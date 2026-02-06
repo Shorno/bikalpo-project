@@ -1,0 +1,69 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1766523086090,
+      "tag": "0000_gigantic_shooting_star",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1766756839223,
+      "tag": "0001_melted_xavin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1766756840000,
+      "tag": "0002_fix_auth_updated_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1766756850000,
+      "tag": "0003_stock_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1766756860000,
+      "tag": "0004_invoice_delivery_user_area",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1766756870000,
+      "tag": "0005_delivery_group_vehicle_expected",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1766756880000,
+      "tag": "0006_product_variant",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1766756890000,
+      "tag": "0007_variant_pricing_delivery_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1766756900000,
+      "tag": "0008_order_price_change_confirmed",
+      "breakpoints": true
+    }
+  ]
+}

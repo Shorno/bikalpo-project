@@ -18,18 +18,27 @@ app.use(
   "/*",
   cors({
     origin: env.CORS_ORIGIN,
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
 );
 
-app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+// Auth routes: /auth/*
+app.on(["POST", "GET"], "/auth/*", (c) => auth.handler(c.req.raw));
 
-export const apiHandler = new OpenAPIHandler(appRouter, {
+// Docs handler with Scalar UI at /docs
+export const docsHandler = new OpenAPIHandler(appRouter, {
   plugins: [
     new OpenAPIReferencePlugin({
       schemaConverters: [new ZodToJsonSchemaConverter()],
+      specGenerateOptions: {
+        info: {
+          title: "Bikalpo API",
+          version: "1.0.0",
+        },
+        servers: [{ url: env.BETTER_AUTH_URL }],
+      },
     }),
   ],
   interceptors: [
@@ -39,6 +48,16 @@ export const apiHandler = new OpenAPIHandler(appRouter, {
   ],
 });
 
+// REST API handler (endpoints at root: /brands, /categories, etc.)
+export const apiHandler = new OpenAPIHandler(appRouter, {
+  interceptors: [
+    onError((error) => {
+      console.error(error);
+    }),
+  ],
+});
+
+// RPC handler for ORPC client calls
 export const rpcHandler = new RPCHandler(appRouter, {
   interceptors: [
     onError((error) => {
@@ -50,6 +69,7 @@ export const rpcHandler = new RPCHandler(appRouter, {
 app.use("/*", async (c, next) => {
   const context = await createContext({ context: c });
 
+  // RPC endpoints at /rpc
   const rpcResult = await rpcHandler.handle(c.req.raw, {
     prefix: "/rpc",
     context: context,
@@ -59,8 +79,19 @@ app.use("/*", async (c, next) => {
     return c.newResponse(rpcResult.response.body, rpcResult.response);
   }
 
+  // API documentation at /docs
+  const docsResult = await docsHandler.handle(c.req.raw, {
+    prefix: "/docs",
+    context: context,
+  });
+
+  if (docsResult.matched) {
+    return c.newResponse(docsResult.response.body, docsResult.response);
+  }
+
+  // REST API endpoints at root (no /api prefix)
   const apiResult = await apiHandler.handle(c.req.raw, {
-    prefix: "/api-reference",
+    prefix: "/",
     context: context,
   });
 
@@ -72,7 +103,11 @@ app.use("/*", async (c, next) => {
 });
 
 app.get("/", (c) => {
-  return c.text("OK");
+  return c.json({
+    name: "Bikalpo API",
+    version: "1.0.0",
+    docs: "/docs",
+  });
 });
 
 export default app;
