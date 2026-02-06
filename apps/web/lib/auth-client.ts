@@ -6,6 +6,7 @@ import { ac, adminRole, customer, guest } from "@bikalpo-project/auth";
 export const authClient = createAuthClient({
   // Point to the server's auth endpoint
   baseURL: process.env.NEXT_PUBLIC_AUTH_URL,
+  basePath: "/auth",
   fetchOptions: {
     credentials: "include",
   },
