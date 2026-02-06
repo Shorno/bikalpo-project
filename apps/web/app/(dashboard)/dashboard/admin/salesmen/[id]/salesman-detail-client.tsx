@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ColumnDef,
   flexRender,
@@ -22,14 +22,9 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  type AssignedCustomer,
-  getSalesmanById,
-  type SalesmanDetail,
-  unassignCustomer,
-} from "@/actions/admin/salesman-actions";
+import { orpc } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,9 +51,29 @@ import {
 import { ADMIN_BASE } from "@/lib/routes";
 import { AssignCustomersDialog } from "./assign-customers-dialog";
 
+// Types for assigned customers (matching ORPC response)
+interface AssignedCustomer {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  shopName: string | null;
+  assignedAt: Date;
+}
+
 interface SalesmanDetailClientProps {
   salesmanId: string;
-  initialData: SalesmanDetail;
+  initialData: {
+    id: string;
+    name: string;
+    email: string;
+    phoneNumber: string | null;
+    createdAt: Date;
+    banned: boolean;
+    estimatesCount: number;
+    assignedCustomers: AssignedCustomer[];
+    assignedCustomersCount: number;
+  };
 }
 
 export function SalesmanDetailClient({
@@ -67,16 +82,14 @@ export function SalesmanDetailClient({
 }: SalesmanDetailClientProps) {
   const queryClient = useQueryClient();
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [_isPending, startTransition] = useTransition();
 
-  // Use TanStack Query for data fetching
-  const { data: result, isLoading } = useQuery({
-    queryKey: ["salesman-detail", salesmanId],
-    queryFn: () => getSalesmanById(salesmanId),
-    initialData: { success: true, salesman: initialData },
+  // Use ORPC for data fetching
+  const { data, isLoading } = useQuery({
+    ...orpc.salesman.getById.queryOptions({ input: { id: salesmanId } }),
+    initialData: { salesman: initialData },
   });
 
-  const salesman = result?.salesman ?? initialData;
+  const salesman = data?.salesman ?? initialData;
 
   // TanStack Table columns for desktop
   const columns: ColumnDef<AssignedCustomer>[] = useMemo(
@@ -123,26 +136,30 @@ export function SalesmanDetailClient({
     },
   });
 
-  const handleUnassign = (customerId: string, customerName: string) => {
-    setRemovingId(customerId);
-    startTransition(async () => {
-      const res = await unassignCustomer(salesman.id, customerId);
-      if (res.success) {
-        toast.success(`${customerName} unassigned`);
-        queryClient.invalidateQueries({
-          queryKey: ["salesman-detail", salesmanId],
-        });
-      } else {
-        toast.error(res.error || "Failed to unassign customer");
-      }
+  // Unassign mutation via ORPC
+  const unassignMutation = useMutation({
+    ...orpc.salesman.unassignCustomer.mutationOptions(),
+    onSuccess: (result) => {
+      toast.success(result.message || "Customer unassigned");
+      queryClient.invalidateQueries({ queryKey: ["salesman"] });
       setRemovingId(null);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to unassign customer");
+      setRemovingId(null);
+    },
+  });
+
+  const handleUnassign = (customerId: string) => {
+    setRemovingId(customerId);
+    unassignMutation.mutate({
+      salesmanId: salesman.id,
+      customerId,
     });
   };
 
   const handleAssigned = () => {
-    queryClient.invalidateQueries({
-      queryKey: ["salesman-detail", salesmanId],
-    });
+    queryClient.invalidateQueries({ queryKey: ["salesman"] });
   };
 
   if (isLoading) {
@@ -157,7 +174,8 @@ export function SalesmanDetailClient({
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-20" />
+            // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+<Skeleton key={i} className="h-20" />
           ))}
         </div>
       </div>
@@ -309,7 +327,7 @@ export function SalesmanDetailClient({
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
                           onClick={() =>
-                            handleUnassign(customer.id, customer.name)
+                            handleUnassign(customer.id)
                           }
                         >
                           Unassign
@@ -333,9 +351,9 @@ export function SalesmanDetailClient({
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
                       </TableHead>
                     ))}
                     <TableHead className="w-10"></TableHead>
@@ -385,7 +403,6 @@ export function SalesmanDetailClient({
                               onClick={() =>
                                 handleUnassign(
                                   row.original.id,
-                                  row.original.name,
                                 )
                               }
                             >

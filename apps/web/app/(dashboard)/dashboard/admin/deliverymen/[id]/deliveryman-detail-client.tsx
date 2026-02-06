@@ -22,11 +22,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
-import {
-  type DeliveryGroupSummary,
-  type DeliverymanDetail,
-  getDeliverymanById,
-} from "@/actions/admin/deliveryman-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 
 function getStatusBadge(status: string) {
   const variants: Record<
@@ -64,6 +60,31 @@ function getStatusBadge(status: string) {
   );
 }
 
+// Types matching ORPC response
+interface DeliveryGroupSummary {
+  id: number;
+  groupName: string;
+  status: string;
+  vehicleType: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+  invoiceCount: number;
+  totalValue: number;
+}
+
+interface DeliverymanDetail {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  serviceArea: string | null;
+  createdAt: Date;
+  banned: boolean;
+  deliveriesCount: number;
+  activeGroup: DeliveryGroupSummary | null;
+  deliveryHistory: DeliveryGroupSummary[];
+}
+
 interface DeliverymanDetailClientProps {
   deliverymanId: string;
   initialData: DeliverymanDetail;
@@ -73,13 +94,13 @@ export function DeliverymanDetailClient({
   deliverymanId,
   initialData,
 }: DeliverymanDetailClientProps) {
-  const { data: result, isLoading } = useQuery({
-    queryKey: ["deliveryman-detail", deliverymanId],
-    queryFn: () => getDeliverymanById(deliverymanId),
-    initialData: { success: true, deliveryman: initialData },
+  // Use ORPC for data fetching
+  const { data, isLoading } = useQuery({
+    ...orpc.deliveryman.getById.queryOptions({ input: { id: deliverymanId } }),
+    initialData: { deliveryman: initialData },
   });
 
-  const deliveryman = result?.deliveryman ?? initialData;
+  const deliveryman = data?.deliveryman ?? initialData;
 
   const columns: ColumnDef<DeliveryGroupSummary>[] = useMemo(
     () => [
@@ -349,9 +370,9 @@ export function DeliverymanDetailClient({
                           {header.isPlaceholder
                             ? null
                             : flexRender(
-                                header.column.columnDef.header,
-                                header.getContext(),
-                              )}
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
                         </TableHead>
                       ))}
                     </TableRow>

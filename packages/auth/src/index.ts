@@ -5,8 +5,8 @@ import { env } from "@bikalpo-project/env/server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
-import { admin as adminPlugin } from "better-auth/plugins";
-import { ac, admin as adminRole, customer, guest } from "./permissions";
+import { admin as adminPlugin, bearer, openAPI } from "better-auth/plugins";
+import { ac, admin as adminRole, customer, deliveryman, guest, salesman } from "./permissions";
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -22,12 +22,16 @@ export const auth = betterAuth({
   },
   plugins: [
     expo(),
+    bearer(), // Enables Bearer token auth for API testing
+    openAPI(), // Enables /auth/reference for API testing
     adminPlugin({
       ac,
       roles: {
         guest,
         customer,
         admin: adminRole,
+        salesman,
+        deliveryman,
       },
       defaultRole: "guest",
     }),
@@ -109,4 +113,4 @@ export const auth = betterAuth({
 export type Session = typeof auth.$Infer.Session;
 
 // Re-export permissions for client usage
-export { ac, admin as adminRole, customer, guest } from "./permissions";
+export { ac, admin as adminRole, customer, deliveryman, guest, salesman } from "./permissions";

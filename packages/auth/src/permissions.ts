@@ -9,6 +9,8 @@ export const statement = {
     ...defaultStatements,
     order: ["create", "read", "update", "delete", "list"],
     product: ["read", "list"],
+    delivery: ["create", "read", "update", "list"],
+    estimate: ["create", "read", "update", "list"],
 } as const;
 
 export const ac = createAccessControl(statement);
@@ -20,6 +22,8 @@ export const ac = createAccessControl(statement);
 export const guest = ac.newRole({
     order: [],
     product: [],
+    delivery: [],
+    estimate: [],
 });
 
 /**
@@ -29,6 +33,28 @@ export const guest = ac.newRole({
 export const customer = ac.newRole({
     order: ["create", "read", "list"],
     product: ["read", "list"],
+    delivery: [],
+    estimate: [],
+});
+
+/**
+ * Salesman role - can manage estimates and view orders
+ */
+export const salesman = ac.newRole({
+    order: ["read", "list"],
+    product: ["read", "list"],
+    delivery: [],
+    estimate: ["create", "read", "update", "list"],
+});
+
+/**
+ * Deliveryman role - can manage deliveries
+ */
+export const deliveryman = ac.newRole({
+    order: ["read", "list"],
+    product: ["read", "list"],
+    delivery: ["create", "read", "update", "list"],
+    estimate: [],
 });
 
 /**
@@ -38,5 +64,8 @@ export const customer = ac.newRole({
 export const admin = ac.newRole({
     order: ["create", "read", "update", "delete", "list"],
     product: ["read", "list"],
+    delivery: ["create", "read", "update", "list"],
+    estimate: ["create", "read", "update", "list"],
     ...adminAc.statements,
 });
+

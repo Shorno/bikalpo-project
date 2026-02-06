@@ -14,11 +14,11 @@ import {
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import {
-  createEmployee,
-  type EmployeeRole,
-} from "@/actions/admin/employee-actions";
 import { Button } from "@/components/ui/button";
+import { orpc } from "@/utils/orpc";
+
+// Employee role type for form
+type EmployeeRole = "salesman" | "deliveryman";
 import {
   Dialog,
   DialogContent,
@@ -70,16 +70,12 @@ export function CreateEmployeeModal({
   } | null>(null);
 
   const mutation = useMutation({
-    mutationFn: createEmployee,
+    ...orpc.employee.create.mutationOptions(),
     onSuccess: (result) => {
-      if (!result.success) {
-        toast.error(result.error || "Failed to create employee");
-        return;
-      }
       queryClient.invalidateQueries({ queryKey: ["employees"] });
       queryClient.invalidateQueries({ queryKey: ["salesmen"] });
       queryClient.invalidateQueries({ queryKey: ["deliverymen"] });
-      toast.success("Employee created successfully");
+      toast.success(result.message || "Employee created successfully");
 
       // Store credentials for copying
       setCreatedCredentials({
@@ -91,8 +87,8 @@ export function CreateEmployeeModal({
       router.refresh();
       onSuccess?.();
     },
-    onError: () => {
-      toast.error("An unexpected error occurred");
+    onError: (error) => {
+      toast.error(error.message || "An unexpected error occurred");
     },
   });
 

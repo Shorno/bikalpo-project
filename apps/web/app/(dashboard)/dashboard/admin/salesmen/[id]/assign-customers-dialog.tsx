@@ -1,12 +1,9 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, Search } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  assignCustomers,
-  getUnassignedCustomers,
-} from "@/actions/admin/salesman-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -20,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { orpc } from "@/utils/orpc";
 
 interface AssignCustomersDialogProps {
   salesmanId: string;
@@ -28,12 +26,6 @@ interface AssignCustomersDialogProps {
   children: React.ReactNode;
 }
 
-interface Customer {
-  id: string;
-  name: string;
-  email: string;
-  shopName: string | null;
-}
 
 export function AssignCustomersDialog({
   salesmanId,
@@ -41,30 +33,39 @@ export function AssignCustomersDialog({
   onAssigned,
   children,
 }: AssignCustomersDialogProps) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [isPending, startTransition] = useTransition();
 
-  const loadCustomers = async () => {
-    setLoading(true);
-    const result = await getUnassignedCustomers();
-    if (result.success) {
-      setCustomers(result.customers);
-    } else {
-      toast.error(result.error || "Failed to load customers");
-    }
-    setLoading(false);
-  };
+  // Fetch unassigned customers via ORPC
+  const { data, isLoading } = useQuery({
+    ...orpc.salesman.getUnassignedCustomers.queryOptions(),
+    enabled: open, // Only fetch when dialog is open
+  });
+
+  const customers = data?.customers ?? [];
+
+  // Assign mutation via ORPC
+  const assignMutation = useMutation({
+    ...orpc.salesman.assignCustomers.mutationOptions(),
+    onSuccess: (result) => {
+      toast.success(result.message || `Assigned customers to ${salesmanName}`);
+      queryClient.invalidateQueries({ queryKey: ["salesman"] });
+      queryClient.invalidateQueries({ queryKey: ["salesmen"] });
+      setOpen(false);
+      onAssigned();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to assign customers");
+    },
+  });
 
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
     if (newOpen) {
       setSelectedIds([]);
       setSearch("");
-      loadCustomers();
     }
   };
 
@@ -86,17 +87,9 @@ export function AssignCustomersDialog({
   };
 
   const handleAssign = () => {
-    startTransition(async () => {
-      const result = await assignCustomers(salesmanId, selectedIds);
-      if (result.success) {
-        toast.success(
-          `Assigned ${selectedIds.length} customer(s) to ${salesmanName}`,
-        );
-        setOpen(false);
-        onAssigned();
-      } else {
-        toast.error(result.error || "Failed to assign customers");
-      }
+    assignMutation.mutate({
+      salesmanId,
+      customerIds: selectedIds,
     });
   };
 
@@ -122,7 +115,7 @@ export function AssignCustomersDialog({
         </div>
 
         <ScrollArea className="h-64 border rounded-md">
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
@@ -170,15 +163,15 @@ export function AssignCustomersDialog({
           <Button
             variant="outline"
             onClick={() => setOpen(false)}
-            disabled={isPending}
+            disabled={assignMutation.isPending}
           >
             Cancel
           </Button>
           <Button
             onClick={handleAssign}
-            disabled={selectedIds.length === 0 || isPending}
+            disabled={selectedIds.length === 0 || assignMutation.isPending}
           >
-            {isPending ? (
+            {assignMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : (
               <Check className="h-4 w-4 mr-2" />

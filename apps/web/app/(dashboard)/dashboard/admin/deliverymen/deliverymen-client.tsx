@@ -11,10 +11,6 @@ import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Eye, Search, Truck } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type {
-  Deliveryman,
-  DeliverymenStats,
-} from "@/actions/admin/deliveryman-actions";
 import { CreateEmployeeModal } from "@/components/features/employees/create-employee-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +25,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
+
+// Types matching ORPC response
+interface Deliveryman {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  createdAt: Date;
+  banned: boolean;
+  deliveriesCount: number;
+}
+
+interface DeliverymenStats {
+  total: number;
+  totalDeliveries: number;
+  activeCount: number;
+}
 
 function getStatusBadge(banned: boolean) {
   if (banned) {
@@ -232,9 +245,9 @@ export function DeliverymenClient({
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
                       </TableHead>
                     ))}
                   </TableRow>

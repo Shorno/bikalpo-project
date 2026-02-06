@@ -124,14 +124,13 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<{
   try {
     await requireAdmin();
 
-    // Create user via Better Auth admin API with "user" role first
-    // (Better Auth only accepts "user" or "admin" as built-in roles)
+    // Create user via Better Auth admin API with the correct role directly
     const newUser = await auth.api.createUser({
       body: {
         email: input.email,
         password: input.password,
         name: input.name,
-        role: "user", // Create with base role first
+        role: input.role, // Directly assign salesman or deliveryman role
         data: {
           phoneNumber: input.phoneNumber || null,
         },
@@ -144,12 +143,6 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<{
         error: "Failed to create employee",
       };
     }
-
-    // Update to the actual custom role (salesman/deliveryman) via database
-    await db
-      .update(user)
-      .set({ role: input.role })
-      .where(eq(user.id, newUser.user.id));
 
     revalidatePath("/dashboard/admin/salesmen");
     revalidatePath("/dashboard/admin/deliverymen");
