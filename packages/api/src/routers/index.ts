@@ -1,6 +1,9 @@
 import type { RouterClient } from "@orpc/server";
 
 import { protectedProcedure, publicProcedure } from "../index";
+import { announcementRouter } from "./announcement";
+import { brandRouter } from "./brand";
+import { categoryRouter } from "./category";
 import { todoRouter } from "./todo";
 
 export const appRouter = {
@@ -14,6 +17,9 @@ export const appRouter = {
     };
   }),
   todo: todoRouter,
+  brand: brandRouter,
+  category: categoryRouter,
+  announcement: announcementRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
