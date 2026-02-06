@@ -1,0 +1,28 @@
+/* Rich Text Editor Styles */
+.editor-paragraph {
+  margin-bottom: 0.5rem;
+}
+
+.editor-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+/* Image styles - ensure decorator images display properly */
+.editor-image {
+  display: block;
+  cursor: default;
+  user-select: none;
+  margin: 0.5rem 0;
+}
+
+.editor-image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.375rem;
+  display: block;
+}
+
+/* Ensure the content editable can display images */
+[contenteditable="true"] span[data-lexical-decorator="true"] {
+  display: block;
+}
