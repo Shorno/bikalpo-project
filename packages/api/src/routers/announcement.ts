@@ -18,25 +18,57 @@ const updateAnnouncementSchema = announcementSchema.extend({
 });
 
 export const announcementRouter = {
-    // Public: Get active announcements
-    getActive: publicProcedure.handler(async () => {
-        return await db
-            .select()
-            .from(announcement)
-            .where(eq(announcement.active, true))
-            .orderBy(desc(announcement.createdAt));
-    }),
+    /**
+     * Get active announcements
+     * REST: GET /api/announcements
+     */
+    getActive: publicProcedure
+        .route({
+            method: "GET",
+            path: "/announcements",
+            tags: ["Announcements"],
+            summary: "Get active announcements",
+            description: "Get all active announcements for public display",
+        })
+        .handler(async () => {
+            return await db
+                .select()
+                .from(announcement)
+                .where(eq(announcement.active, true))
+                .orderBy(desc(announcement.createdAt));
+        }),
 
-    // Admin: Get all announcements
-    getAll: adminProcedure.handler(async () => {
-        return await db
-            .select()
-            .from(announcement)
-            .orderBy(desc(announcement.createdAt));
-    }),
+    /**
+     * Get all announcements (admin)
+     * REST: GET /api/announcements/all
+     */
+    getAll: adminProcedure
+        .route({
+            method: "GET",
+            path: "/announcements/all",
+            tags: ["Announcements"],
+            summary: "Get all announcements",
+            description: "Get all announcements including inactive (admin only)",
+        })
+        .handler(async () => {
+            return await db
+                .select()
+                .from(announcement)
+                .orderBy(desc(announcement.createdAt));
+        }),
 
-    // Admin: Create announcement
+    /**
+     * Create an announcement
+     * REST: POST /api/announcements
+     */
     create: adminProcedure
+        .route({
+            method: "POST",
+            path: "/announcements",
+            tags: ["Announcements"],
+            summary: "Create announcement",
+            description: "Create a new announcement (admin only)",
+        })
         .input(announcementSchema)
         .handler(async ({ input }) => {
             const [newAnnouncement] = await db
@@ -49,8 +81,18 @@ export const announcementRouter = {
             };
         }),
 
-    // Admin: Update announcement
+    /**
+     * Update an announcement
+     * REST: PUT /api/announcements/{id}
+     */
     update: adminProcedure
+        .route({
+            method: "PUT",
+            path: "/announcements/{id}",
+            tags: ["Announcements"],
+            summary: "Update announcement",
+            description: "Update an existing announcement (admin only)",
+        })
         .input(updateAnnouncementSchema)
         .handler(async ({ input }) => {
             const { id, ...data } = input;
@@ -71,8 +113,18 @@ export const announcementRouter = {
             return { message: "Announcement updated successfully" };
         }),
 
-    // Admin: Delete announcement
+    /**
+     * Delete an announcement
+     * REST: DELETE /api/announcements/{id}
+     */
     delete: adminProcedure
+        .route({
+            method: "DELETE",
+            path: "/announcements/{id}",
+            tags: ["Announcements"],
+            summary: "Delete announcement",
+            description: "Delete an announcement (admin only)",
+        })
         .input(z.object({ id: z.number().int() }))
         .handler(async ({ input }) => {
             const existing = await db.query.announcement.findFirst({

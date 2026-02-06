@@ -26,12 +26,24 @@ app.use(
 
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
-export const apiHandler = new OpenAPIHandler(appRouter, {
+// Handler for API documentation at /api-docs (with Swagger/Scalar UI)
+export const docsHandler = new OpenAPIHandler(appRouter, {
   plugins: [
     new OpenAPIReferencePlugin({
       schemaConverters: [new ZodToJsonSchemaConverter()],
+      docsPath: "/",
+      specPath: "/spec.json",
     }),
   ],
+  interceptors: [
+    onError((error) => {
+      console.error(error);
+    }),
+  ],
+});
+
+// Handler for REST API at /api (without docs UI)
+export const apiHandler = new OpenAPIHandler(appRouter, {
   interceptors: [
     onError((error) => {
       console.error(error);
@@ -59,8 +71,19 @@ app.use("/*", async (c, next) => {
     return c.newResponse(rpcResult.response.body, rpcResult.response);
   }
 
+  // API documentation at /api-docs
+  const docsResult = await docsHandler.handle(c.req.raw, {
+    prefix: "/api-docs",
+    context: context,
+  });
+
+  if (docsResult.matched) {
+    return c.newResponse(docsResult.response.body, docsResult.response);
+  }
+
+  // REST API endpoints at /api
   const apiResult = await apiHandler.handle(c.req.raw, {
-    prefix: "/api-reference",
+    prefix: "/api",
     context: context,
   });
 

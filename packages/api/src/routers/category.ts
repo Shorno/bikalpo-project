@@ -28,25 +28,57 @@ const updateSubcategorySchema = createSubcategorySchema.extend({
 });
 
 export const categoryRouter = {
-    // Public: Get all categories with subcategories
-    getAll: publicProcedure.handler(async () => {
-        return await db.query.category.findMany({
-            with: { subCategory: true },
-            orderBy: [asc(category.displayOrder)],
-        });
-    }),
+    /**
+     * Get all categories with subcategories
+     * REST: GET /api/categories
+     */
+    getAll: publicProcedure
+        .route({
+            method: "GET",
+            path: "/categories",
+            tags: ["Categories"],
+            summary: "Get all categories",
+            description: "Get all categories with their subcategories",
+        })
+        .handler(async () => {
+            return await db.query.category.findMany({
+                with: { subCategory: true },
+                orderBy: [asc(category.displayOrder)],
+            });
+        }),
 
-    // Public: Get active categories only
-    getActive: publicProcedure.handler(async () => {
-        return await db.query.category.findMany({
-            where: (c, { eq }) => eq(c.isActive, true),
-            with: { subCategory: true },
-            orderBy: [asc(category.displayOrder)],
-        });
-    }),
+    /**
+     * Get active categories only
+     * REST: GET /api/categories/active
+     */
+    getActive: publicProcedure
+        .route({
+            method: "GET",
+            path: "/categories/active",
+            tags: ["Categories"],
+            summary: "Get active categories",
+            description: "Get only active categories with subcategories for public display",
+        })
+        .handler(async () => {
+            return await db.query.category.findMany({
+                where: (c, { eq }) => eq(c.isActive, true),
+                with: { subCategory: true },
+                orderBy: [asc(category.displayOrder)],
+            });
+        }),
 
-    // Public: Get category by ID
+    /**
+     * Get category by ID
+     * REST: GET /api/categories/{id}
+     */
     getById: publicProcedure
+        .route({
+            method: "GET",
+            path: "/categories/{id}",
+            tags: ["Categories"],
+            summary: "Get category by ID",
+            description: "Get a single category with subcategories by its ID",
+        })
         .input(z.object({ id: z.number().int() }))
         .handler(async ({ input }) => {
             const result = await db.query.category.findFirst({
@@ -61,8 +93,18 @@ export const categoryRouter = {
             return result;
         }),
 
-    // Admin: Create category
+    /**
+     * Create a new category
+     * REST: POST /api/categories
+     */
     create: adminProcedure
+        .route({
+            method: "POST",
+            path: "/categories",
+            tags: ["Categories"],
+            summary: "Create category",
+            description: "Create a new category (admin only)",
+        })
         .input(createCategorySchema)
         .handler(async ({ input }) => {
             const [newCategory] = await db.insert(category).values(input).returning();
@@ -72,8 +114,18 @@ export const categoryRouter = {
             };
         }),
 
-    // Admin: Update category
+    /**
+     * Update a category
+     * REST: PUT /api/categories/{id}
+     */
     update: adminProcedure
+        .route({
+            method: "PUT",
+            path: "/categories/{id}",
+            tags: ["Categories"],
+            summary: "Update category",
+            description: "Update an existing category (admin only)",
+        })
         .input(updateCategorySchema)
         .handler(async ({ input }) => {
             const { id, ...data } = input;
@@ -94,8 +146,18 @@ export const categoryRouter = {
             return { message: "Category updated successfully" };
         }),
 
-    // Admin: Delete category
+    /**
+     * Delete a category
+     * REST: DELETE /api/categories/{id}
+     */
     delete: adminProcedure
+        .route({
+            method: "DELETE",
+            path: "/categories/{id}",
+            tags: ["Categories"],
+            summary: "Delete category",
+            description: "Delete a category (admin only)",
+        })
         .input(z.object({ id: z.number().int() }))
         .handler(async ({ input }) => {
             const existing = await db.query.category.findFirst({
@@ -113,8 +175,18 @@ export const categoryRouter = {
 
     // Subcategory procedures
     subcategory: {
-        // Public: Get subcategories by category ID
+        /**
+         * Get subcategories by category ID
+         * REST: GET /api/categories/{categoryId}/subcategories
+         */
         getByCategoryId: publicProcedure
+            .route({
+                method: "GET",
+                path: "/categories/{categoryId}/subcategories",
+                tags: ["Subcategories"],
+                summary: "Get subcategories by category",
+                description: "Get all subcategories for a specific category",
+            })
             .input(z.object({ categoryId: z.number().int() }))
             .handler(async ({ input }) => {
                 return await db.query.subCategory.findMany({
@@ -123,11 +195,20 @@ export const categoryRouter = {
                 });
             }),
 
-        // Admin: Create subcategory
+        /**
+         * Create a new subcategory
+         * REST: POST /api/subcategories
+         */
         create: adminProcedure
+            .route({
+                method: "POST",
+                path: "/subcategories",
+                tags: ["Subcategories"],
+                summary: "Create subcategory",
+                description: "Create a new subcategory (admin only)",
+            })
             .input(createSubcategorySchema)
             .handler(async ({ input }) => {
-                // Check if parent category exists
                 const parentCategory = await db.query.category.findFirst({
                     where: (c, { eq }) => eq(c.id, input.categoryId),
                 });
@@ -143,8 +224,18 @@ export const categoryRouter = {
                 };
             }),
 
-        // Admin: Update subcategory
+        /**
+         * Update a subcategory
+         * REST: PUT /api/subcategories/{id}
+         */
         update: adminProcedure
+            .route({
+                method: "PUT",
+                path: "/subcategories/{id}",
+                tags: ["Subcategories"],
+                summary: "Update subcategory",
+                description: "Update an existing subcategory (admin only)",
+            })
             .input(updateSubcategorySchema)
             .handler(async ({ input }) => {
                 const { id, ...data } = input;
@@ -165,8 +256,18 @@ export const categoryRouter = {
                 return { message: "Subcategory updated successfully" };
             }),
 
-        // Admin: Delete subcategory
+        /**
+         * Delete a subcategory
+         * REST: DELETE /api/subcategories/{id}
+         */
         delete: adminProcedure
+            .route({
+                method: "DELETE",
+                path: "/subcategories/{id}",
+                tags: ["Subcategories"],
+                summary: "Delete subcategory",
+                description: "Delete a subcategory (admin only)",
+            })
             .input(z.object({ id: z.number().int() }))
             .handler(async ({ input }) => {
                 const existing = await db.query.subCategory.findFirst({
