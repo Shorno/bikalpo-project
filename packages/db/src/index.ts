@@ -12,6 +12,3 @@ const pool = new Pool({
 });
 
 export const db = drizzle({ client: pool, schema });
-
-// Re-export schema for convenience
-export * from "./schema";
