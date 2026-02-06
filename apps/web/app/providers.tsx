@@ -5,10 +5,9 @@ import type * as React from "react";
 import { LoginRequiredProvider } from "@/components/features/auth/login-required-modal";
 import { Toaster } from "@/components/ui/sonner";
 import { CartProvider } from "@/hooks/use-cart";
-import { getQueryClient } from "@/utils/get-query-client";
+import {queryClient} from "@/utils/orpc";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  const queryClient = getQueryClient();
 
   return (
     <QueryClientProvider client={queryClient}>

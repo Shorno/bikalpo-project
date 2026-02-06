@@ -5,7 +5,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import updateCategory from "@/actions/category/update-category";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import type { Category } from "@/db/schema";
 import { updateCategorySchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
+import { orpc } from "@/utils/orpc";
 
 interface EditCategoryDialogProps {
   category: Category;
@@ -40,37 +40,18 @@ export default function EditCategoryDialog({
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const mutation = useMutation({
-    mutationFn: updateCategory,
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 400:
-            toast.error("Invalid categories data.", {
-              description: "Please check your form inputs.",
-            });
-            break;
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          case 404:
-            toast.error("Category not found.");
-            break;
-          default:
-            toast.error(result.error || "Something went wrong.");
-        }
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      toast.success(result.message);
-      setOpen(false);
-    },
-    onError: () => {
-      toast.error(
-        "An unexpected error occurred while updating the categories.",
-      );
-    },
-  });
+  const mutation = useMutation(
+    orpc.category.update.mutationOptions({
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
+        toast.success(result.message);
+        setOpen(false);
+      },
+      onError: (error) => {
+        toast.error(error.message || "An unexpected error occurred while updating the category.");
+      },
+    })
+  );
 
   const form = useForm({
     defaultValues: {

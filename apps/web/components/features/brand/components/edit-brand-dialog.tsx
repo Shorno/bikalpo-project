@@ -5,7 +5,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import updateBrand from "@/actions/brand/update-brand";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import type { Brand } from "@/db/schema/brand";
 import { updateBrandSchema } from "@/schema/brand.schema";
 import { generateSlug } from "@/utils/generate-slug";
+import { orpc } from "@/utils/orpc";
 
 interface EditBrandDialogProps {
   brand: Brand;
@@ -38,35 +38,18 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const mutation = useMutation({
-    mutationFn: updateBrand,
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 400:
-            toast.error("Invalid brand data.", {
-              description: "Please check your form inputs.",
-            });
-            break;
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          case 404:
-            toast.error("Brand not found.");
-            break;
-          default:
-            toast.error(result.error || "Something went wrong.");
-        }
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["admin-brands"] });
-      toast.success(result.message);
-      setOpen(false);
-    },
-    onError: () => {
-      toast.error("An unexpected error occurred while updating the brand.");
-    },
-  });
+  const mutation = useMutation(
+    orpc.brand.update.mutationOptions({
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: orpc.brand.getAll.key() });
+        toast.success(result.message);
+        setOpen(false);
+      },
+      onError: (error) => {
+        toast.error(error.message || "An unexpected error occurred while updating the brand.");
+      },
+    })
+  );
 
   const form = useForm({
     defaultValues: {

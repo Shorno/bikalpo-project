@@ -5,7 +5,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import createCategory from "@/actions/category/create-category";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,40 +27,25 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { createCategorySchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
+import { orpc } from "@/utils/orpc";
 
 export default function NewCategoryDialog() {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const mutation = useMutation({
-    mutationFn: createCategory,
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 400:
-            toast.error("Invalid categories data.", {
-              description: "Please check your form inputs.",
-            });
-            break;
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          default:
-            toast.error(result.error || "Something went wrong.");
-        }
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      toast.success(result.message);
-      form.reset();
-      setOpen(false);
-    },
-    onError: () => {
-      toast.error(
-        "An unexpected error occurred while creating the categories.",
-      );
-    },
-  });
+  const mutation = useMutation(
+    orpc.category.create.mutationOptions({
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
+        toast.success(result.message);
+        form.reset();
+        setOpen(false);
+      },
+      onError: (error) => {
+        toast.error(error.message || "An unexpected error occurred while creating the category.");
+      },
+    })
+  );
 
   const form = useForm({
     defaultValues: {

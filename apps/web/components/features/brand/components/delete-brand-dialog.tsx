@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import deleteBrand from "@/actions/brand/delete-brand";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import type { Brand } from "@/db/schema/brand";
+import { orpc } from "@/utils/orpc";
 
 interface DeleteBrandDialogProps {
   brand: Brand;
@@ -27,33 +27,21 @@ export default function DeleteBrandDialog({ brand }: DeleteBrandDialogProps) {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const mutation = useMutation({
-    mutationFn: (id: number) => deleteBrand(id),
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          case 404:
-            toast.error("Brand not found.");
-            break;
-          default:
-            toast.error(result.error || "Failed to delete brand.");
-        }
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["admin-brands"] });
-      toast.success(result.message);
-      setOpen(false);
-    },
-    onError: () => {
-      toast.error("An unexpected error occurred while deleting the brand.");
-    },
-  });
+  const mutation = useMutation(
+    orpc.brand.delete.mutationOptions({
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: orpc.brand.getAll.key() });
+        toast.success(result.message);
+        setOpen(false);
+      },
+      onError: (error) => {
+        toast.error(error.message || "An unexpected error occurred while deleting the brand.");
+      },
+    })
+  );
 
   const handleDelete = () => {
-    mutation.mutate(brand.id);
+    mutation.mutate({ id: brand.id });
   };
 
   return (

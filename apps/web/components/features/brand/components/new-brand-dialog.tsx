@@ -5,7 +5,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import createBrand from "@/actions/brand/create-brand";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,38 +27,25 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { createBrandSchema } from "@/schema/brand.schema";
 import { generateSlug } from "@/utils/generate-slug";
+import { orpc } from "@/utils/orpc";
 
 export default function NewBrandDialog() {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const mutation = useMutation({
-    mutationFn: createBrand,
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 400:
-            toast.error("Invalid brand data.", {
-              description: "Please check your form inputs.",
-            });
-            break;
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          default:
-            toast.error(result.error || "Something went wrong.");
-        }
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["admin-brands"] });
-      toast.success(result.message);
-      form.reset();
-      setOpen(false);
-    },
-    onError: () => {
-      toast.error("An unexpected error occurred while creating the brand.");
-    },
-  });
+  const mutation = useMutation(
+    orpc.brand.create.mutationOptions({
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: orpc.brand.getAll.key() });
+        toast.success(result.message);
+        form.reset();
+        setOpen(false);
+      },
+      onError: (error) => {
+        toast.error(error.message || "An unexpected error occurred while creating the brand.");
+      },
+    })
+  );
 
   const form = useForm({
     defaultValues: {

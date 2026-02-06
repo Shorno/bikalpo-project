@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import deleteCategory from "@/actions/category/delete-category";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import type { Category, SubCategory } from "@/db/schema";
+import { orpc } from "@/utils/orpc";
 
 interface DeleteCategoryDialogProps {
   category: Category & { subCategory?: SubCategory[] };
@@ -32,35 +32,21 @@ export default function DeleteCategoryDialog({
     category.subCategory && category.subCategory.length > 0;
   const subcategoryCount = category.subCategory?.length || 0;
 
-  const mutation = useMutation({
-    mutationFn: (id: number) => deleteCategory(id),
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          case 404:
-            toast.error("Category not found.");
-            break;
-          default:
-            toast.error(result.error || "Failed to delete categories.");
-        }
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      toast.success(result.message);
-      setOpen(false);
-    },
-    onError: () => {
-      toast.error(
-        "An unexpected error occurred while deleting the categories.",
-      );
-    },
-  });
+  const mutation = useMutation(
+    orpc.category.delete.mutationOptions({
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
+        toast.success(result.message);
+        setOpen(false);
+      },
+      onError: (error) => {
+        toast.error(error.message || "An unexpected error occurred while deleting the category.");
+      },
+    })
+  );
 
   const handleDelete = () => {
-    mutation.mutate(category.id);
+    mutation.mutate({ id: category.id });
   };
 
   return (
