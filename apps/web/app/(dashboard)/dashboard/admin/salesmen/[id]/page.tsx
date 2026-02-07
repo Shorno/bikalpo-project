@@ -2,7 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { unauthorized } from "next/navigation";
 import { getSalesmanById } from "@/actions/admin/salesman-actions";
-import { checkIsAdmin } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkIsAdmin } from "@/utils/auth";
 import { Button } from "@/components/ui/button";
 import { ADMIN_BASE } from "@/lib/routes";
 import { SalesmanDetailClient } from "./salesman-detail-client";

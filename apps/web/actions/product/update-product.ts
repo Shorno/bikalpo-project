@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { updatePendingOrdersForProduct } from "@/actions/order/update-pending-orders-for-product";
-import { checkAuth } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkAuth } from "@/utils/auth";
 import { db } from "@/db/config";
 import { product, productImage } from "@/db/schema/product";
 import {

@@ -3,7 +3,7 @@ import {
   getProductReviewStats,
   getReviewsByProductId,
 } from "@/actions/review/get-reviews";
-import { checkAuth } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkAuth } from "@/utils/auth";
 import { ReviewCard } from "./review-card";
 import { ReviewFormWrapper } from "./review-form-wrapper";
 import { StarRating } from "./star-rating";

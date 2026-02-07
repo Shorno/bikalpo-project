@@ -1,6 +1,6 @@
 import { unauthorized } from "next/navigation";
 import { getDeliverymen } from "@/actions/admin/deliveryman-actions";
-import { checkIsAdmin } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkIsAdmin } from "@/utils/auth";
 import { DeliverymenClient } from "./deliverymen-client";
 
 export default async function DeliverymenPage() {

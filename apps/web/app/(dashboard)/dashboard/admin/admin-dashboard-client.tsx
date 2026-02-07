@@ -17,8 +17,8 @@ import {
   Warehouse,
 } from "lucide-react";
 import Link from "next/link";
-import { getAdminDashboardStats } from "@/actions/admin/admin-dashboard-actions";
 import { Badge } from "@/components/ui/badge";
+import { orpc } from "@/utils/orpc";
 
 const ADMIN_BASE = "/dashboard/admin";
 
@@ -90,16 +90,13 @@ const statusColors: Record<string, string> = {
 };
 
 export function AdminDashboardClient() {
-  const { data: statsData, isLoading } = useQuery({
-    queryKey: ["admin-dashboard-stats"],
-    queryFn: async () => {
-      const result = await getAdminDashboardStats();
-      return result.success ? result.stats : null;
-    },
+  // Use ORPC for dashboard stats
+  const { data, isLoading } = useQuery({
+    ...orpc.dashboard.getStats.queryOptions(),
     refetchInterval: 60000, // Refresh every minute
   });
 
-  const stats = statsData;
+  const stats = data?.stats;
 
   // Format date for header
   const now = new Date();

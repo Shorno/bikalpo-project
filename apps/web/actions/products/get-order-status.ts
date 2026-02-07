@@ -1,7 +1,7 @@
 "use server";
 
 import { and, eq } from "drizzle-orm";
-import { checkAuth } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkAuth } from "@/utils/auth";
 import { db } from "@/db/config";
 import { type Order, order } from "@/db/schema";
 import { type Payment, payment } from "@/db/schema/payment";
