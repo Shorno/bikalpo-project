@@ -1,4 +1,4 @@
-import { requireDeliveryman } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { requireDeliveryman } from "@/utils/auth";
 import { SiteHeader } from "@/components/dashboard/site-header";
 import { DeliverySidebar } from "@/components/features/delivery/DeliverySidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";

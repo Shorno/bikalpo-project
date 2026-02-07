@@ -1,6 +1,6 @@
 import { unauthorized } from "next/navigation";
 import { getSalesmen } from "@/actions/admin/salesman-actions";
-import { checkIsAdmin } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkIsAdmin } from "@/utils/auth";
 import { SalesmenClient } from "./salesmen-client";
 
 export default async function SalesmenPage() {

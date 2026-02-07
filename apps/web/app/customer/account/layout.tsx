@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { checkAuth } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkAuth } from "@/utils/auth";
 import { AccountSidebar } from "@/components/account/account-sidebar";
 
 export default async function AccountLayout({

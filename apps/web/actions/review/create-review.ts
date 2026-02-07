@@ -3,7 +3,7 @@
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkAuth } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkAuth } from "@/utils/auth";
 import { db } from "@/db/config";
 import { order, orderItem } from "@/db/schema/order";
 import { productReview } from "@/db/schema/review";

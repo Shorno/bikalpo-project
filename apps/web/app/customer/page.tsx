@@ -1,6 +1,6 @@
 import { CheckCircle2 } from "lucide-react";
 import { getVerifiedUsersForHome } from "@/actions/users/get-verified-users";
-import { getSession } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { getSession } from "@/utils/auth";
 import { CategoryTabs } from "@/components/features/home/category-tabs";
 import { CustomerHero } from "@/components/features/home/customer-hero";
 import { CustomerSidebar } from "@/components/features/home/customer-sidebar";

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkAuth } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkAuth } from "@/utils/auth";
 import { db } from "@/db/config";
 import { brand } from "@/db/schema/brand";
 import {

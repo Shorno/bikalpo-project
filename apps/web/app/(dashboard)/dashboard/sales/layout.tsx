@@ -1,4 +1,4 @@
-import { requireSalesman } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { requireSalesman } from "@/utils/auth";
 import { SalesSidebar } from "@/components/dashboard/sales-sidebar";
 import { SiteHeader } from "@/components/dashboard/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";

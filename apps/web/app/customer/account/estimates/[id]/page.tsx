@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getEstimateById } from "@/actions/estimate/get-estimates";
-import { checkAuth } from "@/app/(dashboard)/dashboard/admin/_actions/auth/checkAuth";
+import { checkAuth } from "@/utils/auth";
 import { ConvertOrderForm } from "@/components/features/estimates/convert-order-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
