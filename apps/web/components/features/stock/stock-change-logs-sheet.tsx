@@ -1,8 +1,7 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { History } from "lucide-react";
-import { useEffect, useState } from "react";
-import { getStockChangeLogs } from "@/actions/product/get-stock-change-logs";
 import {
   Sheet,
   SheetContent,
@@ -17,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { orpc } from "@/utils/orpc";
 
 interface StockChangeLogsSheetProps {
   productId: number;
@@ -31,18 +31,12 @@ export function StockChangeLogsSheet({
   open,
   onOpenChange,
 }: StockChangeLogsSheetProps) {
-  const [logs, setLogs] = useState<
-    Awaited<ReturnType<typeof getStockChangeLogs>>
-  >([]);
-  const [loading, setLoading] = useState(false);
+  const { data, isLoading } = useQuery({
+    ...orpc.product.getStockLogs.queryOptions({ input: { productId } }),
+    enabled: open && !!productId,
+  });
 
-  useEffect(() => {
-    if (!open || !productId) return;
-    setLoading(true);
-    getStockChangeLogs(productId)
-      .then(setLogs)
-      .finally(() => setLoading(false));
-  }, [open, productId]);
+  const logs = data?.logs ?? [];
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -54,7 +48,7 @@ export function StockChangeLogsSheet({
           </SheetTitle>
         </SheetHeader>
         <div className="mt-4">
-          {loading ? (
+          {isLoading ? (
             <p className="text-muted-foreground text-sm">Loading...</p>
           ) : logs.length === 0 ? (
             <p className="text-muted-foreground text-sm">
@@ -94,9 +88,9 @@ export function StockChangeLogsSheet({
                     <TableCell className="text-muted-foreground text-sm">
                       {log.createdAt
                         ? new Date(log.createdAt).toLocaleString(undefined, {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })
                         : "—"}
                     </TableCell>
                   </TableRow>

@@ -1,9 +1,9 @@
 "use client";
 
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { History, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { adjustStockWithReason } from "@/actions/product/adjust-stock-with-reason";
 import { StockChangeLogsSheet } from "@/components/features/stock/stock-change-logs-sheet";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { orpc } from "@/utils/orpc";
 
 interface AdjustStockDialogProps {
   product: { id: number; name: string; stockQuantity: number };
@@ -33,10 +34,10 @@ export function AdjustStockDialog({
   onOpenChange,
   onSuccess,
 }: AdjustStockDialogProps) {
+  const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>(null);
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
 
   const resetForm = () => {
@@ -49,6 +50,21 @@ export function AdjustStockDialog({
     if (!next) resetForm();
     onOpenChange(next);
   };
+
+  const mutation = useMutation({
+    ...orpc.product.adjustStock.mutationOptions(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stock-products"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      toast.success(mode === "add" ? "Stock added" : "Stock reduced");
+      resetForm();
+      onOpenChange(false);
+      onSuccess?.();
+    },
+    onError: () => {
+      toast.error("Failed to update stock");
+    },
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,27 +79,12 @@ export function AdjustStockDialog({
     }
     if (!mode) return;
 
-    setIsSubmitting(true);
-    try {
-      const result = await adjustStockWithReason(
-        product.id,
-        mode,
-        num,
-        reason.trim() || undefined,
-      );
-      if (result.success) {
-        toast.success(mode === "add" ? "Stock added" : "Stock reduced");
-        resetForm();
-        onOpenChange(false);
-        onSuccess?.();
-      } else {
-        toast.error(result.error || "Failed to update stock");
-      }
-    } catch {
-      toast.error("Something went wrong");
-    } finally {
-      setIsSubmitting(false);
-    }
+    mutation.mutate({
+      productId: product.id,
+      changeType: mode,
+      quantity: num,
+      reason: reason.trim() || undefined,
+    });
   };
 
   return (
@@ -131,7 +132,7 @@ export function AdjustStockDialog({
                   max={mode === "reduce" ? product.stockQuantity : undefined}
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  disabled={isSubmitting}
+                  disabled={mutation.isPending}
                   placeholder="0"
                 />
               </div>
@@ -141,7 +142,7 @@ export function AdjustStockDialog({
                   id="reason"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  disabled={isSubmitting}
+                  disabled={mutation.isPending}
                   placeholder="e.g. Restock from supplier"
                   rows={2}
                 />
@@ -151,12 +152,12 @@ export function AdjustStockDialog({
                   type="button"
                   variant="ghost"
                   onClick={resetForm}
-                  disabled={isSubmitting}
+                  disabled={mutation.isPending}
                 >
                   Back
                 </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting && (
+                <Button type="submit" disabled={mutation.isPending}>
+                  {mutation.isPending && (
                     <Loader2 className="mr-2 size-4 animate-spin" />
                   )}
                   {mode === "add" ? "Add" : "Reduce"} Stock

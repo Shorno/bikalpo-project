@@ -14,9 +14,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import createProduct from "@/actions/product/create-product";
-import updateProduct from "@/actions/product/update-product";
 import { createVariant } from "@/actions/product-variant/create-variant";
+import { orpc } from "@/utils/orpc";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
@@ -71,35 +70,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
 
   const isEdit = mode === "edit";
 
-  const handleSuccess = (result: {
-    success: boolean;
-    status?: number;
-    message?: string;
-    error?: string;
-  }) => {
-    if (!result.success) {
-      switch (result.status) {
-        case 400:
-          toast.error("Invalid product data.", {
-            description: "Please check your form inputs.",
-          });
-          break;
-        case 401:
-          toast.error("You are not authorized to perform this action.");
-          break;
-        case 404:
-          toast.error("Product not found.");
-          break;
-        default:
-          toast.error(result.error || "Something went wrong.");
-      }
-      return;
-    }
-    queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-    toast.success(result.message);
-    router.push("/dashboard/admin/products");
-  };
-
   const handleError = () => {
     toast.error(
       `An unexpected error occurred while ${isEdit ? "updating" : "creating"} the product.`,
@@ -107,10 +77,10 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   };
 
   const createMutation = useMutation({
-    mutationFn: createProduct,
+    ...orpc.product.create.mutationOptions(),
     onSuccess: async (result) => {
-      if (result.success && result.data && draftVariants.length > 0) {
-        const newProductId = (result.data as unknown as { id: number }).id;
+      if (result.product && draftVariants.length > 0) {
+        const newProductId = result.product.id;
         try {
           for (const d of draftVariants) {
             await createVariant({ ...d, productId: newProductId });
@@ -119,14 +89,20 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
           toast.error("Product created but some variants failed to save.");
         }
       }
-      handleSuccess(result);
+      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      toast.success("Product created successfully");
+      router.push("/dashboard/admin/products");
     },
     onError: handleError,
   });
 
   const updateMutation = useMutation({
-    mutationFn: updateProduct,
-    onSuccess: handleSuccess,
+    ...orpc.product.update.mutationOptions(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      toast.success("Product updated successfully");
+      router.push("/dashboard/admin/products");
+    },
     onError: handleError,
   });
 
