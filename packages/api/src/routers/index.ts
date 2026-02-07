@@ -2,7 +2,6 @@ import type { RouterClient } from "@orpc/server";
 
 import { protectedProcedure, publicProcedure } from "../index";
 import { announcementRouter } from "./announcement";
-import { authRouter } from "./auth";
 import { brandRouter } from "./brand";
 import { categoryRouter } from "./category";
 import { customerRouter } from "./customer";
@@ -22,7 +21,6 @@ export const appRouter = {
       user: context.session?.user,
     };
   }),
-  auth: authRouter,
   brand: brandRouter,
   category: categoryRouter,
   customer: customerRouter,
