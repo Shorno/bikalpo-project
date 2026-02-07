@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import deleteProduct from "@/actions/product/delete-product";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { orpc } from "@/utils/orpc";
 
 interface DeleteProductDialogProps {
   productId: number;
@@ -35,23 +35,10 @@ export default function DeleteProductDialog({
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (id: number) => deleteProduct(id),
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          case 404:
-            toast.error("Product not found.");
-            break;
-          default:
-            toast.error(result.error || "Failed to delete product.");
-        }
-        return;
-      }
+    ...orpc.product.delete.mutationOptions(),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-      toast.success(result.message);
+      toast.success("Product deleted successfully");
       setOpen(false);
       onSuccess?.();
     },
@@ -61,7 +48,7 @@ export default function DeleteProductDialog({
   });
 
   const handleDelete = () => {
-    mutation.mutate(productId);
+    mutation.mutate({ id: productId });
   };
 
   return (
