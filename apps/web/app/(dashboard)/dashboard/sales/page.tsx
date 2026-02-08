@@ -1,10 +1,12 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { getEmployeeStats } from "@/actions/employee/get-employee-stats";
-import { getUpcomingOrdersForSalesman } from "@/actions/order/salesman-order-actions";
 import { EmployeeStats } from "@/components/employee/employee-stats";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -14,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SALES_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 
 function formatDeliveryDate(d: Date) {
   const dt = new Date(d);
@@ -33,13 +36,31 @@ function statusLabel(s: string) {
   return s;
 }
 
-export default async function EmployeeDashboard() {
-  const [statsResult, upcomingResult] = await Promise.all([
-    getEmployeeStats(),
-    getUpcomingOrdersForSalesman(5),
-  ]);
+export default function EmployeeDashboard() {
+  const { data: statsData, isLoading: statsLoading, error: statsError } = useQuery({
+    ...orpc.salesman.getStats.queryOptions({ input: {} }),
+  });
 
-  if (!statsResult.success) {
+  const { data: ordersData, isLoading: ordersLoading } = useQuery({
+    ...orpc.salesman.getUpcomingOrders.queryOptions({ input: { limit: 5 } }),
+  });
+
+  if (statsLoading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (statsError || !statsData) {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
@@ -50,8 +71,8 @@ export default async function EmployeeDashboard() {
     );
   }
 
-  const stats = statsResult.stats;
-  const upcoming = upcomingResult.success ? upcomingResult.orders : [];
+  const stats = statsData.stats;
+  const upcoming = ordersData?.orders ?? [];
   const isSalesman = stats?.role === "salesman";
 
   return (
@@ -71,7 +92,13 @@ export default async function EmployeeDashboard() {
             </p>
           </CardHeader>
           <CardContent>
-            {upcoming.length === 0 ? (
+            {ordersLoading ? (
+              <div className="space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-12" />
+                ))}
+              </div>
+            ) : upcoming.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">
                 No upcoming orders.
               </p>

@@ -1,17 +1,32 @@
-import { unauthorized } from "next/navigation";
-import { getSalesmen } from "@/actions/admin/salesman-actions";
-import { checkIsAdmin } from "@/utils/auth";
-import { SalesmenClient } from "./salesmen-client";
+"use client";
 
-export default async function SalesmenPage() {
-  const session = await checkIsAdmin();
-  if (!session) {
-    unauthorized();
+import { useQuery } from "@tanstack/react-query";
+import { SalesmenClient } from "./salesmen-client";
+import TableSkeleton from "@/components/table-skeleton";
+import { orpc } from "@/utils/orpc";
+
+export default function SalesmenPage() {
+  const { data, isLoading, error } = useQuery({
+    ...orpc.salesman.getAll.queryOptions({ input: {} }),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+            Salesmen
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Manage salesmen and their customer assignments
+          </p>
+        </div>
+        <TableSkeleton />
+      </div>
+    );
   }
 
-  const result = await getSalesmen();
-
-  if (!result.success) {
+  if (error || !data) {
     return (
       <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
         <div className="flex items-center justify-center h-40">
@@ -32,7 +47,7 @@ export default async function SalesmenPage() {
         </p>
       </div>
 
-      <SalesmenClient salesmen={result.salesmen} stats={result.stats} />
+      <SalesmenClient salesmen={data.salesmen} stats={data.stats} />
     </div>
   );
 }

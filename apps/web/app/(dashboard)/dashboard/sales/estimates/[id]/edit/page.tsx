@@ -1,28 +1,65 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getEstimateById } from "@/actions/estimate/get-estimates";
+import { useParams } from "next/navigation";
 import { EditEstimateForm } from "@/components/features/estimates/edit-estimate-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SALES_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 
-export default async function EditEstimatePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const result = await getEstimateById(Number(id));
+function EditEstimatePageSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-9 w-9" />
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+      </div>
+      <Skeleton className="h-64 w-full" />
+    </div>
+  );
+}
 
-  if (!result.success || !result.estimate) {
-    notFound();
+export default function EditEstimatePage() {
+  const params = useParams();
+  const estimateId = Number(params.id as string);
+
+  const { data, isLoading, error } = useQuery({
+    ...orpc.salesman.getEstimateById.queryOptions({ input: { id: estimateId } }),
+    enabled: !Number.isNaN(estimateId),
+  });
+
+  if (isLoading) {
+    return <EditEstimatePageSkeleton />;
   }
 
-  const { estimate } = result;
+  if (error || !data?.estimate) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="h-9 w-9" asChild>
+            <Link href={`${SALES_BASE}/estimates`}>
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <h1 className="text-lg sm:text-xl font-bold">Estimate Not Found</h1>
+        </div>
+        <p className="text-muted-foreground">This estimate could not be found or you don't have access to it.</p>
+        <Button asChild>
+          <Link href={`${SALES_BASE}/estimates`}>Back to Estimates</Link>
+        </Button>
+      </div>
+    );
+  }
 
-  const isReadOnly =
-    estimate.status === "converted" || estimate.status === "rejected";
+  const { estimate } = data;
+  const isReadOnly = estimate.status === "converted" || estimate.status === "rejected";
 
   return (
     <div className="space-y-4">

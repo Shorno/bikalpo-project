@@ -1,3 +1,6 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   Calendar,
@@ -10,11 +13,10 @@ import {
   Store,
   XCircle,
 } from "lucide-react";
-import { headers } from "next/headers";
 import Link from "next/link";
-import { getEstimatesBySalesman } from "@/actions/estimate/get-estimates";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -23,8 +25,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { auth } from "@/lib/auth";
 import { SALES_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 
 const getStatusConfig = (status: string) => {
   switch (status) {
@@ -75,25 +77,46 @@ const getStatusConfig = (status: string) => {
   }
 };
 
-export default async function EstimatesPage() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
+function EstimatesTableSkeleton() {
+  return (
+    <div className="space-y-3 p-4">
+      {[...Array(5)].map((_, i) => (
+        <Skeleton key={i} className="h-16 w-full" />
+      ))}
+    </div>
+  );
+}
+
+export default function EstimatesPage() {
+  const { data, isLoading } = useQuery({
+    ...orpc.salesman.getEstimates.queryOptions({ input: {} }),
   });
 
-  const { estimates } = await getEstimatesBySalesman();
+  const estimates = data?.estimates ?? [];
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold tracking-tight">Estimates</h1>
+        </div>
+        <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+          <EstimatesTableSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Estimates</h1>
-        {session?.user?.role === "salesman" && (
-          <Button asChild>
-            <Link href={`${SALES_BASE}/estimates/create`}>
-              <Plus className="mr-2 size-4" />
-              Create Estimate
-            </Link>
-          </Button>
-        )}
+        <Button asChild>
+          <Link href={`${SALES_BASE}/estimates/create`}>
+            <Plus className="mr-2 size-4" />
+            Create Estimate
+          </Link>
+        </Button>
       </div>
 
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
@@ -119,19 +142,17 @@ export default async function EstimatesPage() {
                       <Store className="size-5 text-muted-foreground" />
                     </div>
                     <p className="text-muted-foreground">No estimates found</p>
-                    {session?.user?.role === "salesman" && (
-                      <Button
-                        asChild
-                        size="sm"
-                        variant="outline"
-                        className="mt-2"
-                      >
-                        <Link href={`${SALES_BASE}/estimates/create`}>
-                          <Plus className="mr-2 size-3" />
-                          Create your first estimate
-                        </Link>
-                      </Button>
-                    )}
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                    >
+                      <Link href={`${SALES_BASE}/estimates/create`}>
+                        <Plus className="mr-2 size-3" />
+                        Create your first estimate
+                      </Link>
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>

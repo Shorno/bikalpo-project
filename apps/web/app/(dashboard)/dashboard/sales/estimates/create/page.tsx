@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation } from "@tanstack/react-query";
 import { useForm } from "@tanstack/react-form";
 import { format } from "date-fns";
 import {
@@ -12,9 +13,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { createEstimate } from "@/actions/estimate/create-estimate";
 import { EstimateItemsTable } from "@/components/features/estimates/estimate-items-table";
 import { EstimateSummary } from "@/components/features/estimates/estimate-summary";
 import { MultiCustomerSelect } from "@/components/features/estimates/multi-customer-select";
@@ -31,12 +31,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { SALES_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import type { FormEstimateItem } from "@/types/estimate";
+import { orpc } from "@/utils/orpc";
 
 export default function CreateEstimatePage() {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
 
   const [items, setItems] = useState<FormEstimateItem[]>([]);
+
+  const createEstimateMutation = useMutation({
+    ...orpc.salesman.createEstimate.mutationOptions(),
+    onSuccess: (result) => {
+      toast.success(result.message);
+      router.push(`${SALES_BASE}/estimates`);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Something went wrong");
+    },
+  });
 
   const form = useForm({
     defaultValues: {
@@ -60,27 +71,26 @@ export default function CreateEstimatePage() {
         return;
       }
 
-      startTransition(async () => {
-        try {
-          const submitData = { ...value, items };
-          const result = await createEstimate(submitData);
-
-          if (result.success) {
-            toast.success(result.message);
-            router.push(`${SALES_BASE}/estimates`);
-          } else {
-            toast.error(result.error, {
-              description: result.details?.join(", "),
-            });
-          }
-        } catch (_error) {
-          toast.error("Something went wrong");
-        }
+      createEstimateMutation.mutate({
+        customerIds: value.customerIds,
+        items: items.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          productImage: item.productImage ?? null,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discount: item.discount ?? 0,
+          totalPrice: item.totalPrice,
+        })),
+        discount: value.discount,
+        notes: value.notes,
+        validUntil: value.validUntil,
       });
     },
   });
 
   const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
+  const isPending = createEstimateMutation.isPending;
 
   const handleAddItem = (product: any) => {
     const existingItem = items.find((item) => item.productId === product.id);

@@ -4,12 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, User } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { getCustomerDetails } from "@/actions/employee/get-assigned-customers";
 import { CustomerDetailsCard } from "@/components/features/customers/customer-details-card";
 import { CustomerHistoryTabs } from "@/components/features/customers/customer-history-tabs";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SALES_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 
 function CustomerDetailsSkeleton() {
   return (
@@ -45,12 +45,11 @@ export default function CustomerDetailsPage() {
   const customerId = params.id as string;
 
   const { data: result, isLoading } = useQuery({
-    queryKey: ["customer-details", customerId],
-    queryFn: () => getCustomerDetails(customerId),
+    ...orpc.salesman.getCustomerDetails.queryOptions({ input: { id: customerId } }),
     enabled: !!customerId,
   });
 
-  const customer = result?.success ? result.customer : null;
+  const customer = result?.customer ?? null;
 
   return (
     <div className="space-y-4">
