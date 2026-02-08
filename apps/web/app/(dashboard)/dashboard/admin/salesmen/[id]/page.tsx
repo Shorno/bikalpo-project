@@ -1,28 +1,44 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { unauthorized } from "next/navigation";
-import { getSalesmanById } from "@/actions/admin/salesman-actions";
-import { checkIsAdmin } from "@/utils/auth";
+import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ADMIN_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 import { SalesmanDetailClient } from "./salesman-detail-client";
 
-interface SalesmanDetailPageProps {
-  params: Promise<{ id: string }>;
-}
+export default function SalesmanDetailPage() {
+  const params = useParams<{ id: string }>();
+  const salesmanId = params.id;
 
-export default async function SalesmanDetailPage({
-  params,
-}: SalesmanDetailPageProps) {
-  const session = await checkIsAdmin();
-  if (!session) {
-    unauthorized();
+  const { data, isLoading, error } = useQuery({
+    ...orpc.salesman.getById.queryOptions({ input: { id: salesmanId } }),
+    enabled: !!salesmanId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10" />
+          <div className="flex-1">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-4 w-32 mt-1" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
-  const { id } = await params;
-  const result = await getSalesmanById(id);
-
-  if (!result.success || !result.salesman) {
+  if (error || !data?.salesman) {
     return (
       <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
         <div className="flex items-center gap-4 mb-4">
@@ -35,7 +51,7 @@ export default async function SalesmanDetailPage({
         </div>
         <div className="flex items-center justify-center h-40 border rounded-lg bg-muted/30">
           <p className="text-muted-foreground">
-            {result.error || "Salesman not found"}
+            {error?.message || "Salesman not found"}
           </p>
         </div>
       </div>
@@ -44,7 +60,7 @@ export default async function SalesmanDetailPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
-      <SalesmanDetailClient salesmanId={id} initialData={result.salesman} />
+      <SalesmanDetailClient salesmanId={salesmanId} initialData={data.salesman} />
     </div>
   );
 }

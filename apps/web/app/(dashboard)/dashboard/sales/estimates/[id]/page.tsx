@@ -1,3 +1,6 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft,
@@ -7,19 +10,18 @@ import {
   Phone,
   User,
 } from "lucide-react";
-import { headers } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getEstimateById } from "@/actions/estimate/get-estimates";
+import { useParams } from "next/navigation";
 import { EstimateActionButtons } from "@/components/features/estimates/estimate-action-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { auth } from "@/lib/auth";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SALES_BASE } from "@/lib/routes";
 import { formatPrice } from "@/utils/currency";
+import { orpc } from "@/utils/orpc";
 
 const statusConfig: Record<string, { color: string; label: string }> = {
   draft: { color: "bg-gray-100 text-gray-700", label: "Draft" },
@@ -29,26 +31,64 @@ const statusConfig: Record<string, { color: string; label: string }> = {
   converted: { color: "bg-purple-100 text-purple-700", label: "Converted" },
 };
 
-export default async function EstimateDetailsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const session = await auth.api.getSession({
-    headers: await headers(),
+function EstimateDetailSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-9 w-9" />
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[...Array(4)].map((_, i) => (
+          <Skeleton key={i} className="h-20 rounded-lg" />
+        ))}
+      </div>
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-64 w-full" />
+    </div>
+  );
+}
+
+export default function EstimateDetailsPage() {
+  const params = useParams();
+  const estimateId = Number(params.id as string);
+
+  const { data, isLoading, error } = useQuery({
+    ...orpc.salesman.getEstimateById.queryOptions({ input: { id: estimateId } }),
+    enabled: !Number.isNaN(estimateId),
   });
 
-  const { id } = await params;
-  const result = await getEstimateById(Number(id));
-
-  if (!result.success || !result.estimate) {
-    notFound();
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <EstimateDetailSkeleton />
+      </div>
+    );
   }
 
-  const { estimate } = result;
-  const isEmployee =
-    session?.user?.role === "salesman" || session?.user?.role === "admin";
+  if (error || !data?.estimate) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="h-9 w-9" asChild>
+            <Link href={`${SALES_BASE}/estimates`}>
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <h1 className="text-lg sm:text-xl font-bold">Estimate Not Found</h1>
+        </div>
+        <p className="text-muted-foreground">This estimate could not be found or you don't have access to it.</p>
+        <Button asChild>
+          <Link href={`${SALES_BASE}/estimates`}>Back to Estimates</Link>
+        </Button>
+      </div>
+    );
+  }
 
+  const { estimate } = data;
   const status = statusConfig[estimate.status] || statusConfig.draft;
 
   return (
@@ -74,7 +114,7 @@ export default async function EstimateDetailsPage({
           </div>
         </div>
         {/* Action buttons for employees */}
-        {isEmployee && <EstimateActionButtons estimate={estimate} />}
+        <EstimateActionButtons estimate={estimate} />
       </div>
 
       {/* Quick Stats */}

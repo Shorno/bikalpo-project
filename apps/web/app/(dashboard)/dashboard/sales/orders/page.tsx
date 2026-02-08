@@ -1,8 +1,11 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { getUpcomingOrdersForSalesman } from "@/actions/order/salesman-order-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -12,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SALES_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 
 function formatDeliveryDate(d: Date) {
   const dt = new Date(d);
@@ -31,9 +35,22 @@ function statusLabel(s: string) {
   return s;
 }
 
-export default async function SalesOrdersPage() {
-  const result = await getUpcomingOrdersForSalesman();
-  const orders = result.success ? result.orders : [];
+function OrdersTableSkeleton() {
+  return (
+    <div className="space-y-3">
+      {[...Array(5)].map((_, i) => (
+        <Skeleton key={i} className="h-14 w-full" />
+      ))}
+    </div>
+  );
+}
+
+export default function SalesOrdersPage() {
+  const { data, isLoading, error } = useQuery({
+    ...orpc.salesman.getUpcomingOrders.queryOptions({ input: {} }),
+  });
+
+  const orders = data?.orders ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -51,7 +68,13 @@ export default async function SalesOrdersPage() {
           <CardTitle>All Upcoming Orders</CardTitle>
         </CardHeader>
         <CardContent>
-          {orders.length === 0 ? (
+          {isLoading ? (
+            <OrdersTableSkeleton />
+          ) : error ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              Failed to load orders.
+            </p>
+          ) : orders.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               No upcoming orders.
             </p>
@@ -104,3 +127,4 @@ export default async function SalesOrdersPage() {
     </div>
   );
 }
+

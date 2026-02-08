@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { getOrderById } from "@/actions/order/admin-order-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SALES_BASE } from "@/lib/routes";
 import { formatPrice } from "@/utils/currency";
+import { orpc } from "@/utils/orpc";
 
 function LoadingSkeleton() {
   return (
@@ -60,17 +60,13 @@ const paymentStatusConfig: Record<string, { color: string; label: string }> = {
 
 export function SalesOrderDetails({ orderId }: { orderId: number }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["order", orderId],
-    queryFn: async () => {
-      const result = await getOrderById(orderId);
-      if (!result.success) throw new Error(result.error);
-      return result.order;
-    },
+    ...orpc.salesman.getOrderById.queryOptions({ input: { id: orderId } }),
+    enabled: !Number.isNaN(orderId),
   });
 
   if (isLoading) return <LoadingSkeleton />;
 
-  if (error || !data) {
+  if (error || !data?.order) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center border rounded-lg bg-muted/30">
         <Package className="h-10 w-10 text-muted-foreground mb-3" />
@@ -85,7 +81,7 @@ export function SalesOrderDetails({ orderId }: { orderId: number }) {
     );
   }
 
-  const order = data;
+  const { order } = data;
   const statusConfig =
     orderStatusConfig[order.status] || orderStatusConfig.pending;
   const paymentConfig =

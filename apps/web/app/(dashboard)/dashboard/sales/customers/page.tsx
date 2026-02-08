@@ -20,10 +20,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import {
-  type CustomerListItem,
-  getAssignedCustomers,
-} from "@/actions/employee/get-assigned-customers";
 import { CustomerQuickHistoryModal } from "@/components/features/customers/customer-quick-history-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +36,20 @@ import {
 } from "@/components/ui/table";
 import { SALES_BASE } from "@/lib/routes";
 import { formatPrice } from "@/utils/currency";
+import { orpc } from "@/utils/orpc";
+
+type CustomerListItem = {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  shopName: string | null;
+  createdAt: Date;
+  totalEstimates: number;
+  totalOrders: number;
+  totalSpent: string;
+  lastActivityAt: Date | null;
+};
 
 function CustomersListSkeleton() {
   return (
@@ -69,11 +79,10 @@ export default function CustomersPage() {
   const [globalFilter, setGlobalFilter] = useState("");
 
   const { data: result, isLoading } = useQuery({
-    queryKey: ["salesman-customers"],
-    queryFn: () => getAssignedCustomers(),
+    ...orpc.salesman.getAssignedCustomers.queryOptions({ input: {} }),
   });
 
-  const customers = result?.success ? result.customers || [] : [];
+  const customers = result?.customers ?? [];
 
   // Filter customers by search
   const filteredData = useMemo(() => {
@@ -260,9 +269,9 @@ export default function CustomersPage() {
                                   <div className="text-xs text-muted-foreground">
                                     {c.lastActivityAt
                                       ? format(
-                                          new Date(c.lastActivityAt),
-                                          "MMM d, yyyy",
-                                        )
+                                        new Date(c.lastActivityAt),
+                                        "MMM d, yyyy",
+                                      )
                                       : "No activity"}
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -298,9 +307,9 @@ export default function CustomersPage() {
                               {header.isPlaceholder
                                 ? null
                                 : flexRender(
-                                    header.column.columnDef.header,
-                                    header.getContext(),
-                                  )}
+                                  header.column.columnDef.header,
+                                  header.getContext(),
+                                )}
                             </TableHead>
                           ))}
                           <TableHead className="w-24 font-semibold">
