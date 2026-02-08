@@ -81,7 +81,8 @@ function EstimatesTableSkeleton() {
   return (
     <div className="space-y-3 p-4">
       {[...Array(5)].map((_, i) => (
-        <Skeleton key={i} className="h-16 w-full" />
+        // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+<Skeleton key={i} className="h-16 w-full" />
       ))}
     </div>
   );
