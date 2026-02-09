@@ -819,18 +819,70 @@ export const salesmanRouter = {
             description: "Assign one or more customers to a salesman",
         })
         .input(assignCustomersSchema)
-        .handler(async ({ input, context }) => {
-            // Insert assignments
-            await db.insert(customerAssignment).values(
-                input.customerIds.map((customerId) => ({
-                    customerId,
-                    salesmanId: input.salesmanId,
-                    assignedBy: context.session.user.id,
-                }))
-            );
+        .handler(async ({ input }) => {
+            const { salesmanId, customerIds } = input;
+
+            // Verify salesman exists
+            const salesman = await db.query.user.findFirst({
+                where: and(eq(user.id, salesmanId), eq(user.role, "salesman")),
+            });
+
+            if (!salesman) {
+                throw new ORPCError("NOT_FOUND", { message: "Salesman not found" });
+            }
+
+            let assignedCount = 0;
+            const failures: string[] = [];
+
+            await db.transaction(async (tx) => {
+                for (const customerId of customerIds) {
+                    // Verify customer exists
+                    const customer = await tx.query.user.findFirst({
+                        where: and(eq(user.id, customerId), eq(user.role, "customer")),
+                    });
+
+                    if (!customer) {
+                        failures.push(`Customer ${customerId} not found`);
+                        continue;
+                    }
+
+                    // Check if already assigned
+                    const existingAssignment = await tx.query.customerAssignment.findFirst({
+                        where: eq(customerAssignment.customerId, customerId),
+                    });
+
+                    if (existingAssignment) {
+                        if (existingAssignment.salesmanId === salesmanId) {
+                            // Already assigned to this salesman, skip
+                            continue;
+                        } else {
+                            // Assigned to another salesman, reassign
+                            await tx
+                                .update(customerAssignment)
+                                .set({
+                                    salesmanId,
+                                    assignedAt: new Date(),
+                                })
+                                .where(eq(customerAssignment.customerId, customerId));
+                            assignedCount++;
+                        }
+                    } else {
+                        // Create new assignment
+                        await tx.insert(customerAssignment).values({
+                            salesmanId,
+                            customerId,
+                            assignedAt: new Date(),
+                        });
+                        assignedCount++;
+                    }
+                }
+            });
 
             return {
-                message: `${input.customerIds.length} customer(s) assigned successfully`,
+                success: true,
+                message: `${assignedCount} customers assigned successfully`,
+                assignedCount,
+                failures: failures.length > 0 ? failures : undefined,
             };
         }),
 
@@ -844,20 +896,27 @@ export const salesmanRouter = {
             path: "/salesmen/unassign",
             tags: ["Salesmen"],
             summary: "Unassign customer",
-            description: "Remove a customer assignment from a salesman",
+            description: "Remove a customer from a salesman's assignment",
         })
         .input(unassignCustomerSchema)
         .handler(async ({ input }) => {
-            await db
+            const { salesmanId, customerId } = input;
+
+            const result = await db
                 .delete(customerAssignment)
                 .where(
                     and(
-                        eq(customerAssignment.salesmanId, input.salesmanId),
-                        eq(customerAssignment.customerId, input.customerId)
-                    )
-                );
+                        eq(customerAssignment.salesmanId, salesmanId),
+                        eq(customerAssignment.customerId, customerId),
+                    ),
+                )
+                .returning();
 
-            return { message: "Customer unassigned successfully" };
+            if (result.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Assignment not found" });
+            }
+
+            return { success: true, message: "Customer unassigned successfully" };
         }),
 };
 
