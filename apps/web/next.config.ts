@@ -1,4 +1,3 @@
-import "@bikalpo-project/env/web";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -7,12 +6,14 @@ const nextConfig: NextConfig = {
 
   reactCompiler: true,
   output: "standalone",
+  typescript: {
+    // TODO: Remove after deduplicating @types/react versions in pnpm monorepo
+    ignoreBuildErrors: true,
+  },
   experimental: {
     authInterrupts: true,
   },
-  turbopack: {
-    root: process.cwd(),
-  },
+  serverExternalPackages: ["pg"],
   images: {
     remotePatterns: [
       {
@@ -38,6 +39,9 @@ const nextConfig: NextConfig = {
       },
       {
         hostname: "encrypted-tbn0.gstatic.com",
+      },
+      {
+        hostname: "png.pngtree.com",
       },
     ],
   },

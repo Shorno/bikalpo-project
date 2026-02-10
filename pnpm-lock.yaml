@@ -59,6 +59,9 @@ importers:
       dotenv:
         specifier: 'catalog:'
         version: 17.2.4
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
       zod:
         specifier: 'catalog:'
         version: 4.3.6
@@ -437,6 +440,9 @@ importers:
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
+      pg:
+        specifier: ^8.18.0
+        version: 8.18.0
       react:
         specifier: ^19.2.3
         version: 19.2.4

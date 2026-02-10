@@ -10,6 +10,7 @@ import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
 import { employeeRouter } from "./employee";
 import { productRouter } from "./product";
+import { returnRouter } from "./return";
 import { salesmanRouter } from "./salesman";
 import { userRouter } from "./user";
 import { verifiedUserRouter } from "./verified-user";
@@ -34,6 +35,7 @@ export const appRouter = {
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
   dashboard: dashboardRouter,
+  returns: returnRouter,
   user: userRouter,
   verifiedUser: verifiedUserRouter,
 };

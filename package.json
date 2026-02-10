@@ -21,6 +21,7 @@
   "dependencies": {
     "@bikalpo-project/env": "workspace:*",
     "dotenv": "catalog:",
+    "server-only": "^0.0.1",
     "zod": "catalog:"
   },
   "devDependencies": {

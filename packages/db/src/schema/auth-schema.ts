@@ -88,9 +88,14 @@ export const verification = pgTable(
     (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
+import { deliveryGroup } from "./delivery";
+import { invoice } from "./invoice";
+
 export const userRelations = relations(user, ({ many }) => ({
     sessions: many(session),
     accounts: many(account),
+    deliveryGroups: many(deliveryGroup),
+    customerInvoices: many(invoice, { relationName: "customerInvoices" }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

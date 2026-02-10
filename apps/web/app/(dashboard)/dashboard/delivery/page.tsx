@@ -1,17 +1,24 @@
 import { Bike, LayoutDashboard, RotateCcw } from "lucide-react";
 import Link from "next/link";
-import { getEmployeeStats } from "@/actions/employee/get-employee-stats";
+import { client } from "@/utils/orpc";
 import { ActiveDeliveryGroups } from "@/components/employee/active-delivery-groups";
 import { DeliveryStats } from "@/components/employee/delivery-stats";
 import { Card, CardContent } from "@/components/ui/card";
-import type { DeliverymanStats } from "@/db/schema/delivery";
 import { DELIVERY_BASE } from "@/lib/routes";
+import { redirect } from "next/navigation";
 
 export default async function DeliveryDashboardPage() {
-  const statsResult = await getEmployeeStats();
-  const stats = statsResult.success
-    ? (statsResult.stats as DeliverymanStats)
-    : null;
+  let stats;
+  let activeGroups;
+
+  try {
+    stats = await client.deliveryman.getStats();
+    const result = await client.deliveryman.getMyGroups();
+    activeGroups = result.groups;
+  } catch (error) {
+    console.error("Failed to load delivery dashboard:", error);
+    redirect("/login");
+  }
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
@@ -31,7 +38,7 @@ export default async function DeliveryDashboardPage() {
       </div>
 
       {/* Active Delivery Groups */}
-      <ActiveDeliveryGroups groups={stats?.activeGroups || []} />
+      <ActiveDeliveryGroups groups={activeGroups || []} />
 
       {/* Quick Actions Row */}
       <div className="grid grid-cols-2 gap-3">
@@ -65,7 +72,7 @@ export default async function DeliveryDashboardPage() {
             Performance Overview
           </p>
           <DeliveryStats
-            stats={stats.deliveries}
+            stats={stats}
             successRate={stats.successRate}
           />
         </div>

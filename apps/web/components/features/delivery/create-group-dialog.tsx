@@ -15,11 +15,7 @@ import {
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import {
-  createDeliveryGroup,
-  getDeliverymenForAssignmentByInvoiceIds,
-  getUnassignedInvoices,
-} from "@/actions/delivery/delivery-management";
+import { orpc } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -64,56 +60,54 @@ export function CreateGroupDialog() {
   const [invoiceIdsForDeliverymen, setInvoiceIdsForDeliverymen] =
     React.useState<number[]>([]);
 
-  const { data: invoicesData, isLoading: isLoadingInvoices } = useQuery({
-    queryKey: ["unassigned-invoices"],
-    queryFn: async () => {
-      const result = await getUnassignedInvoices();
-      if (!result.success) throw new Error(result.error);
-      return result.invoices ?? [];
-    },
+  const { data: invoicesResult, isLoading: isLoadingInvoices } = useQuery({
+    ...orpc.deliveryman.getUnassignedInvoices.queryOptions(),
     enabled: open,
     staleTime: 0,
   });
 
-  const { data: deliverymenData, isLoading: isLoadingDeliverymen } = useQuery({
-    queryKey: [
-      "deliverymen-for-assignment-by-invoices",
-      invoiceIdsForDeliverymen,
-    ],
-    queryFn: async () => {
-      const result = await getDeliverymenForAssignmentByInvoiceIds(
-        invoiceIdsForDeliverymen,
-      );
-      if (!result.success) throw new Error(result.error);
-      return result.deliverymen ?? [];
-    },
-    enabled: open,
-    staleTime: 30000,
-  });
+  const invoices = invoicesResult?.invoices ?? [];
 
-  const invoices = invoicesData ?? [];
-  const deliverymen = deliverymenData ?? [];
+  // Determine shipping area from first selected invoice
+  const orderShippingArea = React.useMemo(() => {
+    if (invoiceIdsForDeliverymen.length === 0) return undefined;
+    const firstInvoice = invoices.find(inv => inv.id === invoiceIdsForDeliverymen[0]);
+    return (firstInvoice?.order as any)?.shippingArea ?? undefined;
+  }, [invoiceIdsForDeliverymen, invoices]);
+
+  const { data: deliverymenResult, isLoading: isLoadingDeliverymen } = useQuery(
+    {
+      ...orpc.deliveryman.getForAssignment.queryOptions({
+        input: { orderShippingArea },
+      }),
+      enabled: open,
+      staleTime: 30000,
+    },
+  );
+
+  const deliverymen = deliverymenResult?.deliverymen ?? [];
 
   // Mutation for creating delivery group
-  const mutation = useMutation({
-    mutationFn: createDeliveryGroup,
-    onSuccess: (result) => {
-      if (!result.success) {
-        toast.error(result.error || "Failed to create group");
-        return;
-      }
-      console.log(result);
-      queryClient.invalidateQueries({ queryKey: ["unassigned-invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["delivery-groups"] });
-      toast.success("Delivery group created successfully");
-      form.reset();
-      setOpen(false);
-      router.refresh();
-    },
-    onError: () => {
-      toast.error("An unexpected error occurred");
-    },
-  });
+  const mutation = useMutation(
+    orpc.deliveryman.createGroup.mutationOptions({
+      onSuccess: (result) => {
+        console.log(result);
+        queryClient.invalidateQueries({
+          queryKey: orpc.deliveryman.getUnassignedInvoices.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: orpc.deliveryman.getGroups.queryKey(),
+        });
+        toast.success("Delivery group created successfully");
+        form.reset();
+        setOpen(false);
+        router.refresh();
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to create group");
+      },
+    }),
+  );
 
   const form = useForm({
     defaultValues: {
@@ -257,13 +251,13 @@ export function CreateGroupDialog() {
                                   <div className="flex items-center gap-1 text-xs text-muted-foreground ml-7">
                                     {(dm as { serviceArea?: string | null })
                                       .serviceArea && (
-                                      <span>
-                                        {
-                                          (dm as { serviceArea: string })
-                                            .serviceArea
-                                        }
-                                      </span>
-                                    )}
+                                        <span>
+                                          {
+                                            (dm as { serviceArea: string })
+                                              .serviceArea
+                                          }
+                                        </span>
+                                      )}
                                     {dm.hasActiveGroup && (
                                       <span className="text-destructive font-medium">
                                         • On Delivery
@@ -321,9 +315,8 @@ export function CreateGroupDialog() {
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
-                          className={`w-full justify-start text-left font-normal ${
-                            !field.state.value && "text-muted-foreground"
-                          }`}
+                          className={`w-full justify-start text-left font-normal ${!field.state.value && "text-muted-foreground"
+                            }`}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {field.state.value
@@ -411,10 +404,9 @@ export function CreateGroupDialog() {
                                   htmlFor={checkboxId}
                                   className={`
                                     flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-all
-                                    ${
-                                      isSelected
-                                        ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                                        : "border-transparent bg-background hover:bg-muted/50"
+                                    ${isSelected
+                                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                                      : "border-transparent bg-background hover:bg-muted/50"
                                     }
                                   `}
                                 >
@@ -425,8 +417,8 @@ export function CreateGroupDialog() {
                                       const next = checked
                                         ? [...field.state.value, invoice.id]
                                         : field.state.value.filter(
-                                            (id) => id !== invoice.id,
-                                          );
+                                          (id) => id !== invoice.id,
+                                        );
                                       field.handleChange(next);
                                       setInvoiceIdsForDeliverymen(next);
                                     }}

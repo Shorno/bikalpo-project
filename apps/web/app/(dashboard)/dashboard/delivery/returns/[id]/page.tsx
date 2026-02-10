@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import { ArrowLeft, Package } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { getReturnById } from "@/actions/returns/return-processing";
+import { queryClient, orpc } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -60,14 +60,23 @@ export default async function ReturnDetailsPage({
     );
   }
 
-  const result = await getReturnById(returnId);
+  // Fetch data using oRPC + queryClient for consistency with TanStack Query
+  let returnData: any;
+  try {
+    const result = await queryClient.fetchQuery(
+      orpc.returns.getById.queryOptions({ input: { id: returnId } })
+    );
+    returnData = (result as any)?.return;
+  } catch (error) {
+    console.error("Failed to load return details:", error);
+  }
 
-  if (!result.success || !result.return) {
+  if (!returnData) {
     return (
       <div className="flex flex-col items-center justify-center h-40 sm:h-64 gap-3">
         <Package className="h-10 w-10 text-muted-foreground mb-2" />
         <p className="text-sm text-muted-foreground">
-          {result.error || "Return not found"}
+          Return not found
         </p>
         <Button asChild variant="outline" size="sm">
           <Link href={`${DELIVERY_BASE}/returns`}>Back to Returns</Link>
@@ -75,8 +84,6 @@ export default async function ReturnDetailsPage({
       </div>
     );
   }
-
-  const returnData = result.return;
   const items = (returnData.items || []) as ReturnItem[];
 
   return (
