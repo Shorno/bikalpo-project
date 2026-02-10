@@ -35,7 +35,7 @@ export const appRouter = {
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
   dashboard: dashboardRouter,
-  orderReturn: returnRouter,
+  returns: returnRouter,
   user: userRouter,
   verifiedUser: verifiedUserRouter,
 };

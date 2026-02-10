@@ -73,7 +73,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
 
   // Fetch order data using oRPC + useQuery
   const { data: orderResult, isLoading: isLoadingOrder } = useQuery(
-    orpc.orderReturn.getOrderForReturn.queryOptions({ input: { orderId: orderId } })
+    orpc.returns.getOrderForReturn.queryOptions({ input: { orderId: orderId } })
   );
 
   const form = useForm<ReturnProcessingFormValues>({
@@ -98,17 +98,17 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
   const queryClient = useQueryClient();
 
   const submitMutation = useMutation(
-    orpc.orderReturn.submit.mutationOptions({
+    orpc.returns.submit.mutationOptions({
       onSuccess: (result: { success: boolean }) => {
         if (result.success) {
           // Invalidate relevant queries
           queryClient.invalidateQueries({
-            queryKey: orpc.orderReturn.getOrderForReturn.queryKey({
+            queryKey: orpc.returns.getOrderForReturn.queryKey({
               input: { orderId },
             }),
           });
           queryClient.invalidateQueries({
-            queryKey: orpc.orderReturn.getAll.queryKey(),
+            queryKey: orpc.returns.getAll.queryKey(),
           });
           toast.success("Return submitted successfully");
           router.push(`${DELIVERY_BASE}/returns`);

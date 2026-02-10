@@ -61,9 +61,15 @@ export default async function ReturnDetailsPage({
   }
 
   // Fetch data using oRPC + queryClient for consistency with TanStack Query
-  const { return: returnData } = await queryClient.fetchQuery(
-    orpc.orderReturn.getById.queryOptions({ input: { id: returnId } })
-  );
+  let returnData: any;
+  try {
+    const result = await queryClient.fetchQuery(
+      orpc.returns.getById.queryOptions({ input: { id: returnId } })
+    );
+    returnData = (result as any)?.return;
+  } catch (error) {
+    console.error("Failed to load return details:", error);
+  }
 
   if (!returnData) {
     return (

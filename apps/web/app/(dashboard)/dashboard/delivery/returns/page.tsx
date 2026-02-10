@@ -3,9 +3,16 @@ import { queryClient, orpc } from "@/utils/orpc";
 import { ReturnsClient } from "./returns-client";
 
 export default async function ReturnsPage() {
-  const { returns } = await queryClient.fetchQuery(
-    orpc.orderReturn.getAll.queryOptions({ input: { status: undefined } })
-  );
+  let returns: any[] = [];
+
+  try {
+    const result = await queryClient.fetchQuery(
+      orpc.returns.getAll.queryOptions()
+    );
+    returns = (result as any)?.returns || [];
+  } catch (error) {
+    console.error("Failed to load returns:", error);
+  }
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
@@ -25,7 +32,7 @@ export default async function ReturnsPage() {
       </div>
 
       {/* Returns List */}
-      <ReturnsClient returns={(returns as any) || []} />
+      <ReturnsClient returns={returns || []} />
     </div>
   );
 }
