@@ -14,6 +14,9 @@ import { logger } from "hono/logger";
 const app = new Hono();
 
 app.use(logger());
+
+console.log("Starting Bikalpo API Server v1.0.0");
+console.log("DB URL:", env.DATABASE_URL.replace(/:[^:@]+@/, ":****@"));
 app.use(
   "/*",
   cors({
@@ -67,7 +70,13 @@ export const rpcHandler = new RPCHandler(appRouter, {
 });
 
 app.use("/*", async (c, next) => {
-  const context = await createContext({ context: c });
+  let context;
+  try {
+    context = await createContext({ context: c });
+  } catch (err) {
+    console.error("ERROR CREATING CONTEXT:", err);
+    return c.json({ error: "Context creation failed" }, 500);
+  }
 
   // RPC endpoints at /rpc
   const rpcResult = await rpcHandler.handle(c.req.raw, {
