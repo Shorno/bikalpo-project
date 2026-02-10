@@ -11,10 +11,7 @@ import React from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { uploadImageToCloudinary } from "@/actions/cloudinary";
-import {
-  getOrderForReturn,
-  submitReturnProcessing,
-} from "@/actions/returns/return-processing";
+import { orpc } from "@/utils/orpc";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -74,11 +71,10 @@ const CONDITION_OPTIONS = [
 export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
   const router = useRouter();
 
-  // Fetch order data
-  const { data: orderResult, isLoading: isLoadingOrder } = useQuery({
-    queryKey: ["order-for-return", orderId],
-    queryFn: () => getOrderForReturn(orderId),
-  });
+  // Fetch order data using oRPC + useQuery
+  const { data: orderResult, isLoading: isLoadingOrder } = useQuery(
+    orpc.return.getOrderForReturn.queryOptions({ input: { orderId: orderId } })
+  );
 
   const form = useForm<ReturnProcessingFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -101,34 +97,49 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
 
   const queryClient = useQueryClient();
 
-  const submitMutation = useMutation({
-    mutationFn: submitReturnProcessing,
-    onSuccess: (result) => {
-      if (result.success) {
-        // Invalidate the cached order data so "available" quantity updates correctly
-        queryClient.invalidateQueries({
-          queryKey: ["order-for-return", orderId],
-        });
-        queryClient.invalidateQueries({ queryKey: ["order-for-return"] });
-        toast.success("Return submitted successfully");
-        router.push(`${DELIVERY_BASE}/returns`);
-      } else {
-        toast.error(result.error || "Failed to submit return");
-      }
-    },
-    onError: () => {
-      toast.error("Something went wrong");
-    },
-  });
+  const submitMutation = useMutation(
+    orpc.return.submit.mutationOptions({
+      onSuccess: (result: { success: boolean }) => {
+        if (result.success) {
+          // Invalidate relevant queries
+          queryClient.invalidateQueries({
+            queryKey: orpc.return.getOrderForReturn.queryKey({
+              input: { orderId },
+            }),
+          });
+          queryClient.invalidateQueries({
+            queryKey: orpc.return.getAll.queryKey(),
+          });
+          toast.success("Return submitted successfully");
+          router.push(`${DELIVERY_BASE}/returns`);
+        }
+      },
+      onError: (error: Error) => {
+        toast.error(error.message || "Failed to submit return");
+      },
+    }),
+  );
 
   const onSubmit = (data: ReturnProcessingFormValues) => {
-    submitMutation.mutate(data);
+    submitMutation.mutate({
+      ...data,
+      returnedItems: data.returnedItems.map(item => ({
+        ...item,
+        unitPrice: String(item.unitPrice),
+      })) as any
+    });
   };
 
   const handleSaveDraft = () => {
     const data = form.getValues();
     data.isDraft = true;
-    submitMutation.mutate(data);
+    submitMutation.mutate({
+      ...data,
+      returnedItems: data.returnedItems.map(item => ({
+        ...item,
+        unitPrice: String(item.unitPrice),
+      })) as any
+    });
   };
 
   const handleAddProduct = (orderItem: any) => {
@@ -222,7 +233,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
     );
   }
 
-  if (!orderResult?.success || !orderResult.order) {
+  if (!orderResult?.order) {
     return (
       <div className="flex flex-col items-center justify-center h-40 sm:h-64 gap-3 sm:gap-4">
         <p className="text-sm text-muted-foreground">Order not found</p>
