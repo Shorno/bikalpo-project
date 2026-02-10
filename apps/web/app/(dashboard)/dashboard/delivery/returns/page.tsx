@@ -1,9 +1,11 @@
 import { RotateCcw } from "lucide-react";
-import { getReturns } from "@/actions/returns/return-processing";
+import { queryClient, orpc } from "@/utils/orpc";
 import { ReturnsClient } from "./returns-client";
 
 export default async function ReturnsPage() {
-  const { returns } = await getReturns();
+  const { returns } = await queryClient.fetchQuery(
+    orpc.orderReturn.getAll.queryOptions({ input: { status: undefined } })
+  );
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
