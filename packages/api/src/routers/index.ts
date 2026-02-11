@@ -10,7 +10,7 @@ import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
 import { employeeRouter } from "./employee";
 import { productRouter } from "./product";
-import { returnRouter } from "./return";
+import { publicRouter } from "./public";
 import { salesmanRouter } from "./salesman";
 import { userRouter } from "./user";
 import { verifiedUserRouter } from "./verified-user";
@@ -32,13 +32,12 @@ export const appRouter = {
   announcement: announcementRouter,
   employee: employeeRouter,
   product: productRouter,
+  public: publicRouter,
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
   dashboard: dashboardRouter,
-  returns: returnRouter,
   user: userRouter,
   verifiedUser: verifiedUserRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
-
