@@ -48,7 +48,7 @@ export const employeeRouter = {
         .route({
             method: "GET",
             path: "/employees",
-            tags: ["Employees"],
+            tags: ["Employee Management"],
             summary: "Get all employees",
             description: "Get all employees with salesman and deliveryman roles",
         })
@@ -91,7 +91,7 @@ export const employeeRouter = {
         .route({
             method: "POST",
             path: "/employees",
-            tags: ["Employees"],
+            tags: ["Employee Management"],
             summary: "Create employee",
             description: "Create a new salesman or deliveryman",
         })
@@ -140,7 +140,7 @@ export const employeeRouter = {
         .route({
             method: "PUT",
             path: "/employees/{id}",
-            tags: ["Employees"],
+            tags: ["Employee Management"],
             summary: "Update employee",
             description: "Update employee name and phone number",
         })
@@ -176,7 +176,7 @@ export const employeeRouter = {
         .route({
             method: "DELETE",
             path: "/employees/{id}",
-            tags: ["Employees"],
+            tags: ["Employee Management"],
             summary: "Delete employee",
             description: "Permanently delete an employee account",
         })
@@ -200,7 +200,7 @@ export const employeeRouter = {
         .route({
             method: "POST",
             path: "/employees/reset-password",
-            tags: ["Employees"],
+            tags: ["Employee Management"],
             summary: "Reset employee password",
             description: "Reset an employee's password (admin only)",
         })
@@ -227,7 +227,7 @@ export const employeeRouter = {
         .route({
             method: "POST",
             path: "/employees/toggle-ban",
-            tags: ["Employees"],
+            tags: ["Employee Management"],
             summary: "Ban or unban employee",
             description: "Toggle ban status for an employee",
         })

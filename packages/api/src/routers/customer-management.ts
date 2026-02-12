@@ -39,7 +39,7 @@ export const customerManagementRouter = {
     .route({
       method: "GET",
       path: "/customers",
-      tags: ["Customers"],
+      tags: ["Customer Management"],
       summary: "Get customers list",
       description:
         "Get paginated customers list with order stats and filtering",
@@ -154,7 +154,7 @@ export const customerManagementRouter = {
     .route({
       method: "GET",
       path: "/customers/stats",
-      tags: ["Customers"],
+      tags: ["Customer Management"],
       summary: "Get customer stats",
       description:
         "Get total customers, new this month, and active customers count",
@@ -202,7 +202,7 @@ export const customerManagementRouter = {
     .route({
       method: "GET",
       path: "/customers/pending",
-      tags: ["Customers"],
+      tags: ["Customer Management"],
       summary: "Get pending customers",
       description: "Get guests awaiting approval to become customers",
     })
@@ -232,7 +232,7 @@ export const customerManagementRouter = {
     .route({
       method: "POST",
       path: "/customers/{customerId}/approve",
-      tags: ["Customers"],
+      tags: ["Customer Management"],
       summary: "Approve customer",
       description: "Approve a guest to become a customer",
     })
@@ -254,7 +254,7 @@ export const customerManagementRouter = {
     .route({
       method: "DELETE",
       path: "/customers/{customerId}",
-      tags: ["Customers"],
+      tags: ["Customer Management"],
       summary: "Reject customer",
       description: "Reject and delete a pending customer",
     })
@@ -273,7 +273,7 @@ export const customerManagementRouter = {
     .route({
       method: "GET",
       path: "/customers/{customerId}",
-      tags: ["Customers"],
+      tags: ["Customer Management"],
       summary: "Get customer by ID",
       description: "Get customer details with order stats and order history",
     })

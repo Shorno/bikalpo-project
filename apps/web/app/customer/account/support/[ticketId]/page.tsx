@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useTicketDetails } from "@/hooks/use-customer-api";
 import { TicketDetails } from "@/components/support";

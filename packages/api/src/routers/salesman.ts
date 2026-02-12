@@ -34,7 +34,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/stats",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Get salesman stats",
             description: "Get statistics for the logged-in salesman's dashboard",
         })
@@ -130,7 +130,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/upcoming-orders",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Get upcoming orders",
             description: "Get upcoming orders from the salesman's assigned customers",
         })
@@ -180,7 +180,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/customers",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Get assigned customers",
             description: "Get list of customers assigned to the logged-in salesman",
         })
@@ -303,7 +303,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/customers/{id}",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Get customer details",
             description: "Get detailed customer information with order and estimate history",
         })
@@ -407,7 +407,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/estimates",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Get salesman estimates",
             description: "Get all estimates created by the logged-in salesman",
         })
@@ -449,7 +449,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/estimates/{id}",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Get estimate by ID",
             description: "Get detailed estimate information by ID",
         })
@@ -500,7 +500,7 @@ export const salesmanRouter = {
         .route({
             method: "POST",
             path: "/salesmen/estimates",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Create estimate",
             description: "Create a new estimate for one or more customers",
         })
@@ -613,7 +613,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/orders/{id}",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Get order by ID",
             description: "Get detailed order information by ID",
         })
@@ -651,7 +651,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen",
-            tags: ["Salesmen"],
+            tags: ["Sales Management"],
             summary: "Get all salesmen",
             description: "Get all salesmen with estimate counts and assigned customers count",
         })
@@ -704,7 +704,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/{id}",
-            tags: ["Salesmen"],
+            tags: ["Sales Management"],
             summary: "Get salesman by ID",
             description: "Get salesman details with their assigned customers",
         })
@@ -772,7 +772,7 @@ export const salesmanRouter = {
         .route({
             method: "GET",
             path: "/salesmen/unassigned-customers",
-            tags: ["Salesmen"],
+            tags: ["Sales Management"],
             summary: "Get unassigned customers",
             description: "Get customers not assigned to any salesman",
         })
@@ -814,7 +814,7 @@ export const salesmanRouter = {
         .route({
             method: "POST",
             path: "/salesmen/assign",
-            tags: ["Salesmen"],
+            tags: ["Sales Management"],
             summary: "Assign customers",
             description: "Assign one or more customers to a salesman",
         })
@@ -842,7 +842,7 @@ export const salesmanRouter = {
         .route({
             method: "DELETE",
             path: "/salesmen/unassign",
-            tags: ["Salesmen"],
+            tags: ["Sales Management"],
             summary: "Unassign customer",
             description: "Remove a customer assignment from a salesman",
         })
@@ -868,7 +868,7 @@ export const salesmanRouter = {
         .route({
             method: "PUT",
             path: "/salesmen/estimates/{id}",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Update estimate",
             description: "Update an existing estimate's items, discount, or metadata",
         })
@@ -972,7 +972,7 @@ export const salesmanRouter = {
         .route({
             method: "POST",
             path: "/salesmen/estimates/{id}/send",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Send estimate",
             description: "Send a draft estimate to the customer",
         })
@@ -1019,7 +1019,7 @@ export const salesmanRouter = {
         .route({
             method: "DELETE",
             path: "/salesmen/estimates/{id}",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Delete estimate",
             description: "Delete an estimate that hasn't been converted",
         })
@@ -1057,7 +1057,7 @@ export const salesmanRouter = {
         .route({
             method: "POST",
             path: "/salesmen/estimates/{id}/convert",
-            tags: ["Salesmen"],
+            tags: ["Salesman"],
             summary: "Convert estimate to order",
             description: "Convert a sent/approved estimate into an order with stock deduction",
         })
