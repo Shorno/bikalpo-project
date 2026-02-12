@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import createReview from "@/actions/review/create-review";
+import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -34,34 +34,20 @@ export function ReviewForm({
   const isEmerald = variant === "emerald";
 
   const mutation = useMutation({
-    mutationFn: createReview,
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 401:
-            toast.error("You must be logged in to leave a review.");
-            break;
-          case 403:
-            toast.error("You can only review products you have ordered.");
-            break;
-          case 409:
-            toast.error("You have already reviewed this product.");
-            break;
-          default:
-            toast.error(result.error || "Something went wrong.");
-        }
-        return;
-      }
+    ...orpc.customer.createReview.mutationOptions(),
+    onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["product-reviews", productId],
+        queryKey: orpc.customer.getProductReviews.key({
+          input: { productId },
+        }),
       });
       toast.success("Review submitted successfully!");
       form.reset();
       setRating(0);
       onSuccess?.();
     },
-    onError: () => {
-      toast.error("An unexpected error occurred.");
+    onError: (err) => {
+      toast.error(err?.message || "An unexpected error occurred.");
     },
   });
 

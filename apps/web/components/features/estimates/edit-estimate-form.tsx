@@ -6,7 +6,7 @@ import { CalendarIcon, FileText, Loader2, Package, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { updateEstimate } from "@/actions/estimate/update-estimate";
+import { client } from "@/utils/orpc";
 import { CustomerSelect } from "@/components/features/estimates/customer-select";
 import { EstimateItemsTable } from "@/components/features/estimates/estimate-items-table";
 import { EstimateSummary } from "@/components/features/estimates/estimate-summary";
@@ -76,20 +76,21 @@ export function EditEstimateForm({
 
       startTransition(async () => {
         try {
-          const updateData = { ...value, items, id: estimate.id } as Parameters<
-            typeof updateEstimate
-          >[0];
-          const result = await updateEstimate(updateData);
+          await client.salesman.updateEstimate({
+            id: estimate.id,
+            customerId: value.customerId,
+            items,
+            discount: value.discount,
+            validUntil: value.validUntil,
+            notes: value.notes,
+            status: value.status as any,
+          });
 
-          if (result.success) {
-            toast.success("Estimate updated successfully");
-            router.push(`${SALES_BASE}/estimates`);
-            router.refresh();
-          } else {
-            toast.error(result.error || "Failed to update estimate");
-          }
-        } catch (_error) {
-          toast.error("Something went wrong");
+          toast.success("Estimate updated successfully");
+          router.push(`${SALES_BASE}/estimates`);
+          router.refresh();
+        } catch (error: any) {
+          toast.error(error?.message || "Failed to update estimate");
         }
       });
     },

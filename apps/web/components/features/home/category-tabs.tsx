@@ -1,9 +1,10 @@
 import { ChevronRight, Grid } from "lucide-react";
 import Link from "next/link";
-import getCategories from "@/actions/category/get-categories";
+import { client } from "@/utils/orpc";
 
 export async function CategoryTabs() {
-  const categories = await getCategories();
+  const result = await client.customer.getActiveCategories();
+  const categories = result.categories ?? [];
 
   return (
     <div className="relative mb-8">

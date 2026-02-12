@@ -1,12 +1,12 @@
 import { Suspense } from "react";
-import { getVerifiedUsers } from "@/actions/users/get-verified-users";
 import { DashboardTopBuyers } from "@/components/features/users/dashboard-top-buyers";
 import { Skeleton } from "@/components/ui/skeleton";
+import { client } from "@/utils/orpc";
 
 // Server component that fetches top buyers
 async function TopBuyersContent() {
-  const { data } = await getVerifiedUsers({ limit: 100 });
-  const allUsers = data?.users || [];
+  const result = await client.customer.getVerifiedUsers({ limit: 100 });
+  const allUsers = result.users ?? [];
   const topBuyers = [...allUsers]
     .sort((a, b) => b.totalSpend - a.totalSpend)
     .slice(0, 3);

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronsUpDown, Loader2, Package, Search } from "lucide-react";
 import Image from "next/image";
 import * as React from "react";
-import getProducts from "@/actions/product/get-products";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -28,8 +28,8 @@ export function ProductPicker({
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["estimate-products"],
     queryFn: async () => {
-      const data = await getProducts();
-      return data as Product[];
+      const result = await client.product.getAll();
+      return result.products as Product[];
     },
     enabled: open,
     staleTime: 1000 * 60 * 5, // 5 minutes

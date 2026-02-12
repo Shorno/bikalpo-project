@@ -53,7 +53,8 @@ export default function EmployeeDashboard() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-24" />
+            // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+<Skeleton key={i} className="h-24" />
           ))}
         </div>
       </div>
@@ -95,7 +96,8 @@ export default function EmployeeDashboard() {
             {ordersLoading ? (
               <div className="space-y-2">
                 {[...Array(3)].map((_, i) => (
-                  <Skeleton key={i} className="h-12" />
+                  // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+<Skeleton key={i} className="h-12" />
                 ))}
               </div>
             ) : upcoming.length === 0 ? (

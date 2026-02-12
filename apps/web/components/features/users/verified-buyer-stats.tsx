@@ -1,10 +1,7 @@
 import { Suspense } from "react";
-import {
-  getVerifiedUsers,
-  getVerifiedUsersCount,
-} from "@/actions/users/get-verified-users";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { client } from "@/utils/orpc";
 
 function getInitials(name: string) {
   return name
@@ -20,12 +17,12 @@ const avatarColors = ["bg-emerald-500", "bg-teal-500", "bg-green-500"];
 // Server component that fetches the count and top customers
 async function HeroDataContent() {
   const [countResult, usersResult] = await Promise.all([
-    getVerifiedUsersCount(),
-    getVerifiedUsers({ limit: 3 }),
+    client.customer.getVerifiedUsersCount(),
+    client.customer.getVerifiedUsers({ limit: 3 }),
   ]);
 
   const totalCount = countResult.count;
-  const topCustomers = usersResult.data?.users.slice(0, 3) || [];
+  const topCustomers = usersResult.users.slice(0, 3);
 
   return (
     <div className="flex items-center justify-center gap-3 mb-8">

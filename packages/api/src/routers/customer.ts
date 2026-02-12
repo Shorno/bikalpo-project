@@ -13,9 +13,12 @@ import {
   address,
   announcement,
   brand,
+  brandUpdate,
   cart,
   cartItem,
   category,
+  estimate,
+  itemRequest,
   order,
   orderItem,
   payment,
@@ -23,6 +26,8 @@ import {
   productReview,
   productVariant,
   subCategory,
+  supportTicket,
+  supportTicketReply,
   user,
   userProfile,
 } from "@bikalpo-project/db/schema";
@@ -39,6 +44,7 @@ import {
   inArray,
   lte,
   sql,
+  sum,
 } from "drizzle-orm";
 import { z } from "zod";
 
@@ -749,6 +755,606 @@ const queries = {
       });
       return { announcements: items };
     }),
+
+  // ── Estimates ─────────────────────────────────────────────────
+
+  /** Get customer's estimates (approved/converted only) */
+  getEstimatesByCustomer: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/estimates",
+      tags: ["Customer"],
+      summary: "Get customer estimates",
+    })
+    .handler(async ({ context }) => {
+      const userId = context.session.user.id;
+
+      const estimates = await db.query.estimate.findMany({
+        where: and(
+          eq(estimate.customerId, userId),
+          inArray(estimate.status, ["approved", "converted"]),
+        ),
+        with: {
+          items: true,
+          salesman: {
+            columns: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: [desc(estimate.createdAt)],
+      });
+
+      return { estimates };
+    }),
+
+  /** Get single estimate by ID */
+  getEstimateById: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/estimates/{id}",
+      tags: ["Customer"],
+      summary: "Get estimate by ID",
+    })
+    .input(z.object({ id: z.number() }))
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      const estimateData = await db.query.estimate.findFirst({
+        where: eq(estimate.id, input.id),
+        with: {
+          items: true,
+          customer: {
+            columns: {
+              id: true,
+              name: true,
+              email: true,
+              phoneNumber: true,
+              shopName: true,
+            },
+          },
+          salesman: {
+            columns: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      if (!estimateData) {
+        throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
+      }
+
+      // Verify access: must be customer, salesman, or admin
+      const isCustomer = estimateData.customerId === userId;
+      const isCreator = estimateData.salesmanId === userId;
+      const isAdmin = context.session.user.role === "admin";
+
+      if (!isCustomer && !isCreator && !isAdmin) {
+        throw new ORPCError("FORBIDDEN", {
+          message: "Not authorized to view this estimate",
+        });
+      }
+
+      // Customers can only view approved/sent/converted estimates
+      if (isCustomer && !isCreator && !isAdmin) {
+        const allowedStatuses = ["sent", "approved", "converted"];
+        if (!allowedStatuses.includes(estimateData.status)) {
+          throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
+        }
+      }
+
+      return { estimate: estimateData };
+    }),
+
+  // ── Estimated Delivery Cost ──────────────────────────────────
+
+  /** Get estimated delivery cost based on area */
+  getEstimatedDeliveryCost: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/delivery-cost",
+      tags: ["Customer"],
+      summary: "Get estimated delivery cost",
+    })
+    .input(z.object({ area: z.string().optional() }))
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      // Get cart to calculate total weight
+      const userCart = await db.query.cart.findFirst({
+        where: eq(cart.userId, userId),
+        with: {
+          items: {
+            with: { product: true, variant: true },
+          },
+        },
+      });
+
+      if (!userCart || userCart.items.length === 0) {
+        return { deliveryCost: 0 };
+      }
+
+      let totalWeightKg = 0;
+      for (const item of userCart.items) {
+        const weightPerUnit = item.variant
+          ? Number(item.variant.weightKg)
+          : parseWeightFromSize(item.product?.size ?? null);
+        totalWeightKg += weightPerUnit * item.quantity;
+      }
+
+      const deliveryCost = await calculateDeliveryCost(
+        totalWeightKg,
+        input.area,
+      );
+
+      return { deliveryCost };
+    }),
+
+  // ── Reorder ──────────────────────────────────────────────────
+
+  /** Get order items with current prices for reordering */
+  getReorderItems: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/orders/{orderId}/reorder",
+      tags: ["Customer"],
+      summary: "Get reorder items",
+    })
+    .input(z.object({ orderId: z.number() }))
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      const orderData = await db.query.order.findFirst({
+        where: eq(order.id, input.orderId),
+        with: { items: true },
+      });
+
+      if (!orderData) {
+        throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+      }
+
+      if (orderData.userId !== userId) {
+        throw new ORPCError("FORBIDDEN", { message: "Not authorized" });
+      }
+
+      // Check if order came from an unapproved estimate
+      const estimateRecord = await db.query.estimate.findFirst({
+        where: eq(estimate.convertedOrderId, orderData.id),
+        columns: { status: true },
+      });
+
+      if (
+        estimateRecord &&
+        estimateRecord.status !== "approved" &&
+        estimateRecord.status !== "converted"
+      ) {
+        throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+      }
+
+      if (orderData.status !== "delivered") {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Only delivered orders can be reordered",
+        });
+      }
+
+      const reorderItems = await Promise.all(
+        orderData.items.map(async (item) => {
+          const currentProduct = await db.query.product.findFirst({
+            where: eq(product.id, item.productId),
+          });
+
+          return {
+            id: item.id,
+            productId: item.productId,
+            productName: item.productName,
+            productImage: item.productImage,
+            productSize: item.productSize,
+            originalQuantity: item.quantity,
+            quantity: item.quantity,
+            originalPrice: item.unitPrice,
+            currentPrice: currentProduct?.price || item.unitPrice,
+            inStock: currentProduct?.inStock ?? false,
+            stockQuantity: currentProduct?.stockQuantity ?? 0,
+            productExists: !!currentProduct,
+          };
+        }),
+      );
+
+      return {
+        items: reorderItems,
+        originalOrder: {
+          id: orderData.id,
+          orderNumber: orderData.orderNumber,
+          shippingName: orderData.shippingName,
+          shippingPhone: orderData.shippingPhone,
+          shippingEmail: orderData.shippingEmail,
+          shippingAddress: orderData.shippingAddress,
+          shippingCity: orderData.shippingCity,
+          shippingArea: orderData.shippingArea,
+          shippingPostalCode: orderData.shippingPostalCode,
+        },
+      };
+    }),
+
+  // ── Support Tickets ──────────────────────────────────────────
+
+  /** Get customer's support tickets */
+  getCustomerTickets: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/tickets",
+      tags: ["Customer"],
+      summary: "Get customer support tickets",
+    })
+    .input(
+      z
+        .object({
+          page: z.number().min(1).default(1),
+          limit: z.number().min(1).max(50).default(10),
+          status: z.string().optional(),
+        })
+        .optional(),
+    )
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+      const page = input?.page ?? 1;
+      const limit = input?.limit ?? 10;
+      const offset = (page - 1) * limit;
+
+      const conditions = [eq(supportTicket.customerId, userId)];
+
+      if (
+        input?.status &&
+        ["open", "in_progress", "resolved", "closed"].includes(input.status)
+      ) {
+        conditions.push(
+          eq(
+            supportTicket.status,
+            input.status as "open" | "in_progress" | "resolved" | "closed",
+          ),
+        );
+      }
+
+      const tickets = await db
+        .select()
+        .from(supportTicket)
+        .where(and(...conditions))
+        .orderBy(desc(supportTicket.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const [countResult] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(supportTicket)
+        .where(and(...conditions));
+
+      const totalCount = Number(countResult?.count) || 0;
+
+      return {
+        tickets,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+        },
+      };
+    }),
+
+  /** Get single ticket with replies */
+  getTicketDetails: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/tickets/{ticketId}",
+      tags: ["Customer"],
+      summary: "Get ticket details with replies",
+    })
+    .input(z.object({ ticketId: z.number() }))
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      const [ticket] = await db
+        .select()
+        .from(supportTicket)
+        .where(eq(supportTicket.id, input.ticketId));
+
+      if (!ticket) {
+        throw new ORPCError("NOT_FOUND", { message: "Ticket not found" });
+      }
+
+      if (ticket.customerId !== userId) {
+        throw new ORPCError("FORBIDDEN", { message: "Not authorized" });
+      }
+
+      const replies = await db
+        .select({
+          id: supportTicketReply.id,
+          ticketId: supportTicketReply.ticketId,
+          userId: supportTicketReply.userId,
+          message: supportTicketReply.message,
+          isStaffReply: supportTicketReply.isStaffReply,
+          createdAt: supportTicketReply.createdAt,
+          userName: user.name,
+          userImage: user.image,
+        })
+        .from(supportTicketReply)
+        .leftJoin(user, eq(supportTicketReply.userId, user.id))
+        .where(eq(supportTicketReply.ticketId, input.ticketId))
+        .orderBy(supportTicketReply.createdAt);
+
+      return {
+        ticket: {
+          ...ticket,
+          replies: replies.map((r) => ({
+            ...r,
+            user: {
+              id: r.userId,
+              name: r.userName || "Unknown",
+              image: r.userImage,
+            },
+          })),
+        },
+      };
+    }),
+
+  // ── Item Requests ────────────────────────────────────────────
+
+  /** Get customer's item requests */
+  getCustomerItemRequests: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/item-requests",
+      tags: ["Customer"],
+      summary: "Get customer item requests",
+    })
+    .input(
+      z
+        .object({
+          page: z.number().min(1).default(1),
+          limit: z.number().min(1).max(50).default(10),
+          status: z.string().optional(),
+          search: z.string().optional(),
+        })
+        .optional(),
+    )
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+      const page = input?.page ?? 1;
+      const limit = input?.limit ?? 10;
+      const offset = (page - 1) * limit;
+
+      const conditions: ReturnType<typeof eq>[] = [
+        eq(itemRequest.customerId, userId),
+      ];
+
+      if (input?.status && input.status !== "all") {
+        conditions.push(eq(itemRequest.status, input.status as any));
+      }
+
+      if (input?.search) {
+        conditions.push(
+          sql`(${ilike(itemRequest.itemName, `%${input.search}%`)} OR ${ilike(
+            itemRequest.requestNumber,
+            `%${input.search}%`,
+          )})` as any,
+        );
+      }
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(itemRequest)
+        .where(and(...conditions));
+
+      const totalCount = countResult?.count || 0;
+
+      const requests = await db
+        .select({
+          id: itemRequest.id,
+          requestNumber: itemRequest.requestNumber,
+          customerId: itemRequest.customerId,
+          itemName: itemRequest.itemName,
+          brand: itemRequest.brand,
+          category: itemRequest.category,
+          quantity: itemRequest.quantity,
+          description: itemRequest.description,
+          image: itemRequest.image,
+          status: itemRequest.status,
+          adminResponse: itemRequest.adminResponse,
+          suggestedProductId: itemRequest.suggestedProductId,
+          processedById: itemRequest.processedById,
+          processedAt: itemRequest.processedAt,
+          createdAt: itemRequest.createdAt,
+          updatedAt: itemRequest.updatedAt,
+          suggestedProduct: {
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            image: product.image,
+          },
+        })
+        .from(itemRequest)
+        .leftJoin(product, eq(itemRequest.suggestedProductId, product.id))
+        .where(and(...conditions))
+        .orderBy(desc(itemRequest.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      return {
+        requests,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+        },
+      };
+    }),
+
+  // ── Brand Updates ───────────────────────────────────────────
+
+  /** Get active brand updates */
+  getBrandUpdates: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/brand-updates",
+      tags: ["Customer"],
+      summary: "Get active brand updates",
+    })
+    .handler(async () => {
+      const updates = await db
+        .select()
+        .from(brandUpdate)
+        .where(eq(brandUpdate.active, true))
+        .orderBy(desc(brandUpdate.createdAt));
+      return { updates };
+    }),
+
+  // ── Verified Users ──────────────────────────────────────────
+
+  /** Get verified users with filtering & pagination */
+  getVerifiedUsers: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/verified-users",
+      tags: ["Customer"],
+      summary: "Get verified users",
+    })
+    .input(
+      z.object({
+        search: z.string().optional(),
+        area: z.string().optional(),
+        sortBy: z.enum(["top_buyers", "most_orders", "newest"]).optional(),
+        page: z.number().optional(),
+        limit: z.number().optional(),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const page = input.page || 1;
+      const limit = input.limit || 12;
+      const offset = (page - 1) * limit;
+
+      // Build where conditions
+      const conditions = [eq(user.role, "customer"), eq(user.banned, false)];
+
+      if (input.search) {
+        const searchTerm = `%${input.search.toLowerCase()}%`;
+        conditions.push(
+          sql`(
+            LOWER(${user.name}) ILIKE ${searchTerm} OR
+            LOWER(COALESCE(${user.shopName}, '')) ILIKE ${searchTerm} OR
+            LOWER(COALESCE(${user.ownerName}, '')) ILIKE ${searchTerm}
+          )`,
+        );
+      }
+
+      const baseUsers = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          shopName: user.shopName,
+          ownerName: user.ownerName,
+          image: user.image,
+          createdAt: user.createdAt,
+        })
+        .from(user)
+        .where(and(...conditions));
+
+      // Enrich each user with order stats and reviews
+      const usersWithDetails = await Promise.all(
+        baseUsers.map(async (u) => {
+          const orderStats = await db
+            .select({
+              orderCount: count(order.id),
+              totalSpend: sum(order.total),
+              area: sql<string>`MODE() WITHIN GROUP (ORDER BY ${order.shippingArea})`,
+            })
+            .from(order)
+            .where(eq(order.userId, u.id))
+            .groupBy(order.userId);
+
+          const userReviews = await db
+            .select({
+              id: productReview.id,
+              comment: productReview.comment,
+              rating: productReview.rating,
+            })
+            .from(productReview)
+            .where(eq(productReview.userId, u.id))
+            .orderBy(desc(productReview.createdAt))
+            .limit(2);
+
+          const stats = orderStats[0];
+          return {
+            ...u,
+            area: stats?.area || null,
+            totalOrders: Number(stats?.orderCount) || 0,
+            totalSpend: Number(stats?.totalSpend) || 0,
+            reviews: userReviews,
+          };
+        }),
+      );
+
+      // Filter by area
+      let filteredUsers = usersWithDetails;
+      if (input.area && input.area !== "all") {
+        filteredUsers = usersWithDetails.filter((u) =>
+          u.area?.toLowerCase().includes(input.area!.toLowerCase()),
+        );
+      }
+
+      // Sort
+      const sortedUsers = [...filteredUsers].sort((a, b) => {
+        switch (input.sortBy) {
+          case "most_orders":
+            return b.totalOrders - a.totalOrders;
+          case "newest":
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          case "top_buyers":
+          default:
+            return b.totalOrders - a.totalOrders;
+        }
+      });
+
+      // Paginate
+      const paginatedUsers = sortedUsers.slice(offset, offset + limit);
+
+      // Unique areas for filters
+      const uniqueAreas = [
+        ...new Set(
+          usersWithDetails.map((u) => u.area).filter((a): a is string => !!a),
+        ),
+      ].sort();
+
+      return {
+        users: paginatedUsers,
+        totalCount: sortedUsers.length,
+        totalPages: Math.ceil(sortedUsers.length / limit),
+        currentPage: page,
+        areas: uniqueAreas,
+      };
+    }),
+
+  /** Get count of verified users */
+  getVerifiedUsersCount: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/verified-users/count",
+      tags: ["Customer"],
+      summary: "Get verified users count",
+    })
+    .handler(async () => {
+      const [result] = await db
+        .select({ count: count() })
+        .from(user)
+        .where(and(eq(user.role, "customer"), eq(user.banned, false)));
+      return { count: Number(result?.count) || 0 };
+    }),
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -1398,6 +2004,455 @@ const mutations = {
       }
 
       return { success: true };
+    }),
+
+  // ── Reorder ──────────────────────────────────────────────────
+
+  /** Place a reorder from a previous delivered order */
+  placeReorder: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/customer/orders/reorder",
+      tags: ["Customer"],
+      summary: "Place reorder from previous order",
+    })
+    .input(
+      z.object({
+        originalOrderId: z.number(),
+        items: z.array(
+          z.object({
+            productId: z.number(),
+            quantity: z.number().min(1),
+          }),
+        ),
+        shippingInfo: shippingInfoSchema,
+        paymentMethod: z
+          .enum([
+            "cash_on_delivery",
+            "bkash",
+            "nagad",
+            "bank_transfer",
+            "card",
+          ])
+          .default("cash_on_delivery"),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      // Verify original order belongs to user and is delivered
+      const originalOrder = await db.query.order.findFirst({
+        where: eq(order.id, input.originalOrderId),
+      });
+
+      if (!originalOrder || originalOrder.userId !== userId) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Original order not found",
+        });
+      }
+
+      if (originalOrder.status !== "delivered") {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Only delivered orders can be reordered",
+        });
+      }
+
+      // Check for active order
+      const activeOrder = await db.query.order.findFirst({
+        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+      });
+
+      if (activeOrder) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            "You already have an active order. Please wait until it's delivered or cancelled.",
+        });
+      }
+
+      if (input.items.length === 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "No items to reorder",
+        });
+      }
+
+      // Validate stock and prepare order items
+      const orderItems: Array<{
+        productId: number;
+        productName: string;
+        productImage: string;
+        productSize: string;
+        quantity: number;
+        unitPrice: string;
+        totalPrice: string;
+      }> = [];
+
+      let subtotal = 0;
+      let totalWeightKg = 0;
+
+      for (const item of input.items) {
+        const currentProduct = await db.query.product.findFirst({
+          where: eq(product.id, item.productId),
+        });
+
+        if (!currentProduct) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Product not found",
+          });
+        }
+
+        if (!currentProduct.inStock) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `${currentProduct.name} is out of stock`,
+          });
+        }
+
+        if (currentProduct.stockQuantity < item.quantity) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `Insufficient stock for ${currentProduct.name}. Available: ${currentProduct.stockQuantity}`,
+          });
+        }
+
+        const itemTotal = Number(currentProduct.price) * item.quantity;
+        subtotal += itemTotal;
+
+        totalWeightKg +=
+          parseWeightFromSize(currentProduct.size) * item.quantity;
+
+        orderItems.push({
+          productId: currentProduct.id,
+          productName: currentProduct.name,
+          productImage: currentProduct.image,
+          productSize: currentProduct.size,
+          quantity: item.quantity,
+          unitPrice: currentProduct.price,
+          totalPrice: itemTotal.toFixed(2),
+        });
+      }
+
+      const shippingCost = await calculateDeliveryCost(
+        totalWeightKg,
+        input.shippingInfo.area,
+      );
+      const total = subtotal + shippingCost;
+
+      // Transaction: create order, deduct stock
+      const result = await db.transaction(async (tx) => {
+        const [newOrder] = await tx
+          .insert(order)
+          .values({
+            orderNumber: generateOrderNumber(),
+            userId,
+            subtotal: subtotal.toFixed(2),
+            shippingCost: shippingCost.toFixed(2),
+            discount: "0",
+            total: total.toFixed(2),
+            status: "pending",
+            paymentStatus: "pending",
+            paymentMethod: input.paymentMethod,
+            shippingName: input.shippingInfo.name,
+            shippingPhone: input.shippingInfo.phone,
+            shippingEmail: input.shippingInfo.email,
+            shippingAddress: input.shippingInfo.address,
+            shippingCity: input.shippingInfo.city,
+            shippingArea: input.shippingInfo.area,
+            shippingPostalCode: input.shippingInfo.postalCode,
+            customerNote: input.shippingInfo.customerNote,
+          })
+          .returning();
+
+        await tx.insert(orderItem).values(
+          orderItems.map((oi) => ({
+            orderId: newOrder!.id,
+            ...oi,
+          })),
+        );
+
+        // Deduct stock
+        for (const oi of orderItems) {
+          await tx
+            .update(product)
+            .set({
+              stockQuantity: sql`${product.stockQuantity} - ${oi.quantity}`,
+            })
+            .where(eq(product.id, oi.productId));
+        }
+
+        return newOrder!;
+      });
+
+      return {
+        success: true,
+        order: { id: result.id, orderNumber: result.orderNumber },
+      };
+    }),
+
+  // ── Support Tickets ──────────────────────────────────────────
+
+  /** Create a new support ticket */
+  createSupportTicket: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/customer/tickets",
+      tags: ["Customer"],
+      summary: "Create support ticket",
+    })
+    .input(
+      z.object({
+        subject: z.string().min(1).max(200),
+        message: z.string().min(1),
+        priority: z
+          .enum(["low", "medium", "high"])
+          .default("medium"),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      const ticketNumber = `TKT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+      const [newTicket] = await db
+        .insert(supportTicket)
+        .values({
+          ticketNumber,
+          customerId: userId,
+          subject: input.subject,
+          message: input.message,
+          priority: input.priority,
+          status: "open",
+        })
+        .returning();
+
+      return { success: true, ticket: newTicket };
+    }),
+
+  /** Add a reply to a support ticket */
+  addTicketReply: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/customer/tickets/{ticketId}/reply",
+      tags: ["Customer"],
+      summary: "Add ticket reply",
+    })
+    .input(
+      z.object({
+        ticketId: z.number(),
+        message: z.string().min(1),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      // Verify ticket ownership
+      const [ticket] = await db
+        .select()
+        .from(supportTicket)
+        .where(eq(supportTicket.id, input.ticketId));
+
+      if (!ticket || ticket.customerId !== userId) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Ticket not found or unauthorized",
+        });
+      }
+
+      const [newReply] = await db
+        .insert(supportTicketReply)
+        .values({
+          ticketId: input.ticketId,
+          userId,
+          message: input.message,
+          isStaffReply: false,
+        })
+        .returning();
+
+      // Update ticket timestamp
+      await db
+        .update(supportTicket)
+        .set({ updatedAt: new Date() })
+        .where(eq(supportTicket.id, input.ticketId));
+
+      return { success: true, reply: newReply };
+    }),
+
+  // ── Estimate Conversion ─────────────────────────────────────
+
+  /** Convert an estimate to an order */
+  convertEstimateToOrder: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/customer/estimates/convert",
+      tags: ["Customer"],
+      summary: "Convert an approved estimate to an order",
+    })
+    .input(
+      z.object({
+        estimateId: z.number(),
+        shippingName: z.string().min(1),
+        shippingPhone: z.string().min(1),
+        shippingAddress: z.string().min(1),
+        shippingCity: z.string().min(1),
+        shippingArea: z.string().optional().nullable(),
+        shippingPostalCode: z.string().optional().nullable(),
+        customerNote: z.string().optional().nullable(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const userId = context.session.user.id;
+      const userRole = context.session.user.role;
+
+      if (userRole !== "admin" && userRole !== "salesman" && userRole !== "customer") {
+        throw new ORPCError("FORBIDDEN", { message: "Unauthorized" });
+      }
+
+      const estimateData = await db.query.estimate.findFirst({
+        where: eq(estimate.id, input.estimateId),
+        with: { items: true },
+      });
+
+      if (!estimateData) {
+        throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
+      }
+
+      // If customer, verify ownership
+      if (userRole === "customer" && estimateData.customerId !== userId) {
+        throw new ORPCError("FORBIDDEN", {
+          message: "You do not own this estimate",
+        });
+      }
+
+      // Check active orders
+      const activeOrder = await db.query.order.findFirst({
+        where: sql`${order.userId} = ${estimateData.customerId}
+          AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+      });
+
+      if (activeOrder) {
+        throw new ORPCError("CONFLICT", {
+          message:
+            "Customer already has an active order. Please wait until it's delivered or cancelled.",
+        });
+      }
+
+      if (estimateData.status === "converted") {
+        throw new ORPCError("CONFLICT", {
+          message: "Estimate has already been converted",
+        });
+      }
+
+      if (estimateData.status !== "approved" && estimateData.status !== "sent") {
+        throw new ORPCError("BAD_REQUEST", {
+          message: `Only sent or approved estimates can be converted. Current status: ${estimateData.status}`,
+        });
+      }
+
+      // Convert in a transaction
+      const result = await db.transaction(async (tx) => {
+        const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+        const [newOrder] = await tx
+          .insert(order)
+          .values({
+            orderNumber,
+            userId: estimateData.customerId,
+            subtotal: estimateData.subtotal,
+            discount: estimateData.discount,
+            total: estimateData.total,
+            shippingCost: "0",
+            status: "pending",
+            paymentStatus: "pending",
+            paymentMethod: "cash_on_delivery",
+            shippingName: input.shippingName,
+            shippingPhone: input.shippingPhone,
+            shippingEmail: null,
+            shippingAddress: input.shippingAddress,
+            shippingCity: input.shippingCity,
+            shippingArea: input.shippingArea || null,
+            shippingPostalCode: input.shippingPostalCode || null,
+            customerNote: input.customerNote || null,
+          })
+          .returning();
+
+        if (!newOrder) throw new Error("Failed to create order");
+
+        // Create order items from estimate items
+        const orderItems = estimateData.items.map((item) => ({
+          orderId: newOrder.id,
+          productId: item.productId,
+          productName: item.productName,
+          productImage: item.productImage || "",
+          productSize: "N/A",
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+        }));
+
+        await tx.insert(orderItem).values(orderItems);
+
+        // Reduce stock
+        for (const item of estimateData.items) {
+          await tx
+            .update(product)
+            .set({
+              stockQuantity: sql`${product.stockQuantity} - ${item.quantity}`,
+            })
+            .where(eq(product.id, item.productId));
+        }
+
+        // Update estimate status
+        await tx
+          .update(estimate)
+          .set({
+            status: "converted",
+            convertedOrderId: newOrder.id,
+            convertedAt: new Date(),
+          })
+          .where(eq(estimate.id, input.estimateId));
+
+        return newOrder;
+      });
+
+      return { success: true, order: result };
+    }),
+
+  // ── Item Requests ───────────────────────────────────────────
+
+  /** Create a new item request */
+  createItemRequest: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/customer/item-requests",
+      tags: ["Customer"],
+      summary: "Create a new item request",
+    })
+    .input(
+      z.object({
+        itemName: z.string().min(2, "Item name must be at least 2 characters"),
+        brand: z.string().optional(),
+        category: z.string().optional(),
+        quantity: z.number().min(1).default(1),
+        description: z.string().optional(),
+        image: z.string().optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const userId = context.session.user.id;
+      const requestNumber = `REQ-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+      const [newRequest] = await db
+        .insert(itemRequest)
+        .values({
+          requestNumber,
+          customerId: userId,
+          itemName: input.itemName,
+          brand: input.brand || null,
+          category: input.category || null,
+          quantity: input.quantity,
+          description: input.description || null,
+          image: input.image || null,
+          status: "pending",
+        })
+        .returning();
+
+      return { success: true, request: newRequest };
     }),
 };
 

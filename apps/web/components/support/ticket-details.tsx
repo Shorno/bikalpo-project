@@ -4,10 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Loader2, Send, User } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { toast } from "sonner";
-import { addTicketReply } from "@/actions/support/support-actions";
+import { useAddTicketReply } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,7 +57,7 @@ function getStatusColor(status: string) {
 }
 
 export function TicketDetails({ ticket }: TicketDetailsProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const addReply = useAddTicketReply();
   const statusStyle = getStatusColor(ticket.status);
 
   const form = useForm<AddReplyFormValues>({
@@ -71,20 +69,14 @@ export function TicketDetails({ ticket }: TicketDetailsProps) {
   });
 
   async function onSubmit(data: AddReplyFormValues) {
-    setIsLoading(true);
-    try {
-      const result = await addTicketReply(data);
-      if (result.success) {
-        toast.success("Reply sent!");
-        form.reset({ ticketId: ticket.id, message: "" });
-      } else {
-        toast.error(result.error || "Failed to send reply");
-      }
-    } catch {
-      toast.error("Something went wrong");
-    } finally {
-      setIsLoading(false);
-    }
+    addReply.mutate(
+      { ticketId: data.ticketId, message: data.message },
+      {
+        onSuccess: () => {
+          form.reset({ ticketId: ticket.id, message: "" });
+        },
+      },
+    );
   }
 
   const canReply = ticket.status !== "closed";
@@ -203,8 +195,8 @@ export function TicketDetails({ ticket }: TicketDetailsProps) {
                 )}
               />
               <div className="flex justify-end">
-                <Button type="submit" disabled={isLoading}>
-                  {isLoading ? (
+                <Button type="submit" disabled={addReply.isPending}>
+                  {addReply.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <Send className="mr-2 h-4 w-4" />

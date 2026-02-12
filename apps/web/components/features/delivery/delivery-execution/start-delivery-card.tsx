@@ -3,7 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { Loader2, Navigation } from "lucide-react";
 import { toast } from "sonner";
-import { startDelivery } from "@/actions/delivery/deliveryman-actions";
+import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -17,17 +17,13 @@ export function StartDeliveryCard({
   onSuccess,
 }: StartDeliveryCardProps) {
   const startMutation = useMutation({
-    mutationFn: () => startDelivery(groupId),
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Delivery run started successfully");
-        onSuccess();
-      } else {
-        toast.error(result.error || "Failed to start delivery");
-      }
+    ...orpc.deliveryman.startDelivery.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Delivery run started successfully");
+      onSuccess();
     },
-    onError: () => {
-      toast.error("Something went wrong");
+    onError: (err) => {
+      toast.error(err?.message || "Failed to start delivery");
     },
   });
 
@@ -44,7 +40,7 @@ export function StartDeliveryCard({
         </div>
         <Button
           size="default"
-          onClick={() => startMutation.mutate()}
+          onClick={() => startMutation.mutate({ id: groupId })}
           disabled={startMutation.isPending}
           className="w-full sm:w-auto h-9 sm:h-10 text-sm"
         >

@@ -2,7 +2,7 @@
 
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import * as React from "react";
-import { getCustomers } from "@/actions/user/get-customers";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -42,10 +42,8 @@ export function CustomerSelect({ value, onSelect }: CustomerSelectProps) {
     const fetchCustomers = async () => {
       setLoading(true);
       try {
-        const result = await getCustomers();
-        if (result.success) {
-          setCustomers(result.data);
-        }
+        const result = await client.salesman.getAssignedCustomers();
+        setCustomers(result.customers as Customer[]);
       } catch (error) {
         console.error("Failed to fetch customers", error);
       } finally {

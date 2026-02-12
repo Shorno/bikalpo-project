@@ -7,10 +7,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import {
-  assignDeliveryman,
-  getDeliverymenForAssignment,
-} from "@/actions/delivery/delivery-management";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -85,11 +82,12 @@ export function AssignDeliverymanDialog({
   React.useEffect(() => {
     if (open) {
       setLoadingUsers(true);
-      getDeliverymenForAssignment(orderShippingArea ?? undefined)
+      client.deliveryman.getDeliverymenForAssignment({ orderShippingArea: orderShippingArea ?? undefined })
         .then((result) => {
-          if (result.success) {
-            setDeliverymen(result.deliverymen || []);
-          }
+          setDeliverymen(result.deliverymen || []);
+        })
+        .catch(() => {
+          setDeliverymen([]);
         })
         .finally(() => setLoadingUsers(false));
     }
@@ -97,21 +95,17 @@ export function AssignDeliverymanDialog({
 
   const onSubmit = async (data: AssignDeliverymanFormValues) => {
     try {
-      const result = await assignDeliveryman({
+      await client.deliveryman.assignDeliveryman({
         groupId: data.groupId,
         deliverymanId: data.deliverymanId,
         vehicleType: data.vehicleType || undefined,
         expectedDeliveryAt: data.expectedDeliveryAt || undefined,
       });
-      if (result.success) {
-        toast.success("Deliveryman assigned successfully");
-        setOpen(false);
-        router.refresh();
-      } else {
-        toast.error(result.error || "Failed to assign deliveryman");
-      }
-    } catch (_error) {
-      toast.error("Something went wrong");
+      toast.success("Deliveryman assigned successfully");
+      setOpen(false);
+      router.refresh();
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to assign deliveryman");
     }
   };
 
@@ -220,9 +214,8 @@ export function AssignDeliverymanDialog({
                       <FormControl>
                         <Button
                           variant="outline"
-                          className={`w-full justify-start text-left font-normal ${
-                            !field.value && "text-muted-foreground"
-                          }`}
+                          className={`w-full justify-start text-left font-normal ${!field.value && "text-muted-foreground"
+                            }`}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {field.value

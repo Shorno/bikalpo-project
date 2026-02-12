@@ -1,7 +1,7 @@
 import { Suspense } from "react";
-import { getVerifiedUsers } from "@/actions/users/get-verified-users";
 import { DashboardCustomersGrid } from "@/components/features/users/dashboard-customers-grid";
 import { Skeleton } from "@/components/ui/skeleton";
+import { client } from "@/utils/orpc";
 
 interface VerifiedCustomersGridProps {
   searchParams: Promise<{
@@ -17,7 +17,7 @@ async function CustomersGridContent({
   searchParams,
 }: VerifiedCustomersGridProps) {
   const params = await searchParams;
-  const { data } = await getVerifiedUsers({
+  const result = await client.customer.getVerifiedUsers({
     search: params.search,
     area: params.area,
     sortBy: params.sortBy as "top_buyers" | "most_orders" | "newest",
@@ -27,9 +27,9 @@ async function CustomersGridContent({
 
   return (
     <DashboardCustomersGrid
-      customers={data?.users || []}
-      totalPages={data?.totalPages || 1}
-      currentPage={data?.currentPage || 1}
+      customers={result.users ?? []}
+      totalPages={result.totalPages ?? 1}
+      currentPage={result.currentPage ?? 1}
     />
   );
 }

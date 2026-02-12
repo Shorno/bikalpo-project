@@ -3,7 +3,7 @@
 import { Loader2, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { createItemRequest } from "@/actions/item-request/create-item-request";
+import { orpc } from "@/utils/orpc";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -94,7 +94,7 @@ export function RequestFormModal({
     setError("");
 
     try {
-      const result = await createItemRequest({
+      await orpc.customer.createItemRequest.call({
         itemName,
         brand: brand || undefined,
         category: category || undefined,
@@ -103,20 +103,14 @@ export function RequestFormModal({
         image: image || undefined,
       });
 
-      if (result.success) {
-        toast.success("Request submitted!", {
-          description: "We'll review your request and get back to you soon.",
-        });
-        resetForm();
-        setIsOpen(false);
-        onSuccess?.();
-      } else {
-        toast.error("Failed to submit request", {
-          description: result.error,
-        });
-      }
-    } catch {
-      toast.error("Something went wrong");
+      toast.success("Request submitted!", {
+        description: "We'll review your request and get back to you soon.",
+      });
+      resetForm();
+      setIsOpen(false);
+      onSuccess?.();
+    } catch (err: any) {
+      toast.error(err?.message || "Something went wrong");
     } finally {
       setIsSubmitting(false);
     }

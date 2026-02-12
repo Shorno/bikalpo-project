@@ -5,7 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { convertEstimateToOrder } from "@/actions/estimate/convert-to-order";
+import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -21,18 +21,14 @@ export function ConvertOrderForm({ estimateId, user }: ConvertOrderFormProps) {
   const router = useRouter();
 
   const mutation = useMutation({
-    mutationFn: convertEstimateToOrder,
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Order placed successfully!");
-        router.push("/account/orders");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Failed to place order");
-      }
+    ...orpc.customer.convertEstimateToOrder.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Order placed successfully!");
+      router.push("/account/orders");
+      router.refresh();
     },
-    onError: () => {
-      toast.error("Something went wrong");
+    onError: (err) => {
+      toast.error(err?.message || "Something went wrong");
     },
   });
 

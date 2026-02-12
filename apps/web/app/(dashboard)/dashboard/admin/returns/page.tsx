@@ -1,8 +1,7 @@
 import { format } from "date-fns";
 import { Eye, RotateCcw } from "lucide-react";
-import { headers } from "next/headers";
 import Link from "next/link";
-import { getReturns } from "@/actions/returns/return-processing";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,16 +19,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { auth } from "@/lib/auth";
 import { ADMIN_BASE } from "@/lib/routes";
 
 export default async function AdminReturnsPage() {
-  const _session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  // Get all returns (without filters for now to see all)
-  const { returns } = await getReturns();
+  // Get all returns using ORPC
+  const { returns } = await client.returns.getAll();
 
   return (
     <div className="flex flex-col gap-6 p-6">

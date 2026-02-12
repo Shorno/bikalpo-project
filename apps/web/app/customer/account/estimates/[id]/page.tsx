@@ -1,13 +1,15 @@
+"use client";
+
 import { format } from "date-fns";
 import { ArrowLeft, Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getEstimateById } from "@/actions/estimate/get-estimates";
-import { checkAuth } from "@/utils/auth";
+import { useParams } from "next/navigation";
+import { useEstimateById } from "@/hooks/use-customer-api";
 import { ConvertOrderForm } from "@/components/features/estimates/convert-order-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatPrice } from "@/utils/currency";
 
 const statusConfig: Record<
@@ -31,29 +33,40 @@ const statusConfig: Record<
   },
 };
 
-export default async function EstimateDetailsPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const { id } = await params;
-  const session = await checkAuth();
+function EstimateDetailSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-10 w-10" />
+        <div>
+          <Skeleton className="h-6 w-40 mb-1" />
+          <Skeleton className="h-4 w-24" />
+        </div>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <Skeleton className="h-96 w-full rounded-lg" />
+        </div>
+        <div className="lg:col-span-2">
+          <Skeleton className="h-48 w-full rounded-lg" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  if (!session?.user) return null;
+export default function EstimateDetailsPage() {
+  const params = useParams();
+  const id = params?.id ? parseInt(params.id as string, 10) : undefined;
+  const { data, isLoading, error } = useEstimateById(id);
 
-  const result = await getEstimateById(parseInt(id, 10));
-  if (!result.success || !result.estimate) {
-    notFound();
-  }
+  if (isLoading) return <EstimateDetailSkeleton />;
 
-  const estimate = result.estimate;
-
-  // Verify ownership
-  if (estimate.customerId !== session.user.id) {
+  if (error || !data?.estimate) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
         <p className="text-red-600 font-medium">
-          You are not authorized to view this estimate.
+          {error?.message || "Estimate not found"}
         </p>
         <Button asChild>
           <Link href="/account/estimates">Go Back</Link>
@@ -62,18 +75,11 @@ export default async function EstimateDetailsPage({
     );
   }
 
+  const estimate = data.estimate;
   const isSent = estimate.status === "sent";
   const isApproved = estimate.status === "approved";
   const canConvert = isSent || isApproved;
   const config = statusConfig[estimate.status] || statusConfig.draft;
-
-  // Ensure user object matches expected shape with nulls for undefined
-  const formUser = {
-    ...session.user,
-    name: session.user.name || null,
-    phoneNumber: session.user.phoneNumber || null,
-    shopName: session.user.shopName || null,
-  };
 
   return (
     <div className="space-y-4">
@@ -199,7 +205,7 @@ export default async function EstimateDetailsPage({
             <div className="lg:sticky lg:top-4">
               <ConvertOrderForm
                 estimateId={estimate.id}
-                user={formUser as any}
+                user={estimate.customer as any}
               />
             </div>
           ) : (

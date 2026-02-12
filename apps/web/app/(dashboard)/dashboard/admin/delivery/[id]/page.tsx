@@ -1,9 +1,8 @@
 import { format } from "date-fns";
 import { ArrowLeft, MapPin, Phone, Truck } from "lucide-react";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getDeliveryGroupById } from "@/actions/delivery/delivery-management";
+import { client } from "@/utils/orpc";
 import { AssignDeliverymanDialog } from "@/components/features/delivery/assign-deliveryman-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,25 +16,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { auth } from "@/lib/auth";
 
 export default async function DeliveryGroupDetailsPage({
   params,
 }: {
   params: { id: string };
 }) {
-  const _session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
   const { id } = await params;
-  const result = await getDeliveryGroupById(Number(id));
-
-  if (!result.success || !result.group) {
+  let group;
+  try {
+    const result = await client.deliveryman.getGroupById({ id: Number(id) });
+    group = result.group;
+  } catch {
     notFound();
   }
 
-  const { group } = result;
+  if (!group) {
+    notFound();
+  }
 
   return (
     <div className="flex flex-col gap-6 p-6">

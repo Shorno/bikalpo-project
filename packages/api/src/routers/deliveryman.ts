@@ -1,10 +1,10 @@
 import { db } from "@bikalpo-project/db";
-import { deliveryGroup, deliveryGroupInvoice, invoice, user, order, orderReturn } from "@bikalpo-project/db/schema";
+import { deliveryGroup, deliveryGroupInvoice, deliveryRule, invoice, user, order, orderReturn } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, sql, count } from "drizzle-orm";
+import { and, asc, desc, eq, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
-import { adminProcedure, deliverymanProcedure } from "../index";
+import { adminProcedure, deliverymanProcedure, protectedProcedure } from "../index";
 
 // Validation schemas
 const deliverymanIdSchema = z.object({
@@ -530,4 +530,431 @@ export const deliverymanRouter = {
                 totalDeliveries: totalDeliveriesCount,
             };
         }),
+
+    // ==================== ADMIN PROCEDURES ====================
+
+    /**
+     * Get all delivery groups (admin)
+     */
+    getDeliveryGroups: adminProcedure
+        .route({
+            method: "GET",
+            path: "/delivery-groups",
+            tags: ["Deliverymen"],
+            summary: "Get all delivery groups",
+        })
+        .input(z.object({ status: z.string().optional() }).optional())
+        .handler(async ({ input }) => {
+            const conditions = input?.status
+                ? eq(deliveryGroup.status, input.status as any)
+                : undefined;
+
+            const groups = await db.query.deliveryGroup.findMany({
+                where: conditions,
+                with: {
+                    deliveryman: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phoneNumber: true,
+                        },
+                    },
+                    invoices: {
+                        with: {
+                            invoice: {
+                                with: {
+                                    customer: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            phoneNumber: true,
+                                            shopName: true,
+                                        },
+                                    },
+                                    order: true,
+                                },
+                            },
+                        },
+                        orderBy: [deliveryGroupInvoice.sequence],
+                    },
+                },
+                orderBy: [desc(deliveryGroup.createdAt)],
+            });
+
+            return { groups };
+        }),
+
+    /**
+     * Get delivery group by ID (admin)
+     */
+    getGroupById: adminProcedure
+        .route({
+            method: "GET",
+            path: "/delivery-groups/{id}",
+            tags: ["Deliverymen"],
+            summary: "Get delivery group by ID",
+        })
+        .input(z.object({ id: z.number() }))
+        .handler(async ({ input }) => {
+            const group = await db.query.deliveryGroup.findFirst({
+                where: eq(deliveryGroup.id, input.id),
+                with: {
+                    deliveryman: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phoneNumber: true,
+                        },
+                    },
+                    invoices: {
+                        with: {
+                            invoice: {
+                                with: {
+                                    customer: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            phoneNumber: true,
+                                            shopName: true,
+                                        },
+                                    },
+                                    items: true,
+                                    order: true,
+                                },
+                            },
+                        },
+                        orderBy: [deliveryGroupInvoice.sequence],
+                    },
+                },
+            });
+
+            if (!group) {
+                throw new ORPCError("NOT_FOUND", { message: "Delivery group not found" });
+            }
+
+            return { group };
+        }),
+
+    /**
+     * Assign deliveryman to a group (admin)
+     */
+    assignDeliveryman: adminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-groups/{groupId}/assign",
+            tags: ["Deliverymen"],
+            summary: "Assign deliveryman to delivery group",
+        })
+        .input(z.object({
+            groupId: z.number(),
+            deliverymanId: z.string(),
+            vehicleType: z.string().optional(),
+            expectedDeliveryAt: z.string().optional(),
+        }))
+        .handler(async ({ input }) => {
+            // Verify deliveryman exists and has correct role
+            const deliveryman = await db.query.user.findFirst({
+                where: eq(user.id, input.deliverymanId),
+            });
+
+            if (!deliveryman) {
+                throw new ORPCError("NOT_FOUND", { message: "Deliveryman not found" });
+            }
+            if (deliveryman.role !== "deliveryman") {
+                throw new ORPCError("BAD_REQUEST", { message: "User is not a deliveryman" });
+            }
+
+            // Check if deliveryman already has an active group (excluding current)
+            const activeGroups = await db.query.deliveryGroup.findMany({
+                where: and(
+                    eq(deliveryGroup.deliverymanId, input.deliverymanId),
+                    sql`${deliveryGroup.id} != ${input.groupId}`,
+                    sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`
+                ),
+                columns: { id: true },
+            });
+            if (activeGroups.length > 0) {
+                throw new ORPCError("BAD_REQUEST", { message: "This deliveryman already has an active delivery group" });
+            }
+
+            // Assign deliveryman to group
+            const set: Record<string, unknown> = {
+                deliverymanId: input.deliverymanId,
+                status: "assigned",
+                assignedAt: new Date(),
+            };
+            if (input.vehicleType !== undefined) set.vehicleType = input.vehicleType;
+            if (input.expectedDeliveryAt !== undefined)
+                set.expectedDeliveryAt = input.expectedDeliveryAt
+                    ? new Date(input.expectedDeliveryAt)
+                    : null;
+
+            await db
+                .update(deliveryGroup)
+                .set(set)
+                .where(eq(deliveryGroup.id, input.groupId));
+
+            return { success: true };
+        }),
+
+    /**
+     * Get deliverymen available for assignment (admin)
+     */
+    getDeliverymenForAssignment: adminProcedure
+        .route({
+            method: "GET",
+            path: "/deliverymen-for-assignment",
+            tags: ["Deliverymen"],
+            summary: "Get deliverymen available for assignment",
+        })
+        .input(z.object({ orderShippingArea: z.string().nullable().optional() }).optional())
+        .handler(async ({ input }) => {
+            // Get deliverymen who already have active groups
+
+            const activeGroups = await db
+                .select({ deliverymanId: deliveryGroup.deliverymanId })
+                .from(deliveryGroup)
+                .where(sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`);
+            const busyDeliverymen = [...new Set(activeGroups.map((g) => g.deliverymanId))];
+
+            const area = input?.orderShippingArea?.trim();
+
+            // Build conditions: role + area filter
+            const conditions: any[] = [eq(user.role, "deliveryman")];
+
+            if (area && area.length > 0) {
+                conditions.push(
+                    sql`(${user.serviceArea} IS NULL OR ${user.serviceArea} ILIKE ${"%" + area + "%"})`,
+                );
+            }
+
+            const where = and(...conditions);
+
+            const allDeliverymen = await db.query.user.findMany({
+                where,
+                columns: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phoneNumber: true,
+                    serviceArea: true,
+                },
+            });
+
+            // Add hasActiveGroup flag
+            const deliverymen = allDeliverymen.map((dm) => ({
+                ...dm,
+                hasActiveGroup: busyDeliverymen.includes(dm.id),
+            }));
+
+            return { deliverymen };
+        }),
+
+    /**
+     * Delete delivery group (admin)
+     */
+    deleteGroup: adminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-groups/{id}/delete",
+            tags: ["Deliverymen"],
+            summary: "Delete delivery group",
+        })
+        .input(z.object({ id: z.number() }))
+        .handler(async ({ input }) => {
+            const group = await db.query.deliveryGroup.findFirst({
+                where: eq(deliveryGroup.id, input.id),
+            });
+
+            if (!group) {
+                throw new ORPCError("NOT_FOUND", { message: "Delivery group not found" });
+            }
+
+            if (group.status === "completed") {
+                throw new ORPCError("BAD_REQUEST", { message: "Cannot delete completed delivery groups" });
+            }
+
+            await db.delete(deliveryGroup).where(eq(deliveryGroup.id, input.id));
+
+            return { success: true };
+        }),
+
+    /**
+     * Get delivery OTP for an order (customer-facing)
+     */
+    getOrderDeliveryOtp: protectedProcedure
+        .route({
+            method: "GET",
+            path: "/delivery-otp/{orderId}",
+            tags: ["Deliveryman"],
+            summary: "Get delivery OTP for an order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+
+            // Get order and verify ownership
+            const orderData = await db.query.order.findFirst({
+                where: eq(order.id, input.orderId),
+            });
+
+            if (!orderData) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+            if (orderData.userId !== userId) {
+                throw new ORPCError("FORBIDDEN", { message: "Not authorized" });
+            }
+
+            // Get invoices for this order
+            const orderInvoices = await db.query.invoice.findMany({
+                where: eq(invoice.orderId, input.orderId),
+                columns: { id: true },
+            });
+
+            if (orderInvoices.length === 0) {
+                return { otp: null, showOtp: false };
+            }
+
+            // Find delivery group invoice for any of these invoices
+            const invoiceIds = orderInvoices.map((inv) => inv.id);
+            const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
+                where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
+                    invoiceIds.map((id) => sql`${id}`),
+                    sql`, `,
+                )})`,
+                with: {
+                    group: true,
+                },
+            });
+
+            // Only show OTP if order is out for delivery
+            if (
+                !deliveryInvoice ||
+                !deliveryInvoice.group ||
+                deliveryInvoice.group.status !== "out_for_delivery"
+            ) {
+                return { otp: null, showOtp: false };
+            }
+
+            return {
+                otp: deliveryInvoice.deliveryOtp,
+                showOtp: true,
+                deliveryStatus: deliveryInvoice.status,
+            };
+        }),
+
+    // ==================== DELIVERY RULES PROCEDURES ====================
+
+    /**
+     * List all delivery rules (admin)
+     */
+    listDeliveryRules: adminProcedure
+        .route({
+            method: "GET",
+            path: "/delivery-rules",
+            tags: ["Deliverymen"],
+            summary: "List delivery rules",
+        })
+        .handler(async () => {
+            const rules = await db.query.deliveryRule.findMany({
+                orderBy: [asc(deliveryRule.sortOrder), asc(deliveryRule.id)],
+            });
+            return { rules };
+        }),
+
+    /**
+     * Create a delivery rule (admin)
+     */
+    createDeliveryRule: adminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-rules",
+            tags: ["Deliverymen"],
+            summary: "Create delivery rule",
+        })
+        .input(z.object({
+            name: z.string().optional(),
+            area: z.string().optional(),
+            minWeightKg: z.string().optional(),
+            maxWeightKg: z.string().optional(),
+            baseCost: z.string().optional(),
+            perKgCost: z.string().optional(),
+            isActive: z.boolean().optional(),
+            sortOrder: z.number().optional(),
+            note: z.string().optional(),
+        }))
+        .handler(async ({ input }) => {
+            const [created] = await db
+                .insert(deliveryRule)
+                .values({
+                    name: input.name ?? null,
+                    area: input.area ?? null,
+                    minWeightKg: input.minWeightKg ?? null,
+                    maxWeightKg: input.maxWeightKg ?? null,
+                    baseCost: input.baseCost ?? "0",
+                    perKgCost: input.perKgCost ?? "0",
+                    isActive: input.isActive ?? true,
+                    sortOrder: input.sortOrder ?? 0,
+                    note: input.note ?? null,
+                })
+                .returning();
+            return { rule: created };
+        }),
+
+    /**
+     * Update a delivery rule (admin)
+     */
+    updateDeliveryRule: adminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-rules/{id}/update",
+            tags: ["Deliverymen"],
+            summary: "Update delivery rule",
+        })
+        .input(z.object({
+            id: z.number(),
+            name: z.string().optional(),
+            area: z.string().optional(),
+            minWeightKg: z.string().optional(),
+            maxWeightKg: z.string().optional(),
+            baseCost: z.string().optional(),
+            perKgCost: z.string().optional(),
+            isActive: z.boolean().optional(),
+            sortOrder: z.number().optional(),
+            note: z.string().optional(),
+        }))
+        .handler(async ({ input }) => {
+            const { id, ...rest } = input;
+            await db
+                .update(deliveryRule)
+                .set({
+                    ...rest,
+                    name: rest.name ?? null,
+                    area: rest.area ?? null,
+                    minWeightKg: rest.minWeightKg ?? null,
+                    maxWeightKg: rest.maxWeightKg ?? null,
+                    note: rest.note ?? null,
+                })
+                .where(eq(deliveryRule.id, id));
+            return { success: true };
+        }),
+
+    /**
+     * Delete a delivery rule (admin)
+     */
+    deleteDeliveryRule: adminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-rules/{id}/delete",
+            tags: ["Deliverymen"],
+            summary: "Delete delivery rule",
+        })
+        .input(z.object({ id: z.number() }))
+        .handler(async ({ input }) => {
+            await db.delete(deliveryRule).where(eq(deliveryRule.id, input.id));
+            return { success: true };
+        }),
 };
+

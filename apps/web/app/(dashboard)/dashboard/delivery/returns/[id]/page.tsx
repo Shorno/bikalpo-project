@@ -412,6 +412,7 @@ export default async function ReturnDetailsPage({
                 {((returnData as any).attachments as string[]).map(
                   (url, index) => (
                     <a
+                      // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
                       key={index}
                       href={url}
                       target="_blank"

@@ -1,5 +1,5 @@
 import { unauthorized } from "next/navigation";
-import { getDeliverymen } from "@/actions/admin/deliveryman-actions";
+import { client } from "@/utils/orpc";
 import { checkIsAdmin } from "@/utils/auth";
 import { DeliverymenClient } from "./deliverymen-client";
 
@@ -9,9 +9,10 @@ export default async function DeliverymenPage() {
     unauthorized();
   }
 
-  const result = await getDeliverymen();
-
-  if (!result.success) {
+  let result;
+  try {
+    result = await client.deliveryman.getAll();
+  } catch {
     return (
       <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
         <div className="flex items-center justify-center h-40">

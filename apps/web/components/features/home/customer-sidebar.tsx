@@ -1,19 +1,18 @@
-import { getAnnouncements } from "@/actions/announcement/get-announcements";
-import { getActiveBrands } from "@/actions/brand/get-brands";
-import { getBrandUpdates } from "@/actions/brand-update/get-brand-updates";
 import { AnnouncementBoardCard } from "@/components/features/home/sidebar/announcement-board-card";
 import { BrandUpdatesCard } from "@/components/features/home/sidebar/brand-updates-card";
 import { TopBrandsCard } from "@/components/features/home/sidebar/top-brands-card";
+import { client } from "@/utils/orpc";
 
 export async function CustomerSidebar() {
-  const [brands, announcementsResult, brandUpdatesResult] = await Promise.all([
-    getActiveBrands(),
-    getAnnouncements(),
-    getBrandUpdates(),
+  const [brandsResult, announcementsResult, brandUpdatesResult] = await Promise.all([
+    client.customer.getActiveBrands(),
+    client.customer.getAnnouncements(),
+    client.customer.getBrandUpdates(),
   ]);
 
-  const announcements = announcementsResult.data || [];
-  const brandUpdates = brandUpdatesResult.data || [];
+  const brands = brandsResult.brands ?? [];
+  const announcements = announcementsResult.announcements ?? [];
+  const brandUpdates = brandUpdatesResult.updates ?? [];
 
   return (
     <aside className="space-y-4">

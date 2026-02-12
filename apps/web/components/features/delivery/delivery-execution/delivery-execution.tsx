@@ -4,10 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import {
-  markInvoiceDelivered,
-  markInvoiceFailed,
-} from "@/actions/delivery/deliveryman-actions";
+import { orpc } from "@/utils/orpc";
 import { DELIVERY_BASE } from "@/lib/routes";
 import { DeliveredModal } from "./delivered-modal";
 import { FailedModal } from "./failed-modal";
@@ -48,43 +45,27 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
 
   // Mark delivered mutation
   const deliveredMutation = useMutation({
-    mutationFn: (params: { invoiceId: number; otp: string }) =>
-      markInvoiceDelivered({
-        deliveryInvoiceId: params.invoiceId,
-        deliveryOtp: params.otp,
-      }),
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Invoice marked as delivered");
-        closeDeliveredModal();
-        refreshData();
-      } else {
-        toast.error(result.error || "Failed to mark delivered");
-      }
+    ...orpc.deliveryman.markDelivered.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Invoice marked as delivered");
+      closeDeliveredModal();
+      refreshData();
     },
-    onError: () => {
-      toast.error("Something went wrong");
+    onError: (err) => {
+      toast.error(err?.message || "Failed to mark delivered");
     },
   });
 
   // Mark failed mutation
   const failedMutation = useMutation({
-    mutationFn: (params: { invoiceId: number; reason: string }) =>
-      markInvoiceFailed({
-        deliveryInvoiceId: params.invoiceId,
-        failedReason: params.reason,
-      }),
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Invoice marked as failed");
-        closeFailedModal();
-        refreshData();
-      } else {
-        toast.error(result.error || "Failed to update status");
-      }
+    ...orpc.deliveryman.markFailed.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Invoice marked as failed");
+      closeFailedModal();
+      refreshData();
     },
-    onError: () => {
-      toast.error("Something went wrong");
+    onError: (err) => {
+      toast.error(err?.message || "Failed to update status");
     },
   });
 
@@ -106,7 +87,7 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
   // Handle delivered confirm
   const handleDeliveredConfirm = React.useCallback(() => {
     if (!deliveredInvoiceId) return;
-    deliveredMutation.mutate({ invoiceId: deliveredInvoiceId, otp });
+    deliveredMutation.mutate({ deliveryInvoiceId: deliveredInvoiceId, deliveryOtp: otp });
   }, [deliveredInvoiceId, otp, deliveredMutation]);
 
   // Handle failed confirm
@@ -116,7 +97,7 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
       toast.error("Please provide a reason for failure");
       return;
     }
-    failedMutation.mutate({ invoiceId: failedInvoiceId, reason: failReason });
+    failedMutation.mutate({ deliveryInvoiceId: failedInvoiceId, failedReason: failReason });
   }, [failedInvoiceId, failReason, failedMutation]);
 
   // Determine if actions can be taken (only when delivery has started)

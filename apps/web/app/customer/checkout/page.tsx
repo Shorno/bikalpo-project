@@ -22,8 +22,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { getEstimatedDeliveryCost } from "@/actions/delivery-rule/get-estimated-delivery-cost";
-import { placeOrder } from "@/actions/order/order-actions";
+import { useEstimatedDeliveryCost, usePlaceOrder } from "@/hooks/use-customer-api";
 import { AddressSelector } from "@/components/checkout/address-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,12 +74,11 @@ export default function CustomerCheckoutPage() {
     isLoading: cartLoading,
   } = useCart();
   const { data: session } = authClient.useSession();
+  const placeOrderMutation = usePlaceOrder();
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_delivery");
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const [shippingCost, setShippingCost] = useState(0);
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(
     null,
   );
@@ -109,16 +107,11 @@ export default function CustomerCheckoutPage() {
     }
   }, [session]);
 
-  // Estimate delivery cost when area or cart changes
-  useEffect(() => {
-    if (items.length === 0) {
-      setShippingCost(0);
-      return;
-    }
-    getEstimatedDeliveryCost(formData.area || undefined).then(
-      ({ shippingCost: cost }) => setShippingCost(cost),
-    );
-  }, [formData.area, items.length]);
+  // Estimate delivery cost when area changes
+  const { data: deliveryCostData } = useEstimatedDeliveryCost(
+    formData.area || undefined,
+  );
+  const shippingCost = items.length > 0 ? (deliveryCostData?.deliveryCost ?? 0) : 0;
 
   // Handle address selection
   const handleAddressSelect = useCallback(
@@ -198,11 +191,9 @@ export default function CustomerCheckoutPage() {
       return;
     }
 
-    setIsSubmitting(true);
-
     try {
-      const result = await placeOrder(
-        {
+      const result = await placeOrderMutation.mutateAsync({
+        shippingInfo: {
           name: formData.name,
           phone: formData.phone,
           email: formData.email || undefined,
@@ -213,19 +204,15 @@ export default function CustomerCheckoutPage() {
           customerNote: formData.customerNote || undefined,
         },
         paymentMethod,
-      );
+      });
 
-      if (result.success && result.orderNumber) {
+      if (result.order?.orderNumber) {
         toast.success("Order placed successfully!");
         clearCart();
-        router.push(`/order-confirmation/${result.orderNumber}`);
-      } else {
-        toast.error(result.error || "Failed to place order");
+        router.push(`/order-confirmation/${result.order.orderNumber}`);
       }
-    } catch {
-      toast.error("Something went wrong. Please try again.");
-    } finally {
-      setIsSubmitting(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Something went wrong. Please try again.");
     }
   };
 

@@ -1,5 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import { customerAssignment, estimate, estimateItem, order, user } from "@bikalpo-project/db/schema";
+import { customerAssignment, estimate, estimateItem, order, orderItem, product, user } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -858,6 +858,330 @@ export const salesmanRouter = {
                 );
 
             return { message: "Customer unassigned successfully" };
+        }),
+
+    /**
+     * Update an existing estimate
+     * REST: PUT /salesmen/estimates/:id
+     */
+    updateEstimate: salesmanProcedure
+        .route({
+            method: "PUT",
+            path: "/salesmen/estimates/{id}",
+            tags: ["Salesmen"],
+            summary: "Update estimate",
+            description: "Update an existing estimate's items, discount, or metadata",
+        })
+        .input(z.object({
+            id: z.number(),
+            customerId: z.string().optional(),
+            items: z.array(z.object({
+                productId: z.number(),
+                productName: z.string(),
+                productImage: z.string().nullable().optional(),
+                quantity: z.number().min(1),
+                unitPrice: z.number(),
+                discount: z.number().optional().default(0),
+                totalPrice: z.number(),
+            })).optional(),
+            discount: z.number().min(0).optional(),
+            validUntil: z.coerce.date().nullable().optional(),
+            notes: z.string().nullable().optional(),
+            status: z.enum(["draft", "pending", "sent", "approved", "rejected", "converted"]).optional(),
+        }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const userRole = context.session.user.role;
+
+            const existingEstimate = await db.query.estimate.findFirst({
+                where: eq(estimate.id, input.id),
+                with: { items: true },
+            });
+
+            if (!existingEstimate) {
+                throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
+            }
+
+            const isCreator = existingEstimate.salesmanId === userId;
+            const isAdmin = userRole === "admin";
+
+            if (!isCreator && !isAdmin) {
+                throw new ORPCError("FORBIDDEN", { message: "Not authorized to update this estimate" });
+            }
+
+            if (existingEstimate.status === "converted") {
+                throw new ORPCError("BAD_REQUEST", { message: "Cannot update converted estimates" });
+            }
+
+            const updateData: Record<string, unknown> = {};
+
+            if (input.customerId) updateData.customerId = input.customerId;
+            if (input.validUntil !== undefined) updateData.validUntil = input.validUntil;
+            if (input.notes !== undefined) updateData.notes = input.notes;
+            if (input.status) {
+                updateData.status = input.status;
+                if (input.status === "sent" && existingEstimate.status !== "sent") {
+                    updateData.sentAt = new Date();
+                }
+            }
+
+            if (input.items && input.items.length > 0) {
+                const subtotal = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
+                const finalDiscount = input.discount ?? Number(existingEstimate.discount);
+                const total = subtotal - finalDiscount;
+
+                updateData.subtotal = subtotal.toString();
+                updateData.discount = finalDiscount.toString();
+                updateData.total = total.toString();
+
+                await db.transaction(async (tx) => {
+                    await tx.update(estimate).set(updateData).where(eq(estimate.id, input.id));
+                    await tx.delete(estimateItem).where(eq(estimateItem.estimateId, input.id));
+
+                    const itemsToInsert = input.items!.map((item) => ({
+                        estimateId: input.id,
+                        productId: item.productId,
+                        productName: item.productName,
+                        productImage: item.productImage || null,
+                        quantity: item.quantity,
+                        unitPrice: item.unitPrice.toString(),
+                        discount: (item.discount || 0).toString(),
+                        totalPrice: item.totalPrice.toString(),
+                    }));
+
+                    await tx.insert(estimateItem).values(itemsToInsert);
+                });
+            } else if (input.discount !== undefined) {
+                const subtotal = Number(existingEstimate.subtotal);
+                const total = subtotal - input.discount;
+                updateData.discount = input.discount.toString();
+                updateData.total = total.toString();
+                await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
+            } else if (Object.keys(updateData).length > 0) {
+                await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
+            }
+
+            return { success: true };
+        }),
+
+    /**
+     * Send a draft estimate (transitions to sent or pending)
+     * REST: POST /salesmen/estimates/:id/send
+     */
+    sendEstimate: salesmanProcedure
+        .route({
+            method: "POST",
+            path: "/salesmen/estimates/{id}/send",
+            tags: ["Salesmen"],
+            summary: "Send estimate",
+            description: "Send a draft estimate to the customer",
+        })
+        .input(z.object({ id: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const userRole = context.session.user.role;
+
+            const existingEstimate = await db.query.estimate.findFirst({
+                where: eq(estimate.id, input.id),
+            });
+
+            if (!existingEstimate) {
+                throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
+            }
+
+            if (existingEstimate.salesmanId !== userId && userRole !== "admin") {
+                throw new ORPCError("FORBIDDEN", { message: "Not authorized" });
+            }
+
+            if (existingEstimate.status !== "draft") {
+                throw new ORPCError("BAD_REQUEST", { message: "Only draft estimates can be sent" });
+            }
+
+            const discount = Number((existingEstimate as any).discount || 0);
+            const hasDiscount = discount > 0;
+            const newStatus = hasDiscount ? "pending" : "sent";
+
+            const updateData: Record<string, unknown> = { status: newStatus };
+            if (newStatus === "sent") {
+                updateData.sentAt = new Date();
+            }
+
+            await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
+
+            return { success: true };
+        }),
+
+    /**
+     * Delete an estimate
+     * REST: DELETE /salesmen/estimates/:id
+     */
+    deleteEstimate: salesmanProcedure
+        .route({
+            method: "DELETE",
+            path: "/salesmen/estimates/{id}",
+            tags: ["Salesmen"],
+            summary: "Delete estimate",
+            description: "Delete an estimate that hasn't been converted",
+        })
+        .input(z.object({ id: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const userRole = context.session.user.role;
+
+            const existingEstimate = await db.query.estimate.findFirst({
+                where: eq(estimate.id, input.id),
+            });
+
+            if (!existingEstimate) {
+                throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
+            }
+
+            if (existingEstimate.salesmanId !== userId && userRole !== "admin") {
+                throw new ORPCError("FORBIDDEN", { message: "Not authorized" });
+            }
+
+            if (existingEstimate.status === "converted") {
+                throw new ORPCError("BAD_REQUEST", { message: "Cannot delete converted estimates" });
+            }
+
+            await db.delete(estimate).where(eq(estimate.id, input.id));
+
+            return { success: true };
+        }),
+
+    /**
+     * Convert an estimate to an order
+     * REST: POST /salesmen/estimates/:id/convert
+     */
+    convertEstimateToOrder: salesmanProcedure
+        .route({
+            method: "POST",
+            path: "/salesmen/estimates/{id}/convert",
+            tags: ["Salesmen"],
+            summary: "Convert estimate to order",
+            description: "Convert a sent/approved estimate into an order with stock deduction",
+        })
+        .input(z.object({
+            estimateId: z.number(),
+            shippingName: z.string().min(1),
+            shippingPhone: z.string().min(1),
+            shippingAddress: z.string().min(1),
+            shippingCity: z.string().min(1),
+            shippingArea: z.string().optional().nullable(),
+            shippingPostalCode: z.string().optional().nullable(),
+            customerNote: z.string().optional().nullable(),
+        }))
+        .handler(async ({ context, input }) => {
+            const userRole = context.session.user.role;
+
+            if (userRole !== "admin" && userRole !== "salesman" && userRole !== "customer") {
+                throw new ORPCError("FORBIDDEN", { message: "Unauthorized" });
+            }
+
+            const estimateData = await db.query.estimate.findFirst({
+                where: eq(estimate.id, input.estimateId),
+                with: { items: true },
+            });
+
+            if (!estimateData) {
+                throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
+            }
+
+            if (userRole === "customer" && estimateData.customerId !== context.session.user.id) {
+                throw new ORPCError("FORBIDDEN", { message: "You do not own this estimate" });
+            }
+
+            // Check if customer has an active order
+            const activeOrder = await db.query.order.findFirst({
+                where: sql`${order.userId} = ${estimateData.customerId} 
+                    AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+            });
+
+            if (activeOrder) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Customer already has an active order. Please wait until it's delivered or cancelled.",
+                });
+            }
+
+            if (estimateData.status === "converted") {
+                throw new ORPCError("BAD_REQUEST", { message: "Estimate has already been converted" });
+            }
+
+            if (estimateData.status !== "approved" && estimateData.status !== "sent") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Only sent or approved estimates can be converted. Current status: ${estimateData.status}`,
+                });
+            }
+
+            // Generate order number
+            const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+            const result = await db.transaction(async (tx) => {
+                const [newOrder] = await tx
+                    .insert(order)
+                    .values({
+                        orderNumber,
+                        userId: estimateData.customerId,
+                        subtotal: estimateData.subtotal,
+                        discount: estimateData.discount,
+                        total: estimateData.total,
+                        shippingCost: "0",
+                        status: "pending",
+                        paymentStatus: "pending",
+                        paymentMethod: "cash_on_delivery",
+                        shippingName: input.shippingName,
+                        shippingPhone: input.shippingPhone,
+                        shippingEmail: null,
+                        shippingAddress: input.shippingAddress,
+                        shippingCity: input.shippingCity,
+                        shippingArea: input.shippingArea || null,
+                        shippingPostalCode: input.shippingPostalCode || null,
+                        customerNote: input.customerNote || null,
+                    } as any)
+                    .returning();
+
+                if (!newOrder) {
+                    throw new Error("Failed to create order");
+                }
+
+                // Create order items
+                const orderItems = estimateData.items.map((item) => ({
+                    orderId: newOrder.id,
+                    productId: item.productId,
+                    productName: item.productName,
+                    productImage: item.productImage || "",
+                    productSize: "N/A",
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    totalPrice: item.totalPrice,
+                }));
+
+                await tx.insert(orderItem).values(orderItems);
+
+                // Reduce stock
+                for (const item of estimateData.items) {
+                    await tx
+                        .update(product)
+                        .set({
+                            stockQuantity: sql`${product.stockQuantity} - ${item.quantity}`,
+                        })
+                        .where(eq(product.id, item.productId));
+                }
+
+                // Update estimate status
+                await tx
+                    .update(estimate)
+                    .set({
+                        status: "converted",
+                        convertedOrderId: newOrder.id,
+                        convertedAt: new Date(),
+                    })
+                    .where(eq(estimate.id, input.estimateId));
+
+                return newOrder;
+            });
+
+            return { success: true, order: result };
         }),
 };
 

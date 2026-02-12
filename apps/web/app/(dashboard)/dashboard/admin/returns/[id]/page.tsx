@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import { ArrowLeft, Package } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { getReturnById } from "@/actions/returns/return-processing";
+import { client } from "@/utils/orpc";
 import { ProcessReturnDialog } from "@/components/features/returns/process-return-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,14 +61,20 @@ export default async function AdminReturnDetailPage({
     );
   }
 
-  const result = await getReturnById(returnId);
+  let returnData: any;
+  try {
+    const result = await client.returns.getById({ id: returnId });
+    returnData = result?.return;
+  } catch (error) {
+    console.error("Failed to load return details:", error);
+  }
 
-  if (!result.success || !result.return) {
+  if (!returnData) {
     return (
       <div className="flex flex-col items-center justify-center h-40 sm:h-64 gap-3">
         <Package className="h-10 w-10 text-muted-foreground mb-2" />
         <p className="text-sm text-muted-foreground">
-          {result.error || "Return not found"}
+          Return not found
         </p>
         <Button asChild variant="outline" size="sm">
           <Link href={`${ADMIN_BASE}/returns`}>Back to Returns</Link>
@@ -76,8 +82,6 @@ export default async function AdminReturnDetailPage({
       </div>
     );
   }
-
-  const returnData = result.return;
   const items = (returnData.items || []) as ReturnItem[];
   const attachments = (returnData.attachments || []) as string[];
 

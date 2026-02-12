@@ -1,10 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { Loader2, Package, Plus, Search } from "lucide-react";
 import Image from "next/image";
 import * as React from "react";
-import { searchProducts } from "@/actions/products/search-products";
+import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -37,16 +37,18 @@ export function ReorderProductPicker({
   const [searchTerm, setSearchTerm] = React.useState("");
   const debouncedSearch = useDebounce(searchTerm, 300);
 
-  const { data: products = [], isLoading } = useQuery({
-    queryKey: ["reorder-products-search", debouncedSearch],
-    queryFn: async () => {
-      if (!debouncedSearch.trim()) return [];
-      const results = await searchProducts(debouncedSearch);
-      return results as ReorderProduct[];
-    },
-    enabled: open && debouncedSearch.trim().length > 0,
+  const searchQuery = open && debouncedSearch.trim().length > 0
+    ? { query: debouncedSearch }
+    : skipToken;
+
+  const { data, isLoading } = useQuery({
+    ...orpc.customer.searchProducts.queryOptions({
+      input: searchQuery,
+    }),
     staleTime: 1000 * 60 * 5,
   });
+
+  const products = data?.products ?? [];
 
   // Filter out already added products and out of stock items
   const filteredProducts = products

@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import { processReturn } from "@/actions/returns/return-processing";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -48,18 +48,20 @@ export function ProcessReturnDialog({
   const [action, setAction] = React.useState<"approve" | "reject">("approve");
 
   const mutation = useMutation({
-    mutationFn: processReturn,
-    onSuccess: (result) => {
-      if (!result.success) {
-        toast.error(result.error || "Failed to process return");
-        return;
-      }
+    mutationFn: (data: {
+      returnId: number;
+      action: "approve" | "reject";
+      adminNotes?: string;
+      refundType?: "cash" | "wallet" | "adjustment";
+      restockItems?: boolean;
+    }) => client.returns.processReturn(data),
+    onSuccess: () => {
       toast.success("Return request processed successfully");
       setOpen(false);
       router.refresh();
     },
-    onError: () => {
-      toast.error("Something went wrong");
+    onError: (error: any) => {
+      toast.error(error?.message || "Something went wrong");
     },
   });
 

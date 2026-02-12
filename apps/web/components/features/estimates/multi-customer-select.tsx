@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Loader2, Search, User, X } from "lucide-react";
 import * as React from "react";
-import { getCustomers } from "@/actions/user/get-customers";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,11 +28,8 @@ export function MultiCustomerSelect({
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["estimate-customers"],
     queryFn: async () => {
-      const result = await getCustomers();
-      if (result.success) {
-        return result.data;
-      }
-      return [];
+      const result = await client.salesman.getAssignedCustomers();
+      return result.customers;
     },
     enabled: open,
     staleTime: 1000 * 60 * 5, // 5 minutes
