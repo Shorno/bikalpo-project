@@ -6,7 +6,7 @@
 
 import { Check, Home, Briefcase, MapPin, Plus, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useMyAddresses, useAddAddress } from "@/hooks/use-public-api";
+import { useMyAddresses, useAddAddress } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

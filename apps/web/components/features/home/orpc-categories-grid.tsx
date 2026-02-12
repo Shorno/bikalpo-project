@@ -5,7 +5,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useActiveCategories } from "@/hooks/use-public-api";
+import { useActiveCategories } from "@/hooks/use-customer-api";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function OrpcCategoriesGrid() {

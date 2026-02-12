@@ -5,12 +5,12 @@ import { announcementRouter } from "./announcement";
 import { auditRouter } from "./audit";
 import { brandRouter } from "./brand";
 import { categoryRouter } from "./category";
-import { customerRouter } from "./customer";
+import { customerManagementRouter } from "./customer-management";
 import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
 import { employeeRouter } from "./employee";
 import { productRouter } from "./product";
-import { publicRouter } from "./public";
+import { customerRouter } from "./customer";
 import { salesmanRouter } from "./salesman";
 import { userRouter } from "./user";
 import { verifiedUserRouter } from "./verified-user";
@@ -28,11 +28,11 @@ export const appRouter = {
   audit: auditRouter,
   brand: brandRouter,
   category: categoryRouter,
-  customer: customerRouter,
+  customerManagement: customerManagementRouter,
   announcement: announcementRouter,
   employee: employeeRouter,
   product: productRouter,
-  public: publicRouter,
+  customer: customerRouter,
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
   dashboard: dashboardRouter,

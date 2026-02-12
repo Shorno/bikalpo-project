@@ -1,6 +1,6 @@
 /**
  * ORPC-powered Products Grid — client component that fetches products
- * via the public ORPC router and renders the grid with loading/empty states.
+ * via the customer ORPC router and renders the grid with loading/empty states.
  */
 "use client";
 
@@ -8,7 +8,7 @@ import { PackageSearch } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { usePublicProducts } from "@/hooks/use-public-api";
+import { useCustomerProducts } from "@/hooks/use-customer-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 
@@ -28,7 +28,7 @@ export function OrpcProductsGrid() {
     limit: searchParams.get("limit") ?? "12",
   };
 
-  const { data, isLoading, isError, error } = usePublicProducts(filters);
+  const { data, isLoading, isError, error } = useCustomerProducts(filters);
 
   if (isLoading) return <ProductsGridSkeleton />;
 

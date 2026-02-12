@@ -21,7 +21,7 @@ import {
   useUpdateAddress,
   useDeleteAddress,
   useSetDefaultAddress,
-} from "@/hooks/use-public-api";
+} from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

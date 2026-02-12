@@ -12,7 +12,7 @@ import {
   useProductDetails,
   useProductReviews,
   useAddToCart,
-} from "@/hooks/use-public-api";
+} from "@/hooks/use-customer-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

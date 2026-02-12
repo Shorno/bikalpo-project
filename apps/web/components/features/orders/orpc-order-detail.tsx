@@ -20,7 +20,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useOrderByNumber, useCancelOrder } from "@/hooks/use-public-api";
+import { useOrderByNumber, useCancelOrder } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

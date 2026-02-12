@@ -5,7 +5,7 @@
 
 import { Loader2, User } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useProfile, useUpdateProfile } from "@/hooks/use-public-api";
+import { useProfile, useUpdateProfile } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

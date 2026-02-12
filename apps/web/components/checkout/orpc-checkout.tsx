@@ -51,7 +51,7 @@ import {
   useRemoveFromCart,
   useClearCart,
   usePlaceOrder,
-} from "@/hooks/use-public-api";
+} from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 
 const CITIES = [

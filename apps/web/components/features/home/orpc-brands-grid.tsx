@@ -5,7 +5,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useActiveBrands } from "@/hooks/use-public-api";
+import { useActiveBrands } from "@/hooks/use-customer-api";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function OrpcBrandsGrid() {
