@@ -1,9 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, KeyRound, Package, Truck } from "lucide-react";
 import Link from "next/link";
-import { getActiveOrder } from "@/actions/order/order-actions";
+import { useActiveOrder } from "@/hooks/use-customer-api";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/utils/currency";
 
@@ -49,32 +48,17 @@ const STATUS_CONFIG: Record<
   },
 };
 
-function useActiveOrder() {
-  return useQuery({
-    queryKey: ["customer-active-order"],
-    queryFn: async () => {
-      const result = await getActiveOrder();
-      return result;
-    },
-    refetchInterval: 30000,
-    staleTime: 10000,
-  });
-}
-
 // Desktop: Pill-shaped status + amount + OTP badge in navbar
 export function OrderStatusButton() {
   const { data, isLoading } = useActiveOrder();
 
   if (isLoading) return null;
-  if (!data?.success || !data.order) return null;
+  if (!data?.order) return null;
 
   const order = data.order;
-  const deliveryInfo = data.deliveryInfo;
 
   const displayStatus =
-    deliveryInfo?.status === "out_for_delivery"
-      ? "out_for_delivery"
-      : order.status;
+    order.status === "out_for_delivery" ? "out_for_delivery" : order.status;
 
   const config = STATUS_CONFIG[displayStatus] || {
     label: order.status,
@@ -86,40 +70,8 @@ export function OrderStatusButton() {
 
   const Icon = config.icon || Package;
   const orderTotal = order.total ? Number(order.total) : 0;
-  const otp = deliveryInfo?.otp;
 
-  // When OTP is available, show simplified OTP-focused design
-  if (otp) {
-    return (
-      <Link
-        href="/customer/account/track"
-        className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 transition-all hover:shadow-sm hover:bg-emerald-100"
-      >
-        <div className="flex items-center justify-center h-6 w-6 rounded-full bg-emerald-600">
-          <KeyRound className="h-3.5 w-3.5 text-white" />
-        </div>
-        <div className="flex flex-col leading-none">
-          <span className="text-[10px] text-emerald-600 font-medium">
-            Delivery OTP
-          </span>
-          <span className="text-base font-bold tracking-widest text-emerald-700">
-            {otp}
-          </span>
-        </div>
-        {orderTotal > 0 && (
-          <>
-            <div className="w-px h-6 bg-emerald-200" />
-            <span className="text-sm font-semibold text-gray-900">
-              {formatPrice(orderTotal)}
-            </span>
-          </>
-        )}
-        <ArrowRight className="h-3.5 w-3.5 text-emerald-600" />
-      </Link>
-    );
-  }
-
-  // Standard status display (no OTP)
+  // Standard status display
   return (
     <Link
       href="/customer/account/track"
@@ -154,15 +106,12 @@ export function MobileOrderStatus() {
   const { data, isLoading } = useActiveOrder();
 
   // Don't show anything while loading or if no active order
-  if (isLoading || !data?.success || !data.order) return null;
+  if (isLoading || !data?.order) return null;
 
   const order = data.order;
-  const deliveryInfo = data.deliveryInfo;
 
   const displayStatus =
-    deliveryInfo?.status === "out_for_delivery"
-      ? "out_for_delivery"
-      : order.status;
+    order.status === "out_for_delivery" ? "out_for_delivery" : order.status;
 
   const config = STATUS_CONFIG[displayStatus] || {
     label: order.status,
@@ -173,29 +122,6 @@ export function MobileOrderStatus() {
   };
 
   const Icon = config.icon || Package;
-  const otp = deliveryInfo?.otp;
-
-  // When OTP is available, show compact OTP badge
-  if (otp) {
-    return (
-      <Link
-        href="/customer/account/track"
-        className="sm:hidden flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200"
-      >
-        <div className="flex items-center justify-center h-5 w-5 rounded-full bg-emerald-600">
-          <KeyRound className="h-2.5 w-2.5 text-white" />
-        </div>
-        <div className="flex flex-col leading-none">
-          <span className="text-[8px] text-emerald-600 font-medium uppercase">
-            OTP
-          </span>
-          <span className="text-sm font-bold tracking-wider text-emerald-700">
-            {otp}
-          </span>
-        </div>
-      </Link>
-    );
-  }
 
   // Standard status - compact icon + label
   return (

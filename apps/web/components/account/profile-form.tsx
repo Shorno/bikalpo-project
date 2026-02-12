@@ -10,12 +10,8 @@ import {
   User,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
-import {
-  type ProfileFormData,
-  updateProfile,
-} from "@/actions/profile/profile-actions";
+import { useState } from "react";
+import { useUpdateProfile } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +33,7 @@ interface ProfileFormProps {
 
 export function ProfileForm({ initialData }: ProfileFormProps) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const updateProfile = useUpdateProfile();
   const [formData, setFormData] = useState({
     businessName: initialData.businessName || "",
     ownerName: initialData.ownerName || initialData.name || "",
@@ -55,19 +51,20 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    startTransition(async () => {
-      const result = await updateProfile(formData as ProfileFormData);
-
-      if (result.success) {
-        toast.success("Profile updated successfully");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Failed to update profile");
-      }
+    await updateProfile.mutateAsync({
+      businessName: formData.businessName,
+      ownerName: formData.ownerName,
+      phoneNumber: formData.phoneNumber || null,
+      vatNumber: formData.vatNumber || null,
+      address: formData.address || null,
+      facebook: formData.facebook || null,
+      whatsapp: formData.whatsapp || null,
     });
+
+    router.refresh();
   };
 
   return (
@@ -228,8 +225,12 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
 
       {/* Submit Button */}
       <div className="flex justify-end pt-4 border-t">
-        <Button type="submit" disabled={isPending} className="gap-2">
-          {isPending ? (
+        <Button
+          type="submit"
+          disabled={updateProfile.isPending}
+          className="gap-2"
+        >
+          {updateProfile.isPending ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               Saving...

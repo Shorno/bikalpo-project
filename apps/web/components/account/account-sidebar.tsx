@@ -16,9 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getCart } from "@/actions/cart/cart-actions";
-import { getCustomerItemRequests } from "@/actions/item-request/get-item-requests";
+import { useCartQuery } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
@@ -85,28 +83,12 @@ const bottomItems = [
 export function AccountSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [counts, setCounts] = useState<{ cart: number; requests: number }>({
-    cart: 0,
-    requests: 0,
-  });
+  const { data: cartData } = useCartQuery();
 
-  useEffect(() => {
-    const fetchCounts = async () => {
-      const [cartRes, requestRes] = await Promise.all([
-        getCart(),
-        getCustomerItemRequests({ limit: 1 } as any),
-      ]);
-
-      setCounts({
-        cart: cartRes.totalItems || 0,
-        requests: requestRes.success
-          ? requestRes.data?.pagination.totalCount || 0
-          : 0,
-      });
-    };
-
-    fetchCounts();
-  }, []);
+  const counts = {
+    cart: cartData?.totalItems || 0,
+    requests: 0, // TODO: Need API endpoint for item requests count
+  };
 
   const handleLogout = async () => {
     // Cart will be cleared automatically when session changes
