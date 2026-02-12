@@ -13,10 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import {
-  type CustomerDetails,
-  getCustomerDetails,
-} from "@/actions/employee/get-assigned-customers";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,18 +54,17 @@ export function CustomerQuickHistoryModal({
   open,
   onOpenChange,
 }: CustomerQuickHistoryModalProps) {
-  const [customer, setCustomer] = useState<CustomerDetails | null>(null);
+  const [customer, setCustomer] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (open && customerId) {
       setLoading(true);
-      getCustomerDetails(customerId)
+      client.salesman.getCustomerDetails({ id: customerId })
         .then((result) => {
-          if (result.success && result.customer) {
-            setCustomer(result.customer);
-          }
+          setCustomer(result.customer);
         })
+        .catch(() => setCustomer(null))
         .finally(() => setLoading(false));
     }
   }, [open, customerId]);
@@ -226,11 +222,10 @@ export function CustomerQuickHistoryModal({
                           </p>
                           <Badge
                             variant="outline"
-                            className={`text-xs ${
-                              order.paymentStatus === "paid"
+                            className={`text-xs ${order.paymentStatus === "paid"
                                 ? "text-green-600"
                                 : "text-yellow-600"
-                            }`}
+                              }`}
                           >
                             {order.paymentStatus}
                           </Badge>

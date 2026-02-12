@@ -6,11 +6,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { convertEstimateToOrder } from "@/actions/estimate/convert-to-order";
-import {
-  deleteEstimate,
-  sendEstimate,
-} from "@/actions/estimate/update-estimate";
+import { client } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,15 +89,11 @@ export function EstimateActionButtons({
   const handleSend = async () => {
     setLoading(true);
     try {
-      const result = await sendEstimate(estimate.id);
-      if (result.success) {
-        toast.success("Estimate sent for review");
-        router.refresh();
-      } else {
-        toast.error(result.error || "Failed to send estimate");
-      }
-    } catch (_error) {
-      toast.error("Something went wrong");
+      await client.salesman.sendEstimate({ id: estimate.id });
+      toast.success("Estimate sent for review");
+      router.refresh();
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to send estimate");
     } finally {
       setLoading(false);
     }
@@ -110,27 +102,16 @@ export function EstimateActionButtons({
   const handleDelete = async () => {
     setLoading(true);
     try {
-      const result = await deleteEstimate(estimate.id);
-      if (result.success) {
-        toast.success("Estimate deleted");
-        const isDashboard = window.location.pathname.startsWith("/dashboard");
-        const _redirectPath = isDashboard
-          ? window.location.pathname.startsWith("/dashboard/admin")
-            ? "/dashboard/admin/estimates"
-            : "/dashboard/estimates" // Fallback or handling other dashboard types? Better safe:
-          : "/employee/estimates";
+      await client.salesman.deleteEstimate({ id: estimate.id });
+      toast.success("Estimate deleted");
 
-        // Actually, let's just use the correct path if it's admin
-        const finalRedirectPath = window.location.pathname.includes("/admin")
-          ? "/dashboard/admin/estimates"
-          : "/employee/estimates";
+      const finalRedirectPath = window.location.pathname.includes("/admin")
+        ? "/dashboard/admin/estimates"
+        : "/employee/estimates";
 
-        router.push(finalRedirectPath);
-      } else {
-        toast.error(result.error || "Failed to delete estimate");
-      }
-    } catch (_error) {
-      toast.error("Something went wrong");
+      router.push(finalRedirectPath);
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to delete estimate");
     } finally {
       setLoading(false);
     }
@@ -139,23 +120,19 @@ export function EstimateActionButtons({
   const onConvertSubmit = async (data: ConvertEstimateFormValues) => {
     setLoading(true);
     try {
-      const result = await convertEstimateToOrder(data);
-      if (result.success) {
-        toast.success("Estimate converted to order");
-        setConvertOpen(false);
+      await client.salesman.convertEstimateToOrder(data);
+      toast.success("Estimate converted to order");
+      setConvertOpen(false);
 
-        const isDashboard = window.location.pathname.startsWith("/dashboard");
-        const redirectPath = isDashboard
-          ? `/dashboard/estimates/${estimate.id}`
-          : `/employee/estimates/${estimate.id}`;
+      const isDashboard = window.location.pathname.startsWith("/dashboard");
+      const redirectPath = isDashboard
+        ? `/dashboard/estimates/${estimate.id}`
+        : `/employee/estimates/${estimate.id}`;
 
-        router.push(redirectPath);
-        router.refresh();
-      } else {
-        toast.error(result.error || "Failed to convert estimate");
-      }
-    } catch (_error: any) {
-      toast.error("Something went wrong during conversion");
+      router.push(redirectPath);
+      router.refresh();
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to convert estimate");
     } finally {
       setLoading(false);
     }
