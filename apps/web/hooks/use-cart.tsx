@@ -10,13 +10,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import {
-  addToCart,
-  clearCart as clearCartAction,
-  getCart,
-  removeFromCart,
-  updateCartItemQuantity,
-} from "@/actions/cart/cart-actions";
+import { orpc } from "@/utils/orpc";
 import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { authClient } from "@/lib/auth-client";
 
@@ -61,9 +55,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // Fetch cart from database on mount
   const refreshCart = useCallback(async () => {
     try {
-      const cartData = await getCart();
+      const cartData = await orpc.customer.getCart.call();
       if (isMounted.current) {
-        setItems(cartData.items);
+        setItems(cartData.items as CartItem[]);
       }
     } catch (error) {
       console.error("Failed to fetch cart:", error);
@@ -95,20 +89,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const addItem = async (productId: number, quantity: number = 1) => {
     setIsLoading(true);
     try {
-      const result = await addToCart(productId, quantity);
-      if (result.success) {
-        await refreshCart();
-        toast.success(result.message || "Item added to cart");
+      const result = await orpc.customer.addToCart.call({ productId, quantity });
+      await refreshCart();
+      toast.success(result.message || "Item added to cart");
+    } catch (err: any) {
+      const msg = err?.message?.toLowerCase() || "";
+      if (msg.includes("login") || msg.includes("unauthorized")) {
+        showLoginModal();
       } else {
-        // Check if it's a login required error
-        if (result.error?.toLowerCase().includes("login")) {
-          showLoginModal();
-        } else {
-          toast.error(result.error || "Failed to add item");
-        }
+        toast.error(err?.message || "Failed to add item to cart");
       }
-    } catch (_error) {
-      toast.error("Failed to add item to cart");
     } finally {
       setIsLoading(false);
     }
@@ -117,15 +107,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const removeItem = async (cartItemId: number) => {
     setIsLoading(true);
     try {
-      const result = await removeFromCart(cartItemId);
-      if (result.success) {
-        await refreshCart();
-        toast.success("Item removed from cart");
-      } else {
-        toast.error(result.error || "Failed to remove item");
-      }
-    } catch (_error) {
-      toast.error("Failed to remove item");
+      await orpc.customer.removeFromCart.call({ cartItemId });
+      await refreshCart();
+      toast.success("Item removed from cart");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to remove item");
     } finally {
       setIsLoading(false);
     }
@@ -134,14 +120,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const updateQuantity = async (cartItemId: number, quantity: number) => {
     setIsLoading(true);
     try {
-      const result = await updateCartItemQuantity(cartItemId, quantity);
-      if (result.success) {
-        await refreshCart();
-      } else {
-        toast.error(result.error || "Failed to update cart");
-      }
-    } catch (_error) {
-      toast.error("Failed to update cart");
+      await orpc.customer.updateCartItem.call({ cartItemId, quantity });
+      await refreshCart();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update cart");
     } finally {
       setIsLoading(false);
     }
@@ -150,15 +132,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const clearCart = async () => {
     setIsLoading(true);
     try {
-      const result = await clearCartAction();
-      if (result.success) {
-        setItems([]);
-        toast.success("Cart cleared");
-      } else {
-        toast.error(result.error || "Failed to clear cart");
-      }
-    } catch (_error) {
-      toast.error("Failed to clear cart");
+      await orpc.customer.clearCart.call();
+      setItems([]);
+      toast.success("Cart cleared");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to clear cart");
     } finally {
       setIsLoading(false);
     }

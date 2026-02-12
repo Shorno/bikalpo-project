@@ -2,10 +2,9 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { createSupportTicket } from "@/actions/support/support-actions";
+import { useCreateSupportTicket } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -35,7 +34,7 @@ interface TicketFormProps {
 }
 
 export function TicketForm({ onSuccess, onCancel }: TicketFormProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const createTicketMutation = useCreateSupportTicket();
 
   const form = useForm<CreateTicketFormValues>({
     resolver: zodResolver(createTicketSchema),
@@ -47,20 +46,12 @@ export function TicketForm({ onSuccess, onCancel }: TicketFormProps) {
   });
 
   async function onSubmit(data: CreateTicketFormValues) {
-    setIsLoading(true);
     try {
-      const result = await createSupportTicket(data);
-      if (result.success) {
-        toast.success("Ticket created successfully!");
-        form.reset();
-        onSuccess?.();
-      } else {
-        toast.error(result.error || "Failed to create ticket");
-      }
-    } catch {
-      toast.error("Something went wrong");
-    } finally {
-      setIsLoading(false);
+      await createTicketMutation.mutateAsync(data);
+      form.reset();
+      onSuccess?.();
+    } catch (err: any) {
+      toast.error(err?.message || "Something went wrong");
     }
   }
 
@@ -138,8 +129,8 @@ export function TicketForm({ onSuccess, onCancel }: TicketFormProps) {
                 Cancel
               </Button>
             )}
-            <Button type="submit" disabled={isLoading} className="flex-1">
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" disabled={createTicketMutation.isPending} className="flex-1">
+              {createTicketMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Submit Ticket
             </Button>
           </div>

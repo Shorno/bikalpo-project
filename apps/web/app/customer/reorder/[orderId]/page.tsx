@@ -25,7 +25,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import { toast } from "sonner";
-import { getReorderItems, placeReorder } from "@/actions/order/order-actions";
+import { useReorderItems, usePlaceReorder } from "@/hooks/use-customer-api";
 import { ReorderProductPicker } from "@/components/features/orders/reorder-product-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -90,25 +90,21 @@ export default function ReorderPage({
   const router = useRouter();
   const { data: session } = authClient.useSession();
 
-  // Fetch reorder items using TanStack Query
+  // Fetch reorder items using ORPC hook
   const {
     data: reorderData,
     isLoading,
     error: queryError,
-  } = useQuery({
-    queryKey: ["reorder-items", orderId],
-    queryFn: () => getReorderItems(orderId),
-    enabled: !!orderId,
-  });
+  } = useReorderItems(orderId || undefined);
+  const placeReorderMutation = usePlaceReorder();
 
   const [items, setItems] = useState<ReorderItem[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [itemsInitialized, setItemsInitialized] = useState(false);
 
   // Initialize items when data is loaded
-  if (reorderData?.success && reorderData.items && !itemsInitialized) {
-    setItems(reorderData.items);
+  if (reorderData?.items && !itemsInitialized) {
+    setItems(reorderData.items as ReorderItem[]);
     setItemsInitialized(true);
   }
 
@@ -163,16 +159,14 @@ export default function ReorderPage({
         return;
       }
 
-      setIsSubmitting(true);
-
       try {
-        const result = await placeReorder(
-          orderId,
-          availableItems.map((item) => ({
+        const result = await placeReorderMutation.mutateAsync({
+          originalOrderId: orderId,
+          items: availableItems.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
           })),
-          {
+          shippingInfo: {
             name: value.name,
             phone: value.phone,
             email: value.email || undefined,
@@ -182,19 +176,15 @@ export default function ReorderPage({
             postalCode: value.postalCode || undefined,
             customerNote: value.customerNote || undefined,
           },
-          value.paymentMethod,
-        );
+          paymentMethod: value.paymentMethod,
+        });
 
-        if (result.success && result.orderNumber) {
+        if (result.order?.orderNumber) {
           toast.success("Reorder placed successfully!");
-          router.push(`/order-confirmation/${result.orderNumber}`);
-        } else {
-          toast.error(result.error || "Failed to place reorder");
+          router.push(`/order-confirmation/${result.order.orderNumber}`);
         }
-      } catch {
-        toast.error("Something went wrong. Please try again.");
-      } finally {
-        setIsSubmitting(false);
+      } catch (err: any) {
+        toast.error(err?.message || "Something went wrong. Please try again.");
       }
     },
   });
@@ -462,10 +452,10 @@ export default function ReorderPage({
                           </span>
                           {parseFloat(item.currentPrice) !==
                             parseFloat(item.originalPrice) && (
-                            <span className="text-xs text-gray-400 line-through">
-                              {formatPrice(item.originalPrice)}
-                            </span>
-                          )}
+                              <span className="text-xs text-gray-400 line-through">
+                                {formatPrice(item.originalPrice)}
+                              </span>
+                            )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

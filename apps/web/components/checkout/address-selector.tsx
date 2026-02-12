@@ -1,9 +1,10 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Check, Home, Loader2, MapPin, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { getMyAddresses } from "@/actions/address/address-actions";
+import { useMyAddresses } from "@/hooks/use-customer-api";
+import { orpc } from "@/utils/orpc";
 import { AddressForm } from "@/components/account/address-form";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -28,15 +29,9 @@ export function AddressSelector({
   const [showAddModal, setShowAddModal] = useState(false);
   const hasAutoSelected = useRef(false);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["my-addresses"],
-    queryFn: async () => {
-      const result = await getMyAddresses();
-      return result.success ? result.addresses : [];
-    },
-  });
+  const { data, isLoading } = useMyAddresses();
 
-  const addresses = data || [];
+  const addresses = data?.addresses ?? [];
 
   // Auto-select default address ONLY on initial load (once)
   useEffect(() => {
@@ -52,7 +47,7 @@ export function AddressSelector({
   const handleAddressAdded = () => {
     setShowAddModal(false);
     // Refetch addresses to get the newly added one
-    queryClient.invalidateQueries({ queryKey: ["my-addresses"] });
+    queryClient.invalidateQueries({ queryKey: orpc.customer.getMyAddresses.key() });
   };
 
   if (isLoading) {

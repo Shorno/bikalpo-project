@@ -1,8 +1,7 @@
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { getVerifiedUsersForHome } from "@/actions/users/get-verified-users";
+import { useVerifiedUsersForHome } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 import { CategoryTabs } from "@/components/features/home/category-tabs";
 import { CustomerHero } from "@/components/features/home/customer-hero";
@@ -13,13 +12,8 @@ import { OrpcCategoryListing } from "@/components/features/products/orpc-categor
 export default function CustomerDashboardPage() {
   const { data: session } = authClient.useSession();
 
-  const { data: verifiedUsers = [] } = useQuery({
-    queryKey: ["verified-users-home"],
-    queryFn: async () => {
-      const result = await getVerifiedUsersForHome();
-      return result.data ?? [];
-    },
-  });
+  const { data: verifiedUsersData } = useVerifiedUsersForHome();
+  const verifiedUsers = (verifiedUsersData as any)?.users ?? [];
 
   const shopName = session?.user?.shopName || "Our Valued Partner";
 

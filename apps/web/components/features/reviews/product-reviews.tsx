@@ -1,9 +1,6 @@
 import { Star } from "lucide-react";
-import {
-  getProductReviewStats,
-  getReviewsByProductId,
-} from "@/actions/review/get-reviews";
 import { checkAuth } from "@/utils/auth";
+import { client } from "@/utils/orpc";
 import { ReviewCard } from "./review-card";
 import { ReviewFormWrapper } from "./review-form-wrapper";
 import { StarRating } from "./star-rating";
@@ -17,12 +14,13 @@ export async function ProductReviews({
   productId,
   variant = "default",
 }: ProductReviewsProps) {
-  const [reviews, stats, session] = await Promise.all([
-    getReviewsByProductId(productId),
-    getProductReviewStats(productId),
+  const [reviewData, session] = await Promise.all([
+    client.customer.getProductReviews({ productId }),
     checkAuth(),
   ]);
 
+  const reviews = reviewData.reviews;
+  const stats = reviewData.stats;
   const isLoggedIn = !!session?.user;
   const userId = session?.user?.id;
   const isEmerald = variant === "emerald";

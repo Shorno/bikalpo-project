@@ -1,12 +1,12 @@
 import { Suspense } from "react";
-import { getVerifiedUsers } from "@/actions/users/get-verified-users";
 import { DashboardCustomersFilters } from "@/components/features/users/dashboard-customers-filters";
 import { Skeleton } from "@/components/ui/skeleton";
+import { client } from "@/utils/orpc";
 
 // Server component that fetches areas for filters
 async function FiltersDataContent() {
-  const { data } = await getVerifiedUsers({ limit: 100 });
-  const areas = data?.areas || [];
+  const result = await client.customer.getVerifiedUsers({ limit: 100 });
+  const areas = result.areas ?? [];
 
   return <DashboardCustomersFilters areas={areas} />;
 }
