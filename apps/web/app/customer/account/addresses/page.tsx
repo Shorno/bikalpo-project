@@ -1,8 +1,5 @@
-import { getMyAddresses } from "@/actions/address/address-actions";
-import { AddressList } from "@/components/account/address-list";
+import { AddressesClient } from "@/components/customer/addresses-client";
 
-export default async function AddressesPage() {
-  const { addresses } = await getMyAddresses();
-
-  return <AddressList addresses={addresses} />;
+export default function AddressesPage() {
+  return <AddressesClient />;
 }

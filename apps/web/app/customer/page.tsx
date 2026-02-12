@@ -1,24 +1,26 @@
+"use client";
+
 import { CheckCircle2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { getVerifiedUsersForHome } from "@/actions/users/get-verified-users";
-import { getSession } from "@/utils/auth";
+import { authClient } from "@/lib/auth-client";
 import { CategoryTabs } from "@/components/features/home/category-tabs";
 import { CustomerHero } from "@/components/features/home/customer-hero";
 import { CustomerSidebar } from "@/components/features/home/customer-sidebar";
 import { DashboardVerifiedCustomersSection } from "@/components/features/home/dashboard-verified-customers-section";
-import CategoryListing from "@/components/features/products/category-listing";
+import { OrpcCategoryListing } from "@/components/features/products/orpc-category-listing";
 
-export default async function CustomerDashboardPage() {
-  // Use allSettled so page still renders when DB is unreachable (e.g. migrations not run)
-  const [sessionResult, verifiedResult] = await Promise.allSettled([
-    getSession(),
-    getVerifiedUsersForHome(),
-  ]);
-  const session =
-    sessionResult.status === "fulfilled" ? sessionResult.value : null;
-  const verifiedUsers =
-    verifiedResult.status === "fulfilled"
-      ? (verifiedResult.value.data ?? [])
-      : [];
+export default function CustomerDashboardPage() {
+  const { data: session } = authClient.useSession();
+
+  const { data: verifiedUsers = [] } = useQuery({
+    queryKey: ["verified-users-home"],
+    queryFn: async () => {
+      const result = await getVerifiedUsersForHome();
+      return result.data ?? [];
+    },
+  });
+
   const shopName = session?.user?.shopName || "Our Valued Partner";
 
   return (
@@ -56,7 +58,7 @@ export default async function CustomerDashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Products section */}
           <div className="lg:col-span-3">
-            <CategoryListing />
+            <OrpcCategoryListing />
           </div>
 
           {/* Sidebar */}
