@@ -4,7 +4,17 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
 import { Eye, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
-import type { CustomerListItem } from "@/actions/customers/customer-actions";
+type CustomerListItem = {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  shopName: string | null;
+  ownerName: string | null;
+  createdAt: Date;
+  ordersCount: number;
+  totalSpent: number;
+};
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

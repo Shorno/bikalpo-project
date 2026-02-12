@@ -5,8 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import * as z from "zod";
-import { createAnnouncement } from "@/actions/announcement/create-announcement";
-import { updateAnnouncement } from "@/actions/announcement/update-announcement";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -67,21 +66,21 @@ export function AnnouncementForm({
     },
     onSubmit: async ({ value }) => {
       setIsSubmitting(true);
-
-      const result = isEditing
-        ? await updateAnnouncement(announcement.id, value)
-        : await createAnnouncement(value);
-
-      setIsSubmitting(false);
-
-      if (result.success) {
+      try {
+        if (isEditing) {
+          await client.adminAnnouncement.update({ id: announcement.id, data: value });
+        } else {
+          await client.adminAnnouncement.create(value);
+        }
         toast.success(
           isEditing ? "Announcement updated" : "Announcement created",
         );
         onOpenChange(false);
         form.reset();
-      } else {
-        toast.error(result.error || "Something went wrong");
+      } catch (error: any) {
+        toast.error(error.message || "Something went wrong");
+      } finally {
+        setIsSubmitting(false);
       }
     },
   });
@@ -123,7 +122,7 @@ export function AnnouncementForm({
                       {typeof field.state.meta.errors[0] === "string"
                         ? field.state.meta.errors[0]
                         : field.state.meta.errors[0]?.message ||
-                          "Invalid value"}
+                        "Invalid value"}
                     </p>
                   )}
               </Field>

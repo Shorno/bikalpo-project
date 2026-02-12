@@ -4,8 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { deleteVariant } from "@/actions/product-variant/delete-variant";
-import { getVariantsByProductId } from "@/actions/product-variant/get-variants-by-product-id";
+import { client } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +41,7 @@ export function ProductVariantsCard({
 
   const { data: variants = initialVariants } = useQuery({
     queryKey: ["product-variants", productId],
-    queryFn: () => getVariantsByProductId(productId),
+    queryFn: () => client.adminProductVariant.getByProductId({ productId }),
     initialData: initialVariants,
   });
 
@@ -64,7 +63,7 @@ export function ProductVariantsCard({
   const handleDeleteConfirm = async () => {
     if (deleteId == null) return;
     try {
-      await deleteVariant(deleteId);
+      await client.adminProductVariant.delete({ id: deleteId });
       toast.success("Variant removed");
       setDeleteId(null);
     } catch {

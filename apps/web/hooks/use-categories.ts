@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getCategoriesForSelect } from "@/actions/product/get-categories-for-select";
+import { client } from "@/utils/orpc";
 import type { Category, SubCategory } from "@/db/schema";
 
 export interface CategoryWithSubs extends Category {
@@ -10,7 +10,7 @@ export function useCategories() {
   return useQuery({
     queryKey: ["categories-with-subs"],
     queryFn: async () => {
-      return (await getCategoriesForSelect()) as CategoryWithSubs[];
+      return (await client.category.getActive()) as CategoryWithSubs[];
     },
     staleTime: 1000 * 60 * 10, // Cache for 10 minutes
     gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes

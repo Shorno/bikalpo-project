@@ -12,10 +12,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  revokeAllUserSessions,
-  revokeUserSession,
-} from "@/app/(dashboard)/dashboard/admin/_actions/users/user-actions";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -159,7 +156,7 @@ function SessionCard({
   const handleRevoke = async () => {
     setIsRevoking(true);
     try {
-      await revokeUserSession(session.id);
+      await client.customerManagement.revokeSession({ sessionId: session.id });
       onRevoke(session.id);
       toast.success("Session revoked");
     } catch (error) {
@@ -243,7 +240,7 @@ export function UserSessionsDialog({
   const handleRevokeAll = async () => {
     setIsRevokingAll(true);
     try {
-      await revokeAllUserSessions(user.id);
+      await client.customerManagement.revokeAllSessions({ userId: user.id });
       setSessions([]);
       toast.success("All sessions revoked");
     } catch (error) {

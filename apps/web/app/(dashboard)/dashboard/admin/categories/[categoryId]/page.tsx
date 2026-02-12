@@ -2,12 +2,11 @@ import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import getCategoryById from "@/actions/category/get-category-by-id";
-import getSubcategories from "@/actions/subcategory/get-subcategories";
 import { subcategoryColumns } from "@/components/features/subcategory/components/subcategory-columns";
 import SubcategoryTable from "@/components/features/subcategory/components/subcategory-table";
 import { Button } from "@/components/ui/button";
 import { getQueryClient } from "@/utils/get-query-client";
+import { client, orpc } from "@/utils/orpc";
 
 export default async function SubCategoryPage({
   params,
@@ -15,7 +14,12 @@ export default async function SubCategoryPage({
   params: Promise<{ categoryId: string }>;
 }) {
   const { categoryId } = await params;
-  const category = await getCategoryById(Number(categoryId));
+  let category: { id: number; name: string } | null = null;
+  try {
+    category = await client.category.getById({ id: Number(categoryId) });
+  } catch {
+    notFound();
+  }
   if (!category) {
     notFound();
   }
@@ -24,8 +28,9 @@ export default async function SubCategoryPage({
 
   // Prefetch subcategories data on the server (don't await - non-blocking)
   queryClient.prefetchQuery({
-    queryKey: ["admin-subcategories", Number(categoryId)],
-    queryFn: () => getSubcategories(Number(categoryId)),
+    ...orpc.adminSubcategory.getAll.queryOptions({
+      input: { categoryId: Number(categoryId) },
+    }),
   });
 
   return (

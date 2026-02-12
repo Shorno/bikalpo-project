@@ -12,10 +12,7 @@ import {
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import {
-  exportAuditActivities,
-  getAuditActivities,
-} from "@/actions/admin/audit-actions";
+import { client, orpc } from "@/utils/orpc";
 import ActivityDetailsModal from "@/components/admin/audit/activity-details-modal";
 import { useAuditColumns } from "@/components/admin/audit/audit-columns";
 import AuditTable from "@/components/admin/audit/audit-table";
@@ -81,19 +78,34 @@ export default function AuditLogPage() {
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["audit-activities", filters],
-    queryFn: () => getAuditActivities(filters),
+    ...orpc.audit.getActivities.queryOptions({
+      input: {
+        dateFrom: filters.dateFrom?.toISOString(),
+        dateTo: filters.dateTo?.toISOString(),
+        userRole: filters.userRole,
+        actionType: filters.actionType,
+        module: filters.module,
+        search: filters.search,
+      },
+    }),
   });
 
-  const activities = result?.activities || [];
+  const activities = (result?.activities || []) as AuditActivity[];
   const total = result?.total || 0;
 
   const handleExport = async () => {
     toast.loading("Exporting audit activities...");
     try {
-      const exportResult = await exportAuditActivities(filters);
+      const exportResult = await client.audit.export({
+        dateFrom: filters.dateFrom?.toISOString(),
+        dateTo: filters.dateTo?.toISOString(),
+        userRole: filters.userRole,
+        actionType: filters.actionType,
+        module: filters.module,
+        search: filters.search,
+      });
 
-      if (exportResult.success && exportResult.csv) {
+      if (exportResult.csv) {
         const blob = new Blob([exportResult.csv], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -105,7 +117,7 @@ export default function AuditLogPage() {
         URL.revokeObjectURL(url);
         toast.success("Audit activities exported successfully");
       } else {
-        toast.error(exportResult.error || "Failed to export activities");
+        toast.error("Failed to export activities");
       }
     } catch (_error) {
       toast.error("An error occurred during export");
@@ -164,6 +176,7 @@ export default function AuditLogPage() {
                 <Calendar className="h-3 w-3" />
                 From
               </Label>
+              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
               <Input
                 id="dateFrom"
                 type="date"
@@ -178,6 +191,7 @@ export default function AuditLogPage() {
                 <Calendar className="h-3 w-3" />
                 To
               </Label>
+              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
               <Input
                 id="dateTo"
                 type="date"
@@ -195,6 +209,7 @@ export default function AuditLogPage() {
                   setUserRole(value as UserRole | "all")
                 }
               >
+                {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                 <SelectTrigger id="userRole">
                   <SelectValue placeholder="All Roles" />
                 </SelectTrigger>
@@ -219,6 +234,7 @@ export default function AuditLogPage() {
                   setActionType(value as ActionType | "all")
                 }
               >
+                {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                 <SelectTrigger id="actionType">
                   <SelectValue placeholder="All Actions" />
                 </SelectTrigger>
@@ -246,6 +262,7 @@ export default function AuditLogPage() {
                   setModule(value as ModuleType | "all")
                 }
               >
+                {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                 <SelectTrigger id="module">
                   <SelectValue placeholder="All Modules" />
                 </SelectTrigger>
@@ -273,6 +290,7 @@ export default function AuditLogPage() {
                 <Search className="h-3 w-3" />
                 Search
               </Label>
+              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
               <Input
                 id="search"
                 type="text"

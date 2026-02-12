@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FolderPlus, Loader, Plus } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import createSubcategory from "@/actions/subcategory/create-subcategory";
+import { client } from "@/utils/orpc";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,35 +45,19 @@ export default function NewSubcategoryDialog({
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: createSubcategory,
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 400:
-            toast.error("Invalid subcategory data.", {
-              description: "Please check your form inputs.",
-            });
-            break;
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          default:
-            toast.error(result.error || "Something went wrong.");
-        }
-        return;
-      }
+    mutationFn: (data: Parameters<typeof client.adminSubcategory.create>[0]) =>
+      client.adminSubcategory.create(data),
+    onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["admin-subcategories", categoryId],
       });
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      toast.success(result.message);
+      toast.success("Subcategory created successfully");
       form.reset();
       setOpen(false);
     },
-    onError: () => {
-      toast.error(
-        "An unexpected error occurred while creating the subcategory.",
-      );
+    onError: (error) => {
+      toast.error(error.message || "Failed to create subcategory.");
     },
   });
 

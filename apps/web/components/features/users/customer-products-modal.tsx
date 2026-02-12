@@ -3,11 +3,7 @@
 import { Package, ShoppingBag, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import {
-  type CustomerProduct,
-  getCustomerProducts,
-} from "@/actions/users/get-customer-products";
-import type { VerifiedUser } from "@/actions/users/get-verified-users";
+import { client } from "@/utils/orpc";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,8 +15,19 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 
+type CustomerProduct = {
+  productId: number;
+  productName: string;
+  productImage: string;
+  productSize: string;
+  categoryName: string | null;
+  totalQuantity: number;
+  totalOrders: number;
+  lastOrderedAt: Date;
+};
+
 interface CustomerProductsModalProps {
-  customer: VerifiedUser | null;
+  customer: { id: string; name: string; shopName?: string | null; image?: string | null } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -45,12 +52,12 @@ export function CustomerProductsModal({
   useEffect(() => {
     if (open && customer) {
       setLoading(true);
-      getCustomerProducts(customer.id)
+      client.customerManagement
+        .getPurchasedProducts({ customerId: customer.id })
         .then((result) => {
-          if (result.success) {
-            setProducts(result.data);
-          }
+          setProducts(result.data as CustomerProduct[]);
         })
+        .catch(() => setProducts([]))
         .finally(() => setLoading(false));
     }
   }, [open, customer]);

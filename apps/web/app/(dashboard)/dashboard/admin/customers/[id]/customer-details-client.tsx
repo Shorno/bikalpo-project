@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCustomerById } from "@/actions/customers/customer-actions";
+import { orpc } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,8 +120,9 @@ export function CustomerDetailsClient({
   customerId,
 }: CustomerDetailsClientProps) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["customer", customerId],
-    queryFn: () => getCustomerById(customerId),
+    ...orpc.customerManagement.getById.queryOptions({
+      input: { customerId },
+    }),
   });
 
   const table = useReactTable({
@@ -138,7 +139,7 @@ export function CustomerDetailsClient({
     );
   }
 
-  if (error || !data?.success || !data.customer) {
+  if (error || !data?.customer) {
     notFound();
   }
 
@@ -233,9 +234,9 @@ export function CustomerDetailsClient({
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                     </TableHead>
                   ))}
                 </TableRow>

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Loader2, Package } from "lucide-react";
 import Image from "next/image";
 import * as React from "react";
-import getProducts from "@/actions/product/get-products";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -41,8 +41,8 @@ export function ProductSelect({ onSelect, selectedId }: ProductSelectProps) {
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products-for-suggestion"],
     queryFn: async () => {
-      const result = await getProducts();
-      return (result || []) as unknown as Product[];
+      const { products } = await client.product.getAll();
+      return (products || []) as unknown as Product[];
     },
     enabled: open, // Only fetch when popover is open
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes

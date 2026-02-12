@@ -18,9 +18,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { deleteAnnouncement } from "@/actions/announcement/delete-announcement";
-import { getAllAnnouncements } from "@/actions/announcement/get-all-announcements";
-import { toggleAnnouncementActive } from "@/actions/announcement/update-announcement";
+import { client } from "@/utils/orpc";
 import { createAnnouncementColumns } from "@/components/admin/announcements/announcement-columns";
 import { AnnouncementForm } from "@/components/admin/announcements/announcement-form";
 import {
@@ -66,12 +64,11 @@ export function AnnouncementManagement() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   // Fetch announcements with Tanstack Query
-  const { data: result, isLoading } = useQuery({
+  const { data: announcements = [], isLoading } = useQuery({
     queryKey: ["announcements"],
-    queryFn: getAllAnnouncements,
+    queryFn: () => client.adminAnnouncement.getAll(),
   });
 
-  const announcements = result?.success ? result.data : [];
   const activeCount = announcements.filter((a) => a.active).length;
   const inactiveCount = announcements.length - activeCount;
 
@@ -90,23 +87,23 @@ export function AnnouncementManagement() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    const result = await deleteAnnouncement(deleteId);
-    if (result.success) {
+    try {
+      await client.adminAnnouncement.delete({ id: deleteId });
       toast.success("Announcement deleted");
       queryClient.invalidateQueries({ queryKey: ["announcements"] });
-    } else {
-      toast.error(result.error);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete announcement");
     }
     setDeleteId(null);
   };
 
   const handleToggle = async (id: number, currentActive: boolean) => {
-    const result = await toggleAnnouncementActive(id, !currentActive);
-    if (result.success) {
+    try {
+      const result = await client.adminAnnouncement.toggleActive({ id, active: !currentActive });
       toast.success(result.message);
       queryClient.invalidateQueries({ queryKey: ["announcements"] });
-    } else {
-      toast.error(result.error);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update announcement status");
     }
   };
 
@@ -265,9 +262,9 @@ export function AnnouncementManagement() {
                         <span className="text-xs text-muted-foreground">
                           {announcement.createdAt
                             ? format(
-                                new Date(announcement.createdAt),
-                                "MMM d, yyyy",
-                              )
+                              new Date(announcement.createdAt),
+                              "MMM d, yyyy",
+                            )
                             : ""}
                         </span>
                       </div>
@@ -326,9 +323,9 @@ export function AnnouncementManagement() {
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
                   </TableHead>
                 ))}
               </TableRow>

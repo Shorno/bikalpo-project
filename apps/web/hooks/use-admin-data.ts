@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import getProducts from "@/actions/product/get-products";
+import { client } from "@/utils/orpc";
 
 export function useAdminProducts() {
   return useQuery({
     queryKey: ["admin-products"],
     queryFn: async () => {
-      return await getProducts();
+      const { products } = await client.product.getAll();
+      return products;
     },
     staleTime: 1000 * 60 * 5,
   });

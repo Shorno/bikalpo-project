@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import Link from "next/link";
-import { getOrdersWithPriceChange } from "@/actions/order/admin-order-actions";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { ADMIN_BASE } from "@/lib/routes";
 
@@ -9,17 +9,7 @@ function formatPrice(price: string | number) {
 }
 
 export default async function PriceChangedOrdersPage() {
-  const result = await getOrdersWithPriceChange();
-
-  if (!result.success) {
-    return (
-      <div className="p-6">
-        <p className="text-destructive">{result.error}</p>
-      </div>
-    );
-  }
-
-  const orders = result.orders ?? [];
+  const orders = await client.adminOrder.getWithPriceChange();
 
   return (
     <div className="p-6 space-y-6">
@@ -71,9 +61,9 @@ export default async function PriceChangedOrdersPage() {
                   <td className="p-3 text-muted-foreground">
                     {o.totalPriceChangedAt
                       ? format(
-                          new Date(o.totalPriceChangedAt),
-                          "MMM d, yyyy HH:mm",
-                        )
+                        new Date(o.totalPriceChangedAt),
+                        "MMM d, yyyy HH:mm",
+                      )
                       : "—"}
                   </td>
                   <td className="p-3">

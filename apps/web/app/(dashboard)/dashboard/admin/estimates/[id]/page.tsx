@@ -2,9 +2,9 @@ import { format } from "date-fns";
 import { ArrowLeft, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEstimateById } from "@/actions/estimate/get-estimates";
 import { AdminEstimateActions } from "@/components/features/estimates/admin-estimate-actions";
 import { EstimateActionButtons } from "@/components/features/estimates/estimate-action-buttons";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,13 +24,19 @@ export default async function AdminEstimateDetailsPage({
   params: { id: string };
 }) {
   const { id } = await params;
-  const result = await getEstimateById(Number(id));
-
-  if (!result.success || !result.estimate) {
+  let estimateData;
+  try {
+    const result = await client.adminEstimate.getById({ id: Number(id) });
+    estimateData = result.estimate;
+  } catch {
     notFound();
   }
 
-  const { estimate } = result;
+  if (!estimateData) {
+    notFound();
+  }
+
+  const estimate = estimateData;
   const needsReview = estimate.status === "pending";
 
   return (
@@ -51,7 +57,7 @@ export default async function AdminEstimateDetailsPage({
             <Badge
               variant={
                 estimate.status === "approved" ||
-                estimate.status === "converted"
+                  estimate.status === "converted"
                   ? "default"
                   : estimate.status === "rejected"
                     ? "destructive"

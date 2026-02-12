@@ -2,6 +2,7 @@ import { db } from "@bikalpo-project/db";
 import { category as categoryTable, product, productImage, stockChangeLog } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, asc, desc, eq, gt, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
@@ -53,6 +54,13 @@ const stockListParamsSchema = z.object({
     sort: z.enum(["newest", "oldest", "popular"]).default("newest"),
     page: z.number().min(1).default(1),
     limit: z.number().min(1).max(100).default(10),
+});
+
+const stockExportParamsSchema = z.object({
+    search: z.string().optional(),
+    categoryId: z.string().optional(),
+    stockStatus: z.enum(["all", "in", "out", "low"]).default("all"),
+    sort: z.enum(["newest", "oldest", "popular"]).default("newest"),
 });
 
 const adjustStockSchema = z.object({
@@ -518,5 +526,208 @@ export const productRouter = {
             });
 
             return { products };
+        }),
+
+    /**
+     * Export stock as CSV
+     */
+    exportStockCSV: adminProcedure
+        .route({
+            method: "POST",
+            path: "/products/stock/export-csv",
+            tags: ["Product Management"],
+            summary: "Export stock as CSV",
+            description: "Export stock inventory data as a CSV string",
+        })
+        .input(stockExportParamsSchema)
+        .handler(async ({ input }) => {
+            const { search, categoryId, stockStatus, sort } = input;
+            const conditions: any[] = [];
+
+            if (search?.trim()) {
+                const s = `%${search.trim()}%`;
+                conditions.push(
+                    or(
+                        ilike(product.name, s),
+                        ilike(product.sku, s),
+                        sql`EXISTS (SELECT 1 FROM "category" c WHERE c.id = ${product.categoryId} AND c.name ILIKE ${s})`,
+                    ),
+                );
+            }
+            if (categoryId) {
+                const cid = parseInt(categoryId, 10);
+                if (!Number.isNaN(cid)) conditions.push(eq(product.categoryId, cid));
+            }
+            if (stockStatus === "in") {
+                conditions.push(eq(product.inStock, true));
+                conditions.push(gt(product.stockQuantity, 0));
+            } else if (stockStatus === "out") {
+                conditions.push(or(eq(product.inStock, false), eq(product.stockQuantity, 0)));
+            } else if (stockStatus === "low") {
+                conditions.push(gt(product.reorderLevel, 0));
+                conditions.push(sql`${product.stockQuantity} <= ${product.reorderLevel}`);
+            }
+
+            const where = conditions.length > 0 ? and(...conditions) : undefined;
+            const products = await db.query.product.findMany({
+                where,
+                orderBy: (p, { asc: ascFn, desc: descFn }) =>
+                    sort === "oldest" ? [ascFn(p.createdAt)]
+                        : sort === "popular" ? [descFn(p.stockQuantity)]
+                            : [descFn(p.createdAt)],
+                limit: 100_000,
+                columns: {
+                    id: true, name: true, slug: true, sku: true, price: true,
+                    stockQuantity: true, inStock: true, reorderLevel: true,
+                },
+                with: {
+                    category: { columns: { name: true } },
+                },
+            });
+
+            function escapeCsvCell(val: string | number | null | undefined): string {
+                if (val == null) return "";
+                const s = String(val);
+                if (s.includes(",") || s.includes('"') || s.includes("\n"))
+                    return `"${s.replace(/"/g, '""')}"`;
+                return s;
+            }
+
+            const headers = ["Product ID", "Product Name", "SKU", "Category", "Current Stock", "Reorder Level", "Unit Price", "In Stock"];
+            const rows = products.map((p) => [
+                `PRD-${p.id}`, p.name, p.sku ?? p.slug,
+                p.category?.name ?? "", p.stockQuantity, p.reorderLevel,
+                String(p.price ?? ""), p.inStock ? "Yes" : "No",
+            ]);
+            const csv = [headers.join(","), ...rows.map((r) => r.map(escapeCsvCell).join(","))].join("\n");
+
+            return { success: true as const, csv };
+        }),
+
+    /**
+     * Export stock as PDF
+     */
+    exportStockPDF: adminProcedure
+        .route({
+            method: "POST",
+            path: "/products/stock/export-pdf",
+            tags: ["Product Management"],
+            summary: "Export stock as PDF",
+            description: "Export stock inventory data as a base64 PDF",
+        })
+        .input(stockExportParamsSchema)
+        .handler(async ({ input }) => {
+            const { search, categoryId, stockStatus, sort } = input;
+            const conditions: any[] = [];
+
+            if (search?.trim()) {
+                const s = `%${search.trim()}%`;
+                conditions.push(
+                    or(
+                        ilike(product.name, s),
+                        ilike(product.sku, s),
+                        sql`EXISTS (SELECT 1 FROM "category" c WHERE c.id = ${product.categoryId} AND c.name ILIKE ${s})`,
+                    ),
+                );
+            }
+            if (categoryId) {
+                const cid = parseInt(categoryId, 10);
+                if (!Number.isNaN(cid)) conditions.push(eq(product.categoryId, cid));
+            }
+            if (stockStatus === "in") {
+                conditions.push(eq(product.inStock, true));
+                conditions.push(gt(product.stockQuantity, 0));
+            } else if (stockStatus === "out") {
+                conditions.push(or(eq(product.inStock, false), eq(product.stockQuantity, 0)));
+            } else if (stockStatus === "low") {
+                conditions.push(gt(product.reorderLevel, 0));
+                conditions.push(sql`${product.stockQuantity} <= ${product.reorderLevel}`);
+            }
+
+            const where = conditions.length > 0 ? and(...conditions) : undefined;
+            const products = await db.query.product.findMany({
+                where,
+                orderBy: (p, { asc: ascFn, desc: descFn }) =>
+                    sort === "oldest" ? [ascFn(p.createdAt)]
+                        : sort === "popular" ? [descFn(p.stockQuantity)]
+                            : [descFn(p.createdAt)],
+                limit: 100_000,
+                columns: {
+                    id: true, name: true, slug: true, sku: true, price: true,
+                    stockQuantity: true, inStock: true, reorderLevel: true,
+                },
+                with: {
+                    category: { columns: { name: true } },
+                    subCategory: { columns: { name: true } },
+                },
+            });
+
+            function formatPrice(price: string | number | null | undefined): string {
+                if (price == null) return "—";
+                return new Intl.NumberFormat("en-BD", { style: "currency", currency: "BDT", minimumFractionDigits: 0 }).format(Number(price));
+            }
+            function truncate(s: string, max: number): string {
+                if (!s) return "—";
+                return s.length > max ? `${s.slice(0, max)}…` : s;
+            }
+
+            const pdfDoc = await PDFDocument.create();
+            let currentPage = pdfDoc.addPage([595, 842]);
+            const { width, height } = currentPage.getSize();
+            const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+            const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+            const leftMargin = 40;
+            const rightMargin = width - 40;
+            const col = {
+                id: leftMargin, name: leftMargin + 38, sku: leftMargin + 118,
+                category: leftMargin + 178, stock: leftMargin + 268, reorder: leftMargin + 303,
+                price: leftMargin + 348, inStock: leftMargin + 418,
+            };
+            const rowHeight = 16;
+            const headerFontSize = 9;
+            const cellFontSize = 8;
+
+            const drawHeader = (page: typeof currentPage, y: number) => {
+                const headers = [["ID", col.id], ["Product", col.name], ["SKU", col.sku],
+                ["Category", col.category], ["Stock", col.stock], ["Reorder", col.reorder],
+                ["Price", col.price], ["In", col.inStock]] as const;
+                for (const [text, x] of headers) {
+                    page.drawText(text, { x, y, size: headerFontSize, font: helveticaBold });
+                }
+                page.drawLine({ start: { x: leftMargin, y: y - 6 }, end: { x: rightMargin, y: y - 6 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
+                return y - 20;
+            };
+
+            let y = height - 50;
+            currentPage.drawText("Stock Inventory", { x: width / 2 - 55, y, size: 18, font: helveticaBold, color: rgb(0, 0, 0) });
+            y -= 22;
+            currentPage.drawText(`Generated: ${new Date().toLocaleDateString("en-BD", { dateStyle: "medium" })}`, { x: leftMargin, y, size: 9, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
+            y -= 24;
+            y = drawHeader(currentPage, y);
+
+            for (const p of products) {
+                if (y < 60) {
+                    currentPage = pdfDoc.addPage([595, 842]);
+                    y = height - 50;
+                    y = drawHeader(currentPage, y);
+                }
+                const cat = p.category?.name ?? "";
+                const sub = (p as any).subCategory?.name ? ` / ${(p as any).subCategory.name}` : "";
+                const cells: [string, number][] = [
+                    [`PRD-${p.id}`, col.id], [truncate(p.name, 18), col.name],
+                    [truncate(p.sku ?? p.slug ?? "", 12), col.sku], [truncate(cat + sub, 14), col.category],
+                    [String(p.stockQuantity), col.stock], [String(p.reorderLevel), col.reorder],
+                    [formatPrice(p.price), col.price], [p.inStock ? "Yes" : "No", col.inStock],
+                ];
+                for (const [text, x] of cells) {
+                    currentPage.drawText(text, { x, y, size: cellFontSize, font: helvetica });
+                }
+                y -= rowHeight;
+            }
+
+            const pdfBytes = await pdfDoc.save();
+            const pdfBase64 = Buffer.from(pdfBytes).toString("base64");
+            return { success: true as const, pdfBase64 };
         }),
 };

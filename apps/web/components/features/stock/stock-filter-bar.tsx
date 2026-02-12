@@ -5,12 +5,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { exportStockCSV } from "@/actions/product/export-stock-csv";
-import { exportStockPDF } from "@/actions/product/export-stock-pdf";
-import type {
-  StockSort,
-  StockStatusFilter,
-} from "@/actions/product/get-products-for-stock";
+import { client } from "@/utils/orpc";
+
+type StockStatusFilter = "all" | "in" | "out" | "low";
+type StockSort = "newest" | "oldest" | "popular";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -109,13 +107,13 @@ export function StockFilterBar({ categories }: StockFilterBarProps) {
       const c = searchParams.get("category");
       const st = searchParams.get("status") as StockStatusFilter | null;
       const so = searchParams.get("sort") as StockSort | null;
-      const result = await exportStockCSV({
+      const result = await client.product.exportStockCSV({
         search: s || undefined,
         categoryId: c && c !== "all" ? c : undefined,
         stockStatus: st && st !== "all" ? st : undefined,
         sort: so && so !== "newest" ? so : undefined,
       });
-      if (result.success && result.csv) {
+      if (result.csv) {
         const blob = new Blob([result.csv], {
           type: "text/csv;charset=utf-8;",
         });
@@ -126,8 +124,6 @@ export function StockFilterBar({ categories }: StockFilterBarProps) {
         a.click();
         URL.revokeObjectURL(url);
         toast.success("CSV exported");
-      } else {
-        toast.error(result.success === false ? result.error : "Export failed");
       }
     } catch {
       toast.error("Export failed");
@@ -143,13 +139,13 @@ export function StockFilterBar({ categories }: StockFilterBarProps) {
       const c = searchParams.get("category");
       const st = searchParams.get("status") as StockStatusFilter | null;
       const so = searchParams.get("sort") as StockSort | null;
-      const result = await exportStockPDF({
+      const result = await client.product.exportStockPDF({
         search: s || undefined,
         categoryId: c && c !== "all" ? c : undefined,
         stockStatus: st && st !== "all" ? st : undefined,
         sort: so && so !== "newest" ? so : undefined,
       });
-      if (result.success && result.pdfBase64) {
+      if (result.pdfBase64) {
         const bin = atob(result.pdfBase64);
         const arr = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
@@ -161,8 +157,6 @@ export function StockFilterBar({ categories }: StockFilterBarProps) {
         a.click();
         URL.revokeObjectURL(url);
         toast.success("PDF exported");
-      } else {
-        toast.error(result.success === false ? result.error : "Export failed");
       }
     } catch {
       toast.error("Export failed");

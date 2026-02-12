@@ -14,7 +14,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { createVariant } from "@/actions/product-variant/create-variant";
+import { client } from "@/utils/orpc";
 import { orpc } from "@/utils/orpc";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
@@ -83,7 +83,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
         const newProductId = result.product.id;
         try {
           for (const d of draftVariants) {
-            await createVariant({ ...d, productId: newProductId });
+            await client.adminProductVariant.create({ ...d, productId: newProductId });
           }
         } catch {
           toast.error("Product created but some variants failed to save.");

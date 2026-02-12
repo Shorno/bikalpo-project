@@ -13,7 +13,7 @@ import {
   User,
   XCircle,
 } from "lucide-react";
-import { getAuditActivityDetail } from "@/actions/admin/audit-actions";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +39,7 @@ export default function ActivityDetailsModal({
 }: ActivityDetailsModalProps) {
   const { data: result, isLoading } = useQuery({
     queryKey: ["audit-activity-detail", logId],
-    queryFn: () => getAuditActivityDetail(logId!),
+    queryFn: () => client.audit.getActivityDetail({ logId: logId! }),
     enabled: !!logId && open,
   });
 

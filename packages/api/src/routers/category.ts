@@ -1,5 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import { category, subCategory } from "@bikalpo-project/db/schema";
+import { category } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -16,14 +16,6 @@ const createCategorySchema = z.object({
 });
 
 const updateCategorySchema = createCategorySchema.extend({
-    id: z.number().int(),
-});
-
-const createSubcategorySchema = createCategorySchema.extend({
-    categoryId: z.number().int(),
-});
-
-const updateSubcategorySchema = createSubcategorySchema.extend({
     id: z.number().int(),
 });
 
@@ -101,7 +93,7 @@ export const categoryRouter = {
         .route({
             method: "POST",
             path: "/categories",
-            tags: ["Categories"],
+            tags: ["Admin Categories"],
             summary: "Create category",
             description: "Create a new category (admin only)",
         })
@@ -122,7 +114,7 @@ export const categoryRouter = {
         .route({
             method: "PUT",
             path: "/categories/{id}",
-            tags: ["Categories"],
+            tags: ["Admin Categories"],
             summary: "Update category",
             description: "Update an existing category (admin only)",
         })
@@ -154,7 +146,7 @@ export const categoryRouter = {
         .route({
             method: "DELETE",
             path: "/categories/{id}",
-            tags: ["Categories"],
+            tags: ["Admin Categories"],
             summary: "Delete category",
             description: "Delete a category (admin only)",
         })
@@ -172,115 +164,4 @@ export const categoryRouter = {
 
             return { message: "Category deleted successfully" };
         }),
-
-    // Subcategory procedures
-    subcategory: {
-        /**
-         * Get subcategories by category ID
-         * REST: GET /api/categories/{categoryId}/subcategories
-         */
-        getByCategoryId: publicProcedure
-            .route({
-                method: "GET",
-                path: "/categories/{categoryId}/subcategories",
-                tags: ["Subcategories"],
-                summary: "Get subcategories by category",
-                description: "Get all subcategories for a specific category",
-            })
-            .input(z.object({ categoryId: z.number().int() }))
-            .handler(async ({ input }) => {
-                return await db.query.subCategory.findMany({
-                    where: (s, { eq }) => eq(s.categoryId, input.categoryId),
-                    orderBy: [asc(subCategory.displayOrder)],
-                });
-            }),
-
-        /**
-         * Create a new subcategory
-         * REST: POST /api/subcategories
-         */
-        create: adminProcedure
-            .route({
-                method: "POST",
-                path: "/subcategories",
-                tags: ["Subcategories"],
-                summary: "Create subcategory",
-                description: "Create a new subcategory (admin only)",
-            })
-            .input(createSubcategorySchema)
-            .handler(async ({ input }) => {
-                const parentCategory = await db.query.category.findFirst({
-                    where: (c, { eq }) => eq(c.id, input.categoryId),
-                });
-
-                if (!parentCategory) {
-                    throw new ORPCError("NOT_FOUND", { message: "Parent category not found" });
-                }
-
-                const [newSubcategory] = await db.insert(subCategory).values(input).returning();
-                return {
-                    data: newSubcategory,
-                    message: "Subcategory created successfully",
-                };
-            }),
-
-        /**
-         * Update a subcategory
-         * REST: PUT /api/subcategories/{id}
-         */
-        update: adminProcedure
-            .route({
-                method: "PUT",
-                path: "/subcategories/{id}",
-                tags: ["Subcategories"],
-                summary: "Update subcategory",
-                description: "Update an existing subcategory (admin only)",
-            })
-            .input(updateSubcategorySchema)
-            .handler(async ({ input }) => {
-                const { id, ...data } = input;
-
-                const existing = await db.query.subCategory.findFirst({
-                    where: (s, { eq }) => eq(s.id, id),
-                });
-
-                if (!existing) {
-                    throw new ORPCError("NOT_FOUND", { message: "Subcategory not found" });
-                }
-
-                await db
-                    .update(subCategory)
-                    .set({ ...data, updatedAt: new Date() })
-                    .where(eq(subCategory.id, id));
-
-                return { message: "Subcategory updated successfully" };
-            }),
-
-        /**
-         * Delete a subcategory
-         * REST: DELETE /api/subcategories/{id}
-         */
-        delete: adminProcedure
-            .route({
-                method: "DELETE",
-                path: "/subcategories/{id}",
-                tags: ["Subcategories"],
-                summary: "Delete subcategory",
-                description: "Delete a subcategory (admin only)",
-            })
-            .input(z.object({ id: z.number().int() }))
-            .handler(async ({ input }) => {
-                const existing = await db.query.subCategory.findFirst({
-                    where: (s, { eq }) => eq(s.id, input.id),
-                });
-
-                if (!existing) {
-                    throw new ORPCError("NOT_FOUND", { message: "Subcategory not found" });
-                }
-
-                await db.delete(subCategory).where(eq(subCategory.id, input.id));
-
-                return { message: "Subcategory deleted successfully" };
-            }),
-    },
 };

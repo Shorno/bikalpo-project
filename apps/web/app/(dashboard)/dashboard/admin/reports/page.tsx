@@ -1,9 +1,5 @@
 import { Bike, CalendarCheck, Package, Users } from "lucide-react";
-import { headers } from "next/headers";
-import {
-  getEmployeePerformanceReport,
-  getTeamOverview,
-} from "@/actions/reports/employee-reports";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -21,20 +17,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { auth } from "@/lib/auth";
 
 export default async function ReportsPage() {
-  const _session = await auth.api.getSession({
-    headers: await headers(),
-  });
 
-  const [overviewResult, performanceResult] = await Promise.all([
-    getTeamOverview(),
-    getEmployeePerformanceReport(),
+  const [overview, reports] = await Promise.all([
+    client.adminEmployeeReport.getTeamOverview(),
+    client.adminEmployeeReport.getPerformance({}),
   ]);
-
-  const overview = overviewResult.overview!;
-  const reports = performanceResult.reports || [];
 
   const salesmen = reports.filter((r) => r.role === "salesman");
   const deliverymen = reports.filter((r) => r.role === "deliveryman");

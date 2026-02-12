@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import { reviewEstimate } from "@/actions/estimate/admin-estimate-actions";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,23 +39,19 @@ export function AdminEstimateActions({
 
     setLoading(true);
     try {
-      const result = await reviewEstimate({
+      await client.adminEstimate.review({
         estimateId,
         action,
         notes: notes || undefined,
       });
 
-      if (result.success) {
-        toast.success(
-          `Estimate ${action === "approve" ? "approved" : "rejected"}`,
-        );
-        setOpen(false);
-        router.refresh();
-      } else {
-        toast.error(result.error || "Failed to review estimate");
-      }
-    } catch (_error) {
-      toast.error("Something went wrong");
+      toast.success(
+        `Estimate ${action === "approve" ? "approved" : "rejected"}`,
+      );
+      setOpen(false);
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
     } finally {
       setLoading(false);
     }

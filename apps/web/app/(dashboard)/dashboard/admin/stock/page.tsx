@@ -1,9 +1,8 @@
 import { ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
-import getCategories from "@/actions/category/get-categories";
-import { getProductsForStock } from "@/actions/product/get-products-for-stock";
 import { StockFilterBar } from "@/components/features/stock/stock-filter-bar";
+import { client } from "@/utils/orpc";
 import { StockInventoryTable } from "@/components/features/stock/stock-inventory-table";
 import { StockPagination } from "@/components/features/stock/stock-pagination";
 import { Button } from "@/components/ui/button";
@@ -14,14 +13,14 @@ export default async function StockInventoryPage({
   searchParams = {},
 }: {
   searchParams?:
-    | Promise<Record<string, string | string[] | undefined>>
-    | Record<string, string | string[] | undefined>;
+  | Promise<Record<string, string | string[] | undefined>>
+  | Record<string, string | string[] | undefined>;
 }) {
   const resolved =
     typeof (searchParams as any)?.then === "function"
       ? await (searchParams as Promise<
-          Record<string, string | string[] | undefined>
-        >)
+        Record<string, string | string[] | undefined>
+      >)
       : (searchParams ?? {});
   const sp = resolved as Record<string, string | string[] | undefined>;
   const search = (typeof sp.search === "string" ? sp.search : undefined) ?? "";
@@ -42,9 +41,9 @@ export default async function StockInventoryPage({
     parseInt(typeof sp.page === "string" ? sp.page : "1", 10) || 1,
   );
 
-  const [categories, { products, total }] = await Promise.all([
-    getCategories(),
-    getProductsForStock({
+  const [allCategories, stockResult] = await Promise.all([
+    client.category.getAll(),
+    client.product.getForStock({
       search: search || undefined,
       categoryId: categoryId || undefined,
       stockStatus: stockStatus || "all",
@@ -54,12 +53,14 @@ export default async function StockInventoryPage({
     }),
   ]);
 
+  const { products, total } = stockResult;
+
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
   const q = new URLSearchParams(sp as Record<string, string>);
   q.delete("page");
   const queryWithoutPage = q.toString();
 
-  const categoryList = categories.map((c) => ({ id: c.id, name: c.name }));
+  const categoryList = allCategories.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }));
 
   const rows = products.map((p) => ({
     id: p.id,

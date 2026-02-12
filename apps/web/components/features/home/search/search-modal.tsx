@@ -5,7 +5,7 @@ import { Package, SearchIcon } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { searchProducts } from "@/actions/products/search-products";
+import { client } from "@/utils/orpc";
 import {
   Dialog,
   DialogContent,
@@ -54,7 +54,8 @@ export function SearchModal({
       if (!debouncedQuery.trim()) {
         return [];
       }
-      return (await searchProducts(debouncedQuery)) as SearchResult[];
+      const { products } = await client.product.search({ query: debouncedQuery });
+      return products as SearchResult[];
     },
     enabled: debouncedQuery.trim().length > 0,
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getEmployeeDetailedReport } from "@/actions/reports/employee-reports";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -66,10 +66,8 @@ export function EmployeeDetailModal({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: detailedReport, isLoading } = useQuery<any>({
     queryKey: ["employee-detailed-report", employee?.id],
-    queryFn: async () => {
-      const result = await getEmployeeDetailedReport(employee.id);
-      return result.success && "report" in result ? result.report : null;
-    },
+    queryFn: () =>
+      client.adminEmployeeReport.getDetailed({ employeeId: employee.id }),
     enabled: open && !!employee?.id,
   });
 
@@ -236,9 +234,8 @@ export function EmployeeDetailModal({
                   {Array.from({ length: 5 }).map((_, i) => (
                     <span
                       key={i}
-                      className={`text-2xl ${
-                        i < rating ? "text-yellow-400" : "text-gray-300"
-                      }`}
+                      className={`text-2xl ${i < rating ? "text-yellow-400" : "text-gray-300"
+                        }`}
                     >
                       ★
                     </span>
@@ -287,7 +284,7 @@ export function EmployeeDetailModal({
 
                       {"topCustomers" in detailedReport &&
                         (detailedReport.topCustomers as TopCustomer[])?.length >
-                          0 && (
+                        0 && (
                           <>
                             <Separator />
                             <div>

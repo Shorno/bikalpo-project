@@ -46,7 +46,7 @@ const auditFiltersSchema = z.object({
     dateTo: z.string().optional(),
     userRole: z.string().optional(),
     actionType: z.enum(["login", "logout", "create", "update", "delete", "approve", "reject", "payment", "invoice"]).optional(),
-    module: z.enum(["auth", "users", "orders", "products", "invoices", "payments", "delivery"]).optional(),
+    module: z.enum(["auth", "users", "orders", "products", "invoices", "payments", "delivery", "stock", "settings", "category", "brand", "estimate", "returns", "invoice"]).optional(),
     search: z.string().optional(),
     page: z.number().min(1).default(1),
     pageSize: z.number().min(1).max(100).default(50),

@@ -12,12 +12,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import {
-  approveUser,
-  banUser,
-  setUserRole,
-  unbanUser,
-} from "@/app/(dashboard)/dashboard/admin/_actions/users/user-actions";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,7 +32,7 @@ import { UserSessionsDialog } from "./user-sessions-dialog";
 
 async function handleApprove(userId: string) {
   try {
-    await approveUser(userId);
+    await client.customerManagement.approve({ customerId: userId });
     toast.success("User approved successfully");
   } catch (error) {
     toast.error(
@@ -48,7 +43,7 @@ async function handleApprove(userId: string) {
 
 async function handleSetRole(userId: string, role: UserRole) {
   try {
-    await setUserRole(userId, role);
+    await client.customerManagement.setRole({ userId, role });
     toast.success(`Role changed to ${role}`);
   } catch (error) {
     toast.error(error instanceof Error ? error.message : "Failed to set role");
@@ -57,7 +52,7 @@ async function handleSetRole(userId: string, role: UserRole) {
 
 async function handleBan(userId: string) {
   try {
-    await banUser(userId, "Banned by admin");
+    await client.customerManagement.ban({ userId, reason: "Banned by admin" });
     toast.success("User banned");
   } catch (error) {
     toast.error(error instanceof Error ? error.message : "Failed to ban user");
@@ -66,7 +61,7 @@ async function handleBan(userId: string) {
 
 async function handleUnban(userId: string) {
   try {
-    await unbanUser(userId);
+    await client.customerManagement.unban({ userId });
     toast.success("User unbanned");
   } catch (error) {
     toast.error(

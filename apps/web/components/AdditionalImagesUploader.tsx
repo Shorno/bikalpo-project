@@ -10,10 +10,7 @@ import {
 import { CldImage } from "next-cloudinary";
 import React, { useCallback, useState, useTransition } from "react";
 import { toast } from "sonner";
-import {
-  deleteImageFromCloudinary,
-  uploadImageToCloudinary,
-} from "@/actions/cloudinary";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getPublicIdFromUrl } from "@/utils/getPublicIdFromUrl";
@@ -80,10 +77,7 @@ export default function AdditionalImagesUploader({
       startTransition(async () => {
         try {
           const uploadPromises = files.map(async (file) => {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("folder", folder);
-            return await uploadImageToCloudinary(formData);
+            return await client.cloudinary.upload({ file, folder });
           });
 
           const results = await Promise.all(uploadPromises);
@@ -183,7 +177,7 @@ export default function AdditionalImagesUploader({
         setDeletingId(urlToRemove);
         startTransition(async () => {
           try {
-            const result = await deleteImageFromCloudinary(publicId);
+            const result = await client.cloudinary.delete({ publicId });
 
             if (result.success) {
               const updatedUrls = imageUrls.filter(
@@ -194,7 +188,7 @@ export default function AdditionalImagesUploader({
               setError(null);
               toast.success("Image deleted successfully");
             } else {
-              toast.error(result.error || "Failed to delete image");
+              toast.error(result.message || "Failed to delete image");
             }
           } catch (error) {
             console.error("Delete error:", error);

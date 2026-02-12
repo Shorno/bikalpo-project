@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { uploadImageToCloudinary } from "@/actions/cloudinary";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { $createImageNode } from "./image-node";
@@ -197,11 +197,7 @@ export default function RichTextToolbar() {
 
     startUploadTransition(async () => {
       try {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("folder", "product-descriptions");
-
-        const result = await uploadImageToCloudinary(formData);
+        const result = await client.cloudinary.upload({ file, folder: "product-descriptions" });
 
         if (result.success) {
           editor.update(() => {

@@ -1,9 +1,5 @@
 import { format } from "date-fns";
 import Link from "next/link";
-import {
-  getAdminEstimateStats,
-  getAllEstimates,
-} from "@/actions/estimate/admin-estimate-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,10 +11,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { client } from "@/utils/orpc";
 
 export default async function AdminEstimatesPage() {
-  const { estimates } = await getAllEstimates();
-  const { stats } = await getAdminEstimateStats();
+  const { estimates } = await client.adminEstimate.getAll({});
+  const { stats } = await client.adminEstimate.getStats();
 
   return (
     <div className="flex flex-col gap-6">
@@ -136,7 +133,7 @@ export default async function AdminEstimatesPage() {
                       <Badge
                         variant={
                           estimate.status === "approved" ||
-                          estimate.status === "converted"
+                            estimate.status === "converted"
                             ? "default"
                             : estimate.status === "rejected"
                               ? "destructive"

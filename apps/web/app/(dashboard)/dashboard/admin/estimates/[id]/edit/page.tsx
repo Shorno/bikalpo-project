@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { getEstimateById } from "@/actions/estimate/get-estimates";
 import { EditEstimateForm } from "@/components/features/estimates/edit-estimate-form";
+import { client } from "@/utils/orpc";
 
 export default async function AdminEditEstimatePage({
   params,
@@ -8,9 +8,15 @@ export default async function AdminEditEstimatePage({
   params: { id: string };
 }) {
   const { id } = await params;
-  const result = await getEstimateById(Number(id));
+  let estimateData;
+  try {
+    const result = await client.adminEstimate.getById({ id: Number(id) });
+    estimateData = result.estimate;
+  } catch {
+    notFound();
+  }
 
-  if (!result.success || !result.estimate) {
+  if (!estimateData) {
     notFound();
   }
 
@@ -18,11 +24,11 @@ export default async function AdminEditEstimatePage({
     <div className="flex flex-col gap-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">
-          Edit Estimate {result.estimate.estimateNumber}
+          Edit Estimate {estimateData.estimateNumber}
         </h1>
       </div>
 
-      <EditEstimateForm estimate={result.estimate} />
+      <EditEstimateForm estimate={estimateData} />
     </div>
   );
 }
