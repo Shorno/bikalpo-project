@@ -20,7 +20,6 @@ import {
   orderItem,
   payment,
   product,
-  productImage,
   productReview,
   productVariant,
   subCategory,
@@ -39,7 +38,6 @@ import {
   ilike,
   inArray,
   lte,
-  or,
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
@@ -50,10 +48,7 @@ import { protectedProcedure, publicProcedure } from "../index";
 // Shared Zod Schemas
 // ────────────────────────────────────────────────────────────────
 
-const paginationSchema = z.object({
-  page: z.number().min(1).default(1),
-  limit: z.number().min(1).max(100).default(12),
-});
+
 
 const productFiltersSchema = z.object({
   category: z.string().optional().nullable(),
