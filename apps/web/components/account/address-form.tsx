@@ -3,12 +3,7 @@
 import { useForm } from "@tanstack/react-form";
 import { Loader2, X } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
-import {
-  type AddressFormData,
-  addAddress,
-  updateAddress,
-} from "@/actions/address/address-actions";
+import { useAddAddress, useUpdateAddress } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -23,8 +18,9 @@ interface AddressFormProps {
 const labelOptions = ["Home", "Office", "Other"];
 
 export function AddressForm({ address, onClose }: AddressFormProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditing = !!address;
+  const addAddress = useAddAddress();
+  const updateAddress = useUpdateAddress();
 
   const form = useForm({
     defaultValues: {
@@ -38,9 +34,7 @@ export function AddressForm({ address, onClose }: AddressFormProps) {
       isDefault: address?.isDefault || false,
     },
     onSubmit: async ({ value }) => {
-      setIsSubmitting(true);
-
-      const data: AddressFormData = {
+      const data = {
         label: value.label,
         recipientName: value.recipientName,
         phone: value.phone,
@@ -51,18 +45,13 @@ export function AddressForm({ address, onClose }: AddressFormProps) {
         isDefault: value.isDefault,
       };
 
-      const result = isEditing
-        ? await updateAddress(address.id, data)
-        : await addAddress(data);
-
-      setIsSubmitting(false);
-
-      if (result.success) {
-        toast.success(isEditing ? "Address updated" : "Address added");
-        onClose();
+      if (isEditing) {
+        await updateAddress.mutateAsync({ id: address.id, ...data });
       } else {
-        toast.error(result.error || "Something went wrong");
+        await addAddress.mutateAsync(data);
       }
+
+      onClose();
     },
   });
 
@@ -223,10 +212,12 @@ export function AddressForm({ address, onClose }: AddressFormProps) {
         <div className="flex gap-3 pt-4">
           <Button
             type="submit"
-            disabled={isSubmitting}
+            disabled={addAddress.isPending || updateAddress.isPending}
             className="bg-emerald-600 hover:bg-emerald-700"
           >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {(addAddress.isPending || updateAddress.isPending) && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
             {isEditing ? "Update Address" : "Save Address"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>

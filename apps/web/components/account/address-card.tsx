@@ -2,11 +2,10 @@
 
 import { Edit2, MapPin, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import {
-  deleteAddress,
-  setDefaultAddress,
-} from "@/actions/address/address-actions";
+  useDeleteAddress,
+  useSetDefaultAddress,
+} from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Address } from "@/db/schema/address";
@@ -17,33 +16,16 @@ interface AddressCardProps {
 }
 
 export function AddressCard({ address, onEdit }: AddressCardProps) {
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isSettingDefault, setIsSettingDefault] = useState(false);
+  const deleteAddress = useDeleteAddress();
+  const setDefaultAddress = useSetDefaultAddress();
 
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this address?")) return;
-
-    setIsDeleting(true);
-    const result = await deleteAddress(address.id);
-    setIsDeleting(false);
-
-    if (result.success) {
-      toast.success("Address deleted");
-    } else {
-      toast.error(result.error || "Failed to delete");
-    }
+    await deleteAddress.mutateAsync({ id: address.id });
   };
 
   const handleSetDefault = async () => {
-    setIsSettingDefault(true);
-    const result = await setDefaultAddress(address.id);
-    setIsSettingDefault(false);
-
-    if (result.success) {
-      toast.success("Default address updated");
-    } else {
-      toast.error(result.error || "Failed to set default");
-    }
+    await setDefaultAddress.mutateAsync({ id: address.id });
   };
 
   return (
@@ -88,7 +70,7 @@ export function AddressCard({ address, onEdit }: AddressCardProps) {
           variant="outline"
           size="sm"
           onClick={handleDelete}
-          disabled={isDeleting}
+          disabled={deleteAddress.isPending}
           className="gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50"
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -99,7 +81,7 @@ export function AddressCard({ address, onEdit }: AddressCardProps) {
             variant="ghost"
             size="sm"
             onClick={handleSetDefault}
-            disabled={isSettingDefault}
+            disabled={setDefaultAddress.isPending}
             className="gap-1.5 ml-auto"
           >
             <Star className="h-3.5 w-3.5" />
