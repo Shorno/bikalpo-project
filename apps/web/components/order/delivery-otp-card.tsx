@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
-import { getOrderDeliveryOtp } from "@/actions/order/order-actions";
+import { orpc } from "@/utils/orpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface DeliveryOtpCardProps {
@@ -11,8 +11,7 @@ interface DeliveryOtpCardProps {
 
 export function DeliveryOtpCard({ orderId }: DeliveryOtpCardProps) {
   const { data, isLoading } = useQuery({
-    queryKey: ["delivery-otp", orderId],
-    queryFn: () => getOrderDeliveryOtp(orderId),
+    ...orpc.deliveryman.getOrderDeliveryOtp.queryOptions({ input: { orderId } }),
     refetchInterval: 30000, // Refresh every 30 seconds
     staleTime: 10000,
   });

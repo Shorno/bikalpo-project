@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getDeliverymanById } from "@/actions/admin/deliveryman-actions";
+import { client } from "@/utils/orpc";
 import { DeliverymanDetailClient } from "./deliveryman-detail-client";
 
 interface DeliverymanDetailPageProps {
@@ -10,16 +10,22 @@ export default async function DeliverymanDetailPage({
   params,
 }: DeliverymanDetailPageProps) {
   const { id } = await params;
-  const result = await getDeliverymanById(id);
+  let deliveryman;
+  try {
+    const result = await client.deliveryman.getById({ id });
+    deliveryman = result.deliveryman;
+  } catch {
+    notFound();
+  }
 
-  if (!result.success || !result.deliveryman) {
+  if (!deliveryman) {
     notFound();
   }
 
   return (
     <DeliverymanDetailClient
       deliverymanId={id}
-      initialData={result.deliveryman}
+      initialData={deliveryman}
     />
   );
 }

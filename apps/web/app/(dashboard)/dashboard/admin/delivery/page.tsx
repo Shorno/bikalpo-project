@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import { Clock, Eye, MapPin, Package, Truck } from "lucide-react";
 import Link from "next/link";
-import { getDeliveryGroups } from "@/actions/delivery/delivery-management";
+import { client } from "@/utils/orpc";
 import { CreateGroupDialog } from "@/components/features/delivery/create-group-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table";
 
 export default async function AdminDeliveryPage() {
-  const { groups } = await getDeliveryGroups();
+  const { groups } = await client.deliveryman.getDeliveryGroups();
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -96,7 +96,7 @@ export default async function AdminDeliveryPage() {
                   g.status === "completed" &&
                   g.completedAt &&
                   new Date(g.completedAt).toDateString() ===
-                    new Date().toDateString(),
+                  new Date().toDateString(),
               ).length || 0}
             </div>
           </CardContent>

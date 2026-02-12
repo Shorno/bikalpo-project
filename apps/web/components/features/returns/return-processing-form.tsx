@@ -957,6 +957,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
                             className="flex flex-wrap gap-3"
                           >
                             <div className="flex items-center space-x-1.5">
+                              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                               <RadioGroupItem
                                 value="cash"
                                 id="cash"
@@ -967,6 +968,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
                               </Label>
                             </div>
                             <div className="flex items-center space-x-1.5">
+                              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                               <RadioGroupItem
                                 value="wallet"
                                 id="wallet"
@@ -977,6 +979,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
                               </Label>
                             </div>
                             <div className="flex items-center space-x-1.5">
+                              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                               <RadioGroupItem
                                 value="adjustment"
                                 id="adjustment"

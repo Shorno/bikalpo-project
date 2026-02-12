@@ -4,10 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, Truck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { createDeliveryRule } from "@/actions/delivery-rule/create-delivery-rule";
-import { deleteDeliveryRule } from "@/actions/delivery-rule/delete-delivery-rule";
-import { listDeliveryRules } from "@/actions/delivery-rule/list-delivery-rules";
-import { updateDeliveryRule } from "@/actions/delivery-rule/update-delivery-rule";
+import { client, orpc } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,10 +43,10 @@ export function DeliveryRulesClient() {
   const [editing, setEditing] = useState<DeliveryRule | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const { data: rules = [] } = useQuery({
-    queryKey: ["delivery-rules"],
-    queryFn: listDeliveryRules,
+  const { data } = useQuery({
+    ...orpc.deliveryman.listDeliveryRules.queryOptions({}),
   });
+  const rules = data?.rules ?? [];
 
   const handleAdd = () => {
     setEditing(null);
@@ -64,7 +61,7 @@ export function DeliveryRulesClient() {
   const handleDialogClose = (open: boolean) => {
     setDialogOpen(open);
     if (!open) setEditing(null);
-    queryClient.invalidateQueries({ queryKey: ["delivery-rules"] });
+    queryClient.invalidateQueries(orpc.deliveryman.listDeliveryRules.queryOptions({}));
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -84,7 +81,7 @@ export function DeliveryRulesClient() {
 
     try {
       if (editing) {
-        await updateDeliveryRule({
+        await client.deliveryman.updateDeliveryRule({
           id: editing.id,
           name,
           area,
@@ -98,7 +95,7 @@ export function DeliveryRulesClient() {
         });
         toast.success("Rule updated");
       } else {
-        await createDeliveryRule({
+        await client.deliveryman.createDeliveryRule({
           name,
           area,
           minWeightKg,
@@ -120,9 +117,9 @@ export function DeliveryRulesClient() {
   const handleDeleteConfirm = async () => {
     if (deleteId == null) return;
     try {
-      await deleteDeliveryRule(deleteId);
+      await client.deliveryman.deleteDeliveryRule({ id: deleteId });
       toast.success("Rule removed");
-      queryClient.invalidateQueries({ queryKey: ["delivery-rules"] });
+      queryClient.invalidateQueries(orpc.deliveryman.listDeliveryRules.queryOptions({}));
     } catch {
       toast.error("Failed to remove rule");
     }

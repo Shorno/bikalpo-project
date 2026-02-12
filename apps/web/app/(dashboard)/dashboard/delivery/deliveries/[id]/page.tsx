@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getDeliveryGroupById } from "@/actions/delivery/delivery-management";
+import { client } from "@/utils/orpc";
 import { DeliveryExecution } from "@/components/features/delivery/delivery-execution";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,13 +54,17 @@ export default async function DeliveryRunPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const result = await getDeliveryGroupById(Number(id));
-
-  if (!result.success || !result.group) {
+  let group: any;
+  try {
+    const result = await client.deliveryman.getMyGroupById({ id: Number(id) });
+    group = result.group;
+  } catch {
     notFound();
   }
 
-  const { group } = result;
+  if (!group) {
+    notFound();
+  }
 
   // Calculate stats from invoices
   const invoices = group.invoices || [];
