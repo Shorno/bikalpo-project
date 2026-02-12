@@ -7,10 +7,7 @@ import {
   Ticket,
 } from "lucide-react";
 import Link from "next/link";
-import {
-  getAllTickets,
-  getTicketStats,
-} from "@/actions/support/admin-ticket-actions";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,8 +57,8 @@ function getPriorityColor(priority: string) {
 
 export default async function AdminTicketsPage() {
   const [ticketsResult, statsResult] = await Promise.all([
-    getAllTickets({ page: 1, limit: 50 }),
-    getTicketStats(),
+    client.adminTicket.getAll({ page: 1, limit: 50 }),
+    client.adminTicket.getStats(),
   ]);
 
   const tickets = ticketsResult.data?.tickets || [];

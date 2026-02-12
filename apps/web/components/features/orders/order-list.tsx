@@ -2,10 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle, Clock, Package, Truck } from "lucide-react";
-import {
-  getAllOrders,
-  getOrderStats,
-} from "@/actions/order/admin-order-actions";
+import { client } from "@/utils/orpc";
 import { orderColumns } from "@/components/features/orders/order-columns";
 import OrderTable from "@/components/features/orders/order-table";
 import TableSkeleton from "@/components/table-skeleton";
@@ -41,16 +38,15 @@ function StatsCardsSkeleton() {
 export default function OrderList() {
   const { data: ordersResult, isLoading: ordersLoading } = useQuery({
     queryKey: ["admin-orders"],
-    queryFn: () => getAllOrders(),
+    queryFn: () => client.adminOrder.getAll({}),
   });
 
-  const { data: statsResult, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["admin-order-stats"],
-    queryFn: () => getOrderStats(),
+    queryFn: () => client.adminOrder.getStats(),
   });
 
-  const orders = ordersResult?.orders || [];
-  const stats = statsResult?.stats;
+  const orders = ordersResult ?? [];
 
   if (ordersLoading || statsLoading) {
     return (

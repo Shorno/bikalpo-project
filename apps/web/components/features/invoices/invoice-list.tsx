@@ -2,10 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Clock, CreditCard, FileText, Split, Truck } from "lucide-react";
-import {
-  getAllInvoices,
-  getInvoiceStats,
-} from "@/actions/invoice/invoice-actions";
+import { client } from "@/utils/orpc";
 import { useInvoiceColumns } from "@/components/features/invoices/invoice-columns";
 import InvoiceTable from "@/components/features/invoices/invoice-table";
 import TableSkeleton from "@/components/table-skeleton";
@@ -43,12 +40,12 @@ export default function InvoiceList() {
 
   const { data: invoicesResult, isLoading: invoicesLoading } = useQuery({
     queryKey: ["admin-invoices"],
-    queryFn: () => getAllInvoices(),
+    queryFn: () => client.adminInvoice.getAll({}),
   });
 
   const { data: statsResult, isLoading: statsLoading } = useQuery({
     queryKey: ["admin-invoice-stats"],
-    queryFn: () => getInvoiceStats(),
+    queryFn: () => client.adminInvoice.getStats(),
   });
 
   const invoices = invoicesResult?.invoices || [];

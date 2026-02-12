@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import updateSubcategory from "@/actions/subcategory/update-subcategory";
+import { client } from "@/utils/orpc";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,37 +43,18 @@ export default function EditSubcategoryDialog({
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: updateSubcategory,
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 400:
-            toast.error("Invalid subcategory data.", {
-              description: "Please check your form inputs.",
-            });
-            break;
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          case 404:
-            toast.error("Subcategory not found.");
-            break;
-          default:
-            toast.error(result.error || "Something went wrong.");
-        }
-        return;
-      }
+    mutationFn: (data: Parameters<typeof client.adminSubcategory.update>[0]) =>
+      client.adminSubcategory.update(data),
+    onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["admin-subcategories", subcategory.categoryId],
       });
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      toast.success(result.message);
+      toast.success("Subcategory updated successfully");
       setOpen(false);
     },
-    onError: () => {
-      toast.error(
-        "An unexpected error occurred while updating the subcategory.",
-      );
+    onError: (error) => {
+      toast.error(error.message || "Failed to update subcategory.");
     },
   });
 

@@ -21,12 +21,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import {
-  approveOrder,
-  getOrderById,
-  rejectOrder,
-  updateOrderItems,
-} from "@/actions/order/admin-order-actions";
+import { client } from "@/utils/orpc";
 import { ItemReplacePicker } from "@/components/features/orders/item-replace-picker";
 import {
   AlertDialog,
@@ -87,48 +82,34 @@ export default function AdminOrderDetailsClient({
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-order", orderId],
-    queryFn: async () => {
-      const result = await getOrderById(orderId);
-      if (!result.success || !result.order) {
-        throw new Error(result.error || "Order not found");
-      }
-      return result.order;
-    },
+    queryFn: () => client.adminOrder.getById({ id: orderId }),
   });
 
   const approveMutation = useMutation({
-    mutationFn: () => approveOrder(orderId),
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Order approved successfully");
-        queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
-        queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
-        router.push(`${ADMIN_BASE}/orders`);
-      } else {
-        toast.error(result.error || "Failed to approve order");
-      }
+    mutationFn: () => client.adminOrder.approve({ orderId }),
+    onSuccess: () => {
+      toast.success("Order approved successfully");
+      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      router.push(`${ADMIN_BASE}/orders`);
     },
-    onError: () => {
-      toast.error("Failed to approve order");
+    onError: (error) => {
+      toast.error(error.message || "Failed to approve order");
     },
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (reason: string) => rejectOrder(orderId, reason),
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Order rejected");
-        setIsRejectDialogOpen(false);
-        setRejectionReason("");
-        queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
-        queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
-        router.push(`${ADMIN_BASE}/orders`);
-      } else {
-        toast.error(result.error || "Failed to reject order");
-      }
+    mutationFn: (reason: string) => client.adminOrder.reject({ orderId, rejectionReason: reason }),
+    onSuccess: () => {
+      toast.success("Order rejected");
+      setIsRejectDialogOpen(false);
+      setRejectionReason("");
+      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      router.push(`${ADMIN_BASE}/orders`);
     },
-    onError: () => {
-      toast.error("Failed to reject order");
+    onError: (error) => {
+      toast.error(error.message || "Failed to reject order");
     },
   });
 
@@ -140,21 +121,17 @@ export default function AdminOrderDetailsClient({
         quantity: item.quantity,
         remove: item.remove,
       }));
-      return updateOrderItems(orderId, updates, editNote || undefined);
+      return client.adminOrder.updateItems({ orderId, items: updates, adminNote: editNote || undefined });
     },
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Order updated successfully");
-        setIsEditMode(false);
-        setEditNote("");
-        queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
-        queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
-      } else {
-        toast.error(result.error || "Failed to update order");
-      }
+    onSuccess: () => {
+      toast.success("Order updated successfully");
+      setIsEditMode(false);
+      setEditNote("");
+      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
     },
-    onError: () => {
-      toast.error("Failed to update order");
+    onError: (error) => {
+      toast.error(error.message || "Failed to update order");
     },
   });
 
@@ -214,15 +191,15 @@ export default function AdminOrderDetailsClient({
       prev.map((item) =>
         item.itemId === itemId
           ? {
-              ...item,
-              productId: newProduct.id,
-              productName: newProduct.name,
-              productImage: newProduct.image,
-              productSize: newProduct.size,
-              unitPrice: Number(newProduct.price),
-              replaced: true,
-              originalProductName: item.originalProductName || item.productName,
-            }
+            ...item,
+            productId: newProduct.id,
+            productName: newProduct.name,
+            productImage: newProduct.image,
+            productSize: newProduct.size,
+            unitPrice: Number(newProduct.price),
+            replaced: true,
+            originalProductName: item.originalProductName || item.productName,
+          }
           : item,
       ),
     );

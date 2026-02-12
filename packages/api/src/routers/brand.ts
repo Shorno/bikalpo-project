@@ -90,7 +90,7 @@ export const brandRouter = {
         .route({
             method: "POST",
             path: "/brands",
-            tags: ["Brands"],
+            tags: ["Admin Brands"],
             summary: "Create brand",
             description: "Create a new brand (admin only)",
         })
@@ -111,7 +111,7 @@ export const brandRouter = {
         .route({
             method: "PUT",
             path: "/brands/{id}",
-            tags: ["Brands"],
+            tags: ["Admin Brands"],
             summary: "Update brand",
             description: "Update an existing brand (admin only)",
         })
@@ -143,7 +143,7 @@ export const brandRouter = {
         .route({
             method: "DELETE",
             path: "/brands/{id}",
-            tags: ["Brands"],
+            tags: ["Admin Brands"],
             summary: "Delete brand",
             description: "Delete a brand (admin only)",
         })

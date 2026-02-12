@@ -1,9 +1,6 @@
 import { format } from "date-fns";
 import { CheckCircle, ClipboardList, Clock, Lightbulb } from "lucide-react";
-import {
-  getAllItemRequests,
-  getItemRequestStats,
-} from "@/actions/item-request/get-item-requests";
+import { client } from "@/utils/orpc";
 import { ProcessRequestDialog } from "@/components/features/item-request/process-request-dialog";
 import { RequestStatusBadge } from "@/components/features/item-request/request-status-badge";
 import { Button } from "@/components/ui/button";
@@ -25,8 +22,8 @@ import {
 
 export default async function AdminItemRequestsPage() {
   const [requestsResult, statsResult] = await Promise.all([
-    getAllItemRequests({ page: 1, limit: 50 }),
-    getItemRequestStats(),
+    client.adminItemRequest.getAll({ page: 1, limit: 50 }),
+    client.adminItemRequest.getStats(),
   ]);
 
   const requests = requestsResult.data?.requests || [];

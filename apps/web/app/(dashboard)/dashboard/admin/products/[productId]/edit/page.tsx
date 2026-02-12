@@ -1,7 +1,7 @@
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { notFound } from "next/navigation";
-import getProductById from "@/actions/product/get-product-by-id";
 import { getQueryClient } from "@/utils/get-query-client";
+import { client } from "@/utils/orpc";
 import EditProductClient from "./edit-product-client";
 
 export default async function EditProductPage({
@@ -16,7 +16,13 @@ export default async function EditProductPage({
     notFound();
   }
 
-  const product = await getProductById(productIdNum);
+  let product;
+  try {
+    const result = await client.product.getById({ id: productIdNum });
+    product = result.product;
+  } catch {
+    notFound();
+  }
 
   if (!product) {
     notFound();

@@ -15,7 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useState } from "react";
-import { getEmployeePerformanceReport } from "@/actions/reports/employee-reports";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,14 +43,12 @@ export function EmployeePerformanceClient() {
     refetch: refetchDeliverymen,
   } = useQuery({
     queryKey: ["employee-performance", "deliveryman", startDate, endDate],
-    queryFn: async () => {
-      const result = await getEmployeePerformanceReport({
+    queryFn: () =>
+      client.adminEmployeeReport.getPerformance({
         role: "deliveryman",
         startDate,
         endDate,
-      });
-      return result.success ? result.reports || [] : [];
-    },
+      }),
   });
 
   // Fetch salesman performance data
@@ -60,14 +58,12 @@ export function EmployeePerformanceClient() {
     refetch: refetchSalesmen,
   } = useQuery({
     queryKey: ["employee-performance", "salesman", startDate, endDate],
-    queryFn: async () => {
-      const result = await getEmployeePerformanceReport({
+    queryFn: () =>
+      client.adminEmployeeReport.getPerformance({
         role: "salesman",
         startDate,
         endDate,
-      });
-      return result.success ? result.reports || [] : [];
-    },
+      }),
   });
 
   const deliverymen = deliverymenData || [];
@@ -87,31 +83,31 @@ export function EmployeePerformanceClient() {
       activeTab === "deliveryman"
         ? ["Name", "Total Deliveries", "Completed", "Failed", "Success Rate"]
         : [
-            "Name",
-            "Total Estimates",
-            "Approved",
-            "Converted",
-            "Conv Rate",
-            "Sales Value",
-          ];
+          "Name",
+          "Total Estimates",
+          "Approved",
+          "Converted",
+          "Conv Rate",
+          "Sales Value",
+        ];
 
     const rows = employees.map((emp) =>
       activeTab === "deliveryman"
         ? [
-            emp.name,
-            emp.totalDeliveries || 0,
-            emp.completedDeliveries || 0,
-            emp.failedDeliveries || 0,
-            `${emp.successRate || 0}%`,
-          ]
+          emp.name,
+          emp.totalDeliveries || 0,
+          emp.completedDeliveries || 0,
+          emp.failedDeliveries || 0,
+          `${emp.successRate || 0}%`,
+        ]
         : [
-            emp.name,
-            emp.totalEstimates || 0,
-            emp.approvedEstimates || 0,
-            emp.convertedEstimates || 0,
-            `${emp.conversionRate || 0}%`,
-            emp.totalSalesValue || 0,
-          ],
+          emp.name,
+          emp.totalEstimates || 0,
+          emp.approvedEstimates || 0,
+          emp.convertedEstimates || 0,
+          `${emp.conversionRate || 0}%`,
+          emp.totalSalesValue || 0,
+        ],
     );
 
     const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");

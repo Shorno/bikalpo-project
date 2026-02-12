@@ -13,10 +13,7 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  addStaffReply,
-  updateTicketStatus,
-} from "@/actions/support/admin-ticket-actions";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,15 +90,14 @@ export function AdminTicketDetails({ ticket }: AdminTicketDetailsProps) {
 
     setIsLoading(true);
     try {
-      const result = await addStaffReply(ticket.id, replyMessage);
-      if (result.success) {
-        toast.success("Reply sent successfully!");
-        setReplyMessage("");
-      } else {
-        toast.error(result.error || "Failed to send reply");
-      }
-    } catch {
-      toast.error("Something went wrong");
+      await client.adminTicket.addReply({
+        ticketId: ticket.id,
+        message: replyMessage,
+      });
+      toast.success("Reply sent successfully!");
+      setReplyMessage("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
     } finally {
       setIsLoading(false);
     }
@@ -110,17 +106,13 @@ export function AdminTicketDetails({ ticket }: AdminTicketDetailsProps) {
   async function handleStatusChange(newStatus: string) {
     setIsUpdatingStatus(true);
     try {
-      const result = await updateTicketStatus(
-        ticket.id,
-        newStatus as TicketStatus,
-      );
-      if (result.success) {
-        toast.success("Status updated!");
-      } else {
-        toast.error(result.error || "Failed to update status");
-      }
-    } catch {
-      toast.error("Something went wrong");
+      await client.adminTicket.updateStatus({
+        ticketId: ticket.id,
+        status: newStatus as "open" | "in_progress" | "resolved" | "closed",
+      });
+      toast.success("Status updated!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
     } finally {
       setIsUpdatingStatus(false);
     }

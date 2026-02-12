@@ -4,10 +4,7 @@ import { AlertCircleIcon, ImageUpIcon, LoaderIcon, XIcon } from "lucide-react";
 import { CldImage } from "next-cloudinary";
 import React, { useCallback, useState, useTransition } from "react";
 import { toast } from "sonner";
-import {
-  deleteImageFromCloudinary,
-  uploadImageToCloudinary,
-} from "@/actions/cloudinary";
+import { client } from "@/utils/orpc";
 import { getPublicIdFromUrl } from "@/utils/getPublicIdFromUrl";
 
 interface ImageUploaderProps {
@@ -52,11 +49,7 @@ export default function ImageUploader({
 
       startTransition(async () => {
         try {
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("folder", folder);
-
-          const result = await uploadImageToCloudinary(formData);
+          const result = await client.cloudinary.upload({ file, folder });
 
           if (result.success) {
             setPreviewUrl(result.url);
@@ -138,7 +131,7 @@ export default function ImageUploader({
     if (publicId) {
       startDeleteTransition(async () => {
         try {
-          const result = await deleteImageFromCloudinary(publicId);
+          const result = await client.cloudinary.delete({ publicId });
 
           if (result.success) {
             setPreviewUrl("");
@@ -146,7 +139,7 @@ export default function ImageUploader({
             setError(null);
             toast.success("Image deleted successfully");
           } else {
-            toast.error(result.error || "Failed to delete image");
+            toast.error(result.message || "Failed to delete image");
           }
         } catch (error) {
           console.error("Delete error:", error);

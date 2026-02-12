@@ -4,11 +4,7 @@ import { Check, Lightbulb, Loader2, X } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  approveItemRequest,
-  rejectItemRequest,
-  suggestAlternativeProduct,
-} from "@/actions/item-request/admin-item-request-actions";
+import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,21 +40,21 @@ export function ProcessRequestDialog({ request }: ProcessRequestDialogProps) {
   const [addToProductId, setAddToProductId] = useState<number | null>(null);
 
   const handleApprove = async () => {
+    if (!addToProductId) {
+      toast.error("Please select a product to add the requested quantity to.");
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const result = await approveItemRequest(
-        request.id,
-        approveResponse,
-        addToProductId ?? undefined,
-      );
-      if (result.success) {
-        toast.success("Request approved!");
-        setOpen(false);
-      } else {
-        toast.error(result.error || "Failed to approve");
-      }
-    } catch {
-      toast.error("Something went wrong");
+      await client.adminItemRequest.approve({
+        requestId: request.id,
+        adminResponse: approveResponse || undefined,
+        addToProductId,
+      });
+      toast.success("Request approved!");
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
     } finally {
       setIsSubmitting(false);
     }
@@ -67,15 +63,14 @@ export function ProcessRequestDialog({ request }: ProcessRequestDialogProps) {
   const handleReject = async () => {
     setIsSubmitting(true);
     try {
-      const result = await rejectItemRequest(request.id, rejectResponse);
-      if (result.success) {
-        toast.success("Request rejected");
-        setOpen(false);
-      } else {
-        toast.error(result.error || "Failed to reject");
-      }
-    } catch {
-      toast.error("Something went wrong");
+      await client.adminItemRequest.reject({
+        requestId: request.id,
+        adminResponse: rejectResponse || undefined,
+      });
+      toast.success("Request rejected");
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
     } finally {
       setIsSubmitting(false);
     }
@@ -89,19 +84,15 @@ export function ProcessRequestDialog({ request }: ProcessRequestDialogProps) {
 
     setIsSubmitting(true);
     try {
-      const result = await suggestAlternativeProduct(
-        request.id,
+      await client.adminItemRequest.suggest({
+        requestId: request.id,
         suggestedProductId,
-        suggestResponse,
-      );
-      if (result.success) {
-        toast.success("Alternative suggested!");
-        setOpen(false);
-      } else {
-        toast.error(result.error || "Failed to suggest");
-      }
-    } catch {
-      toast.error("Something went wrong");
+        adminResponse: suggestResponse || undefined,
+      });
+      toast.success("Alternative suggested!");
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
     } finally {
       setIsSubmitting(false);
     }

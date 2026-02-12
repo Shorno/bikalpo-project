@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { getInvoiceById } from "@/actions/invoice/invoice-actions";
+import { client } from "@/utils/orpc";
 import {
   InvoiceDeliveryBadge,
   InvoicePaymentBadge,
@@ -157,7 +157,7 @@ export default function InvoiceDetailPage() {
 
   const { data: result, isLoading } = useQuery({
     queryKey: ["admin-invoice", invoiceId],
-    queryFn: () => getInvoiceById(invoiceId),
+    queryFn: () => client.adminInvoice.getById({ id: invoiceId }),
     enabled: !!invoiceId,
   });
 
@@ -165,7 +165,7 @@ export default function InvoiceDetailPage() {
     return <InvoiceDetailSkeleton />;
   }
 
-  if (!result?.success || !result.invoice) {
+  if (!result?.invoice) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
         <div className="flex flex-col items-center justify-center p-12 bg-white rounded-lg border border-dashed text-center">
@@ -684,15 +684,15 @@ export default function InvoiceDetailPage() {
                     </p>
                     {(invoice.order?.shippingArea ||
                       invoice.order?.shippingCity) && (
-                      <p className="text-gray-500 mt-1">
-                        {[
-                          invoice.order?.shippingArea,
-                          invoice.order?.shippingCity,
-                        ]
-                          .filter(Boolean)
-                          .join(", ")}
-                      </p>
-                    )}
+                        <p className="text-gray-500 mt-1">
+                          {[
+                            invoice.order?.shippingArea,
+                            invoice.order?.shippingCity,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                      )}
                   </div>
                 </div>
 

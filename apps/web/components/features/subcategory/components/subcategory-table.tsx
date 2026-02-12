@@ -14,7 +14,7 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import * as React from "react";
-import getSubcategories from "@/actions/subcategory/get-subcategories";
+import { client } from "@/utils/orpc";
 import NewSubcategoryDialog from "@/components/features/subcategory/components/new-subcategory-dialog";
 import TableSkeleton from "@/components/table-skeleton";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ export default function SubcategoryTable<TData, TValue>({
 
   const { data = [], isLoading } = useQuery({
     queryKey: ["admin-subcategories", categoryId],
-    queryFn: () => getSubcategories(categoryId),
+    queryFn: () => client.adminSubcategory.getAll({ categoryId }),
   });
 
   const table = useReactTable({
@@ -102,9 +102,9 @@ export default function SubcategoryTable<TData, TValue>({
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                     </TableHead>
                   );
                 })}

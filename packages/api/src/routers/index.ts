@@ -1,10 +1,21 @@
 import type { RouterClient } from "@orpc/server";
 
 import { protectedProcedure, publicProcedure } from "../index";
-import { announcementRouter } from "./announcement";
+import { adminEmployeeReportRouter } from "./admin-employee-report";
+import { adminBrandUpdateRouter } from "./admin-brand-update";
+import { adminAnnouncementRouter } from "./admin-announcement";
+import { adminEstimateRouter } from "./admin-estimate";
+import { adminInvoiceRouter } from "./admin-invoice";
+import { adminItemRequestRouter } from "./admin-item-request";
+import { adminOrderRouter } from "./admin-order";
+import { adminProductVariantRouter } from "./admin-product-variant";
+import { adminSalesReportRouter } from "./admin-sales-report";
+import { adminSubcategoryRouter } from "./admin-subcategory";
+import { adminTicketRouter } from "./admin-ticket";
 import { auditRouter } from "./audit";
 import { brandRouter } from "./brand";
 import { categoryRouter } from "./category";
+import { cloudinaryRouter } from "./cloudinary";
 import { customerManagementRouter } from "./customer-management";
 import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
@@ -13,7 +24,7 @@ import { productRouter } from "./product";
 import { customerRouter } from "./customer";
 import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
-import { userRouter } from "./user";
+
 import { verifiedUserRouter } from "./verified-user";
 
 export const appRouter = {
@@ -27,10 +38,22 @@ export const appRouter = {
     };
   }),
   audit: auditRouter,
+  adminEmployeeReport: adminEmployeeReportRouter,
+  adminBrandUpdate: adminBrandUpdateRouter,
+  adminAnnouncement: adminAnnouncementRouter,
+  adminEstimate: adminEstimateRouter,
+  adminInvoice: adminInvoiceRouter,
+  adminItemRequest: adminItemRequestRouter,
+  adminOrder: adminOrderRouter,
+  adminProductVariant: adminProductVariantRouter,
+  adminSalesReport: adminSalesReportRouter,
+  adminSubcategory: adminSubcategoryRouter,
+  adminTicket: adminTicketRouter,
   brand: brandRouter,
   category: categoryRouter,
+  cloudinary: cloudinaryRouter,
   customerManagement: customerManagementRouter,
-  announcement: announcementRouter,
+
   employee: employeeRouter,
   product: productRouter,
   customer: customerRouter,
@@ -38,7 +61,7 @@ export const appRouter = {
   deliveryman: deliverymanRouter,
   returns: returnsRouter,
   dashboard: dashboardRouter,
-  user: userRouter,
+
   verifiedUser: verifiedUserRouter,
 };
 export type AppRouter = typeof appRouter;

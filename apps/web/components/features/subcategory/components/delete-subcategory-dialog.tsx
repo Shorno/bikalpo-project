@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import deleteSubcategory from "@/actions/subcategory/delete-subcategory";
+import { client } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,32 +32,17 @@ export default function DeleteSubcategoryDialog({
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (id: number) => deleteSubcategory(id),
-    onSuccess: (result) => {
-      if (!result.success) {
-        switch (result.status) {
-          case 401:
-            toast.error("You are not authorized to perform this action.");
-            break;
-          case 404:
-            toast.error("Subcategory not found.");
-            break;
-          default:
-            toast.error(result.error || "Failed to delete subcategory.");
-        }
-        return;
-      }
+    mutationFn: (id: number) => client.adminSubcategory.delete({ subcategoryId: id }),
+    onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["admin-subcategories", subcategory.categoryId],
       });
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      toast.success(result.message);
+      toast.success("Subcategory deleted successfully");
       setOpen(false);
     },
-    onError: () => {
-      toast.error(
-        "An unexpected error occurred while deleting the subcategory.",
-      );
+    onError: (error) => {
+      toast.error(error.message || "Failed to delete subcategory.");
     },
   });
 

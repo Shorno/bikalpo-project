@@ -20,15 +20,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  approveCustomer,
-  type CustomerFilters,
-  getCustomerStats,
-  getCustomersList,
-  getPendingCustomers,
-  type PendingCustomer,
-  rejectCustomer,
-} from "@/actions/customers/customer-actions";
+import { client, orpc } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -51,6 +43,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { customerColumns } from "./customer-columns";
 
+type CustomerFilters = {
+  search?: string;
+  startDate?: Date;
+  endDate?: Date;
+  page?: number;
+  pageSize?: number;
+};
+
+type PendingCustomer = {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  shopName: string | null;
+  ownerName: string | null;
+  createdAt: Date;
+};
+
 export function CustomersClient() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("active");
@@ -62,59 +72,57 @@ export function CustomersClient() {
 
   // Fetch customers list
   const { data: customersResult, isLoading: customersLoading } = useQuery({
-    queryKey: ["customers-list", filters],
-    queryFn: () => getCustomersList(filters),
+    ...orpc.customerManagement.getList.queryOptions({
+      input: {
+        search: filters.search,
+        startDate: filters.startDate?.toISOString(),
+        endDate: filters.endDate?.toISOString(),
+        page: filters.page ?? 1,
+        pageSize: filters.pageSize ?? 10,
+      },
+    }),
   });
 
   // Fetch stats
   const { data: statsResult, isLoading: statsLoading } = useQuery({
-    queryKey: ["customer-stats"],
-    queryFn: getCustomerStats,
+    ...orpc.customerManagement.getStats.queryOptions(),
   });
 
   // Fetch pending customers
   const { data: pendingResult, isLoading: pendingLoading } = useQuery({
-    queryKey: ["pending-customers"],
-    queryFn: getPendingCustomers,
+    ...orpc.customerManagement.getPending.queryOptions(),
   });
 
   // Approve mutation
   const approveMutation = useMutation({
-    mutationFn: approveCustomer,
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Customer approved");
-        queryClient.invalidateQueries({ queryKey: ["pending-customers"] });
-        queryClient.invalidateQueries({ queryKey: ["customers-list"] });
-        queryClient.invalidateQueries({ queryKey: ["customer-stats"] });
-      } else {
-        toast.error(result.error || "Failed to approve");
-      }
+    mutationFn: (customerId: string) =>
+      client.customerManagement.approve({ customerId }),
+    onSuccess: () => {
+      toast.success("Customer approved");
+      queryClient.invalidateQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to approve");
     },
   });
 
   // Reject mutation
   const rejectMutation = useMutation({
-    mutationFn: rejectCustomer,
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("Customer rejected");
-        queryClient.invalidateQueries({ queryKey: ["pending-customers"] });
-      } else {
-        toast.error(result.error || "Failed to reject");
-      }
+    mutationFn: (customerId: string) =>
+      client.customerManagement.reject({ customerId }),
+    onSuccess: () => {
+      toast.success("Customer rejected");
+      queryClient.invalidateQueries();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to reject");
     },
   });
 
-  const customers =
-    customersResult?.success && customersResult.data
-      ? customersResult.data
-      : [];
-  const pagination = customersResult?.success
-    ? customersResult.pagination
-    : null;
-  const stats = statsResult?.success ? statsResult.stats : null;
-  const pendingCustomers = pendingResult?.success ? pendingResult.data : [];
+  const customers = customersResult?.customers ?? [];
+  const pagination = customersResult?.pagination ?? null;
+  const stats = statsResult?.stats ?? null;
+  const pendingCustomers = (pendingResult?.customers ?? []) as PendingCustomer[];
 
   // TanStack Table
   const table = useReactTable({
@@ -402,9 +410,9 @@ export function CustomersClient() {
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
                       </TableHead>
                     ))}
                   </TableRow>

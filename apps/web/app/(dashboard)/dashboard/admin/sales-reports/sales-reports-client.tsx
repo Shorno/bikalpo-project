@@ -22,15 +22,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  getCustomersForFilter,
-  getSalesByEmployee,
-  getSalesmenForFilter,
-  getSalesReportData,
-  getSalesReportSummary,
-  getSalesTrendData,
-  type SalesReportFilters,
-} from "@/actions/reports/sales-reports";
+import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -58,7 +50,15 @@ import {
 import { cn } from "@/lib/utils";
 
 export function SalesReportsClient() {
-  const [filters, setFilters] = useState<SalesReportFilters>({
+  const [filters, setFilters] = useState<{
+    startDate?: Date;
+    endDate?: Date;
+    customerId?: string;
+    salesmanId?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }>({
     startDate: subMonths(new Date(), 1),
     endDate: new Date(),
     page: 1,
@@ -66,70 +66,56 @@ export function SalesReportsClient() {
   });
 
   // Fetch summary data
-  const { data: summaryResult, isLoading: summaryLoading } = useQuery({
+  const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: [
       "sales-report-summary",
       filters.startDate,
       filters.endDate,
       filters.customerId,
     ],
-    queryFn: () => getSalesReportSummary(filters),
+    queryFn: () => client.adminSalesReport.getSummary(filters),
   });
 
   // Fetch table data
   const { data: tableResult, isLoading: tableLoading } = useQuery({
     queryKey: ["sales-report-data", filters],
-    queryFn: () => getSalesReportData(filters),
+    queryFn: () => client.adminSalesReport.getData(filters),
   });
 
   // Fetch trend data
-  const { data: trendResult } = useQuery({
+  const { data: trendData } = useQuery({
     queryKey: ["sales-trend-data", filters.startDate, filters.endDate],
     queryFn: () =>
-      getSalesTrendData({
+      client.adminSalesReport.getTrend({
         startDate: filters.startDate,
         endDate: filters.endDate,
       }),
   });
 
   // Fetch filter options
-  const { data: customersResult } = useQuery({
+  const { data: customers } = useQuery({
     queryKey: ["customers-for-filter"],
-    queryFn: getCustomersForFilter,
+    queryFn: () => client.adminSalesReport.getCustomersForFilter(),
   });
 
   // Fetch salesmen for filter
-  const { data: salesmenResult } = useQuery({
+  const { data: salesmen } = useQuery({
     queryKey: ["salesmen-for-filter"],
-    queryFn: getSalesmenForFilter,
+    queryFn: () => client.adminSalesReport.getSalesmenForFilter(),
   });
 
   // Fetch sales by employee data
-  const { data: salesByEmployeeResult } = useQuery({
+  const { data: salesByEmployee } = useQuery({
     queryKey: ["sales-by-employee", filters.startDate, filters.endDate],
     queryFn: () =>
-      getSalesByEmployee({
+      client.adminSalesReport.getByEmployee({
         startDate: filters.startDate,
         endDate: filters.endDate,
       }),
   });
 
-  const summary = summaryResult?.success ? summaryResult.summary : null;
-  const tableData =
-    tableResult?.success && tableResult.data ? tableResult.data : [];
-  const pagination = tableResult?.success ? tableResult.pagination : null;
-  const trendData =
-    trendResult?.success && trendResult.data ? trendResult.data : [];
-  const customers =
-    customersResult?.success && customersResult.data
-      ? customersResult.data
-      : [];
-  const salesmen =
-    salesmenResult?.success && salesmenResult.data ? salesmenResult.data : [];
-  const salesByEmployee =
-    salesByEmployeeResult?.success && salesByEmployeeResult.data
-      ? salesByEmployeeResult.data
-      : [];
+  const tableData = tableResult?.data ?? [];
+  const pagination = tableResult?.pagination ?? null;
 
   // Export to CSV
   const handleExportCSV = () => {

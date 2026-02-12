@@ -10,8 +10,7 @@ import { useRouter } from "next/navigation";
 import React from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { uploadImageToCloudinary } from "@/actions/cloudinary";
-import { orpc } from "@/utils/orpc";
+import { client, orpc } from "@/utils/orpc";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -191,11 +190,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
 
       setUploadingItemIndex(index);
       try {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("folder", "returns/items");
-
-        const result = await uploadImageToCloudinary(formData);
+        const result = await client.cloudinary.upload({ file, folder: "returns/items" });
         if (result.success) {
           form.setValue(`returnedItems.${index}.attachment`, result.url);
           toast.success("Photo uploaded");

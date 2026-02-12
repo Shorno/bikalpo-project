@@ -20,9 +20,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { deleteBrandUpdate } from "@/actions/brand-update/delete-brand-update";
-import { getAllBrandUpdates } from "@/actions/brand-update/get-all-brand-updates";
-import { toggleBrandUpdateActive } from "@/actions/brand-update/update-brand-update";
+import { client } from "@/utils/orpc";
 import { BrandUpdateForm } from "@/components/admin/brand-updates/brand-update-form";
 import {
   AlertDialog,
@@ -69,12 +67,11 @@ export function BrandUpdateManagement() {
   const [editingUpdate, setEditingUpdate] = useState<BrandUpdate | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const { data: result, isLoading } = useQuery({
+  const { data: brandUpdates = [], isLoading } = useQuery({
     queryKey: ["brand-updates"],
-    queryFn: getAllBrandUpdates,
+    queryFn: () => client.adminBrandUpdate.getAll(),
   });
 
-  const brandUpdates = result?.success ? result.data : [];
   const activeCount = brandUpdates.filter((a) => a.active).length;
   const inactiveCount = brandUpdates.length - activeCount;
 
@@ -93,23 +90,23 @@ export function BrandUpdateManagement() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    const result = await deleteBrandUpdate(deleteId);
-    if (result.success) {
+    try {
+      await client.adminBrandUpdate.delete({ id: deleteId });
       toast.success("Brand update deleted");
       queryClient.invalidateQueries({ queryKey: ["brand-updates"] });
-    } else {
-      toast.error(result.error);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete brand update");
     }
     setDeleteId(null);
   };
 
   const handleToggle = async (id: number, currentActive: boolean) => {
-    const result = await toggleBrandUpdateActive(id, !currentActive);
-    if (result.success) {
+    try {
+      const result = await client.adminBrandUpdate.toggleActive({ id, active: !currentActive });
       toast.success(result.message);
       queryClient.invalidateQueries({ queryKey: ["brand-updates"] });
-    } else {
-      toast.error(result.error);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update brand update status");
     }
   };
 
@@ -433,9 +430,9 @@ export function BrandUpdateManagement() {
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
                   </TableHead>
                 ))}
               </TableRow>

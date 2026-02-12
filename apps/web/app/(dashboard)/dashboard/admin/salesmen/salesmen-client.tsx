@@ -19,7 +19,23 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import type { Salesman, SalesmenStats } from "@/actions/admin/salesman-actions";
+
+type Salesman = {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  createdAt: Date;
+  banned: boolean;
+  estimatesCount: number;
+  assignedCustomersCount: number;
+};
+
+type SalesmenStats = {
+  total: number;
+  totalEstimates: number;
+  activeCount: number;
+};
 import { CreateEmployeeModal } from "@/components/features/employees/create-employee-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -282,9 +298,9 @@ export function SalesmenClient({ salesmen, stats }: SalesmenClientProps) {
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
                       </TableHead>
                     ))}
                   </TableRow>
