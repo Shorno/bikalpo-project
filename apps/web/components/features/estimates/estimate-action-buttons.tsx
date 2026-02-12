@@ -120,7 +120,8 @@ export function EstimateActionButtons({
   const onConvertSubmit = async (data: ConvertEstimateFormValues) => {
     setLoading(true);
     try {
-      await client.salesman.convertEstimateToOrder(data);
+      const { estimateId, ...rest } = data;
+      await client.salesman.convertEstimateToOrder({ id: estimateId, ...rest });
       toast.success("Estimate converted to order");
       setConvertOpen(false);
 

@@ -1062,7 +1062,7 @@ export const salesmanRouter = {
             description: "Convert a sent/approved estimate into an order with stock deduction",
         })
         .input(z.object({
-            estimateId: z.number(),
+            id: z.number(),
             shippingName: z.string().min(1),
             shippingPhone: z.string().min(1),
             shippingAddress: z.string().min(1),
@@ -1079,7 +1079,7 @@ export const salesmanRouter = {
             }
 
             const estimateData = await db.query.estimate.findFirst({
-                where: eq(estimate.id, input.estimateId),
+                where: eq(estimate.id, input.id),
                 with: { items: true },
             });
 
@@ -1176,7 +1176,7 @@ export const salesmanRouter = {
                         convertedOrderId: newOrder.id,
                         convertedAt: new Date(),
                     })
-                    .where(eq(estimate.id, input.estimateId));
+                    .where(eq(estimate.id, input.id));
 
                 return newOrder;
             });
