@@ -5,7 +5,7 @@
 
 import { Bell, X } from "lucide-react";
 import { useState } from "react";
-import { useAnnouncements } from "@/hooks/use-public-api";
+import { useAnnouncements } from "@/hooks/use-customer-api";
 
 export function OrpcAnnouncementBanner() {
   const { data } = useAnnouncements();

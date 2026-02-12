@@ -1,5 +1,5 @@
 /**
- * ORPC-powered React hooks for the public / customer-facing API.
+ * ORPC-powered React hooks for the customer-facing API.
  *
  * Uses the existing `orpc` TanStack Query utils from @/utils/orpc
  * which is already wired into the app's QueryClientProvider.
@@ -16,7 +16,7 @@ import { client, orpc } from "@/utils/orpc";
 // ────────────────────────────────────────────────────────────────
 
 /** Paginated, filterable product listing */
-export function usePublicProducts(filters: {
+export function useCustomerProducts(filters: {
   category?: string | null;
   subcategory?: string | null;
   brand?: string | null;
@@ -29,8 +29,8 @@ export function usePublicProducts(filters: {
   limit?: string;
 }) {
   return useQuery({
-    queryKey: ["public-products", filters],
-    queryFn: () => client.public.getPublicProducts(filters),
+    queryKey: ["customer-products", filters],
+    queryFn: () => client.customer.getCustomerProducts(filters),
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -38,8 +38,8 @@ export function usePublicProducts(filters: {
 /** Quick product search (max 10 results) */
 export function useSearchProducts(query: string) {
   return useQuery({
-    queryKey: ["public-search", query],
-    queryFn: () => client.public.searchProducts({ query }),
+    queryKey: ["customer-search", query],
+    queryFn: () => client.customer.searchProducts({ query }),
     enabled: query.trim().length > 0,
     staleTime: 1000 * 30,
   });
@@ -48,8 +48,8 @@ export function useSearchProducts(query: string) {
 /** Product detail by slug */
 export function useProductDetails(slug: string) {
   return useQuery({
-    queryKey: ["public-product", slug],
-    queryFn: () => client.public.getProductDetails({ slug }),
+    queryKey: ["customer-product", slug],
+    queryFn: () => client.customer.getProductDetails({ slug }),
     enabled: !!slug,
     staleTime: 1000 * 60 * 5,
   });
@@ -58,8 +58,8 @@ export function useProductDetails(slug: string) {
 /** Product reviews */
 export function useProductReviews(productId: number | undefined) {
   return useQuery({
-    queryKey: ["public-reviews", productId],
-    queryFn: () => client.public.getProductReviews({ productId: productId! }),
+    queryKey: ["customer-reviews", productId],
+    queryFn: () => client.customer.getProductReviews({ productId: productId! }),
     enabled: !!productId,
     staleTime: 1000 * 60 * 5,
   });
@@ -68,8 +68,8 @@ export function useProductReviews(productId: number | undefined) {
 /** Active categories with subcategories */
 export function useActiveCategories() {
   return useQuery({
-    queryKey: ["public-categories"],
-    queryFn: () => client.public.getActiveCategories(),
+    queryKey: ["customer-categories"],
+    queryFn: () => client.customer.getActiveCategories(),
     staleTime: 1000 * 60 * 10,
   });
 }
@@ -77,8 +77,8 @@ export function useActiveCategories() {
 /** Category by slug */
 export function useCategoryBySlug(slug: string) {
   return useQuery({
-    queryKey: ["public-category", slug],
-    queryFn: () => client.public.getCategoryBySlug({ slug }),
+    queryKey: ["customer-category", slug],
+    queryFn: () => client.customer.getCategoryBySlug({ slug }),
     enabled: !!slug,
     staleTime: 1000 * 60 * 10,
   });
@@ -87,9 +87,9 @@ export function useCategoryBySlug(slug: string) {
 /** Categories with products (home page) */
 export function useCategoriesWithProducts(limit?: number) {
   return useQuery({
-    queryKey: ["public-categories-products", limit],
+    queryKey: ["customer-categories-products", limit],
     queryFn: () =>
-      client.public.getCategoriesWithProducts(limit ? { limit } : undefined),
+      client.customer.getCategoriesWithProducts(limit ? { limit } : undefined),
     staleTime: 1000 * 60 * 5,
   });
 }
@@ -97,8 +97,8 @@ export function useCategoriesWithProducts(limit?: number) {
 /** Subcategories by category slug */
 export function useSubcategoriesByCategory(slug: string) {
   return useQuery({
-    queryKey: ["public-subcategories", slug],
-    queryFn: () => client.public.getSubcategoriesByCategory({ slug }),
+    queryKey: ["customer-subcategories", slug],
+    queryFn: () => client.customer.getSubcategoriesByCategory({ slug }),
     enabled: !!slug,
     staleTime: 1000 * 60 * 10,
   });
@@ -107,8 +107,8 @@ export function useSubcategoriesByCategory(slug: string) {
 /** Active brands */
 export function useActiveBrands() {
   return useQuery({
-    queryKey: ["public-brands"],
-    queryFn: () => client.public.getActiveBrands(),
+    queryKey: ["customer-brands"],
+    queryFn: () => client.customer.getActiveBrands(),
     staleTime: 1000 * 60 * 10,
   });
 }
@@ -116,16 +116,16 @@ export function useActiveBrands() {
 /** Customer orders */
 export function useMyOrders() {
   return useQuery({
-    queryKey: ["public-orders"],
-    queryFn: () => client.public.getMyOrders(),
+    queryKey: ["customer-orders"],
+    queryFn: () => client.customer.getMyOrders(),
   });
 }
 
 /** Order by order number */
 export function useOrderByNumber(orderNumber: string) {
   return useQuery({
-    queryKey: ["public-order", orderNumber],
-    queryFn: () => client.public.getOrderByNumber({ orderNumber }),
+    queryKey: ["customer-order", orderNumber],
+    queryFn: () => client.customer.getOrderByNumber({ orderNumber }),
     enabled: !!orderNumber,
   });
 }
@@ -133,8 +133,8 @@ export function useOrderByNumber(orderNumber: string) {
 /** Order status with payment */
 export function useOrderStatus(orderId: number | undefined) {
   return useQuery({
-    queryKey: ["public-order-status", orderId],
-    queryFn: () => client.public.getOrderStatus({ orderId: orderId! }),
+    queryKey: ["customer-order-status", orderId],
+    queryFn: () => client.customer.getOrderStatus({ orderId: orderId! }),
     enabled: !!orderId,
     refetchInterval: 30000, // poll every 30s
   });
@@ -143,40 +143,40 @@ export function useOrderStatus(orderId: number | undefined) {
 /** Active order */
 export function useActiveOrder() {
   return useQuery({
-    queryKey: ["public-active-order"],
-    queryFn: () => client.public.getActiveOrder(),
+    queryKey: ["customer-active-order"],
+    queryFn: () => client.customer.getActiveOrder(),
   });
 }
 
 /** Cart */
 export function useCartQuery() {
   return useQuery({
-    queryKey: ["public-cart"],
-    queryFn: () => client.public.getCart(),
+    queryKey: ["customer-cart"],
+    queryFn: () => client.customer.getCart(),
   });
 }
 
 /** Customer profile */
 export function useProfile() {
   return useQuery({
-    queryKey: ["public-profile"],
-    queryFn: () => client.public.getProfile(),
+    queryKey: ["customer-profile"],
+    queryFn: () => client.customer.getProfile(),
   });
 }
 
 /** Customer addresses */
 export function useMyAddresses() {
   return useQuery({
-    queryKey: ["public-addresses"],
-    queryFn: () => client.public.getMyAddresses(),
+    queryKey: ["customer-addresses"],
+    queryFn: () => client.customer.getMyAddresses(),
   });
 }
 
 /** Active announcements */
 export function useAnnouncements() {
   return useQuery({
-    queryKey: ["public-announcements"],
-    queryFn: () => client.public.getAnnouncements(),
+    queryKey: ["customer-announcements"],
+    queryFn: () => client.customer.getAnnouncements(),
     staleTime: 1000 * 60 * 5,
   });
 }
@@ -193,10 +193,10 @@ export function useAddToCart() {
       productId: number;
       quantity?: number;
       variantId?: number;
-    }) => client.public.addToCart(input),
+    }) => client.customer.addToCart(input),
     onSuccess: (data) => {
       toast.success(data.message);
-      qc.invalidateQueries({ queryKey: ["public-cart"] });
+      qc.invalidateQueries({ queryKey: ["customer-cart"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -207,8 +207,8 @@ export function useUpdateCartItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { cartItemId: number; quantity: number }) =>
-      client.public.updateCartItem(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["public-cart"] }),
+      client.customer.updateCartItem(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["customer-cart"] }),
     onError: (err) => toast.error(err.message),
   });
 }
@@ -218,10 +218,10 @@ export function useRemoveFromCart() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { cartItemId: number }) =>
-      client.public.removeFromCart(input),
+      client.customer.removeFromCart(input),
     onSuccess: () => {
       toast.success("Item removed from cart");
-      qc.invalidateQueries({ queryKey: ["public-cart"] });
+      qc.invalidateQueries({ queryKey: ["customer-cart"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -231,10 +231,10 @@ export function useRemoveFromCart() {
 export function useClearCart() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => client.public.clearCart(),
+    mutationFn: () => client.customer.clearCart(),
     onSuccess: () => {
       toast.success("Cart cleared");
-      qc.invalidateQueries({ queryKey: ["public-cart"] });
+      qc.invalidateQueries({ queryKey: ["customer-cart"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -261,11 +261,11 @@ export function usePlaceOrder() {
         | "nagad"
         | "bank_transfer"
         | "card";
-    }) => client.public.placeOrder(input),
+    }) => client.customer.placeOrder(input),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["public-cart"] });
-      qc.invalidateQueries({ queryKey: ["public-orders"] });
-      qc.invalidateQueries({ queryKey: ["public-active-order"] });
+      qc.invalidateQueries({ queryKey: ["customer-cart"] });
+      qc.invalidateQueries({ queryKey: ["customer-orders"] });
+      qc.invalidateQueries({ queryKey: ["customer-active-order"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -276,11 +276,11 @@ export function useCancelOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { orderId: number }) =>
-      client.public.cancelOrder(input),
+      client.customer.cancelOrder(input),
     onSuccess: () => {
       toast.success("Order cancelled");
-      qc.invalidateQueries({ queryKey: ["public-orders"] });
-      qc.invalidateQueries({ queryKey: ["public-active-order"] });
+      qc.invalidateQueries({ queryKey: ["customer-orders"] });
+      qc.invalidateQueries({ queryKey: ["customer-active-order"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -295,11 +295,11 @@ export function useCreateReview() {
       rating: number;
       title?: string;
       comment: string;
-    }) => client.public.createReview(input),
+    }) => client.customer.createReview(input),
     onSuccess: (_, variables) => {
       toast.success("Review submitted!");
       qc.invalidateQueries({
-        queryKey: ["public-reviews", variables.productId],
+        queryKey: ["customer-reviews", variables.productId],
       });
     },
     onError: (err) => toast.error(err.message),
@@ -319,10 +319,10 @@ export function useAddAddress() {
       area?: string;
       postalCode?: string;
       isDefault?: boolean;
-    }) => client.public.addAddress(input),
+    }) => client.customer.addAddress(input),
     onSuccess: () => {
       toast.success("Address added");
-      qc.invalidateQueries({ queryKey: ["public-addresses"] });
+      qc.invalidateQueries({ queryKey: ["customer-addresses"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -342,10 +342,10 @@ export function useUpdateAddress() {
       area?: string;
       postalCode?: string;
       isDefault?: boolean;
-    }) => client.public.updateAddress(input),
+    }) => client.customer.updateAddress(input),
     onSuccess: () => {
       toast.success("Address updated");
-      qc.invalidateQueries({ queryKey: ["public-addresses"] });
+      qc.invalidateQueries({ queryKey: ["customer-addresses"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -355,10 +355,10 @@ export function useUpdateAddress() {
 export function useDeleteAddress() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: number }) => client.public.deleteAddress(input),
+    mutationFn: (input: { id: number }) => client.customer.deleteAddress(input),
     onSuccess: () => {
       toast.success("Address deleted");
-      qc.invalidateQueries({ queryKey: ["public-addresses"] });
+      qc.invalidateQueries({ queryKey: ["customer-addresses"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -369,10 +369,10 @@ export function useSetDefaultAddress() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { id: number }) =>
-      client.public.setDefaultAddress(input),
+      client.customer.setDefaultAddress(input),
     onSuccess: () => {
       toast.success("Default address updated");
-      qc.invalidateQueries({ queryKey: ["public-addresses"] });
+      qc.invalidateQueries({ queryKey: ["customer-addresses"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -390,10 +390,10 @@ export function useUpdateProfile() {
       address?: string | null;
       facebook?: string | null;
       whatsapp?: string | null;
-    }) => client.public.updateProfile(input),
+    }) => client.customer.updateProfile(input),
     onSuccess: () => {
       toast.success("Profile updated");
-      qc.invalidateQueries({ queryKey: ["public-profile"] });
+      qc.invalidateQueries({ queryKey: ["customer-profile"] });
     },
     onError: (err) => toast.error(err.message),
   });

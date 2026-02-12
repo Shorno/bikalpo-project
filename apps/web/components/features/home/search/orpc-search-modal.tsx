@@ -7,7 +7,7 @@ import { Search, X, Loader2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useSearchProducts } from "@/hooks/use-public-api";
+import { useSearchProducts } from "@/hooks/use-customer-api";
 import {
   Dialog,
   DialogContent,

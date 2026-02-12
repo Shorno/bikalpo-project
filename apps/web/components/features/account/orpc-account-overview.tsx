@@ -14,7 +14,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
-import { useMyOrders, useProfile } from "@/hooks/use-public-api";
+import { useMyOrders, useProfile } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";

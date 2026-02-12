@@ -14,7 +14,7 @@ import {
   useUpdateCartItem,
   useRemoveFromCart,
   useClearCart,
-} from "@/hooks/use-public-api";
+} from "@/hooks/use-customer-api";
 import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { authClient } from "@/lib/auth-client";
 

@@ -1,42 +1,26 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
-import { getActiveBrands } from "@/actions/brand/get-brands";
-import getCategories from "@/actions/category/get-categories";
 import { getVerifiedUsersForHome } from "@/actions/users/get-verified-users";
-import { BrandsCarousel } from "@/components/features/home/brands-carousel";
-import { CategoriesCarousel } from "@/components/features/home/categories-carousel";
 import { HeroButtons } from "@/components/features/home/hero-buttons";
 import { VerifiedCustomersSection } from "@/components/features/home/verified-customers-section";
-import PublicCategoryListing from "@/components/features/products/public-category-listing";
+import { OrpcBrandsCarousel } from "@/components/features/home/orpc-brands-carousel";
+import { OrpcCategoriesCarousel } from "@/components/features/home/orpc-categories-carousel";
+import { OrpcCategoryListing } from "@/components/features/products/orpc-category-listing";
+import { OrpcFeaturedProducts } from "@/components/features/home/orpc-featured-products";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
 
-export default async function HomePage() {
-  // Use allSettled so page still renders when DB is unreachable (e.g. migrations not run)
-  const [verifiedResult, brandsResult, categoriesResult] =
-    await Promise.allSettled([
-      getVerifiedUsersForHome(),
-      getActiveBrands(),
-      getCategories(),
-    ]);
-
-  const verifiedUsers =
-    verifiedResult.status === "fulfilled"
-      ? (verifiedResult.value.data ?? [])
-      : [];
-  const brands = brandsResult.status === "fulfilled" ? brandsResult.value : [];
-  const categoriesData =
-    categoriesResult.status === "fulfilled" ? categoriesResult.value : [];
-
-  // Filter active categories and map to display format
-  const categories = Array.isArray(categoriesData)
-    ? categoriesData
-        .filter((cat) => cat.isActive)
-        .map((cat) => ({
-          name: cat.name,
-          slug: cat.slug,
-          image: cat.image,
-        }))
-    : [];
+export default function HomePage() {
+  // Fetch verified users on client side
+  const { data: verifiedUsers = [] } = useQuery({
+    queryKey: ["verified-users-home"],
+    queryFn: async () => {
+      const result = await getVerifiedUsersForHome();
+      return result.data ?? [];
+    },
+  });
 
   return (
     <>
@@ -63,61 +47,32 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <BrandsCarousel brands={brands} />
+      <OrpcBrandsCarousel />
 
-      <CategoriesCarousel categories={categories} />
+      <OrpcCategoriesCarousel />
 
-      <PublicCategoryListing />
+      <div className="container mx-auto">
+        <OrpcCategoryListing />
+      </div>
+
+      <OrpcFeaturedProducts
+        title="New Arrivals"
+        subtitle="Check out our latest products"
+        type="new-arrivals"
+        limit={8}
+        href="/products?sort=newest"
+      />
+
+      <OrpcFeaturedProducts
+        title="Best Selling"
+        subtitle="Most popular products this month"
+        type="best-selling"
+        limit={8}
+        href="/products?sort=popular"
+        className="bg-gray-50"
+      />
 
       <VerifiedCustomersSection customers={verifiedUsers} />
-
-      <section className="py-16 bg-gray-50">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg p-8 flex items-center justify-between">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                  Explore Our New
-                  <br />
-                  Arrival Products
-                </h3>
-                <Button asChild>
-                  <Link href="/products/new-arrivals">Explore Products</Link>
-                </Button>
-              </div>
-              <div className="relative w-40 h-40">
-                <Image
-                  src="https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&h=400&fit=crop"
-                  alt="New Arrival Products"
-                  fill
-                  className="object-contain"
-                />
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg p-8 flex items-center justify-between">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                  Explore Our Best
-                  <br />
-                  Selling Products
-                </h3>
-                <Button asChild>
-                  <Link href="/products/best-selling">Explore Products</Link>
-                </Button>
-              </div>
-              <div className="relative w-40 h-40">
-                <Image
-                  src="https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&h=400&fit=crop"
-                  alt="Best Selling Products"
-                  fill
-                  className="object-contain"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <section className="relative py-20 overflow-hidden">
         <div
