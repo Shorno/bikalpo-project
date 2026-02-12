@@ -1,12 +1,4 @@
-import { ChevronRight } from "lucide-react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import getProductBySlug from "@/actions/products/get-product-by-slug";
-import { ProductActions } from "@/components/features/products/product-actions";
-import { ProductImageGallery } from "@/components/features/products/product-image-gallery";
-import { ProductSpecs } from "@/components/features/products/product-specs";
-import { RelatedProducts } from "@/components/features/products/related-products";
-import { ProductReviews } from "@/components/features/reviews/product-reviews";
+import { ProductDetailClient } from "@/components/customer/product-detail-client";
 
 interface ProductDetailsPageProps {
   params: Promise<{ category: string; slug: string }>;
@@ -15,12 +7,10 @@ interface ProductDetailsPageProps {
 export default async function CustomerProductDetailsPage({
   params,
 }: ProductDetailsPageProps) {
-  const { slug } = await params;
-  const product = await getProductBySlug(slug);
+  const { slug, category } = await params;
 
-  if (!product) {
-    notFound();
-  }
+  return <ProductDetailClient slug={slug} category={category} />;
+}
 
   // Combine main image with additional images
   const allImages = [
