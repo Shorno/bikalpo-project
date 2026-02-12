@@ -71,7 +71,7 @@ export const productRouter = {
         .route({
             method: "POST",
             path: "/products",
-            tags: ["Products"],
+            tags: ["Product Management"],
             summary: "Create product",
             description: "Create a new product",
         })
@@ -111,7 +111,7 @@ export const productRouter = {
         .route({
             method: "PUT",
             path: "/products/{id}",
-            tags: ["Products"],
+            tags: ["Product Management"],
             summary: "Update product",
             description: "Update an existing product",
         })
@@ -160,7 +160,7 @@ export const productRouter = {
         .route({
             method: "DELETE",
             path: "/products/{id}",
-            tags: ["Products"],
+            tags: ["Product Management"],
             summary: "Delete product",
             description: "Delete a product by ID",
         })
@@ -217,7 +217,7 @@ export const productRouter = {
         .route({
             method: "GET",
             path: "/products/stock",
-            tags: ["Products"],
+            tags: ["Product Management"],
             summary: "Get products for stock",
             description: "Get products with stock information for admin management",
         })
@@ -300,7 +300,7 @@ export const productRouter = {
         .route({
             method: "POST",
             path: "/products/{productId}/stock",
-            tags: ["Products"],
+            tags: ["Product Management"],
             summary: "Adjust stock",
             description: "Adjust product stock with a reason log",
         })
@@ -349,7 +349,7 @@ export const productRouter = {
         .route({
             method: "GET",
             path: "/products/{productId}/stock-logs",
-            tags: ["Products"],
+            tags: ["Product Management"],
             summary: "Get stock logs",
             description: "Get stock change history for a product",
         })

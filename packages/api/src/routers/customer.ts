@@ -942,28 +942,34 @@ const queries = {
         });
       }
 
-      const reorderItems = await Promise.all(
-        orderData.items.map(async (item) => {
-          const currentProduct = await db.query.product.findFirst({
-            where: eq(product.id, item.productId),
-          });
-
-          return {
-            id: item.id,
-            productId: item.productId,
-            productName: item.productName,
-            productImage: item.productImage,
-            productSize: item.productSize,
-            originalQuantity: item.quantity,
-            quantity: item.quantity,
-            originalPrice: item.unitPrice,
-            currentPrice: currentProduct?.price || item.unitPrice,
-            inStock: currentProduct?.inStock ?? false,
-            stockQuantity: currentProduct?.stockQuantity ?? 0,
-            productExists: !!currentProduct,
-          };
-        }),
+      // Batch fetch all products in one query instead of N+1
+      const productIds = Array.from(
+        new Set(orderData.items.map((item) => item.productId)),
       );
+      const products = productIds.length
+        ? await db.query.product.findMany({
+          where: inArray(product.id, productIds),
+        })
+        : [];
+      const productsById = new Map(products.map((p) => [p.id, p]));
+
+      const reorderItems = orderData.items.map((item) => {
+        const currentProduct = productsById.get(item.productId);
+        return {
+          id: item.id,
+          productId: item.productId,
+          productName: item.productName,
+          productImage: item.productImage,
+          productSize: item.productSize,
+          originalQuantity: item.quantity,
+          quantity: item.quantity,
+          originalPrice: item.unitPrice,
+          currentPrice: currentProduct?.price ?? item.unitPrice,
+          inStock: currentProduct?.inStock ?? false,
+          stockQuantity: currentProduct?.stockQuantity ?? 0,
+          productExists: !!currentProduct,
+        };
+      });
 
       return {
         items: reorderItems,

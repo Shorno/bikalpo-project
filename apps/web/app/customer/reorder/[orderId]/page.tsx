@@ -1,7 +1,7 @@
 "use client";
 
 import { useForm } from "@tanstack/react-form";
-import { useQuery } from "@tanstack/react-query";
+
 import {
   AlertCircle,
   ArrowLeft,
@@ -23,7 +23,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useReorderItems, usePlaceReorder } from "@/hooks/use-customer-api";
 import { ReorderProductPicker } from "@/components/features/orders/reorder-product-picker";
@@ -103,10 +103,12 @@ export default function ReorderPage({
   const [itemsInitialized, setItemsInitialized] = useState(false);
 
   // Initialize items when data is loaded
-  if (reorderData?.items && !itemsInitialized) {
-    setItems(reorderData.items as ReorderItem[]);
-    setItemsInitialized(true);
-  }
+  useEffect(() => {
+    if (reorderData?.items && !itemsInitialized) {
+      setItems(reorderData.items as ReorderItem[]);
+      setItemsInitialized(true);
+    }
+  }, [reorderData, itemsInitialized]);
 
   const originalOrder = reorderData?.originalOrder;
 

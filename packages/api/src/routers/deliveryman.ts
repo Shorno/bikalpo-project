@@ -22,7 +22,7 @@ export const deliverymanRouter = {
         .route({
             method: "GET",
             path: "/deliverymen",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Get all deliverymen",
             description: "Get all deliverymen with delivery counts and stats",
         })
@@ -71,7 +71,7 @@ export const deliverymanRouter = {
         .route({
             method: "GET",
             path: "/deliverymen/{id}",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Get deliveryman by ID",
             description: "Get deliveryman details with active group and delivery history",
         })
@@ -540,7 +540,7 @@ export const deliverymanRouter = {
         .route({
             method: "GET",
             path: "/delivery-groups",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Get all delivery groups",
         })
         .input(z.object({ status: z.string().optional() }).optional())
@@ -592,7 +592,7 @@ export const deliverymanRouter = {
         .route({
             method: "GET",
             path: "/delivery-groups/{id}",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Get delivery group by ID",
         })
         .input(z.object({ id: z.number() }))
@@ -644,7 +644,7 @@ export const deliverymanRouter = {
         .route({
             method: "POST",
             path: "/delivery-groups/{groupId}/assign",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Assign deliveryman to delivery group",
         })
         .input(z.object({
@@ -706,7 +706,7 @@ export const deliverymanRouter = {
         .route({
             method: "GET",
             path: "/deliverymen-for-assignment",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Get deliverymen available for assignment",
         })
         .input(z.object({ orderShippingArea: z.string().nullable().optional() }).optional())
@@ -759,7 +759,7 @@ export const deliverymanRouter = {
         .route({
             method: "POST",
             path: "/delivery-groups/{id}/delete",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Delete delivery group",
         })
         .input(z.object({ id: z.number() }))
@@ -854,7 +854,7 @@ export const deliverymanRouter = {
         .route({
             method: "GET",
             path: "/delivery-rules",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "List delivery rules",
         })
         .handler(async () => {
@@ -871,7 +871,7 @@ export const deliverymanRouter = {
         .route({
             method: "POST",
             path: "/delivery-rules",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Create delivery rule",
         })
         .input(z.object({
@@ -910,7 +910,7 @@ export const deliverymanRouter = {
         .route({
             method: "POST",
             path: "/delivery-rules/{id}/update",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Update delivery rule",
         })
         .input(z.object({
@@ -948,7 +948,7 @@ export const deliverymanRouter = {
         .route({
             method: "POST",
             path: "/delivery-rules/{id}/delete",
-            tags: ["Deliverymen"],
+            tags: ["Delivery Management"],
             summary: "Delete delivery rule",
         })
         .input(z.object({ id: z.number() }))
