@@ -680,6 +680,8 @@ export const deliverymanRouter = {
                     })
                     .returning();
 
+                if (!group) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Failed to create delivery group" });
+
                 await tx.insert(deliveryGroupInvoice).values(
                     input.invoiceIds.map((invoiceId, index) => ({
                         groupId: group.id,
