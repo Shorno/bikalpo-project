@@ -2,7 +2,6 @@ import { format } from "date-fns";
 import { ArrowLeft, Package } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { client } from "@/utils/orpc";
 import { ProcessReturnDialog } from "@/components/features/returns/process-return-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
+import { client } from "@/utils/orpc";
 
 function getStatusBadge(status: string) {
   const variant =
@@ -61,7 +61,8 @@ export default async function AdminReturnDetailPage({
     );
   }
 
-  let returnData: any;
+  type ReturnByIdResult = Awaited<ReturnType<typeof client.returns.getById>>;
+  let returnData: ReturnByIdResult["return"] | null = null;
   try {
     const result = await client.returns.getById({ id: returnId });
     returnData = result?.return;
@@ -73,9 +74,7 @@ export default async function AdminReturnDetailPage({
     return (
       <div className="flex flex-col items-center justify-center h-40 sm:h-64 gap-3">
         <Package className="h-10 w-10 text-muted-foreground mb-2" />
-        <p className="text-sm text-muted-foreground">
-          Return not found
-        </p>
+        <p className="text-sm text-muted-foreground">Return not found</p>
         <Button asChild variant="outline" size="sm">
           <Link href={`${ADMIN_BASE}/returns`}>Back to Returns</Link>
         </Button>

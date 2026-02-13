@@ -1,7 +1,6 @@
 import { format } from "date-fns";
 import { Eye, RotateCcw } from "lucide-react";
 import Link from "next/link";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
+import { client } from "@/utils/orpc";
 
 export default async function AdminReturnsPage() {
   // Get all returns using ORPC
@@ -87,7 +87,14 @@ export default async function AdminReturnsPage() {
                     (sum, item) => sum + (item.quantity || 0),
                     0,
                   );
-                  const submitter = (ret as any).submitter;
+                  const submitter = (
+                    ret as unknown as {
+                      submitter?: {
+                        name: string;
+                        phoneNumber?: string | null;
+                      } | null;
+                    }
+                  ).submitter;
 
                   return (
                     <TableRow key={ret.id}>

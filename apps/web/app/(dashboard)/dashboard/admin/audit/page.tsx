@@ -12,7 +12,6 @@ import {
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { client, orpc } from "@/utils/orpc";
 import ActivityDetailsModal from "@/components/admin/audit/activity-details-modal";
 import { useAuditColumns } from "@/components/admin/audit/audit-columns";
 import AuditTable from "@/components/admin/audit/audit-table";
@@ -34,6 +33,7 @@ import type {
   ModuleType,
   UserRole,
 } from "@/types/audit";
+import { client, orpc } from "@/utils/orpc";
 
 export default function AuditLogPage() {
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
@@ -176,7 +176,6 @@ export default function AuditLogPage() {
                 <Calendar className="h-3 w-3" />
                 From
               </Label>
-              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
               <Input
                 id="dateFrom"
                 type="date"
@@ -191,7 +190,6 @@ export default function AuditLogPage() {
                 <Calendar className="h-3 w-3" />
                 To
               </Label>
-              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
               <Input
                 id="dateTo"
                 type="date"
@@ -209,7 +207,6 @@ export default function AuditLogPage() {
                   setUserRole(value as UserRole | "all")
                 }
               >
-                {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                 <SelectTrigger id="userRole">
                   <SelectValue placeholder="All Roles" />
                 </SelectTrigger>
@@ -234,7 +231,6 @@ export default function AuditLogPage() {
                   setActionType(value as ActionType | "all")
                 }
               >
-                {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                 <SelectTrigger id="actionType">
                   <SelectValue placeholder="All Actions" />
                 </SelectTrigger>
@@ -262,7 +258,6 @@ export default function AuditLogPage() {
                   setModule(value as ModuleType | "all")
                 }
               >
-                {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                 <SelectTrigger id="module">
                   <SelectValue placeholder="All Modules" />
                 </SelectTrigger>
@@ -290,7 +285,6 @@ export default function AuditLogPage() {
                 <Search className="h-3 w-3" />
                 Search
               </Label>
-              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
               <Input
                 id="search"
                 type="text"

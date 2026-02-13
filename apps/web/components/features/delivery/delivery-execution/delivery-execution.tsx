@@ -4,8 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import { orpc } from "@/utils/orpc";
 import { DELIVERY_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 import { DeliveredModal } from "./delivered-modal";
 import { FailedModal } from "./failed-modal";
 import { InvoicesList } from "./invoices-list";
@@ -87,7 +87,10 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
   // Handle delivered confirm
   const handleDeliveredConfirm = React.useCallback(() => {
     if (!deliveredInvoiceId) return;
-    deliveredMutation.mutate({ deliveryInvoiceId: deliveredInvoiceId, deliveryOtp: otp });
+    deliveredMutation.mutate({
+      deliveryInvoiceId: deliveredInvoiceId,
+      deliveryOtp: otp,
+    });
   }, [deliveredInvoiceId, otp, deliveredMutation]);
 
   // Handle failed confirm
@@ -97,7 +100,10 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
       toast.error("Please provide a reason for failure");
       return;
     }
-    failedMutation.mutate({ deliveryInvoiceId: failedInvoiceId, failedReason: failReason });
+    failedMutation.mutate({
+      deliveryInvoiceId: failedInvoiceId,
+      failedReason: failReason,
+    });
   }, [failedInvoiceId, failReason, failedMutation]);
 
   // Determine if actions can be taken (only when delivery has started)

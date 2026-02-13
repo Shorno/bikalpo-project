@@ -10,7 +10,7 @@ export default function CategoryList() {
   const columns = useCategoryColumns();
 
   const { data: categories = [], isLoading } = useQuery(
-    orpc.category.getAll.queryOptions()
+    orpc.category.getAll.queryOptions(),
   );
 
   if (isLoading) {

@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { SalesmenClient } from "./salesmen-client";
 import TableSkeleton from "@/components/table-skeleton";
 import { orpc } from "@/utils/orpc";
+import { SalesmenClient } from "./salesmen-client";
 
 export default function SalesmenPage() {
   const { data, isLoading, error } = useQuery({

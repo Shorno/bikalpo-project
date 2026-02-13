@@ -4,6 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
 import { Eye, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
+
 type CustomerListItem = {
   id: string;
   name: string;
@@ -15,6 +16,7 @@ type CustomerListItem = {
   ordersCount: number;
   totalSpent: number;
 };
+
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

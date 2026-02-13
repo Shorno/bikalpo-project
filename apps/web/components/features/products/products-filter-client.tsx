@@ -3,13 +3,13 @@
  */
 "use client";
 
-import {
-  useActiveCategories,
-  useActiveBrands,
-  useSubcategoriesByCategory,
-} from "@/hooks/use-customer-api";
 import { FilterClient } from "@/components/features/products/filter-client";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  useActiveBrands,
+  useActiveCategories,
+  useSubcategoriesByCategory,
+} from "@/hooks/use-customer-api";
 
 interface ProductsFilterClientProps {
   categorySlug?: string;

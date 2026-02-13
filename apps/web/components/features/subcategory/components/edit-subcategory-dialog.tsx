@@ -1,11 +1,11 @@
 "use client";
 
+import type { SubCategory } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,9 +26,9 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { SubCategory } from "@/db/schema";
 import { updateSubcategorySchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
+import { client } from "@/utils/orpc";
 
 interface EditSubcategoryDialogProps {
   subcategory: SubCategory;

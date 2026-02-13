@@ -269,9 +269,9 @@ export default function CustomersPage() {
                                   <div className="text-xs text-muted-foreground">
                                     {c.lastActivityAt
                                       ? format(
-                                        new Date(c.lastActivityAt),
-                                        "MMM d, yyyy",
-                                      )
+                                          new Date(c.lastActivityAt),
+                                          "MMM d, yyyy",
+                                        )
                                       : "No activity"}
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -307,9 +307,9 @@ export default function CustomersPage() {
                               {header.isPlaceholder
                                 ? null
                                 : flexRender(
-                                  header.column.columnDef.header,
-                                  header.getContext(),
-                                )}
+                                    header.column.columnDef.header,
+                                    header.getContext(),
+                                  )}
                             </TableHead>
                           ))}
                           <TableHead className="w-24 font-semibold">

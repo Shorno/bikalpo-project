@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { client } from "@/utils/orpc";
+import { useState } from "react";
+import { toast } from "sonner";
 import {
   InvoiceDeliveryBadge,
   InvoicePaymentBadge,
@@ -37,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { client } from "@/utils/orpc";
 
 function formatPrice(price: string | number) {
   return new Intl.NumberFormat("en-BD", {
@@ -154,6 +156,7 @@ function InvoiceDetailSkeleton() {
 export default function InvoiceDetailPage() {
   const params = useParams();
   const invoiceId = Number(params.id);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const { data: result, isLoading } = useQuery({
     queryKey: ["admin-invoice", invoiceId],
@@ -190,6 +193,20 @@ export default function InvoiceDetailPage() {
   }
 
   const invoice = result.invoice;
+
+  const handleDownloadPdf = async () => {
+    try {
+      setIsDownloadingPdf(true);
+      const res = await client.adminInvoice.getPdfUrl({ id: invoiceId });
+      window.open(res.url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to get PDF URL",
+      );
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-6 md:space-y-8">
@@ -239,11 +256,14 @@ export default function InvoiceDetailPage() {
                 </Link>
               </Button>
             )}
-            <Button variant="outline" size="sm" asChild>
-              <a href={`/api/invoices/${invoiceId}/pdf`} download>
-                <Download className="h-4 w-4 mr-2" />
-                Download PDF
-              </a>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadPdf}
+              disabled={isDownloadingPdf}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              {isDownloadingPdf ? "Preparing..." : "Download PDF"}
             </Button>
           </div>
         </div>
@@ -684,15 +704,15 @@ export default function InvoiceDetailPage() {
                     </p>
                     {(invoice.order?.shippingArea ||
                       invoice.order?.shippingCity) && (
-                        <p className="text-gray-500 mt-1">
-                          {[
-                            invoice.order?.shippingArea,
-                            invoice.order?.shippingCity,
-                          ]
-                            .filter(Boolean)
-                            .join(", ")}
-                        </p>
-                      )}
+                      <p className="text-gray-500 mt-1">
+                        {[
+                          invoice.order?.shippingArea,
+                          invoice.order?.shippingCity,
+                        ]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </p>
+                    )}
                   </div>
                 </div>
 

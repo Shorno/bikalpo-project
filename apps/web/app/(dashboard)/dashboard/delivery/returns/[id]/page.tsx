@@ -2,7 +2,6 @@ import { format } from "date-fns";
 import { ArrowLeft, Package } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { queryClient, orpc } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DELIVERY_BASE } from "@/lib/routes";
+import { type client, orpc, queryClient } from "@/utils/orpc";
 
 function getStatusBadge(status: string) {
   const variant =
@@ -61,12 +61,13 @@ export default async function ReturnDetailsPage({
   }
 
   // Fetch data using oRPC + queryClient for consistency with TanStack Query
-  let returnData: any;
+  type ReturnByIdResult = Awaited<ReturnType<typeof client.returns.getById>>;
+  let returnData: ReturnByIdResult["return"] | null = null;
   try {
     const result = await queryClient.fetchQuery(
-      orpc.returns.getById.queryOptions({ input: { id: returnId } })
+      orpc.returns.getById.queryOptions({ input: { id: returnId } }),
     );
-    returnData = (result as any)?.return;
+    returnData = result?.return ?? null;
   } catch (error) {
     console.error("Failed to load return details:", error);
   }
@@ -75,9 +76,7 @@ export default async function ReturnDetailsPage({
     return (
       <div className="flex flex-col items-center justify-center h-40 sm:h-64 gap-3">
         <Package className="h-10 w-10 text-muted-foreground mb-2" />
-        <p className="text-sm text-muted-foreground">
-          Return not found
-        </p>
+        <p className="text-sm text-muted-foreground">Return not found</p>
         <Button asChild variant="outline" size="sm">
           <Link href={`${DELIVERY_BASE}/returns`}>Back to Returns</Link>
         </Button>
@@ -108,7 +107,7 @@ export default async function ReturnDetailsPage({
             {getStatusBadge(returnData.status)}
           </div>
           <p className="text-[10px] sm:text-sm text-muted-foreground">
-            Order: {returnData.order?.orderNumber} •{" "}
+            Order: {returnData.order?.orderNumber} â€¢{" "}
             {format(new Date(returnData.createdAt), "MMM d, yyyy")}
           </p>
         </div>
@@ -126,7 +125,7 @@ export default async function ReturnDetailsPage({
             </div>
             <div className="text-center p-2 rounded-lg bg-primary/10">
               <p className="text-lg sm:text-xl font-bold text-primary">
-                ৳{Number(returnData.totalAmount).toLocaleString()}
+                à§³{Number(returnData.totalAmount).toLocaleString()}
               </p>
               <p className="text-[10px] sm:text-xs text-muted-foreground">
                 Total Amount
@@ -278,7 +277,7 @@ export default async function ReturnDetailsPage({
                         {item.reason?.replace("_", " ") || "N/A"}
                       </span>
                       <span className="font-semibold">
-                        ৳
+                        à§³
                         {(
                           item.quantity * Number(item.unitPrice)
                         ).toLocaleString()}
@@ -345,10 +344,10 @@ export default async function ReturnDetailsPage({
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          ৳{Number(item.unitPrice).toLocaleString()}
+                          à§³{Number(item.unitPrice).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          ৳
+                          à§³
                           {(
                             item.quantity * Number(item.unitPrice)
                           ).toLocaleString()}
@@ -400,39 +399,34 @@ export default async function ReturnDetailsPage({
       )}
 
       {/* Attachments */}
-      {(returnData as any).attachments &&
-        ((returnData as any).attachments as string[]).length > 0 && (
-          <Card className="p-0">
-            <CardContent className="p-3 sm:p-4">
-              <p className="text-xs font-semibold text-muted-foreground mb-2 sm:mb-3 uppercase tracking-wide">
-                Attachments (
-                {((returnData as any).attachments as string[]).length})
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {((returnData as any).attachments as string[]).map(
-                  (url, index) => (
-                    <a
-                      // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
-                      key={index}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="relative w-20 h-20 rounded-md overflow-hidden bg-accent hover:opacity-80 transition-opacity"
-                    >
-                      <Image
-                        width={300}
-                        height={300}
-                        src={url}
-                        alt={`Attachment ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </a>
-                  ),
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+      {returnData.attachments && returnData.attachments.length > 0 && (
+        <Card className="p-0">
+          <CardContent className="p-3 sm:p-4">
+            <p className="text-xs font-semibold text-muted-foreground mb-2 sm:mb-3 uppercase tracking-wide">
+              Attachments ({returnData.attachments.length})
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {returnData.attachments.map((url, index) => (
+                <a
+                  key={index}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative w-20 h-20 rounded-md overflow-hidden bg-accent hover:opacity-80 transition-opacity"
+                >
+                  <Image
+                    width={300}
+                    height={300}
+                    src={url}
+                    alt={`Attachment ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </a>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Processing Info */}
       {returnData.processor && (

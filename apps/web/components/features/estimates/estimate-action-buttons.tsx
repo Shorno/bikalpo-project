@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,9 +41,22 @@ import {
   type ConvertEstimateFormValues,
   convertEstimateSchema,
 } from "@/schema/estimate.schema";
+import { client } from "@/utils/orpc";
+
+interface EstimateCustomer {
+  name?: string | null;
+  phoneNumber?: string | null;
+}
+
+interface EstimateActionInput {
+  id: number;
+  discount?: string | number | null;
+  status: string;
+  customer?: EstimateCustomer | null;
+}
 
 interface EstimateActionButtonsProps {
-  estimate: any; // Type inference from drizzle result
+  estimate: EstimateActionInput;
 }
 
 export function EstimateActionButtons({
@@ -92,8 +104,10 @@ export function EstimateActionButtons({
       await client.salesman.sendEstimate({ id: estimate.id });
       toast.success("Estimate sent for review");
       router.refresh();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to send estimate");
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to send estimate",
+      );
     } finally {
       setLoading(false);
     }
@@ -110,8 +124,10 @@ export function EstimateActionButtons({
         : "/employee/estimates";
 
       router.push(finalRedirectPath);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to delete estimate");
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete estimate",
+      );
     } finally {
       setLoading(false);
     }
@@ -132,8 +148,10 @@ export function EstimateActionButtons({
 
       router.push(redirectPath);
       router.refresh();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to convert estimate");
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to convert estimate",
+      );
     } finally {
       setLoading(false);
     }

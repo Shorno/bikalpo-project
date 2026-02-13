@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -11,34 +10,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { client } from "@/utils/orpc";
 
 interface BaseEmployee {
   id: string;
   name: string;
-  email: string;
-  role: "salesman" | "deliveryman";
+  email?: string;
+  role?: string | null;
+  totalEstimates?: number;
+  convertedEstimates?: number;
+  approvedEstimates?: number;
+  conversionRate?: number;
+  totalSalesValue?: number;
+  avgOrderValue?: number;
+  totalDeliveries?: number;
+  completedDeliveries?: number;
+  failedDeliveries?: number;
+  successRate?: number;
+  avgDeliveriesPerDay?: number;
 }
-
-interface SalesmanEmployee extends BaseEmployee {
-  role: "salesman";
-  totalEstimates: number;
-  convertedEstimates: number;
-  approvedEstimates: number;
-  conversionRate: number;
-  totalSalesValue: number;
-  avgOrderValue: number;
-}
-
-interface DeliverymanEmployee extends BaseEmployee {
-  role: "deliveryman";
-  totalDeliveries: number;
-  completedDeliveries: number;
-  failedDeliveries: number;
-  successRate: number;
-  avgDeliveriesPerDay: number;
-}
-
-type Employee = SalesmanEmployee | DeliverymanEmployee;
+type Employee = BaseEmployee;
 
 interface TopCustomer {
   shopName?: string;
@@ -63,8 +54,10 @@ export function EmployeeDetailModal({
   open,
   onOpenChange,
 }: EmployeeDetailModalProps) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: detailedReport, isLoading } = useQuery<any>({
+  type DetailedReport = Awaited<
+    ReturnType<typeof client.adminEmployeeReport.getDetailed>
+  >;
+  const { data: detailedReport, isLoading } = useQuery<DetailedReport>({
     queryKey: ["employee-detailed-report", employee?.id],
     queryFn: () =>
       client.adminEmployeeReport.getDetailed({ employeeId: employee.id }),
@@ -75,14 +68,15 @@ export function EmployeeDetailModal({
     employee.role === "salesman"
       ? employee.conversionRate
       : employee.successRate;
+  const normalizedSuccessRate = successRate ?? 0;
   const rating =
-    successRate >= 90
+    normalizedSuccessRate >= 90
       ? 5
-      : successRate >= 80
+      : normalizedSuccessRate >= 80
         ? 4
-        : successRate >= 70
+        : normalizedSuccessRate >= 70
           ? 3
-          : successRate >= 60
+          : normalizedSuccessRate >= 60
             ? 2
             : 1;
 
@@ -234,8 +228,9 @@ export function EmployeeDetailModal({
                   {Array.from({ length: 5 }).map((_, i) => (
                     <span
                       key={i}
-                      className={`text-2xl ${i < rating ? "text-yellow-400" : "text-gray-300"
-                        }`}
+                      className={`text-2xl ${
+                        i < rating ? "text-yellow-400" : "text-gray-300"
+                      }`}
                     >
                       ★
                     </span>
@@ -246,7 +241,7 @@ export function EmployeeDetailModal({
                 </span>
               </div>
               <p className="text-sm text-muted-foreground mt-2">
-                Based on {successRate}% success rate
+                Based on {normalizedSuccessRate}% success rate
               </p>
             </CardContent>
           </Card>
@@ -284,7 +279,7 @@ export function EmployeeDetailModal({
 
                       {"topCustomers" in detailedReport &&
                         (detailedReport.topCustomers as TopCustomer[])?.length >
-                        0 && (
+                          0 && (
                           <>
                             <Separator />
                             <div>

@@ -11,6 +11,15 @@ import { authClient } from "@/lib/auth-client";
 import { loginSchema } from "@/schema/auth.schema";
 import { AuthTabs } from "./auth-tabs";
 
+function getErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    return typeof message === "string" ? message : "";
+  }
+  return "";
+}
+
 export function LoginForm() {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -103,9 +112,7 @@ export function LoginForm() {
                         {isInvalid && (
                           <p className="text-sm text-red-500">
                             {field.state.meta.errors
-                              .map((e: any) =>
-                                typeof e === "string" ? e : e?.message || "",
-                              )
+                              .map(getErrorMessage)
                               .filter(Boolean)
                               .join(", ")}
                           </p>
@@ -144,9 +151,7 @@ export function LoginForm() {
                         {isInvalid && (
                           <p className="text-sm text-red-500">
                             {field.state.meta.errors
-                              .map((e: any) =>
-                                typeof e === "string" ? e : e?.message || "",
-                              )
+                              .map(getErrorMessage)
                               .filter(Boolean)
                               .join(", ")}
                           </p>

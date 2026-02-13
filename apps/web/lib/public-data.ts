@@ -1,0 +1,108 @@
+import { getPublicOrpcClient } from "@/lib/orpc/public-server";
+
+export interface ProductListFilters {
+  category?: string;
+  subcategory?: string;
+  brand?: string;
+  sort?: string;
+  minPrice?: string;
+  maxPrice?: string;
+  inStock?: string;
+  search?: string;
+  page?: string;
+  limit?: string;
+}
+
+export interface ProductPaginationData {
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+export async function getVerifiedUsersForHome(revalidate = 1800) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.verifiedUser.getForHome();
+  return result.users ?? [];
+}
+
+export async function getVerifiedUsersCount(revalidate = 1800) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.customer.getVerifiedUsersCount();
+  return result.count ?? 0;
+}
+
+export async function getVerifiedUsers(
+  params?: {
+    search?: string;
+    area?: string;
+    sortBy?: "top_buyers" | "most_orders" | "newest";
+    page?: number;
+    limit?: number;
+  },
+  revalidate = 1800,
+) {
+  const client = getPublicOrpcClient(revalidate);
+  return client.customer.getVerifiedUsers(params ?? {});
+}
+
+export async function getCategoryBySlug(slug: string, revalidate = 600) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    const result = await client.customer.getCategoryBySlug({ slug });
+    return result.category;
+  } catch {
+    return null;
+  }
+}
+
+export async function getActiveCategories(revalidate = 600) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.customer.getActiveCategories();
+  return result.categories ?? [];
+}
+
+export async function getActiveBrands(revalidate = 600) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.customer.getActiveBrands();
+  return result.brands ?? [];
+}
+
+export async function getCategoriesWithProducts(limit = 8, revalidate = 600) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.customer.getCategoriesWithProducts({ limit });
+  return result.categories ?? [];
+}
+
+export async function getSubcategoriesByCategory(
+  slug: string,
+  revalidate = 600,
+) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.customer.getSubcategoriesByCategory({ slug });
+  return result.subcategories ?? [];
+}
+
+export async function getProductBySlug(slug: string, revalidate = 300) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    return await client.customer.getProductDetails({ slug });
+  } catch {
+    return null;
+  }
+}
+
+export async function getProductsWithQuery(
+  filters: ProductListFilters,
+  revalidate = 600,
+) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.customer.getCustomerProducts(filters);
+
+  return {
+    products: result.products ?? [],
+    pagination: result.pagination as ProductPaginationData,
+  };
+}

@@ -1,10 +1,10 @@
 "use client";
 
+import type { ItemRequestWithRelations } from "@bikalpo-project/db/schema";
 import { Check, Lightbulb, Loader2, X } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +18,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { ItemRequestWithRelations } from "@/db/schema/item-request";
+import { client } from "@/utils/orpc";
 import { ProductSelect } from "./product-select";
 import { RequestStatusBadge } from "./request-status-badge";
 
@@ -54,7 +54,9 @@ export function ProcessRequestDialog({ request }: ProcessRequestDialogProps) {
       toast.success("Request approved!");
       setOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -70,7 +72,9 @@ export function ProcessRequestDialog({ request }: ProcessRequestDialogProps) {
       toast.success("Request rejected");
       setOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -92,7 +96,9 @@ export function ProcessRequestDialog({ request }: ProcessRequestDialogProps) {
       toast.success("Alternative suggested!");
       setOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
     } finally {
       setIsSubmitting(false);
     }

@@ -1,11 +1,11 @@
 "use client";
 
+import type { InvoiceWithItems } from "@bikalpo-project/db/schema";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Minus, Package, Plus } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { InvoiceWithItems } from "@/db/schema/invoice";
+import { client } from "@/utils/orpc";
 
 interface CreatePartialInvoiceDialogProps {
   invoice: InvoiceWithItems;
@@ -274,10 +274,11 @@ export function CreatePartialInvoiceDialog({
                             </TableCell>
                             <TableCell className="text-center">
                               <span
-                                className={`inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-md text-sm font-semibold ${item.remainingQty > 0
+                                className={`inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-md text-sm font-semibold ${
+                                  item.remainingQty > 0
                                     ? "bg-blue-100 text-blue-700"
                                     : "bg-muted text-muted-foreground"
-                                  }`}
+                                }`}
                               >
                                 {item.remainingQty}
                               </span>
@@ -306,7 +307,7 @@ export function CreatePartialInvoiceDialog({
                                       handleQuantityChange(
                                         item.productId,
                                         Number.parseInt(e.target.value, 10) ||
-                                        0,
+                                          0,
                                       )
                                     }
                                     className="h-8 w-16 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"

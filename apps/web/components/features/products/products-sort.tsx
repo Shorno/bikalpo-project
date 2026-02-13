@@ -1,5 +1,6 @@
 "use client";
 
+import type { Brand, Category, SubCategory } from "@bikalpo-project/db/schema";
 import { useQueryState } from "nuqs";
 import { MobileFilter } from "@/components/features/products/mobile-filter";
 import { Label } from "@/components/ui/label";
@@ -10,8 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Category, SubCategory } from "@/db/schema";
-import type { Brand } from "@/db/schema/brand";
 
 interface ProductsSortProps {
   categories?: Category[];

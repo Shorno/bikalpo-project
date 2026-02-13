@@ -22,7 +22,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -48,6 +47,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { client } from "@/utils/orpc";
 
 export function SalesReportsClient() {
   const [filters, setFilters] = useState<{
@@ -488,7 +488,7 @@ export function SalesReportsClient() {
       </div>
 
       {/* Sales by Salesman Chart */}
-      {salesByEmployee.length > 0 && (
+      {salesByEmployee && salesByEmployee.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Sales by Salesman</CardTitle>

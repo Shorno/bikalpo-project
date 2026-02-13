@@ -4,7 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { useCreateSupportTicket } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -23,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useCreateSupportTicket } from "@/hooks/use-customer-api";
 import {
   type CreateTicketFormValues,
   createTicketSchema,
@@ -50,8 +50,10 @@ export function TicketForm({ onSuccess, onCancel }: TicketFormProps) {
       await createTicketMutation.mutateAsync(data);
       form.reset();
       onSuccess?.();
-    } catch (err: any) {
-      toast.error(err?.message || "Something went wrong");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Something went wrong";
+      toast.error(message);
     }
   }
 
@@ -129,8 +131,14 @@ export function TicketForm({ onSuccess, onCancel }: TicketFormProps) {
                 Cancel
               </Button>
             )}
-            <Button type="submit" disabled={createTicketMutation.isPending} className="flex-1">
-              {createTicketMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button
+              type="submit"
+              disabled={createTicketMutation.isPending}
+              className="flex-1"
+            >
+              {createTicketMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               Submit Ticket
             </Button>
           </div>

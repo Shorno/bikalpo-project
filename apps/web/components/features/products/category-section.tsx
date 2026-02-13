@@ -1,8 +1,8 @@
+import type { ProductWithRelations } from "@bikalpo-project/db/schema";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { ProductCard } from "@/components/features/products/product-card";
 import { Button } from "@/components/ui/button";
-import type { ProductWithRelations } from "@/db/schema";
 
 interface CategorySectionProps {
   category: {

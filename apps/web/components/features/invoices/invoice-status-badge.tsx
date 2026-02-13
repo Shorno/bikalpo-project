@@ -1,8 +1,8 @@
-import { Badge } from "@/components/ui/badge";
 import type {
   InvoiceDeliveryStatus,
   InvoicePaymentStatus,
-} from "@/db/schema/invoice";
+} from "@bikalpo-project/db/schema";
+import { Badge } from "@/components/ui/badge";
 
 interface InvoicePaymentBadgeProps {
   status: InvoicePaymentStatus;

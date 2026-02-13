@@ -4,11 +4,23 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
 import { ArrowUpDown, Clock, Eye } from "lucide-react";
 import Link from "next/link";
-import type { CustomerListItem } from "@/actions/employee/get-assigned-customers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SALES_BASE } from "@/lib/routes";
 import { formatPrice } from "@/utils/currency";
+
+type CustomerListItem = {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  shopName: string | null;
+  createdAt: Date;
+  totalEstimates: number;
+  totalOrders: number;
+  totalSpent: string;
+  lastActivityAt: Date | null;
+};
 
 export function getCustomerColumns(
   onQuickView?: (customerId: string) => void,

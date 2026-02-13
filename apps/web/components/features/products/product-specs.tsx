@@ -1,5 +1,7 @@
-import type { ProductFeatureGroup } from "@/db/schema/product";
-import type { QuantitySelectorOption } from "@/db/schema/product-variant";
+import type {
+  ProductFeatureGroup,
+  QuantitySelectorOption,
+} from "@bikalpo-project/db/schema";
 
 type VariantRow = {
   id: number;

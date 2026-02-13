@@ -1,19 +1,21 @@
 import Image from "next/image";
 import Link from "next/link";
-import { getActiveBrands } from "@/actions/brand/get-brands";
-import getCategories from "@/actions/category/get-categories";
-import { getVerifiedUsersForHome } from "@/actions/users/get-verified-users";
 import { BrandsCarousel } from "@/components/features/home/brands-carousel";
 import { CategoriesCarousel } from "@/components/features/home/categories-carousel";
 import { HeroButtons } from "@/components/features/home/hero-buttons";
 import { VerifiedCustomersSection } from "@/components/features/home/verified-customers-section";
 import CategoryListing from "@/components/features/products/category-listing";
 import { Button } from "@/components/ui/button";
+import {
+  getActiveBrands,
+  getActiveCategories,
+  getVerifiedUsersForHome,
+} from "@/lib/public-data";
 
 export async function GuestHomeView() {
-  const { data: verifiedUsers } = await getVerifiedUsersForHome();
-  const brands = await getActiveBrands();
-  const categoriesData = await getCategories();
+  const verifiedUsers = await getVerifiedUsersForHome(1800);
+  const brands = await getActiveBrands(600);
+  const categoriesData = await getActiveCategories(600);
 
   // Filter active categories and map to display format
   const categories = categoriesData

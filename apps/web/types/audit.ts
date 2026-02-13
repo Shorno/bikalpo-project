@@ -44,7 +44,7 @@ export interface AuditActivity {
   module: ModuleType;
   description: string;
   status: ActivityStatus;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   sessionId?: string;
   sessionActive?: boolean;
   deviceType?: "web" | "mobile";

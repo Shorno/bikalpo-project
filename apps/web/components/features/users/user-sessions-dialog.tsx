@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +22,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import type { Session, UserWithSessions } from "./types";
+import { client } from "@/utils/orpc";
+import type { UserSession, UserWithSessions } from "./types";
 
 interface UserSessionsDialogProps {
   user: UserWithSessions;
@@ -145,7 +145,7 @@ function SessionCard({
   onRevoke,
   isCurrent,
 }: {
-  session: Session;
+  session: UserSession;
   onRevoke: (id: string) => void;
   isCurrent?: boolean;
 }) {
@@ -230,7 +230,7 @@ export function UserSessionsDialog({
   currentSessionId,
 }: UserSessionsDialogProps) {
   const [open, setOpen] = useState(false);
-  const [sessions, setSessions] = useState<Session[]>(user.sessions);
+  const [sessions, setSessions] = useState<UserSession[]>(user.sessions);
   const [isRevokingAll, setIsRevokingAll] = useState(false);
 
   const handleSessionRevoked = (sessionId: string) => {

@@ -14,7 +14,6 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import * as React from "react";
-import { client } from "@/utils/orpc";
 import NewSubcategoryDialog from "@/components/features/subcategory/components/new-subcategory-dialog";
 import TableSkeleton from "@/components/table-skeleton";
 import { Button } from "@/components/ui/button";
@@ -27,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { client } from "@/utils/orpc";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -102,9 +102,9 @@ export default function SubcategoryTable<TData, TValue>({
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
                     </TableHead>
                   );
                 })}

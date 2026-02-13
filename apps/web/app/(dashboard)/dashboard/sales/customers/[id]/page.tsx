@@ -45,7 +45,9 @@ export default function CustomerDetailsPage() {
   const customerId = params.id as string;
 
   const { data: result, isLoading } = useQuery({
-    ...orpc.salesman.getCustomerDetails.queryOptions({ input: { id: customerId } }),
+    ...orpc.salesman.getCustomerDetails.queryOptions({
+      input: { id: customerId },
+    }),
     enabled: !!customerId,
   });
 

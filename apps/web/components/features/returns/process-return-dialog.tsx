@@ -6,7 +6,6 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -33,9 +32,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { client } from "@/utils/orpc";
 
 interface ProcessReturnDialogProps {
-  returnRequest: any;
+  returnRequest: { id: number };
   trigger?: React.ReactNode;
 }
 
@@ -60,8 +60,10 @@ export function ProcessReturnDialog({
       setOpen(false);
       router.refresh();
     },
-    onError: (error: any) => {
-      toast.error(error?.message || "Something went wrong");
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
     },
   });
 

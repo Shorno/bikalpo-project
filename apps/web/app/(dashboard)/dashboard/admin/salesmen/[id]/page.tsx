@@ -60,7 +60,10 @@ export default function SalesmanDetailPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
-      <SalesmanDetailClient salesmanId={salesmanId} initialData={data.salesman} />
+      <SalesmanDetailClient
+        salesmanId={salesmanId}
+        initialData={data.salesman}
+      />
     </div>
   );
 }

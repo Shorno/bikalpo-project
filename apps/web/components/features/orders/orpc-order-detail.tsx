@@ -20,18 +20,18 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useOrderByNumber, useCancelOrder } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCancelOrder, useOrderByNumber } from "@/hooks/use-customer-api";
 
 const STATUS_STEPS = [
   { key: "pending", label: "Order Placed", icon: Clock },
   { key: "confirmed", label: "Confirmed", icon: CheckCircle2 },
   { key: "processing", label: "Processing", icon: Package },
-  { key: "shipped", label: "Out for Delivery", icon: Truck },
+  { key: "out_for_delivery", label: "Out for Delivery", icon: Truck },
   { key: "delivered", label: "Delivered", icon: CheckCircle2 },
 ];
 
@@ -39,7 +39,7 @@ const STATUS_ORDER: Record<string, number> = {
   pending: 0,
   confirmed: 1,
   processing: 2,
-  shipped: 3,
+  out_for_delivery: 3,
   delivered: 4,
   cancelled: -1,
 };
@@ -50,6 +50,9 @@ interface OrpcOrderDetailProps {
 
 export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
   const { data, isLoading, isError } = useOrderByNumber(orderNumber);
+  type CustomerOrderItem = NonNullable<
+    NonNullable<typeof data>["order"]
+  >["items"][number];
   const cancelOrder = useCancelOrder();
 
   if (isLoading) return <OrderDetailSkeleton />;
@@ -72,9 +75,15 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
   }
 
   const order = data.order;
+  const deliveryInfo = data.deliveryInfo;
   const items = order.items || [];
   const isCancelled = order.status === "cancelled";
-  const currentStep = STATUS_ORDER[order.status] ?? 0;
+  const statusForProgress =
+    deliveryInfo?.status === "out_for_delivery"
+      ? "out_for_delivery"
+      : order.status;
+  const currentStep = STATUS_ORDER[statusForProgress] ?? 0;
+  const deliveryOtp = deliveryInfo?.otp ?? null;
 
   const formatPrice = (price: number | string) =>
     `৳${Number(price).toLocaleString("en-BD")}`;
@@ -185,34 +194,37 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
       )}
 
       {/* OTP Card */}
-      {order.deliveryOTP && !isCancelled && order.status !== "delivered" && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-emerald-800">
-                  Delivery OTP
-                </p>
-                <p className="text-xs text-emerald-600">
-                  Share this code with the delivery person
-                </p>
+      {!!deliveryOtp &&
+        deliveryInfo?.status === "out_for_delivery" &&
+        !isCancelled &&
+        order.status !== "delivered" && (
+          <Card className="border-emerald-200 bg-emerald-50">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-emerald-800">
+                    Delivery OTP
+                  </p>
+                  <p className="text-xs text-emerald-600">
+                    Share this code with the delivery person
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold tracking-widest text-emerald-700">
+                    {deliveryOtp}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => copyToClipboard(deliveryOtp)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold tracking-widest text-emerald-700">
-                  {order.deliveryOTP}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => copyToClipboard(order.deliveryOTP)}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Order Items */}
@@ -225,13 +237,13 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {items.map((item: any) => (
+                {items.map((item: CustomerOrderItem) => (
                   <div key={item.id} className="flex gap-3 py-2">
                     <div className="relative h-14 w-14 rounded-md overflow-hidden bg-gray-100 shrink-0">
-                      {item.product?.image ? (
+                      {item.productImage ? (
                         <Image
-                          src={item.product.image}
-                          alt={item.product?.name || ""}
+                          src={item.productImage}
+                          alt={item.productName || ""}
                           fill
                           className="object-cover"
                           sizes="56px"
@@ -242,14 +254,14 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">
-                        {item.product?.name || "Product"}
+                        {item.productName || "Product"}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {item.product?.size} × {item.quantity}
+                        {item.productSize} × {item.quantity}
                       </p>
                     </div>
                     <p className="text-sm font-semibold">
-                      {formatPrice(Number(item.price) * item.quantity)}
+                      {formatPrice(item.totalPrice)}
                     </p>
                   </div>
                 ))}
@@ -260,17 +272,15 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Subtotal</span>
-                  <span>
-                    {formatPrice(order.subtotal || order.totalAmount)}
-                  </span>
+                  <span>{formatPrice(order.subtotal || order.total)}</span>
                 </div>
-                {order.shippingCost > 0 && (
+                {Number(order.shippingCost) > 0 && (
                   <div className="flex justify-between">
                     <span className="text-gray-500">Shipping</span>
                     <span>{formatPrice(order.shippingCost)}</span>
                   </div>
                 )}
-                {order.discount > 0 && (
+                {Number(order.discount) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
                     <span>-{formatPrice(order.discount)}</span>
@@ -280,7 +290,7 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
                 <div className="flex justify-between font-bold text-base">
                   <span>Total</span>
                   <span className="text-emerald-600">
-                    {formatPrice(order.totalAmount)}
+                    {formatPrice(order.total)}
                   </span>
                 </div>
               </div>

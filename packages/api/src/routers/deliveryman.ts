@@ -1,7 +1,7 @@
 import { db } from "@bikalpo-project/db";
 import { deliveryGroup, deliveryGroupInvoice, deliveryRule, invoice, user, order, orderReturn } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, desc, eq, sql, count } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, deliverymanProcedure, protectedProcedure } from "../index";
@@ -531,6 +531,234 @@ export const deliverymanRouter = {
             };
         }),
 
+    /**
+     * Get unassigned invoices (admin) for creating delivery groups
+     */
+    getUnassignedInvoices: adminProcedure
+        .route({
+            method: "GET",
+            path: "/delivery/invoices/unassigned",
+            tags: ["Delivery Management"],
+            summary: "Get unassigned invoices",
+        })
+        .handler(async () => {
+            const invoices = await db.query.invoice.findMany({
+                where: eq(invoice.deliveryStatus, "not_assigned"),
+                with: {
+                    customer: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            shopName: true,
+                        },
+                    },
+                    order: {
+                        columns: {
+                            id: true,
+                            orderNumber: true,
+                            shippingAddress: true,
+                            shippingCity: true,
+                            shippingArea: true,
+                        },
+                    },
+                },
+                orderBy: [desc(invoice.createdAt)],
+            });
+
+            return { invoices };
+        }),
+
+    /**
+     * Alias: get deliverymen for assignment (for create-group dialog compatibility)
+     */
+    getForAssignment: adminProcedure
+        .route({
+            method: "GET",
+            path: "/delivery/for-assignment",
+            tags: ["Delivery Management"],
+            summary: "Get deliverymen for assignment",
+        })
+        .input(z.object({ orderShippingArea: z.string().nullable().optional() }).optional())
+        .handler(async ({ input }) => {
+            const activeGroups = await db
+                .select({ deliverymanId: deliveryGroup.deliverymanId })
+                .from(deliveryGroup)
+                .where(sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`);
+            const busyDeliverymen = [...new Set(activeGroups.map((g) => g.deliverymanId))];
+
+            const area = input?.orderShippingArea?.trim();
+            const conditions: SQL[] = [eq(user.role, "deliveryman")];
+
+            if (area && area.length > 0) {
+                conditions.push(
+                    sql`(${user.serviceArea} IS NULL OR ${user.serviceArea} ILIKE ${"%" + area + "%"})`,
+                );
+            }
+
+            const where = and(...conditions);
+            const allDeliverymen = await db.query.user.findMany({
+                where,
+                columns: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phoneNumber: true,
+                    serviceArea: true,
+                },
+            });
+
+            return {
+                deliverymen: allDeliverymen.map((dm) => ({
+                    ...dm,
+                    hasActiveGroup: busyDeliverymen.includes(dm.id),
+                })),
+            };
+        }),
+
+    /**
+     * Create delivery group with selected invoices
+     */
+    createGroup: adminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-groups/create",
+            tags: ["Delivery Management"],
+            summary: "Create delivery group",
+        })
+        .input(z.object({
+            groupName: z.string().min(1),
+            invoiceIds: z.array(z.number()).min(1),
+            deliverymanId: z.string().min(1),
+            notes: z.string().optional(),
+            vehicleType: z.enum(["bike", "car", "van", "truck"]).optional(),
+            expectedDeliveryAt: z.string().optional(),
+        }))
+        .handler(async ({ input }) => {
+            const deliveryman = await db.query.user.findFirst({
+                where: and(eq(user.id, input.deliverymanId), eq(user.role, "deliveryman")),
+                columns: { id: true },
+            });
+            if (!deliveryman) {
+                throw new ORPCError("NOT_FOUND", { message: "Deliveryman not found" });
+            }
+
+            const selectedInvoices = await db.query.invoice.findMany({
+                where: inArray(invoice.id, input.invoiceIds),
+                columns: { id: true, deliveryStatus: true },
+            });
+            if (selectedInvoices.length !== input.invoiceIds.length) {
+                throw new ORPCError("BAD_REQUEST", { message: "Some selected invoices were not found" });
+            }
+
+            const invalidInvoice = selectedInvoices.find(
+                (inv) => inv.deliveryStatus !== "not_assigned" && inv.deliveryStatus !== "pending",
+            );
+            if (invalidInvoice) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "One or more invoices are already assigned or delivered",
+                });
+            }
+
+            const expectedDeliveryDate = input.expectedDeliveryAt
+                ? new Date(input.expectedDeliveryAt)
+                : null;
+
+            const createdGroup = await db.transaction(async (tx) => {
+                const [group] = await tx
+                    .insert(deliveryGroup)
+                    .values({
+                        groupName: input.groupName,
+                        deliverymanId: input.deliverymanId,
+                        status: "assigned",
+                        totalInvoices: input.invoiceIds.length,
+                        completedInvoices: 0,
+                        notes: input.notes ?? null,
+                        vehicleType: input.vehicleType ?? null,
+                        expectedDeliveryAt: expectedDeliveryDate,
+                        assignedAt: new Date(),
+                    })
+                    .returning();
+
+                if (!group) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Failed to create delivery group" });
+
+                await tx.insert(deliveryGroupInvoice).values(
+                    input.invoiceIds.map((invoiceId, index) => ({
+                        groupId: group.id,
+                        invoiceId,
+                        sequence: index,
+                        status: "pending" as const,
+                    })),
+                );
+
+                await tx
+                    .update(invoice)
+                    .set({
+                        deliveryStatus: "pending",
+                        deliverymanId: input.deliverymanId,
+                        vehicleType: input.vehicleType ?? null,
+                        expectedDeliveryAt: expectedDeliveryDate,
+                    })
+                    .where(inArray(invoice.id, input.invoiceIds));
+
+                return group;
+            });
+
+            return { success: true, group: createdGroup };
+        }),
+
+    /**
+     * Alias: get delivery groups (for create-group dialog compatibility)
+     */
+    getGroups: adminProcedure
+        .route({
+            method: "GET",
+            path: "/delivery-groups/list",
+            tags: ["Delivery Management"],
+            summary: "Get delivery groups",
+        })
+        .input(z.object({ status: z.string().optional() }).optional())
+        .handler(async ({ input }) => {
+            const conditions = input?.status
+                ? eq(deliveryGroup.status, input.status as typeof deliveryGroup.$inferSelect.status)
+                : undefined;
+
+            const groups = await db.query.deliveryGroup.findMany({
+                where: conditions,
+                with: {
+                    deliveryman: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phoneNumber: true,
+                        },
+                    },
+                    invoices: {
+                        with: {
+                            invoice: {
+                                with: {
+                                    customer: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            phoneNumber: true,
+                                            shopName: true,
+                                        },
+                                    },
+                                    order: true,
+                                },
+                            },
+                        },
+                        orderBy: [deliveryGroupInvoice.sequence],
+                    },
+                },
+                orderBy: [desc(deliveryGroup.createdAt)],
+            });
+
+            return { groups };
+        }),
+
     // ==================== ADMIN PROCEDURES ====================
 
     /**
@@ -546,7 +774,7 @@ export const deliverymanRouter = {
         .input(z.object({ status: z.string().optional() }).optional())
         .handler(async ({ input }) => {
             const conditions = input?.status
-                ? eq(deliveryGroup.status, input.status as any)
+                ? eq(deliveryGroup.status, input.status as typeof deliveryGroup.$inferSelect.status)
                 : undefined;
 
             const groups = await db.query.deliveryGroup.findMany({
@@ -722,7 +950,7 @@ export const deliverymanRouter = {
             const area = input?.orderShippingArea?.trim();
 
             // Build conditions: role + area filter
-            const conditions: any[] = [eq(user.role, "deliveryman")];
+            const conditions: SQL[] = [eq(user.role, "deliveryman")];
 
             if (area && area.length > 0) {
                 conditions.push(

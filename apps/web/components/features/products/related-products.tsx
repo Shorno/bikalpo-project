@@ -1,33 +1,27 @@
-import { and, desc, eq, ne } from "drizzle-orm";
-import { db } from "@/db/config";
-import { product } from "@/db/schema/product";
+import { getProductsWithQuery } from "@/lib/public-data";
 import { ProductCard } from "./product-card";
 
 interface RelatedProductsProps {
-  categoryId: number;
+  categorySlug: string;
   currentProductId: number;
 }
 
 export async function RelatedProducts({
-  categoryId,
+  categorySlug,
   currentProductId,
 }: RelatedProductsProps) {
-  const relatedProducts = await db.query.product.findMany({
-    where: and(
-      eq(product.categoryId, categoryId),
-      ne(product.id, currentProductId),
-    ),
-    limit: 4,
-    orderBy: [desc(product.createdAt)],
-    with: {
-      category: {
-        columns: {
-          name: true,
-          slug: true,
-        },
-      },
+  const { products } = await getProductsWithQuery(
+    {
+      category: categorySlug,
+      limit: "8",
+      sort: "newest",
     },
-  });
+    600,
+  );
+
+  const relatedProducts = products
+    .filter((prod) => prod.id !== currentProductId)
+    .slice(0, 4);
 
   if (relatedProducts.length === 0) {
     return null;

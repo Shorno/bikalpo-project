@@ -10,9 +10,9 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { orpc } from "@/utils/orpc";
 import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { authClient } from "@/lib/auth-client";
+import { orpc } from "@/utils/orpc";
 
 export interface CartItem {
   id: number; // cart item id
@@ -42,6 +42,7 @@ interface CartContextType {
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
+type CartData = Awaited<ReturnType<typeof orpc.customer.getCart.call>>;
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -57,7 +58,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     try {
       const cartData = await orpc.customer.getCart.call();
       if (isMounted.current) {
-        setItems(cartData.items as CartItem[]);
+        setItems((cartData as CartData).items as CartItem[]);
       }
     } catch (error) {
       console.error("Failed to fetch cart:", error);
@@ -89,15 +90,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const addItem = async (productId: number, quantity: number = 1) => {
     setIsLoading(true);
     try {
-      const result = await orpc.customer.addToCart.call({ productId, quantity });
+      const result = await orpc.customer.addToCart.call({
+        productId,
+        quantity,
+      });
       await refreshCart();
       toast.success(result.message || "Item added to cart");
-    } catch (err: any) {
-      const msg = err?.message?.toLowerCase() || "";
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to add item to cart";
+      const msg = message.toLowerCase();
       if (msg.includes("login") || msg.includes("unauthorized")) {
         showLoginModal();
       } else {
-        toast.error(err?.message || "Failed to add item to cart");
+        toast.error(message);
       }
     } finally {
       setIsLoading(false);
@@ -110,8 +116,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
       await orpc.customer.removeFromCart.call({ cartItemId });
       await refreshCart();
       toast.success("Item removed from cart");
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to remove item");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to remove item";
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -122,8 +130,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     try {
       await orpc.customer.updateCartItem.call({ cartItemId, quantity });
       await refreshCart();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update cart");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to update cart";
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -132,11 +142,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const clearCart = async () => {
     setIsLoading(true);
     try {
-      await orpc.customer.clearCart.call();
+      await orpc.customer.clearCart.call({});
       setItems([]);
       toast.success("Cart cleared");
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to clear cart");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to clear cart";
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }

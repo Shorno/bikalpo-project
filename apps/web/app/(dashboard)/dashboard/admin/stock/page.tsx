@@ -2,10 +2,10 @@ import { ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { StockFilterBar } from "@/components/features/stock/stock-filter-bar";
-import { client } from "@/utils/orpc";
 import { StockInventoryTable } from "@/components/features/stock/stock-inventory-table";
 import { StockPagination } from "@/components/features/stock/stock-pagination";
 import { Button } from "@/components/ui/button";
+import { client } from "@/utils/orpc";
 
 const LIMIT = 10;
 
@@ -13,16 +13,13 @@ export default async function StockInventoryPage({
   searchParams = {},
 }: {
   searchParams?:
-  | Promise<Record<string, string | string[] | undefined>>
-  | Record<string, string | string[] | undefined>;
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
 }) {
-  const resolved =
-    typeof (searchParams as any)?.then === "function"
-      ? await (searchParams as Promise<
-        Record<string, string | string[] | undefined>
-      >)
-      : (searchParams ?? {});
-  const sp = resolved as Record<string, string | string[] | undefined>;
+  const sp = (await Promise.resolve(searchParams ?? {})) as Record<
+    string,
+    string | string[] | undefined
+  >;
   const search = (typeof sp.search === "string" ? sp.search : undefined) ?? "";
   const categoryId = typeof sp.category === "string" ? sp.category : undefined;
   const stockStatus = (typeof sp.status === "string" ? sp.status : undefined) as
@@ -60,7 +57,10 @@ export default async function StockInventoryPage({
   q.delete("page");
   const queryWithoutPage = q.toString();
 
-  const categoryList = allCategories.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }));
+  const categoryList = allCategories.map((c: { id: number; name: string }) => ({
+    id: c.id,
+    name: c.name,
+  }));
 
   const rows = products.map((p) => ({
     id: p.id,

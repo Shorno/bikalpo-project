@@ -1,5 +1,6 @@
 "use client";
 
+import type { OrderWithItems } from "@bikalpo-project/db/schema";
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -34,7 +35,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { OrderWithItems } from "@/db/schema/order";
 import { ADMIN_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 

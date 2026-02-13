@@ -16,8 +16,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCartQuery } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
+import { useCartQuery } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 

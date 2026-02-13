@@ -2,7 +2,6 @@ import { format } from "date-fns";
 import { ArrowLeft, MapPin, Phone, Truck } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { client } from "@/utils/orpc";
 import { AssignDeliverymanDialog } from "@/components/features/delivery/assign-deliveryman-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { client } from "@/utils/orpc";
 
 export default async function DeliveryGroupDetailsPage({
   params,

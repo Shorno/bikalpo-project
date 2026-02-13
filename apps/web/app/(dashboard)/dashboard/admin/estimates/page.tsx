@@ -133,7 +133,7 @@ export default async function AdminEstimatesPage() {
                       <Badge
                         variant={
                           estimate.status === "approved" ||
-                            estimate.status === "converted"
+                          estimate.status === "converted"
                             ? "default"
                             : estimate.status === "rejected"
                               ? "destructive"

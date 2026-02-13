@@ -88,9 +88,9 @@ export function StockChangeLogsSheet({
                     <TableCell className="text-muted-foreground text-sm">
                       {log.createdAt
                         ? new Date(log.createdAt).toLocaleString(undefined, {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })
                         : "—"}
                     </TableCell>
                   </TableRow>

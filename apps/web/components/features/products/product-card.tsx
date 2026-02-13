@@ -1,12 +1,12 @@
 "use client";
 
+import type { ProductWithRelations } from "@bikalpo-project/db/schema";
 import { Eye, Loader2, Package, PackagePlus, ShoppingCart } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { RequestFormModal } from "@/components/features/item-request/request-form-modal";
 import { Button } from "@/components/ui/button";
-import type { ProductWithRelations } from "@/db/schema";
 import { useCart } from "@/hooks/use-cart";
 import { formatPrice } from "@/utils/currency";
 

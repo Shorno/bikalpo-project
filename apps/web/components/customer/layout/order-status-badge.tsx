@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, KeyRound, Package, Truck } from "lucide-react";
+import { ArrowRight, Package, Truck } from "lucide-react";
 import Link from "next/link";
 import { useActiveOrder } from "@/hooks/use-customer-api";
 import { cn } from "@/lib/utils";
@@ -56,9 +56,12 @@ export function OrderStatusButton() {
   if (!data?.order) return null;
 
   const order = data.order;
+  const deliveryInfo = data.deliveryInfo;
 
   const displayStatus =
-    order.status === "out_for_delivery" ? "out_for_delivery" : order.status;
+    deliveryInfo?.status === "out_for_delivery"
+      ? "out_for_delivery"
+      : order.status;
 
   const config = STATUS_CONFIG[displayStatus] || {
     label: order.status,
@@ -109,9 +112,12 @@ export function MobileOrderStatus() {
   if (isLoading || !data?.order) return null;
 
   const order = data.order;
+  const deliveryInfo = data.deliveryInfo;
 
   const displayStatus =
-    order.status === "out_for_delivery" ? "out_for_delivery" : order.status;
+    deliveryInfo?.status === "out_for_delivery"
+      ? "out_for_delivery"
+      : order.status;
 
   const config = STATUS_CONFIG[displayStatus] || {
     label: order.status,

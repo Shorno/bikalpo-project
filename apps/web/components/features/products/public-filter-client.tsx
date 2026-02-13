@@ -1,5 +1,6 @@
 "use client";
 
+import type { Brand, Category, SubCategory } from "@bikalpo-project/db/schema";
 import { Filter, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { parseAsString, useQueryStates } from "nuqs";
@@ -12,8 +13,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { Category, SubCategory } from "@/db/schema";
-import type { Brand } from "@/db/schema/brand";
 
 interface PublicFilterClientProps {
   categories: Category[];

@@ -1,7 +1,7 @@
 "use client";
 
+import type { PaymentMethod } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
-
 import {
   AlertCircle,
   ArrowLeft,
@@ -25,7 +25,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useReorderItems, usePlaceReorder } from "@/hooks/use-customer-api";
 import { ReorderProductPicker } from "@/components/features/orders/reorder-product-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -48,7 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import type { PaymentMethod } from "@/db/schema/order";
+import { usePlaceReorder, useReorderItems } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 
 const CITIES = [
@@ -97,6 +96,7 @@ export default function ReorderPage({
     error: queryError,
   } = useReorderItems(orderId || undefined);
   const placeReorderMutation = usePlaceReorder();
+  const isSubmitting = placeReorderMutation.isPending;
 
   const [items, setItems] = useState<ReorderItem[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -185,8 +185,12 @@ export default function ReorderPage({
           toast.success("Reorder placed successfully!");
           router.push(`/order-confirmation/${result.order.orderNumber}`);
         }
-      } catch (err: any) {
-        toast.error(err?.message || "Something went wrong. Please try again.");
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Something went wrong. Please try again.";
+        toast.error(message);
       }
     },
   });
@@ -253,11 +257,8 @@ export default function ReorderPage({
   }
 
   // Error state
-  if (queryError || !reorderData?.success) {
-    const errorMessage =
-      reorderData?.error ||
-      queryError?.message ||
-      "Failed to load reorder items";
+  if (queryError || !reorderData) {
+    const errorMessage = queryError?.message || "Failed to load reorder items";
     return (
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-md mx-auto text-center">
@@ -454,10 +455,10 @@ export default function ReorderPage({
                           </span>
                           {parseFloat(item.currentPrice) !==
                             parseFloat(item.originalPrice) && (
-                              <span className="text-xs text-gray-400 line-through">
-                                {formatPrice(item.originalPrice)}
-                              </span>
-                            )}
+                            <span className="text-xs text-gray-400 line-through">
+                              {formatPrice(item.originalPrice)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

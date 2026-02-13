@@ -1,5 +1,6 @@
 "use client";
 
+import type { Category } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
@@ -25,7 +26,6 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { Category } from "@/db/schema";
 import { updateCategorySchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -48,9 +48,12 @@ export default function EditCategoryDialog({
         setOpen(false);
       },
       onError: (error) => {
-        toast.error(error.message || "An unexpected error occurred while updating the category.");
+        toast.error(
+          error.message ||
+            "An unexpected error occurred while updating the category.",
+        );
       },
-    })
+    }),
   );
 
   const form = useForm({

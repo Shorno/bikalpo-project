@@ -1,11 +1,11 @@
 "use client";
 
+import type { BrandUpdate } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import * as z from "zod";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { BrandUpdate } from "@/db/schema/brand-update";
+import { client } from "@/utils/orpc";
 
 const formSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
@@ -67,7 +67,10 @@ export function BrandUpdateForm({
       setIsSubmitting(true);
       try {
         if (isEditing) {
-          await client.adminBrandUpdate.update({ id: brandUpdate.id, data: value });
+          await client.adminBrandUpdate.update({
+            id: brandUpdate.id,
+            data: value,
+          });
         } else {
           await client.adminBrandUpdate.create(value);
         }
@@ -76,8 +79,10 @@ export function BrandUpdateForm({
         );
         onOpenChange(false);
         form.reset();
-      } catch (error: any) {
-        toast.error(error.message || "Something went wrong");
+      } catch (error: unknown) {
+        toast.error(
+          error instanceof Error ? error.message : "Something went wrong",
+        );
       } finally {
         setIsSubmitting(false);
       }
@@ -121,7 +126,7 @@ export function BrandUpdateForm({
                       {typeof field.state.meta.errors[0] === "string"
                         ? field.state.meta.errors[0]
                         : field.state.meta.errors[0]?.message ||
-                        "Invalid value"}
+                          "Invalid value"}
                     </p>
                   )}
               </Field>

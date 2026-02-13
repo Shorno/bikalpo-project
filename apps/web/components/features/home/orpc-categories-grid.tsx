@@ -5,11 +5,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useActiveCategories } from "@/hooks/use-customer-api";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useActiveCategories } from "@/hooks/use-customer-api";
 
 export function OrpcCategoriesGrid() {
   const { data, isLoading } = useActiveCategories();
+  type ActiveCategory = NonNullable<typeof data>["categories"][number];
 
   if (isLoading) {
     return (
@@ -33,7 +34,7 @@ export function OrpcCategoriesGrid() {
         Browse Categories
       </h2>
       <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-        {categories.map((cat: any) => (
+        {categories.map((cat: ActiveCategory) => (
           <Link
             key={cat.id}
             href={`/products?category=${cat.slug}`}

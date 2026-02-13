@@ -21,7 +21,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { ItemReplacePicker } from "@/components/features/orders/item-replace-picker";
 import {
   AlertDialog,
@@ -40,6 +39,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ADMIN_BASE } from "@/lib/routes";
+import { client } from "@/utils/orpc";
 
 interface EditableItem {
   itemId: number;
@@ -99,7 +99,8 @@ export default function AdminOrderDetailsClient({
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (reason: string) => client.adminOrder.reject({ orderId, rejectionReason: reason }),
+    mutationFn: (reason: string) =>
+      client.adminOrder.reject({ orderId, rejectionReason: reason }),
     onSuccess: () => {
       toast.success("Order rejected");
       setIsRejectDialogOpen(false);
@@ -121,7 +122,11 @@ export default function AdminOrderDetailsClient({
         quantity: item.quantity,
         remove: item.remove,
       }));
-      return client.adminOrder.updateItems({ orderId, items: updates, adminNote: editNote || undefined });
+      return client.adminOrder.updateItems({
+        orderId,
+        items: updates,
+        adminNote: editNote || undefined,
+      });
     },
     onSuccess: () => {
       toast.success("Order updated successfully");
@@ -191,15 +196,15 @@ export default function AdminOrderDetailsClient({
       prev.map((item) =>
         item.itemId === itemId
           ? {
-            ...item,
-            productId: newProduct.id,
-            productName: newProduct.name,
-            productImage: newProduct.image,
-            productSize: newProduct.size,
-            unitPrice: Number(newProduct.price),
-            replaced: true,
-            originalProductName: item.originalProductName || item.productName,
-          }
+              ...item,
+              productId: newProduct.id,
+              productName: newProduct.name,
+              productImage: newProduct.image,
+              productSize: newProduct.size,
+              unitPrice: Number(newProduct.price),
+              replaced: true,
+              originalProductName: item.originalProductName || item.productName,
+            }
           : item,
       ),
     );

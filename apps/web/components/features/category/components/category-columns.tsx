@@ -1,5 +1,6 @@
 "use client";
 
+import type { Category, SubCategory } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   ArrowUpDown,
@@ -26,7 +27,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { Category, SubCategory } from "@/db/schema/category";
 import { cn } from "@/lib/utils";
 
 export interface CategoryWithSubcategories extends Category {

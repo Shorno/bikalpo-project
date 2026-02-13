@@ -44,9 +44,9 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { client } from "@/utils/orpc";
 import { $createImageNode } from "./image-node";
 
 type BlockType =
@@ -197,7 +197,10 @@ export default function RichTextToolbar() {
 
     startUploadTransition(async () => {
       try {
-        const result = await client.cloudinary.upload({ file, folder: "product-descriptions" });
+        const result = await client.cloudinary.upload({
+          file,
+          folder: "product-descriptions",
+        });
 
         if (result.success) {
           editor.update(() => {

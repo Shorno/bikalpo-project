@@ -8,14 +8,14 @@
 "use client";
 
 import { createContext, type ReactNode, useContext, useMemo } from "react";
-import {
-  useCartQuery,
-  useAddToCart,
-  useUpdateCartItem,
-  useRemoveFromCart,
-  useClearCart,
-} from "@/hooks/use-customer-api";
 import { useLoginRequired } from "@/components/features/auth/login-required-modal";
+import {
+  useAddToCart,
+  useCartQuery,
+  useClearCart,
+  useRemoveFromCart,
+  useUpdateCartItem,
+} from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 
 export interface CartItem {
@@ -102,7 +102,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
   };
 
   const clearCartFn = async () => {
-    await clearMutation.mutateAsync();
+    await clearMutation.mutateAsync({});
   };
 
   const refreshCart = async () => {

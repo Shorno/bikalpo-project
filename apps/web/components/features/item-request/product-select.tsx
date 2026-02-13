@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Loader2, Package } from "lucide-react";
 import Image from "next/image";
 import * as React from "react";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -19,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { client } from "@/utils/orpc";
 
 interface Product {
   id: number;

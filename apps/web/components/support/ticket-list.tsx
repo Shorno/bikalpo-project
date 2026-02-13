@@ -1,12 +1,12 @@
 "use client";
 
+import type { SupportTicket } from "@bikalpo-project/db/schema";
 import { formatDistanceToNow } from "date-fns";
 import { Clock, MessageSquare, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { SupportTicket } from "@/db/schema/support";
 import { cn } from "@/lib/utils";
 import { TicketForm } from "./ticket-form";
 

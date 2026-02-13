@@ -13,7 +13,6 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,8 +30,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { TicketStatus } from "@/db/schema/support";
 import { cn } from "@/lib/utils";
+import { client } from "@/utils/orpc";
 
 interface AdminTicketDetailsProps {
   ticket: {
@@ -97,7 +96,9 @@ export function AdminTicketDetails({ ticket }: AdminTicketDetailsProps) {
       toast.success("Reply sent successfully!");
       setReplyMessage("");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -112,7 +113,9 @@ export function AdminTicketDetails({ ticket }: AdminTicketDetailsProps) {
       });
       toast.success("Status updated!");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
     } finally {
       setIsUpdatingStatus(false);
     }

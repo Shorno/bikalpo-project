@@ -1,10 +1,10 @@
 "use client";
 
+import type { ProductVariant } from "@bikalpo-project/db/schema";
 import { useQuery } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { ProductVariant } from "@/db/schema/product-variant";
+import { client } from "@/utils/orpc";
 import { VariantFormDialog } from "./variant-form-dialog";
 
 export function ProductVariantsCard({

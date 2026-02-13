@@ -1,6 +1,6 @@
-import { ProductsGridClient } from "@/components/features/products/products-grid-client";
-import { ProductsFilterClient } from "@/components/features/products/products-filter-client";
 import { ProductSearch } from "@/components/features/products/product-search";
+import { ProductsFilterClient } from "@/components/features/products/products-filter-client";
+import { ProductsGridClient } from "@/components/features/products/products-grid-client";
 
 interface ProductsPageProps {
   searchParams: Promise<{

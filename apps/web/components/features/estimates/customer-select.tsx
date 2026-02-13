@@ -2,7 +2,6 @@
 
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import * as React from "react";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -10,6 +9,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { client } from "@/utils/orpc";
 
 interface Customer {
   id: string;

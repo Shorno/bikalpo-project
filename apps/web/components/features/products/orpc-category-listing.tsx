@@ -7,9 +7,8 @@
 import { ChevronRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCategoriesWithProducts } from "@/hooks/use-customer-api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { useCategoriesWithProducts } from "@/hooks/use-customer-api";
 
 interface OrpcCategoryListingProps {
   /** Max categories to show (default all) */
@@ -35,6 +34,8 @@ export function OrpcCategoryListing({
   }
 
   const categories = data?.categories ?? [];
+  type CategorySection = (typeof categories)[number];
+  type SectionProduct = CategorySection["products"][number];
 
   if (categories.length === 0) {
     return (
@@ -46,16 +47,11 @@ export function OrpcCategoryListing({
 
   return (
     <div className="space-y-10">
-      {categories.map((cat: any) => (
+      {categories.map((cat: CategorySection) => (
         <section key={cat.id}>
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900">{cat.name}</h2>
-              {cat.description && (
-                <p className="text-sm text-gray-500 line-clamp-1">
-                  {cat.description}
-                </p>
-              )}
             </div>
             <Link
               href={`${basePath}?category=${cat.slug}`}
@@ -68,7 +64,7 @@ export function OrpcCategoryListing({
 
           {cat.products && cat.products.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {cat.products.map((product: any) => (
+              {cat.products.map((product: SectionProduct) => (
                 <Link
                   key={product.id}
                   href={`${basePath}/${cat.slug}/${product.slug}`}

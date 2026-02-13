@@ -7,7 +7,6 @@ import {
   Ticket,
 } from "lucide-react";
 import Link from "next/link";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { client } from "@/utils/orpc";
 
 function getStatusColor(status: string) {
   switch (status) {

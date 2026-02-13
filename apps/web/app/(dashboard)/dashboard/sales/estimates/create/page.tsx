@@ -1,7 +1,7 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
 import { useForm } from "@tanstack/react-form";
+import { useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft,
@@ -32,6 +32,13 @@ import { SALES_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import type { FormEstimateItem } from "@/types/estimate";
 import { orpc } from "@/utils/orpc";
+
+interface SelectableProduct {
+  id: number;
+  name: string;
+  image: string;
+  price: string | number;
+}
 
 export default function CreateEstimatePage() {
   const router = useRouter();
@@ -92,7 +99,7 @@ export default function CreateEstimatePage() {
   const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
   const isPending = createEstimateMutation.isPending;
 
-  const handleAddItem = (product: any) => {
+  const handleAddItem = (product: SelectableProduct) => {
     const existingItem = items.find((item) => item.productId === product.id);
 
     if (existingItem) {

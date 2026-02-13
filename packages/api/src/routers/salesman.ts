@@ -997,7 +997,7 @@ export const salesmanRouter = {
                 throw new ORPCError("BAD_REQUEST", { message: "Only draft estimates can be sent" });
             }
 
-            const discount = Number((existingEstimate as any).discount || 0);
+            const discount = Number(existingEstimate.discount || 0);
             const hasDiscount = discount > 0;
             const newStatus = hasDiscount ? "pending" : "sent";
 
@@ -1137,7 +1137,7 @@ export const salesmanRouter = {
                         shippingArea: input.shippingArea || null,
                         shippingPostalCode: input.shippingPostalCode || null,
                         customerNote: input.customerNote || null,
-                    } as any)
+                    })
                     .returning();
 
                 if (!newOrder) {

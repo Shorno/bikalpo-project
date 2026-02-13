@@ -1,5 +1,6 @@
 "use client";
 
+import type { DeliveryStatsCount } from "@bikalpo-project/db/schema";
 import {
   Banknote,
   CheckCircle2,
@@ -11,7 +12,6 @@ import {
   XCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { DeliveryStatsCount } from "@/db/schema/delivery";
 
 interface DeliveryStatsProps {
   stats: DeliveryStatsCount;

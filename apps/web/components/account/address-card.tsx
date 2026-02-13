@@ -1,14 +1,13 @@
 "use client";
 
+import type { Address } from "@bikalpo-project/db/schema";
 import { Edit2, MapPin, Star, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   useDeleteAddress,
   useSetDefaultAddress,
 } from "@/hooks/use-customer-api";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import type { Address } from "@/db/schema/address";
 
 interface AddressCardProps {
   address: Address;

@@ -5,12 +5,12 @@
 
 import { Loader2, User } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useProfile, useUpdateProfile } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useProfile, useUpdateProfile } from "@/hooks/use-customer-api";
 
 export function OrpcProfilePage() {
   const { data, isLoading, isError } = useProfile();
@@ -31,7 +31,7 @@ export function OrpcProfilePage() {
     if (data?.profile) {
       const p = data.profile;
       setFormData({
-        businessName: p.shopName || p.businessName || "",
+        businessName: p.businessName || "",
         ownerName: p.ownerName || p.name || "",
         phoneNumber: p.phoneNumber || "",
         vatNumber: p.vatNumber || "",
@@ -199,7 +199,7 @@ export function OrpcProfilePage() {
             <div className="grid grid-cols-2 gap-y-4 text-sm">
               <ProfileField
                 label="Business Name"
-                value={profile?.shopName || profile?.businessName}
+                value={profile?.businessName}
               />
               <ProfileField
                 label="Owner Name"

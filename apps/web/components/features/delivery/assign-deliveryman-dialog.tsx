@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -43,6 +42,7 @@ import {
   type AssignDeliverymanFormValues,
   assignDeliverymanSchema,
 } from "@/schema/delivery.schema";
+import { client } from "@/utils/orpc";
 
 const VEHICLE_OPTIONS = [
   { value: "bike", label: "Bike" },
@@ -58,6 +58,10 @@ interface AssignDeliverymanDialogProps {
   trigger?: React.ReactNode;
 }
 
+type AssignmentDeliveryman = Awaited<
+  ReturnType<typeof client.deliveryman.getDeliverymenForAssignment>
+>["deliverymen"][number];
+
 export function AssignDeliverymanDialog({
   groupId,
   orderShippingArea,
@@ -66,7 +70,9 @@ export function AssignDeliverymanDialog({
   const router = useRouter();
 
   const [open, setOpen] = React.useState(false);
-  const [deliverymen, setDeliverymen] = React.useState<any[]>([]);
+  const [deliverymen, setDeliverymen] = React.useState<AssignmentDeliveryman[]>(
+    [],
+  );
   const [loadingUsers, setLoadingUsers] = React.useState(false);
 
   const form = useForm<AssignDeliverymanFormValues>({
@@ -82,7 +88,10 @@ export function AssignDeliverymanDialog({
   React.useEffect(() => {
     if (open) {
       setLoadingUsers(true);
-      client.deliveryman.getDeliverymenForAssignment({ orderShippingArea: orderShippingArea ?? undefined })
+      client.deliveryman
+        .getDeliverymenForAssignment({
+          orderShippingArea: orderShippingArea ?? undefined,
+        })
         .then((result) => {
           setDeliverymen(result.deliverymen || []);
         })
@@ -104,8 +113,10 @@ export function AssignDeliverymanDialog({
       toast.success("Deliveryman assigned successfully");
       setOpen(false);
       router.refresh();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to assign deliveryman");
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to assign deliveryman",
+      );
     }
   };
 
@@ -214,8 +225,9 @@ export function AssignDeliverymanDialog({
                       <FormControl>
                         <Button
                           variant="outline"
-                          className={`w-full justify-start text-left font-normal ${!field.value && "text-muted-foreground"
-                            }`}
+                          className={`w-full justify-start text-left font-normal ${
+                            !field.value && "text-muted-foreground"
+                          }`}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {field.value

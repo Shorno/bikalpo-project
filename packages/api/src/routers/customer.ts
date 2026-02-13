@@ -17,7 +17,9 @@ import {
   cart,
   cartItem,
   category,
+  deliveryGroupInvoice,
   estimate,
+  invoice,
   itemRequest,
   order,
   orderItem,
@@ -45,6 +47,7 @@ import {
   lte,
   sql,
   sum,
+  type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 
@@ -130,7 +133,13 @@ async function calculateDeliveryCost(
     const rules = await db.execute(
       sql`SELECT * FROM delivery_rule WHERE is_active = true ORDER BY sort_order ASC, id ASC`,
     );
-    for (const rule of rules.rows as any[]) {
+    for (const rule of rules.rows as Array<{
+      area: string | null;
+      min_weight_kg: string | number | null;
+      max_weight_kg: string | number | null;
+      base_cost: string | number | null;
+      per_kg_cost: string | number | null;
+    }>) {
       const areaMatch =
         rule.area == null ||
         rule.area === "" ||
@@ -188,7 +197,7 @@ const queries = {
       const limit = Math.max(1, Math.min(100, parseInt(limitStr, 10) || 12));
       const offset = (page - 1) * limit;
 
-      const conditions: any[] = [];
+      const conditions: SQL[] = [];
 
       // Category filter
       if (categorySlug) {
@@ -566,7 +575,36 @@ const queries = {
       });
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Order not found" });
-      return { order: found };
+
+      const orderInvoices = await db.query.invoice.findMany({
+        where: eq(invoice.orderId, found.id),
+        columns: { id: true },
+      });
+
+      let deliveryInfo: { status: string; otp: string | null } | null = null;
+
+      if (orderInvoices.length > 0) {
+        const invoiceIds = orderInvoices.map((inv) => inv.id);
+        const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
+          where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
+            invoiceIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+          with: { group: true },
+        });
+
+        if (deliveryInvoice) {
+          deliveryInfo = {
+            status: deliveryInvoice.group.status,
+            otp:
+              deliveryInvoice.group.status === "out_for_delivery"
+                ? deliveryInvoice.deliveryOtp
+                : null,
+          };
+        }
+      }
+
+      return { order: found, deliveryInfo };
     }),
 
   /** Get order status (order + payment info) */
@@ -611,8 +649,41 @@ const queries = {
       const activeOrder = await db.query.order.findFirst({
         where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
         with: { items: true },
+        orderBy: [desc(order.createdAt)],
       });
-      return { order: activeOrder || null };
+      if (!activeOrder) {
+        return { order: null, deliveryInfo: null };
+      }
+
+      const orderInvoices = await db.query.invoice.findMany({
+        where: eq(invoice.orderId, activeOrder.id),
+        columns: { id: true },
+      });
+
+      let deliveryInfo: { status: string; otp: string | null } | null = null;
+
+      if (orderInvoices.length > 0) {
+        const invoiceIds = orderInvoices.map((inv) => inv.id);
+        const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
+          where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
+            invoiceIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+          with: { group: true },
+        });
+
+        if (deliveryInvoice) {
+          deliveryInfo = {
+            status: deliveryInvoice.group.status,
+            otp:
+              deliveryInvoice.group.status === "out_for_delivery"
+                ? deliveryInvoice.deliveryOtp
+                : null,
+          };
+        }
+      }
+
+      return { order: activeOrder, deliveryInfo };
     }),
 
   // ── Cart (authenticated customer) ────────────────────────────
@@ -1139,7 +1210,7 @@ const queries = {
       ];
 
       if (input?.status && input.status !== "all") {
-        conditions.push(eq(itemRequest.status, input.status as any));
+        conditions.push(eq(itemRequest.status, input.status as never));
       }
 
       if (input?.search) {
@@ -1147,7 +1218,7 @@ const queries = {
           sql`(${ilike(itemRequest.itemName, `%${input.search}%`)} OR ${ilike(
             itemRequest.requestNumber,
             `%${input.search}%`,
-          )})` as any,
+          )})`,
         );
       }
 
@@ -1360,6 +1431,75 @@ const queries = {
         .from(user)
         .where(and(eq(user.role, "customer"), eq(user.banned, false)));
       return { count: Number(result?.count) || 0 };
+    }),
+
+  /** Get products purchased by a customer (public, for verified-customers page) */
+  getCustomerPurchasedProducts: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/{customerId}/purchased-products",
+      tags: ["Customer"],
+      summary: "Get customer purchased products (public)",
+      description:
+        "Get aggregated list of products a customer has ordered (public access)",
+    })
+    .input(z.object({ customerId: z.string().min(1) }))
+    .handler(async ({ input }) => {
+      const products = await db
+        .select({
+          productId: orderItem.productId,
+          productName: orderItem.productName,
+          productImage: orderItem.productImage,
+          productSize: orderItem.productSize,
+          totalQuantity: sql<number>`SUM(${orderItem.quantity})::int`,
+          totalOrders: sql<number>`COUNT(DISTINCT ${orderItem.orderId})::int`,
+          lastOrderedAt: sql<Date>`MAX(${order.createdAt})`,
+          categoryId: product.categoryId,
+        })
+        .from(orderItem)
+        .innerJoin(order, eq(orderItem.orderId, order.id))
+        .innerJoin(product, eq(orderItem.productId, product.id))
+        .where(eq(order.userId, input.customerId))
+        .groupBy(
+          orderItem.productId,
+          orderItem.productName,
+          orderItem.productImage,
+          orderItem.productSize,
+          product.categoryId,
+        )
+        .orderBy(desc(sql`MAX(${order.createdAt})`))
+        .limit(20);
+
+      const categoryIds = [
+        ...new Set(products.map((p) => p.categoryId).filter(Boolean)),
+      ] as number[];
+
+      let categoryMap: Record<number, string> = {};
+      if (categoryIds.length > 0) {
+        const categories = await db
+          .select({ id: category.id, name: category.name })
+          .from(category)
+          .where(inArray(category.id, categoryIds));
+
+        categoryMap = Object.fromEntries(
+          categories.map((c) => [c.id, c.name]),
+        );
+      }
+
+      return {
+        data: products.map((p) => ({
+          productId: p.productId,
+          productName: p.productName,
+          productImage: p.productImage,
+          productSize: p.productSize,
+          categoryName: p.categoryId
+            ? categoryMap[p.categoryId] || null
+            : null,
+          totalQuantity: Number(p.totalQuantity) || 0,
+          totalOrders: Number(p.totalOrders) || 0,
+          lastOrderedAt: p.lastOrderedAt,
+        })),
+      };
     }),
 };
 

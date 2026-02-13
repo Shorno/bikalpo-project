@@ -1,9 +1,9 @@
+import type { Session } from "@bikalpo-project/auth";
 import { CheckCircle2 } from "lucide-react";
 import { CategoryTabs } from "@/components/features/home/category-tabs";
 import { CustomerHero } from "@/components/features/home/customer-hero";
 import { CustomerSidebar } from "@/components/features/home/customer-sidebar";
 import CategoryListing from "@/components/features/products/category-listing";
-import type { Session } from "@/lib/auth";
 
 interface CustomerHomeViewProps {
   session: Session | null;

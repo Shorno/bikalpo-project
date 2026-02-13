@@ -1,8 +1,8 @@
 import { format } from "date-fns";
 import Link from "next/link";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { ADMIN_BASE } from "@/lib/routes";
+import { client } from "@/utils/orpc";
 
 function formatPrice(price: string | number) {
   return `৳${Number(price).toLocaleString()}`;
@@ -61,9 +61,9 @@ export default async function PriceChangedOrdersPage() {
                   <td className="p-3 text-muted-foreground">
                     {o.totalPriceChangedAt
                       ? format(
-                        new Date(o.totalPriceChangedAt),
-                        "MMM d, yyyy HH:mm",
-                      )
+                          new Date(o.totalPriceChangedAt),
+                          "MMM d, yyyy HH:mm",
+                        )
                       : "—"}
                   </td>
                   <td className="p-3">

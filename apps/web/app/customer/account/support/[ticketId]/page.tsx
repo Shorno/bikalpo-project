@@ -2,9 +2,9 @@
 
 import { AlertCircle } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useTicketDetails } from "@/hooks/use-customer-api";
 import { TicketDetails } from "@/components/support";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTicketDetails } from "@/hooks/use-customer-api";
 
 export default function TicketDetailPage() {
   const params = useParams();
@@ -38,5 +38,5 @@ export default function TicketDetailPage() {
     );
   }
 
-  return <TicketDetails ticket={data.ticket as any} />;
+  return <TicketDetails ticket={data.ticket} />;
 }

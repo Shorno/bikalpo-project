@@ -42,9 +42,12 @@ export default function NewBrandDialog() {
         setOpen(false);
       },
       onError: (error) => {
-        toast.error(error.message || "An unexpected error occurred while creating the brand.");
+        toast.error(
+          error.message ||
+            "An unexpected error occurred while creating the brand.",
+        );
       },
-    })
+    }),
   );
 
   const form = useForm({

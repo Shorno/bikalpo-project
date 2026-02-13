@@ -1,8 +1,8 @@
 "use client";
 
+import type { ProductVariant } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,10 +14,14 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { ProductVariant } from "@/db/schema/product-variant";
+import { client } from "@/utils/orpc";
 
-type CreateVariantInput = Parameters<typeof client.adminProductVariant.create>[0];
-type UpdateVariantInput = Parameters<typeof client.adminProductVariant.update>[0] & { id: number };
+type CreateVariantInput = Parameters<
+  typeof client.adminProductVariant.create
+>[0];
+type UpdateVariantInput = Parameters<
+  typeof client.adminProductVariant.update
+>[0] & { id: number };
 
 /** Draft variant (no productId) for "add while creating product" */
 export type DraftVariant = Omit<CreateVariantInput, "productId">;
@@ -47,7 +51,8 @@ export function VariantFormDialog({
   const source = variant ?? draftInitial;
 
   const createMutation = useMutation({
-    mutationFn: (input: CreateVariantInput) => client.adminProductVariant.create(input),
+    mutationFn: (input: CreateVariantInput) =>
+      client.adminProductVariant.create(input),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["product-variants", productId],
@@ -59,7 +64,8 @@ export function VariantFormDialog({
   });
 
   const updateMutation = useMutation({
-    mutationFn: (input: UpdateVariantInput) => client.adminProductVariant.update(input),
+    mutationFn: (input: UpdateVariantInput) =>
+      client.adminProductVariant.update(input),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["product-variants", productId],

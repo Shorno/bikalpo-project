@@ -1,10 +1,10 @@
 "use client";
 
+import type { SubCategory } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +17,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { SubCategory } from "@/db/schema";
+import { client } from "@/utils/orpc";
 
 interface DeleteSubcategoryDialogProps {
   subcategory: SubCategory;
@@ -32,7 +32,8 @@ export default function DeleteSubcategoryDialog({
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (id: number) => client.adminSubcategory.delete({ subcategoryId: id }),
+    mutationFn: (id: number) =>
+      client.adminSubcategory.delete({ subcategoryId: id }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["admin-subcategories", subcategory.categoryId],

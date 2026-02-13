@@ -1,5 +1,6 @@
 "use client";
 
+import type { Address, PaymentMethod } from "@bikalpo-project/db/schema";
 import {
   ArrowLeft,
   Banknote,
@@ -22,7 +23,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useEstimatedDeliveryCost, usePlaceOrder } from "@/hooks/use-customer-api";
 import { AddressSelector } from "@/components/checkout/address-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,9 +43,11 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import type { Address } from "@/db/schema/address";
-import type { PaymentMethod } from "@/db/schema/order";
 import { useCart } from "@/hooks/use-cart";
+import {
+  useEstimatedDeliveryCost,
+  usePlaceOrder,
+} from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 
 const CITIES = [
@@ -75,6 +77,7 @@ export default function CustomerCheckoutPage() {
   } = useCart();
   const { data: session } = authClient.useSession();
   const placeOrderMutation = usePlaceOrder();
+  const isSubmitting = placeOrderMutation.isPending;
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_delivery");
@@ -111,7 +114,8 @@ export default function CustomerCheckoutPage() {
   const { data: deliveryCostData } = useEstimatedDeliveryCost(
     formData.area || undefined,
   );
-  const shippingCost = items.length > 0 ? (deliveryCostData?.deliveryCost ?? 0) : 0;
+  const shippingCost =
+    items.length > 0 ? (deliveryCostData?.deliveryCost ?? 0) : 0;
 
   // Handle address selection
   const handleAddressSelect = useCallback(
@@ -211,8 +215,12 @@ export default function CustomerCheckoutPage() {
         clearCart();
         router.push(`/order-confirmation/${result.order.orderNumber}`);
       }
-    } catch (err: any) {
-      toast.error(err?.message || "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.";
+      toast.error(message);
     }
   };
 

@@ -1,5 +1,5 @@
-import { getCategoriesWithProducts } from "@/actions/products/get-categories-with-products";
 import { CategorySection } from "@/components/features/products/category-section";
+import { getCategoriesWithProducts } from "@/lib/public-data";
 import { cn } from "@/lib/utils";
 
 interface CategoryListingProps {
@@ -9,7 +9,7 @@ interface CategoryListingProps {
 export default async function CategoryListing({
   className,
 }: CategoryListingProps) {
-  const categoriesWithProducts = await getCategoriesWithProducts();
+  const categoriesWithProducts = await getCategoriesWithProducts(8, 600);
 
   return (
     <div className={cn("py-4 container mx-auto", className)}>

@@ -1,6 +1,6 @@
 import { unauthorized } from "next/navigation";
-import { client } from "@/utils/orpc";
 import { checkIsAdmin } from "@/utils/auth";
+import { client } from "@/utils/orpc";
 import { DeliverymenClient } from "./deliverymen-client";
 
 export default async function DeliverymenPage() {

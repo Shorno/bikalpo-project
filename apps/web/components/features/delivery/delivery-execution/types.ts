@@ -2,9 +2,10 @@ import type {
   DeliveryGroup,
   DeliveryGroupInvoice,
   DeliveryInvoiceStatus,
-} from "@/db/schema/delivery";
-import type { Invoice, InvoiceItem } from "@/db/schema/invoice";
-import type { Order } from "@/db/schema/order";
+  Invoice,
+  InvoiceItem,
+  Order,
+} from "@bikalpo-project/db/schema";
 
 // ============================================================================
 // Customer Types

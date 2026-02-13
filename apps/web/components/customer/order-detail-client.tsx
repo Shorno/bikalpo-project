@@ -3,10 +3,10 @@
  */
 "use client";
 
-import { useOrderByNumber } from "@/hooks/use-customer-api";
-import { Skeleton } from "@/components/ui/skeleton";
 import { notFound } from "next/navigation";
 import { useEffect } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useOrderByNumber } from "@/hooks/use-customer-api";
 
 interface OrderDetailClientProps {
   orderNumber: string;
@@ -14,6 +14,9 @@ interface OrderDetailClientProps {
 
 export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
   const { data, isLoading, isError } = useOrderByNumber(orderNumber);
+  type OrderItem = NonNullable<
+    NonNullable<typeof data>["order"]
+  >["items"][number];
 
   useEffect(() => {
     if (isError) {
@@ -68,7 +71,7 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
       <div className="bg-white rounded-lg border p-6">
         <h2 className="text-lg font-semibold mb-4">Order Items</h2>
         <div className="space-y-4">
-          {order.items?.map((item: any) => (
+          {order.items?.map((item: OrderItem) => (
             <div
               key={item.id}
               className="flex items-center gap-4 pb-4 border-b last:border-0"

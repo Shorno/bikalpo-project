@@ -25,6 +25,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import {
+  OrpcAddressSelector,
+  type OrpcCheckoutAddress,
+} from "@/components/checkout/orpc-address-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -44,13 +48,12 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { OrpcAddressSelector } from "@/components/checkout/orpc-address-selector";
 import {
   useCartQuery,
-  useUpdateCartItem,
-  useRemoveFromCart,
   useClearCart,
   usePlaceOrder,
+  useRemoveFromCart,
+  useUpdateCartItem,
 } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 
@@ -74,6 +77,20 @@ type PaymentMethod =
   | "nagad"
   | "bank_transfer"
   | "card";
+type CartData = NonNullable<ReturnType<typeof useCartQuery>["data"]>;
+type CheckoutCartItem = CartData["items"][number];
+type SessionUser = NonNullable<
+  ReturnType<typeof authClient.useSession>["data"]
+>["user"];
+
+function getUserPhone(user: SessionUser | undefined) {
+  if (!user) return "";
+  const phoneNumber =
+    "phoneNumber" in user && typeof user.phoneNumber === "string"
+      ? user.phoneNumber
+      : "";
+  return phoneNumber;
+}
 
 export function OrpcCheckout() {
   const router = useRouter();
@@ -82,13 +99,13 @@ export function OrpcCheckout() {
   const { data: cartData, isLoading: cartLoading } = useCartQuery();
   const updateItem = useUpdateCartItem();
   const removeItem = useRemoveFromCart();
-  const clearCartMutation = useClearCart();
+  const _clearCartMutation = useClearCart();
   const placeOrderMutation = usePlaceOrder();
 
-  const items = cartData?.items ?? [];
-  const totalItems = items.reduce((sum: number, i: any) => sum + i.quantity, 0);
+  const items: CheckoutCartItem[] = cartData?.items ?? [];
+  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const totalPrice = items.reduce(
-    (sum: number, i: any) => sum + i.price * i.quantity,
+    (sum, item) => sum + item.price * item.quantity,
     0,
   );
 
@@ -117,13 +134,13 @@ export function OrpcCheckout() {
         ...prev,
         name: session.user.name || "",
         email: session.user.email || "",
-        phone: (session.user as any).phoneNumber || "",
+        phone: getUserPhone(session.user),
       }));
     }
   }, [session]);
 
   const handleAddressSelect = useCallback(
-    (address: any | null) => {
+    (address: OrpcCheckoutAddress | null) => {
       if (address) {
         setSelectedAddressId(address.id);
         setFormData({
@@ -140,7 +157,7 @@ export function OrpcCheckout() {
         setSelectedAddressId(null);
         setFormData({
           name: session?.user?.name || "",
-          phone: (session?.user as any)?.phoneNumber || "",
+          phone: getUserPhone(session?.user),
           email: session?.user?.email || "",
           address: "",
           city: "",
@@ -212,9 +229,9 @@ export function OrpcCheckout() {
         paymentMethod,
       });
 
-      if (result.orderNumber) {
+      if (result.order.orderNumber) {
         toast.success("Order placed successfully!");
-        router.push(`/order-confirmation/${result.orderNumber}`);
+        router.push(`/order-confirmation/${result.order.orderNumber}`);
       }
     } catch {
       // Error toast is handled in the mutation hook
@@ -304,7 +321,7 @@ export function OrpcCheckout() {
                 <CollapsibleContent className="pb-2">
                   <CardContent className="pt-0 space-y-3">
                     <Separator />
-                    {items.map((item: any) => (
+                    {items.map((item) => (
                       <CartItemRow
                         key={item.id}
                         item={item}
@@ -528,7 +545,7 @@ export function OrpcCheckout() {
                 </CardHeader>
                 <CardContent className="space-y-4 pt-0">
                   <div className="space-y-3 max-h-64 overflow-y-auto">
-                    {items.map((item: any) => (
+                    {items.map((item) => (
                       <CartItemRow
                         key={item.id}
                         item={item}
@@ -630,7 +647,7 @@ function CartItemRow({
   onRemove,
   disabled,
 }: {
-  item: any;
+  item: CheckoutCartItem;
   formatPrice: (n: number) => string;
   onUpdateQuantity: (id: number, qty: number) => void;
   onRemove: (id: number) => void;

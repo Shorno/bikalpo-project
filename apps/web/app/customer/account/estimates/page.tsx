@@ -4,10 +4,10 @@ import { format } from "date-fns";
 import { FileText, Image as ImageIcon, ShoppingCart } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCustomerEstimates } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCustomerEstimates } from "@/hooks/use-customer-api";
 import { formatPrice } from "@/utils/currency";
 
 const statusConfig: Record<
@@ -39,7 +39,6 @@ function EstimatesSkeleton() {
   return (
     <div className="space-y-3">
       {[...Array(2)].map((_, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
         <div key={i} className="bg-white rounded-lg border border-gray-200 p-4">
           <Skeleton className="h-5 w-40 mb-2" />
           <Skeleton className="h-24 w-full" />

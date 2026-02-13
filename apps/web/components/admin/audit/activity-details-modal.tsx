@@ -13,7 +13,6 @@ import {
   User,
   XCircle,
 } from "lucide-react";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { client } from "@/utils/orpc";
 
 interface ActivityDetailsModalProps {
   logId: string | null;

@@ -1,11 +1,11 @@
 "use client";
 
+import type { Address } from "@bikalpo-project/db/schema";
 import { MapPin, Plus } from "lucide-react";
 import { useState } from "react";
 import { AddressCard } from "@/components/account/address-card";
 import { AddressForm } from "@/components/account/address-form";
 import { Button } from "@/components/ui/button";
-import type { Address } from "@/db/schema/address";
 
 interface AddressListProps {
   addresses: Address[];

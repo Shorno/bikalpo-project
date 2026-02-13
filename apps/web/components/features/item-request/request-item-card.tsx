@@ -1,5 +1,6 @@
 "use client";
 
+import type { ItemRequestWithRelations } from "@bikalpo-project/db/schema";
 import {
   Calendar,
   ExternalLink,
@@ -11,7 +12,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { ItemRequestWithRelations } from "@/db/schema/item-request";
 import { cn } from "@/lib/utils";
 import { RequestStatusBadge } from "./request-status-badge";
 

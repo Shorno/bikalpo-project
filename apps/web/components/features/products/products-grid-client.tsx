@@ -3,16 +3,16 @@
  */
 "use client";
 
-import {
-  useCustomerProducts,
-  useActiveCategories,
-  useActiveBrands,
-  useSubcategoriesByCategory,
-} from "@/hooks/use-customer-api";
 import { ProductCard } from "@/components/features/products/product-card";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { ProductsSort } from "@/components/features/products/products-sort";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  useActiveBrands,
+  useActiveCategories,
+  useCustomerProducts,
+  useSubcategoriesByCategory,
+} from "@/hooks/use-customer-api";
 
 interface ProductsGridClientProps {
   searchParams: {
@@ -64,6 +64,7 @@ export function ProductsGridClient({ searchParams }: ProductsGridClientProps) {
   }
 
   const products = productsData?.products || [];
+  type GridProduct = (typeof products)[number];
   const pagination = productsData?.pagination || {
     page: 1,
     limit: 12,
@@ -98,7 +99,7 @@ export function ProductsGridClient({ searchParams }: ProductsGridClientProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {products.map((product: any) => (
+          {products.map((product: GridProduct) => (
             <ProductCard key={product.id} product={product} />
           ))}
         </div>

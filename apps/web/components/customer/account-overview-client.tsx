@@ -12,10 +12,10 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import Link from "next/link";
-import { useMyOrders, useProfile } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMyOrders, useProfile } from "@/hooks/use-customer-api";
 import { formatPrice } from "@/utils/currency";
 
 function getStatusColor(status: string) {
@@ -39,6 +39,7 @@ function getStatusColor(status: string) {
 export function AccountOverviewClient() {
   const { data: ordersData, isLoading: ordersLoading } = useMyOrders();
   const { data: profileData, isLoading: profileLoading } = useProfile();
+  type CustomerOrder = NonNullable<typeof ordersData>["orders"][number];
 
   const isLoading = ordersLoading || profileLoading;
 
@@ -65,15 +66,11 @@ export function AccountOverviewClient() {
     "User";
 
   const totalOrders = orders.length;
-  const pendingOrders = orders.filter(
-    (o: any) => o.status === "pending",
-  ).length;
-  const completedOrders = orders.filter(
-    (o: any) => o.status === "delivered",
-  ).length;
+  const pendingOrders = orders.filter((o) => o.status === "pending").length;
+  const completedOrders = orders.filter((o) => o.status === "delivered").length;
   const totalSpent = orders
-    .filter((o: any) => o.status === "delivered")
-    .reduce((sum: number, o: any) => sum + Number(o.total || 0), 0);
+    .filter((o) => o.status === "delivered")
+    .reduce((sum, o) => sum + Number(o.total || 0), 0);
 
   const recentOrders = orders.slice(0, 5);
 
@@ -144,7 +141,7 @@ export function AccountOverviewClient() {
               <p className="text-sm">No orders yet</p>
             </div>
           ) : (
-            recentOrders.map((order: any) => {
+            recentOrders.map((order: CustomerOrder) => {
               const statusStyle = getStatusColor(order.status);
               return (
                 <Link

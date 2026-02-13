@@ -4,6 +4,19 @@ import { db } from "@bikalpo-project/db";
 import { productVariant } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
 
+const quantitySelectorOptionSchema = z.object({
+    value: z.number(),
+    unit: z.string(),
+    label: z.string().optional(),
+});
+
+const bulkRateTierSchema = z.object({
+    minKg: z.number().optional(),
+    maxKg: z.number().optional(),
+    pricePerKg: z.string().optional(),
+    priceTotal: z.string().optional(),
+});
+
 const variantInput = z.object({
     productId: z.number().int(),
     sku: z.string().optional(),
@@ -19,8 +32,8 @@ const variantInput = z.object({
     orderMax: z.string().optional(),
     orderIncrement: z.string().optional(),
     orderUnit: z.string().optional(),
-    quantitySelectorOptions: z.array(z.any()).optional(),
-    priceTiers: z.array(z.any()).optional(),
+    quantitySelectorOptions: z.array(quantitySelectorOptionSchema).optional(),
+    priceTiers: z.array(bulkRateTierSchema).optional(),
     stockQuantity: z.number().int().optional(),
     reorderLevel: z.number().int().optional(),
     origin: z.string().optional(),

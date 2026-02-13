@@ -1,4 +1,9 @@
-// User type definition with role support
+import type { User } from "@bikalpo-project/auth";
+
+// Re-export User from auth package
+export type { User };
+
+// User role definition
 export type UserRole =
   | "guest"
   | "customer"
@@ -6,23 +11,8 @@ export type UserRole =
   | "salesman"
   | "deliveryman";
 
-export type User = {
-  id: string;
-  name: string;
-  email: string;
-  phoneNumber: string | null;
-  shopName: string | null;
-  ownerName: string | null;
-  emailVerified: boolean;
-  role: string | null;
-  banned: boolean | null;
-  banReason: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-// Session type for tracking user devices/sessions
-export type Session = {
+// Database session row for admin user-sessions dialog
+export type UserSession = {
   id: string;
   token: string;
   expiresAt: Date;
@@ -33,7 +23,7 @@ export type Session = {
 
 // User with sessions for admin dashboard
 export type UserWithSessions = User & {
-  sessions: Session[];
+  sessions: UserSession[];
 };
 
 // Role display configuration
@@ -63,3 +53,23 @@ export const roleConfig: Record<UserRole, { label: string; color: string }> = {
 export function getRoleConfig(role: string | null) {
   return roleConfig[(role as UserRole) || "guest"] || roleConfig.guest;
 }
+
+export type VerifiedUserReview = {
+  id: number;
+  comment: string;
+  rating: number;
+};
+
+export type VerifiedUser = {
+  id: string;
+  name: string;
+  email: string;
+  shopName: string | null;
+  ownerName: string | null;
+  image: string | null;
+  createdAt: Date;
+  area: string | null;
+  totalOrders: number;
+  totalSpend: number;
+  reviews: VerifiedUserReview[];
+};

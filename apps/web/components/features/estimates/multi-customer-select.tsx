@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Loader2, Search, User, X } from "lucide-react";
 import * as React from "react";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { client } from "@/utils/orpc";
 
 interface MultiCustomerSelectProps {
   value: string[];

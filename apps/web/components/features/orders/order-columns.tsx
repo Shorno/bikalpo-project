@@ -1,11 +1,11 @@
 "use client";
 
+import type { OrderWithItems } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, ClipboardCheck, Eye } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { OrderWithItems } from "@/db/schema/order";
 import { ADMIN_BASE } from "@/lib/routes";
 
 function getStatusColor(status: string) {

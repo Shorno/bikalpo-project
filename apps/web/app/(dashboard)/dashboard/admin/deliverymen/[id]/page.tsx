@@ -23,9 +23,6 @@ export default async function DeliverymanDetailPage({
   }
 
   return (
-    <DeliverymanDetailClient
-      deliverymanId={id}
-      initialData={deliveryman}
-    />
+    <DeliverymanDetailClient deliverymanId={id} initialData={deliveryman} />
   );
 }

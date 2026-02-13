@@ -1,19 +1,19 @@
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
-import { useVerifiedUsersForHome } from "@/hooks/use-customer-api";
-import { authClient } from "@/lib/auth-client";
 import { CategoryTabs } from "@/components/features/home/category-tabs";
 import { CustomerHero } from "@/components/features/home/customer-hero";
 import { CustomerSidebar } from "@/components/features/home/customer-sidebar";
 import { DashboardVerifiedCustomersSection } from "@/components/features/home/dashboard-verified-customers-section";
 import { OrpcCategoryListing } from "@/components/features/products/orpc-category-listing";
+import { useVerifiedUsersForHome } from "@/hooks/use-customer-api";
+import { authClient } from "@/lib/auth-client";
 
 export default function CustomerDashboardPage() {
   const { data: session } = authClient.useSession();
 
   const { data: verifiedUsersData } = useVerifiedUsersForHome();
-  const verifiedUsers = (verifiedUsersData as any)?.users ?? [];
+  const verifiedUsers = verifiedUsersData?.users ?? [];
 
   const shopName = session?.user?.shopName || "Our Valued Partner";
 

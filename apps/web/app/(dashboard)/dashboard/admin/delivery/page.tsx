@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import { Clock, Eye, MapPin, Package, Truck } from "lucide-react";
 import Link from "next/link";
-import { client } from "@/utils/orpc";
+import type { ComponentProps } from "react";
 import { CreateGroupDialog } from "@/components/features/delivery/create-group-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,18 +20,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { client } from "@/utils/orpc";
+
+type BadgeVariant = NonNullable<ComponentProps<typeof Badge>["variant"]>;
 
 export default async function AdminDeliveryPage() {
   const { groups } = await client.deliveryman.getDeliveryGroups();
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string): BadgeVariant => {
     switch (status) {
       case "completed":
         return "default";
       case "partial":
-        return "warning";
+        return "secondary";
       case "out_for_delivery":
-        return "info";
+        return "secondary";
       case "assigned":
         return "secondary";
       default:
@@ -96,7 +99,7 @@ export default async function AdminDeliveryPage() {
                   g.status === "completed" &&
                   g.completedAt &&
                   new Date(g.completedAt).toDateString() ===
-                  new Date().toDateString(),
+                    new Date().toDateString(),
               ).length || 0}
             </div>
           </CardContent>
@@ -172,7 +175,7 @@ export default async function AdminDeliveryPage() {
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant={getStatusColor(group.status) as any}
+                        variant={getStatusColor(group.status)}
                         className="uppercase"
                       >
                         {group.status.replace(/_/g, " ")}

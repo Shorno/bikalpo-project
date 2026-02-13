@@ -7,7 +7,6 @@
 import { Package } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useActiveCategories } from "@/hooks/use-customer-api";
 import {
   Carousel,
   CarouselContent,
@@ -16,8 +15,13 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useActiveCategories } from "@/hooks/use-customer-api";
 
-function CategoryItem({ category }: { category: any }) {
+type ActiveCategory = NonNullable<
+  ReturnType<typeof useActiveCategories>["data"]
+>["categories"][number];
+
+function CategoryItem({ category }: { category: ActiveCategory }) {
   return (
     <Link
       href={`/products/${category.slug}`}

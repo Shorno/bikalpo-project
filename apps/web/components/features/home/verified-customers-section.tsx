@@ -2,7 +2,7 @@
 
 import { Building2 } from "lucide-react";
 import Link from "next/link";
-import type { VerifiedUser } from "@/actions/users/get-verified-users";
+import type { VerifiedUser } from "@/components/features/users/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

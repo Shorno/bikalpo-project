@@ -2,12 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle, Clock, Package, Truck } from "lucide-react";
-import { client } from "@/utils/orpc";
 import { orderColumns } from "@/components/features/orders/order-columns";
 import OrderTable from "@/components/features/orders/order-table";
 import TableSkeleton from "@/components/table-skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { client } from "@/utils/orpc";
 
 function formatPrice(price: string | number) {
   return new Intl.NumberFormat("en-BD", {
