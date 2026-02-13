@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
 import { ArrowUpDown, Clock, Eye } from "lucide-react";
 import Link from "next/link";
-import type { CustomerListItem } from "@/actions/employee/get-assigned-customers";
+import type { CustomerListItem } from "@/types/api/common";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SALES_BASE } from "@/lib/routes";
@@ -159,3 +159,4 @@ export function getCustomerColumns(
 // Keep the static columns for backward compatibility
 export const customerColumns: ColumnDef<CustomerListItem>[] =
   getCustomerColumns();
+

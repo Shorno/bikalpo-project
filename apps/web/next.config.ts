@@ -13,7 +13,6 @@ const nextConfig: NextConfig = {
   experimental: {
     authInterrupts: true,
   },
-  serverExternalPackages: ["pg"],
   images: {
     remotePatterns: [
       {

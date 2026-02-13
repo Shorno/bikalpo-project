@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { Category } from "@/db/schema";
+import type { Category } from "@/types/api/common";
 import { updateCategorySchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -247,3 +247,4 @@ export default function EditCategoryDialog({
     </Dialog>
   );
 }
+

@@ -31,7 +31,7 @@ const STATUS_STEPS = [
   { key: "pending", label: "Order Placed", icon: Clock },
   { key: "confirmed", label: "Confirmed", icon: CheckCircle2 },
   { key: "processing", label: "Processing", icon: Package },
-  { key: "shipped", label: "Out for Delivery", icon: Truck },
+  { key: "out_for_delivery", label: "Out for Delivery", icon: Truck },
   { key: "delivered", label: "Delivered", icon: CheckCircle2 },
 ];
 
@@ -39,7 +39,7 @@ const STATUS_ORDER: Record<string, number> = {
   pending: 0,
   confirmed: 1,
   processing: 2,
-  shipped: 3,
+  out_for_delivery: 3,
   delivered: 4,
   cancelled: -1,
 };
@@ -72,9 +72,15 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
   }
 
   const order = data.order;
+  const deliveryInfo = data.deliveryInfo;
   const items = order.items || [];
   const isCancelled = order.status === "cancelled";
-  const currentStep = STATUS_ORDER[order.status] ?? 0;
+  const statusForProgress =
+    deliveryInfo?.status === "out_for_delivery"
+      ? "out_for_delivery"
+      : order.status;
+  const currentStep = STATUS_ORDER[statusForProgress] ?? 0;
+  const deliveryOtp = deliveryInfo?.otp ?? null;
 
   const formatPrice = (price: number | string) =>
     `৳${Number(price).toLocaleString("en-BD")}`;
@@ -185,7 +191,10 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
       )}
 
       {/* OTP Card */}
-      {order.deliveryOTP && !isCancelled && order.status !== "delivered" && (
+      {!!deliveryOtp &&
+        deliveryInfo?.status === "out_for_delivery" &&
+        !isCancelled &&
+        order.status !== "delivered" && (
         <Card className="border-emerald-200 bg-emerald-50">
           <CardContent className="py-4">
             <div className="flex items-center justify-between">
@@ -199,12 +208,12 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-bold tracking-widest text-emerald-700">
-                  {order.deliveryOTP}
+                  {deliveryOtp}
                 </span>
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => copyToClipboard(order.deliveryOTP)}
+                  onClick={() => copyToClipboard(deliveryOtp)}
                 >
                   <Copy className="h-4 w-4" />
                 </Button>
@@ -260,17 +269,15 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Subtotal</span>
-                  <span>
-                    {formatPrice(order.subtotal || order.totalAmount)}
-                  </span>
+                  <span>{formatPrice(order.subtotal || order.total)}</span>
                 </div>
-                {order.shippingCost > 0 && (
+                {Number(order.shippingCost) > 0 && (
                   <div className="flex justify-between">
                     <span className="text-gray-500">Shipping</span>
                     <span>{formatPrice(order.shippingCost)}</span>
                   </div>
                 )}
-                {order.discount > 0 && (
+                {Number(order.discount) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
                     <span>-{formatPrice(order.discount)}</span>
@@ -280,7 +287,7 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
                 <div className="flex justify-between font-bold text-base">
                   <span>Total</span>
                   <span className="text-emerald-600">
-                    {formatPrice(order.totalAmount)}
+                    {formatPrice(order.total)}
                   </span>
                 </div>
               </div>

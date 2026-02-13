@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Address } from "@/db/schema/address";
+import type { Address } from "@/types/api/common";
 import { cn } from "@/lib/utils";
 
 interface AddressSelectorProps {
@@ -186,3 +186,4 @@ export function AddressSelector({
     </div>
   );
 }
+

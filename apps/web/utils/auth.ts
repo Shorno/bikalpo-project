@@ -1,115 +1,113 @@
-import { headers } from "next/headers";
-import { redirect, unauthorized } from "next/navigation";
-
-import { auth } from "@/lib/auth";
-
-/**
- * Server-side auth utilities using Better Auth directly
- * Use these in Server Components and Server Actions
- * 
- * Using Better Auth directly is more efficient than ORPC for server-side auth
- * because it avoids HTTP round-trips and serialization overhead.
- */
-
 export type UserRole = "guest" | "customer" | "admin" | "salesman" | "deliveryman";
 
-/**
- * Get current session - returns null if not authenticated
- */
+type SessionUser = {
+  id: string;
+  name: string;
+  email: string;
+  role?: UserRole;
+  [key: string]: unknown;
+};
+
+type SessionPayload = {
+  session?: Record<string, unknown>;
+  user?: SessionUser;
+};
+
+function getAuthBaseUrl(): string {
+  const base = process.env.NEXT_PUBLIC_AUTH_URL;
+  if (!base) {
+    throw new Error("NEXT_PUBLIC_AUTH_URL is not configured");
+  }
+  return base.replace(/\/$/, "");
+}
+
 export async function getSession() {
-    try {
-        const session = await auth.api.getSession({
-            headers: await headers(),
-        });
+  try {
+    const cookie =
+      typeof window === "undefined"
+        ? (await (await import("next/headers")).headers()).get("cookie")
+        : undefined;
+    const response = await fetch(`${getAuthBaseUrl()}/auth/get-session`, {
+      method: "GET",
+      headers: cookie ? { cookie } : {},
+      cache: "no-store",
+    });
 
-        if (!session?.user) {
-            return null;
-        }
-
-        return {
-            session,
-            user: session.user,
-            isAuthenticated: true,
-        };
-    } catch {
-        return null;
+    if (!response.ok) {
+      return null;
     }
+
+    const session = (await response.json()) as SessionPayload;
+    if (!session?.user) {
+      return null;
+    }
+
+    return {
+      session: session.session ?? {},
+      user: session.user,
+      isAuthenticated: true,
+    };
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Check if user is authenticated
- */
 export async function checkAuth() {
-    return getSession();
+  return getSession();
 }
 
-/**
- * Require authentication - redirects to sign-in if not authenticated
- */
 export async function requireAuth() {
-    const session = await getSession();
-    if (!session) {
-        redirect("/sign-in");
+  const session = await getSession();
+  if (!session) {
+    if (typeof window === "undefined") {
+      const { redirect } = await import("next/navigation");
+      redirect("/login");
+    } else {
+      window.location.href = "/login";
     }
-    return session;
+  }
+  return session;
 }
 
-/**
- * Require specific roles - returns unauthorized if role doesn't match
- */
 export async function requireRole(allowedRoles: UserRole[]) {
-    const session = await requireAuth();
-    const userRole = session.user?.role as UserRole;
+  const session = await requireAuth();
+  const userRole = session.user.role as UserRole | undefined;
 
-    if (!allowedRoles.includes(userRole)) {
-        return unauthorized();
+  if (!userRole || !allowedRoles.includes(userRole)) {
+    if (typeof window === "undefined") {
+      const { unauthorized } = await import("next/navigation");
+      return unauthorized();
     }
+    throw new Error("Unauthorized");
+  }
 
-    return session;
+  return session;
 }
 
-/**
- * Require admin role
- */
 export async function requireAdmin() {
-    return requireRole(["admin"]);
+  return requireRole(["admin"]);
 }
 
-/**
- * Require salesman role
- */
 export async function requireSalesman() {
-    return requireRole(["salesman"]);
+  return requireRole(["salesman"]);
 }
 
-/**
- * Require deliveryman role
- */
 export async function requireDeliveryman() {
-    return requireRole(["deliveryman"]);
+  return requireRole(["deliveryman"]);
 }
 
-/**
- * Require customer role
- */
 export async function requireCustomer() {
-    return requireRole(["customer"]);
+  return requireRole(["customer"]);
 }
 
-/**
- * Check role without redirect - useful for conditional logic
- */
 export async function checkRole(allowedRoles: UserRole[]) {
-    const session = await getSession();
-    if (!session) return null;
+  const session = await getSession();
+  if (!session) return null;
 
-    const userRole = session.user?.role as UserRole;
-    return allowedRoles.includes(userRole) ? session : null;
+  const userRole = session.user.role as UserRole | undefined;
+  return userRole && allowedRoles.includes(userRole) ? session : null;
 }
 
-/**
- * Check if user is admin (without redirect)
- */
 export async function checkIsAdmin() {
-    return checkRole(["admin"]);
+  return checkRole(["admin"]);
 }

@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { Brand } from "@/db/schema/brand";
+import type { Brand } from "@/types/api/common";
 import { updateBrandSchema } from "@/schema/brand.schema";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -245,3 +245,4 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
     </Dialog>
   );
 }
+

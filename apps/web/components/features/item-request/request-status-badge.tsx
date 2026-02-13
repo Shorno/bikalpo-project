@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import type { ItemRequestStatus } from "@/db/schema/item-request";
+import type { ItemRequestStatus } from "@/types/api/common";
 
 interface RequestStatusBadgeProps {
   status: ItemRequestStatus;
@@ -45,3 +45,4 @@ export function RequestStatusBadge({
     </Badge>
   );
 }
+

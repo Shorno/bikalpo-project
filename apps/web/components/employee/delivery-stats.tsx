@@ -11,7 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { DeliveryStatsCount } from "@/db/schema/delivery";
+import type { DeliveryStatsCount } from "@/types/api/common";
 
 interface DeliveryStatsProps {
   stats: DeliveryStatsCount;
@@ -159,3 +159,4 @@ export function DeliveryStats({ stats, successRate }: DeliveryStatsProps) {
     </div>
   );
 }
+

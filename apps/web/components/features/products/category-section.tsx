@@ -2,7 +2,7 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { ProductCard } from "@/components/features/products/product-card";
 import { Button } from "@/components/ui/button";
-import type { ProductWithRelations } from "@/db/schema";
+import type { ProductWithRelations } from "@/types/api/common";
 
 interface CategorySectionProps {
   category: {
@@ -45,3 +45,4 @@ export function CategorySection({ category }: CategorySectionProps) {
     </section>
   );
 }
+

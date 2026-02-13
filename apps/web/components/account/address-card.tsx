@@ -8,7 +8,7 @@ import {
 } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Address } from "@/db/schema/address";
+import type { Address } from "@/types/api/common";
 
 interface AddressCardProps {
   address: Address;
@@ -92,3 +92,4 @@ export function AddressCard({ address, onEdit }: AddressCardProps) {
     </div>
   );
 }
+

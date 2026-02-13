@@ -11,7 +11,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { Product } from "@/db/schema/product";
+import type { Product } from "@/types/api/common";
 
 interface ItemReplacePickerProps {
   onSelect: (product: Product) => void;
@@ -123,3 +123,4 @@ export function ItemReplacePicker({
     </Popover>
   );
 }
+

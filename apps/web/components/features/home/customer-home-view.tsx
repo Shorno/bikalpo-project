@@ -3,7 +3,7 @@ import { CategoryTabs } from "@/components/features/home/category-tabs";
 import { CustomerHero } from "@/components/features/home/customer-hero";
 import { CustomerSidebar } from "@/components/features/home/customer-sidebar";
 import CategoryListing from "@/components/features/products/category-listing";
-import type { Session } from "@/lib/auth";
+import type { Session } from "@/types/session";
 
 interface CustomerHomeViewProps {
   session: Session | null;
@@ -47,3 +47,4 @@ export async function CustomerHomeView({ session }: CustomerHomeViewProps) {
     </div>
   );
 }
+

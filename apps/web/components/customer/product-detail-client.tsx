@@ -139,7 +139,7 @@ export function ProductDetailClient({
         {/* Related Products */}
         <div className="mt-12">
           <RelatedProducts
-            categoryId={product.categoryId}
+            categorySlug={productAny.category?.slug || category}
             currentProductId={product.id}
           />
         </div>

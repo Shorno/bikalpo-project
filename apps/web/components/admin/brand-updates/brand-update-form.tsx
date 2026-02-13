@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { BrandUpdate } from "@/db/schema/brand-update";
+import type { BrandUpdate } from "@/types/api/common";
 
 const formSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
@@ -195,3 +195,4 @@ export function BrandUpdateForm({
     </Dialog>
   );
 }
+

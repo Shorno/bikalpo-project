@@ -21,7 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Announcement } from "@/db/schema/announcement";
+import type { Announcement } from "@/types/api/common";
 import { cn } from "@/lib/utils";
 
 const typeColors: Record<string, { bg: string; text: string; dot: string }> = {
@@ -164,3 +164,4 @@ export const createAnnouncementColumns = ({
       },
     },
   ];
+

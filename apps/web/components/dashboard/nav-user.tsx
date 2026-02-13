@@ -18,7 +18,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import type { Session } from "@/lib/auth";
+import type { Session } from "@/types/session";
 import { authClient } from "@/lib/auth-client";
 
 export function NavUser({ session }: { session: Session | null }) {
@@ -92,3 +92,4 @@ export function NavUser({ session }: { session: Session | null }) {
     </SidebarMenu>
   );
 }
+

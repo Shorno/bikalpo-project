@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { getCategoryBySlug } from "@/actions/products/get-category-by-slug";
-import getCategoryWithSubcategory from "@/actions/products/get-category-with-subcategory";
 import { ProductsFilter } from "@/components/features/products/products-filter";
 import { ProductsGrid } from "@/components/features/products/products-grid";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getActiveCategories, getCategoryBySlug } from "@/lib/public-data";
 
-export const revalidate = 3600;
+export const revalidate = 600;
 export const dynamicParams = true;
 
 interface CategoryProductsPageProps {
@@ -59,7 +58,7 @@ export async function generateMetadata({
 }
 
 export async function generateStaticParams() {
-  const categories = await getCategoryWithSubcategory();
+  const categories = await getActiveCategories(revalidate);
 
   return categories.map((category) => ({
     category: category.slug,
@@ -73,7 +72,7 @@ export default async function CategoryProductsPage({
   const { category: categorySlug } = await params;
   const filters = await searchParams;
 
-  const category = await getCategoryBySlug(categorySlug);
+  const category = await getCategoryBySlug(categorySlug, revalidate);
 
   if (!category) {
     notFound();

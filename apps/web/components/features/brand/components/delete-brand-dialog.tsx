@@ -16,7 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { Brand } from "@/db/schema/brand";
+import type { Brand } from "@/types/api/common";
 import { orpc } from "@/utils/orpc";
 
 interface DeleteBrandDialogProps {
@@ -90,3 +90,4 @@ export default function DeleteBrandDialog({ brand }: DeleteBrandDialogProps) {
     </AlertDialog>
   );
 }
+

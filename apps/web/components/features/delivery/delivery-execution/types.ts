@@ -2,9 +2,9 @@ import type {
   DeliveryGroup,
   DeliveryGroupInvoice,
   DeliveryInvoiceStatus,
-} from "@/db/schema/delivery";
-import type { Invoice, InvoiceItem } from "@/db/schema/invoice";
-import type { Order } from "@/db/schema/order";
+} from "@/types/api/common";
+import type { Invoice, InvoiceItem } from "@/types/api/common";
+import type { Order } from "@/types/api/common";
 
 // ============================================================================
 // Customer Types
@@ -86,3 +86,4 @@ export type { DeliveryInvoiceStatus };
 
 // Backward compatibility alias (deprecated - use DeliveryInvoiceWithDetails instead)
 export type DeliveryOrderWithDetails = DeliveryInvoiceWithDetails;
+

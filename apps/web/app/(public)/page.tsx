@@ -1,8 +1,5 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
-import { getVerifiedUsersForHome } from "@/actions/users/get-verified-users";
 import { HeroButtons } from "@/components/features/home/hero-buttons";
 import { VerifiedCustomersSection } from "@/components/features/home/verified-customers-section";
 import { OrpcBrandsCarousel } from "@/components/features/home/orpc-brands-carousel";
@@ -10,17 +7,12 @@ import { OrpcCategoriesCarousel } from "@/components/features/home/orpc-categori
 import { OrpcCategoryListing } from "@/components/features/products/orpc-category-listing";
 import { OrpcFeaturedProducts } from "@/components/features/home/orpc-featured-products";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
+import { getVerifiedUsersForHome } from "@/lib/public-data";
 
-export default function HomePage() {
-  // Fetch verified users on client side
-  const { data: verifiedUsers = [] } = useQuery({
-    queryKey: ["verified-users-home"],
-    queryFn: async () => {
-      const result = await getVerifiedUsersForHome();
-      return result.data ?? [];
-    },
-  });
+export const revalidate = 1800;
+
+export default async function HomePage() {
+  const verifiedUsers = await getVerifiedUsersForHome(revalidate);
 
   return (
     <>

@@ -1,5 +1,5 @@
-import type { ProductFeatureGroup } from "@/db/schema/product";
-import type { QuantitySelectorOption } from "@/db/schema/product-variant";
+import type { ProductFeatureGroup } from "@/types/api/common";
+import type { QuantitySelectorOption } from "@/types/api/common";
 
 type VariantRow = {
   id: number;
@@ -207,3 +207,4 @@ function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
+

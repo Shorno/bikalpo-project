@@ -1,7 +1,5 @@
 import { adminClient, inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import type { auth } from "@bikalpo-project/auth";
-import { ac, adminRole, customer, guest } from "@bikalpo-project/auth";
 
 export const authClient = createAuthClient({
   // Point to the server's auth endpoint
@@ -11,15 +9,8 @@ export const authClient = createAuthClient({
     credentials: "include",
   },
   plugins: [
-    adminClient({
-      ac,
-      roles: {
-        guest,
-        customer,
-        admin: adminRole,
-      },
-    }),
-    inferAdditionalFields<typeof auth>(),
+    adminClient(),
+    inferAdditionalFields(),
   ],
 });
 

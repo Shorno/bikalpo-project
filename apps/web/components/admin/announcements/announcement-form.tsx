@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { Announcement } from "@/db/schema/announcement";
+import type { Announcement } from "@/types/api/common";
 
 const formSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
@@ -196,3 +196,4 @@ export function AnnouncementForm({
     </Dialog>
   );
 }
+

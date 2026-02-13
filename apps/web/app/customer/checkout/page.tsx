@@ -43,8 +43,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import type { Address } from "@/db/schema/address";
-import type { PaymentMethod } from "@/db/schema/order";
+import type { Address } from "@/types/api/common";
+import type { PaymentMethod } from "@/types/api/common";
 import { useCart } from "@/hooks/use-cart";
 import { authClient } from "@/lib/auth-client";
 
@@ -75,6 +75,7 @@ export default function CustomerCheckoutPage() {
   } = useCart();
   const { data: session } = authClient.useSession();
   const placeOrderMutation = usePlaceOrder();
+  const isSubmitting = placeOrderMutation.isPending;
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_delivery");
@@ -745,3 +746,4 @@ export default function CustomerCheckoutPage() {
     </div>
   );
 }
+

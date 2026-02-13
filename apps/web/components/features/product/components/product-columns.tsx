@@ -12,10 +12,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Brand } from "@/db/schema/brand";
-import type { Category, SubCategory } from "@/db/schema/category";
-import type { Product, ProductImage } from "@/db/schema/product";
-import type { ProductVariant } from "@/db/schema/product-variant";
+import type { Brand } from "@/types/api/common";
+import type { Category, SubCategory } from "@/types/api/common";
+import type { Product, ProductImage } from "@/types/api/common";
+import type { ProductVariant } from "@/types/api/common";
 import DeleteProductDialog from "./delete-product-dialog";
 
 export interface ProductWithRelations extends Product {
@@ -217,3 +217,4 @@ export function useProductColumns() {
 
   return columns;
 }
+

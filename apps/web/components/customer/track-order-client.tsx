@@ -29,9 +29,11 @@ const ORDER_STEPS = [
   { key: "delivered", label: "Delivered", icon: CheckCircle2 },
 ] as const;
 
-function getStepIndex(status: string): number {
+function getStepIndex(status: string, deliveryStatus?: string): number {
   if (status === "delivered") return 4;
-  if (status === "out_for_delivery") return 3;
+  if (deliveryStatus === "out_for_delivery" || status === "out_for_delivery") {
+    return 3;
+  }
   if (status === "processing") return 2;
   if (status === "confirmed") return 1;
   return 0;
@@ -69,10 +71,10 @@ export function TrackOrderClient() {
   }
 
   const order = data.order;
-  const currentStep = getStepIndex(order.status);
-
-  // Note: OTP feature requires delivery info which is not yet in the API
-  // const showOtp = deliveryInfo?.otp && deliveryInfo.status === "out_for_delivery";
+  const deliveryInfo = data.deliveryInfo;
+  const currentStep = getStepIndex(order.status, deliveryInfo?.status);
+  const showOtp =
+    !!deliveryInfo?.otp && deliveryInfo.status === "out_for_delivery";
 
   return (
     <div className="space-y-6">
@@ -87,8 +89,26 @@ export function TrackOrderClient() {
         <p className="text-sm text-gray-500">Order #{order.orderNumber}</p>
       </div>
 
-      {/* OTP Card - Hidden until API supports delivery info */}
-      {/* {showOtp && (...)} */}
+      {/* OTP Card - Prominent when out for delivery */}
+      {showOtp && (
+        <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-6">
+          <div className="flex items-center gap-2 text-emerald-700 mb-3">
+            <KeyRound className="h-5 w-5" />
+            <span className="font-semibold">Your Delivery OTP</span>
+          </div>
+          <p className="text-sm text-emerald-600/80 mb-4">
+            Share this code with the delivery person to receive your order.
+          </p>
+          <div className="flex items-center justify-center bg-white rounded-lg py-5 border-2 border-dashed border-emerald-200">
+            <span className="text-4xl font-bold tracking-[0.5em] font-mono text-emerald-600">
+              {deliveryInfo.otp}
+            </span>
+          </div>
+          <p className="text-xs text-emerald-600/70 mt-3 text-center font-medium">
+            Only share this code when you physically receive your order
+          </p>
+        </div>
+      )}
 
       {/* Order Progress */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">

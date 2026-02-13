@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { TicketStatus } from "@/db/schema/support";
+import type { TicketStatus } from "@/types/api/common";
 import { cn } from "@/lib/utils";
 
 interface AdminTicketDetailsProps {
@@ -334,3 +334,4 @@ export function AdminTicketDetails({ ticket }: AdminTicketDetailsProps) {
     </div>
   );
 }
+

@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from "date-fns";
-import type { ReviewWithUser } from "@/db/schema/review";
+import type { ReviewWithUser } from "@/types/api/common";
 import { StarRating } from "./star-rating";
 
 interface ReviewCardProps {
@@ -52,3 +52,4 @@ export function ReviewCard({ review }: ReviewCardProps) {
     </div>
   );
 }
+

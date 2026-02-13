@@ -1,6 +1,7 @@
 import { and, count, desc, eq, gte, lte, sum } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
+import { env } from "@bikalpo-project/env/server";
 import { invoice, invoiceItem } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
 
@@ -245,6 +246,34 @@ export const adminInvoiceRouter = {
                 .where(eq(invoice.id, input.invoiceId));
 
             return { success: true };
+        }),
+
+    /**
+     * Get downloadable PDF URL for an invoice
+     */
+    getPdfUrl: adminProcedure
+        .route({
+            method: "POST",
+            path: "/admin/invoices/pdf-url",
+            tags: ["Admin Invoices"],
+            summary: "Get invoice PDF URL",
+            description: "Returns backend URL for downloading an invoice PDF",
+        })
+        .input(z.object({ id: z.number() }))
+        .handler(async ({ input }) => {
+            const exists = await db.query.invoice.findFirst({
+                where: eq(invoice.id, input.id),
+                columns: { id: true },
+            });
+
+            if (!exists) {
+                throw new Error("Invoice not found");
+            }
+
+            return {
+                success: true,
+                url: `${env.BETTER_AUTH_URL}/api/invoices/${input.id}/pdf`,
+            };
         }),
 
     /**

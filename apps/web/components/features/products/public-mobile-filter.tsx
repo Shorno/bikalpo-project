@@ -23,8 +23,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import type { Category, SubCategory } from "@/db/schema";
-import type { Brand } from "@/db/schema/brand";
+import type { Category, SubCategory } from "@/types/api/common";
+import type { Brand } from "@/types/api/common";
 
 interface PublicMobileFilterProps {
   categories: Category[];
@@ -300,3 +300,4 @@ export function PublicMobileFilter({
     </Sheet>
   );
 }
+

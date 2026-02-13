@@ -17,7 +17,9 @@ import {
   cart,
   cartItem,
   category,
+  deliveryGroupInvoice,
   estimate,
+  invoice,
   itemRequest,
   order,
   orderItem,
@@ -566,7 +568,36 @@ const queries = {
       });
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Order not found" });
-      return { order: found };
+
+      const orderInvoices = await db.query.invoice.findMany({
+        where: eq(invoice.orderId, found.id),
+        columns: { id: true },
+      });
+
+      let deliveryInfo: { status: string; otp: string | null } | null = null;
+
+      if (orderInvoices.length > 0) {
+        const invoiceIds = orderInvoices.map((inv) => inv.id);
+        const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
+          where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
+            invoiceIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+          with: { group: true },
+        });
+
+        if (deliveryInvoice) {
+          deliveryInfo = {
+            status: deliveryInvoice.group.status,
+            otp:
+              deliveryInvoice.group.status === "out_for_delivery"
+                ? deliveryInvoice.deliveryOtp
+                : null,
+          };
+        }
+      }
+
+      return { order: found, deliveryInfo };
     }),
 
   /** Get order status (order + payment info) */
@@ -611,8 +642,41 @@ const queries = {
       const activeOrder = await db.query.order.findFirst({
         where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
         with: { items: true },
+        orderBy: [desc(order.createdAt)],
       });
-      return { order: activeOrder || null };
+      if (!activeOrder) {
+        return { order: null, deliveryInfo: null };
+      }
+
+      const orderInvoices = await db.query.invoice.findMany({
+        where: eq(invoice.orderId, activeOrder.id),
+        columns: { id: true },
+      });
+
+      let deliveryInfo: { status: string; otp: string | null } | null = null;
+
+      if (orderInvoices.length > 0) {
+        const invoiceIds = orderInvoices.map((inv) => inv.id);
+        const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
+          where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
+            invoiceIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+          with: { group: true },
+        });
+
+        if (deliveryInvoice) {
+          deliveryInfo = {
+            status: deliveryInvoice.group.status,
+            otp:
+              deliveryInvoice.group.status === "out_for_delivery"
+                ? deliveryInvoice.deliveryOtp
+                : null,
+          };
+        }
+      }
+
+      return { order: activeOrder, deliveryInfo };
     }),
 
   // ── Cart (authenticated customer) ────────────────────────────

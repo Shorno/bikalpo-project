@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import type { Address } from "@/db/schema/address";
+import type { Address } from "@/types/api/common";
 
 interface AddressFormProps {
   address?: Address | null;
@@ -228,3 +228,4 @@ export function AddressForm({ address, onClose }: AddressFormProps) {
     </div>
   );
 }
+

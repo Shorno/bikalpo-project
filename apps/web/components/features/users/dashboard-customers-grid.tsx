@@ -9,8 +9,8 @@ import {
 } from "lucide-react";
 import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import { useState } from "react";
-import type { VerifiedUser } from "@/actions/users/get-verified-users";
 import { CustomerProductsModal } from "@/components/features/users/customer-products-modal";
+import type { VerifiedUser } from "@/components/features/users/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

@@ -1,12 +1,14 @@
 import { Package } from "lucide-react";
-import { getActiveBrands } from "@/actions/brand/get-brands";
-import { getActiveCategories } from "@/actions/products/get-active-categories";
-import { getProductsWithQuery } from "@/actions/products/get-product-with-query";
-import { getSubCategoriesByCategory } from "@/actions/products/get-subcategories-by-category";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { PublicProductCard } from "@/components/features/products/public-product-card";
 import { PublicProductsSort } from "@/components/features/products/public-products-sort";
-import type { ProductWithRelations } from "@/db/schema";
+import type { ProductWithRelations } from "@/types/api/common";
+import {
+  getActiveBrands,
+  getActiveCategories,
+  getProductsWithQuery,
+  getSubcategoriesByCategory,
+} from "@/lib/public-data";
 
 interface PublicProductsGridProps {
   searchParams: {
@@ -24,12 +26,12 @@ interface PublicProductsGridProps {
 export async function PublicProductsGrid({
   searchParams,
 }: PublicProductsGridProps) {
-  const { products, pagination } = await getProductsWithQuery(searchParams);
+  const { products, pagination } = await getProductsWithQuery(searchParams, 600);
 
-  const categories = await getActiveCategories();
-  const brands = await getActiveBrands();
+  const categories = await getActiveCategories(600);
+  const brands = await getActiveBrands(600);
   const subCategories = searchParams.category
-    ? await getSubCategoriesByCategory(searchParams.category)
+    ? await getSubcategoriesByCategory(searchParams.category, 600)
     : [];
 
   // Check if any filters are active
@@ -102,3 +104,4 @@ export async function PublicProductsGrid({
     </div>
   );
 }
+

@@ -17,7 +17,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { SubCategory } from "@/db/schema";
+import type { SubCategory } from "@/types/api/common";
 
 interface DeleteSubcategoryDialogProps {
   subcategory: SubCategory;
@@ -106,3 +106,4 @@ export default function DeleteSubcategoryDialog({
     </AlertDialog>
   );
 }
+

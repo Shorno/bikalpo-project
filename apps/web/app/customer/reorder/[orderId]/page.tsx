@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import type { PaymentMethod } from "@/db/schema/order";
+import type { PaymentMethod } from "@/types/api/common";
 import { authClient } from "@/lib/auth-client";
 
 const CITIES = [
@@ -97,6 +97,7 @@ export default function ReorderPage({
     error: queryError,
   } = useReorderItems(orderId || undefined);
   const placeReorderMutation = usePlaceReorder();
+  const isSubmitting = placeReorderMutation.isPending;
 
   const [items, setItems] = useState<ReorderItem[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -868,3 +869,4 @@ export default function ReorderPage({
     </div>
   );
 }
+

@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Brand } from "@/db/schema/brand";
+import type { Brand } from "@/types/api/common";
 
 export function useBrandColumns() {
   const columns: ColumnDef<Brand>[] = [
@@ -130,3 +130,4 @@ export function useBrandColumns() {
 
   return columns;
 }
+

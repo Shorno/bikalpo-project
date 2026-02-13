@@ -2,7 +2,7 @@
 
 import { CheckCircle, Clock, List, Package, XCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { OrderWithItems } from "@/db/schema/order";
+import type { OrderWithItems } from "@/types/api/common";
 import { OrderCard } from "./order-card";
 
 interface OrderTabsProps {
@@ -132,3 +132,4 @@ export function OrderTabs({ orders }: OrderTabsProps) {
     </Tabs>
   );
 }
+

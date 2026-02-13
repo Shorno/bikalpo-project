@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import type {
   InvoiceDeliveryStatus,
   InvoicePaymentStatus,
-} from "@/db/schema/invoice";
+} from "@/types/api/common";
 
 interface InvoicePaymentBadgeProps {
   status: InvoicePaymentStatus;
@@ -55,3 +55,4 @@ export function InvoiceDeliveryBadge({ status }: InvoiceDeliveryBadgeProps) {
     </Badge>
   );
 }
+

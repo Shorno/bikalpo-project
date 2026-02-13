@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { InvoiceWithItems } from "@/db/schema/invoice";
+import type { InvoiceWithItems } from "@/types/api/common";
 
 interface CreatePartialInvoiceDialogProps {
   invoice: InvoiceWithItems;
@@ -402,3 +402,4 @@ export function CreatePartialInvoiceDialog({
     </Dialog>
   );
 }
+

@@ -1,7 +1,9 @@
-import { getActiveBrands } from "@/actions/brand/get-brands";
-import { getActiveCategories } from "@/actions/products/get-active-categories";
-import { getSubCategoriesByCategory } from "@/actions/products/get-subcategories-by-category";
 import { PublicFilterClient } from "@/components/features/products/public-filter-client";
+import {
+  getActiveBrands,
+  getActiveCategories,
+  getSubcategoriesByCategory,
+} from "@/lib/public-data";
 
 interface PublicProductsFilterProps {
   categorySlug?: string;
@@ -10,10 +12,10 @@ interface PublicProductsFilterProps {
 export async function PublicProductsFilter({
   categorySlug,
 }: PublicProductsFilterProps) {
-  const categories = await getActiveCategories();
-  const brands = await getActiveBrands();
+  const categories = await getActiveCategories(600);
+  const brands = await getActiveBrands(600);
   const subCategories = categorySlug
-    ? await getSubCategoriesByCategory(categorySlug)
+    ? await getSubcategoriesByCategory(categorySlug, 600)
     : [];
 
   return (

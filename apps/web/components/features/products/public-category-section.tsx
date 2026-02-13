@@ -2,7 +2,7 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { PublicProductCard } from "@/components/features/products/public-product-card";
 import { Button } from "@/components/ui/button";
-import type { ProductWithRelations } from "@/db/schema";
+import type { ProductWithRelations } from "@/types/api/common";
 
 interface PublicCategorySectionProps {
   category: {
@@ -43,3 +43,4 @@ export function PublicCategorySection({
     </section>
   );
 }
+

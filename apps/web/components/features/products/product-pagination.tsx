@@ -2,7 +2,6 @@
 
 import { useSearchParams } from "next/navigation";
 import { parseAsInteger, useQueryState } from "nuqs";
-import type { PaginationData } from "@/actions/products/get-product-with-query";
 import {
   Pagination,
   PaginationContent,
@@ -12,9 +11,10 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import type { ProductPaginationData } from "@/lib/public-data";
 
 interface ProductPaginationProps {
-  pagination: PaginationData;
+  pagination: ProductPaginationData;
 }
 
 export function ProductPagination({ pagination }: ProductPaginationProps) {

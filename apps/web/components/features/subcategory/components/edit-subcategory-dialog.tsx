@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { SubCategory } from "@/db/schema";
+import type { SubCategory } from "@/types/api/common";
 import { updateSubcategorySchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
 
@@ -263,3 +263,4 @@ export default function EditSubcategoryDialog({
     </Dialog>
   );
 }
+

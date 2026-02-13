@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { OrderWithItems } from "@/db/schema/order";
+import type { OrderWithItems } from "@/types/api/common";
 import { ADMIN_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 
@@ -374,3 +374,4 @@ export default function OrderTable<TData, TValue>({
     </div>
   );
 }
+

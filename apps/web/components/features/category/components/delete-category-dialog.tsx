@@ -16,7 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { Category, SubCategory } from "@/db/schema";
+import type { Category, SubCategory } from "@/types/api/common";
 import { orpc } from "@/utils/orpc";
 
 interface DeleteCategoryDialogProps {
@@ -109,3 +109,4 @@ export default function DeleteCategoryDialog({
     </AlertDialog>
   );
 }
+

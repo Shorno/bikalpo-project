@@ -63,3 +63,23 @@ export const roleConfig: Record<UserRole, { label: string; color: string }> = {
 export function getRoleConfig(role: string | null) {
   return roleConfig[(role as UserRole) || "guest"] || roleConfig.guest;
 }
+
+export type VerifiedUserReview = {
+  id: number;
+  comment: string;
+  rating: number;
+};
+
+export type VerifiedUser = {
+  id: string;
+  name: string;
+  email: string;
+  shopName: string | null;
+  ownerName: string | null;
+  image: string | null;
+  createdAt: Date;
+  area: string | null;
+  totalOrders: number;
+  totalSpend: number;
+  reviews: VerifiedUserReview[];
+};

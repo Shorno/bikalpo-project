@@ -14,7 +14,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { ItemRequestWithRelations } from "@/db/schema/item-request";
+import type { ItemRequestWithRelations } from "@/types/api/common";
 import { RequestFormModal } from "./request-form-modal";
 
 interface RequestItemsListProps {
@@ -271,3 +271,4 @@ export function RequestItemsList({
     </div>
   );
 }
+

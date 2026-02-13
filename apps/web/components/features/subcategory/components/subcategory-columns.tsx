@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { SubCategory } from "@/db/schema";
+import type { SubCategory } from "@/types/api/common";
 
 export const subcategoryColumns: ColumnDef<SubCategory>[] = [
   {
@@ -123,3 +123,4 @@ export const subcategoryColumns: ColumnDef<SubCategory>[] = [
     size: 80,
   },
 ];
+

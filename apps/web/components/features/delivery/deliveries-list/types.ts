@@ -3,9 +3,9 @@ import type {
   DeliveryGroupInvoice,
   DeliveryGroupStatus,
   DeliveryInvoiceStatus,
-} from "@/db/schema/delivery";
-import type { Invoice } from "@/db/schema/invoice";
-import type { Order } from "@/db/schema/order";
+} from "@/types/api/common";
+import type { Invoice } from "@/types/api/common";
+import type { Order } from "@/types/api/common";
 
 // ============================================================================
 // Customer Types
@@ -58,3 +58,4 @@ export interface DeliveryGroupsListProps {
 
 // Re-export for convenience
 export type { DeliveryGroupStatus, DeliveryInvoiceStatus };
+

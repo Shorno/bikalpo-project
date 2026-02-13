@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { OrderWithItems } from "@/db/schema/order";
+import type { OrderWithItems } from "@/types/api/common";
 
 interface CustomerDetailsClientProps {
   customerId: string;
@@ -273,3 +273,4 @@ export function CustomerDetailsClient({
     </div>
   );
 }
+

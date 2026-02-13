@@ -23,7 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { ProductVariant } from "@/db/schema/product-variant";
+import type { ProductVariant } from "@/types/api/common";
 import { VariantFormDialog } from "./variant-form-dialog";
 
 export function ProductVariantsCard({
@@ -175,3 +175,4 @@ export function ProductVariantsCard({
     </>
   );
 }
+

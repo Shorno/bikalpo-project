@@ -1,13 +1,12 @@
 import { Suspense } from "react";
-import {
-  getVerifiedUsers,
-  getVerifiedUsersCount,
-} from "@/actions/users/get-verified-users";
 import { TopBuyers } from "@/components/features/users/top-buyers";
 import { VerifiedCustomersCta } from "@/components/features/users/verified-customers-cta";
 import { VerifiedCustomersGrid } from "@/components/features/users/verified-customers-grid";
 import { VerifiedCustomersHero } from "@/components/features/users/verified-customers-hero";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getVerifiedUsers, getVerifiedUsersCount } from "@/lib/public-data";
+
+export const revalidate = 1800;
 
 interface VerifiedCustomersPageProps {
   searchParams: Promise<{
@@ -113,13 +112,13 @@ function VerifiedCustomersContent({
 
 async function VerifiedCustomersHeroWrapper() {
   const [countResult, usersResult] = await Promise.all([
-    getVerifiedUsersCount(),
-    getVerifiedUsers({ limit: 100 }),
+    getVerifiedUsersCount(revalidate),
+    getVerifiedUsers({ limit: 100 }, revalidate),
   ]);
 
-  const totalCount = countResult.count;
-  const areas = usersResult.data?.areas || [];
-  const allUsers = usersResult.data?.users || [];
+  const totalCount = countResult;
+  const areas = usersResult.areas || [];
+  const allUsers = usersResult.users || [];
   const topCustomers = allUsers.slice(0, 3);
 
   return (
@@ -135,11 +134,11 @@ export default async function VerifiedCustomersPage({
   searchParams,
 }: VerifiedCustomersPageProps) {
   const [_countResult, usersResult] = await Promise.all([
-    getVerifiedUsersCount(),
-    getVerifiedUsers({ limit: 100 }),
+    getVerifiedUsersCount(revalidate),
+    getVerifiedUsers({ limit: 100 }, revalidate),
   ]);
 
-  const allUsers = usersResult.data?.users || [];
+  const allUsers = usersResult.users || [];
   const topBuyers = [...allUsers]
     .sort((a, b) => b.totalSpend - a.totalSpend)
     .slice(0, 3);

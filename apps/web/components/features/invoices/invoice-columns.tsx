@@ -22,7 +22,7 @@ import type {
   InvoiceDeliveryStatus,
   InvoicePaymentStatus,
   InvoiceWithItems,
-} from "@/db/schema/invoice";
+} from "@/types/api/common";
 
 const PAYMENT_OPTIONS: { value: InvoicePaymentStatus; label: string }[] = [
   { value: "unpaid", label: "Unpaid" },
@@ -325,3 +325,4 @@ export function useInvoiceColumns() {
 
   return columns;
 }
+

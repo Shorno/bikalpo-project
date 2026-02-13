@@ -14,7 +14,7 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { ProductVariant } from "@/db/schema/product-variant";
+import type { ProductVariant } from "@/types/api/common";
 
 type CreateVariantInput = Parameters<typeof client.adminProductVariant.create>[0];
 type UpdateVariantInput = Parameters<typeof client.adminProductVariant.update>[0] & { id: number };
@@ -345,3 +345,4 @@ export function VariantFormDialog({
     </Dialog>
   );
 }
+

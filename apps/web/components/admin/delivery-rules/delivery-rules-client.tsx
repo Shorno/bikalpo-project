@@ -35,7 +35,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { DeliveryRule } from "@/db/schema/delivery-rule";
+import type { DeliveryRule } from "@/types/api/common";
 
 export function DeliveryRulesClient() {
   const queryClient = useQueryClient();
@@ -338,3 +338,4 @@ export function DeliveryRulesClient() {
     </div>
   );
 }
+

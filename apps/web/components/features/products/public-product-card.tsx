@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import type { ProductWithRelations } from "@/db/schema";
+import type { ProductWithRelations } from "@/types/api/common";
 
 interface PublicProductCardProps {
   product: ProductWithRelations;
@@ -68,3 +68,4 @@ export function PublicProductCard({ product }: PublicProductCardProps) {
     </Link>
   );
 }
+

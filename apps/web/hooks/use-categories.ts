@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { client } from "@/utils/orpc";
-import type { Category, SubCategory } from "@/db/schema";
+import type { Category, SubCategory } from "@/types/api/common";
 
 export interface CategoryWithSubs extends Category {
   subCategory: SubCategory[];
@@ -27,3 +27,4 @@ export function useSubCategories(categoryId: number | null) {
   const category = categories.find((c) => c.id === categoryId);
   return category?.subCategory || [];
 }
+

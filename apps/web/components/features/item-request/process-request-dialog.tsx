@@ -18,7 +18,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { ItemRequestWithRelations } from "@/db/schema/item-request";
+import type { ItemRequestWithRelations } from "@/types/api/common";
 import { ProductSelect } from "./product-select";
 import { RequestStatusBadge } from "./request-status-badge";
 
@@ -303,3 +303,4 @@ export function ProcessRequestDialog({ request }: ProcessRequestDialogProps) {
     </Dialog>
   );
 }
+

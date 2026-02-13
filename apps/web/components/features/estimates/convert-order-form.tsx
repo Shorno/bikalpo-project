@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { User } from "@/db/schema/auth-schema";
+import type { User } from "@/types/api/common";
 
 interface ConvertOrderFormProps {
   estimateId: number;
@@ -249,3 +249,4 @@ export function ConvertOrderForm({ estimateId, user }: ConvertOrderFormProps) {
     </div>
   );
 }
+

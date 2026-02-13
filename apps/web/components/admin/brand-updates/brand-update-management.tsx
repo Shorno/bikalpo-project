@@ -51,7 +51,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { BrandUpdate } from "@/db/schema/brand-update";
+import type { BrandUpdate } from "@/types/api/common";
 import { cn } from "@/lib/utils";
 
 const typeColors: Record<string, { bg: string; text: string; dot: string }> = {
@@ -541,3 +541,4 @@ export function BrandUpdateManagement() {
     </div>
   );
 }
+

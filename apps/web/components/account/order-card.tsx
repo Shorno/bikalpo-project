@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { OrderWithItems } from "@/db/schema/order";
+import type { OrderWithItems } from "@/types/api/common";
 import { formatPrice } from "@/utils/currency";
 
 interface OrderCardProps {
@@ -135,3 +135,4 @@ export function OrderCard({ order }: OrderCardProps) {
     </div>
   );
 }
+

@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Brand } from "@/db/schema";
+import type { Brand } from "@/types/api/common";
 
 interface TopBrandsCardProps {
   brands: Brand[];
@@ -36,3 +36,4 @@ export function TopBrandsCard({ brands }: TopBrandsCardProps) {
     </Card>
   );
 }
+

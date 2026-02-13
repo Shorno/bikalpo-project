@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Brand } from "@/db/schema/brand";
+import type { Brand } from "@/types/api/common";
 
 interface DataTableProps {
   columns: ColumnDef<Brand, unknown>[];
@@ -145,3 +145,4 @@ export default function BrandTable({ columns, data }: DataTableProps) {
     </div>
   );
 }
+

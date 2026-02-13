@@ -5,7 +5,7 @@ import { ArrowUpDown, ClipboardCheck, Eye } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { OrderWithItems } from "@/db/schema/order";
+import type { OrderWithItems } from "@/types/api/common";
 import { ADMIN_BASE } from "@/lib/routes";
 
 function getStatusColor(status: string) {
@@ -183,3 +183,4 @@ export const orderColumns: ColumnDef<OrderWithItems>[] = [
     },
   },
 ];
+

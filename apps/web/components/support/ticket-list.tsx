@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { SupportTicket } from "@/db/schema/support";
+import type { SupportTicket } from "@/types/api/common";
 import { cn } from "@/lib/utils";
 import { TicketForm } from "./ticket-form";
 
@@ -145,3 +145,4 @@ export function TicketList({ tickets }: TicketListProps) {
     </div>
   );
 }
+

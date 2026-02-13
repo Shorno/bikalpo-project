@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AddressCard } from "@/components/account/address-card";
 import { AddressForm } from "@/components/account/address-form";
 import { Button } from "@/components/ui/button";
-import type { Address } from "@/db/schema/address";
+import type { Address } from "@/types/api/common";
 
 interface AddressListProps {
   addresses: Address[];
@@ -74,3 +74,4 @@ export function AddressList({ addresses }: AddressListProps) {
     </div>
   );
 }
+

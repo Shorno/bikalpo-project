@@ -1,8 +1,8 @@
 import { MapPin, ShoppingBag, Trophy } from "lucide-react";
-import type { VerifiedUser } from "@/actions/users/get-verified-users";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import type { VerifiedUser } from "@/components/features/users/types";
 
 interface DashboardTopBuyersProps {
   buyers: VerifiedUser[];

@@ -1,12 +1,14 @@
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import getProductBySlug from "@/actions/products/get-product-by-slug";
 import { ProductActions } from "@/components/features/products/product-actions";
 import { ProductImageGallery } from "@/components/features/products/product-image-gallery";
 import { ProductSpecs } from "@/components/features/products/product-specs";
 import { RelatedProducts } from "@/components/features/products/related-products";
 import { ProductReviews } from "@/components/features/reviews/product-reviews";
+import { getProductBySlug } from "@/lib/public-data";
+
+export const revalidate = 300;
 
 interface ProductDetailsPageProps {
   params: Promise<{ category: string; productSlug: string }>;
@@ -14,7 +16,9 @@ interface ProductDetailsPageProps {
 
 export default async function ProductPage({ params }: ProductDetailsPageProps) {
   const { productSlug } = await params;
-  const product = await getProductBySlug(productSlug);
+  const productData = await getProductBySlug(productSlug, revalidate);
+  const product = productData?.product;
+  const variants = productData?.variants;
 
   if (!product) {
     notFound();
@@ -114,7 +118,7 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                   productSize={product.size}
                   subCategoryName={product.subCategory?.name ?? null}
                   features={product.features ?? undefined}
-                  variants={product.variants ?? undefined}
+                  variants={variants ?? undefined}
                 />
               </div>
 
@@ -275,7 +279,7 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
 
         {/* Related Products */}
         <RelatedProducts
-          categoryId={product.categoryId}
+          categorySlug={product.category.slug}
           currentProductId={product.id}
         />
       </div>
