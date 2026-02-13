@@ -1,3 +1,4 @@
+import type { ProductWithRelations } from "@bikalpo-project/db/schema";
 import { ProductCard } from "@/components/features/products/product-card";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { ProductsSort } from "@/components/features/products/products-sort";
@@ -7,7 +8,6 @@ import {
   getProductsWithQuery,
   getSubcategoriesByCategory,
 } from "@/lib/public-data";
-import type { ProductWithRelations } from "@/types/api/common";
 
 interface ProductsGridProps {
   searchParams: {

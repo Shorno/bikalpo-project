@@ -50,8 +50,10 @@ export function TicketForm({ onSuccess, onCancel }: TicketFormProps) {
       await createTicketMutation.mutateAsync(data);
       form.reset();
       onSuccess?.();
-    } catch (err: any) {
-      toast.error(err?.message || "Something went wrong");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Something went wrong";
+      toast.error(message);
     }
   }
 

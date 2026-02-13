@@ -1,5 +1,6 @@
 "use client";
 
+import type { SupportTicket } from "@bikalpo-project/db/schema";
 import { formatDistanceToNow } from "date-fns";
 import { Clock, MessageSquare, Plus } from "lucide-react";
 import Link from "next/link";
@@ -7,7 +8,6 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { SupportTicket } from "@/types/api/common";
 import { TicketForm } from "./ticket-form";
 
 interface TicketListProps {

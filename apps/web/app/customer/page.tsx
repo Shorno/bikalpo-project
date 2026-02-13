@@ -13,7 +13,7 @@ export default function CustomerDashboardPage() {
   const { data: session } = authClient.useSession();
 
   const { data: verifiedUsersData } = useVerifiedUsersForHome();
-  const verifiedUsers = (verifiedUsersData as any)?.users ?? [];
+  const verifiedUsers = verifiedUsersData?.users ?? [];
 
   const shopName = session?.user?.shopName || "Our Valued Partner";
 

@@ -31,7 +31,7 @@ export function OrpcProfilePage() {
     if (data?.profile) {
       const p = data.profile;
       setFormData({
-        businessName: p.shopName || p.businessName || "",
+        businessName: p.businessName || "",
         ownerName: p.ownerName || p.name || "",
         phoneNumber: p.phoneNumber || "",
         vatNumber: p.vatNumber || "",
@@ -199,7 +199,7 @@ export function OrpcProfilePage() {
             <div className="grid grid-cols-2 gap-y-4 text-sm">
               <ProfileField
                 label="Business Name"
-                value={profile?.shopName || profile?.businessName}
+                value={profile?.businessName}
               />
               <ProfileField
                 label="Owner Name"

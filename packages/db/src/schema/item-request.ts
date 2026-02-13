@@ -99,7 +99,7 @@ export interface ItemRequestWithRelations extends ItemRequest {
         email: string;
         shopName: string | null;
         phoneNumber: string | null;
-    };
+    } | null;
     suggestedProduct?: {
         id: number;
         name: string;

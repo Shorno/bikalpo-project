@@ -1,5 +1,6 @@
 "use client";
 
+import type { Brand } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, MoreHorizontal } from "lucide-react";
 import Image from "next/image";
@@ -13,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Brand } from "@/types/api/common";
 
 export function useBrandColumns() {
   const columns: ColumnDef<Brand>[] = [

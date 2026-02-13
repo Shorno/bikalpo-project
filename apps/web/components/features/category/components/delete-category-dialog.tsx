@@ -1,5 +1,6 @@
 "use client";
 
+import type { Category, SubCategory } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader, Trash2 } from "lucide-react";
 import * as React from "react";
@@ -16,7 +17,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { Category, SubCategory } from "@/types/api/common";
 import { orpc } from "@/utils/orpc";
 
 interface DeleteCategoryDialogProps {

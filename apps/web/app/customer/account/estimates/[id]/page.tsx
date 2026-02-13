@@ -59,6 +59,9 @@ export default function EstimateDetailsPage() {
   const params = useParams();
   const id = params?.id ? parseInt(params.id as string, 10) : undefined;
   const { data, isLoading, error } = useEstimateById(id);
+  type EstimateData = NonNullable<typeof data>;
+  type EstimateItem = EstimateData["estimate"]["items"][number];
+  type EstimateCustomer = EstimateData["estimate"]["customer"];
 
   if (isLoading) return <EstimateDetailSkeleton />;
 
@@ -128,7 +131,7 @@ export default function EstimateDetailsPage() {
 
             {/* Items List */}
             <div className="divide-y divide-gray-50">
-              {estimate.items.map((item: any) => (
+              {estimate.items.map((item: EstimateItem) => (
                 <div
                   key={item.id}
                   className="flex items-center gap-3 px-4 py-2.5"
@@ -205,7 +208,7 @@ export default function EstimateDetailsPage() {
             <div className="lg:sticky lg:top-4">
               <ConvertOrderForm
                 estimateId={estimate.id}
-                user={estimate.customer as any}
+                user={estimate.customer as EstimateCustomer}
               />
             </div>
           ) : (

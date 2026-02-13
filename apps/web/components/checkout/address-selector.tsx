@@ -1,5 +1,6 @@
 "use client";
 
+import type { Address } from "@bikalpo-project/db/schema";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Home, Loader2, MapPin, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -13,7 +14,6 @@ import {
 } from "@/components/ui/dialog";
 import { useMyAddresses } from "@/hooks/use-customer-api";
 import { cn } from "@/lib/utils";
-import type { Address } from "@/types/api/common";
 import { orpc } from "@/utils/orpc";
 
 interface AddressSelectorProps {

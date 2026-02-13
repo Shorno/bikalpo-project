@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ComponentProps } from "react";
 import { DeliveryExecution } from "@/components/features/delivery/delivery-execution";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,10 +55,12 @@ export default async function DeliveryRunPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  let group: any;
+  let group: ComponentProps<typeof DeliveryExecution>["group"] | null = null;
   try {
     const result = await client.deliveryman.getMyGroupById({ id: Number(id) });
-    group = result.group;
+    group = result.group as unknown as ComponentProps<
+      typeof DeliveryExecution
+    >["group"];
   } catch {
     notFound();
   }
@@ -68,17 +71,18 @@ export default async function DeliveryRunPage({
 
   // Calculate stats from invoices
   const invoices = group.invoices || [];
+  type DeliveryInvoice = (typeof invoices)[number];
   const pendingInvoices = invoices.filter(
-    (inv: any) => inv.status === "pending",
+    (inv: DeliveryInvoice) => inv.status === "pending",
   ).length;
   const deliveredInvoices = invoices.filter(
-    (inv: any) => inv.status === "delivered",
+    (inv: DeliveryInvoice) => inv.status === "delivered",
   ).length;
   const failedInvoices = invoices.filter(
-    (inv: any) => inv.status === "failed",
+    (inv: DeliveryInvoice) => inv.status === "failed",
   ).length;
   const totalValue = invoices.reduce(
-    (sum: number, inv: any) => sum + Number(inv.invoice.grandTotal),
+    (sum: number, inv: DeliveryInvoice) => sum + Number(inv.invoice.grandTotal),
     0,
   );
 

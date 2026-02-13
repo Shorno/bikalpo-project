@@ -5,7 +5,7 @@ import type {
   DeliveryInvoiceStatus,
   Invoice,
   Order,
-} from "@/types/api/common";
+} from "@bikalpo-project/db/schema";
 
 // ============================================================================
 // Customer Types

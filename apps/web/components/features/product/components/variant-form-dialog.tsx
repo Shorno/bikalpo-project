@@ -1,5 +1,6 @@
 "use client";
 
+import type { ProductVariant } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,6 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { ProductVariant } from "@/types/api/common";
 import { client } from "@/utils/orpc";
 
 type CreateVariantInput = Parameters<

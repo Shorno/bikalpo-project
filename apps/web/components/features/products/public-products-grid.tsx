@@ -1,3 +1,4 @@
+import type { ProductWithRelations } from "@bikalpo-project/db/schema";
 import { Package } from "lucide-react";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { PublicProductCard } from "@/components/features/products/public-product-card";
@@ -8,7 +9,6 @@ import {
   getProductsWithQuery,
   getSubcategoriesByCategory,
 } from "@/lib/public-data";
-import type { ProductWithRelations } from "@/types/api/common";
 
 interface PublicProductsGridProps {
   searchParams: {

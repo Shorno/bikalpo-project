@@ -24,8 +24,35 @@ import { cn } from "@/lib/utils";
 import type { FormEstimateItem } from "@/types/estimate";
 import { client } from "@/utils/orpc";
 
+interface EstimateItemInput {
+  productId: number;
+  productName: string;
+  productImage?: string | null;
+  quantity: number | string;
+  unitPrice: number | string;
+  discount: number | string;
+  totalPrice: number | string;
+}
+
+interface EditEstimateInput {
+  id: number;
+  customerId?: string | null;
+  discount?: number | string | null;
+  notes?: string | null;
+  validUntil?: Date | string | null;
+  status?: "draft" | "pending" | "sent" | "approved" | "rejected" | "converted";
+  items: EstimateItemInput[];
+}
+
+interface SelectableProduct {
+  id: number;
+  name: string;
+  image: string;
+  price: number | string;
+}
+
 interface EditEstimateFormProps {
-  estimate: any;
+  estimate: EditEstimateInput;
   isReadOnly?: boolean;
 }
 
@@ -37,7 +64,7 @@ export function EditEstimateForm({
   const [isPending, startTransition] = useTransition();
 
   const [items, setItems] = useState<FormEstimateItem[]>(
-    estimate.items.map((item: any) => ({
+    estimate.items.map((item: EstimateItemInput) => ({
       productId: item.productId,
       productName: item.productName,
       productImage: item.productImage,
@@ -57,7 +84,7 @@ export function EditEstimateForm({
       validUntil: estimate.validUntil
         ? new Date(estimate.validUntil)
         : (null as Date | null),
-      status: estimate.status as string | undefined,
+      status: estimate.status as EditEstimateInput["status"],
     },
     onSubmit: async ({ value }) => {
       if (!value.customerId) {
@@ -83,14 +110,18 @@ export function EditEstimateForm({
             discount: value.discount,
             validUntil: value.validUntil,
             notes: value.notes,
-            status: value.status as any,
+            status: value.status,
           });
 
           toast.success("Estimate updated successfully");
           router.push(`${SALES_BASE}/estimates`);
           router.refresh();
-        } catch (error: any) {
-          toast.error(error?.message || "Failed to update estimate");
+        } catch (error: unknown) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Failed to update estimate",
+          );
         }
       });
     },
@@ -98,7 +129,7 @@ export function EditEstimateForm({
 
   const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
 
-  const handleAddItem = (product: any) => {
+  const handleAddItem = (product: SelectableProduct) => {
     const existingItem = items.find((item) => item.productId === product.id);
 
     if (existingItem) {

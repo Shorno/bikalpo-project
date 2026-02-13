@@ -1,5 +1,6 @@
 "use client";
 
+import type { Product } from "@bikalpo-project/db/schema";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronsUpDown, Loader2, Package, Search } from "lucide-react";
 import Image from "next/image";
@@ -10,7 +11,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { Product } from "@/types/api/common";
 import { client } from "@/utils/orpc";
 
 interface ProductPickerProps {

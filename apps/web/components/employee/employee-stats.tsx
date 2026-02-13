@@ -9,7 +9,30 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface EmployeeStatsProps {
-  stats: any;
+  stats:
+    | {
+        role: "salesman";
+        estimates: {
+          total: number;
+          thisMonth: number;
+          converted: number;
+          convertedValue: number;
+          sent: number;
+        };
+        conversionRate: number;
+      }
+    | {
+        role: "deliveryman";
+        deliveries: {
+          pending: number;
+          todayDelivered: number;
+          failed: number;
+          delivered: number;
+        };
+        successRate: number;
+      }
+    | null
+    | undefined;
 }
 
 export function EmployeeStats({ stats }: EmployeeStatsProps) {

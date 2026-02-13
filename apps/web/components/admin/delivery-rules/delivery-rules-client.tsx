@@ -1,5 +1,6 @@
 "use client";
 
+import type { DeliveryRule } from "@bikalpo-project/db/schema";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, Truck } from "lucide-react";
 import { useState } from "react";
@@ -34,7 +35,6 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { DeliveryRule } from "@/types/api/common";
 import { client, orpc } from "@/utils/orpc";
 
 export function DeliveryRulesClient() {

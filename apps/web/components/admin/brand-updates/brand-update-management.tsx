@@ -1,5 +1,6 @@
 "use client";
 
+import type { BrandUpdate } from "@bikalpo-project/db/schema";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -51,7 +52,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import type { BrandUpdate } from "@/types/api/common";
 import { client } from "@/utils/orpc";
 
 const typeColors: Record<string, { bg: string; text: string; dot: string }> = {
@@ -62,6 +62,8 @@ const typeColors: Record<string, { bg: string; text: string; dot: string }> = {
 };
 
 export function BrandUpdateManagement() {
+  const getErrorMessage = (error: unknown) =>
+    error instanceof Error ? error.message : "Something went wrong";
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState<BrandUpdate | null>(null);
@@ -94,8 +96,8 @@ export function BrandUpdateManagement() {
       await client.adminBrandUpdate.delete({ id: deleteId });
       toast.success("Brand update deleted");
       queryClient.invalidateQueries({ queryKey: ["brand-updates"] });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to delete brand update");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error) || "Failed to delete brand update");
     }
     setDeleteId(null);
   };
@@ -108,8 +110,10 @@ export function BrandUpdateManagement() {
       });
       toast.success(result.message);
       queryClient.invalidateQueries({ queryKey: ["brand-updates"] });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update brand update status");
+    } catch (error: unknown) {
+      toast.error(
+        getErrorMessage(error) || "Failed to update brand update status",
+      );
     }
   };
 

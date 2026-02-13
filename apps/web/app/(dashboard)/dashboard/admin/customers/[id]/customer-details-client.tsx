@@ -1,5 +1,6 @@
 "use client";
 
+import type { OrderWithItems } from "@bikalpo-project/db/schema";
 import { useQuery } from "@tanstack/react-query";
 import {
   type ColumnDef,
@@ -30,7 +31,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { OrderWithItems } from "@/types/api/common";
 import { orpc } from "@/utils/orpc";
 
 interface CustomerDetailsClientProps {

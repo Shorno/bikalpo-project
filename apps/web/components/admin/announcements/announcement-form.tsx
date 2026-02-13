@@ -1,5 +1,6 @@
 "use client";
 
+import type { Announcement } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -23,7 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { Announcement } from "@/types/api/common";
 import { client } from "@/utils/orpc";
 
 const formSchema = z.object({
@@ -80,8 +80,10 @@ export function AnnouncementForm({
         );
         onOpenChange(false);
         form.reset();
-      } catch (error: any) {
-        toast.error(error.message || "Something went wrong");
+      } catch (error: unknown) {
+        toast.error(
+          error instanceof Error ? error.message : "Something went wrong",
+        );
       } finally {
         setIsSubmitting(false);
       }

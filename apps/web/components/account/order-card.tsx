@@ -1,12 +1,12 @@
 "use client";
 
+import type { OrderWithItems } from "@bikalpo-project/db/schema";
 import { format } from "date-fns";
 import { Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { OrderWithItems } from "@/types/api/common";
 import { formatPrice } from "@/utils/currency";
 
 interface OrderCardProps {

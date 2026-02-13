@@ -50,6 +50,9 @@ interface OrpcOrderDetailProps {
 
 export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
   const { data, isLoading, isError } = useOrderByNumber(orderNumber);
+  type CustomerOrderItem = NonNullable<
+    NonNullable<typeof data>["order"]
+  >["items"][number];
   const cancelOrder = useCancelOrder();
 
   if (isLoading) return <OrderDetailSkeleton />;
@@ -234,13 +237,13 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {items.map((item: any) => (
+                {items.map((item: CustomerOrderItem) => (
                   <div key={item.id} className="flex gap-3 py-2">
                     <div className="relative h-14 w-14 rounded-md overflow-hidden bg-gray-100 shrink-0">
-                      {item.product?.image ? (
+                      {item.productImage ? (
                         <Image
-                          src={item.product.image}
-                          alt={item.product?.name || ""}
+                          src={item.productImage}
+                          alt={item.productName || ""}
                           fill
                           className="object-cover"
                           sizes="56px"
@@ -251,14 +254,14 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">
-                        {item.product?.name || "Product"}
+                        {item.productName || "Product"}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {item.product?.size} × {item.quantity}
+                        {item.productSize} × {item.quantity}
                       </p>
                     </div>
                     <p className="text-sm font-semibold">
-                      {formatPrice(Number(item.price) * item.quantity)}
+                      {formatPrice(item.totalPrice)}
                     </p>
                   </div>
                 ))}

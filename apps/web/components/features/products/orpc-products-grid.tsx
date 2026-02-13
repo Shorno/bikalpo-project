@@ -48,6 +48,7 @@ export function OrpcProductsGrid() {
   }
 
   const products = data?.products ?? [];
+  type GridProduct = (typeof products)[number];
   const pagination = data?.pagination;
 
   if (products.length === 0) {
@@ -81,7 +82,7 @@ export function OrpcProductsGrid() {
 
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
-        {products.map((p: any) => (
+        {products.map((p: GridProduct) => (
           <Link
             key={p.id}
             href={`/products/${p.category?.slug ?? "all"}/${p.slug}`}

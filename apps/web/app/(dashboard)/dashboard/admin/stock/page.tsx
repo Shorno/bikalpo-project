@@ -16,13 +16,10 @@ export default async function StockInventoryPage({
     | Promise<Record<string, string | string[] | undefined>>
     | Record<string, string | string[] | undefined>;
 }) {
-  const resolved =
-    typeof (searchParams as any)?.then === "function"
-      ? await (searchParams as Promise<
-          Record<string, string | string[] | undefined>
-        >)
-      : (searchParams ?? {});
-  const sp = resolved as Record<string, string | string[] | undefined>;
+  const sp = (await Promise.resolve(searchParams ?? {})) as Record<
+    string,
+    string | string[] | undefined
+  >;
   const search = (typeof sp.search === "string" ? sp.search : undefined) ?? "";
   const categoryId = typeof sp.category === "string" ? sp.category : undefined;
   const stockStatus = (typeof sp.status === "string" ? sp.status : undefined) as

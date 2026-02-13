@@ -1,5 +1,10 @@
 "use client";
 
+import type {
+  InvoiceDeliveryStatus,
+  InvoicePaymentStatus,
+  InvoiceWithItems,
+} from "@bikalpo-project/db/schema";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Eye, FileText, MoreHorizontal } from "lucide-react";
@@ -15,11 +20,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type {
-  InvoiceDeliveryStatus,
-  InvoicePaymentStatus,
-  InvoiceWithItems,
-} from "@/types/api/common";
 import { client } from "@/utils/orpc";
 
 const PAYMENT_OPTIONS: { value: InvoicePaymentStatus; label: string }[] = [

@@ -1,7 +1,7 @@
 import { db } from "@bikalpo-project/db";
 import { category as categoryTable, product, productImage, stockChangeLog } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, desc, eq, gt, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, lte, or, sql, type SQL } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { z } from "zod";
 
@@ -233,17 +233,16 @@ export const productRouter = {
         .handler(async ({ input }) => {
             const { search, categoryId, stockStatus, sort, page, limit } = input;
 
-            const conditions: any[] = [];
+            const conditions: SQL[] = [];
 
             if (search?.trim()) {
                 const s = `%${search.trim()}%`;
-                conditions.push(
-                    or(
-                        ilike(product.name, s),
-                        ilike(product.sku, s),
-                        sql`EXISTS (SELECT 1 FROM "category" c WHERE c.id = ${product.categoryId} AND c.name ILIKE ${s})`,
-                    ),
+                const searchCondition = or(
+                    ilike(product.name, s),
+                    ilike(product.sku, s),
+                    sql`EXISTS (SELECT 1 FROM "category" c WHERE c.id = ${product.categoryId} AND c.name ILIKE ${s})`,
                 );
+                if (searchCondition) conditions.push(searchCondition);
             }
 
             if (categoryId) {
@@ -255,7 +254,8 @@ export const productRouter = {
                 conditions.push(eq(product.inStock, true));
                 conditions.push(gt(product.stockQuantity, 0));
             } else if (stockStatus === "out") {
-                conditions.push(or(eq(product.inStock, false), eq(product.stockQuantity, 0)));
+                const outCondition = or(eq(product.inStock, false), eq(product.stockQuantity, 0));
+                if (outCondition) conditions.push(outCondition);
             } else if (stockStatus === "low") {
                 conditions.push(gt(product.reorderLevel, 0));
                 conditions.push(sql`${product.stockQuantity} <= ${product.reorderLevel}`);
@@ -482,7 +482,7 @@ export const productRouter = {
         .handler(async ({ input }) => {
             const { category: categorySlug, minPrice, maxPrice, sort } = input;
 
-            const conditions: any[] = [];
+            const conditions: SQL[] = [];
 
             // Category filter
             if (categorySlug) {
@@ -542,17 +542,16 @@ export const productRouter = {
         .input(stockExportParamsSchema)
         .handler(async ({ input }) => {
             const { search, categoryId, stockStatus, sort } = input;
-            const conditions: any[] = [];
+            const conditions: SQL[] = [];
 
             if (search?.trim()) {
                 const s = `%${search.trim()}%`;
-                conditions.push(
-                    or(
-                        ilike(product.name, s),
-                        ilike(product.sku, s),
-                        sql`EXISTS (SELECT 1 FROM "category" c WHERE c.id = ${product.categoryId} AND c.name ILIKE ${s})`,
-                    ),
+                const searchCondition = or(
+                    ilike(product.name, s),
+                    ilike(product.sku, s),
+                    sql`EXISTS (SELECT 1 FROM "category" c WHERE c.id = ${product.categoryId} AND c.name ILIKE ${s})`,
                 );
+                if (searchCondition) conditions.push(searchCondition);
             }
             if (categoryId) {
                 const cid = parseInt(categoryId, 10);
@@ -562,7 +561,8 @@ export const productRouter = {
                 conditions.push(eq(product.inStock, true));
                 conditions.push(gt(product.stockQuantity, 0));
             } else if (stockStatus === "out") {
-                conditions.push(or(eq(product.inStock, false), eq(product.stockQuantity, 0)));
+                const outCondition = or(eq(product.inStock, false), eq(product.stockQuantity, 0));
+                if (outCondition) conditions.push(outCondition);
             } else if (stockStatus === "low") {
                 conditions.push(gt(product.reorderLevel, 0));
                 conditions.push(sql`${product.stockQuantity} <= ${product.reorderLevel}`);
@@ -618,17 +618,16 @@ export const productRouter = {
         .input(stockExportParamsSchema)
         .handler(async ({ input }) => {
             const { search, categoryId, stockStatus, sort } = input;
-            const conditions: any[] = [];
+            const conditions: SQL[] = [];
 
             if (search?.trim()) {
                 const s = `%${search.trim()}%`;
-                conditions.push(
-                    or(
-                        ilike(product.name, s),
-                        ilike(product.sku, s),
-                        sql`EXISTS (SELECT 1 FROM "category" c WHERE c.id = ${product.categoryId} AND c.name ILIKE ${s})`,
-                    ),
+                const searchCondition = or(
+                    ilike(product.name, s),
+                    ilike(product.sku, s),
+                    sql`EXISTS (SELECT 1 FROM "category" c WHERE c.id = ${product.categoryId} AND c.name ILIKE ${s})`,
                 );
+                if (searchCondition) conditions.push(searchCondition);
             }
             if (categoryId) {
                 const cid = parseInt(categoryId, 10);
@@ -638,7 +637,8 @@ export const productRouter = {
                 conditions.push(eq(product.inStock, true));
                 conditions.push(gt(product.stockQuantity, 0));
             } else if (stockStatus === "out") {
-                conditions.push(or(eq(product.inStock, false), eq(product.stockQuantity, 0)));
+                const outCondition = or(eq(product.inStock, false), eq(product.stockQuantity, 0));
+                if (outCondition) conditions.push(outCondition);
             } else if (stockStatus === "low") {
                 conditions.push(gt(product.reorderLevel, 0));
                 conditions.push(sql`${product.stockQuantity} <= ${product.reorderLevel}`);
@@ -713,7 +713,7 @@ export const productRouter = {
                     y = drawHeader(currentPage, y);
                 }
                 const cat = p.category?.name ?? "";
-                const sub = (p as any).subCategory?.name ? ` / ${(p as any).subCategory.name}` : "";
+                const sub = p.subCategory?.name ? ` / ${p.subCategory.name}` : "";
                 const cells: [string, number][] = [
                     [`PRD-${p.id}`, col.id], [truncate(p.name, 18), col.name],
                     [truncate(p.sku ?? p.slug ?? "", 12), col.sku], [truncate(cat + sub, 14), col.category],

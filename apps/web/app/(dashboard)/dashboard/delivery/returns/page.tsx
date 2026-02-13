@@ -1,15 +1,18 @@
 import { RotateCcw } from "lucide-react";
-import { orpc, queryClient } from "@/utils/orpc";
+import { type client, orpc, queryClient } from "@/utils/orpc";
 import { ReturnsClient } from "./returns-client";
 
 export default async function ReturnsPage() {
-  let returns: any[] = [];
+  type ReturnItem = Awaited<
+    ReturnType<typeof client.returns.getAll>
+  >["returns"][number];
+  let returns: ReturnItem[] = [];
 
   try {
     const result = await queryClient.fetchQuery(
       orpc.returns.getAll.queryOptions(),
     );
-    returns = (result as any)?.returns || [];
+    returns = result.returns || [];
   } catch (error) {
     console.error("Failed to load returns:", error);
   }

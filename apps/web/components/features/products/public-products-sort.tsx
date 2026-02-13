@@ -1,5 +1,6 @@
 "use client";
 
+import type { Brand, Category, SubCategory } from "@bikalpo-project/db/schema";
 import { useQueryState } from "nuqs";
 import { PublicMobileFilter } from "@/components/features/products/public-mobile-filter";
 import { Label } from "@/components/ui/label";
@@ -10,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Brand, Category, SubCategory } from "@/types/api/common";
 
 interface PublicProductsSortProps {
   categories?: Category[];

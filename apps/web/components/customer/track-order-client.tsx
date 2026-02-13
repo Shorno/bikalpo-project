@@ -41,6 +41,9 @@ function getStepIndex(status: string, deliveryStatus?: string): number {
 
 export function TrackOrderClient() {
   const { data, isLoading } = useActiveOrder();
+  type ActiveOrderItem = NonNullable<
+    NonNullable<typeof data>["order"]
+  >["items"][number];
 
   if (isLoading) {
     return (
@@ -174,7 +177,7 @@ export function TrackOrderClient() {
           <h3 className="font-semibold text-gray-900">Order Items</h3>
         </div>
         <div className="divide-y divide-gray-50">
-          {order.items.map((item: any) => (
+          {order.items.map((item: ActiveOrderItem) => (
             <div key={item.id} className="flex items-center gap-4 p-4">
               <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-100">
                 {item.productImage ? (

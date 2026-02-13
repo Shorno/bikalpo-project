@@ -17,7 +17,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveCategories } from "@/hooks/use-customer-api";
 
-function CategoryItem({ category }: { category: any }) {
+type ActiveCategory = NonNullable<
+  ReturnType<typeof useActiveCategories>["data"]
+>["categories"][number];
+
+function CategoryItem({ category }: { category: ActiveCategory }) {
   return (
     <Link
       href={`/products/${category.slug}`}

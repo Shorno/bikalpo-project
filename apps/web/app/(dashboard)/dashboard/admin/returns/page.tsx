@@ -87,7 +87,14 @@ export default async function AdminReturnsPage() {
                     (sum, item) => sum + (item.quantity || 0),
                     0,
                   );
-                  const submitter = (ret as any).submitter;
+                  const submitter = (
+                    ret as unknown as {
+                      submitter?: {
+                        name: string;
+                        phoneNumber?: string | null;
+                      } | null;
+                    }
+                  ).submitter;
 
                   return (
                     <TableRow key={ret.id}>

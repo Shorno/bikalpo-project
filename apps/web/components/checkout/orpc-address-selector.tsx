@@ -26,9 +26,12 @@ const LABEL_ICONS: Record<string, React.ElementType> = {
   Shop: MapPin,
 };
 
+type MyAddressesData = NonNullable<ReturnType<typeof useMyAddresses>["data"]>;
+export type OrpcCheckoutAddress = MyAddressesData["addresses"][number];
+
 interface OrpcAddressSelectorProps {
   selectedAddressId: number | null;
-  onSelectAddress: (address: any | null) => void;
+  onSelectAddress: (address: OrpcCheckoutAddress | null) => void;
 }
 
 export function OrpcAddressSelector({
@@ -43,8 +46,7 @@ export function OrpcAddressSelector({
   // Auto-select default address on first load
   useEffect(() => {
     if (addresses.length > 0 && selectedAddressId === null) {
-      const defaultAddr =
-        addresses.find((a: any) => a.isDefault) || addresses[0];
+      const defaultAddr = addresses.find((a) => a.isDefault) || addresses[0];
       onSelectAddress(defaultAddr);
     }
   }, [addresses, selectedAddressId, onSelectAddress]);
@@ -84,7 +86,7 @@ export function OrpcAddressSelector({
     <div className="space-y-2">
       <Label className="text-sm font-medium">Select Address</Label>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {addresses.map((addr: any) => {
+        {addresses.map((addr) => {
           const Icon = LABEL_ICONS[addr.label] || MapPin;
           const isSelected = selectedAddressId === addr.id;
           return (

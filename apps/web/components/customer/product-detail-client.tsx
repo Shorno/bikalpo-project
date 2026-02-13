@@ -59,12 +59,12 @@ export function ProductDetailClient({
   }
 
   const product = data.product;
-  const productAny = product as any;
+  type ProductImageItem = NonNullable<typeof product.images>[number];
 
   // Combine main image with additional images
   const allImages = [
     product.image,
-    ...(product.images?.map((img: any) => img.imageUrl) || []),
+    ...(product.images?.map((img: ProductImageItem) => img.imageUrl) || []),
   ];
 
   return (
@@ -116,16 +116,26 @@ export function ProductDetailClient({
               </div>
 
               {/* Product Actions (Add to Cart, etc.) */}
-              <ProductActions product={productAny} />
+              <ProductActions
+                product={{
+                  id: product.id,
+                  name: product.name,
+                  price: Number(product.price || 0),
+                  image: product.image,
+                  size: product.size,
+                  inStock: product.inStock,
+                  stockQuantity: product.stockQuantity,
+                }}
+              />
 
               {/* Product Specifications */}
               <ProductSpecs
-                categoryName={productAny.category?.name || ""}
-                brandName={productAny.brand?.name || null}
+                categoryName={product.category?.name || ""}
+                brandName={product.brand?.name || null}
                 productSize={product.size}
-                subCategoryName={productAny.subCategory?.name || null}
-                features={productAny.features}
-                variants={productAny.variants || []}
+                subCategoryName={product.subCategory?.name || null}
+                features={product.features}
+                variants={data.variants || []}
               />
             </div>
           </div>
@@ -139,7 +149,7 @@ export function ProductDetailClient({
         {/* Related Products */}
         <div className="mt-12">
           <RelatedProducts
-            categorySlug={productAny.category?.slug || category}
+            categorySlug={product.category?.slug || category}
             currentProductId={product.id}
           />
         </div>

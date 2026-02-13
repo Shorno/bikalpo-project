@@ -1,5 +1,6 @@
 "use client";
 
+import type { Address, PaymentMethod } from "@bikalpo-project/db/schema";
 import {
   ArrowLeft,
   Banknote,
@@ -48,7 +49,6 @@ import {
   usePlaceOrder,
 } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
-import type { Address, PaymentMethod } from "@/types/api/common";
 
 const CITIES = [
   "Dhaka",
@@ -215,8 +215,12 @@ export default function CustomerCheckoutPage() {
         clearCart();
         router.push(`/order-confirmation/${result.order.orderNumber}`);
       }
-    } catch (err: any) {
-      toast.error(err?.message || "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.";
+      toast.error(message);
     }
   };
 

@@ -1,7 +1,7 @@
 "use client";
 
+import type { PaymentMethod } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
-
 import {
   AlertCircle,
   ArrowLeft,
@@ -49,7 +49,6 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { usePlaceReorder, useReorderItems } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
-import type { PaymentMethod } from "@/types/api/common";
 
 const CITIES = [
   "Dhaka",
@@ -186,8 +185,12 @@ export default function ReorderPage({
           toast.success("Reorder placed successfully!");
           router.push(`/order-confirmation/${result.order.orderNumber}`);
         }
-      } catch (err: any) {
-        toast.error(err?.message || "Something went wrong. Please try again.");
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Something went wrong. Please try again.";
+        toast.error(message);
       }
     },
   });
@@ -254,11 +257,8 @@ export default function ReorderPage({
   }
 
   // Error state
-  if (queryError || !reorderData?.success) {
-    const errorMessage =
-      reorderData?.error ||
-      queryError?.message ||
-      "Failed to load reorder items";
+  if (queryError || !reorderData) {
+    const errorMessage = queryError?.message || "Failed to load reorder items";
     return (
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-md mx-auto text-center">

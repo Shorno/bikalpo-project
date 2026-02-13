@@ -1,10 +1,10 @@
 "use client";
 
+import type { SupportTicket } from "@bikalpo-project/db/schema";
 import { HelpCircle, MessageSquare, Phone } from "lucide-react";
 import { useState } from "react";
 import { ContactSection, FAQSection, TicketList } from "@/components/support";
 import { cn } from "@/lib/utils";
-import type { SupportTicket } from "@/types/api/common";
 
 interface SupportPageClientProps {
   tickets: SupportTicket[];

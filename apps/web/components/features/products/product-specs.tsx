@@ -1,7 +1,7 @@
 import type {
   ProductFeatureGroup,
   QuantitySelectorOption,
-} from "@/types/api/common";
+} from "@bikalpo-project/db/schema";
 
 type VariantRow = {
   id: number;

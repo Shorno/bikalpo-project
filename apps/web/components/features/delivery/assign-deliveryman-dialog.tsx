@@ -58,6 +58,10 @@ interface AssignDeliverymanDialogProps {
   trigger?: React.ReactNode;
 }
 
+type AssignmentDeliveryman = Awaited<
+  ReturnType<typeof client.deliveryman.getDeliverymenForAssignment>
+>["deliverymen"][number];
+
 export function AssignDeliverymanDialog({
   groupId,
   orderShippingArea,
@@ -66,7 +70,9 @@ export function AssignDeliverymanDialog({
   const router = useRouter();
 
   const [open, setOpen] = React.useState(false);
-  const [deliverymen, setDeliverymen] = React.useState<any[]>([]);
+  const [deliverymen, setDeliverymen] = React.useState<AssignmentDeliveryman[]>(
+    [],
+  );
   const [loadingUsers, setLoadingUsers] = React.useState(false);
 
   const form = useForm<AssignDeliverymanFormValues>({
@@ -107,8 +113,10 @@ export function AssignDeliverymanDialog({
       toast.success("Deliveryman assigned successfully");
       setOpen(false);
       router.refresh();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to assign deliveryman");
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to assign deliveryman",
+      );
     }
   };
 

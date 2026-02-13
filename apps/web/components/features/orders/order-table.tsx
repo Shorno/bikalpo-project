@@ -1,5 +1,6 @@
 "use client";
 
+import type { OrderWithItems } from "@bikalpo-project/db/schema";
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -36,7 +37,6 @@ import {
 } from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
-import type { OrderWithItems } from "@/types/api/common";
 
 const ORDER_STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },

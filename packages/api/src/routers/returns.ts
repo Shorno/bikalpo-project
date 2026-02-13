@@ -310,7 +310,7 @@ export const returnsRouter = {
                     status: "pending",
                     notes: notes || null,
                     attachments: attachments && attachments.length > 0 ? attachments : null,
-                } as any)
+                })
                 .returning();
 
             return { success: true, return: newReturn! };
@@ -391,7 +391,7 @@ export const returnsRouter = {
                 // Update payment status on order
                 await db
                     .update(order)
-                    .set({ paymentStatus: "refunded" as any })
+                    .set({ paymentStatus: "refunded" })
                     .where(eq(order.id, returnData.orderId));
             } else {
                 updateData.status = "rejected";

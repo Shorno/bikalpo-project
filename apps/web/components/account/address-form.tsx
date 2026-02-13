@@ -1,5 +1,6 @@
 "use client";
 
+import type { Address } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { useAddAddress, useUpdateAddress } from "@/hooks/use-customer-api";
-import type { Address } from "@/types/api/common";
 
 interface AddressFormProps {
   address?: Address | null;

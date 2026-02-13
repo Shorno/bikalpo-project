@@ -51,6 +51,7 @@ export function OrpcSearchModal({
 
   const { data, isLoading } = useSearchProducts(debouncedQuery);
   const products = data?.products ?? [];
+  type SearchProduct = (typeof products)[number];
 
   const basePath = variant === "public" ? "/products" : "/customer/products";
 
@@ -104,7 +105,7 @@ export function OrpcSearchModal({
 
           {products.length > 0 && (
             <div className="space-y-1">
-              {products.map((product: any) => (
+              {products.map((product: SearchProduct) => (
                 <Link
                   key={product.id}
                   href={`${basePath}/${product.category?.slug || "all"}/${product.slug}`}

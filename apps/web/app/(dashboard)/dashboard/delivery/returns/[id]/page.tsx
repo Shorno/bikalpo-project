@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DELIVERY_BASE } from "@/lib/routes";
-import { orpc, queryClient } from "@/utils/orpc";
+import { type client, orpc, queryClient } from "@/utils/orpc";
 
 function getStatusBadge(status: string) {
   const variant =
@@ -61,12 +61,13 @@ export default async function ReturnDetailsPage({
   }
 
   // Fetch data using oRPC + queryClient for consistency with TanStack Query
-  let returnData: any;
+  type ReturnByIdResult = Awaited<ReturnType<typeof client.returns.getById>>;
+  let returnData: ReturnByIdResult["return"] | null = null;
   try {
     const result = await queryClient.fetchQuery(
       orpc.returns.getById.queryOptions({ input: { id: returnId } }),
     );
-    returnData = (result as any)?.return;
+    returnData = result?.return ?? null;
   } catch (error) {
     console.error("Failed to load return details:", error);
   }
@@ -398,38 +399,34 @@ export default async function ReturnDetailsPage({
       )}
 
       {/* Attachments */}
-      {(returnData as any).attachments &&
-        ((returnData as any).attachments as string[]).length > 0 && (
-          <Card className="p-0">
-            <CardContent className="p-3 sm:p-4">
-              <p className="text-xs font-semibold text-muted-foreground mb-2 sm:mb-3 uppercase tracking-wide">
-                Attachments (
-                {((returnData as any).attachments as string[]).length})
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {((returnData as any).attachments as string[]).map(
-                  (url, index) => (
-                    <a
-                      key={index}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="relative w-20 h-20 rounded-md overflow-hidden bg-accent hover:opacity-80 transition-opacity"
-                    >
-                      <Image
-                        width={300}
-                        height={300}
-                        src={url}
-                        alt={`Attachment ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </a>
-                  ),
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+      {returnData.attachments && returnData.attachments.length > 0 && (
+        <Card className="p-0">
+          <CardContent className="p-3 sm:p-4">
+            <p className="text-xs font-semibold text-muted-foreground mb-2 sm:mb-3 uppercase tracking-wide">
+              Attachments ({returnData.attachments.length})
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {returnData.attachments.map((url, index) => (
+                <a
+                  key={index}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative w-20 h-20 rounded-md overflow-hidden bg-accent hover:opacity-80 transition-opacity"
+                >
+                  <Image
+                    width={300}
+                    height={300}
+                    src={url}
+                    alt={`Attachment ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </a>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Processing Info */}
       {returnData.processor && (

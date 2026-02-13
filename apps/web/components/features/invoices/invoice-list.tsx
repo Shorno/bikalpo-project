@@ -49,11 +49,12 @@ export default function InvoiceList() {
   });
 
   const invoices = invoicesResult?.invoices || [];
+  type InvoiceItem = (typeof invoices)[number];
   const stats = statsResult?.stats;
 
   // Calculate partial invoices count
   const partialInvoicesCount = invoices.filter(
-    (inv: any) => inv.invoiceType === "split",
+    (inv: InvoiceItem) => inv.invoiceType === "split",
   ).length;
 
   if (invoicesLoading || statsLoading) {

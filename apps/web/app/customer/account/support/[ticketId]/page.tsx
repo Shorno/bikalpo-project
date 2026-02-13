@@ -38,5 +38,5 @@ export default function TicketDetailPage() {
     );
   }
 
-  return <TicketDetails ticket={data.ticket as any} />;
+  return <TicketDetails ticket={data.ticket} />;
 }

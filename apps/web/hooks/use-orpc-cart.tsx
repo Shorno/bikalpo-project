@@ -102,7 +102,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
   };
 
   const clearCartFn = async () => {
-    await clearMutation.mutateAsync();
+    await clearMutation.mutateAsync({});
   };
 
   const refreshCart = async () => {

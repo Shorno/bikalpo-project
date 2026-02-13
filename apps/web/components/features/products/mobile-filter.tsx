@@ -1,5 +1,6 @@
 "use client";
 
+import type { Brand, Category, SubCategory } from "@bikalpo-project/db/schema";
 import { Filter, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { parseAsFloat, parseAsString, useQueryStates } from "nuqs";
@@ -24,7 +25,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import type { Brand, Category, SubCategory } from "@/types/api/common";
 
 interface MobileFilterProps {
   categories: Category[];

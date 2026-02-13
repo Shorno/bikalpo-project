@@ -10,6 +10,7 @@ import { useActiveBrands } from "@/hooks/use-customer-api";
 
 export function OrpcBrandsGrid() {
   const { data, isLoading } = useActiveBrands();
+  type ActiveBrand = NonNullable<typeof data>["brands"][number];
 
   if (isLoading) {
     return (
@@ -28,16 +29,16 @@ export function OrpcBrandsGrid() {
     <section>
       <h2 className="text-xl font-bold text-gray-900 mb-4">Shop by Brand</h2>
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-        {brands.map((brand: any) => (
+        {brands.map((brand: ActiveBrand) => (
           <Link
             key={brand.id}
             href={`/products?brand=${brand.slug}`}
             className="group bg-white border rounded-lg p-3 flex flex-col items-center justify-center hover:shadow-md transition-shadow"
           >
-            {brand.image ? (
+            {brand.logo ? (
               <div className="relative w-12 h-12 mb-2">
                 <Image
-                  src={brand.image}
+                  src={brand.logo}
                   alt={brand.name}
                   fill
                   className="object-contain"

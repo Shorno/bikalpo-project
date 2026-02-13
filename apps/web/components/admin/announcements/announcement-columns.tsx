@@ -1,5 +1,6 @@
 "use client";
 
+import type { Announcement } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
 import {
@@ -21,7 +22,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { Announcement } from "@/types/api/common";
 import { client } from "@/utils/orpc";
 
 const typeColors: Record<string, { bg: string; text: string; dot: string }> = {
@@ -118,8 +118,12 @@ export const createAnnouncementColumns = ({
             active: !announcement.active,
           });
           toast.success(result.message);
-        } catch (error: any) {
-          toast.error(error.message || "Failed to toggle announcement");
+        } catch (error: unknown) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Failed to toggle announcement",
+          );
         }
       };
 

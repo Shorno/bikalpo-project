@@ -1,5 +1,6 @@
 "use client";
 
+import type { Brand } from "@bikalpo-project/db/schema";
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -24,7 +25,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Brand } from "@/types/api/common";
 
 interface DataTableProps {
   columns: ColumnDef<Brand, unknown>[];

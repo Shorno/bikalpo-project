@@ -66,6 +66,7 @@ const STATUS_CONFIG: Record<
 
 export function OrpcMyOrders() {
   const { data, isLoading, isError } = useMyOrders();
+  type CustomerOrder = NonNullable<typeof data>["orders"][number];
   const cancelOrder = useCancelOrder();
   const [activeTab, setActiveTab] = useState("all");
 
@@ -86,9 +87,7 @@ export function OrpcMyOrders() {
   const orders = data?.orders ?? [];
 
   const filteredOrders =
-    activeTab === "all"
-      ? orders
-      : orders.filter((o: any) => o.status === activeTab);
+    activeTab === "all" ? orders : orders.filter((o) => o.status === activeTab);
 
   const formatPrice = (price: number | string) =>
     `৳${Number(price).toLocaleString("en-BD")}`;
@@ -113,7 +112,7 @@ export function OrpcMyOrders() {
             "delivered",
             "cancelled",
           ].map((status) => {
-            const count = orders.filter((o: any) => o.status === status).length;
+            const count = orders.filter((o) => o.status === status).length;
             if (count === 0) return null;
             return (
               <TabsTrigger key={status} value={status}>
@@ -141,7 +140,7 @@ export function OrpcMyOrders() {
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredOrders.map((order: any) => {
+              {filteredOrders.map((order: CustomerOrder) => {
                 const cfg =
                   STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
                 const StatusIcon = cfg.icon;
@@ -167,8 +166,8 @@ export function OrpcMyOrders() {
                     <div className="flex items-center justify-between text-sm">
                       <div className="text-gray-500">
                         <span>
-                          {order.itemCount || "–"} item
-                          {(order.itemCount || 0) !== 1 ? "s" : ""}
+                          {order.items.length || "–"} item
+                          {(order.items.length || 0) !== 1 ? "s" : ""}
                         </span>
                         <span className="mx-1.5">·</span>
                         <span>
@@ -181,7 +180,7 @@ export function OrpcMyOrders() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-gray-900">
-                          {formatPrice(order.totalAmount || order.total || 0)}
+                          {formatPrice(order.total || 0)}
                         </span>
                         <ChevronRight className="h-4 w-4 text-gray-400" />
                       </div>

@@ -15,8 +15,19 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+interface EmployeePerformance {
+  id: string;
+  name: string;
+  convertedEstimates?: number;
+  completedDeliveries?: number;
+  totalEstimates?: number;
+  totalDeliveries?: number;
+  conversionRate?: number;
+  successRate?: number;
+}
+
 interface PerformanceChartsProps {
-  employees: any[];
+  employees: EmployeePerformance[];
   roleFilter: "salesman" | "deliveryman";
 }
 

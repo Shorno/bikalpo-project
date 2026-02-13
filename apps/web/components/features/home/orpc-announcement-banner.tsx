@@ -9,23 +9,26 @@ import { useAnnouncements } from "@/hooks/use-customer-api";
 
 export function OrpcAnnouncementBanner() {
   const { data } = useAnnouncements();
+  type AnnouncementItem = NonNullable<typeof data>["announcements"][number];
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
 
   const announcements = (data?.announcements ?? []).filter(
-    (a: any) => !dismissed.has(a.id),
+    (a) => !dismissed.has(a.id),
   );
 
   if (announcements.length === 0) return null;
 
   return (
     <div className="space-y-0">
-      {announcements.map((ann: any) => (
+      {announcements.map((ann: AnnouncementItem) => (
         <div
           key={ann.id}
           className="bg-emerald-600 text-white px-4 py-2 text-sm flex items-center justify-center relative"
         >
           <Bell className="h-3.5 w-3.5 mr-2 shrink-0" />
-          <p className="text-center line-clamp-1">{ann.message || ann.title}</p>
+          <p className="text-center line-clamp-1">
+            {ann.description || ann.title}
+          </p>
           <button
             type="button"
             onClick={() => setDismissed((prev) => new Set([...prev, ann.id]))}

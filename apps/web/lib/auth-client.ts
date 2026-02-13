@@ -1,6 +1,6 @@
+import type { auth } from "@bikalpo-project/auth";
 import { adminClient, inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import type { auth } from "@bikalpo-project/auth";
 
 export const authClient = createAuthClient({
   // Point to the server's auth endpoint
@@ -11,4 +11,3 @@ export const authClient = createAuthClient({
   },
   plugins: [adminClient(), inferAdditionalFields<typeof auth>()],
 });
-

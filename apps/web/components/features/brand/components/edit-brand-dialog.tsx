@@ -1,5 +1,6 @@
 "use client";
 
+import type { Brand } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
@@ -26,7 +27,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { updateBrandSchema } from "@/schema/brand.schema";
-import type { Brand } from "@/types/api/common";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 

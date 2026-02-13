@@ -35,7 +35,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { client } from "@/utils/orpc";
 
 interface ProcessReturnDialogProps {
-  returnRequest: any;
+  returnRequest: { id: number };
   trigger?: React.ReactNode;
 }
 
@@ -60,8 +60,10 @@ export function ProcessReturnDialog({
       setOpen(false);
       router.refresh();
     },
-    onError: (error: any) => {
-      toast.error(error?.message || "Something went wrong");
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
     },
   });
 

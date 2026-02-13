@@ -16,6 +16,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -100,7 +101,7 @@ export function useAuditColumns({ onViewDetails }: UseAuditColumnsProps) {
         header: "Action",
         cell: ({ row }) => {
           const action = row.original.action;
-          const actionIcons: Record<string, any> = {
+          const actionIcons: Record<string, ReactNode> = {
             login: <LogIn className="h-3 w-3" />,
             logout: <LogOut className="h-3 w-3" />,
             create: <Plus className="h-3 w-3" />,
@@ -163,7 +164,7 @@ export function useAuditColumns({ onViewDetails }: UseAuditColumnsProps) {
         header: "Status",
         cell: ({ row }) => {
           const status = row.original.status;
-          const statusIcons: Record<string, any> = {
+          const statusIcons: Record<string, ReactNode> = {
             success: <CheckCircle2 className="h-4 w-4 text-green-600" />,
             warning: <AlertTriangle className="h-4 w-4 text-orange-600" />,
             failed: <XCircle className="h-4 w-4 text-red-600" />,

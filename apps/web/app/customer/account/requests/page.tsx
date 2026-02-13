@@ -19,10 +19,7 @@ export default function AccountRequestsPage() {
 
   return (
     <div>
-      <RequestItemsList
-        requests={(data?.requests as any) || []}
-        onRefresh={refetch}
-      />
+      <RequestItemsList requests={data?.requests || []} onRefresh={refetch} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ItemRequestWithRelations } from "@bikalpo-project/db/schema";
 import { format } from "date-fns";
 import {
   CheckCircle,
@@ -14,7 +15,6 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { ItemRequestWithRelations } from "@/types/api/common";
 import { RequestFormModal } from "./request-form-modal";
 
 interface RequestItemsListProps {

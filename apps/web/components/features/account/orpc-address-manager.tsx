@@ -40,6 +40,8 @@ const LABEL_ICONS: Record<string, React.ElementType> = {
   Office: Briefcase,
   Shop: MapPin,
 };
+type MyAddressesData = NonNullable<ReturnType<typeof useMyAddresses>["data"]>;
+type ManagedAddress = MyAddressesData["addresses"][number];
 
 export function OrpcAddressManager() {
   const { data, isLoading, isError } = useMyAddresses();
@@ -47,7 +49,9 @@ export function OrpcAddressManager() {
   const setDefault = useSetDefaultAddress();
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingAddress, setEditingAddress] = useState<any>(null);
+  const [editingAddress, setEditingAddress] = useState<ManagedAddress | null>(
+    null,
+  );
 
   if (isLoading) return <AddressSkeleton />;
 
@@ -67,7 +71,7 @@ export function OrpcAddressManager() {
     setDialogOpen(true);
   };
 
-  const openEdit = (addr: any) => {
+  const openEdit = (addr: ManagedAddress) => {
     setEditingAddress(addr);
     setDialogOpen(true);
   };
@@ -103,7 +107,7 @@ export function OrpcAddressManager() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {addresses.map((addr: any) => {
+          {addresses.map((addr) => {
             const Icon = LABEL_ICONS[addr.label] || MapPin;
             return (
               <Card key={addr.id} className="relative">
@@ -200,7 +204,7 @@ function AddressForm({
   address,
   onDone,
 }: {
-  address?: any;
+  address?: ManagedAddress | null;
   onDone: () => void;
 }) {
   const addAddress = useAddAddress();

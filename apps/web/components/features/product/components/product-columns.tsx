@@ -1,5 +1,13 @@
 "use client";
 
+import type {
+  Brand,
+  Category,
+  Product,
+  ProductImage,
+  ProductVariant,
+  SubCategory,
+} from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, MoreHorizontal, Pencil } from "lucide-react";
 import Image from "next/image";
@@ -12,14 +20,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type {
-  Brand,
-  Category,
-  Product,
-  ProductImage,
-  ProductVariant,
-  SubCategory,
-} from "@/types/api/common";
 import DeleteProductDialog from "./delete-product-dialog";
 
 export interface ProductWithRelations extends Product {

@@ -1,5 +1,5 @@
+import type { ReviewWithUser } from "@bikalpo-project/db/schema";
 import { formatDistanceToNow } from "date-fns";
-import type { ReviewWithUser } from "@/types/api/common";
 import { StarRating } from "./star-rating";
 
 interface ReviewCardProps {

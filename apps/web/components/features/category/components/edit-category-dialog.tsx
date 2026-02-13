@@ -1,5 +1,6 @@
 "use client";
 
+import type { Category } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
@@ -26,7 +27,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { updateCategorySchema } from "@/schema/category.scheam";
-import type { Category } from "@/types/api/common";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 

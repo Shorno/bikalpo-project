@@ -65,6 +65,7 @@ export function OrpcFeaturedProducts({
   }
 
   const products = data.products.slice(0, limit);
+  type FeaturedProduct = (typeof products)[number];
 
   return (
     <section className={cn("py-8", className)}>
@@ -90,7 +91,7 @@ export function OrpcFeaturedProducts({
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {products.map((product: any) => (
+          {products.map((product: FeaturedProduct) => (
             <Link
               key={product.id}
               href={`/products/${product.slug}`}

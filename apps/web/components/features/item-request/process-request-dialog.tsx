@@ -1,5 +1,6 @@
 "use client";
 
+import type { ItemRequestWithRelations } from "@bikalpo-project/db/schema";
 import { Check, Lightbulb, Loader2, X } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
@@ -17,7 +18,6 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { ItemRequestWithRelations } from "@/types/api/common";
 import { client } from "@/utils/orpc";
 import { ProductSelect } from "./product-select";
 import { RequestStatusBadge } from "./request-status-badge";

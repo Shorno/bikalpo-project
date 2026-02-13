@@ -14,8 +14,25 @@ import {
 } from "@/components/ui/table";
 import { EmployeeDetailModal } from "./employee-detail-modal";
 
+interface Employee {
+  id: string;
+  name: string;
+  email?: string;
+  role?: string | null;
+  totalDeliveries?: number;
+  completedDeliveries?: number;
+  failedDeliveries?: number;
+  successRate?: number;
+  avgDeliveriesPerDay?: number;
+  totalEstimates?: number;
+  approvedEstimates?: number;
+  convertedEstimates?: number;
+  conversionRate?: number;
+  totalSalesValue?: number;
+}
+
 interface EmployeeTableProps {
-  employees: any[];
+  employees: Employee[];
   loading: boolean;
   role: "deliveryman" | "salesman";
 }
@@ -25,10 +42,12 @@ export function EmployeeTable({
   loading,
   role,
 }: EmployeeTableProps) {
-  const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
+    null,
+  );
   const [modalOpen, setModalOpen] = useState(false);
 
-  const handleViewDetails = (employee: any) => {
+  const handleViewDetails = (employee: Employee) => {
     setSelectedEmployee(employee);
     setModalOpen(true);
   };

@@ -1,5 +1,6 @@
 "use client";
 
+import type { User } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -9,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { User } from "@/types/api/common";
 import { orpc } from "@/utils/orpc";
 
 interface ConvertOrderFormProps {

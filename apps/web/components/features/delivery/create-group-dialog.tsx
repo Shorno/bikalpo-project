@@ -74,7 +74,7 @@ export function CreateGroupDialog() {
     const firstInvoice = invoices.find(
       (inv) => inv.id === invoiceIdsForDeliverymen[0],
     );
-    return (firstInvoice?.order as any)?.shippingArea ?? undefined;
+    return firstInvoice?.order?.shippingArea ?? undefined;
   }, [invoiceIdsForDeliverymen, invoices]);
 
   const { data: deliverymenResult, isLoading: isLoadingDeliverymen } = useQuery(
@@ -251,14 +251,8 @@ export function CreateGroupDialog() {
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1 text-xs text-muted-foreground ml-7">
-                                    {(dm as { serviceArea?: string | null })
-                                      .serviceArea && (
-                                      <span>
-                                        {
-                                          (dm as { serviceArea: string })
-                                            .serviceArea
-                                        }
-                                      </span>
+                                    {dm.serviceArea && (
+                                      <span>{dm.serviceArea}</span>
                                     )}
                                     {dm.hasActiveGroup && (
                                       <span className="text-destructive font-medium">

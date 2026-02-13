@@ -8,7 +8,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { type Resolver, useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import { Badge } from "@/components/ui/badge";
@@ -76,10 +76,13 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
       input: { orderId: orderId },
     }),
   );
+  type ReturnOrder = NonNullable<typeof orderResult>["order"];
+  type ReturnOrderItem = ReturnOrder["items"][number];
 
   const form = useForm<ReturnProcessingFormValues>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(returnProcessingFormSchema) as any,
+    resolver: zodResolver(
+      returnProcessingFormSchema,
+    ) as unknown as Resolver<ReturnProcessingFormValues>,
     defaultValues: {
       orderId: orderId,
       returnedItems: [],
@@ -127,7 +130,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
       returnedItems: data.returnedItems.map((item) => ({
         ...item,
         unitPrice: String(item.unitPrice),
-      })) as any,
+      })) as ReturnProcessingFormValues["returnedItems"],
     });
   };
 
@@ -139,11 +142,11 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
       returnedItems: data.returnedItems.map((item) => ({
         ...item,
         unitPrice: String(item.unitPrice),
-      })) as any,
+      })) as ReturnProcessingFormValues["returnedItems"],
     });
   };
 
-  const handleAddProduct = (orderItem: any) => {
+  const handleAddProduct = (orderItem: ReturnOrderItem) => {
     // Check if already added
     const existing = fields.find((f) => f.orderItemId === orderItem.id);
     if (existing) {
@@ -356,7 +359,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
 
               {/* Mobile: Card View */}
               <div className="sm:hidden space-y-2">
-                {orderData.items.map((item: any, index: number) => {
+                {orderData.items.map((item: ReturnOrderItem, index: number) => {
                   const isAdded = fields.some((f) => f.orderItemId === item.id);
                   const returnedQty = item.returnedQty ?? 0;
                   const availableToReturn =
@@ -445,83 +448,87 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {orderData.items.map((item: any, index: number) => {
-                      const returnedQty = item.returnedQty ?? 0;
-                      const availableToReturn =
-                        item.availableToReturn ?? item.quantity;
-                      const isFullyReturned = availableToReturn <= 0;
-                      const isAdded = fields.some(
-                        (f) => f.orderItemId === item.id,
-                      );
-                      return (
-                        <TableRow
-                          key={item.id}
-                          className={
-                            isFullyReturned ? "opacity-60 bg-muted/30" : ""
-                          }
-                        >
-                          <TableCell className="text-muted-foreground">
-                            {index + 1}
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{item.productName}</p>
-                              <p className="text-xs text-muted-foreground">
-                                SKU-{item.productId} • ৳
-                                {Number(item.unitPrice).toLocaleString()}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {item.quantity}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {returnedQty > 0 ? (
-                              <span className="text-amber-600 font-medium">
-                                {returnedQty}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">0</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <span
-                              className={
-                                availableToReturn > 0
-                                  ? "text-green-600 font-medium"
-                                  : "text-muted-foreground"
-                              }
-                            >
-                              {availableToReturn}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            ৳{Number(item.unitPrice).toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={isFullyReturned ? "ghost" : "outline"}
-                              className="h-7 text-xs"
-                              onClick={() => handleAddProduct(item)}
-                              disabled={isAdded || isFullyReturned}
-                            >
-                              {isAdded ? (
-                                "Added"
-                              ) : isFullyReturned ? (
-                                "—"
+                    {orderData.items.map(
+                      (item: ReturnOrderItem, index: number) => {
+                        const returnedQty = item.returnedQty ?? 0;
+                        const availableToReturn =
+                          item.availableToReturn ?? item.quantity;
+                        const isFullyReturned = availableToReturn <= 0;
+                        const isAdded = fields.some(
+                          (f) => f.orderItemId === item.id,
+                        );
+                        return (
+                          <TableRow
+                            key={item.id}
+                            className={
+                              isFullyReturned ? "opacity-60 bg-muted/30" : ""
+                            }
+                          >
+                            <TableCell className="text-muted-foreground">
+                              {index + 1}
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">
+                                  {item.productName}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  SKU-{item.productId} • ৳
+                                  {Number(item.unitPrice).toLocaleString()}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {item.quantity}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {returnedQty > 0 ? (
+                                <span className="text-amber-600 font-medium">
+                                  {returnedQty}
+                                </span>
                               ) : (
-                                <>
-                                  <Plus className="h-3 w-3 mr-1" />
-                                  Add
-                                </>
+                                <span className="text-muted-foreground">0</span>
                               )}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span
+                                className={
+                                  availableToReturn > 0
+                                    ? "text-green-600 font-medium"
+                                    : "text-muted-foreground"
+                                }
+                              >
+                                {availableToReturn}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              ৳{Number(item.unitPrice).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={isFullyReturned ? "ghost" : "outline"}
+                                className="h-7 text-xs"
+                                onClick={() => handleAddProduct(item)}
+                                disabled={isAdded || isFullyReturned}
+                              >
+                                {isAdded ? (
+                                  "Added"
+                                ) : isFullyReturned ? (
+                                  "—"
+                                ) : (
+                                  <>
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Add
+                                  </>
+                                )}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      },
+                    )}
                   </TableBody>
                 </Table>
               </div>

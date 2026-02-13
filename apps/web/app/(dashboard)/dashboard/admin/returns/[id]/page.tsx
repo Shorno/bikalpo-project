@@ -61,7 +61,8 @@ export default async function AdminReturnDetailPage({
     );
   }
 
-  let returnData: any;
+  type ReturnByIdResult = Awaited<ReturnType<typeof client.returns.getById>>;
+  let returnData: ReturnByIdResult["return"] | null = null;
   try {
     const result = await client.returns.getById({ id: returnId });
     returnData = result?.return;

@@ -1,7 +1,7 @@
 "use client";
 
+import type { ItemRequestStatus } from "@bikalpo-project/db/schema";
 import { Badge } from "@/components/ui/badge";
-import type { ItemRequestStatus } from "@/types/api/common";
 
 interface RequestStatusBadgeProps {
   status: ItemRequestStatus;

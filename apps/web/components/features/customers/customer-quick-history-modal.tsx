@@ -31,6 +31,11 @@ interface CustomerQuickHistoryModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+type SalesmanCustomerDetailsResponse = Awaited<
+  ReturnType<typeof client.salesman.getCustomerDetails>
+>;
+type SalesmanCustomerDetails = SalesmanCustomerDetailsResponse["customer"];
+
 function getStatusColor(status: string) {
   switch (status.toLowerCase()) {
     case "pending":
@@ -54,7 +59,9 @@ export function CustomerQuickHistoryModal({
   open,
   onOpenChange,
 }: CustomerQuickHistoryModalProps) {
-  const [customer, setCustomer] = useState<any>(null);
+  const [customer, setCustomer] = useState<SalesmanCustomerDetails | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {

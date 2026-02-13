@@ -1,8 +1,8 @@
 "use client";
 
+import type { OrderWithItems } from "@bikalpo-project/db/schema";
 import { CheckCircle, Clock, List, Package, XCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { OrderWithItems } from "@/types/api/common";
 import { OrderCard } from "./order-card";
 
 interface OrderTabsProps {

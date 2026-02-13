@@ -1,5 +1,6 @@
 "use client";
 
+import type { InvoiceWithItems } from "@bikalpo-project/db/schema";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Minus, Package, Plus } from "lucide-react";
 import Image from "next/image";
@@ -25,7 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { InvoiceWithItems } from "@/types/api/common";
 import { client } from "@/utils/orpc";
 
 interface CreatePartialInvoiceDialogProps {

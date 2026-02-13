@@ -1,5 +1,5 @@
+import type { Category, SubCategory } from "@bikalpo-project/db/schema";
 import { useQuery } from "@tanstack/react-query";
-import type { Category, SubCategory } from "@/types/api/common";
 import { client } from "@/utils/orpc";
 
 export interface CategoryWithSubs extends Category {

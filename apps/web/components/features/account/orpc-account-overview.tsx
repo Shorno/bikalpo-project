@@ -40,6 +40,7 @@ function getStatusColor(status: string) {
 export function OrpcAccountOverview() {
   const { data: ordersData, isLoading: ordersLoading } = useMyOrders();
   const { data: profileData, isLoading: profileLoading } = useProfile();
+  type CustomerOrder = NonNullable<typeof ordersData>["orders"][number];
 
   const isLoading = ordersLoading || profileLoading;
 
@@ -50,18 +51,13 @@ export function OrpcAccountOverview() {
 
   const totalOrders = orders.length;
   const pendingOrders = orders.filter(
-    (o: any) =>
+    (o) =>
       o.status === "pending" ||
       o.status === "confirmed" ||
       o.status === "processing",
   ).length;
-  const completedOrders = orders.filter(
-    (o: any) => o.status === "delivered",
-  ).length;
-  const totalSpent = orders.reduce(
-    (sum: number, o: any) => sum + Number(o.totalAmount || o.total || 0),
-    0,
-  );
+  const completedOrders = orders.filter((o) => o.status === "delivered").length;
+  const totalSpent = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
 
   const recentOrders = orders.slice(0, 5);
   const userName = profile?.ownerName || profile?.name || "there";
@@ -139,7 +135,7 @@ export function OrpcAccountOverview() {
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
-            {recentOrders.map((order: any) => {
+            {recentOrders.map((order: CustomerOrder) => {
               const statusStyle = getStatusColor(order.status);
               return (
                 <Link
@@ -156,8 +152,8 @@ export function OrpcAccountOverview() {
                         #{order.orderNumber}
                       </p>
                       <p className="text-sm text-gray-500">
-                        {order.itemCount || "–"} item
-                        {(order.itemCount || 0) !== 1 ? "s" : ""} ·{" "}
+                        {order.items.length || "–"} item
+                        {(order.items.length || 0) !== 1 ? "s" : ""} ·{" "}
                         {order.createdAt
                           ? formatDistanceToNow(new Date(order.createdAt), {
                               addSuffix: true,
@@ -168,9 +164,7 @@ export function OrpcAccountOverview() {
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-gray-900">
-                      {formatPrice(
-                        Number(order.totalAmount || order.total || 0),
-                      )}
+                      {formatPrice(Number(order.total || 0))}
                     </p>
                     <Badge
                       className={`${statusStyle.bg} ${statusStyle.color} border-0 text-xs capitalize`}

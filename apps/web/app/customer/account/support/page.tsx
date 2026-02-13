@@ -30,5 +30,5 @@ export default function SupportPage() {
     );
   }
 
-  return <SupportPageClient tickets={(data?.tickets as any) || []} />;
+  return <SupportPageClient tickets={data?.tickets || []} />;
 }

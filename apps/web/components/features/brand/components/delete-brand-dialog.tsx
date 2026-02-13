@@ -1,5 +1,6 @@
 "use client";
 
+import type { Brand } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Trash2 } from "lucide-react";
 import * as React from "react";
@@ -16,7 +17,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { Brand } from "@/types/api/common";
 import { orpc } from "@/utils/orpc";
 
 interface DeleteBrandDialogProps {

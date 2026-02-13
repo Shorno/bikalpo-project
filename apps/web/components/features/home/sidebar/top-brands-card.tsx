@@ -1,7 +1,7 @@
+import type { Brand } from "@bikalpo-project/db/schema";
 import Image from "next/image";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Brand } from "@/types/api/common";
 
 interface TopBrandsCardProps {
   brands: Brand[];

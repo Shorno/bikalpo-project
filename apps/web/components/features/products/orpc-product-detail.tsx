@@ -52,10 +52,12 @@ export function OrpcProductDetail({
   const product = data!.product;
   const variants = data!.variants;
   const reviewStats = data!.reviewStats;
+  type ProductImageItem = NonNullable<typeof product.images>[number];
+  type ProductVariantItem = (typeof variants)[number];
 
   const allImages = [
     product.image,
-    ...(product.images?.map((img: any) => img.imageUrl) || []),
+    ...(product.images?.map((img: ProductImageItem) => img.imageUrl) || []),
   ];
 
   return (
@@ -215,7 +217,7 @@ export function OrpcProductDetail({
                     Available Variants
                   </h3>
                   <div className="flex flex-wrap gap-2">
-                    {variants.map((v: any) => (
+                    {variants.map((v: ProductVariantItem) => (
                       <div
                         key={v.id}
                         className="border rounded-md px-3 py-2 text-sm"
@@ -307,6 +309,7 @@ function OrpcProductReviews({ productId }: { productId: number }) {
   }
 
   const reviews = data?.reviews ?? [];
+  type ProductReviewItem = (typeof reviews)[number];
   const stats = data?.stats;
 
   if (reviews.length === 0) return null;
@@ -339,7 +342,7 @@ function OrpcProductReviews({ productId }: { productId: number }) {
       </div>
 
       <div className="space-y-4 divide-y">
-        {reviews.map((review: any) => (
+        {reviews.map((review: ProductReviewItem) => (
           <div key={review.id} className="pt-4 first:pt-0">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700 font-medium text-sm shrink-0">

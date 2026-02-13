@@ -47,6 +47,7 @@ import {
   lte,
   sql,
   sum,
+  type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 
@@ -132,7 +133,13 @@ async function calculateDeliveryCost(
     const rules = await db.execute(
       sql`SELECT * FROM delivery_rule WHERE is_active = true ORDER BY sort_order ASC, id ASC`,
     );
-    for (const rule of rules.rows as any[]) {
+    for (const rule of rules.rows as Array<{
+      area: string | null;
+      min_weight_kg: string | number | null;
+      max_weight_kg: string | number | null;
+      base_cost: string | number | null;
+      per_kg_cost: string | number | null;
+    }>) {
       const areaMatch =
         rule.area == null ||
         rule.area === "" ||
@@ -190,7 +197,7 @@ const queries = {
       const limit = Math.max(1, Math.min(100, parseInt(limitStr, 10) || 12));
       const offset = (page - 1) * limit;
 
-      const conditions: any[] = [];
+      const conditions: SQL[] = [];
 
       // Category filter
       if (categorySlug) {
@@ -1203,7 +1210,7 @@ const queries = {
       ];
 
       if (input?.status && input.status !== "all") {
-        conditions.push(eq(itemRequest.status, input.status as any));
+        conditions.push(eq(itemRequest.status, input.status as never));
       }
 
       if (input?.search) {
@@ -1211,7 +1218,7 @@ const queries = {
           sql`(${ilike(itemRequest.itemName, `%${input.search}%`)} OR ${ilike(
             itemRequest.requestNumber,
             `%${input.search}%`,
-          )})` as any,
+          )})`,
         );
       }
 
