@@ -35,9 +35,12 @@ export default function DeleteBrandDialog({ brand }: DeleteBrandDialogProps) {
         setOpen(false);
       },
       onError: (error) => {
-        toast.error(error.message || "An unexpected error occurred while deleting the brand.");
+        toast.error(
+          error.message ||
+            "An unexpected error occurred while deleting the brand.",
+        );
       },
-    })
+    }),
   );
 
   const handleDelete = () => {
@@ -90,4 +93,3 @@ export default function DeleteBrandDialog({ brand }: DeleteBrandDialogProps) {
     </AlertDialog>
   );
 }
-

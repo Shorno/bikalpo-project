@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -43,6 +42,7 @@ import {
   type AssignDeliverymanFormValues,
   assignDeliverymanSchema,
 } from "@/schema/delivery.schema";
+import { client } from "@/utils/orpc";
 
 const VEHICLE_OPTIONS = [
   { value: "bike", label: "Bike" },
@@ -82,7 +82,10 @@ export function AssignDeliverymanDialog({
   React.useEffect(() => {
     if (open) {
       setLoadingUsers(true);
-      client.deliveryman.getDeliverymenForAssignment({ orderShippingArea: orderShippingArea ?? undefined })
+      client.deliveryman
+        .getDeliverymenForAssignment({
+          orderShippingArea: orderShippingArea ?? undefined,
+        })
         .then((result) => {
           setDeliverymen(result.deliverymen || []);
         })
@@ -214,8 +217,9 @@ export function AssignDeliverymanDialog({
                       <FormControl>
                         <Button
                           variant="outline"
-                          className={`w-full justify-start text-left font-normal ${!field.value && "text-muted-foreground"
-                            }`}
+                          className={`w-full justify-start text-left font-normal ${
+                            !field.value && "text-muted-foreground"
+                          }`}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {field.value

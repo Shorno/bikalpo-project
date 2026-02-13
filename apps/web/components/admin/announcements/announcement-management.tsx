@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { createAnnouncementColumns } from "@/components/admin/announcements/announcement-columns";
 import { AnnouncementForm } from "@/components/admin/announcements/announcement-form";
 import {
@@ -42,8 +41,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Announcement } from "@/types/api/common";
 import { cn } from "@/lib/utils";
+import type { Announcement } from "@/types/api/common";
+import { client } from "@/utils/orpc";
 
 const typeColors: Record<string, { bg: string; text: string; dot: string }> = {
   info: { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
@@ -99,7 +99,10 @@ export function AnnouncementManagement() {
 
   const handleToggle = async (id: number, currentActive: boolean) => {
     try {
-      const result = await client.adminAnnouncement.toggleActive({ id, active: !currentActive });
+      const result = await client.adminAnnouncement.toggleActive({
+        id,
+        active: !currentActive,
+      });
       toast.success(result.message);
       queryClient.invalidateQueries({ queryKey: ["announcements"] });
     } catch (error: any) {
@@ -262,9 +265,9 @@ export function AnnouncementManagement() {
                         <span className="text-xs text-muted-foreground">
                           {announcement.createdAt
                             ? format(
-                              new Date(announcement.createdAt),
-                              "MMM d, yyyy",
-                            )
+                                new Date(announcement.createdAt),
+                                "MMM d, yyyy",
+                              )
                             : ""}
                         </span>
                       </div>
@@ -323,9 +326,9 @@ export function AnnouncementManagement() {
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </TableHead>
                 ))}
               </TableRow>
@@ -434,4 +437,3 @@ export function AnnouncementManagement() {
     </div>
   );
 }
-

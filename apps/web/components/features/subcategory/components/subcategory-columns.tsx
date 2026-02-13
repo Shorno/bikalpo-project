@@ -123,4 +123,3 @@ export const subcategoryColumns: ColumnDef<SubCategory>[] = [
     size: 80,
   },
 ];
-

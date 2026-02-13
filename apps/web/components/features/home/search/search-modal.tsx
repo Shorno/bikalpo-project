@@ -5,7 +5,6 @@ import { Package, SearchIcon } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { client } from "@/utils/orpc";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDebounce } from "@/hooks/use-debounce";
+import { client } from "@/utils/orpc";
 
 interface SearchModalProps {
   open: boolean;
@@ -54,7 +54,9 @@ export function SearchModal({
       if (!debouncedQuery.trim()) {
         return [];
       }
-      const { products } = await client.product.search({ query: debouncedQuery });
+      const { products } = await client.product.search({
+        query: debouncedQuery,
+      });
       return products as SearchResult[];
     },
     enabled: debouncedQuery.trim().length > 0,

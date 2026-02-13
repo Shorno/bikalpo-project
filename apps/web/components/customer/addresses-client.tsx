@@ -3,9 +3,9 @@
  */
 "use client";
 
-import { useMyAddresses } from "@/hooks/use-customer-api";
 import { AddressList } from "@/components/account/address-list";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMyAddresses } from "@/hooks/use-customer-api";
 
 export function AddressesClient() {
   const { data, isLoading, isError } = useMyAddresses();

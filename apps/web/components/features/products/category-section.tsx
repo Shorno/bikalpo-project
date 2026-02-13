@@ -45,4 +45,3 @@ export function CategorySection({ category }: CategorySectionProps) {
     </section>
   );
 }
-

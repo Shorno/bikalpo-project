@@ -2,13 +2,13 @@ import { Package } from "lucide-react";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { PublicProductCard } from "@/components/features/products/public-product-card";
 import { PublicProductsSort } from "@/components/features/products/public-products-sort";
-import type { ProductWithRelations } from "@/types/api/common";
 import {
   getActiveBrands,
   getActiveCategories,
   getProductsWithQuery,
   getSubcategoriesByCategory,
 } from "@/lib/public-data";
+import type { ProductWithRelations } from "@/types/api/common";
 
 interface PublicProductsGridProps {
   searchParams: {
@@ -26,7 +26,10 @@ interface PublicProductsGridProps {
 export async function PublicProductsGrid({
   searchParams,
 }: PublicProductsGridProps) {
-  const { products, pagination } = await getProductsWithQuery(searchParams, 600);
+  const { products, pagination } = await getProductsWithQuery(
+    searchParams,
+    600,
+  );
 
   const categories = await getActiveCategories(600);
   const brands = await getActiveBrands(600);
@@ -104,4 +107,3 @@ export async function PublicProductsGrid({
     </div>
   );
 }
-

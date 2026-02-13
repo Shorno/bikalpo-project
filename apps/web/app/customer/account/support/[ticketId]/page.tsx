@@ -2,9 +2,9 @@
 
 import { AlertCircle } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useTicketDetails } from "@/hooks/use-customer-api";
 import { TicketDetails } from "@/components/support";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTicketDetails } from "@/hooks/use-customer-api";
 
 export default function TicketDetailPage() {
   const params = useParams();

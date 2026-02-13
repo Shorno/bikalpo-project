@@ -31,7 +31,9 @@ export default function EditEstimatePage() {
   const estimateId = Number(params.id as string);
 
   const { data, isLoading, error } = useQuery({
-    ...orpc.salesman.getEstimateById.queryOptions({ input: { id: estimateId } }),
+    ...orpc.salesman.getEstimateById.queryOptions({
+      input: { id: estimateId },
+    }),
     enabled: !Number.isNaN(estimateId),
   });
 
@@ -50,7 +52,9 @@ export default function EditEstimatePage() {
           </Button>
           <h1 className="text-lg sm:text-xl font-bold">Estimate Not Found</h1>
         </div>
-        <p className="text-muted-foreground">This estimate could not be found or you don't have access to it.</p>
+        <p className="text-muted-foreground">
+          This estimate could not be found or you don't have access to it.
+        </p>
         <Button asChild>
           <Link href={`${SALES_BASE}/estimates`}>Back to Estimates</Link>
         </Button>
@@ -59,7 +63,8 @@ export default function EditEstimatePage() {
   }
 
   const { estimate } = data;
-  const isReadOnly = estimate.status === "converted" || estimate.status === "rejected";
+  const isReadOnly =
+    estimate.status === "converted" || estimate.status === "rejected";
 
   return (
     <div className="space-y-4">

@@ -2,12 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Clock, CreditCard, FileText, Split, Truck } from "lucide-react";
-import { client } from "@/utils/orpc";
 import { useInvoiceColumns } from "@/components/features/invoices/invoice-columns";
 import InvoiceTable from "@/components/features/invoices/invoice-table";
 import TableSkeleton from "@/components/table-skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { client } from "@/utils/orpc";
 
 function formatPrice(price: string | number) {
   return new Intl.NumberFormat("en-BD", {

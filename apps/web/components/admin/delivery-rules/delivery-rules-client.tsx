@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, Truck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { client, orpc } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,6 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { DeliveryRule } from "@/types/api/common";
+import { client, orpc } from "@/utils/orpc";
 
 export function DeliveryRulesClient() {
   const queryClient = useQueryClient();
@@ -61,7 +61,9 @@ export function DeliveryRulesClient() {
   const handleDialogClose = (open: boolean) => {
     setDialogOpen(open);
     if (!open) setEditing(null);
-    queryClient.invalidateQueries(orpc.deliveryman.listDeliveryRules.queryOptions({}));
+    queryClient.invalidateQueries(
+      orpc.deliveryman.listDeliveryRules.queryOptions({}),
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -119,7 +121,9 @@ export function DeliveryRulesClient() {
     try {
       await client.deliveryman.deleteDeliveryRule({ id: deleteId });
       toast.success("Rule removed");
-      queryClient.invalidateQueries(orpc.deliveryman.listDeliveryRules.queryOptions({}));
+      queryClient.invalidateQueries(
+        orpc.deliveryman.listDeliveryRules.queryOptions({}),
+      );
     } catch {
       toast.error("Failed to remove rule");
     }
@@ -338,4 +342,3 @@ export function DeliveryRulesClient() {
     </div>
   );
 }
-

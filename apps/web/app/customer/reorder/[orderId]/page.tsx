@@ -25,7 +25,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useReorderItems, usePlaceReorder } from "@/hooks/use-customer-api";
 import { ReorderProductPicker } from "@/components/features/orders/reorder-product-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -48,8 +47,9 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import type { PaymentMethod } from "@/types/api/common";
+import { usePlaceReorder, useReorderItems } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
+import type { PaymentMethod } from "@/types/api/common";
 
 const CITIES = [
   "Dhaka",
@@ -455,10 +455,10 @@ export default function ReorderPage({
                           </span>
                           {parseFloat(item.currentPrice) !==
                             parseFloat(item.originalPrice) && (
-                              <span className="text-xs text-gray-400 line-through">
-                                {formatPrice(item.originalPrice)}
-                              </span>
-                            )}
+                            <span className="text-xs text-gray-400 line-through">
+                              {formatPrice(item.originalPrice)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -869,4 +869,3 @@ export default function ReorderPage({
     </div>
   );
 }
-

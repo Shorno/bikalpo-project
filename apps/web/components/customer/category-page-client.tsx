@@ -3,12 +3,12 @@
  */
 "use client";
 
-import { useCategoryBySlug } from "@/hooks/use-customer-api";
-import { Skeleton } from "@/components/ui/skeleton";
 import { notFound } from "next/navigation";
 import { useEffect } from "react";
 import { ProductsFilterClient } from "@/components/features/products/products-filter-client";
 import { ProductsGridClient } from "@/components/features/products/products-grid-client";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useCategoryBySlug } from "@/hooks/use-customer-api";
 
 interface CategoryPageClientProps {
   categorySlug: string;

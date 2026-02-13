@@ -4,11 +4,12 @@ import { TopBrandsCard } from "@/components/features/home/sidebar/top-brands-car
 import { client } from "@/utils/orpc";
 
 export async function CustomerSidebar() {
-  const [brandsResult, announcementsResult, brandUpdatesResult] = await Promise.all([
-    client.customer.getActiveBrands(),
-    client.customer.getAnnouncements(),
-    client.customer.getBrandUpdates(),
-  ]);
+  const [brandsResult, announcementsResult, brandUpdatesResult] =
+    await Promise.all([
+      client.customer.getActiveBrands(),
+      client.customer.getAnnouncements(),
+      client.customer.getBrandUpdates(),
+    ]);
 
   const brands = brandsResult.brands ?? [];
   const announcements = announcementsResult.announcements ?? [];

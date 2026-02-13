@@ -1,6 +1,6 @@
 import { PublicCategorySection } from "@/components/features/products/public-category-section";
-import { cn } from "@/lib/utils";
 import { getCategoriesWithProducts } from "@/lib/public-data";
+import { cn } from "@/lib/utils";
 
 interface PublicCategoryListingProps {
   className?: string;

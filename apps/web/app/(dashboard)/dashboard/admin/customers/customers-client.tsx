@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { client, orpc } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -41,6 +40,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { client, orpc } from "@/utils/orpc";
 import { customerColumns } from "./customer-columns";
 
 type CustomerFilters = {
@@ -122,7 +122,8 @@ export function CustomersClient() {
   const customers = customersResult?.customers ?? [];
   const pagination = customersResult?.pagination ?? null;
   const stats = statsResult?.stats ?? null;
-  const pendingCustomers = (pendingResult?.customers ?? []) as PendingCustomer[];
+  const pendingCustomers = (pendingResult?.customers ??
+    []) as PendingCustomer[];
 
   // TanStack Table
   const table = useReactTable({
@@ -410,9 +411,9 @@ export function CustomersClient() {
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
                       </TableHead>
                     ))}
                   </TableRow>

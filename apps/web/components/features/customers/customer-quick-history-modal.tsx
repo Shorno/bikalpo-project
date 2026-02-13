@@ -13,7 +13,6 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatPrice } from "@/utils/currency";
+import { client } from "@/utils/orpc";
 
 interface CustomerQuickHistoryModalProps {
   customerId: string | null;
@@ -60,7 +60,8 @@ export function CustomerQuickHistoryModal({
   useEffect(() => {
     if (open && customerId) {
       setLoading(true);
-      client.salesman.getCustomerDetails({ id: customerId })
+      client.salesman
+        .getCustomerDetails({ id: customerId })
         .then((result) => {
           setCustomer(result.customer);
         })
@@ -222,10 +223,11 @@ export function CustomerQuickHistoryModal({
                           </p>
                           <Badge
                             variant="outline"
-                            className={`text-xs ${order.paymentStatus === "paid"
+                            className={`text-xs ${
+                              order.paymentStatus === "paid"
                                 ? "text-green-600"
                                 : "text-yellow-600"
-                              }`}
+                            }`}
                           >
                             {order.paymentStatus}
                           </Badge>

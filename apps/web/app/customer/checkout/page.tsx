@@ -22,7 +22,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useEstimatedDeliveryCost, usePlaceOrder } from "@/hooks/use-customer-api";
 import { AddressSelector } from "@/components/checkout/address-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,10 +42,13 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import type { Address } from "@/types/api/common";
-import type { PaymentMethod } from "@/types/api/common";
 import { useCart } from "@/hooks/use-cart";
+import {
+  useEstimatedDeliveryCost,
+  usePlaceOrder,
+} from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
+import type { Address, PaymentMethod } from "@/types/api/common";
 
 const CITIES = [
   "Dhaka",
@@ -112,7 +114,8 @@ export default function CustomerCheckoutPage() {
   const { data: deliveryCostData } = useEstimatedDeliveryCost(
     formData.area || undefined,
   );
-  const shippingCost = items.length > 0 ? (deliveryCostData?.deliveryCost ?? 0) : 0;
+  const shippingCost =
+    items.length > 0 ? (deliveryCostData?.deliveryCost ?? 0) : 0;
 
   // Handle address selection
   const handleAddressSelect = useCallback(
@@ -746,4 +749,3 @@ export default function CustomerCheckoutPage() {
     </div>
   );
 }
-

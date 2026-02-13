@@ -21,7 +21,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import {
   InvoiceDeliveryBadge,
   InvoicePaymentBadge,
@@ -39,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { client } from "@/utils/orpc";
 
 function formatPrice(price: string | number) {
   return new Intl.NumberFormat("en-BD", {
@@ -200,7 +200,9 @@ export default function InvoiceDetailPage() {
       const res = await client.adminInvoice.getPdfUrl({ id: invoiceId });
       window.open(res.url, "_blank", "noopener,noreferrer");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to get PDF URL");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to get PDF URL",
+      );
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -702,15 +704,15 @@ export default function InvoiceDetailPage() {
                     </p>
                     {(invoice.order?.shippingArea ||
                       invoice.order?.shippingCity) && (
-                        <p className="text-gray-500 mt-1">
-                          {[
-                            invoice.order?.shippingArea,
-                            invoice.order?.shippingCity,
-                          ]
-                            .filter(Boolean)
-                            .join(", ")}
-                        </p>
-                      )}
+                      <p className="text-gray-500 mt-1">
+                        {[
+                          invoice.order?.shippingArea,
+                          invoice.order?.shippingCity,
+                        ]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </p>
+                    )}
                   </div>
                 </div>
 

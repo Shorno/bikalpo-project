@@ -1,9 +1,9 @@
 "use client";
 
 import { HelpCircle } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useCustomerTickets } from "@/hooks/use-customer-api";
 import { SupportPageClient } from "./support-client";
-import { Skeleton } from "@/components/ui/skeleton";
 
 export default function SupportPage() {
   const { data, isLoading, error } = useCustomerTickets();

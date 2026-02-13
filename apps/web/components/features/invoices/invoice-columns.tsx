@@ -4,10 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Eye, FileText, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useTransition } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +20,7 @@ import type {
   InvoicePaymentStatus,
   InvoiceWithItems,
 } from "@/types/api/common";
+import { client } from "@/utils/orpc";
 
 const PAYMENT_OPTIONS: { value: InvoicePaymentStatus; label: string }[] = [
   { value: "unpaid", label: "Unpaid" },
@@ -97,11 +95,16 @@ export function useInvoiceColumns() {
     status: InvoicePaymentStatus,
   ) => {
     try {
-      await client.adminInvoice.updatePaymentStatus({ invoiceId, paymentStatus: status });
+      await client.adminInvoice.updatePaymentStatus({
+        invoiceId,
+        paymentStatus: status,
+      });
       toast.success(`Payment status updated to ${status}`);
       queryClient.invalidateQueries({ queryKey: ["admin-invoices"] });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
     }
   };
 
@@ -325,4 +328,3 @@ export function useInvoiceColumns() {
 
   return columns;
 }
-

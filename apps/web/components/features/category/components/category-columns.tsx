@@ -26,8 +26,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { Category, SubCategory } from "@/types/api/common";
 import { cn } from "@/lib/utils";
+import type { Category, SubCategory } from "@/types/api/common";
 
 export interface CategoryWithSubcategories extends Category {
   subCategory: SubCategory[];
@@ -406,4 +406,3 @@ function DeleteSubcategoryButton({
 }) {
   return <DeleteSubcategoryDialog subcategory={subcategory} variant="icon" />;
 }
-

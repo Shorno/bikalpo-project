@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { orpc } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { OrderWithItems } from "@/types/api/common";
+import { orpc } from "@/utils/orpc";
 
 interface CustomerDetailsClientProps {
   customerId: string;
@@ -234,9 +234,9 @@ export function CustomerDetailsClient({
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
                     </TableHead>
                   ))}
                 </TableRow>
@@ -273,4 +273,3 @@ export function CustomerDetailsClient({
     </div>
   );
 }
-

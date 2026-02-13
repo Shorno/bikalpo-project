@@ -57,7 +57,9 @@ export default function EstimateDetailsPage() {
   const estimateId = Number(params.id as string);
 
   const { data, isLoading, error } = useQuery({
-    ...orpc.salesman.getEstimateById.queryOptions({ input: { id: estimateId } }),
+    ...orpc.salesman.getEstimateById.queryOptions({
+      input: { id: estimateId },
+    }),
     enabled: !Number.isNaN(estimateId),
   });
 
@@ -80,7 +82,9 @@ export default function EstimateDetailsPage() {
           </Button>
           <h1 className="text-lg sm:text-xl font-bold">Estimate Not Found</h1>
         </div>
-        <p className="text-muted-foreground">This estimate could not be found or you don't have access to it.</p>
+        <p className="text-muted-foreground">
+          This estimate could not be found or you don't have access to it.
+        </p>
         <Button asChild>
           <Link href={`${SALES_BASE}/estimates`}>Back to Estimates</Link>
         </Button>

@@ -4,11 +4,11 @@
 "use client";
 
 import { User } from "lucide-react";
-import { useProfile } from "@/hooks/use-customer-api";
-import { ProfileForm } from "@/components/account/profile-form";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { ProfileForm } from "@/components/account/profile-form";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useProfile } from "@/hooks/use-customer-api";
 
 export function ProfileClient() {
   const { data, isLoading, isError } = useProfile();

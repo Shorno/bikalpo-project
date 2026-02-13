@@ -145,4 +145,3 @@ export default function BrandTable({ columns, data }: DataTableProps) {
     </div>
   );
 }
-

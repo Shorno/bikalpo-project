@@ -3,16 +3,16 @@
  */
 "use client";
 
-import {
-  useCustomerProducts,
-  useActiveCategories,
-  useActiveBrands,
-  useSubcategoriesByCategory,
-} from "@/hooks/use-customer-api";
 import { ProductCard } from "@/components/features/products/product-card";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { ProductsSort } from "@/components/features/products/products-sort";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  useActiveBrands,
+  useActiveCategories,
+  useCustomerProducts,
+  useSubcategoriesByCategory,
+} from "@/hooks/use-customer-api";
 
 interface ProductsGridClientProps {
   searchParams: {

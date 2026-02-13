@@ -3,11 +3,11 @@
  */
 "use client";
 
-import { Search, X, Loader2 } from "lucide-react";
+import { Loader2, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useSearchProducts } from "@/hooks/use-customer-api";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { useSearchProducts } from "@/hooks/use-customer-api";
 
 interface OrpcSearchModalProps {
   open: boolean;

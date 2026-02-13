@@ -12,10 +12,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Brand } from "@/types/api/common";
-import type { Category, SubCategory } from "@/types/api/common";
-import type { Product, ProductImage } from "@/types/api/common";
-import type { ProductVariant } from "@/types/api/common";
+import type {
+  Brand,
+  Category,
+  Product,
+  ProductImage,
+  ProductVariant,
+  SubCategory,
+} from "@/types/api/common";
 import DeleteProductDialog from "./delete-product-dialog";
 
 export interface ProductWithRelations extends Product {
@@ -217,4 +221,3 @@ export function useProductColumns() {
 
   return columns;
 }
-

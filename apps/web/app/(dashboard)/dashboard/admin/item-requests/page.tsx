@@ -1,6 +1,5 @@
 import { format } from "date-fns";
 import { CheckCircle, ClipboardList, Clock, Lightbulb } from "lucide-react";
-import { client } from "@/utils/orpc";
 import { ProcessRequestDialog } from "@/components/features/item-request/process-request-dialog";
 import { RequestStatusBadge } from "@/components/features/item-request/request-status-badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { client } from "@/utils/orpc";
 
 export default async function AdminItemRequestsPage() {
   const [requestsResult, statsResult] = await Promise.all([

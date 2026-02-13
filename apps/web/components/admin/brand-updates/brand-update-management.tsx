@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { client } from "@/utils/orpc";
 import { BrandUpdateForm } from "@/components/admin/brand-updates/brand-update-form";
 import {
   AlertDialog,
@@ -51,8 +50,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { BrandUpdate } from "@/types/api/common";
 import { cn } from "@/lib/utils";
+import type { BrandUpdate } from "@/types/api/common";
+import { client } from "@/utils/orpc";
 
 const typeColors: Record<string, { bg: string; text: string; dot: string }> = {
   info: { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
@@ -102,7 +102,10 @@ export function BrandUpdateManagement() {
 
   const handleToggle = async (id: number, currentActive: boolean) => {
     try {
-      const result = await client.adminBrandUpdate.toggleActive({ id, active: !currentActive });
+      const result = await client.adminBrandUpdate.toggleActive({
+        id,
+        active: !currentActive,
+      });
       toast.success(result.message);
       queryClient.invalidateQueries({ queryKey: ["brand-updates"] });
     } catch (error: any) {
@@ -430,9 +433,9 @@ export function BrandUpdateManagement() {
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </TableHead>
                 ))}
               </TableRow>
@@ -541,4 +544,3 @@ export function BrandUpdateManagement() {
     </div>
   );
 }
-

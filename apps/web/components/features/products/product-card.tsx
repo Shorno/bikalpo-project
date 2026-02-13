@@ -6,8 +6,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { RequestFormModal } from "@/components/features/item-request/request-form-modal";
 import { Button } from "@/components/ui/button";
-import type { ProductWithRelations } from "@/types/api/common";
 import { useCart } from "@/hooks/use-cart";
+import type { ProductWithRelations } from "@/types/api/common";
 import { formatPrice } from "@/utils/currency";
 
 interface ProductCardProps {
@@ -132,4 +132,3 @@ export function ProductCard({ product }: ProductCardProps) {
     </div>
   );
 }
-

@@ -10,8 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Category, SubCategory } from "@/types/api/common";
-import type { Brand } from "@/types/api/common";
+import type { Brand, Category, SubCategory } from "@/types/api/common";
 
 interface PublicProductsSortProps {
   categories?: Category[];
@@ -68,4 +67,3 @@ export function PublicProductsSort({
     </div>
   );
 }
-

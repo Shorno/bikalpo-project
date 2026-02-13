@@ -40,9 +40,12 @@ export default function DeleteCategoryDialog({
         setOpen(false);
       },
       onError: (error) => {
-        toast.error(error.message || "An unexpected error occurred while deleting the category.");
+        toast.error(
+          error.message ||
+            "An unexpected error occurred while deleting the category.",
+        );
       },
-    })
+    }),
   );
 
   const handleDelete = () => {
@@ -109,4 +112,3 @@ export default function DeleteCategoryDialog({
     </AlertDialog>
   );
 }
-

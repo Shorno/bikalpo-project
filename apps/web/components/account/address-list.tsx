@@ -74,4 +74,3 @@ export function AddressList({ addresses }: AddressListProps) {
     </div>
   );
 }
-

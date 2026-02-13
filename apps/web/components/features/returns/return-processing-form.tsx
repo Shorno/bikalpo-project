@@ -10,7 +10,6 @@ import { useRouter } from "next/navigation";
 import React from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { client, orpc } from "@/utils/orpc";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +46,7 @@ import {
   type ReturnProcessingFormValues,
   returnProcessingFormSchema,
 } from "@/schema/return.schema";
+import { client, orpc } from "@/utils/orpc";
 
 interface ReturnProcessingFormProps {
   orderId: number;
@@ -72,7 +72,9 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
 
   // Fetch order data using oRPC + useQuery
   const { data: orderResult, isLoading: isLoadingOrder } = useQuery(
-    orpc.returns.getOrderForReturn.queryOptions({ input: { orderId: orderId } })
+    orpc.returns.getOrderForReturn.queryOptions({
+      input: { orderId: orderId },
+    }),
   );
 
   const form = useForm<ReturnProcessingFormValues>({
@@ -122,10 +124,10 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
   const onSubmit = (data: ReturnProcessingFormValues) => {
     submitMutation.mutate({
       ...data,
-      returnedItems: data.returnedItems.map(item => ({
+      returnedItems: data.returnedItems.map((item) => ({
         ...item,
         unitPrice: String(item.unitPrice),
-      })) as any
+      })) as any,
     });
   };
 
@@ -134,10 +136,10 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
     data.isDraft = true;
     submitMutation.mutate({
       ...data,
-      returnedItems: data.returnedItems.map(item => ({
+      returnedItems: data.returnedItems.map((item) => ({
         ...item,
         unitPrice: String(item.unitPrice),
-      })) as any
+      })) as any,
     });
   };
 
@@ -190,7 +192,10 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
 
       setUploadingItemIndex(index);
       try {
-        const result = await client.cloudinary.upload({ file, folder: "returns/items" });
+        const result = await client.cloudinary.upload({
+          file,
+          folder: "returns/items",
+        });
         if (result.success) {
           form.setValue(`returnedItems.${index}.attachment`, result.url);
           toast.success("Photo uploaded");
@@ -952,7 +957,6 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
                             className="flex flex-wrap gap-3"
                           >
                             <div className="flex items-center space-x-1.5">
-                              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                               <RadioGroupItem
                                 value="cash"
                                 id="cash"
@@ -963,7 +967,6 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
                               </Label>
                             </div>
                             <div className="flex items-center space-x-1.5">
-                              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                               <RadioGroupItem
                                 value="wallet"
                                 id="wallet"
@@ -974,7 +977,6 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
                               </Label>
                             </div>
                             <div className="flex items-center space-x-1.5">
-                              {/** biome-ignore lint/correctness/useUniqueElementIds: <explanation> */}
                               <RadioGroupItem
                                 value="adjustment"
                                 id="adjustment"

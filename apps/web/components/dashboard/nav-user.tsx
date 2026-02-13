@@ -1,5 +1,6 @@
 "use client";
 
+import type { Session } from "@bikalpo-project/auth";
 import { IconDotsVertical, IconLogout } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -18,7 +19,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import type { Session } from "@bikalpo-project/auth";
 import { authClient } from "@/lib/auth-client";
 
 export function NavUser({ session }: { session: Session | null }) {
@@ -92,4 +92,3 @@ export function NavUser({ session }: { session: Session | null }) {
     </SidebarMenu>
   );
 }
-

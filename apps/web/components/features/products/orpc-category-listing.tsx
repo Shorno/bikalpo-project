@@ -7,9 +7,8 @@
 import { ChevronRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCategoriesWithProducts } from "@/hooks/use-customer-api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { useCategoriesWithProducts } from "@/hooks/use-customer-api";
 
 interface OrpcCategoryListingProps {
   /** Max categories to show (default all) */

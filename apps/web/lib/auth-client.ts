@@ -8,10 +8,7 @@ export const authClient = createAuthClient({
   fetchOptions: {
     credentials: "include",
   },
-  plugins: [
-    adminClient(),
-    inferAdditionalFields(),
-  ],
+  plugins: [adminClient(), inferAdditionalFields()],
 });
 
 // Re-export common auth hooks for convenience

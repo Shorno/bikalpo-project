@@ -3,17 +3,17 @@
  */
 "use client";
 
-import { useProductDetails } from "@/hooks/use-customer-api";
-import { Skeleton } from "@/components/ui/skeleton";
-import { notFound } from "next/navigation";
-import { useEffect } from "react";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { ProductImageGallery } from "@/components/features/products/product-image-gallery";
+import { notFound } from "next/navigation";
+import { useEffect } from "react";
 import { ProductActions } from "@/components/features/products/product-actions";
+import { ProductImageGallery } from "@/components/features/products/product-image-gallery";
 import { ProductSpecs } from "@/components/features/products/product-specs";
 import { RelatedProducts } from "@/components/features/products/related-products";
 import { ProductReviews } from "@/components/features/reviews/product-reviews";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useProductDetails } from "@/hooks/use-customer-api";
 
 interface ProductDetailClientProps {
   slug: string;

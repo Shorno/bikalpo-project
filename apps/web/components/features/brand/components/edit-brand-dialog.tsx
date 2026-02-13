@@ -25,8 +25,8 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { Brand } from "@/types/api/common";
 import { updateBrandSchema } from "@/schema/brand.schema";
+import type { Brand } from "@/types/api/common";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 
@@ -46,9 +46,12 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
         setOpen(false);
       },
       onError: (error) => {
-        toast.error(error.message || "An unexpected error occurred while updating the brand.");
+        toast.error(
+          error.message ||
+            "An unexpected error occurred while updating the brand.",
+        );
       },
-    })
+    }),
   );
 
   const form = useForm({
@@ -245,4 +248,3 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
     </Dialog>
   );
 }
-

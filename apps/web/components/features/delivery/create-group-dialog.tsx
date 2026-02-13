@@ -15,7 +15,6 @@ import {
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import { orpc } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -45,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { orpc } from "@/utils/orpc";
 
 const VEHICLE_OPTIONS = [
   { value: "bike", label: "Bike" },
@@ -71,7 +71,9 @@ export function CreateGroupDialog() {
   // Determine shipping area from first selected invoice
   const orderShippingArea = React.useMemo(() => {
     if (invoiceIdsForDeliverymen.length === 0) return undefined;
-    const firstInvoice = invoices.find(inv => inv.id === invoiceIdsForDeliverymen[0]);
+    const firstInvoice = invoices.find(
+      (inv) => inv.id === invoiceIdsForDeliverymen[0],
+    );
     return (firstInvoice?.order as any)?.shippingArea ?? undefined;
   }, [invoiceIdsForDeliverymen, invoices]);
 
@@ -251,13 +253,13 @@ export function CreateGroupDialog() {
                                   <div className="flex items-center gap-1 text-xs text-muted-foreground ml-7">
                                     {(dm as { serviceArea?: string | null })
                                       .serviceArea && (
-                                        <span>
-                                          {
-                                            (dm as { serviceArea: string })
-                                              .serviceArea
-                                          }
-                                        </span>
-                                      )}
+                                      <span>
+                                        {
+                                          (dm as { serviceArea: string })
+                                            .serviceArea
+                                        }
+                                      </span>
+                                    )}
                                     {dm.hasActiveGroup && (
                                       <span className="text-destructive font-medium">
                                         • On Delivery
@@ -315,8 +317,9 @@ export function CreateGroupDialog() {
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
-                          className={`w-full justify-start text-left font-normal ${!field.state.value && "text-muted-foreground"
-                            }`}
+                          className={`w-full justify-start text-left font-normal ${
+                            !field.state.value && "text-muted-foreground"
+                          }`}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {field.state.value
@@ -404,9 +407,10 @@ export function CreateGroupDialog() {
                                   htmlFor={checkboxId}
                                   className={`
                                     flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-all
-                                    ${isSelected
-                                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                                      : "border-transparent bg-background hover:bg-muted/50"
+                                    ${
+                                      isSelected
+                                        ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                                        : "border-transparent bg-background hover:bg-muted/50"
                                     }
                                   `}
                                 >
@@ -417,8 +421,8 @@ export function CreateGroupDialog() {
                                       const next = checked
                                         ? [...field.state.value, invoice.id]
                                         : field.state.value.filter(
-                                          (id) => id !== invoice.id,
-                                        );
+                                            (id) => id !== invoice.id,
+                                          );
                                       field.handleChange(next);
                                       setInvoiceIdsForDeliverymen(next);
                                     }}

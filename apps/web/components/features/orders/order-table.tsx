@@ -34,9 +34,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { OrderWithItems } from "@/types/api/common";
 import { ADMIN_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
+import type { OrderWithItems } from "@/types/api/common";
 
 const ORDER_STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },
@@ -374,4 +374,3 @@ export default function OrderTable<TData, TValue>({
     </div>
   );
 }
-

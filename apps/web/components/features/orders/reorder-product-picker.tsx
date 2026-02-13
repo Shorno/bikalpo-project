@@ -4,7 +4,6 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 import { Loader2, Package, Plus, Search } from "lucide-react";
 import Image from "next/image";
 import * as React from "react";
-import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -12,6 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useDebounce } from "@/hooks/use-debounce";
+import { orpc } from "@/utils/orpc";
 
 interface ReorderProduct {
   id: number;
@@ -37,9 +37,10 @@ export function ReorderProductPicker({
   const [searchTerm, setSearchTerm] = React.useState("");
   const debouncedSearch = useDebounce(searchTerm, 300);
 
-  const searchQuery = open && debouncedSearch.trim().length > 0
-    ? { query: debouncedSearch }
-    : skipToken;
+  const searchQuery =
+    open && debouncedSearch.trim().length > 0
+      ? { query: debouncedSearch }
+      : skipToken;
 
   const { data, isLoading } = useQuery({
     ...orpc.customer.searchProducts.queryOptions({

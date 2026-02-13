@@ -3,7 +3,6 @@
 import { Package, ShoppingBag, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { client } from "@/utils/orpc";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { client } from "@/utils/orpc";
 
 type CustomerProduct = {
   productId: number;
@@ -27,7 +27,12 @@ type CustomerProduct = {
 };
 
 interface CustomerProductsModalProps {
-  customer: { id: string; name: string; shopName?: string | null; image?: string | null } | null;
+  customer: {
+    id: string;
+    name: string;
+    shopName?: string | null;
+    image?: string | null;
+  } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }

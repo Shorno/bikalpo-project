@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, Package, RefreshCw, Search } from "lucide-react";
 import Image from "next/image";
 import * as React from "react";
-import { client } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -12,6 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { Product } from "@/types/api/common";
+import { client } from "@/utils/orpc";
 
 interface ItemReplacePickerProps {
   onSelect: (product: Product) => void;
@@ -123,4 +123,3 @@ export function ItemReplacePicker({
     </Popover>
   );
 }
-

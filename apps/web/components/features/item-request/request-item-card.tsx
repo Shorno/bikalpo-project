@@ -11,8 +11,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { ItemRequestWithRelations } from "@/types/api/common";
 import { cn } from "@/lib/utils";
+import type { ItemRequestWithRelations } from "@/types/api/common";
 import { RequestStatusBadge } from "./request-status-badge";
 
 interface RequestItemCardProps {
@@ -189,4 +189,3 @@ export function RequestItemCard({ request }: RequestItemCardProps) {
     </Card>
   );
 }
-

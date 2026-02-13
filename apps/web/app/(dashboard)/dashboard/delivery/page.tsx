@@ -1,11 +1,11 @@
 import { Bike, LayoutDashboard, RotateCcw } from "lucide-react";
 import Link from "next/link";
-import { client } from "@/utils/orpc";
+import { redirect } from "next/navigation";
 import { ActiveDeliveryGroups } from "@/components/employee/active-delivery-groups";
 import { DeliveryStats } from "@/components/employee/delivery-stats";
 import { Card, CardContent } from "@/components/ui/card";
 import { DELIVERY_BASE } from "@/lib/routes";
-import { redirect } from "next/navigation";
+import { client } from "@/utils/orpc";
 
 export default async function DeliveryDashboardPage() {
   let stats;
@@ -71,10 +71,7 @@ export default async function DeliveryDashboardPage() {
           <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wide font-medium">
             Performance Overview
           </p>
-          <DeliveryStats
-            stats={stats}
-            successRate={stats.successRate}
-          />
+          <DeliveryStats stats={stats} successRate={stats.successRate} />
         </div>
       )}
     </div>

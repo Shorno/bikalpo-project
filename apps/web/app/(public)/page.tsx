@@ -1,11 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { HeroButtons } from "@/components/features/home/hero-buttons";
-import { VerifiedCustomersSection } from "@/components/features/home/verified-customers-section";
 import { OrpcBrandsCarousel } from "@/components/features/home/orpc-brands-carousel";
 import { OrpcCategoriesCarousel } from "@/components/features/home/orpc-categories-carousel";
-import { OrpcCategoryListing } from "@/components/features/products/orpc-category-listing";
 import { OrpcFeaturedProducts } from "@/components/features/home/orpc-featured-products";
+import { VerifiedCustomersSection } from "@/components/features/home/verified-customers-section";
+import { OrpcCategoryListing } from "@/components/features/products/orpc-category-listing";
 import { Button } from "@/components/ui/button";
 import { getVerifiedUsersForHome } from "@/lib/public-data";
 

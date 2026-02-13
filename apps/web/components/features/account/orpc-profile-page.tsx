@@ -5,12 +5,12 @@
 
 import { Loader2, User } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useProfile, useUpdateProfile } from "@/hooks/use-customer-api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useProfile, useUpdateProfile } from "@/hooks/use-customer-api";
 
 export function OrpcProfilePage() {
   const { data, isLoading, isError } = useProfile();

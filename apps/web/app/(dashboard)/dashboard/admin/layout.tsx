@@ -1,7 +1,7 @@
-import { requireAdmin } from "@/utils/auth";
 import { AdminSidebar } from "@/components/dashboard/admin-sidebar";
 import { SiteHeader } from "@/components/dashboard/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { requireAdmin } from "@/utils/auth";
 
 export default async function AdminDashboardLayout({
   children,

@@ -7,9 +7,14 @@
 
 "use client";
 
-import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  skipToken,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
-import { client, orpc } from "@/utils/orpc";
+import { type client, orpc } from "@/utils/orpc";
 
 /** Inferred type for a single verified user from the ORPC response */
 export type VerifiedUser = Awaited<
@@ -190,7 +195,8 @@ export function useUpdateCartItem() {
   const qc = useQueryClient();
   return useMutation({
     ...orpc.customer.updateCartItem.mutationOptions(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() }),
     onError: (err) => toast.error(err.message),
   });
 }
@@ -437,7 +443,9 @@ export function useCreateSupportTicket() {
     ...orpc.customer.createSupportTicket.mutationOptions(),
     onSuccess: () => {
       toast.success("Ticket created");
-      qc.invalidateQueries({ queryKey: orpc.customer.getCustomerTickets.key() });
+      qc.invalidateQueries({
+        queryKey: orpc.customer.getCustomerTickets.key(),
+      });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -525,4 +533,3 @@ export function useCreateItemRequest() {
     onError: (err) => toast.error(err.message),
   });
 }
-

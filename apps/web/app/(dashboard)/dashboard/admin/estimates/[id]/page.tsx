@@ -4,7 +4,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminEstimateActions } from "@/components/features/estimates/admin-estimate-actions";
 import { EstimateActionButtons } from "@/components/features/estimates/estimate-action-buttons";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { client } from "@/utils/orpc";
 
 export default async function AdminEstimateDetailsPage({
   params,
@@ -57,7 +57,7 @@ export default async function AdminEstimateDetailsPage({
             <Badge
               variant={
                 estimate.status === "approved" ||
-                  estimate.status === "converted"
+                estimate.status === "converted"
                   ? "default"
                   : estimate.status === "rejected"
                     ? "destructive"

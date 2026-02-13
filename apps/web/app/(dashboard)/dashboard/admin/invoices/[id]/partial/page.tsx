@@ -1,18 +1,25 @@
 "use client";
 
-import {useQuery, useQueryClient} from "@tanstack/react-query";
-import {ArrowLeft, Loader2, Minus, Package, Plus, Save} from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Loader2, Minus, Package, Plus, Save } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import {useParams, useRouter} from "next/navigation";
-import {useState} from "react";
-import {toast} from "sonner";
-import {client} from "@/utils/orpc";
-import {Button} from "@/components/ui/button";
-import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
-import {Input} from "@/components/ui/input";
-import {Skeleton} from "@/components/ui/skeleton";
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
+import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { client } from "@/utils/orpc";
 
 function formatPrice(price: string | number) {
   return new Intl.NumberFormat("en-BD", {
@@ -158,7 +165,9 @@ export default function CreatePartialInvoicePage() {
       queryClient.invalidateQueries({ queryKey: ["admin-invoices"] });
       router.push(`/dashboard/admin/invoices/${invoice.id}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong",
+      );
       console.error(error);
     } finally {
       setIsSubmitting(false);
@@ -336,10 +345,11 @@ export default function CreatePartialInvoicePage() {
                           </TableCell>
                           <TableCell className="text-center">
                             <span
-                              className={`inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-md text-sm font-semibold ${item.remainingQty > 0
+                              className={`inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-md text-sm font-semibold ${
+                                item.remainingQty > 0
                                   ? "bg-blue-100 text-blue-700"
                                   : "bg-muted text-muted-foreground"
-                                }`}
+                              }`}
                             >
                               {item.remainingQty}
                             </span>
@@ -369,7 +379,7 @@ export default function CreatePartialInvoicePage() {
                                       handleQuantityChange(
                                         item.productId,
                                         Number.parseInt(e.target.value, 10) ||
-                                        0,
+                                          0,
                                       )
                                     }
                                     className="h-8 w-20 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"

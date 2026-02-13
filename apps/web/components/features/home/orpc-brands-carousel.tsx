@@ -7,7 +7,6 @@
 import { Building2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useActiveBrands } from "@/hooks/use-customer-api";
 import {
   Carousel,
   CarouselContent,
@@ -16,6 +15,7 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useActiveBrands } from "@/hooks/use-customer-api";
 
 function BrandItem({ brand }: { brand: any }) {
   return (

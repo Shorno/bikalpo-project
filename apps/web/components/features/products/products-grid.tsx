@@ -1,13 +1,13 @@
 import { ProductCard } from "@/components/features/products/product-card";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { ProductsSort } from "@/components/features/products/products-sort";
-import type { ProductWithRelations } from "@/types/api/common";
 import {
   getActiveBrands,
   getActiveCategories,
   getProductsWithQuery,
   getSubcategoriesByCategory,
 } from "@/lib/public-data";
+import type { ProductWithRelations } from "@/types/api/common";
 
 interface ProductsGridProps {
   searchParams: {
@@ -25,7 +25,10 @@ interface ProductsGridProps {
 }
 
 export async function ProductsGrid({ searchParams }: ProductsGridProps) {
-  const { products, pagination } = await getProductsWithQuery(searchParams, 600);
+  const { products, pagination } = await getProductsWithQuery(
+    searchParams,
+    600,
+  );
 
   const categories = await getActiveCategories(600);
   const brands = await getActiveBrands(600);
@@ -71,4 +74,3 @@ export async function ProductsGrid({ searchParams }: ProductsGridProps) {
     </div>
   );
 }
-

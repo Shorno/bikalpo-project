@@ -8,5 +8,9 @@ export async function DeliveriesListContent() {
 
   const hasGroups = groups && groups.length > 0;
 
-  return hasGroups ? <DeliveryGroupsList groups={groups as any} /> : <EmptyState />;
+  return hasGroups ? (
+    <DeliveryGroupsList groups={groups as any} />
+  ) : (
+    <EmptyState />
+  );
 }

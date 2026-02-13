@@ -5,7 +5,6 @@ import { formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Loader2, Send, User } from "lucide-react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
-import { useAddTicketReply } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { useAddTicketReply } from "@/hooks/use-customer-api";
 import { cn } from "@/lib/utils";
 import {
   type AddReplyFormValues,

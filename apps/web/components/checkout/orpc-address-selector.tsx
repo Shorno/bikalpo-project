@@ -4,9 +4,8 @@
  */
 "use client";
 
-import { Check, Home, Briefcase, MapPin, Plus, Loader2 } from "lucide-react";
+import { Briefcase, Check, Home, Loader2, MapPin, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useMyAddresses, useAddAddress } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAddAddress, useMyAddresses } from "@/hooks/use-customer-api";
 
 const LABEL_ICONS: Record<string, React.ElementType> = {
   Home: Home,

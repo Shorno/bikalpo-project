@@ -25,6 +25,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { OrpcAddressSelector } from "@/components/checkout/orpc-address-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -44,13 +45,12 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { OrpcAddressSelector } from "@/components/checkout/orpc-address-selector";
 import {
   useCartQuery,
-  useUpdateCartItem,
-  useRemoveFromCart,
   useClearCart,
   usePlaceOrder,
+  useRemoveFromCart,
+  useUpdateCartItem,
 } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 
@@ -82,7 +82,7 @@ export function OrpcCheckout() {
   const { data: cartData, isLoading: cartLoading } = useCartQuery();
   const updateItem = useUpdateCartItem();
   const removeItem = useRemoveFromCart();
-  const clearCartMutation = useClearCart();
+  const _clearCartMutation = useClearCart();
   const placeOrderMutation = usePlaceOrder();
 
   const items = cartData?.items ?? [];

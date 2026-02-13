@@ -1,5 +1,5 @@
 import { RotateCcw } from "lucide-react";
-import { queryClient, orpc } from "@/utils/orpc";
+import { orpc, queryClient } from "@/utils/orpc";
 import { ReturnsClient } from "./returns-client";
 
 export default async function ReturnsPage() {
@@ -7,7 +7,7 @@ export default async function ReturnsPage() {
 
   try {
     const result = await queryClient.fetchQuery(
-      orpc.returns.getAll.queryOptions()
+      orpc.returns.getAll.queryOptions(),
     );
     returns = (result as any)?.returns || [];
   } catch (error) {

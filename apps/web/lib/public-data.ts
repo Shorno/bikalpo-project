@@ -69,10 +69,7 @@ export async function getActiveBrands(revalidate = 600) {
   return result.brands ?? [];
 }
 
-export async function getCategoriesWithProducts(
-  limit = 8,
-  revalidate = 600,
-) {
+export async function getCategoriesWithProducts(limit = 8, revalidate = 600) {
   const client = getPublicOrpcClient(revalidate);
   const result = await client.customer.getCategoriesWithProducts({ limit });
   return result.categories ?? [];

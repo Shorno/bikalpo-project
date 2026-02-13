@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -11,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { client } from "@/utils/orpc";
 
 interface BaseEmployee {
   id: string;
@@ -234,8 +234,9 @@ export function EmployeeDetailModal({
                   {Array.from({ length: 5 }).map((_, i) => (
                     <span
                       key={i}
-                      className={`text-2xl ${i < rating ? "text-yellow-400" : "text-gray-300"
-                        }`}
+                      className={`text-2xl ${
+                        i < rating ? "text-yellow-400" : "text-gray-300"
+                      }`}
                     >
                       ★
                     </span>
@@ -284,7 +285,7 @@ export function EmployeeDetailModal({
 
                       {"topCustomers" in detailedReport &&
                         (detailedReport.topCustomers as TopCustomer[])?.length >
-                        0 && (
+                          0 && (
                           <>
                             <Separator />
                             <div>

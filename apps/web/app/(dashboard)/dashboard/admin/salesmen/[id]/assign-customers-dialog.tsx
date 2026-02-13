@@ -26,7 +26,6 @@ interface AssignCustomersDialogProps {
   children: React.ReactNode;
 }
 
-
 export function AssignCustomersDialog({
   salesmanId,
   salesmanName,

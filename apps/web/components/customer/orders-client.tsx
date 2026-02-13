@@ -3,9 +3,9 @@
  */
 "use client";
 
-import { useMyOrders } from "@/hooks/use-customer-api";
 import { OrderTabs } from "@/components/account/order-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMyOrders } from "@/hooks/use-customer-api";
 
 export function OrdersClient() {
   const { data, isLoading, isError } = useMyOrders();

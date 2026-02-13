@@ -20,12 +20,12 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useOrderByNumber, useCancelOrder } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCancelOrder, useOrderByNumber } from "@/hooks/use-customer-api";
 
 const STATUS_STEPS = [
   { key: "pending", label: "Order Placed", icon: Clock },
@@ -195,33 +195,33 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
         deliveryInfo?.status === "out_for_delivery" &&
         !isCancelled &&
         order.status !== "delivered" && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-emerald-800">
-                  Delivery OTP
-                </p>
-                <p className="text-xs text-emerald-600">
-                  Share this code with the delivery person
-                </p>
+          <Card className="border-emerald-200 bg-emerald-50">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-emerald-800">
+                    Delivery OTP
+                  </p>
+                  <p className="text-xs text-emerald-600">
+                    Share this code with the delivery person
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold tracking-widest text-emerald-700">
+                    {deliveryOtp}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => copyToClipboard(deliveryOtp)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold tracking-widest text-emerald-700">
-                  {deliveryOtp}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => copyToClipboard(deliveryOtp)}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Order Items */}

@@ -3,10 +3,10 @@
  */
 "use client";
 
-import { useOrderByNumber } from "@/hooks/use-customer-api";
-import { Skeleton } from "@/components/ui/skeleton";
 import { notFound } from "next/navigation";
 import { useEffect } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useOrderByNumber } from "@/hooks/use-customer-api";
 
 interface OrderDetailClientProps {
   orderNumber: string;

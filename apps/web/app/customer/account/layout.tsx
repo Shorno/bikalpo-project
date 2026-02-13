@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { checkAuth } from "@/utils/auth";
 import { AccountSidebar } from "@/components/account/account-sidebar";
+import { checkAuth } from "@/utils/auth";
 
 export default async function AccountLayout({
   children,

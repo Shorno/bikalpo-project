@@ -3,8 +3,8 @@
 import { HelpCircle, MessageSquare, Phone } from "lucide-react";
 import { useState } from "react";
 import { ContactSection, FAQSection, TicketList } from "@/components/support";
-import type { SupportTicket } from "@/types/api/common";
 import { cn } from "@/lib/utils";
+import type { SupportTicket } from "@/types/api/common";
 
 interface SupportPageClientProps {
   tickets: SupportTicket[];
@@ -76,4 +76,3 @@ export function SupportPageClient({ tickets }: SupportPageClientProps) {
     </div>
   );
 }
-

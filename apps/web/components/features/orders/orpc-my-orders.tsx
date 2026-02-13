@@ -3,24 +3,24 @@
  */
 "use client";
 
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import {
-  Clock,
   CheckCircle2,
+  ChevronRight,
+  Clock,
   Loader2,
   Package,
   ShoppingBag,
   Truck,
   XCircle,
-  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { useMyOrders, useCancelOrder } from "@/hooks/use-customer-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCancelOrder, useMyOrders } from "@/hooks/use-customer-api";
 
 const STATUS_CONFIG: Record<
   string,

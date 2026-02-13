@@ -1,5 +1,4 @@
 import { Bike, CalendarCheck, Package, Users } from "lucide-react";
-import { client } from "@/utils/orpc";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -17,9 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { client } from "@/utils/orpc";
 
 export default async function ReportsPage() {
-
   const [overview, reports] = await Promise.all([
     client.adminEmployeeReport.getTeamOverview(),
     client.adminEmployeeReport.getPerformance({}),

@@ -1,6 +1,11 @@
 import type { Session as AuthSession } from "@bikalpo-project/auth";
 
-export type UserRole = "guest" | "customer" | "admin" | "salesman" | "deliveryman";
+export type UserRole =
+  | "guest"
+  | "customer"
+  | "admin"
+  | "salesman"
+  | "deliveryman";
 
 type SessionPayload = AuthSession | null;
 

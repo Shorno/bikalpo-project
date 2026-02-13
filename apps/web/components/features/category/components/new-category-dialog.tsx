@@ -42,9 +42,12 @@ export default function NewCategoryDialog() {
         setOpen(false);
       },
       onError: (error) => {
-        toast.error(error.message || "An unexpected error occurred while creating the category.");
+        toast.error(
+          error.message ||
+            "An unexpected error occurred while creating the category.",
+        );
       },
-    })
+    }),
   );
 
   const form = useForm({

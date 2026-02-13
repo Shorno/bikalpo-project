@@ -8,14 +8,14 @@ import { ChevronRight, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
+  useAddToCart,
   useProductDetails,
   useProductReviews,
-  useAddToCart,
 } from "@/hooks/use-customer-api";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 interface OrpcProductDetailProps {
   slug: string;

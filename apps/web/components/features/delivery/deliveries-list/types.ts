@@ -3,9 +3,9 @@ import type {
   DeliveryGroupInvoice,
   DeliveryGroupStatus,
   DeliveryInvoiceStatus,
+  Invoice,
+  Order,
 } from "@/types/api/common";
-import type { Invoice } from "@/types/api/common";
-import type { Order } from "@/types/api/common";
 
 // ============================================================================
 // Customer Types
@@ -58,4 +58,3 @@ export interface DeliveryGroupsListProps {
 
 // Re-export for convenience
 export type { DeliveryGroupStatus, DeliveryInvoiceStatus };
-

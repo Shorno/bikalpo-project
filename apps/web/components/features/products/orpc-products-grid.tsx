@@ -8,9 +8,8 @@ import { PackageSearch } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCustomerProducts } from "@/hooks/use-customer-api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { useCustomerProducts } from "@/hooks/use-customer-api";
 
 export function OrpcProductsGrid() {
   const searchParams = useSearchParams();

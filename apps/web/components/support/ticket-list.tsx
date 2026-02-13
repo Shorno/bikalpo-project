@@ -6,8 +6,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { SupportTicket } from "@/types/api/common";
 import { cn } from "@/lib/utils";
+import type { SupportTicket } from "@/types/api/common";
 import { TicketForm } from "./ticket-form";
 
 interface TicketListProps {
@@ -145,4 +145,3 @@ export function TicketList({ tickets }: TicketListProps) {
     </div>
   );
 }
-

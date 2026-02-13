@@ -10,9 +10,9 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { orpc } from "@/utils/orpc";
 import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { authClient } from "@/lib/auth-client";
+import { orpc } from "@/utils/orpc";
 
 export interface CartItem {
   id: number; // cart item id
@@ -89,7 +89,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const addItem = async (productId: number, quantity: number = 1) => {
     setIsLoading(true);
     try {
-      const result = await orpc.customer.addToCart.call({ productId, quantity });
+      const result = await orpc.customer.addToCart.call({
+        productId,
+        quantity,
+      });
       await refreshCart();
       toast.success(result.message || "Item added to cart");
     } catch (err: any) {

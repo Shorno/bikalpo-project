@@ -1,6 +1,6 @@
 import { CategorySection } from "@/components/features/products/category-section";
-import { cn } from "@/lib/utils";
 import { getCategoriesWithProducts } from "@/lib/public-data";
+import { cn } from "@/lib/utils";
 
 interface CategoryListingProps {
   className?: string;

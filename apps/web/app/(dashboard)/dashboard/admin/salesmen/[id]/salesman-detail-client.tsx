@@ -24,7 +24,6 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { orpc } from "@/utils/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,6 +48,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 import { AssignCustomersDialog } from "./assign-customers-dialog";
 
 // Types for assigned customers (matching ORPC response)
@@ -174,8 +174,7 @@ export function SalesmanDetailClient({
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[...Array(4)].map((_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
-<Skeleton key={i} className="h-20" />
+            <Skeleton key={i} className="h-20" />
           ))}
         </div>
       </div>
@@ -326,9 +325,7 @@ export function SalesmanDetailClient({
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
-                          onClick={() =>
-                            handleUnassign(customer.id)
-                          }
+                          onClick={() => handleUnassign(customer.id)}
                         >
                           Unassign
                         </AlertDialogAction>
@@ -351,9 +348,9 @@ export function SalesmanDetailClient({
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
                       </TableHead>
                     ))}
                     <TableHead className="w-10"></TableHead>
@@ -400,11 +397,7 @@ export function SalesmanDetailClient({
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction
-                              onClick={() =>
-                                handleUnassign(
-                                  row.original.id,
-                                )
-                              }
+                              onClick={() => handleUnassign(row.original.id)}
                             >
                               Unassign
                             </AlertDialogAction>

@@ -271,4 +271,3 @@ export function RequestItemsList({
     </div>
   );
 }
-

@@ -25,8 +25,8 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { Category } from "@/types/api/common";
 import { updateCategorySchema } from "@/schema/category.scheam";
+import type { Category } from "@/types/api/common";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 
@@ -48,9 +48,12 @@ export default function EditCategoryDialog({
         setOpen(false);
       },
       onError: (error) => {
-        toast.error(error.message || "An unexpected error occurred while updating the category.");
+        toast.error(
+          error.message ||
+            "An unexpected error occurred while updating the category.",
+        );
       },
-    })
+    }),
   );
 
   const form = useForm({
@@ -247,4 +250,3 @@ export default function EditCategoryDialog({
     </Dialog>
   );
 }
-

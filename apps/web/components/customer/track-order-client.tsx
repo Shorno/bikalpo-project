@@ -3,11 +3,6 @@
  */
 "use client";
 
-import { useActiveOrder } from "@/hooks/use-customer-api";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import Link from "next/link";
 import {
   CheckCircle2,
   Clock,
@@ -17,8 +12,13 @@ import {
   Truck,
 } from "lucide-react";
 import Image from "next/image";
-import { formatPrice } from "@/utils/currency";
+import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useActiveOrder } from "@/hooks/use-customer-api";
 import { cn } from "@/lib/utils";
+import { formatPrice } from "@/utils/currency";
 
 // Order status steps
 const ORDER_STEPS = [

@@ -10,7 +10,7 @@ export default function BrandList() {
   const columns = useBrandColumns();
 
   const { data: brands = [], isLoading } = useQuery(
-    orpc.brand.getAll.queryOptions()
+    orpc.brand.getAll.queryOptions(),
   );
 
   if (isLoading) {

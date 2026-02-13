@@ -12,8 +12,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { Category, SubCategory } from "@/types/api/common";
-import type { Brand } from "@/types/api/common";
+import type { Brand, Category, SubCategory } from "@/types/api/common";
 
 interface PublicFilterClientProps {
   categories: Category[];
@@ -264,4 +263,3 @@ export function PublicFilterClient({
     </div>
   );
 }
-

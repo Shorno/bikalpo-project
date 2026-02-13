@@ -3,8 +3,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Home, Loader2, MapPin, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useMyAddresses } from "@/hooks/use-customer-api";
-import { orpc } from "@/utils/orpc";
 import { AddressForm } from "@/components/account/address-form";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,8 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Address } from "@/types/api/common";
+import { useMyAddresses } from "@/hooks/use-customer-api";
 import { cn } from "@/lib/utils";
+import type { Address } from "@/types/api/common";
+import { orpc } from "@/utils/orpc";
 
 interface AddressSelectorProps {
   selectedAddressId: number | null;
@@ -47,7 +47,9 @@ export function AddressSelector({
   const handleAddressAdded = () => {
     setShowAddModal(false);
     // Refetch addresses to get the newly added one
-    queryClient.invalidateQueries({ queryKey: orpc.customer.getMyAddresses.key() });
+    queryClient.invalidateQueries({
+      queryKey: orpc.customer.getMyAddresses.key(),
+    });
   };
 
   if (isLoading) {
@@ -186,4 +188,3 @@ export function AddressSelector({
     </div>
   );
 }
-

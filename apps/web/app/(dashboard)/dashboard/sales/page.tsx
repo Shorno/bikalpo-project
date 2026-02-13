@@ -37,7 +37,11 @@ function statusLabel(s: string) {
 }
 
 export default function EmployeeDashboard() {
-  const { data: statsData, isLoading: statsLoading, error: statsError } = useQuery({
+  const {
+    data: statsData,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery({
     ...orpc.salesman.getStats.queryOptions({ input: {} }),
   });
 
@@ -53,8 +57,7 @@ export default function EmployeeDashboard() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
-<Skeleton key={i} className="h-24" />
+            <Skeleton key={i} className="h-24" />
           ))}
         </div>
       </div>
@@ -96,8 +99,7 @@ export default function EmployeeDashboard() {
             {ordersLoading ? (
               <div className="space-y-2">
                 {[...Array(3)].map((_, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
-<Skeleton key={i} className="h-12" />
+                  <Skeleton key={i} className="h-12" />
                 ))}
               </div>
             ) : upcoming.length === 0 ? (
