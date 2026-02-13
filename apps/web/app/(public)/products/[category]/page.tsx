@@ -57,13 +57,13 @@ export async function generateMetadata({
   };
 }
 
-// export async function generateStaticParams() {
-//   const categories = await getActiveCategories(revalidate);
-//
-//   return categories.map((category) => ({
-//     category: category.slug,
-//   }));
-// }
+export async function generateStaticParams() {
+  const categories = await getActiveCategories(revalidate);
+
+  return categories.map((category) => ({
+    category: category.slug,
+  }));
+}
 
 export default async function CategoryProductsPage({
   params,

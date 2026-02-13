@@ -15,20 +15,25 @@ const app = new Hono();
 
 app.use(logger());
 
-console.log("Starting Bikalpo API Server v1.0.0");
-console.log("DB URL:", env.DATABASE_URL.replace(/:[^:@]+@/, ":****@"));
 app.use(
   "/*",
   cors({
-    origin: env.CORS_ORIGIN,
+    origin: (origin) => {
+      if (env.CORS_ORIGINS.includes(origin)) {
+        return origin;
+      }
+      return env.CORS_ORIGINS[0];
+    },
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
     credentials: true,
   }),
 );
 
 // Auth routes: /auth/*
-app.on(["POST", "GET"], "/auth/*", (c) => auth.handler(c.req.raw));
+app.on(["POST", "GET", "OPTIONS"], "/auth/*", (c) => auth.handler(c.req.raw));
 
 // Docs handler with Scalar UI at /docs
 export const docsHandler = new OpenAPIHandler(appRouter, {

@@ -52,8 +52,8 @@ export function CustomerProductsModal({
   useEffect(() => {
     if (open && customer) {
       setLoading(true);
-      client.customerManagement
-        .getPurchasedProducts({ customerId: customer.id })
+      client.customer
+        .getCustomerPurchasedProducts({ customerId: customer.id })
         .then((result) => {
           setProducts(result.data as CustomerProduct[]);
         })

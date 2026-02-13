@@ -7,7 +7,7 @@ export const env = createEnv({
     DATABASE_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_URL: z.url(),
-    CORS_ORIGIN: z.url(),
+    CORS_ORIGINS: z.string().min(1).transform((val) => val.split(",").map((s) => s.trim())),
     COOKIE_DOMAIN: z.string().optional(),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     CLOUDINARY_CLOUD_NAME: z.string().min(1),

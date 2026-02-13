@@ -1425,6 +1425,75 @@ const queries = {
         .where(and(eq(user.role, "customer"), eq(user.banned, false)));
       return { count: Number(result?.count) || 0 };
     }),
+
+  /** Get products purchased by a customer (public, for verified-customers page) */
+  getCustomerPurchasedProducts: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/{customerId}/purchased-products",
+      tags: ["Customer"],
+      summary: "Get customer purchased products (public)",
+      description:
+        "Get aggregated list of products a customer has ordered (public access)",
+    })
+    .input(z.object({ customerId: z.string().min(1) }))
+    .handler(async ({ input }) => {
+      const products = await db
+        .select({
+          productId: orderItem.productId,
+          productName: orderItem.productName,
+          productImage: orderItem.productImage,
+          productSize: orderItem.productSize,
+          totalQuantity: sql<number>`SUM(${orderItem.quantity})::int`,
+          totalOrders: sql<number>`COUNT(DISTINCT ${orderItem.orderId})::int`,
+          lastOrderedAt: sql<Date>`MAX(${order.createdAt})`,
+          categoryId: product.categoryId,
+        })
+        .from(orderItem)
+        .innerJoin(order, eq(orderItem.orderId, order.id))
+        .innerJoin(product, eq(orderItem.productId, product.id))
+        .where(eq(order.userId, input.customerId))
+        .groupBy(
+          orderItem.productId,
+          orderItem.productName,
+          orderItem.productImage,
+          orderItem.productSize,
+          product.categoryId,
+        )
+        .orderBy(desc(sql`MAX(${order.createdAt})`))
+        .limit(20);
+
+      const categoryIds = [
+        ...new Set(products.map((p) => p.categoryId).filter(Boolean)),
+      ] as number[];
+
+      let categoryMap: Record<number, string> = {};
+      if (categoryIds.length > 0) {
+        const categories = await db
+          .select({ id: category.id, name: category.name })
+          .from(category)
+          .where(inArray(category.id, categoryIds));
+
+        categoryMap = Object.fromEntries(
+          categories.map((c) => [c.id, c.name]),
+        );
+      }
+
+      return {
+        data: products.map((p) => ({
+          productId: p.productId,
+          productName: p.productName,
+          productImage: p.productImage,
+          productSize: p.productSize,
+          categoryName: p.categoryId
+            ? categoryMap[p.categoryId] || null
+            : null,
+          totalQuantity: Number(p.totalQuantity) || 0,
+          totalOrders: Number(p.totalOrders) || 0,
+          lastOrderedAt: p.lastOrderedAt,
+        })),
+      };
+    }),
 };
 
 // ════════════════════════════════════════════════════════════════
