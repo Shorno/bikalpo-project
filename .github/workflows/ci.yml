@@ -12,6 +12,7 @@ jobs:
   build-web:
     name: Build Web App
     runs-on: ubuntu-latest
+    environment: prod
 
     steps:
       - name: Checkout
@@ -44,6 +45,7 @@ jobs:
   build-server:
     name: Build Server
     runs-on: ubuntu-latest
+    environment: prod
 
     steps:
       - name: Checkout
