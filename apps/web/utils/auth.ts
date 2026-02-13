@@ -1,17 +1,8 @@
+import type { Session as AuthSession } from "@bikalpo-project/auth";
+
 export type UserRole = "guest" | "customer" | "admin" | "salesman" | "deliveryman";
 
-type SessionUser = {
-  id: string;
-  name: string;
-  email: string;
-  role?: UserRole;
-  [key: string]: unknown;
-};
-
-type SessionPayload = {
-  session?: Record<string, unknown>;
-  user?: SessionUser;
-};
+type SessionPayload = AuthSession | null;
 
 function getAuthBaseUrl(): string {
   const base = process.env.NEXT_PUBLIC_AUTH_URL;
@@ -65,6 +56,8 @@ export async function requireAuth() {
     } else {
       window.location.href = "/login";
     }
+    // redirect() throws, so this is unreachable, but satisfies TypeScript
+    throw new Error("Redirecting to login");
   }
   return session;
 }

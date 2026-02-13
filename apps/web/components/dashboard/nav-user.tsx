@@ -18,7 +18,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import type { Session } from "@/types/session";
+import type { Session } from "@bikalpo-project/auth";
 import { authClient } from "@/lib/auth-client";
 
 export function NavUser({ session }: { session: Session | null }) {

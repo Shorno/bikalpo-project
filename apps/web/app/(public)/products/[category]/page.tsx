@@ -57,13 +57,13 @@ export async function generateMetadata({
   };
 }
 
-export async function generateStaticParams() {
-  const categories = await getActiveCategories(revalidate);
-
-  return categories.map((category) => ({
-    category: category.slug,
-  }));
-}
+// export async function generateStaticParams() {
+//   const categories = await getActiveCategories(revalidate);
+//
+//   return categories.map((category) => ({
+//     category: category.slug,
+//   }));
+// }
 
 export default async function CategoryProductsPage({
   params,
@@ -130,7 +130,8 @@ function ProductsGridSkeleton() {
       <Skeleton className="h-10 w-full" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         {Array.from({ length: 9 }).map((_, i) => (
-          <Skeleton key={i} className="h-80 w-full" />
+          // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+<Skeleton key={i} className="h-80 w-full" />
         ))}
       </div>
     </div>

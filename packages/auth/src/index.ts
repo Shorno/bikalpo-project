@@ -111,6 +111,7 @@ export const auth = betterAuth({
 });
 
 export type Session = typeof auth.$Infer.Session;
+export type User = Session["user"];
 
 // Re-export permissions for client usage
 export { ac, admin as adminRole, customer, deliveryman, guest, salesman } from "./permissions";
