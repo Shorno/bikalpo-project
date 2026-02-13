@@ -257,6 +257,9 @@ importers:
       '@bikalpo-project/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@bikalpo-project/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@bikalpo-project/env':
         specifier: workspace:*
         version: link:../../packages/env
