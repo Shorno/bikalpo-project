@@ -38,7 +38,7 @@ export function proxy(request: NextRequest) {
   const origin = request.headers.get("origin");
 
   const allowedOrigins = [
-    process.env.BETTER_AUTH_URL,
+    process.env.NEXT_PUBLIC_AUTH_URL,
     process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL,
     "http://localhost:3000",
     "http://b2b.localhost:3000",
@@ -113,7 +113,7 @@ export function proxy(request: NextRequest) {
     // If logged in but not a customer, redirect to main domain
     if (role && role !== "customer") {
       const mainDomain =
-        process.env.BETTER_AUTH_URL || "http://b2b.localhost:3000";
+        process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL || "http://b2b.localhost:3000";
       return NextResponse.redirect(new URL("/dashboard", mainDomain));
     }
 

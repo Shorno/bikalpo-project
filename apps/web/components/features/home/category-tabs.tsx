@@ -1,10 +1,12 @@
+"use client";
+
 import { ChevronRight, Grid } from "lucide-react";
 import Link from "next/link";
-import { client } from "@/utils/orpc";
+import { useActiveCategories } from "@/hooks/use-customer-api";
 
-export async function CategoryTabs() {
-  const result = await client.customer.getActiveCategories();
-  const categories = result.categories ?? [];
+export function CategoryTabs() {
+  const { data } = useActiveCategories();
+  const categories = data?.categories ?? [];
 
   return (
     <div className="relative mb-8">
@@ -43,7 +45,7 @@ export async function CategoryTabs() {
       </div>
 
       {/* Visual fading indicator for horizontal scroll */}
-      <div className="absolute right-0 top-0 h-full w-12 bg-gradient-to-l from-[#f8f9fa] to-transparent pointer-events-none" />
+      <div className="absolute right-0 top-0 h-full w-12 bg-linear-to-l from-[#f8f9fa] to-transparent pointer-events-none" />
     </div>
   );
 }

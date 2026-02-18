@@ -15,7 +15,7 @@ import {
   User,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useCartQuery } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
@@ -82,7 +82,6 @@ const bottomItems = [
 
 export function AccountSidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { data: cartData } = useCartQuery();
 
   const counts = {
@@ -95,7 +94,11 @@ export function AccountSidebar() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          router.push("/");
+          // Always redirect to main domain after logout (not app subdomain)
+          const mainDomain =
+            process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL?.replace("app.", "") ||
+            window.location.origin;
+          window.location.href = `${mainDomain}/login`;
         },
       },
     });
@@ -111,7 +114,7 @@ export function AccountSidebar() {
               "exact" in item && item.exact
                 ? pathname === item.href
                 : pathname === item.href ||
-                  pathname.startsWith(item.href + "/");
+                pathname.startsWith(item.href + "/");
             const Icon = item.icon;
             const badgeCount = item.badgeKey
               ? counts[item.badgeKey as keyof typeof counts]
@@ -144,7 +147,7 @@ export function AccountSidebar() {
                       {badgeCount > 0 && (
                         <span
                           className={cn(
-                            "flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full text-[11px] font-bold",
+                            "flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[11px] font-bold",
                             item.badgeKey === "requests"
                               ? "bg-emerald-600 text-white"
                               : "bg-emerald-50 text-emerald-600",

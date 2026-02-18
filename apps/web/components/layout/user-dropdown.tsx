@@ -10,7 +10,6 @@ import {
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -33,9 +32,9 @@ const DASHBOARD_PATHS: Record<string, string> = {
 const STAFF_ROLES = ["admin", "salesman", "deliveryman"];
 
 export function UserDropdown() {
-  const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
   const [isMounted, setIsMounted] = React.useState(false);
+
 
   React.useEffect(() => {
     setIsMounted(true);
@@ -65,11 +64,11 @@ export function UserDropdown() {
 
   const initials = user.name
     ? user.name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2)
     : "U";
 
   const handleLogout = async () => {
@@ -77,8 +76,11 @@ export function UserDropdown() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          router.push("/");
-          router.refresh();
+          // Always redirect to main domain after logout (not app subdomain)
+          const mainDomain =
+            process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL?.replace("app.", "") ||
+            window.location.origin;
+          window.location.href = `${mainDomain}/login`;
         },
       },
     });

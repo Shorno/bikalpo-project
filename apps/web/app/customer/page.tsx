@@ -10,12 +10,14 @@ import { useVerifiedUsersForHome } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 
 export default function CustomerDashboardPage() {
-  const { data: session } = authClient.useSession();
+  const { data: session} = authClient.useSession();
+
 
   const { data: verifiedUsersData } = useVerifiedUsersForHome();
   const verifiedUsers = verifiedUsersData?.users ?? [];
 
   const shopName = session?.user?.shopName || "Our Valued Partner";
+
 
   return (
     <div>
@@ -37,17 +39,17 @@ export default function CustomerDashboardPage() {
         </div>
       </div>
 
-      {/* Full-width hero */}
+      {/*/!* Full-width hero *!/*/}
       <div className="container mx-auto px-4">
         <CustomerHero />
       </div>
 
-      {/* Full-width category tabs */}
+      {/*/!* Full-width category tabs *!/*/}
       <div className="container mx-auto px-4 mt-6">
         <CategoryTabs />
       </div>
 
-      {/* Grid section with sidebar */}
+      {/*/!* Grid section with sidebar *!/*/}
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Products section */}
@@ -62,7 +64,7 @@ export default function CustomerDashboardPage() {
         </div>
       </div>
 
-      {/* Verified Customers Section */}
+      {/*/!* Verified Customers Section *!/*/}
       <DashboardVerifiedCustomersSection customers={verifiedUsers} />
     </div>
   );
