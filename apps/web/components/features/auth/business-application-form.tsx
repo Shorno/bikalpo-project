@@ -1,6 +1,6 @@
 "use client";
 import { useForm } from "@tanstack/react-form";
-import { Building2, CheckCircle, Loader, MapPin, Pencil, Store, Upload, User } from "lucide-react";
+import { Building2, CheckCircle, Loader, MapPin, Pencil, Store, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";

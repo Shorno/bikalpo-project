@@ -78,7 +78,7 @@ export default function ApplyBusinessPage() {
                 </div>
                 <BusinessApplicationForm
                     initialData={initialData}
-                    isEditMode={!!isEditMode && !!data}
+                    isEditMode={isEditMode && !!data}
                 />
             </div>
         </>
