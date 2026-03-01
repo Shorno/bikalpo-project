@@ -26,6 +26,7 @@ import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
 
 import { verifiedUserRouter } from "./verified-user";
+import { sellerApplicationRouter } from "./seller-application";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -63,6 +64,7 @@ export const appRouter = {
   dashboard: dashboardRouter,
 
   verifiedUser: verifiedUserRouter,
+  sellerApplication: sellerApplicationRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

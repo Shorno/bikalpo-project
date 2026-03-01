@@ -30,18 +30,14 @@ export default function DashboardPage() {
       case "deliveryman":
         router.replace(DELIVERY_BASE);
         break;
-      case "customer": {
-        window.location.href =
-          process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL ||
-          "http://app.b2b.localhost:3000";
+      case "shop_owner":
+        router.replace(ADMIN_BASE);
         break;
-      }
-      case "guest":
-        // Unapproved users - show pending approval
-        router.replace("/pending-approval");
+      case "consumer":
+        // Consumers go to home page
+        router.replace("/");
         break;
       default:
-        // Fallback for unknown roles
         router.replace("/");
     }
   }, [session, isPending, router]);

@@ -30,8 +30,6 @@ export function SignupForm() {
       name: "",
       email: "",
       phoneNumber: "",
-      shopName: "",
-      ownerName: "",
       password: "",
       confirmPassword: "",
     },
@@ -50,18 +48,13 @@ export function SignupForm() {
             email: value.email,
             password: value.password,
             name: value.name,
-            shopName: value.shopName || undefined,
-            ownerName: value.ownerName || undefined,
             phoneNumber: value.phoneNumber,
           },
           {
             onSuccess: () => {
               toast.success("Account created successfully!");
-
-              // Redirect to pending approval page
-              // New users have role="guest" and need admin approval
-              // Use window.location.href to force full page reload and ensure cookies are set
-              window.location.href = "/pending-approval";
+              // Consumer signup — immediate access, redirect to home
+              window.location.href = "/";
             },
             onError: (ctx) => {
               toast.error(ctx.error.message);
@@ -80,7 +73,7 @@ export function SignupForm() {
     <div className="flex w-full flex-col items-center gap-6 md:gap-8">
       <div className="flex w-full flex-col items-center gap-4 px-4 md:gap-6 md:px-0">
         <h1 className="text-center font-inter text-xl font-semibold leading-[130%] text-black md:text-2xl">
-          Create Your B2B Account
+          Create Your Account
         </h1>
 
         <AuthTabs />
@@ -215,90 +208,6 @@ export function SignupForm() {
                   }}
                 </form.Field>
 
-                {/* Shop Name Field (Optional) */}
-                <form.Field name="shopName">
-                  {(field) => {
-                    const isInvalid =
-                      field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <div className="flex flex-col gap-3">
-                        <label
-                          htmlFor={field.name}
-                          className="font-inter text-sm font-medium leading-[160%] text-black"
-                        >
-                          Shop Name{" "}
-                          <span className="text-sm text-gray-500">
-                            (Optional)
-                          </span>
-                        </label>
-                        <Input
-                          id={field.name}
-                          name={field.name}
-                          type="text"
-                          placeholder="Enter Shop Name"
-                          value={field.state.value}
-                          onBlur={field.handleBlur}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          aria-invalid={isInvalid}
-                          autoComplete="organization"
-                          disabled={isPending}
-                          className="h-10 rounded-lg border border-gray-200 bg-white px-4 py-2 font-inter text-sm font-normal text-gray-900 placeholder:text-[#8B8B8B]"
-                        />
-                        {isInvalid && (
-                          <p className="text-sm text-red-500">
-                            {field.state.meta.errors
-                              .map(getErrorMessage)
-                              .filter(Boolean)
-                              .join(", ")}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  }}
-                </form.Field>
-
-                {/* Owner Name Field (Optional) */}
-                <form.Field name="ownerName">
-                  {(field) => {
-                    const isInvalid =
-                      field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <div className="flex flex-col gap-3">
-                        <label
-                          htmlFor={field.name}
-                          className="font-inter text-sm font-medium leading-[160%] text-black"
-                        >
-                          Owner Name{" "}
-                          <span className="text-sm text-gray-500">
-                            (Optional)
-                          </span>
-                        </label>
-                        <Input
-                          id={field.name}
-                          name={field.name}
-                          type="text"
-                          placeholder="Enter Owner Name"
-                          value={field.state.value}
-                          onBlur={field.handleBlur}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          aria-invalid={isInvalid}
-                          autoComplete="name"
-                          disabled={isPending}
-                          className="h-10 rounded-lg border border-gray-200 bg-white px-4 py-2 font-inter text-sm font-normal text-gray-900 placeholder:text-[#8B8B8B]"
-                        />
-                        {isInvalid && (
-                          <p className="text-sm text-red-500">
-                            {field.state.meta.errors
-                              .map(getErrorMessage)
-                              .filter(Boolean)
-                              .join(", ")}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  }}
-                </form.Field>
-
                 {/* Password Field */}
                 <form.Field name="password">
                   {(field) => {
@@ -403,7 +312,7 @@ export function SignupForm() {
               className="h-10 w-full rounded-lg bg-[#1E62C3] px-6 py-2 font-inter text-sm font-semibold text-white hover:bg-[#1E62C3]/90"
             >
               {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-              Register Account
+              Create Account
             </Button>
           </div>
 
@@ -414,6 +323,18 @@ export function SignupForm() {
               OR
             </span>
             <div className="h-px w-24 border-t border-gray-300" />
+          </div>
+
+          {/* Business Seller CTA */}
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
+            <p className="text-center font-inter text-sm font-medium text-gray-700">
+              Want to sell on our platform?
+            </p>
+            <Button asChild variant="outline" className="w-full">
+              <Link href="/apply-business">
+                Become a Business Seller
+              </Link>
+            </Button>
           </div>
 
           {/* QR Code Section */}

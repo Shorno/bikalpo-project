@@ -17,6 +17,7 @@ export * from "./payment";
 export * from "./product";
 export * from "./product-variant";
 export * from "./review";
+export * from "./seller-application";
 export * from "./stock-change-log";
 export * from "./support";
 export * from "./user-profile";

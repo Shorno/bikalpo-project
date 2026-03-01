@@ -1,0 +1,453 @@
+"use client";
+import { useForm } from "@tanstack/react-form";
+import { Building2, CheckCircle, Loader, MapPin, Store, Upload, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
+import { sellerApplicationSchema } from "@/schema/auth.schema";
+import { client } from "@/utils/orpc";
+
+function getErrorMessage(error: unknown): string {
+    if (typeof error === "string") return error;
+    if (error && typeof error === "object" && "message" in error) {
+        const message = (error as { message?: unknown }).message;
+        return typeof message === "string" ? message : "";
+    }
+    return "";
+}
+
+const STEPS = [
+    { id: 1, title: "Business Info", icon: Store },
+    { id: 2, title: "Contact & Location", icon: MapPin },
+    { id: 3, title: "Documents", icon: Upload },
+    { id: 4, title: "Review", icon: CheckCircle },
+] as const;
+
+export function BusinessApplicationForm() {
+    const [currentStep, setCurrentStep] = useState(1);
+    const [isPending, startTransition] = useTransition();
+    const router = useRouter();
+
+    const form = useForm({
+        defaultValues: {
+            shopName: "",
+            ownerName: "",
+            phoneNumber: "",
+            businessType: "" as "retail" | "restaurant",
+            shopAddress: "",
+            tradeLicenseNumber: "",
+        },
+        validators: {
+            onSubmit: sellerApplicationSchema,
+        },
+        onSubmit: async ({ value }) => {
+            startTransition(async () => {
+                try {
+                    await client.sellerApplication.submit(value);
+                    toast.success("Application submitted successfully!");
+                    router.push("/application-status");
+                } catch (error) {
+                    const message =
+                        error instanceof Error ? error.message : "Something went wrong. Please try again.";
+                    toast.error(message);
+                }
+            });
+        },
+    });
+
+    const nextStep = () => {
+        if (currentStep < 4) setCurrentStep(currentStep + 1);
+    };
+
+    const prevStep = () => {
+        if (currentStep > 1) setCurrentStep(currentStep - 1);
+    };
+
+    return (
+        <div className="mx-auto w-full max-w-2xl">
+            {/* Step Indicator */}
+            <div className="mb-8 flex items-center justify-between">
+                {STEPS.map((step, index) => {
+                    const Icon = step.icon;
+                    const isActive = currentStep === step.id;
+                    const isCompleted = currentStep > step.id;
+
+                    return (
+                        <div key={step.id} className="flex items-center">
+                            <div className="flex flex-col items-center gap-1.5">
+                                <div
+                                    className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-colors ${isActive
+                                        ? "border-[#1E62C3] bg-[#1E62C3] text-white"
+                                        : isCompleted
+                                            ? "border-green-500 bg-green-500 text-white"
+                                            : "border-gray-300 bg-white text-gray-400"
+                                        }`}
+                                >
+                                    {isCompleted ? (
+                                        <CheckCircle className="h-5 w-5" />
+                                    ) : (
+                                        <Icon className="h-5 w-5" />
+                                    )}
+                                </div>
+                                <span
+                                    className={`text-xs font-medium ${isActive ? "text-[#1E62C3]" : isCompleted ? "text-green-600" : "text-gray-400"
+                                        }`}
+                                >
+                                    {step.title}
+                                </span>
+                            </div>
+                            {index < STEPS.length - 1 && (
+                                <div
+                                    className={`mx-2 h-0.5 w-12 sm:w-20 ${isCompleted ? "bg-green-500" : "bg-gray-200"
+                                        }`}
+                                />
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            <form
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (currentStep === 4) {
+                        form.handleSubmit();
+                    }
+                }}
+            >
+                {/* Step 1: Business Info */}
+                {currentStep === 1 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Store className="h-5 w-5 text-[#1E62C3]" />
+                                Business Information
+                            </CardTitle>
+                            <CardDescription>
+                                Tell us about your business
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {/* Shop Name */}
+                            <form.Field name="shopName">
+                                {(field) => {
+                                    const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                                    return (
+                                        <div className="space-y-2">
+                                            <Label htmlFor={field.name}>Shop / Business Name *</Label>
+                                            <Input
+                                                id={field.name}
+                                                placeholder="Enter your shop or business name"
+                                                value={field.state.value}
+                                                onBlur={field.handleBlur}
+                                                onChange={(e) => field.handleChange(e.target.value)}
+                                                aria-invalid={isInvalid}
+                                            />
+                                            {isInvalid && (
+                                                <p className="text-sm text-red-500">
+                                                    {field.state.meta.errors.map(getErrorMessage).filter(Boolean).join(", ")}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                }}
+                            </form.Field>
+
+                            {/* Owner Name */}
+                            <form.Field name="ownerName">
+                                {(field) => {
+                                    const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                                    return (
+                                        <div className="space-y-2">
+                                            <Label htmlFor={field.name}>Owner Name *</Label>
+                                            <Input
+                                                id={field.name}
+                                                placeholder="Enter the business owner's name"
+                                                value={field.state.value}
+                                                onBlur={field.handleBlur}
+                                                onChange={(e) => field.handleChange(e.target.value)}
+                                                aria-invalid={isInvalid}
+                                            />
+                                            {isInvalid && (
+                                                <p className="text-sm text-red-500">
+                                                    {field.state.meta.errors.map(getErrorMessage).filter(Boolean).join(", ")}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                }}
+                            </form.Field>
+
+                            {/* Business Type */}
+                            <form.Field name="businessType">
+                                {(field) => (
+                                    <div className="space-y-3">
+                                        <Label>Business Type *</Label>
+                                        <RadioGroup
+                                            value={field.state.value}
+                                            onValueChange={(val) => field.handleChange(val as "retail" | "restaurant")}
+                                            className="grid grid-cols-2 gap-4"
+                                        >
+                                            <Label
+                                                htmlFor="type-retail"
+                                                className={`flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors ${field.state.value === "retail"
+                                                    ? "border-[#1E62C3] bg-blue-50"
+                                                    : "border-gray-200 hover:border-gray-300"
+                                                    }`}
+                                            >
+                                                <RadioGroupItem value="retail" id="type-retail" className="sr-only" />
+                                                <Store className="h-8 w-8 text-[#1E62C3]" />
+                                                <span className="text-sm font-medium">Retail Shop</span>
+                                                <span className="text-center text-xs text-gray-500">
+                                                    Buy wholesale & sell to consumers
+                                                </span>
+                                            </Label>
+
+                                            <Label
+                                                htmlFor="type-restaurant"
+                                                className={`flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors ${field.state.value === "restaurant"
+                                                    ? "border-[#1E62C3] bg-blue-50"
+                                                    : "border-gray-200 hover:border-gray-300"
+                                                    }`}
+                                            >
+                                                <RadioGroupItem value="restaurant" id="type-restaurant" className="sr-only" />
+                                                <Building2 className="h-8 w-8 text-[#1E62C3]" />
+                                                <span className="text-sm font-medium">Restaurant</span>
+                                                <span className="text-center text-xs text-gray-500">
+                                                    Buy wholesale for your business
+                                                </span>
+                                            </Label>
+                                        </RadioGroup>
+                                    </div>
+                                )}
+                            </form.Field>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Step 2: Contact & Location */}
+                {currentStep === 2 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <MapPin className="h-5 w-5 text-[#1E62C3]" />
+                                Contact & Location
+                            </CardTitle>
+                            <CardDescription>
+                                Where is your business located?
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {/* Phone Number */}
+                            <form.Field name="phoneNumber">
+                                {(field) => {
+                                    const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                                    return (
+                                        <div className="space-y-2">
+                                            <Label htmlFor={field.name}>Business Phone Number *</Label>
+                                            <Input
+                                                id={field.name}
+                                                type="tel"
+                                                placeholder="Enter business phone number"
+                                                value={field.state.value}
+                                                onBlur={field.handleBlur}
+                                                onChange={(e) => field.handleChange(e.target.value)}
+                                                aria-invalid={isInvalid}
+                                            />
+                                            {isInvalid && (
+                                                <p className="text-sm text-red-500">
+                                                    {field.state.meta.errors.map(getErrorMessage).filter(Boolean).join(", ")}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                }}
+                            </form.Field>
+
+                            {/* Shop Address */}
+                            <form.Field name="shopAddress">
+                                {(field) => {
+                                    const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                                    return (
+                                        <div className="space-y-2">
+                                            <Label htmlFor={field.name}>Shop Address *</Label>
+                                            <Textarea
+                                                id={field.name}
+                                                placeholder="Enter full shop address including area, road, and city"
+                                                value={field.state.value}
+                                                onBlur={field.handleBlur}
+                                                onChange={(e) => field.handleChange(e.target.value)}
+                                                aria-invalid={isInvalid}
+                                                rows={3}
+                                            />
+                                            {isInvalid && (
+                                                <p className="text-sm text-red-500">
+                                                    {field.state.meta.errors.map(getErrorMessage).filter(Boolean).join(", ")}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                }}
+                            </form.Field>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Step 3: Documents */}
+                {currentStep === 3 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Upload className="h-5 w-5 text-[#1E62C3]" />
+                                Documents
+                            </CardTitle>
+                            <CardDescription>
+                                Provide your business documents (optional but recommended)
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {/* Trade License */}
+                            <form.Field name="tradeLicenseNumber">
+                                {(field) => (
+                                    <div className="space-y-2">
+                                        <Label htmlFor={field.name}>
+                                            Trade License Number{" "}
+                                            <span className="text-sm text-gray-500">(Optional)</span>
+                                        </Label>
+                                        <Input
+                                            id={field.name}
+                                            placeholder="Enter trade license number"
+                                            value={field.state.value}
+                                            onBlur={field.handleBlur}
+                                            onChange={(e) => field.handleChange(e.target.value)}
+                                        />
+                                    </div>
+                                )}
+                            </form.Field>
+
+                            {/* Document upload placeholder */}
+                            <div className="space-y-2">
+                                <Label>Upload Documents <span className="text-sm text-gray-500">(Coming Soon)</span></Label>
+                                <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
+                                    <Upload className="mb-2 h-8 w-8 text-gray-400" />
+                                    <p className="text-sm text-gray-500">
+                                        Document upload will be available soon
+                                    </p>
+                                    <p className="mt-1 text-xs text-gray-400">
+                                        Trade license, NID, business registration
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Step 4: Review */}
+                {currentStep === 4 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <CheckCircle className="h-5 w-5 text-[#1E62C3]" />
+                                Review Your Application
+                            </CardTitle>
+                            <CardDescription>
+                                Please review your information before submitting
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <form.Subscribe selector={(state) => state.values}>
+                                {(values) => (
+                                    <div className="space-y-3">
+                                        <div className="rounded-lg bg-gray-50 p-4">
+                                            <h4 className="mb-2 text-sm font-semibold text-gray-700">Business Details</h4>
+                                            <div className="space-y-1.5 text-sm">
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500">Shop Name</span>
+                                                    <span className="font-medium">{values.shopName || "—"}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500">Owner</span>
+                                                    <span className="font-medium">{values.ownerName || "—"}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500">Type</span>
+                                                    <Badge variant="outline" className="capitalize">
+                                                        {values.businessType || "—"}
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-lg bg-gray-50 p-4">
+                                            <h4 className="mb-2 text-sm font-semibold text-gray-700">Contact & Location</h4>
+                                            <div className="space-y-1.5 text-sm">
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500">Phone</span>
+                                                    <span className="font-medium">{values.phoneNumber || "—"}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500">Address</span>
+                                                    <span className="max-w-[200px] text-right font-medium">{values.shopAddress || "—"}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {values.tradeLicenseNumber && (
+                                            <div className="rounded-lg bg-gray-50 p-4">
+                                                <h4 className="mb-2 text-sm font-semibold text-gray-700">Documents</h4>
+                                                <div className="space-y-1.5 text-sm">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-500">Trade License</span>
+                                                        <span className="font-medium">{values.tradeLicenseNumber}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </form.Subscribe>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Navigation Buttons */}
+                <div className="mt-6 flex justify-between">
+                    {currentStep > 1 ? (
+                        <Button type="button" variant="outline" onClick={prevStep}>
+                            Previous
+                        </Button>
+                    ) : (
+                        <div />
+                    )}
+
+                    {currentStep < 4 ? (
+                        <Button
+                            type="button"
+                            onClick={nextStep}
+                            className="bg-[#1E62C3] hover:bg-[#1E62C3]/90"
+                        >
+                            Next
+                        </Button>
+                    ) : (
+                        <Button
+                            type="submit"
+                            disabled={isPending}
+                            className="bg-green-600 hover:bg-green-700"
+                        >
+                            {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                            Submit Application
+                        </Button>
+                    )}
+                </div>
+            </form>
+        </div>
+    );
+}

@@ -27,9 +27,10 @@ const DASHBOARD_PATHS: Record<string, string> = {
   admin: "/dashboard/admin",
   salesman: "/dashboard/sales",
   deliveryman: "/dashboard/delivery",
+  shop_owner: "/dashboard",
 };
 
-const STAFF_ROLES = ["admin", "salesman", "deliveryman"];
+const STAFF_ROLES = ["admin", "salesman", "deliveryman", "shop_owner"];
 
 export function UserDropdown() {
   const { data: session, isPending } = authClient.useSession();
@@ -58,7 +59,7 @@ export function UserDropdown() {
   }
 
   const user = session.user;
-  const userRole = user.role || "guest";
+  const userRole = user.role || "consumer";
   const isStaff = STAFF_ROLES.includes(userRole);
   const dashboardPath = DASHBOARD_PATHS[userRole] || "/dashboard";
 
@@ -118,16 +119,8 @@ export function UserDropdown() {
               Dashboard
             </Link>
           </DropdownMenuItem>
-        ) : userRole === "guest" ? (
-          // Guest role - pending approval
-          <DropdownMenuItem asChild>
-            <Link href="/pending-approval" className="cursor-pointer">
-              <UserCircle className="mr-2 h-4 w-4" />
-              Pending Approval
-            </Link>
-          </DropdownMenuItem>
         ) : (
-          // Customer role - show all account navigation links
+          // Consumer role - show account navigation + become a seller link
           <>
             <DropdownMenuItem asChild>
               <Link href="/customer/account" className="cursor-pointer">

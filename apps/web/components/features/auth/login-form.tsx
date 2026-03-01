@@ -20,6 +20,27 @@ function getErrorMessage(error: unknown): string {
   return "";
 }
 
+/**
+ * Returns the redirect path based on user role.
+ * All roles stay within the single app — route-based separation.
+ */
+function getRedirectForRole(role: string): string {
+  switch (role) {
+    case "consumer":
+      return "/";
+    case "shop_owner":
+      return "/dashboard";
+    case "admin":
+      return "/dashboard";
+    case "salesman":
+      return "/dashboard";
+    case "deliveryman":
+      return "/dashboard";
+    default:
+      return "/";
+  }
+}
+
 export function LoginForm() {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -46,17 +67,12 @@ export function LoginForm() {
 
         toast.success("Logged in successfully!");
 
-        // Redirect based on role (cookie is set by server hook)
         const user = data?.user as { role?: string } | undefined;
-        const role = user?.role || "guest";
+        const role = user?.role || "consumer";
+        const redirect = getRedirectForRole(role);
 
-        if (role === "customer") {
-          window.location.href =
-            process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL ||
-            "http://app.b2b.localhost:3000";
-        } else {
-          router.push("/dashboard");
-        }
+        // Use window.location for full page reload to ensure cookies are set
+        window.location.href = redirect;
       });
     },
   });
