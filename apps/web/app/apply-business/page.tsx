@@ -60,6 +60,7 @@ export default function ApplyBusinessPage() {
         businessType: data.businessType as "retail" | "restaurant",
         shopAddress: data.shopAddress,
         tradeLicenseNumber: data.tradeLicenseNumber || "",
+        documents: (data.documents as string[]) || [],
     } : undefined;
 
     return (

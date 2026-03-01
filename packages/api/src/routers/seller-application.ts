@@ -25,6 +25,7 @@ const submitApplicationSchema = z.object({
     businessType: z.enum(["retail", "restaurant"]),
     shopAddress: z.string().min(5).max(500),
     tradeLicenseNumber: z.string().optional(),
+    documents: z.array(z.string()).optional(),
 });
 
 const reviewApplicationSchema = z.object({
@@ -74,6 +75,7 @@ export const sellerApplicationRouter = {
                     businessType: input.businessType,
                     shopAddress: input.shopAddress,
                     tradeLicenseNumber: input.tradeLicenseNumber || null,
+                    documents: input.documents || [],
                 })
                 .returning();
 
@@ -270,6 +272,7 @@ export const sellerApplicationRouter = {
                         businessType: input.businessType,
                         shopAddress: input.shopAddress,
                         tradeLicenseNumber: input.tradeLicenseNumber || null,
+                        documents: input.documents || [],
                     })
                     .returning();
                 return application;
@@ -291,6 +294,7 @@ export const sellerApplicationRouter = {
                     businessType: input.businessType,
                     shopAddress: input.shopAddress,
                     tradeLicenseNumber: input.tradeLicenseNumber || null,
+                    documents: input.documents || [],
                     status: "pending",
                     adminNotes: null,
                     reviewedBy: null,

@@ -1,8 +1,9 @@
 "use client";
 import { useForm } from "@tanstack/react-form";
-import { Building2, CheckCircle, Loader, MapPin, Pencil, Store, Upload } from "lucide-react";
+import { Building2, CheckCircle, FileText, Loader, Loader2, MapPin, Pencil, Store, Upload, XIcon } from "lucide-react";
+import { CldImage } from "next-cloudinary";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { getPublicIdFromUrl } from "@/utils/getPublicIdFromUrl";
 import { sellerApplicationSchema } from "@/schema/auth.schema";
 import { client } from "@/utils/orpc";
 
@@ -38,8 +40,153 @@ interface BusinessApplicationFormProps {
         businessType: "retail" | "restaurant";
         shopAddress: string;
         tradeLicenseNumber: string;
+        documents: string[];
     };
     isEditMode?: boolean;
+}
+
+function DocumentUploadField({ field }: { field: { state: { value: string[] }; handleChange: (value: string[]) => void } }) {
+    const docs = field.state.value;
+    const maxFiles = 5;
+    const maxSizeMB = 10;
+
+    const [isUploading, setIsUploading] = useState(false);
+    const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
+
+    const handleUpload = useCallback(async (file: File) => {
+        if (docs.length >= maxFiles) {
+            toast.error(`Maximum ${maxFiles} documents allowed`);
+            return;
+        }
+        if (file.size > maxSizeMB * 1024 * 1024) {
+            toast.error(`File too large. Max ${maxSizeMB}MB`);
+            return;
+        }
+        setIsUploading(true);
+        try {
+            const result = await client.cloudinary.upload({
+                file,
+                folder: "seller-documents",
+            });
+            if (result.success) {
+                field.handleChange([...docs, result.url]);
+                toast.success("Document uploaded");
+            } else {
+                toast.error(result.error || "Upload failed");
+            }
+        } catch {
+            toast.error("Upload failed");
+        } finally {
+            setIsUploading(false);
+        }
+    }, [docs, field]);
+
+    const handleRemove = useCallback(async (url: string) => {
+        setDeletingUrl(url);
+        const publicId = getPublicIdFromUrl(url);
+        if (publicId) {
+            try {
+                await client.cloudinary.delete({ publicId });
+            } catch { /* ignore delete errors */ }
+        }
+        field.handleChange(docs.filter((d) => d !== url));
+        setDeletingUrl(null);
+        toast.success("Document removed");
+    }, [docs, field]);
+
+    const getFilename = (url: string) => {
+        const parts = url.split("/");
+        const last = parts[parts.length - 1] || "document";
+        return last.split(".")[0].replace(/v\d+\//, "").slice(0, 28);
+    };
+
+    return (
+        <div className="space-y-2">
+            <Label>
+                Upload Documents{" "}
+                <span className="text-sm text-gray-500">(Optional)</span>
+            </Label>
+            <p className="text-xs text-muted-foreground">
+                Trade license, NID, business registration, shop photo, etc.
+            </p>
+
+            {/* Uploaded documents list */}
+            {docs.length > 0 && (
+                <div className="space-y-2">
+                    {docs.map((url, idx) => (
+                        <div
+                            key={url}
+                            className="flex items-center gap-3 rounded-lg border bg-gray-50 p-2"
+                        >
+                            <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-white">
+                                <CldImage
+                                    src={url}
+                                    alt={`Document ${idx + 1}`}
+                                    fill
+                                    className="object-cover"
+                                    sizes="48px"
+                                />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="truncate text-sm font-medium">
+                                    Document {idx + 1}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                    {getFilename(url)}
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0 text-gray-400 hover:text-red-500"
+                                disabled={deletingUrl === url}
+                                onClick={() => handleRemove(url)}
+                            >
+                                {deletingUrl === url ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <XIcon className="h-4 w-4" />
+                                )}
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Upload button / drop zone */}
+            {docs.length < maxFiles && (
+                <div
+                    className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 p-4 text-center transition-colors hover:border-[#1E62C3] hover:bg-blue-50/50"
+                    onClick={() => {
+                        if (isUploading) return;
+                        const input = document.createElement("input");
+                        input.type = "file";
+                        input.accept = "image/jpeg,image/jpg,image/png,image/webp";
+                        input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0];
+                            if (file) handleUpload(file);
+                        };
+                        input.click();
+                    }}
+                >
+                    {isUploading ? (
+                        <>
+                            <Loader2 className="h-4 w-4 animate-spin text-[#1E62C3]" />
+                            <span className="text-sm text-muted-foreground">Uploading...</span>
+                        </>
+                    ) : (
+                        <>
+                            <Upload className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm text-gray-500">
+                                Click to upload ({docs.length}/{maxFiles})
+                            </span>
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    );
 }
 
 export function BusinessApplicationForm({ initialData, isEditMode }: BusinessApplicationFormProps) {
@@ -55,6 +202,7 @@ export function BusinessApplicationForm({ initialData, isEditMode }: BusinessApp
             businessType: (initialData?.businessType || "") as "retail" | "restaurant",
             shopAddress: initialData?.shopAddress || "",
             tradeLicenseNumber: initialData?.tradeLicenseNumber || "",
+            documents: initialData?.documents || [] as string[],
         },
         validators: {
             onSubmit: sellerApplicationSchema,
@@ -353,19 +501,12 @@ export function BusinessApplicationForm({ initialData, isEditMode }: BusinessApp
                                 )}
                             </form.Field>
 
-                            {/* Document upload placeholder */}
-                            <div className="space-y-2">
-                                <Label>Upload Documents <span className="text-sm text-gray-500">(Coming Soon)</span></Label>
-                                <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
-                                    <Upload className="mb-2 h-8 w-8 text-gray-400" />
-                                    <p className="text-sm text-gray-500">
-                                        Document upload will be available soon
-                                    </p>
-                                    <p className="mt-1 text-xs text-gray-400">
-                                        Trade license, NID, business registration
-                                    </p>
-                                </div>
-                            </div>
+                            {/* Document upload — list layout */}
+                            <form.Field name="documents">
+                                {(field) => (
+                                    <DocumentUploadField field={field} />
+                                )}
+                            </form.Field>
                         </CardContent>
                     </Card>
                 )}
@@ -439,12 +580,12 @@ export function BusinessApplicationForm({ initialData, isEditMode }: BusinessApp
                                                 </div>
                                                 <div className="flex justify-between">
                                                     <span className="text-gray-500">Address</span>
-                                                    <span className="max-w-[200px] text-right font-medium">{values.shopAddress || "—"}</span>
+                                                    <span className="max-w-50 text-right font-medium">{values.shopAddress || "—"}</span>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {values.tradeLicenseNumber && (
+                                        {(values.tradeLicenseNumber || (values.documents && values.documents.length > 0)) && (
                                             <div className="rounded-lg bg-gray-50 p-4">
                                                 <div className="mb-2 flex items-center justify-between">
                                                     <h4 className="text-sm font-semibold text-gray-700">Documents</h4>
@@ -460,10 +601,21 @@ export function BusinessApplicationForm({ initialData, isEditMode }: BusinessApp
                                                     </Button>
                                                 </div>
                                                 <div className="space-y-1.5 text-sm">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-gray-500">Trade License</span>
-                                                        <span className="font-medium">{values.tradeLicenseNumber}</span>
-                                                    </div>
+                                                    {values.tradeLicenseNumber && (
+                                                        <div className="flex justify-between">
+                                                            <span className="text-gray-500">Trade License</span>
+                                                            <span className="font-medium">{values.tradeLicenseNumber}</span>
+                                                        </div>
+                                                    )}
+                                                    {values.documents && values.documents.length > 0 && (
+                                                        <div className="flex justify-between">
+                                                            <span className="text-gray-500">Uploaded Files</span>
+                                                            <span className="font-medium">
+                                                                <FileText className="mr-1 inline h-3 w-3" />
+                                                                {values.documents.length} document{values.documents.length > 1 ? "s" : ""}
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}

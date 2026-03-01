@@ -24,6 +24,7 @@ import { productRouter } from "./product";
 import { customerRouter } from "./customer";
 import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
+import { inventoryRouter } from "./inventory";
 
 import { verifiedUserRouter } from "./verified-user";
 import { sellerApplicationRouter } from "./seller-application";
@@ -56,6 +57,7 @@ export const appRouter = {
   customerManagement: customerManagementRouter,
 
   employee: employeeRouter,
+  inventory: inventoryRouter,
   product: productRouter,
   customer: customerRouter,
   salesman: salesmanRouter,

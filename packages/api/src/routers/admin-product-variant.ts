@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
-import { productVariant } from "@bikalpo-project/db/schema";
+import { productVariant, variantConversionMap } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
 
 const quantitySelectorOptionSchema = z.object({
@@ -42,6 +42,36 @@ const variantInput = z.object({
     care: z.string().optional(),
     note: z.string().optional(),
     sortOrder: z.number().int().optional(),
+
+    // === B2B + B2C Fields ===
+    variantType: z.enum(["trade", "retail"]).optional(),
+    packType: z.enum(["sack", "carton", "packet", "loose", "bottle", "can", "jar", "pouch", "box"]).optional(),
+    packWeightKg: z.string().optional(),
+    innerPackSizeKg: z.string().optional(),
+    packCountInside: z.number().int().optional(),
+    sellUnit: z.string().optional(),
+    orderType: z.enum(["b2b", "b2c"]).optional(),
+    visibilityRole: z.enum(["shop_owner", "consumer", "all"]).optional(),
+    stockSource: z.string().optional(),
+    deliveryType: z.string().optional(),
+    deliveryRuleId: z.number().int().optional(),
+    linkedRetailVariantId: z.number().int().optional(),
+    conversionRatio: z.string().optional(),
+    conversionLossPercent: z.string().optional(),
+    isOpenOrderAllowed: z.boolean().optional(),
+    negotiationTimeoutSec: z.number().int().optional(),
+    isPackReturnRequired: z.boolean().optional(),
+    packDepositAmount: z.string().optional(),
+    minMarginPercent: z.string().optional(),
+    minMarginAmount: z.string().optional(),
+    isActive: z.boolean().optional(),
+});
+
+const conversionRuleInput = z.object({
+    fromVariantId: z.number().int(),
+    toVariantId: z.number().int(),
+    conversionRatio: z.string(),
+    autoConvert: z.boolean().default(true),
 });
 
 export const adminProductVariantRouter = {
@@ -98,6 +128,28 @@ export const adminProductVariantRouter = {
                     care: input.care ?? null,
                     note: input.note ?? null,
                     sortOrder: input.sortOrder ?? 0,
+                    // B2B + B2C fields
+                    variantType: input.variantType ?? null,
+                    packType: input.packType ?? null,
+                    packWeightKg: input.packWeightKg ?? null,
+                    innerPackSizeKg: input.innerPackSizeKg ?? null,
+                    packCountInside: input.packCountInside ?? null,
+                    sellUnit: input.sellUnit ?? null,
+                    orderType: input.orderType ?? null,
+                    visibilityRole: input.visibilityRole ?? "all",
+                    stockSource: input.stockSource ?? null,
+                    deliveryType: input.deliveryType ?? null,
+                    deliveryRuleId: input.deliveryRuleId ?? null,
+                    linkedRetailVariantId: input.linkedRetailVariantId ?? null,
+                    conversionRatio: input.conversionRatio ?? null,
+                    conversionLossPercent: input.conversionLossPercent ?? "0",
+                    isOpenOrderAllowed: input.isOpenOrderAllowed ?? false,
+                    negotiationTimeoutSec: input.negotiationTimeoutSec ?? 100,
+                    isPackReturnRequired: input.isPackReturnRequired ?? false,
+                    packDepositAmount: input.packDepositAmount ?? "0",
+                    minMarginPercent: input.minMarginPercent ?? null,
+                    minMarginAmount: input.minMarginAmount ?? null,
+                    isActive: input.isActive ?? true,
                 })
                 .returning();
             return created;
@@ -128,6 +180,28 @@ export const adminProductVariantRouter = {
                     packagingNote: rest.packagingNote ?? null,
                     care: rest.care ?? null,
                     note: rest.note ?? null,
+                    // B2B + B2C fields
+                    variantType: rest.variantType ?? null,
+                    packType: rest.packType ?? null,
+                    packWeightKg: rest.packWeightKg ?? null,
+                    innerPackSizeKg: rest.innerPackSizeKg ?? null,
+                    packCountInside: rest.packCountInside ?? null,
+                    sellUnit: rest.sellUnit ?? null,
+                    orderType: rest.orderType ?? null,
+                    visibilityRole: rest.visibilityRole ?? "all",
+                    stockSource: rest.stockSource ?? null,
+                    deliveryType: rest.deliveryType ?? null,
+                    deliveryRuleId: rest.deliveryRuleId ?? null,
+                    linkedRetailVariantId: rest.linkedRetailVariantId ?? null,
+                    conversionRatio: rest.conversionRatio ?? null,
+                    conversionLossPercent: rest.conversionLossPercent ?? "0",
+                    isOpenOrderAllowed: rest.isOpenOrderAllowed ?? false,
+                    negotiationTimeoutSec: rest.negotiationTimeoutSec ?? 100,
+                    isPackReturnRequired: rest.isPackReturnRequired ?? false,
+                    packDepositAmount: rest.packDepositAmount ?? "0",
+                    minMarginPercent: rest.minMarginPercent ?? null,
+                    minMarginAmount: rest.minMarginAmount ?? null,
+                    isActive: rest.isActive ?? true,
                 })
                 .where(eq(productVariant.id, id));
             return { message: "Variant updated successfully" };
@@ -145,5 +219,90 @@ export const adminProductVariantRouter = {
         .handler(async ({ input }) => {
             await db.delete(productVariant).where(eq(productVariant.id, input.id));
             return { message: "Variant deleted successfully" };
+        }),
+
+    // === Conversion Rule Management ===
+
+    listConversionRules: adminProcedure
+        .route({
+            method: "POST",
+            path: "/admin/conversion-rules/list",
+            tags: ["Admin Conversion Rules"],
+            summary: "List conversion rules",
+            description: "List all conversion rules, optionally filtered by variant",
+        })
+        .input(z.object({ fromVariantId: z.number().int().optional() }).optional())
+        .handler(async ({ input }) => {
+            if (input?.fromVariantId) {
+                return db.query.variantConversionMap.findMany({
+                    where: eq(variantConversionMap.fromVariantId, input.fromVariantId),
+                    with: {
+                        fromVariant: true,
+                        toVariant: true,
+                    },
+                });
+            }
+            return db.query.variantConversionMap.findMany({
+                with: {
+                    fromVariant: true,
+                    toVariant: true,
+                },
+            });
+        }),
+
+    createConversionRule: adminProcedure
+        .route({
+            method: "POST",
+            path: "/admin/conversion-rules",
+            tags: ["Admin Conversion Rules"],
+            summary: "Create conversion rule",
+            description: "Create a new TRADE → RETAIL conversion rule",
+        })
+        .input(conversionRuleInput)
+        .handler(async ({ input }) => {
+            const [created] = await db
+                .insert(variantConversionMap)
+                .values({
+                    fromVariantId: input.fromVariantId,
+                    toVariantId: input.toVariantId,
+                    conversionRatio: input.conversionRatio,
+                    autoConvert: input.autoConvert,
+                })
+                .returning();
+            return created;
+        }),
+
+    updateConversionRule: adminProcedure
+        .route({
+            method: "PUT",
+            path: "/admin/conversion-rules/update",
+            tags: ["Admin Conversion Rules"],
+            summary: "Update conversion rule",
+            description: "Update an existing conversion rule",
+        })
+        .input(conversionRuleInput.extend({ id: z.number().int() }))
+        .handler(async ({ input }) => {
+            const { id, ...rest } = input;
+            await db
+                .update(variantConversionMap)
+                .set(rest)
+                .where(eq(variantConversionMap.id, id));
+            return { message: "Conversion rule updated" };
+        }),
+
+    deleteConversionRule: adminProcedure
+        .route({
+            method: "DELETE",
+            path: "/admin/conversion-rules/delete",
+            tags: ["Admin Conversion Rules"],
+            summary: "Delete conversion rule",
+            description: "Delete a conversion rule",
+        })
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ input }) => {
+            await db
+                .delete(variantConversionMap)
+                .where(eq(variantConversionMap.id, input.id));
+            return { message: "Conversion rule deleted" };
         }),
 };

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
     id: text("id").primaryKey(),
@@ -20,6 +20,15 @@ export const user = pgTable("user", {
     sellerStatus: text("seller_status"), // pending | approved | rejected | disabled
     businessType: text("business_type"), // retail | restaurant
     shopAddress: text("shop_address"),
+
+    // === B2B + B2C Shop Owner fields ===
+    shopName: text("shop_name"),
+    shopSlug: text("shop_slug"), // for public store URL: /store/{shop_slug}
+    /** Whether this seller can receive open order broadcasts */
+    canAcceptOpenOrder: boolean("can_accept_open_order").default(false),
+    /** Current count of pending OTP confirmations (max 2 for open orders) */
+    pendingOtpCount: integer("pending_otp_count").default(0),
+
     // Deliveryman: comma-separated areas for area-based assignment
     serviceArea: text("service_area"),
     createdAt: timestamp("created_at").defaultNow().notNull(),

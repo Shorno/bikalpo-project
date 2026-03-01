@@ -61,6 +61,29 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      // === B2B + B2C Shop Owner fields ===
+      shopName: {
+        type: "string",
+        required: false,
+      },
+      shopSlug: {
+        type: "string",
+        required: false,
+      },
+      canAcceptOpenOrder: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+      },
+      pendingOtpCount: {
+        type: "number",
+        required: false,
+        defaultValue: 0,
+      },
+      serviceArea: {
+        type: "string",
+        required: false,
+      },
     },
   },
   advanced: {
