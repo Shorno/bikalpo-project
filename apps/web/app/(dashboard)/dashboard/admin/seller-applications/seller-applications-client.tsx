@@ -6,11 +6,13 @@ import {
     Building2,
     Check,
     Clock,
+    Eye,
     FileText,
     Loader2,
     Store,
     X,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -187,37 +189,49 @@ export function SellerApplicationsClient() {
             <TableCell>
                 <Badge
                     variant={statusBadge[app.status as keyof typeof statusBadge]?.variant || "outline"}
-                    className={statusBadge[app.status as keyof typeof statusBadge]?.className}
+                    className={`capitalize ${statusBadge[app.status as keyof typeof statusBadge]?.className}`}
                 >
                     {app.status}
                 </Badge>
             </TableCell>
-            {showActions && (
-                <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                            onClick={() => openDialog(app, "approve")}
-                            disabled={isActionPending}
-                        >
-                            <Check className="size-4 mr-1" />
-                            Approve
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => openDialog(app, "reject")}
-                            disabled={isActionPending}
-                        >
-                            <X className="size-4 mr-1" />
-                            Reject
-                        </Button>
-                    </div>
-                </TableCell>
-            )}
+            <TableCell className="text-right">
+                <div className="flex justify-end gap-2">
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        asChild
+                    >
+                        <Link href={`/dashboard/admin/seller-applications/${app.id}`}>
+                            <Eye className="size-4 mr-1" />
+                            View
+                        </Link>
+                    </Button>
+                    {showActions && (
+                        <>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                onClick={() => openDialog(app, "approve")}
+                                disabled={isActionPending}
+                            >
+                                <Check className="size-4 mr-1" />
+                                Approve
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => openDialog(app, "reject")}
+                                disabled={isActionPending}
+                            >
+                                <X className="size-4 mr-1" />
+                                Reject
+                            </Button>
+                        </>
+                    )}
+                </div>
+            </TableCell>
         </TableRow>
     );
 
@@ -255,7 +269,7 @@ export function SellerApplicationsClient() {
                             <TableHead>Address</TableHead>
                             <TableHead>Submitted</TableHead>
                             <TableHead>Status</TableHead>
-                            {showActions && <TableHead className="text-right">Actions</TableHead>}
+                            <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>

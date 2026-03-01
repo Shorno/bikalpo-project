@@ -54,7 +54,7 @@ export const sellerApplicationSchema = z.object({
     .min(5, "Please enter a valid shop address")
     .max(500, "Address is too long"),
   tradeLicenseNumber: z.string(),
-  documents: z.array(z.string()).optional(),
+  documents: z.array(z.string()).default([]),
 });
 
 export type SignUpFormData = z.infer<typeof signupSchema>;

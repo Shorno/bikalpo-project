@@ -205,6 +205,7 @@ export function BusinessApplicationForm({ initialData, isEditMode }: BusinessApp
             documents: initialData?.documents || [] as string[],
         },
         validators: {
+            //@ts-ignore
             onSubmit: sellerApplicationSchema,
         },
         onSubmit: async ({ value }) => {

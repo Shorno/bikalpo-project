@@ -106,6 +106,51 @@ export const sellerApplicationRouter = {
             return application;
         }),
 
+    // ── Admin: Get Application by ID ─────────────────────────────
+
+    getById: adminProcedure
+        .route({
+            method: "GET",
+            path: "/seller-applications/{applicationId}",
+            tags: ["Seller Application"],
+            summary: "Get a single seller application by ID (admin only)",
+        })
+        .input(
+            z.object({
+                applicationId: z.string(),
+            }),
+        )
+        .handler(async ({ input }) => {
+            const application = await db.query.sellerApplication.findFirst({
+                where: eq(sellerApplication.id, input.applicationId),
+                with: {
+                    user: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phoneNumber: true,
+                            role: true,
+                            image: true,
+                        },
+                    },
+                    reviewer: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            email: true,
+                        },
+                    },
+                },
+            });
+
+            if (!application) {
+                throw new ORPCError("NOT_FOUND", { message: "Application not found" });
+            }
+
+            return application;
+        }),
+
     // ── Admin: List All Applications ────────────────────────────
 
     list: adminProcedure
