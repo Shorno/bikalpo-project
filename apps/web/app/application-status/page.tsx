@@ -136,6 +136,13 @@ export default function ApplicationStatusPage() {
 
                     {/* Action Buttons */}
                     <div className="flex flex-col gap-3 pt-2">
+                        {application.status === "pending" && (
+                            <Button asChild className="w-full bg-[#1E62C3] hover:bg-[#1E62C3]/90">
+                                <Link href="/apply-business?edit=true">
+                                    Edit Application
+                                </Link>
+                            </Button>
+                        )}
                         {application.status === "approved" && (
                             <Button asChild className="w-full bg-green-600 hover:bg-green-700">
                                 <Link href="/dashboard">Go to Seller Dashboard</Link>
@@ -143,7 +150,7 @@ export default function ApplicationStatusPage() {
                         )}
                         {application.status === "rejected" && (
                             <Button asChild className="w-full bg-[#1E62C3] hover:bg-[#1E62C3]/90">
-                                <Link href="/apply-business">Reapply</Link>
+                                <Link href="/apply-business?edit=true">Reapply</Link>
                             </Button>
                         )}
                         <Button asChild variant="outline" className="w-full">

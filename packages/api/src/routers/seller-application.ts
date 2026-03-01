@@ -239,4 +239,66 @@ export const sellerApplicationRouter = {
 
             return { success: true };
         }),
+
+    // ── Consumer: Update Own Application ────────────────────────
+
+    update: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/seller-applications/update",
+            tags: ["Seller Application"],
+            summary: "Update own pending/rejected seller application",
+        })
+        .input(submitApplicationSchema)
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.sellerApplication.findFirst({
+                where: eq(sellerApplication.userId, userId),
+                orderBy: [desc(sellerApplication.createdAt)],
+            });
+
+            // If no existing application, create a new one
+            if (!existing) {
+                const [application] = await db
+                    .insert(sellerApplication)
+                    .values({
+                        userId,
+                        shopName: input.shopName,
+                        ownerName: input.ownerName,
+                        phoneNumber: input.phoneNumber,
+                        businessType: input.businessType,
+                        shopAddress: input.shopAddress,
+                        tradeLicenseNumber: input.tradeLicenseNumber || null,
+                    })
+                    .returning();
+                return application;
+            }
+
+            if (existing.status === "approved") {
+                throw new ORPCError("CONFLICT", {
+                    message: "Cannot edit an approved application",
+                });
+            }
+
+            // Update the existing application and reset to pending
+            const [updated] = await db
+                .update(sellerApplication)
+                .set({
+                    shopName: input.shopName,
+                    ownerName: input.ownerName,
+                    phoneNumber: input.phoneNumber,
+                    businessType: input.businessType,
+                    shopAddress: input.shopAddress,
+                    tradeLicenseNumber: input.tradeLicenseNumber || null,
+                    status: "pending",
+                    adminNotes: null,
+                    reviewedBy: null,
+                    reviewedAt: null,
+                })
+                .where(eq(sellerApplication.id, existing.id))
+                .returning();
+
+            return updated;
+        }),
 };

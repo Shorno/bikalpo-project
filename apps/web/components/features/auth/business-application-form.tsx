@@ -1,6 +1,6 @@
 "use client";
 import { useForm } from "@tanstack/react-form";
-import { Building2, CheckCircle, Loader, MapPin, Store, Upload, User } from "lucide-react";
+import { Building2, CheckCircle, Loader, MapPin, Pencil, Store, Upload, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -30,19 +30,31 @@ const STEPS = [
     { id: 4, title: "Review", icon: CheckCircle },
 ] as const;
 
-export function BusinessApplicationForm() {
+interface BusinessApplicationFormProps {
+    initialData?: {
+        shopName: string;
+        ownerName: string;
+        phoneNumber: string;
+        businessType: "retail" | "restaurant";
+        shopAddress: string;
+        tradeLicenseNumber: string;
+    };
+    isEditMode?: boolean;
+}
+
+export function BusinessApplicationForm({ initialData, isEditMode }: BusinessApplicationFormProps) {
     const [currentStep, setCurrentStep] = useState(1);
     const [isPending, startTransition] = useTransition();
     const router = useRouter();
 
     const form = useForm({
         defaultValues: {
-            shopName: "",
-            ownerName: "",
-            phoneNumber: "",
-            businessType: "" as "retail" | "restaurant",
-            shopAddress: "",
-            tradeLicenseNumber: "",
+            shopName: initialData?.shopName || "",
+            ownerName: initialData?.ownerName || "",
+            phoneNumber: initialData?.phoneNumber || "",
+            businessType: (initialData?.businessType || "") as "retail" | "restaurant",
+            shopAddress: initialData?.shopAddress || "",
+            tradeLicenseNumber: initialData?.tradeLicenseNumber || "",
         },
         validators: {
             onSubmit: sellerApplicationSchema,
@@ -50,8 +62,13 @@ export function BusinessApplicationForm() {
         onSubmit: async ({ value }) => {
             startTransition(async () => {
                 try {
-                    await client.sellerApplication.submit(value);
-                    toast.success("Application submitted successfully!");
+                    if (isEditMode) {
+                        await client.sellerApplication.update(value);
+                        toast.success("Application updated successfully!");
+                    } else {
+                        await client.sellerApplication.submit(value);
+                        toast.success("Application submitted successfully!");
+                    }
                     router.push("/application-status");
                 } catch (error) {
                     const message =
@@ -118,8 +135,11 @@ export function BusinessApplicationForm() {
                 onSubmit={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (currentStep === 4) {
-                        form.handleSubmit();
+                }}
+                onKeyDown={(e) => {
+                    // Prevent Enter key from triggering any form submission
+                    if (e.key === "Enter") {
+                        e.preventDefault();
                     }
                 }}
             >
@@ -367,7 +387,19 @@ export function BusinessApplicationForm() {
                                 {(values) => (
                                     <div className="space-y-3">
                                         <div className="rounded-lg bg-gray-50 p-4">
-                                            <h4 className="mb-2 text-sm font-semibold text-gray-700">Business Details</h4>
+                                            <div className="mb-2 flex items-center justify-between">
+                                                <h4 className="text-sm font-semibold text-gray-700">Business Details</h4>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto px-2 py-1 text-xs text-[#1E62C3]"
+                                                    onClick={() => setCurrentStep(1)}
+                                                >
+                                                    <Pencil className="mr-1 h-3 w-3" />
+                                                    Edit
+                                                </Button>
+                                            </div>
                                             <div className="space-y-1.5 text-sm">
                                                 <div className="flex justify-between">
                                                     <span className="text-gray-500">Shop Name</span>
@@ -387,7 +419,19 @@ export function BusinessApplicationForm() {
                                         </div>
 
                                         <div className="rounded-lg bg-gray-50 p-4">
-                                            <h4 className="mb-2 text-sm font-semibold text-gray-700">Contact & Location</h4>
+                                            <div className="mb-2 flex items-center justify-between">
+                                                <h4 className="text-sm font-semibold text-gray-700">Contact & Location</h4>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-auto px-2 py-1 text-xs text-[#1E62C3]"
+                                                    onClick={() => setCurrentStep(2)}
+                                                >
+                                                    <Pencil className="mr-1 h-3 w-3" />
+                                                    Edit
+                                                </Button>
+                                            </div>
                                             <div className="space-y-1.5 text-sm">
                                                 <div className="flex justify-between">
                                                     <span className="text-gray-500">Phone</span>
@@ -402,7 +446,19 @@ export function BusinessApplicationForm() {
 
                                         {values.tradeLicenseNumber && (
                                             <div className="rounded-lg bg-gray-50 p-4">
-                                                <h4 className="mb-2 text-sm font-semibold text-gray-700">Documents</h4>
+                                                <div className="mb-2 flex items-center justify-between">
+                                                    <h4 className="text-sm font-semibold text-gray-700">Documents</h4>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-auto px-2 py-1 text-xs text-[#1E62C3]"
+                                                        onClick={() => setCurrentStep(3)}
+                                                    >
+                                                        <Pencil className="mr-1 h-3 w-3" />
+                                                        Edit
+                                                    </Button>
+                                                </div>
                                                 <div className="space-y-1.5 text-sm">
                                                     <div className="flex justify-between">
                                                         <span className="text-gray-500">Trade License</span>
@@ -438,12 +494,13 @@ export function BusinessApplicationForm() {
                         </Button>
                     ) : (
                         <Button
-                            type="submit"
+                            type="button"
                             disabled={isPending}
                             className="bg-green-600 hover:bg-green-700"
+                            onClick={() => form.handleSubmit()}
                         >
                             {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-                            Submit Application
+                            {isEditMode ? "Update Application" : "Submit Application"}
                         </Button>
                     )}
                 </div>

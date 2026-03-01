@@ -105,6 +105,14 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
 
+    // Allow apply-business and application-status routes (they live at root, not under /customer)
+    if (pathname === "/apply-business" || pathname === "/application-status") {
+      if (!token) {
+        return NextResponse.redirect(new URL("/login", request.url));
+      }
+      return NextResponse.next();
+    }
+
     // Redirect to login if not authenticated
     if (!token) {
       return NextResponse.redirect(new URL("/login", request.url));

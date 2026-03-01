@@ -7,6 +7,7 @@ import {
   MapPin,
   Package,
   Receipt,
+  Store,
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -159,6 +160,13 @@ export function UserDropdown() {
               >
                 <MapPin className="mr-2 h-4 w-4" />
                 Addresses
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/apply-business" className="cursor-pointer">
+                <Store className="mr-2 h-4 w-4" />
+                Become a Seller
               </Link>
             </DropdownMenuItem>
           </>
