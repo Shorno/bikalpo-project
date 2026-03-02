@@ -28,10 +28,9 @@ const DASHBOARD_PATHS: Record<string, string> = {
   admin: "/dashboard/admin",
   salesman: "/dashboard/sales",
   deliveryman: "/dashboard/delivery",
-  shop_owner: "/", // on shop subdomain, "/" is the dashboard
 };
 
-const STAFF_ROLES = ["admin", "salesman", "deliveryman", "shop_owner"];
+const STAFF_ROLES = ["admin", "salesman", "deliveryman"];
 
 export function UserDropdown() {
   const { data: session, isPending } = authClient.useSession();
@@ -62,7 +61,13 @@ export function UserDropdown() {
   const user = session.user;
   const userRole = user.role || "consumer";
   const isStaff = STAFF_ROLES.includes(userRole);
+  const isSeller = userRole === "shop_owner" && user.isSeller;
   const dashboardPath = DASHBOARD_PATHS[userRole] || "/dashboard";
+
+  // Shop owner dashboard is on the shop subdomain
+  const shopDashboardUrl = process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL
+    ? `${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL}/dashboard`
+    : `${window.location.protocol}//shop.${window.location.host}/dashboard`;
 
   const initials = user.name
     ? user.name
@@ -112,13 +117,49 @@ export function UserDropdown() {
         <DropdownMenuSeparator />
 
         {isStaff ? (
-          // Staff roles (admin, salesman, deliveryman) - only show dashboard
+          // Staff roles (admin, salesman, deliveryman) - show dashboard
           <DropdownMenuItem asChild>
             <Link href={dashboardPath} className="cursor-pointer">
               <LayoutDashboard className="mr-2 h-4 w-4" />
               Dashboard
             </Link>
           </DropdownMenuItem>
+        ) : isSeller ? (
+          // Shop owner who is a seller - show shop dashboard + account links
+          <>
+            <DropdownMenuItem asChild>
+              <a href={shopDashboardUrl} className="cursor-pointer">
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                Shop Dashboard
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/shop/account" className="cursor-pointer">
+                <UserCircle className="mr-2 h-4 w-4" />
+                My Account
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/shop/account/orders" className="cursor-pointer">
+                <Package className="mr-2 h-4 w-4" />
+                Orders
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/shop/account/estimates" className="cursor-pointer">
+                <Receipt className="mr-2 h-4 w-4" />
+                Estimates
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/shop/account/payments" className="cursor-pointer">
+                <CreditCard className="mr-2 h-4 w-4" />
+                Payments
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
         ) : (
           // Consumer role - show account navigation + become a seller link
           <>
