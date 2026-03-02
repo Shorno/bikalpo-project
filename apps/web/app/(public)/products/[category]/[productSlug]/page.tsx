@@ -1,9 +1,8 @@
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ProductActions } from "@/components/features/products/product-actions";
+import { ProductDetailClient } from "@/components/features/products/product-detail-client";
 import { ProductImageGallery } from "@/components/features/products/product-image-gallery";
-import { ProductSpecs } from "@/components/features/products/product-specs";
 import { RelatedProducts } from "@/components/features/products/related-products";
 import { ProductReviews } from "@/components/features/reviews/product-reviews";
 import { getProductBySlug } from "@/lib/public-data";
@@ -23,21 +22,6 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
   if (!product) {
     notFound();
   }
-
-  // Determine the primary (cheapest) variant for display
-  const sortedVariants = [...(variants ?? [])].sort(
-    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
-  );
-  const primaryVariant = sortedVariants[0] ?? null;
-  const displayPrice = primaryVariant
-    ? Number(primaryVariant.price)
-    : Number(product.price);
-  const displayStock = primaryVariant
-    ? (primaryVariant.stockQuantity ?? 0)
-    : product.stockQuantity;
-  const displaySize = primaryVariant
-    ? primaryVariant.unitLabel
-    : product.size;
 
   // Combine main image with additional images
   const allImages = [
@@ -86,7 +70,7 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
               productName={product.name}
             />
 
-            {/* Product Info */}
+            {/* Product Info — client component handles variant selection, price, specs, cart */}
             <div className="flex flex-col">
               {/* Category Badge */}
               <div className="mb-2">
@@ -110,64 +94,23 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                 </h1>
               </div>
 
-              {/* Price Display */}
-              <div className="mb-6">
-                {displayPrice > 0 ? (
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-bold text-gray-900">
-                      ৳{displayPrice.toLocaleString("en-BD")}
-                    </span>
-                    {sortedVariants.length > 1 && (
-                      <span className="text-sm text-gray-500">
-                        from · {displaySize}
-                      </span>
-                    )}
-                    {sortedVariants.length === 1 && displaySize && (
-                      <span className="text-sm text-gray-500">
-                        / {displaySize}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-blue-800 font-medium">
-                      <Link
-                        href="/signup"
-                        className="text-blue-600 hover:text-blue-800 underline"
-                      >
-                        Login
-                      </Link>{" "}
-                      to view price and stock availability
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Product specs: Weight, Category, Brand, Origin, Shelf Life, Packaging, Moisture, Grain Length + Packaging & Unit Type sections */}
-              <div className="mb-6">
-                <ProductSpecs
-                  categoryName={product.category.name}
-                  brandName={product.brand?.name ?? null}
-                  productSize={product.size}
-                  subCategoryName={product.subCategory?.name ?? null}
-                  features={product.features ?? undefined}
-                  variants={variants ?? undefined}
-                />
-              </div>
-
-              {/* Add to Cart / Request Item Actions */}
-              <ProductActions
+              {/* Variant-aware price, selector, specs, and cart */}
+              <ProductDetailClient
                 product={{
                   id: product.id,
                   name: product.name,
-                  price: displayPrice,
+                  price: product.price,
                   image: product.image,
-                  size: displaySize,
+                  size: product.size,
                   inStock: product.inStock,
-                  stockQuantity: displayStock,
+                  stockQuantity: product.stockQuantity,
                 }}
+                variants={variants ?? []}
                 categoryName={product.category.name}
                 brandName={product.brand?.name}
+                subCategoryName={product.subCategory?.name}
+                productSize={product.size}
+                features={product.features}
               />
 
               {/* Trust Badges */}
