@@ -9,7 +9,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCustomerProducts } from "@/hooks/use-customer-api";
+import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
 
 export function OrpcProductsGrid() {
   const searchParams = useSearchParams();
@@ -27,7 +27,7 @@ export function OrpcProductsGrid() {
     limit: searchParams.get("limit") ?? "12",
   };
 
-  const { data, isLoading, isError, error } = useCustomerProducts(filters);
+  const { data, isLoading, isError, error } = useRoleAwareProducts(filters);
 
   if (isLoading) return <ProductsGridSkeleton />;
 
@@ -130,11 +130,10 @@ export function OrpcProductsGrid() {
                 ...Object.fromEntries(searchParams.entries()),
                 page: page.toString(),
               }).toString()}`}
-              className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
-                page === currentPage
+              className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${page === currentPage
                   ? "bg-primary text-white border-primary"
                   : "bg-white text-gray-700 hover:bg-gray-50"
-              }`}
+                }`}
             >
               {page}
             </Link>

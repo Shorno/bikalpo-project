@@ -8,7 +8,7 @@ import { ChevronRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCustomerProducts } from "@/hooks/use-customer-api";
+import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
 import { cn } from "@/lib/utils";
 
 interface OrpcFeaturedProductsProps {
@@ -36,7 +36,7 @@ export function OrpcFeaturedProducts({
         ? { sort: "popular" }
         : { sort: "newest" };
 
-  const { data, isLoading, isError } = useCustomerProducts({
+  const { data, isLoading, isError } = useRoleAwareProducts({
     ...sortConfig,
     limit: limit.toString(),
     page: "1",
