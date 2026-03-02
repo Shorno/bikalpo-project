@@ -12,7 +12,7 @@ import { getVerifiedUsersForHome } from "@/lib/public-data";
 export const revalidate = 1800;
 
 export default async function HomePage() {
-  const verifiedUsers = await getVerifiedUsersForHome(revalidate);
+  // const verifiedUsers = await getVerifiedUsersForHome(revalidate);
 
   return (
     <>
@@ -64,7 +64,7 @@ export default async function HomePage() {
         className="bg-gray-50"
       />
 
-      <VerifiedCustomersSection customers={verifiedUsers} />
+      {/*<VerifiedCustomersSection customers={verifiedUsers} />-*/}
 
       <section className="relative py-20 overflow-hidden">
         <div

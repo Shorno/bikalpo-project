@@ -115,7 +115,7 @@ export function OrpcAccountOverview() {
             <p className="text-sm text-gray-500">Your last 5 orders</p>
           </div>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/customer/account/orders">
+            <Link href="/shop/account/orders">
               View All
               <ArrowRight className="ml-1.5 h-4 w-4" />
             </Link>

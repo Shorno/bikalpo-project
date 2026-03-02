@@ -69,8 +69,16 @@ export function LoginForm() {
 
         const user = data?.user as { role?: string } | undefined;
         const role = user?.role || "consumer";
-        const redirect = getRedirectForRole(role);
 
+        // Shop owners go to shop subdomain
+        if (role === "shop_owner") {
+          const shopDomain =
+            process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.b2b.localhost:3001";
+          window.location.href = shopDomain;
+          return;
+        }
+
+        const redirect = getRedirectForRole(role);
         // Use window.location for full page reload to ensure cookies are set
         window.location.href = redirect;
       });

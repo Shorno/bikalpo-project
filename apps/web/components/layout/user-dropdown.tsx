@@ -28,7 +28,7 @@ const DASHBOARD_PATHS: Record<string, string> = {
   admin: "/dashboard/admin",
   salesman: "/dashboard/sales",
   deliveryman: "/dashboard/delivery",
-  shop_owner: "/dashboard",
+  shop_owner: "/", // on shop subdomain, "/" is the dashboard
 };
 
 const STAFF_ROLES = ["admin", "salesman", "deliveryman", "shop_owner"];
@@ -78,10 +78,9 @@ export function UserDropdown() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          // Always redirect to main domain after logout (not app subdomain)
-          const mainDomain =
-            process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL?.replace("app.", "") ||
-            window.location.origin;
+          // Strip shop. prefix to go back to main domain
+          const currentOrigin = window.location.origin;
+          const mainDomain = currentOrigin.replace("://shop.", "://");
           window.location.href = `${mainDomain}/login`;
         },
       },
@@ -124,20 +123,20 @@ export function UserDropdown() {
           // Consumer role - show account navigation + become a seller link
           <>
             <DropdownMenuItem asChild>
-              <Link href="/customer/account" className="cursor-pointer">
+              <Link href="/shop/account" className="cursor-pointer">
                 <UserCircle className="mr-2 h-4 w-4" />
                 My Account
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/customer/account/orders" className="cursor-pointer">
+              <Link href="/shop/account/orders" className="cursor-pointer">
                 <Package className="mr-2 h-4 w-4" />
                 Orders
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link
-                href="/customer/account/estimates"
+                href="/shop/account/estimates"
                 className="cursor-pointer"
               >
                 <Receipt className="mr-2 h-4 w-4" />
@@ -146,7 +145,7 @@ export function UserDropdown() {
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link
-                href="/customer/account/payments"
+                href="/shop/account/payments"
                 className="cursor-pointer"
               >
                 <CreditCard className="mr-2 h-4 w-4" />
@@ -155,7 +154,7 @@ export function UserDropdown() {
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link
-                href="/customer/account/addresses"
+                href="/shop/account/addresses"
                 className="cursor-pointer"
               >
                 <MapPin className="mr-2 h-4 w-4" />

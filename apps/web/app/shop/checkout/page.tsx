@@ -1,8 +1,6 @@
-/**
- * ORPC-powered Checkout page — replaces server-action-based checkout.
- */
 "use client";
 
+import type { Address, PaymentMethod } from "@bikalpo-project/db/schema";
 import {
   ArrowLeft,
   Banknote,
@@ -25,10 +23,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import {
-  OrpcAddressSelector,
-  type OrpcCheckoutAddress,
-} from "@/components/checkout/orpc-address-selector";
+import { AddressSelector } from "@/components/checkout/address-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -48,12 +43,10 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { useCart } from "@/hooks/use-cart";
 import {
-  useCartQuery,
-  useClearCart,
+  useEstimatedDeliveryCost,
   usePlaceOrder,
-  useRemoveFromCart,
-  useUpdateCartItem,
 } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
 
@@ -71,52 +64,29 @@ const CITIES = [
   "Narayanganj",
 ];
 
-type PaymentMethod =
-  | "cash_on_delivery"
-  | "bkash"
-  | "nagad"
-  | "bank_transfer"
-  | "card";
-type CartData = NonNullable<ReturnType<typeof useCartQuery>["data"]>;
-type CheckoutCartItem = CartData["items"][number];
-type SessionUser = NonNullable<
-  ReturnType<typeof authClient.useSession>["data"]
->["user"];
-
-function getUserPhone(user: SessionUser | undefined) {
-  if (!user) return "";
-  const phoneNumber =
-    "phoneNumber" in user && typeof user.phoneNumber === "string"
-      ? user.phoneNumber
-      : "";
-  return phoneNumber;
-}
-
-export function OrpcCheckout() {
+export default function CustomerCheckoutPage() {
   const router = useRouter();
+  const {
+    items,
+    totalItems,
+    totalPrice,
+    clearCart,
+    updateQuantity,
+    removeItem,
+    isLoading: cartLoading,
+  } = useCart();
   const { data: session } = authClient.useSession();
-
-  const { data: cartData, isLoading: cartLoading } = useCartQuery();
-  const updateItem = useUpdateCartItem();
-  const removeItem = useRemoveFromCart();
-  const _clearCartMutation = useClearCart();
   const placeOrderMutation = usePlaceOrder();
-
-  const items: CheckoutCartItem[] = cartData?.items ?? [];
-  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-  const totalPrice = items.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0,
-  );
+  const isSubmitting = placeOrderMutation.isPending;
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_delivery");
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const [shippingCost] = useState(0);
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(
     null,
   );
 
+  // Form state
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -128,25 +98,34 @@ export function OrpcCheckout() {
     customerNote: "",
   });
 
+  // Pre-fill form with user data
   useEffect(() => {
     if (session?.user) {
       setFormData((prev) => ({
         ...prev,
         name: session.user.name || "",
         email: session.user.email || "",
-        phone: getUserPhone(session.user),
+        phone: (session.user as { phoneNumber?: string }).phoneNumber || "",
       }));
     }
   }, [session]);
 
+  // Estimate delivery cost when area changes
+  const { data: deliveryCostData } = useEstimatedDeliveryCost(
+    formData.area || undefined,
+  );
+  const shippingCost =
+    items.length > 0 ? (deliveryCostData?.deliveryCost ?? 0) : 0;
+
+  // Handle address selection
   const handleAddressSelect = useCallback(
-    (address: OrpcCheckoutAddress | null) => {
+    (address: Address | null) => {
       if (address) {
         setSelectedAddressId(address.id);
         setFormData({
           name: address.recipientName,
           phone: address.phone,
-          email: "",
+          email: "", // Email not stored in address
           address: address.address,
           city: address.city,
           area: address.area || "",
@@ -155,9 +134,10 @@ export function OrpcCheckout() {
         });
       } else {
         setSelectedAddressId(null);
+        // Clear form for new address entry
         setFormData({
           name: session?.user?.name || "",
-          phone: getUserPhone(session?.user),
+          phone: (session?.user as { phoneNumber?: string })?.phoneNumber || "",
           email: session?.user?.email || "",
           address: "",
           city: "",
@@ -209,6 +189,7 @@ export function OrpcCheckout() {
     }
 
     if (!validateForm()) return;
+
     if (items.length === 0) {
       toast.error("Your cart is empty");
       return;
@@ -229,21 +210,27 @@ export function OrpcCheckout() {
         paymentMethod,
       });
 
-      if (result.order.orderNumber) {
+      if (result.order?.orderNumber) {
         toast.success("Order placed successfully!");
+        clearCart();
         router.push(`/order-confirmation/${result.order.orderNumber}`);
       }
-    } catch {
-      // Error toast is handled in the mutation hook
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.";
+      toast.error(message);
     }
   };
 
-  const formatPrice = (price: number) =>
-    new Intl.NumberFormat("en-BD", {
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat("en-BD", {
       style: "currency",
       currency: "BDT",
       minimumFractionDigits: 0,
     }).format(price);
+  };
 
   if (cartLoading) {
     return (
@@ -272,8 +259,6 @@ export function OrpcCheckout() {
     );
   }
 
-  const isSubmitting = placeOrderMutation.isPending;
-
   return (
     <div className="min-h-screen bg-gray-50/50 pb-24 md:pb-8">
       <div className="max-w-4xl mx-auto px-4 py-6 md:py-8">
@@ -295,7 +280,7 @@ export function OrpcCheckout() {
           {/* Mobile: Collapsible Order Summary */}
           <div className="md:hidden mb-4">
             <Collapsible open={summaryOpen} onOpenChange={setSummaryOpen}>
-              <Card className="border-gray-200 shadow-sm p-0">
+              <Card className="border-gray-200 shadow-sm p-0 ">
                 <CollapsibleTrigger asChild>
                   <CardHeader className="cursor-pointer hover:bg-gray-50 transition-colors py-3">
                     <div className="flex items-center justify-between">
@@ -318,20 +303,75 @@ export function OrpcCheckout() {
                     </div>
                   </CardHeader>
                 </CollapsibleTrigger>
-                <CollapsibleContent className="pb-2">
+                <CollapsibleContent className={"pb-2"}>
                   <CardContent className="pt-0 space-y-3">
                     <Separator />
                     {items.map((item) => (
-                      <CartItemRow
+                      <div
                         key={item.id}
-                        item={item}
-                        formatPrice={formatPrice}
-                        onUpdateQuantity={(id, qty) =>
-                          updateItem.mutate({ cartItemId: id, quantity: qty })
-                        }
-                        onRemove={(id) => removeItem.mutate({ cartItemId: id })}
-                        disabled={updateItem.isPending || removeItem.isPending}
-                      />
+                        className="flex gap-3 p-2 rounded-lg hover:bg-gray-50"
+                      >
+                        <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
+                          <Image
+                            src={item.image || "/placeholder.png"}
+                            alt={item.name || "Product"}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {item.name}
+                          </p>
+                          <p className="text-xs text-gray-500 mb-1">
+                            {item.size}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center border rounded-md bg-white">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() =>
+                                  updateQuantity(item.id, item.quantity - 1)
+                                }
+                                disabled={item.quantity <= 1 || cartLoading}
+                              >
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <span className="w-5 text-center text-xs font-medium">
+                                {item.quantity}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() =>
+                                  updateQuantity(item.id, item.quantity + 1)
+                                }
+                                disabled={cartLoading}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => removeItem(item.id)}
+                              disabled={cartLoading}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="text-sm font-medium">
+                          {formatPrice(item.price * item.quantity)}
+                        </p>
+                      </div>
                     ))}
                   </CardContent>
                 </CollapsibleContent>
@@ -351,7 +391,8 @@ export function OrpcCheckout() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 pt-0">
-                  <OrpcAddressSelector
+                  {/* Address Selector */}
+                  <AddressSelector
                     selectedAddressId={selectedAddressId}
                     onSelectAddress={handleAddressSelect}
                   />
@@ -461,53 +502,63 @@ export function OrpcCheckout() {
                 <CardContent className="pt-0">
                   <RadioGroup
                     value={paymentMethod}
-                    onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
+                    onValueChange={(value) =>
+                      setPaymentMethod(value as PaymentMethod)
+                    }
                     className="space-y-2"
                   >
-                    {[
-                      {
-                        value: "cash_on_delivery",
-                        label: "Cash on Delivery",
-                        icon: Banknote,
-                        color: "emerald",
-                      },
-                      {
-                        value: "bkash",
-                        label: "bKash",
-                        icon: Smartphone,
-                        color: "pink",
-                      },
-                      {
-                        value: "nagad",
-                        label: "Nagad",
-                        icon: Smartphone,
-                        color: "orange",
-                      },
-                    ].map((pm) => (
-                      <div
-                        key={pm.value}
-                        className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                          paymentMethod === pm.value
-                            ? `bg-${pm.color}-50 border-${pm.color}-200`
-                            : "hover:bg-gray-50"
-                        }`}
+                    <div
+                      className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "cash_on_delivery" ? "bg-emerald-50 border-emerald-200" : "hover:bg-gray-50"}`}
+                    >
+                      <RadioGroupItem
+                        value="cash_on_delivery"
+                        id="cod"
+                        className="text-emerald-600"
+                      />
+                      <Label
+                        htmlFor="cod"
+                        className="flex items-center gap-2 cursor-pointer flex-1"
                       >
-                        <RadioGroupItem
-                          value={pm.value}
-                          id={pm.value}
-                          className={`text-${pm.color}-600`}
-                        />
-                        <Label
-                          htmlFor={pm.value}
-                          className="flex items-center gap-2 cursor-pointer flex-1"
-                        >
-                          <pm.icon className={`h-4 w-4 text-${pm.color}-600`} />
-                          <span className="font-medium text-sm">
-                            {pm.label}
-                          </span>
-                        </Label>
-                      </div>
-                    ))}
+                        <Banknote className="h-4 w-4 text-emerald-600" />
+                        <span className="font-medium text-sm">
+                          Cash on Delivery
+                        </span>
+                      </Label>
+                    </div>
+
+                    <div
+                      className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "bkash" ? "bg-pink-50 border-pink-200" : "hover:bg-gray-50"}`}
+                    >
+                      <RadioGroupItem
+                        value="bkash"
+                        id="bkash"
+                        className="text-pink-600"
+                      />
+                      <Label
+                        htmlFor="bkash"
+                        className="flex items-center gap-2 cursor-pointer flex-1"
+                      >
+                        <Smartphone className="h-4 w-4 text-pink-600" />
+                        <span className="font-medium text-sm">bKash</span>
+                      </Label>
+                    </div>
+
+                    <div
+                      className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "nagad" ? "bg-orange-50 border-orange-200" : "hover:bg-gray-50"}`}
+                    >
+                      <RadioGroupItem
+                        value="nagad"
+                        id="nagad"
+                        className="text-orange-600"
+                      />
+                      <Label
+                        htmlFor="nagad"
+                        className="flex items-center gap-2 cursor-pointer flex-1"
+                      >
+                        <Smartphone className="h-4 w-4 text-orange-600" />
+                        <span className="font-medium text-sm">Nagad</span>
+                      </Label>
+                    </div>
                   </RadioGroup>
                 </CardContent>
               </Card>
@@ -532,7 +583,7 @@ export function OrpcCheckout() {
               </Card>
             </div>
 
-            {/* Right Column - Desktop Summary */}
+            {/* Right Column - Order Summary (Desktop) */}
             <div className="hidden md:block md:col-span-2">
               <Card className="sticky top-20 border-gray-200 shadow-sm">
                 <CardHeader className="py-4">
@@ -544,21 +595,80 @@ export function OrpcCheckout() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 pt-0">
+                  {/* Cart Items */}
                   <div className="space-y-3 max-h-64 overflow-y-auto">
                     {items.map((item) => (
-                      <CartItemRow
+                      <div
                         key={item.id}
-                        item={item}
-                        formatPrice={formatPrice}
-                        onUpdateQuantity={(id, qty) =>
-                          updateItem.mutate({ cartItemId: id, quantity: qty })
-                        }
-                        onRemove={(id) => removeItem.mutate({ cartItemId: id })}
-                        disabled={updateItem.isPending || removeItem.isPending}
-                      />
+                        className="flex gap-3 p-2 rounded-lg hover:bg-gray-50"
+                      >
+                        <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
+                          <Image
+                            src={item.image || "/placeholder.png"}
+                            alt={item.name || "Product"}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {item.name}
+                          </p>
+                          <p className="text-xs text-gray-500 mb-1">
+                            {item.size}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center border rounded-md bg-white">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() =>
+                                  updateQuantity(item.id, item.quantity - 1)
+                                }
+                                disabled={item.quantity <= 1 || cartLoading}
+                              >
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <span className="w-5 text-center text-xs font-medium">
+                                {item.quantity}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() =>
+                                  updateQuantity(item.id, item.quantity + 1)
+                                }
+                                disabled={cartLoading}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => removeItem(item.id)}
+                              disabled={cartLoading}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="text-sm font-semibold">
+                          {formatPrice(item.price * item.quantity)}
+                        </p>
+                      </div>
                     ))}
                   </div>
+
                   <Separator />
+
+                  {/* Totals */}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Subtotal</span>
@@ -580,6 +690,8 @@ export function OrpcCheckout() {
                       </span>
                     </div>
                   </div>
+
+                  {/* Submit Button */}
                   <Button
                     type="submit"
                     className="w-full bg-emerald-600 hover:bg-emerald-700"
@@ -598,6 +710,7 @@ export function OrpcCheckout() {
                       </>
                     )}
                   </Button>
+
                   <p className="text-xs text-center text-gray-500">
                     By placing this order, you agree to our terms
                   </p>
@@ -608,7 +721,7 @@ export function OrpcCheckout() {
         </form>
       </div>
 
-      {/* Mobile Sticky Bottom Bar */}
+      {/* Mobile: Sticky Bottom Bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-gray-600">Total</span>
@@ -617,6 +730,8 @@ export function OrpcCheckout() {
           </span>
         </div>
         <Button
+          type="submit"
+          form="checkout-form"
           className="w-full bg-emerald-600 hover:bg-emerald-700"
           size="lg"
           disabled={isSubmitting}
@@ -635,78 +750,6 @@ export function OrpcCheckout() {
           )}
         </Button>
       </div>
-    </div>
-  );
-}
-
-/* Shared cart item row */
-function CartItemRow({
-  item,
-  formatPrice,
-  onUpdateQuantity,
-  onRemove,
-  disabled,
-}: {
-  item: CheckoutCartItem;
-  formatPrice: (n: number) => string;
-  onUpdateQuantity: (id: number, qty: number) => void;
-  onRemove: (id: number) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="flex gap-3 p-2 rounded-lg hover:bg-gray-50">
-      <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
-        <Image
-          src={item.image || "/placeholder.png"}
-          alt={item.name || "Product"}
-          fill
-          className="object-cover"
-        />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-sm truncate">{item.name}</p>
-        <p className="text-xs text-gray-500 mb-1">{item.size}</p>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center border rounded-md bg-white">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
-              disabled={item.quantity <= 1 || disabled}
-            >
-              <Minus className="h-3 w-3" />
-            </Button>
-            <span className="w-5 text-center text-xs font-medium">
-              {item.quantity}
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
-              disabled={disabled}
-            >
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => onRemove(item.id)}
-            disabled={disabled}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </div>
-      </div>
-      <p className="text-sm font-semibold">
-        {formatPrice(item.price * item.quantity)}
-      </p>
     </div>
   );
 }

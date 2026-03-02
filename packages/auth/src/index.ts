@@ -61,6 +61,10 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      ownerName: {
+        type: "string",
+        required: false,
+      },
       // === B2B + B2C Shop Owner fields ===
       shopName: {
         type: "string",

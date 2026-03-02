@@ -39,10 +39,10 @@ export function proxy(request: NextRequest) {
 
   const allowedOrigins = [
     process.env.NEXT_PUBLIC_AUTH_URL,
-    process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL,
-    "http://localhost:3000",
-    "http://b2b.localhost:3000",
-    "http://app.b2b.localhost:3000",
+    process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL,
+    "http://localhost:3001",
+    "http://b2b.localhost:3001",
+    "http://shop.b2b.localhost:3001",
   ].filter(Boolean) as string[];
 
   // Handle CORS for API routes
@@ -86,11 +86,11 @@ export function proxy(request: NextRequest) {
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
   const isStaffRoute = STAFF_ROUTES.some((route) => pathname.startsWith(route));
 
-  // Detect app subdomain (consumer portal)
-  const isAppSubdomain = hostname.startsWith("app.");
+  // Detect shop subdomain (shop owner portal)
+  const isShopSubdomain = hostname.startsWith("shop.");
 
-  if (isAppSubdomain) {
-    // === APP SUBDOMAIN (Consumer Portal) ===
+  if (isShopSubdomain) {
+    // === SHOP SUBDOMAIN (Shop Owner Portal) ===
 
     // Auth routes - redirect logged-in users away from login/sign-up
     if (isAuthRoute) {
@@ -100,12 +100,12 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
 
-    // Skip if already accessing customer routes
-    if (pathname.startsWith("/customer")) {
+    // Skip if already accessing shop routes
+    if (pathname.startsWith("/shop")) {
       return NextResponse.next();
     }
 
-    // Allow apply-business and application-status routes (they live at root, not under /customer)
+    // Allow apply-business and application-status routes (they live at root, not under /shop)
     if (pathname === "/apply-business" || pathname === "/application-status") {
       if (!token) {
         return NextResponse.redirect(new URL("/login", request.url));
@@ -113,20 +113,21 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
 
-    // Redirect to login if not authenticated
+    // Redirect to main domain login if not authenticated
     if (!token) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      // Use the frontend URL, not the auth/backend URL
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^shop\./, "")}`;
+      return NextResponse.redirect(new URL("/login", mainDomain));
     }
 
-    // If logged in but not a consumer, redirect to main domain dashboard
-    if (role && role !== "consumer") {
-      const mainDomain =
-        process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL || "http://b2b.localhost:3000";
-      return NextResponse.redirect(new URL("/dashboard", mainDomain));
+    // If logged in but not a shop_owner, redirect to main domain
+    if (role && role !== "shop_owner") {
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^shop\./, "")}`;
+      return NextResponse.redirect(new URL("/", mainDomain));
     }
 
-    // Rewrite to customer folder for consumers
-    const rewritePath = pathname === "/" ? "/customer" : `/customer${pathname}`;
+    // Rewrite to shop folder for shop owners
+    const rewritePath = pathname === "/" ? "/shop" : `/shop${pathname}`;
     const rewriteUrl = new URL(rewritePath, request.url);
     rewriteUrl.search = request.nextUrl.search; // Preserve query params
     return NextResponse.rewrite(rewriteUrl);
@@ -137,11 +138,13 @@ export function proxy(request: NextRequest) {
   // Auth routes - redirect logged-in users away from login/sign-up
   if (isAuthRoute) {
     if (token && role) {
-      if (role === "consumer") {
-        // Consumers go to home page
-        return NextResponse.redirect(new URL("/", request.url));
+      if (role === "shop_owner") {
+        // Shop owners go to shop subdomain
+        const shopDomain =
+          process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.b2b.localhost:3001";
+        return NextResponse.redirect(new URL("/", shopDomain));
       }
-      // Staff, shop_owner, etc. go to dashboard
+      // Staff go to dashboard
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
     // Allow access to login/sign-up if not logged in
@@ -166,8 +169,13 @@ export function proxy(request: NextRequest) {
   }
 
   // If logged in as staff trying to access public pages, redirect to dashboard
-  const staffRoles = ["admin", "salesman", "deliveryman"];
+  const staffRoles = ["admin", "salesman", "deliveryman", "shop_owner"];
   if (token && role && staffRoles.includes(role)) {
+    if (role === "shop_owner") {
+      const shopDomain =
+        process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.b2b.localhost:3001";
+      return NextResponse.redirect(new URL("/", shopDomain));
+    }
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

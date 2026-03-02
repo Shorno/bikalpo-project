@@ -2,7 +2,8 @@ import type { Session as AuthSession } from "@bikalpo-project/auth";
 
 export type UserRole =
   | "guest"
-  | "customer"
+  | "shop_owner"
+  | "consumer"
   | "admin"
   | "salesman"
   | "deliveryman";
@@ -94,8 +95,12 @@ export async function requireDeliveryman() {
   return requireRole(["deliveryman"]);
 }
 
+export async function requireShopOwner() {
+  return requireRole(["shop_owner"]);
+}
+
 export async function requireCustomer() {
-  return requireRole(["customer"]);
+  return requireRole(["consumer"]);
 }
 
 export async function checkRole(allowedRoles: UserRole[]) {

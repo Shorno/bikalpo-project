@@ -167,36 +167,44 @@ export const verifiedUserRouter = {
 
             const usersWithOrders = await Promise.all(
                 baseUsers.map(async (u) => {
-                    const orderStats = await db
-                        .select({
-                            orderCount: count(order.id),
-                            totalSpend: sum(order.total),
-                            area: sql<string>`MODE() WITHIN GROUP (ORDER BY ${order.shippingArea})`,
-                        })
-                        .from(order)
-                        .where(eq(order.userId, u.id))
-                        .groupBy(order.userId);
+                    try {
+                        const orderStats = await db
+                            .select({
+                                orderCount: count(order.id),
+                                totalSpend: sum(order.total),
+                            })
+                            .from(order)
+                            .where(eq(order.userId, u.id));
 
-                    const reviews = await db
-                        .select({
-                            id: productReview.id,
-                            comment: productReview.comment,
-                            rating: productReview.rating,
-                        })
-                        .from(productReview)
-                        .where(eq(productReview.userId, u.id))
-                        .orderBy(desc(productReview.createdAt))
-                        .limit(2);
+                        const reviews = await db
+                            .select({
+                                id: productReview.id,
+                                comment: productReview.comment,
+                                rating: productReview.rating,
+                            })
+                            .from(productReview)
+                            .where(eq(productReview.userId, u.id))
+                            .orderBy(desc(productReview.createdAt))
+                            .limit(2);
 
-                    const stats = orderStats[0];
+                        const stats = orderStats[0];
 
-                    return {
-                        ...u,
-                        area: stats?.area || null,
-                        totalOrders: Number(stats?.orderCount) || 0,
-                        totalSpend: Number(stats?.totalSpend) || 0,
-                        reviews,
-                    };
+                        return {
+                            ...u,
+                            area: null,
+                            totalOrders: Number(stats?.orderCount) || 0,
+                            totalSpend: Number(stats?.totalSpend) || 0,
+                            reviews,
+                        };
+                    } catch {
+                        return {
+                            ...u,
+                            area: null,
+                            totalOrders: 0,
+                            totalSpend: 0,
+                            reviews: [],
+                        };
+                    }
                 }),
             );
 

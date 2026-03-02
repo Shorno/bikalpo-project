@@ -20,6 +20,7 @@ export const user = pgTable("user", {
     sellerStatus: text("seller_status"), // pending | approved | rejected | disabled
     businessType: text("business_type"), // retail | restaurant
     shopAddress: text("shop_address"),
+    ownerName: text("owner_name"),
 
     // === B2B + B2C Shop Owner fields ===
     shopName: text("shop_name"),
