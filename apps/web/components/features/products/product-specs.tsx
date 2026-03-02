@@ -98,37 +98,40 @@ export function ProductSpecs({
     "grain length",
   );
 
-  const packagingLine =
-    primaryVariant?.weightKg && primaryVariant?.unitLabel
-      ? `1 ${primaryVariant.unitLabel} = ${Number(primaryVariant.weightKg)}kg`
-      : productSize
-        ? `1 unit = ${productSize}`
-        : null;
+  const packagingLine = primaryVariant?.unitLabel
+    ? primaryVariant.unitLabel
+    : productSize
+      ? productSize
+      : null;
   const minOrder =
     primaryVariant?.orderMin != null && primaryVariant?.orderUnit
-      ? `${primaryVariant.orderMin} ${primaryVariant.orderUnit}`
+      ? `${parseInt(primaryVariant.orderMin, 10)} ${primaryVariant.orderUnit}`
       : "1 unit";
   const bulkUnits = primaryVariant?.quantitySelectorOptions?.length
     ? formatBulkUnits(
-        primaryVariant.quantitySelectorOptions,
-        primaryVariant.unitLabel,
-      )
+      primaryVariant.quantitySelectorOptions,
+      primaryVariant.unitLabel,
+    )
     : undefined;
 
   const emptyPlaceholder = "—";
-  const specs: { label: string; value: string }[] = [
+  const allSpecs: { label: string; value: string }[] = [
     { label: "Weight", value: weight || emptyPlaceholder },
     { label: "Category", value: categoryName || emptyPlaceholder },
     ...(subCategoryName
       ? [{ label: "Sub-Category", value: subCategoryName }]
       : []),
     { label: "Brand", value: brandName ?? emptyPlaceholder },
-    { label: "Origin", value: origin ?? emptyPlaceholder },
-    { label: "Shelf Life", value: shelfLife ?? emptyPlaceholder },
-    { label: "Packaging Type", value: packagingType ?? emptyPlaceholder },
-    { label: "Moisture", value: moisture ?? emptyPlaceholder },
-    { label: "Grain Length", value: grainLength ?? emptyPlaceholder },
+    ...(origin ? [{ label: "Origin", value: origin }] : []),
+    ...(shelfLife ? [{ label: "Shelf Life", value: shelfLife }] : []),
+    ...(packagingType ? [{ label: "Packaging Type", value: packagingType }] : []),
+    ...(moisture ? [{ label: "Moisture", value: moisture }] : []),
+    ...(grainLength ? [{ label: "Grain Length", value: grainLength }] : []),
   ];
+  // Only show specs that have real values
+  const specs = allSpecs.filter(
+    (s) => s.value !== emptyPlaceholder && s.value !== "",
+  );
 
   const hasAnySpecValue = specs.some(
     (s) => s.value !== emptyPlaceholder && s.value !== "",

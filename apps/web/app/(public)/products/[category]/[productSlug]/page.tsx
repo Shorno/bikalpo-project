@@ -24,6 +24,21 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
     notFound();
   }
 
+  // Determine the primary (cheapest) variant for display
+  const sortedVariants = [...(variants ?? [])].sort(
+    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+  );
+  const primaryVariant = sortedVariants[0] ?? null;
+  const displayPrice = primaryVariant
+    ? Number(primaryVariant.price)
+    : Number(product.price);
+  const displayStock = primaryVariant
+    ? (primaryVariant.stockQuantity ?? 0)
+    : product.stockQuantity;
+  const displaySize = primaryVariant
+    ? primaryVariant.unitLabel
+    : product.size;
+
   // Combine main image with additional images
   const allImages = [
     product.image,
@@ -95,19 +110,37 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                 </h1>
               </div>
 
-              {/* Login to View Price */}
+              {/* Price Display */}
               <div className="mb-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <p className="text-blue-800 font-medium">
-                    <Link
-                      href="/signup"
-                      className="text-blue-600 hover:text-blue-800 underline"
-                    >
-                      Login
-                    </Link>{" "}
-                    to view price and stock availability
-                  </p>
-                </div>
+                {displayPrice > 0 ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-gray-900">
+                      ৳{displayPrice.toLocaleString("en-BD")}
+                    </span>
+                    {sortedVariants.length > 1 && (
+                      <span className="text-sm text-gray-500">
+                        from · {displaySize}
+                      </span>
+                    )}
+                    {sortedVariants.length === 1 && displaySize && (
+                      <span className="text-sm text-gray-500">
+                        / {displaySize}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-blue-800 font-medium">
+                      <Link
+                        href="/signup"
+                        className="text-blue-600 hover:text-blue-800 underline"
+                      >
+                        Login
+                      </Link>{" "}
+                      to view price and stock availability
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Product specs: Weight, Category, Brand, Origin, Shelf Life, Packaging, Moisture, Grain Length + Packaging & Unit Type sections */}
@@ -127,11 +160,11 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                 product={{
                   id: product.id,
                   name: product.name,
-                  price: Number(product.price),
+                  price: displayPrice,
                   image: product.image,
-                  size: product.size,
+                  size: displaySize,
                   inStock: product.inStock,
-                  stockQuantity: product.stockQuantity,
+                  stockQuantity: displayStock,
                 }}
                 categoryName={product.category.name}
                 brandName={product.brand?.name}

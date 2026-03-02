@@ -94,7 +94,7 @@ export function OrpcFeaturedProducts({
           {products.map((product: FeaturedProduct) => (
             <Link
               key={product.id}
-              href={`/products/${product.slug}`}
+              href={`/products/${(product as any).category?.slug ?? "all"}/${product.slug}`}
               className="group bg-white border rounded-lg overflow-hidden hover:shadow-lg transition-all"
             >
               <div className="aspect-square relative overflow-hidden bg-gray-100">

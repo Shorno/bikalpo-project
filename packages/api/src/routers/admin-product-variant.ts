@@ -9,10 +9,12 @@ import { adminProcedure } from "../index";
  * from its variants: price = MIN, stockQuantity = SUM, size = descriptive.
  */
 async function syncProductFromVariants(productId: number) {
+    console.log("🔄 syncProductFromVariants called for productId:", productId);
     const variants = await db.query.productVariant.findMany({
         where: eq(productVariant.productId, productId),
         columns: { price: true, stockQuantity: true, weightKg: true, unitLabel: true },
     });
+    console.log("🔄 Found variants:", JSON.stringify(variants));
 
     if (variants.length === 0) {
         await db.update(product).set({ price: "0", stockQuantity: 0, size: "\u2014" }).where(eq(product.id, productId));
@@ -24,6 +26,7 @@ async function syncProductFromVariants(productId: number) {
     const totalStock = variants.reduce((sum, v) => sum + (v.stockQuantity ?? 0), 0);
     const sizeStr = variants.map((v) => v.unitLabel || `${v.weightKg}kg`).join(", ");
 
+    console.log("🔄 Syncing product:", { minPrice, totalStock, sizeStr });
     await db
         .update(product)
         .set({
@@ -32,6 +35,7 @@ async function syncProductFromVariants(productId: number) {
             size: sizeStr.slice(0, 50),
         })
         .where(eq(product.id, productId));
+    console.log("🔄 Sync complete for productId:", productId);
 }
 
 const quantitySelectorOptionSchema = z.object({
