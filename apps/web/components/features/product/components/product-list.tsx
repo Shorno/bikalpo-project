@@ -11,9 +11,11 @@ export default function ProductList() {
 
   const { data, isLoading } = useQuery({
     ...orpc.product.getAll.queryOptions({ input: {} }),
+    queryKey: ["admin-products"],
   });
 
   const products = data?.products ?? [];
+  console.log("📦 Products response:", JSON.stringify(products.map(p => ({ id: p.id, name: p.name, price: p.price, stockQuantity: p.stockQuantity, size: p.size })), null, 2));
 
   if (isLoading) {
     return <TableSkeleton />;

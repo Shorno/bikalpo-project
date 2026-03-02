@@ -201,7 +201,6 @@ export const userColumns: ColumnDef<UserWithSessions>[] = [
     enableHiding: false,
     cell: ({ row, table }) => {
       const user = row.original;
-      const isGuest = user.role === "guest";
       const currentSessionId = (
         table.options.meta as { currentSessionId?: string } | undefined
       )?.currentSessionId;
@@ -216,14 +215,6 @@ export const userColumns: ColumnDef<UserWithSessions>[] = [
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-
-            {/* Approve action for guests */}
-            {isGuest && (
-              <DropdownMenuItem onClick={() => handleApprove(user.id)}>
-                <Check className="mr-2 h-4 w-4 text-green-600" />
-                Approve as Customer
-              </DropdownMenuItem>
-            )}
 
             {/* View Profile */}
             <DropdownMenuItem asChild>
@@ -252,14 +243,14 @@ export const userColumns: ColumnDef<UserWithSessions>[] = [
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 <DropdownMenuItem
-                  onClick={() => handleSetRole(user.id, "guest")}
+                  onClick={() => handleSetRole(user.id, "consumer")}
                 >
-                  Guest (Pending)
+                  Consumer
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => handleSetRole(user.id, "customer")}
+                  onClick={() => handleSetRole(user.id, "shop_owner")}
                 >
-                  Customer
+                  Shop Owner
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => handleSetRole(user.id, "salesman")}

@@ -94,9 +94,9 @@ export function AccountSidebar() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          // Always redirect to main domain after logout (not app subdomain)
+          // Always redirect to main domain after logout (not shop subdomain)
           const mainDomain =
-            process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL?.replace("app.", "") ||
+            process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL?.replace("shop.", "") ||
             window.location.origin;
           window.location.href = `${mainDomain}/login`;
         },

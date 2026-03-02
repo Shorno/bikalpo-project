@@ -41,6 +41,12 @@ const createProductSchema = z.object({
     supplier: z.string().optional().nullable(),
     features: z.array(productFeatureGroupSchema).optional(),
     additionalImages: z.array(z.string()).optional(),
+    // B2B + B2C Pack Return fields
+    isReturnablePack: z.boolean().default(false),
+    defaultPackDepositAmount: z.string().optional(),
+    allowedPackBrands: z.array(z.string()).optional(),
+    allowedPackSizes: z.array(z.string()).optional(),
+    status: z.enum(["active", "inactive", "draft"]).default("active"),
 });
 
 const updateProductSchema = createProductSchema.extend({

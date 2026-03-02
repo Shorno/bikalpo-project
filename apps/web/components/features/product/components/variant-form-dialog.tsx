@@ -1,6 +1,7 @@
 "use client";
 
 import type { ProductVariant } from "@bikalpo-project/db/schema";
+import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,10 +12,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { client } from "@/utils/orpc";
+import {
+  PACK_TYPES,
+  PACKAGING_TYPES,
+  ORDER_UNITS,
+  variantFormSchema,
+} from "@/schema/variant.schema";
 
 type CreateVariantInput = Parameters<
   typeof client.adminProductVariant.create
@@ -36,6 +52,14 @@ type VariantFormDialogProps = {
   /** When set, dialog works in draft mode: submit calls this instead of createVariant */
   onSubmitDraft?: (data: DraftVariant) => void;
 };
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h4 className="text-sm font-semibold text-foreground tracking-wide uppercase pb-1 border-b">
+      {children}
+    </h4>
+  );
+}
 
 export function VariantFormDialog({
   productId = null,
@@ -76,263 +100,845 @@ export function VariantFormDialog({
     onError: () => toast.error("Failed to update variant"),
   });
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const fd = new FormData(form);
-
-    const unitLabel = (fd.get("unitLabel") as string)?.trim();
-    const packagingType = (fd.get("packagingType") as string) || "loose";
-    const weightKg = (fd.get("weightKg") as string)?.trim();
-    const price = (fd.get("price") as string)?.trim();
-    if (!unitLabel || !weightKg || !price) {
-      toast.error("Unit label, weight, and price are required");
-      return;
-    }
-
-    const draftData: DraftVariant = {
-      sku: (fd.get("sku") as string)?.trim() || undefined,
-      unitLabel: unitLabel!,
-      quantitySelectorLabel:
-        (fd.get("quantitySelectorLabel") as string)?.trim() || undefined,
-      packagingType,
-      weightKg: weightKg!,
-      pieceWeightKg: (fd.get("pieceWeightKg") as string)?.trim() || undefined,
-      piecesPerUnit: fd.get("piecesPerUnit")
-        ? Number(fd.get("piecesPerUnit"))
-        : undefined,
-      pricingType: (fd.get("pricingType") as string) || "per_unit",
-      price: price!,
-      orderMin: (fd.get("orderMin") as string)?.trim() || "1",
-      orderMax: (fd.get("orderMax") as string)?.trim() || undefined,
-      orderIncrement: (fd.get("orderIncrement") as string)?.trim() || "1",
-      orderUnit: (fd.get("orderUnit") as string) || "piece",
-      stockQuantity: fd.get("stockQuantity")
-        ? Number(fd.get("stockQuantity"))
-        : 0,
-      reorderLevel: fd.get("reorderLevel") ? Number(fd.get("reorderLevel")) : 0,
-      care: (fd.get("care") as string)?.trim() || undefined,
-      note: (fd.get("note") as string)?.trim() || undefined,
-    };
-
-    if (isDraftMode && onSubmitDraft) {
-      onSubmitDraft(draftData);
-      onOpenChange(false);
-      return;
-    }
-
-    if (isEdit && variant && productId) {
-      updateMutation.mutate({ id: variant.id, ...draftData });
-      return;
-    }
-    if (productId) {
-      createMutation.mutate({
-        productId,
-        sku: (fd.get("sku") as string)?.trim() || undefined,
-        unitLabel,
-        quantitySelectorLabel:
-          (fd.get("quantitySelectorLabel") as string)?.trim() || undefined,
-        packagingType,
-        weightKg,
-        pieceWeightKg: (fd.get("pieceWeightKg") as string)?.trim() || undefined,
-        piecesPerUnit: fd.get("piecesPerUnit")
-          ? Number(fd.get("piecesPerUnit"))
-          : undefined,
-        pricingType: (fd.get("pricingType") as string) || "per_unit",
-        price,
-        orderMin: (fd.get("orderMin") as string)?.trim() || "1",
-        orderMax: (fd.get("orderMax") as string)?.trim() || undefined,
-        orderIncrement: (fd.get("orderIncrement") as string)?.trim() || "1",
-        orderUnit: (fd.get("orderUnit") as string) || "piece",
-        stockQuantity: fd.get("stockQuantity")
-          ? Number(fd.get("stockQuantity"))
-          : 0,
-        reorderLevel: fd.get("reorderLevel")
-          ? Number(fd.get("reorderLevel"))
-          : 0,
-        care: (fd.get("care") as string)?.trim() || undefined,
-        note: (fd.get("note") as string)?.trim() || undefined,
-      });
-    }
-  };
-
   const pending =
     !isDraftMode && (createMutation.isPending || updateMutation.isPending);
 
+  const form = useForm({
+    defaultValues: {
+      sku: source?.sku ?? "",
+      unitLabel: source?.unitLabel ?? "",
+      quantitySelectorLabel: source?.quantitySelectorLabel ?? "",
+      variantType: (source?.variantType as "trade" | "retail" | undefined) ?? undefined,
+      packType: (source?.packType as string | undefined) ?? undefined,
+      packagingType: source?.packagingType ?? "loose",
+      weightKg: source?.weightKg ?? "",
+      pieceWeightKg: source?.pieceWeightKg ?? "",
+      piecesPerUnit: source?.piecesPerUnit ?? (undefined as number | undefined),
+      sellUnit: source?.sellUnit ?? "",
+      packWeightKg: source?.packWeightKg ?? "",
+      innerPackSizeKg: source?.innerPackSizeKg ?? "",
+      packCountInside: source?.packCountInside ?? (undefined as number | undefined),
+      pricingType: source?.pricingType ?? "per_unit",
+      price: source?.price ?? "",
+      orderMin: source?.orderMin ?? "1",
+      orderMax: source?.orderMax ?? "",
+      orderIncrement: source?.orderIncrement ?? "1",
+      orderUnit: source?.orderUnit ?? "piece",
+      stockQuantity: source?.stockQuantity ?? 0,
+      reorderLevel: source?.reorderLevel ?? 0,
+      orderType: (source?.orderType as "b2b" | "b2c" | undefined) ?? undefined,
+      visibilityRole: (source?.visibilityRole as "shop_owner" | "consumer" | "all" | undefined) ?? "all",
+      isActive: source?.isActive ?? true,
+      isOpenOrderAllowed: source?.isOpenOrderAllowed ?? false,
+      negotiationTimeoutSec: source?.negotiationTimeoutSec ?? 100,
+      minMarginPercent: source?.minMarginPercent ?? "",
+      minMarginAmount: source?.minMarginAmount ?? "",
+      isPackReturnRequired: source?.isPackReturnRequired ?? false,
+      packDepositAmount: source?.packDepositAmount ?? "",
+      origin: source?.origin ?? "",
+      shelfLife: source?.shelfLife ?? "",
+      packagingNote: source?.packagingNote ?? "",
+      care: source?.care ?? "",
+      note: source?.note ?? "",
+      sortOrder: source?.sortOrder ?? 0,
+    },
+    validators: {
+      // @ts-ignore
+      onSubmit: variantFormSchema,
+    },
+    onSubmit: async ({ value }) => {
+      const draftData: DraftVariant = {
+        sku: value.sku || undefined,
+        unitLabel: value.unitLabel,
+        quantitySelectorLabel: value.quantitySelectorLabel || undefined,
+        variantType: value.variantType || undefined,
+        packType: value.packType || undefined,
+        packagingType: value.packagingType,
+        weightKg: value.weightKg,
+        pieceWeightKg: value.pieceWeightKg || undefined,
+        piecesPerUnit: value.piecesPerUnit || undefined,
+        sellUnit: value.sellUnit || undefined,
+        packWeightKg: value.packWeightKg || undefined,
+        innerPackSizeKg: value.innerPackSizeKg || undefined,
+        packCountInside: value.packCountInside || undefined,
+        pricingType: value.pricingType,
+        price: value.price,
+        orderMin: value.orderMin || "1",
+        orderMax: value.orderMax || undefined,
+        orderIncrement: value.orderIncrement || "1",
+        orderUnit: value.orderUnit || "piece",
+        stockQuantity: value.stockQuantity ?? 0,
+        reorderLevel: value.reorderLevel ?? 0,
+        orderType: value.orderType || undefined,
+        visibilityRole: value.visibilityRole || undefined,
+        isActive: value.isActive ?? true,
+        isOpenOrderAllowed: value.isOpenOrderAllowed ?? false,
+        negotiationTimeoutSec: value.negotiationTimeoutSec ?? 100,
+        minMarginPercent: value.minMarginPercent || undefined,
+        minMarginAmount: value.minMarginAmount || undefined,
+        isPackReturnRequired: value.isPackReturnRequired ?? false,
+        packDepositAmount: value.packDepositAmount || undefined,
+        origin: value.origin || undefined,
+        shelfLife: value.shelfLife || undefined,
+        packagingNote: value.packagingNote || undefined,
+        care: value.care || undefined,
+        note: value.note || undefined,
+        sortOrder: value.sortOrder ?? 0,
+      };
+
+      if (isDraftMode && onSubmitDraft) {
+        onSubmitDraft(draftData);
+        onOpenChange(false);
+        return;
+      }
+
+      if (isEdit && variant && productId) {
+        updateMutation.mutate({ id: variant.id, ...draftData });
+        return;
+      }
+      if (productId) {
+        createMutation.mutate({ productId, ...draftData });
+      }
+    },
+  });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl p-8">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit variant" : "Add variant"}</DialogTitle>
+          <DialogTitle className="text-xl">{isEdit ? "Edit Variant" : "Add Variant"}</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            Configure this variant's packaging, pricing, and order rules.
+          </p>
         </DialogHeader>
-        <form id="variant-form" onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel>SKU</FieldLabel>
-              <Input
-                name="sku"
-                defaultValue={source?.sku ?? ""}
-                placeholder="e.g. AT-IF-L-1020"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Unit label *</FieldLabel>
-              <Input
-                name="unitLabel"
-                required
-                defaultValue={source?.unitLabel ?? ""}
-                placeholder="Sack, Carton, kg"
-              />
-            </Field>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            form.handleSubmit();
+          }}
+          className="space-y-6"
+        >
+          {/* ─── Identity ─── */}
+          <SectionHeading>Identity</SectionHeading>
+          <div className="grid grid-cols-3 gap-4">
+            <form.Field name="sku">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>SKU</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="e.g. AT-IF-L-1020"
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="unitLabel">
+              {(field) => {
+                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                return (
+                  <Field data-invalid={isInvalid}>
+                    <FieldLabel htmlFor={field.name}>Unit Label *</FieldLabel>
+                    <Input
+                      id={field.name}
+                      value={field.state.value}
+                      onBlur={field.handleBlur}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      placeholder="Sack, Carton, kg"
+                    />
+                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                  </Field>
+                );
+              }}
+            </form.Field>
+            <form.Field name="quantitySelectorLabel">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Qty Selector Label</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="Sack (50 kg)"
+                  />
+                </Field>
+              )}
+            </form.Field>
           </div>
-          <Field>
-            <FieldLabel>Quantity selector label</FieldLabel>
-            <Input
-              name="quantitySelectorLabel"
-              defaultValue={source?.quantitySelectorLabel ?? ""}
-              placeholder="e.g. Sack (50 kg)"
-            />
-          </Field>
+
+          <Separator />
+
+          {/* ─── Type & Packaging ─── */}
+          <SectionHeading>Type & Packaging</SectionHeading>
+          <div className="grid grid-cols-3 gap-4">
+            <form.Field name="variantType">
+              {(field) => (
+                <Field>
+                  <FieldLabel>Variant Type</FieldLabel>
+                  <Select
+                    value={field.state.value ?? "none"}
+                    onValueChange={(v) =>
+                      field.handleChange(v === "none" ? undefined : (v as "trade" | "retail"))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not set</SelectItem>
+                      <SelectItem value="trade">Trade (B2B)</SelectItem>
+                      <SelectItem value="retail">Retail (B2C)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="packType">
+              {(field) => (
+                <Field>
+                  <FieldLabel>Pack Type</FieldLabel>
+                  <Select
+                    value={field.state.value ?? "none"}
+                    onValueChange={(v) =>
+                      field.handleChange(v === "none" ? undefined : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not set</SelectItem>
+                      {PACK_TYPES.map((pt) => (
+                        <SelectItem key={pt.value} value={pt.value}>
+                          {pt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="packagingType">
+              {(field) => (
+                <Field>
+                  <FieldLabel>Packaging Type *</FieldLabel>
+                  <Select
+                    value={field.state.value}
+                    onValueChange={field.handleChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PACKAGING_TYPES.map((pt) => (
+                        <SelectItem key={pt.value} value={pt.value}>
+                          {pt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <form.Field name="weightKg">
+              {(field) => {
+                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                return (
+                  <Field data-invalid={isInvalid}>
+                    <FieldLabel htmlFor={field.name}>Weight (kg) *</FieldLabel>
+                    <Input
+                      id={field.name}
+                      value={field.state.value}
+                      onBlur={field.handleBlur}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      placeholder="50"
+                    />
+                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                  </Field>
+                );
+              }}
+            </form.Field>
+            <form.Field name="pieceWeightKg">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Piece Weight (kg)</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="For carton"
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="piecesPerUnit">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Pieces / Unit</FieldLabel>
+                  <Input
+                    id={field.name}
+                    type="number"
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) =>
+                      field.handleChange(
+                        e.target.value ? parseInt(e.target.value, 10) : undefined,
+                      )
+                    }
+                    placeholder="10"
+                  />
+                </Field>
+              )}
+            </form.Field>
+          </div>
+
+          <form.Field name="packType">
+            {(packTypeField) =>
+              packTypeField.state.value === "carton" ||
+                packTypeField.state.value === "box" ? (
+                <>
+                  <Separator />
+
+                  {/* ─── Pack Structure (carton/box only) ─── */}
+                  <SectionHeading>Pack Structure</SectionHeading>
+                  <div className="grid grid-cols-4 gap-4">
+                    <form.Field name="sellUnit">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Sell Unit</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="Sack, KG"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="packWeightKg">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Pack Weight (kg)</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="50"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="innerPackSizeKg">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Inner Pack (kg)</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="5"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="packCountInside">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Count Inside</FieldLabel>
+                          <Input
+                            id={field.name}
+                            type="number"
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) =>
+                              field.handleChange(
+                                e.target.value ? parseInt(e.target.value, 10) : undefined,
+                              )
+                            }
+                            placeholder="10"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                  </div>
+                </>
+              ) : null
+            }
+          </form.Field>
+
+          <Separator />
+
+          {/* ─── Pricing ─── */}
+          <SectionHeading>Pricing</SectionHeading>
           <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel>Packaging type</FieldLabel>
-              <select
-                name="packagingType"
-                defaultValue={source?.packagingType ?? "loose"}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="loose">Loose</option>
-                <option value="carton">Carton</option>
-              </select>
-            </Field>
-            <Field>
-              <FieldLabel>Weight (kg) *</FieldLabel>
-              <Input
-                name="weightKg"
-                type="text"
-                required
-                defaultValue={source?.weightKg ?? ""}
-                placeholder="50"
-              />
-            </Field>
+            <form.Field name="pricingType">
+              {(field) => (
+                <Field>
+                  <FieldLabel>Pricing Type</FieldLabel>
+                  <Select
+                    value={field.state.value}
+                    onValueChange={field.handleChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="per_unit">Per Unit</SelectItem>
+                      <SelectItem value="bulk_rate">Bulk Rate</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="price">
+              {(field) => {
+                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                return (
+                  <Field data-invalid={isInvalid}>
+                    <FieldLabel htmlFor={field.name}>Price (৳) *</FieldLabel>
+                    <Input
+                      id={field.name}
+                      value={field.state.value}
+                      onBlur={field.handleBlur}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      placeholder="0.00"
+                    />
+                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                  </Field>
+                );
+              }}
+            </form.Field>
+          </div>
+
+          <Separator />
+
+          {/* ─── Order Rules ─── */}
+          <SectionHeading>Order Rules</SectionHeading>
+          <div className="grid grid-cols-4 gap-4">
+            <form.Field name="orderMin">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Min</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="1"
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="orderMax">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Max</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="No limit"
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="orderIncrement">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Increment</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="1"
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="orderUnit">
+              {(field) => (
+                <Field>
+                  <FieldLabel>Order Unit</FieldLabel>
+                  <Select
+                    value={field.state.value}
+                    onValueChange={field.handleChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ORDER_UNITS.map((u) => (
+                        <SelectItem key={u.value} value={u.value}>
+                          {u.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+          </div>
+
+          <Separator />
+
+          {/* ─── Inventory ─── */}
+          <SectionHeading>Inventory</SectionHeading>
+          <div className="grid grid-cols-2 gap-4">
+            <form.Field name="stockQuantity">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Stock Quantity</FieldLabel>
+                  <Input
+                    id={field.name}
+                    type="number"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) =>
+                      field.handleChange(parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="reorderLevel">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Reorder Level</FieldLabel>
+                  <Input
+                    id={field.name}
+                    type="number"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) =>
+                      field.handleChange(parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                </Field>
+              )}
+            </form.Field>
+          </div>
+
+          <Separator />
+
+          {/* ─── Visibility & Access ─── */}
+          <SectionHeading>Visibility & Access</SectionHeading>
+          <div className="grid grid-cols-2 gap-4">
+            <form.Field name="orderType">
+              {(field) => (
+                <Field>
+                  <FieldLabel>Order Type</FieldLabel>
+                  <Select
+                    value={field.state.value ?? "none"}
+                    onValueChange={(v) =>
+                      field.handleChange(v === "none" ? undefined : (v as "b2b" | "b2c"))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not set</SelectItem>
+                      <SelectItem value="b2b">B2B (Wholesale)</SelectItem>
+                      <SelectItem value="b2c">B2C (Consumer)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="visibilityRole">
+              {(field) => (
+                <Field>
+                  <FieldLabel>Visible To</FieldLabel>
+                  <Select
+                    value={field.state.value ?? "all"}
+                    onValueChange={(v) =>
+                      field.handleChange(v as "shop_owner" | "consumer" | "all")
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="shop_owner">Shop Owners Only</SelectItem>
+                      <SelectItem value="consumer">Consumers Only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+          </div>
+          <form.Field name="isActive">
+            {(field) => (
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <FieldLabel htmlFor={field.name} className="text-sm font-medium">
+                    Active
+                  </FieldLabel>
+                  <p className="text-xs text-muted-foreground">
+                    Inactive variants are hidden from customers
+                  </p>
+                </div>
+                <Switch
+                  id={field.name}
+                  checked={field.state.value}
+                  onCheckedChange={field.handleChange}
+                />
+              </div>
+            )}
+          </form.Field>
+
+          <form.Field name="variantType">
+            {(varTypeField) =>
+              varTypeField.state.value === "trade" ? (
+                <>
+                  <Separator />
+
+                  {/* ─── Open Order & Negotiation (Trade only) ─── */}
+                  <SectionHeading>Open Order & Negotiation</SectionHeading>
+                  <form.Field name="isOpenOrderAllowed">
+                    {(field) => (
+                      <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div>
+                          <FieldLabel htmlFor={field.name} className="text-sm font-medium">
+                            Allow Open Orders
+                          </FieldLabel>
+                          <p className="text-xs text-muted-foreground">
+                            Broadcast this variant to eligible sellers for competitive pricing
+                          </p>
+                        </div>
+                        <Switch
+                          id={field.name}
+                          checked={field.state.value}
+                          onCheckedChange={field.handleChange}
+                        />
+                      </div>
+                    )}
+                  </form.Field>
+                  <form.Field name="isOpenOrderAllowed">
+                    {(openOrderField) =>
+                      openOrderField.state.value ? (
+                        <form.Field name="negotiationTimeoutSec">
+                          {(field) => (
+                            <div className="grid grid-cols-2 gap-4">
+                              <Field>
+                                <FieldLabel htmlFor={field.name}>
+                                  Negotiation Timeout (seconds)
+                                </FieldLabel>
+                                <Input
+                                  id={field.name}
+                                  type="number"
+                                  value={field.state.value}
+                                  onBlur={field.handleBlur}
+                                  onChange={(e) =>
+                                    field.handleChange(
+                                      parseInt(e.target.value, 10) || 100,
+                                    )
+                                  }
+                                  placeholder="100"
+                                />
+                              </Field>
+                            </div>
+                          )}
+                        </form.Field>
+                      ) : null
+                    }
+                  </form.Field>
+
+                  <Separator />
+
+                  {/* ─── Margin Rules (Trade only) ─── */}
+                  <SectionHeading>Margin Rules</SectionHeading>
+                  <div className="grid grid-cols-2 gap-4">
+                    <form.Field name="minMarginPercent">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Min Margin (%)</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="e.g. 5"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="minMarginAmount">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Min Margin (৳)</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="e.g. 50"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                  </div>
+
+                  <Separator />
+
+                  {/* ─── Pack Return & Deposit (Trade only) ─── */}
+                  <SectionHeading>Pack Return & Deposit</SectionHeading>
+                  <form.Field name="isPackReturnRequired">
+                    {(field) => (
+                      <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div>
+                          <FieldLabel htmlFor={field.name} className="text-sm font-medium">
+                            Pack Return Required
+                          </FieldLabel>
+                          <p className="text-xs text-muted-foreground">
+                            Customer must return empty pack (e.g. gas cylinder, reusable sack)
+                          </p>
+                        </div>
+                        <Switch
+                          id={field.name}
+                          checked={field.state.value}
+                          onCheckedChange={field.handleChange}
+                        />
+                      </div>
+                    )}
+                  </form.Field>
+                  <form.Field name="isPackReturnRequired">
+                    {(packReturnField) =>
+                      packReturnField.state.value ? (
+                        <form.Field name="packDepositAmount">
+                          {(field) => (
+                            <div className="grid grid-cols-2 gap-4">
+                              <Field>
+                                <FieldLabel htmlFor={field.name}>
+                                  Pack Deposit Amount (৳)
+                                </FieldLabel>
+                                <Input
+                                  id={field.name}
+                                  value={field.state.value ?? ""}
+                                  onBlur={field.handleBlur}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  placeholder="e.g. 200"
+                                />
+                              </Field>
+                            </div>
+                          )}
+                        </form.Field>
+                      ) : null
+                    }
+                  </form.Field>
+                </>
+              ) : null
+            }
+          </form.Field>
+
+          {/* ─── Additional Details ─── */}
+          <SectionHeading>Additional Details</SectionHeading>
+          <div className="grid grid-cols-3 gap-4">
+            <form.Field name="origin">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Origin</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="Bangladesh"
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="shelfLife">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Shelf Life</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="6 months"
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="sortOrder">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Sort Order</FieldLabel>
+                  <Input
+                    id={field.name}
+                    type="number"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) =>
+                      field.handleChange(parseInt(e.target.value, 10) || 0)
+                    }
+                    placeholder="0"
+                  />
+                </Field>
+              )}
+            </form.Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel>Piece weight (kg)</FieldLabel>
-              <Input
-                name="pieceWeightKg"
-                type="text"
-                defaultValue={source?.pieceWeightKg ?? ""}
-                placeholder="For carton"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Pieces per unit</FieldLabel>
-              <Input
-                name="piecesPerUnit"
-                type="number"
-                defaultValue={source?.piecesPerUnit ?? ""}
-                placeholder="10"
-              />
-            </Field>
+            <form.Field name="care">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Care</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="Store in cool place"
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="packagingNote">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Packaging Note</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="Sealed packaging"
+                  />
+                </Field>
+              )}
+            </form.Field>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel>Pricing type</FieldLabel>
-              <select
-                name="pricingType"
-                defaultValue={source?.pricingType ?? "per_unit"}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="per_unit">Per unit</option>
-                <option value="bulk_rate">Bulk rate</option>
-              </select>
-            </Field>
-            <Field>
-              <FieldLabel>Price *</FieldLabel>
-              <Input
-                name="price"
-                type="text"
-                required
-                defaultValue={source?.price ?? ""}
-                placeholder="0.00"
-              />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel>Order min</FieldLabel>
-              <Input
-                name="orderMin"
-                defaultValue={source?.orderMin ?? "1"}
-                placeholder="1"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Order max</FieldLabel>
-              <Input
-                name="orderMax"
-                defaultValue={source?.orderMax ?? ""}
-                placeholder="Leave empty for no max"
-              />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel>Order increment</FieldLabel>
-              <Input
-                name="orderIncrement"
-                defaultValue={source?.orderIncrement ?? "1"}
-                placeholder="1"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Order unit</FieldLabel>
-              <select
-                name="orderUnit"
-                defaultValue={source?.orderUnit ?? "piece"}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="piece">piece</option>
-                <option value="kg">kg</option>
-              </select>
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel>Stock quantity</FieldLabel>
-              <Input
-                name="stockQuantity"
-                type="number"
-                defaultValue={source?.stockQuantity ?? 0}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Reorder level</FieldLabel>
-              <Input
-                name="reorderLevel"
-                type="number"
-                defaultValue={source?.reorderLevel ?? 0}
-              />
-            </Field>
-          </div>
-          <Field>
-            <FieldLabel>Care</FieldLabel>
-            <Input
-              name="care"
-              defaultValue={source?.care ?? ""}
-              placeholder="e.g. No Care"
-            />
-          </Field>
-          <Field>
-            <FieldLabel>Note</FieldLabel>
-            <Textarea
-              name="note"
-              defaultValue={source?.note ?? ""}
-              placeholder="e.g. Delivery charges calculated at checkout"
-              rows={2}
-            />
-          </Field>
+          <form.Field name="note">
+            {(field) => (
+              <Field>
+                <FieldLabel htmlFor={field.name}>Note</FieldLabel>
+                <Textarea
+                  id={field.name}
+                  value={field.state.value ?? ""}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="Additional notes..."
+                  rows={2}
+                />
+              </Field>
+            )}
+          </form.Field>
+
           <DialogFooter>
             <Button
               type="button"
@@ -342,8 +948,8 @@ export function VariantFormDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" form="variant-form" disabled={pending}>
-              {pending ? "Saving…" : isEdit ? "Update variant" : "Add variant"}
+            <Button type="submit" disabled={pending}>
+              {pending ? "Saving…" : isEdit ? "Update Variant" : "Add Variant"}
             </Button>
           </DialogFooter>
         </form>

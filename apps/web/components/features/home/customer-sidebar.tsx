@@ -9,7 +9,7 @@ import {
   useBrandUpdates,
 } from "@/hooks/use-customer-api";
 
-export function CustomerSidebar() {
+export function ShopSidebar() {
   const { data: brandsData } = useActiveBrands();
   const { data: announcementsData } = useAnnouncements();
   const { data: brandUpdatesData } = useBrandUpdates();

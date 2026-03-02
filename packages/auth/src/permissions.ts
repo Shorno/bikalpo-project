@@ -2,7 +2,7 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements } from "better-auth/plugins/admin/access";
 
 /**
- * Custom statements for B2B e-commerce
+ * Custom statements for B2B + B2C marketplace
  * Extends default admin plugin statements with custom resources
  */
 export const statement = {
@@ -11,30 +11,40 @@ export const statement = {
     product: ["read", "list"],
     delivery: ["create", "read", "update", "list"],
     estimate: ["create", "read", "update", "list"],
+    shop: ["create", "read", "update", "list"],
+    inventory: ["read", "list"],
+    seller_application: ["create", "read", "update", "list"],
 } as const;
 
 export const ac = createAccessControl(statement);
 
 /**
- * Guest role - newly registered users, pending approval
- * Limited access - can only view their profile
+ * Consumer role - default role for all new signups
+ * Can browse products, place B2C orders, apply to become a seller
  */
-export const guest = ac.newRole({
-    order: [],
-    product: [],
-    delivery: [],
-    estimate: [],
-});
-
-/**
- * Customer role - approved accounts
- * Can place orders, view products
- */
-export const customer = ac.newRole({
+export const consumer = ac.newRole({
     order: ["create", "read", "list"],
     product: ["read", "list"],
     delivery: [],
     estimate: [],
+    shop: [],
+    inventory: [],
+    seller_application: ["create"],
+});
+
+/**
+ * Shop Owner role - approved business accounts
+ * Can buy B2B wholesale + conditionally sell B2C (based on is_seller flag)
+ * Seller vs Buyer-only controlled by capability flags, not separate roles
+ */
+export const shop_owner = ac.newRole({
+    order: ["create", "read", "update", "list"],
+    product: ["read", "list"],
+    delivery: ["read", "list"],
+    estimate: ["create", "read", "update", "list"],
+    shop: ["read", "update"],
+    inventory: ["read", "list"],
+    seller_application: [],
 });
 
 /**
@@ -45,6 +55,9 @@ export const salesman = ac.newRole({
     product: ["read", "list"],
     delivery: [],
     estimate: ["create", "read", "update", "list"],
+    shop: [],
+    inventory: [],
+    seller_application: [],
 });
 
 /**
@@ -55,17 +68,22 @@ export const deliveryman = ac.newRole({
     product: ["read", "list"],
     delivery: ["create", "read", "update", "list"],
     estimate: [],
+    shop: [],
+    inventory: [],
+    seller_application: [],
 });
 
 /**
- * Admin role - full access
- * Can manage users, approve guests, manage all resources
+ * Admin role - full access (Super Seller)
+ * Can manage users, approve sellers, manage all resources
  */
 export const admin = ac.newRole({
     order: ["create", "read", "update", "delete", "list"],
     product: ["read", "list"],
     delivery: ["create", "read", "update", "list"],
     estimate: ["create", "read", "update", "list"],
+    shop: ["create", "read", "update", "list"],
+    inventory: ["read", "list"],
+    seller_application: ["create", "read", "update", "list"],
     ...adminAc.statements,
 });
-

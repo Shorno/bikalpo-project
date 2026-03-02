@@ -53,7 +53,7 @@ export function OrpcSearchModal({
   const products = data?.products ?? [];
   type SearchProduct = (typeof products)[number];
 
-  const basePath = variant === "public" ? "/products" : "/customer/products";
+  const basePath = variant === "public" ? "/products" : "/shop/products";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

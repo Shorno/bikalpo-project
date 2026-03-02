@@ -1,16 +1,17 @@
-import { v2 as cloudinary, type UploadApiResponse } from "cloudinary";
+import { v2 as cloudinary } from "cloudinary";
 import { z } from "zod";
 
 import { env } from "@bikalpo-project/env/server";
 
 import { protectedProcedure } from "../index";
 
-// Configure Cloudinary
-cloudinary.config({
-    cloud_name: env.CLOUDINARY_CLOUD_NAME,
-    api_key: env.CLOUDINARY_API_KEY,
-    api_secret: env.CLOUDINARY_API_SECRET,
-});
+function ensureCloudinaryConfig() {
+    cloudinary.config({
+        cloud_name: env.CLOUDINARY_CLOUD_NAME,
+        api_key: env.CLOUDINARY_API_KEY,
+        api_secret: env.CLOUDINARY_API_SECRET,
+    });
+}
 
 export const cloudinaryRouter = {
     /**
@@ -51,12 +52,12 @@ export const cloudinaryRouter = {
                 };
             }
 
-            // Validate file size (5MB)
-            const maxSize = 5 * 1024 * 1024;
+            // Validate file size (10MB)
+            const maxSize = 10 * 1024 * 1024;
             if (file.size > maxSize) {
                 return {
                     success: false as const,
-                    error: "File too large. Please upload files smaller than 5MB.",
+                    error: "File too large. Please upload files smaller than 10MB.",
                     url: "",
                     publicId: "",
                 };
@@ -64,28 +65,21 @@ export const cloudinaryRouter = {
 
             const bytes = await file.arrayBuffer();
             const buffer = Buffer.from(bytes);
+            const base64 = buffer.toString("base64");
+            const dataUri = `data:${file.type};base64,${base64}`;
 
-            const result = await new Promise<UploadApiResponse>(
-                (resolve, reject) => {
-                    cloudinary.uploader
-                        .upload_stream(
-                            {
-                                folder,
-                                resource_type: "auto",
-                                transformation: [
-                                    { quality: "auto:good" },
-                                    { fetch_format: "auto" },
-                                ],
-                            },
-                            (error, result) => {
-                                if (error) reject(error);
-                                else if (result) resolve(result);
-                                else reject(new Error("Unknown Cloudinary error"));
-                            },
-                        )
-                        .end(buffer);
-                },
-            );
+            // Use upload() with data URI — more reliable than upload_stream in Bun
+            const result = await cloudinary.uploader.upload(dataUri, {
+                folder,
+                resource_type: "auto",
+                transformation: [
+                    { quality: "auto:good" },
+                    { fetch_format: "auto" },
+                ],
+                cloud_name: env.CLOUDINARY_CLOUD_NAME,
+                api_key: env.CLOUDINARY_API_KEY,
+                api_secret: env.CLOUDINARY_API_SECRET,
+            });
 
             return {
                 success: true as const,
@@ -112,6 +106,7 @@ export const cloudinaryRouter = {
             }),
         )
         .handler(async ({ input }) => {
+            ensureCloudinaryConfig();
             const result = await cloudinary.uploader.destroy(input.publicId);
 
             return {

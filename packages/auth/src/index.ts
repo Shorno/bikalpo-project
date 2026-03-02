@@ -6,7 +6,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
 import { admin as adminPlugin, bearer, openAPI } from "better-auth/plugins";
-import { ac, admin as adminRole, customer, deliveryman, guest, salesman } from "./permissions";
+import { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman } from "./permissions";
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -27,31 +27,66 @@ export const auth = betterAuth({
     adminPlugin({
       ac,
       roles: {
-        guest,
-        customer,
+        consumer,
+        shop_owner,
         admin: adminRole,
         salesman,
         deliveryman,
       },
-      defaultRole: "guest",
+      defaultRole: "consumer",
     }),
   ],
   user: {
     additionalFields: {
-      shopName: {
-        type: "string",
-        required: false,
-        input: true,
-      },
-      ownerName: {
-        type: "string",
-        required: false,
-        input: true,
-      },
       phoneNumber: {
         type: "string",
         required: false,
         input: true,
+      },
+      // Shop owner capability flags (set by admin on approval)
+      isSeller: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+      },
+      sellerStatus: {
+        type: "string",
+        required: false,
+      },
+      businessType: {
+        type: "string",
+        required: false,
+      },
+      shopAddress: {
+        type: "string",
+        required: false,
+      },
+      ownerName: {
+        type: "string",
+        required: false,
+      },
+      // === B2B + B2C Shop Owner fields ===
+      shopName: {
+        type: "string",
+        required: false,
+      },
+      shopSlug: {
+        type: "string",
+        required: false,
+      },
+      canAcceptOpenOrder: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+      },
+      pendingOtpCount: {
+        type: "number",
+        required: false,
+        defaultValue: 0,
+      },
+      serviceArea: {
+        type: "string",
+        required: false,
       },
     },
   },
@@ -84,7 +119,7 @@ export const auth = betterAuth({
         const newSession = ctx.context.newSession;
         if (newSession) {
           const user = newSession.user as { role?: string };
-          const role = user.role || "guest";
+          const role = user.role || "consumer";
 
           ctx.setCookie("user-role", role, {
             path: "/",
@@ -114,4 +149,4 @@ export type Session = typeof auth.$Infer.Session;
 export type User = Session["user"];
 
 // Re-export permissions for client usage
-export { ac, admin as adminRole, customer, deliveryman, guest, salesman } from "./permissions";
+export { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman } from "./permissions";

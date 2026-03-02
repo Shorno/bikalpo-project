@@ -95,7 +95,7 @@ export function TicketList({ tickets }: TicketListProps) {
             return (
               <Link
                 key={ticket.id}
-                href={`/customer/account/support/${ticket.id}`}
+                href={`/shop/account/support/${ticket.id}`}
                 className="flex items-center justify-between p-4 hover:bg-emerald-50/50 transition-colors bg-white"
               >
                 <div className="flex-1 min-w-0">

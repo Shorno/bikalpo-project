@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-export function CustomerHero() {
+export function ShopHero() {
   return (
     <section className="relative h-[200px] md:h-[300px] w-full rounded-2xl overflow-hidden shadow-sm mb-8">
       {/* Background Generated Image */}

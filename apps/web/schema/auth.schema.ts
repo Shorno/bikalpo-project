@@ -8,6 +8,7 @@ export const passwordValidation = z
   .regex(/[a-z]/, "Password must contain at least one lowercase letter")
   .regex(/[0-9]/, "Password must contain at least one number");
 
+// Consumer signup — simple, zero-friction
 export const signupSchema = z
   .object({
     name: z
@@ -19,8 +20,6 @@ export const signupSchema = z
       .string()
       .min(10, "Phone number must be at least 10 digits")
       .regex(/^[0-9+\-\s()]*$/, "Invalid phone number format"),
-    shopName: z.string().max(100, "Shop name is too long"),
-    ownerName: z.string().max(100, "Owner name is too long"),
     password: passwordValidation,
     confirmPassword: z.string().min(1, "Please confirm your password"),
   })
@@ -35,5 +34,29 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+// Business seller application form
+export const sellerApplicationSchema = z.object({
+  shopName: z
+    .string()
+    .min(2, "Shop name must be at least 2 characters")
+    .max(100, "Shop name is too long"),
+  ownerName: z
+    .string()
+    .min(2, "Owner name must be at least 2 characters")
+    .max(100, "Owner name is too long"),
+  phoneNumber: z
+    .string()
+    .min(10, "Phone number must be at least 10 digits")
+    .regex(/^[0-9+\-\s()]*$/, "Invalid phone number format"),
+  businessType: z.enum(["retail", "restaurant"]),
+  shopAddress: z
+    .string()
+    .min(5, "Please enter a valid shop address")
+    .max(500, "Address is too long"),
+  tradeLicenseNumber: z.string(),
+  documents: z.array(z.string()).default([]),
+});
+
 export type SignUpFormData = z.infer<typeof signupSchema>;
 export type LoginFormData = z.infer<typeof loginSchema>;
+export type SellerApplicationFormData = z.infer<typeof sellerApplicationSchema>;

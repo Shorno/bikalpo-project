@@ -67,7 +67,7 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
         <p className="text-sm text-gray-500">
           We couldn't find order #{orderNumber}
         </p>
-        <Link href="/customer/account/orders" className="mt-4">
+        <Link href="/shop/account/orders" className="mt-4">
           <Button variant="outline">Back to Orders</Button>
         </Link>
       </div>
@@ -99,7 +99,7 @@ export function OrpcOrderDetail({ orderNumber }: OrpcOrderDetailProps) {
       <div className="flex items-center justify-between">
         <div>
           <Link
-            href="/customer/account/orders"
+            href="/shop/account/orders"
             className="inline-flex items-center text-sm text-gray-500 hover:text-emerald-600 mb-2"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />

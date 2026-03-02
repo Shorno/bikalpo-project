@@ -3,6 +3,7 @@ import {
     decimal,
     integer,
     jsonb,
+    pgEnum,
     pgTable,
     serial,
     text,
@@ -23,6 +24,13 @@ export type ProductFeatureGroup = {
     title: string;
     items: ProductFeatureItem[];
 };
+
+// Product status enum
+export const productStatusEnum = pgEnum("product_status", [
+    "active",
+    "inactive",
+    "draft",
+]);
 
 export const product = pgTable("product", {
     id: serial("id").primaryKey(),
@@ -56,6 +64,18 @@ export const product = pgTable("product", {
     inStock: boolean("in_stock").default(true).notNull(),
     isFeatured: boolean("is_featured").default(false).notNull(),
 
+    // === B2B + B2C Pack Return Configuration (product-level defaults) ===
+    isReturnablePack: boolean("is_returnable_pack").default(false).notNull(),
+    defaultPackDepositAmount: decimal("default_pack_deposit_amount", {
+        precision: 10,
+        scale: 2,
+    }).default("0"),
+    allowedPackBrands: jsonb("allowed_pack_brands").$type<string[]>().default([]),
+    allowedPackSizes: jsonb("allowed_pack_sizes").$type<string[]>().default([]),
+
+    // Product status
+    status: productStatusEnum("status").default("active").notNull(),
+
     ...timestamps,
 });
 
@@ -69,6 +89,8 @@ export const productImage = pgTable("product_image", {
     imageUrl: varchar("image_url", { length: 255 }).notNull(),
     ...timestamps,
 });
+
+import { productVariant } from "./product-variant";
 
 export const productRelations = relations(product, ({ one, many }) => ({
     category: one(category, {
@@ -84,6 +106,7 @@ export const productRelations = relations(product, ({ one, many }) => ({
         references: [brand.id],
     }),
     images: many(productImage),
+    variants: many(productVariant),
 }));
 
 export const productImageRelations = relations(productImage, ({ one }) => ({

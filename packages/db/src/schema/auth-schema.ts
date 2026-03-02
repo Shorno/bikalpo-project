@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
     id: text("id").primaryKey(),
@@ -7,18 +7,30 @@ export const user = pgTable("user", {
     email: text("email").notNull().unique(),
     emailVerified: boolean("email_verified").default(false).notNull(),
     image: text("image"),
-    // Phone number plugin fields
+    // Phone number fields
     phoneNumber: text("phone_number"),
     phoneNumberVerified: boolean("phone_number_verified").default(false),
-    // Custom fields
-    shopName: text("shop_name"),
-    ownerName: text("owner_name"),
     // Admin plugin fields
-    role: text("role").default("guest"),
+    role: text("role").default("consumer"),
     banned: boolean("banned").default(false),
     banReason: text("ban_reason"),
     banExpires: timestamp("ban_expires"),
-    // Deliveryman: comma-separated areas for area-based assignment (e.g. "Gulshan, Banani")
+    // Shop owner capability flags
+    isSeller: boolean("is_seller").default(false),
+    sellerStatus: text("seller_status"), // pending | approved | rejected | disabled
+    businessType: text("business_type"), // retail | restaurant
+    shopAddress: text("shop_address"),
+    ownerName: text("owner_name"),
+
+    // === B2B + B2C Shop Owner fields ===
+    shopName: text("shop_name"),
+    shopSlug: text("shop_slug"), // for public store URL: /store/{shop_slug}
+    /** Whether this seller can receive open order broadcasts */
+    canAcceptOpenOrder: boolean("can_accept_open_order").default(false),
+    /** Current count of pending OTP confirmations (max 2 for open orders) */
+    pendingOtpCount: integer("pending_otp_count").default(0),
+
+    // Deliveryman: comma-separated areas for area-based assignment
     serviceArea: text("service_area"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

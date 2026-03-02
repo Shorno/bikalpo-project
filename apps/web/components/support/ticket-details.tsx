@@ -87,7 +87,7 @@ export function TicketDetails({ ticket }: TicketDetailsProps) {
       <div className="flex items-start justify-between">
         <div>
           <Button variant="ghost" size="sm" asChild className="mb-2 -ml-2">
-            <Link href="/customer/account/support">
+            <Link href="/shop/account/support">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Tickets
             </Link>

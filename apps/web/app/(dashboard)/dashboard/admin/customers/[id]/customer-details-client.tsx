@@ -160,8 +160,8 @@ export function CustomerDetailsClient({
             Customer since {format(new Date(customer.createdAt), "MMMM yyyy")}
           </p>
         </div>
-        <Badge variant={customer.role === "customer" ? "default" : "secondary"}>
-          {customer.role === "customer" ? "Active" : "Pending"}
+        <Badge variant={customer.role === "consumer" || customer.role === "shop_owner" ? "default" : "secondary"}>
+          {customer.role === "consumer" ? "Consumer" : customer.role === "shop_owner" ? "Shop Owner" : customer.role}
         </Badge>
       </div>
 
@@ -234,9 +234,9 @@ export function CustomerDetailsClient({
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                     </TableHead>
                   ))}
                 </TableRow>

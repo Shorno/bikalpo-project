@@ -14,6 +14,7 @@ import {
   PackageIcon,
   ReceiptIcon,
   ShoppingCartIcon,
+  StoreIcon,
   TagIcon,
   TruckIcon,
   Undo2Icon,
@@ -142,8 +143,13 @@ const adminNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Employee Management",
+    label: "People Management",
     items: [
+      {
+        title: "Seller Applications",
+        url: `${ADMIN_BASE}/seller-applications`,
+        icon: StoreIcon,
+      },
       {
         title: "Salesmen",
         url: `${ADMIN_BASE}/salesmen`,

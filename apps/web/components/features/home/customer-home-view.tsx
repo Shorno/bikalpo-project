@@ -1,8 +1,8 @@
 import type { Session } from "@bikalpo-project/auth";
 import { CheckCircle2 } from "lucide-react";
 import { CategoryTabs } from "@/components/features/home/category-tabs";
-import { CustomerHero } from "@/components/features/home/customer-hero";
-import { CustomerSidebar } from "@/components/features/home/customer-sidebar";
+import { ShopHero } from "@/components/features/home/customer-hero";
+import { ShopSidebar } from "@/components/features/home/customer-sidebar";
 import CategoryListing from "@/components/features/products/category-listing";
 
 interface CustomerHomeViewProps {
@@ -32,7 +32,7 @@ export async function CustomerHomeView({ session }: CustomerHomeViewProps) {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-3 space-y-8">
-            <CustomerHero />
+            <ShopHero />
 
             <CategoryTabs />
 
@@ -40,7 +40,7 @@ export async function CustomerHomeView({ session }: CustomerHomeViewProps) {
           </div>
 
           <div className="lg:col-span-1">
-            <CustomerSidebar />
+            <ShopSidebar />
           </div>
         </div>
       </div>

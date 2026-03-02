@@ -5,8 +5,8 @@ export type { User };
 
 // User role definition
 export type UserRole =
-  | "guest"
-  | "customer"
+  | "consumer"
+  | "shop_owner"
   | "admin"
   | "salesman"
   | "deliveryman";
@@ -28,13 +28,13 @@ export type UserWithSessions = User & {
 
 // Role display configuration
 export const roleConfig: Record<UserRole, { label: string; color: string }> = {
-  guest: {
-    label: "Pending",
-    color: "bg-yellow-100 text-yellow-800 hover:bg-yellow-100",
-  },
-  customer: {
-    label: "Customer",
+  consumer: {
+    label: "Consumer",
     color: "bg-green-100 text-green-800 hover:bg-green-100",
+  },
+  shop_owner: {
+    label: "Shop Owner",
+    color: "bg-teal-100 text-teal-800 hover:bg-teal-100",
   },
   admin: {
     label: "Admin",
@@ -51,7 +51,7 @@ export const roleConfig: Record<UserRole, { label: string; color: string }> = {
 };
 
 export function getRoleConfig(role: string | null) {
-  return roleConfig[(role as UserRole) || "guest"] || roleConfig.guest;
+  return roleConfig[(role as UserRole) || "consumer"] || roleConfig.consumer;
 }
 
 export type VerifiedUserReview = {

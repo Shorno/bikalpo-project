@@ -265,7 +265,7 @@ export function OrpcCheckout() {
             Add some products to your cart before checking out.
           </p>
           <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
-            <Link href="/customer/products">Browse Products</Link>
+            <Link href="/shop/products">Browse Products</Link>
           </Button>
         </div>
       </div>
