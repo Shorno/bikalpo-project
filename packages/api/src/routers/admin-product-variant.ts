@@ -1,8 +1,38 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
-import { productVariant, variantConversionMap } from "@bikalpo-project/db/schema";
+import { product, productVariant, variantConversionMap } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
+
+/**
+ * After any variant change, sync the parent product's price/stock/size
+ * from its variants: price = MIN, stockQuantity = SUM, size = descriptive.
+ */
+async function syncProductFromVariants(productId: number) {
+    const variants = await db.query.productVariant.findMany({
+        where: eq(productVariant.productId, productId),
+        columns: { price: true, stockQuantity: true, weightKg: true, unitLabel: true },
+    });
+
+    if (variants.length === 0) {
+        await db.update(product).set({ price: "0", stockQuantity: 0, size: "\u2014" }).where(eq(product.id, productId));
+        return;
+    }
+
+    const prices = variants.map((v) => parseFloat(v.price)).filter((p) => !isNaN(p) && p > 0);
+    const minPrice = prices.length > 0 ? Math.min(...prices).toFixed(2) : "0";
+    const totalStock = variants.reduce((sum, v) => sum + (v.stockQuantity ?? 0), 0);
+    const sizeStr = variants.map((v) => v.unitLabel || `${v.weightKg}kg`).join(", ");
+
+    await db
+        .update(product)
+        .set({
+            price: minPrice,
+            stockQuantity: totalStock,
+            size: sizeStr.slice(0, 50),
+        })
+        .where(eq(product.id, productId));
+}
 
 const quantitySelectorOptionSchema = z.object({
     value: z.number(),
@@ -152,6 +182,10 @@ export const adminProductVariantRouter = {
                     isActive: input.isActive ?? true,
                 })
                 .returning();
+
+            // Auto-sync product price/stock from variants
+            await syncProductFromVariants(input.productId);
+
             return created;
         }),
 
@@ -204,6 +238,14 @@ export const adminProductVariantRouter = {
                     isActive: rest.isActive ?? true,
                 })
                 .where(eq(productVariant.id, id));
+
+            // Find productId and sync
+            const variant = await db.query.productVariant.findFirst({
+                where: eq(productVariant.id, id),
+                columns: { productId: true },
+            });
+            if (variant) await syncProductFromVariants(variant.productId);
+
             return { message: "Variant updated successfully" };
         }),
 
@@ -217,7 +259,17 @@ export const adminProductVariantRouter = {
         })
         .input(z.object({ id: z.number().int() }))
         .handler(async ({ input }) => {
+            // Get productId before deleting
+            const variant = await db.query.productVariant.findFirst({
+                where: eq(productVariant.id, input.id),
+                columns: { productId: true },
+            });
+
             await db.delete(productVariant).where(eq(productVariant.id, input.id));
+
+            // Sync after delete
+            if (variant) await syncProductFromVariants(variant.productId);
+
             return { message: "Variant deleted successfully" };
         }),
 

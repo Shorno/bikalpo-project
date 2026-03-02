@@ -121,8 +121,9 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
       subCategoryId:
         product?.subCategoryId ?? (undefined as number | undefined),
       brandId: product?.brandId ?? (undefined as number | undefined),
-      size: product?.size ?? "",
-      price: product?.price ?? "",
+      // These fields are auto-managed (synced from variants)
+      size: product?.size ?? "—",
+      price: product?.price ?? "0",
       stockQuantity: product?.stockQuantity ?? 0,
       reorderLevel: product?.reorderLevel ?? 0,
       supplier: product?.supplier ?? "",
@@ -156,7 +157,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
 
   return (
     <div className="min-h-screen bg-muted/30">
-      {/* Header */}
+      {/* Sticky Header */}
       <div className="sticky top-0 z-10 bg-background border-b">
         <div className="container mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
@@ -205,14 +206,16 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main Content - Left Column (2/3 width) */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Basic Information */}
+              {/* ── Product Details ── */}
               <Card>
                 <CardHeader className="pb-4">
                   <CardTitle className="text-base">Product Details</CardTitle>
+                  <CardDescription>
+                    Basic information about your product
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Product Name */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <form.Field name="name">
                       {(field) => {
                         const isInvalid =
@@ -241,7 +244,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       }}
                     </form.Field>
 
-                    {/* Slug */}
                     <form.Field name="slug">
                       {(field) => {
                         const isInvalid =
@@ -269,31 +271,8 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       }}
                     </form.Field>
 
-                    {/* SKU */}
-                    <form.Field name="sku">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel htmlFor={field.name}>
-                            SKU (optional)
-                          </FieldLabel>
-                          <Input
-                            id={field.name}
-                            name={field.name}
-                            value={field.state.value ?? ""}
-                            onBlur={field.handleBlur}
-                            onChange={(e) =>
-                              field.handleChange(e.target.value || "")
-                            }
-                            placeholder="e.g. RICE-5520"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
                   </div>
 
-                  <Separator />
-
-                  {/* Description */}
                   <form.Field name="description">
                     {(field) => (
                       <Field>
@@ -308,186 +287,57 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       </Field>
                     )}
                   </form.Field>
-
-                  <Separator />
-
-                  {/* Product Features */}
-                  <form.Field name="features">
-                    {(field) => (
-                      <Field>
-                        <FieldLabel htmlFor={field.name}>
-                          Product Features
-                        </FieldLabel>
-                        <p className="text-sm text-muted-foreground mb-3">
-                          Add feature groups with key-value pairs (e.g.,
-                          Specifications: Weight - 500g)
-                        </p>
-                        <ProductFeaturesInput
-                          value={field.state.value}
-                          onChange={field.handleChange}
-                        />
-                      </Field>
-                    )}
-                  </form.Field>
-
-                  {isEdit && product?.id ? (
-                    <>
-                      <Separator />
-                      <ProductVariantsCard
-                        productId={product.id}
-                        initialVariants={product?.variants ?? []}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <Separator />
-                      <ProductDraftVariantsCard
-                        draftVariants={draftVariants}
-                        setDraftVariants={setDraftVariants}
-                      />
-                    </>
-                  )}
-
-                  <Separator />
-
-                  {isEdit && (product?.variants?.length ?? 0) > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      This product has variants above. Customer price at
-                      checkout uses each variant’s price. The fields below are
-                      the product base (used when no variant is selected or for
-                      listing).
-                    </p>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                    {/* Size */}
-                    <form.Field name="size">
-                      {(field) => {
-                        const isInvalid =
-                          field.state.meta.isTouched &&
-                          !field.state.meta.isValid;
-                        return (
-                          <Field data-invalid={isInvalid}>
-                            <FieldLabel htmlFor={field.name}>Size</FieldLabel>
-                            <Input
-                              id={field.name}
-                              name={field.name}
-                              value={field.state.value}
-                              onBlur={field.handleBlur}
-                              onChange={(e) =>
-                                field.handleChange(e.target.value)
-                              }
-                              aria-invalid={isInvalid}
-                              placeholder="500g"
-                            />
-                            {isInvalid && (
-                              <FieldError errors={field.state.meta.errors} />
-                            )}
-                          </Field>
-                        );
-                      }}
-                    </form.Field>
-
-                    {/* Price */}
-                    <form.Field name="price">
-                      {(field) => {
-                        const isInvalid =
-                          field.state.meta.isTouched &&
-                          !field.state.meta.isValid;
-                        return (
-                          <Field data-invalid={isInvalid}>
-                            <FieldLabel htmlFor={field.name}>Price</FieldLabel>
-                            <Input
-                              id={field.name}
-                              name={field.name}
-                              type="text"
-                              value={field.state.value}
-                              onBlur={field.handleBlur}
-                              onChange={(e) =>
-                                field.handleChange(e.target.value)
-                              }
-                              aria-invalid={isInvalid}
-                              placeholder="9.99"
-                            />
-                            {isInvalid && (
-                              <FieldError errors={field.state.meta.errors} />
-                            )}
-                          </Field>
-                        );
-                      }}
-                    </form.Field>
-
-                    {/* Stock Quantity */}
-                    <form.Field name="stockQuantity">
-                      {(field) => {
-                        const isInvalid =
-                          field.state.meta.isTouched &&
-                          !field.state.meta.isValid;
-                        return (
-                          <Field data-invalid={isInvalid}>
-                            <FieldLabel htmlFor={field.name}>Stock</FieldLabel>
-                            <Input
-                              id={field.name}
-                              name={field.name}
-                              type="number"
-                              value={field.state.value}
-                              onBlur={field.handleBlur}
-                              onChange={(e) =>
-                                field.handleChange(
-                                  parseInt(e.target.value, 10) || 0,
-                                )
-                              }
-                              aria-invalid={isInvalid}
-                              placeholder="100"
-                            />
-                            {isInvalid && (
-                              <FieldError errors={field.state.meta.errors} />
-                            )}
-                          </Field>
-                        );
-                      }}
-                    </form.Field>
-
-                    {/* Reorder Level */}
-                    <form.Field name="reorderLevel">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel htmlFor={field.name}>
-                            Reorder Level
-                          </FieldLabel>
-                          <Input
-                            id={field.name}
-                            name={field.name}
-                            type="number"
-                            min={0}
-                            value={field.state.value ?? 0}
-                            onBlur={field.handleBlur}
-                            onChange={(e) =>
-                              field.handleChange(
-                                parseInt(e.target.value, 10) || 0,
-                              )
-                            }
-                            placeholder="20"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
-                  </div>
                 </CardContent>
               </Card>
 
-              {/* Media */}
+              {/* ── Variants ── */}
+              {isEdit && product?.id ? (
+                <ProductVariantsCard
+                  productId={product.id}
+                  initialVariants={product?.variants ?? []}
+                />
+              ) : (
+                <ProductDraftVariantsCard
+                  draftVariants={draftVariants}
+                  setDraftVariants={setDraftVariants}
+                />
+              )}
+
+
+              {/* ── Features ── */}
+              <Card>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-base">Product Features</CardTitle>
+                  <CardDescription>
+                    Add feature groups with key-value pairs (e.g.,
+                    Specifications: Weight - 500g)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form.Field name="features">
+                    {(field) => (
+                      <ProductFeaturesInput
+                        value={field.state.value}
+                        onChange={field.handleChange}
+                      />
+                    )}
+                  </form.Field>
+                </CardContent>
+              </Card>
+
+              {/* ── Media ── */}
               <Card>
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-2">
                     <ImageIcon className="h-4 w-4 text-muted-foreground" />
                     <CardTitle className="text-base">Media</CardTitle>
                   </div>
-                  <CardDescription>Add photos of your product</CardDescription>
+                  <CardDescription>
+                    Add photos of your product
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Main Image */}
                     <form.Field name="image">
                       {(field) => {
                         const isInvalid =
@@ -510,7 +360,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       }}
                     </form.Field>
 
-                    {/* Additional Images */}
                     <form.Field name="additionalImages">
                       {(field) => {
                         const isInvalid =
@@ -548,7 +397,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* In Stock Switch */}
                   <form.Field name="inStock">
                     {(field) => (
                       <div className="flex items-center justify-between">
@@ -574,7 +422,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
 
                   <Separator />
 
-                  {/* Is Featured Switch */}
                   <form.Field name="isFeatured">
                     {(field) => (
                       <div className="flex items-center justify-between">
@@ -600,7 +447,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 </CardContent>
               </Card>
 
-              {/* Classification */}
+              {/* Organization */}
               <Card>
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-2">
@@ -609,7 +456,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Category */}
                   <form.Field name="categoryId">
                     {(field) => {
                       const isInvalid =
@@ -648,7 +494,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                     }}
                   </form.Field>
 
-                  {/* Subcategory */}
                   <form.Field name="subCategoryId">
                     {(field) => {
                       const isInvalid =
@@ -694,7 +539,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                     }}
                   </form.Field>
 
-                  {/* Brand */}
                   <form.Field name="brandId">
                     {(field) => {
                       const isInvalid =
@@ -735,7 +579,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                     }}
                   </form.Field>
 
-                  {/* Supplier */}
                   <form.Field name="supplier">
                     {(field) => (
                       <Field>

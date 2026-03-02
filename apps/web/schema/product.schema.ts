@@ -47,32 +47,20 @@ export const createProductSchema = z.object({
     .union([z.number().int().positive(), z.undefined()])
     .optional(),
   brandId: z.union([z.number().int().positive(), z.undefined()]).optional(),
-  size: z
-    .string()
-    .min(1, "Size is required.")
-    .max(50, "Size must be at most 50 characters.")
-    .trim(),
-  price: z
-    .string()
-    .regex(
-      /^\d+(\.\d{1,2})?$/,
-      "Price must be a valid number with up to 2 decimal places.",
-    )
-    .refine((val) => parseFloat(val) > 0, "Price must be greater than 0."),
+  // These fields are auto-managed (synced from variants)
+  size: z.string().max(50).default("—").optional(),
+  price: z.string().default("0").optional(),
   stockQuantity: z
     .number()
-    .int("Stock quantity must be a whole number.")
-    .min(0, "Stock quantity cannot be negative.")
-    .default(0),
-  sku: z
-    .string()
-    .max(100, "SKU must be at most 100 characters.")
-    .trim()
+    .int()
+    .min(0)
+    .default(0)
     .optional(),
+  sku: z.string().max(100).trim().optional(),
   reorderLevel: z
     .number()
-    .int("Reorder level must be a whole number.")
-    .min(0, "Reorder level cannot be negative.")
+    .int()
+    .min(0)
     .default(0)
     .optional(),
   supplier: z.string().max(500).trim().optional(),

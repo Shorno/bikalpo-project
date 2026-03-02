@@ -399,73 +399,82 @@ export function VariantFormDialog({
             </form.Field>
           </div>
 
-          <Separator />
+          <form.Field name="packType">
+            {(packTypeField) =>
+              packTypeField.state.value === "carton" ||
+                packTypeField.state.value === "box" ? (
+                <>
+                  <Separator />
 
-          {/* ─── Pack Structure ─── */}
-          <SectionHeading>Pack Structure</SectionHeading>
-          <div className="grid grid-cols-4 gap-4">
-            <form.Field name="sellUnit">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Sell Unit</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="Sack, KG"
-                  />
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="packWeightKg">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Pack Weight (kg)</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="50"
-                  />
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="innerPackSizeKg">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Inner Pack (kg)</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="5"
-                  />
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="packCountInside">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Count Inside</FieldLabel>
-                  <Input
-                    id={field.name}
-                    type="number"
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) =>
-                      field.handleChange(
-                        e.target.value ? parseInt(e.target.value, 10) : undefined,
-                      )
-                    }
-                    placeholder="10"
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
+                  {/* ─── Pack Structure (carton/box only) ─── */}
+                  <SectionHeading>Pack Structure</SectionHeading>
+                  <div className="grid grid-cols-4 gap-4">
+                    <form.Field name="sellUnit">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Sell Unit</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="Sack, KG"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="packWeightKg">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Pack Weight (kg)</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="50"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="innerPackSizeKg">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Inner Pack (kg)</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="5"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="packCountInside">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Count Inside</FieldLabel>
+                          <Input
+                            id={field.name}
+                            type="number"
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) =>
+                              field.handleChange(
+                                e.target.value ? parseInt(e.target.value, 10) : undefined,
+                              )
+                            }
+                            placeholder="10"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                  </div>
+                </>
+              ) : null
+            }
+          </form.Field>
 
           <Separator />
 
@@ -691,143 +700,149 @@ export function VariantFormDialog({
             )}
           </form.Field>
 
-          <Separator />
+          <form.Field name="variantType">
+            {(varTypeField) =>
+              varTypeField.state.value === "trade" ? (
+                <>
+                  <Separator />
 
-          {/* ─── Open Order & Negotiation ─── */}
-          <SectionHeading>Open Order & Negotiation</SectionHeading>
-          <form.Field name="isOpenOrderAllowed">
-            {(field) => (
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                  <FieldLabel htmlFor={field.name} className="text-sm font-medium">
-                    Allow Open Orders
-                  </FieldLabel>
-                  <p className="text-xs text-muted-foreground">
-                    Broadcast this variant to eligible sellers for competitive pricing
-                  </p>
-                </div>
-                <Switch
-                  id={field.name}
-                  checked={field.state.value}
-                  onCheckedChange={field.handleChange}
-                />
-              </div>
-            )}
-          </form.Field>
-          <form.Field name="isOpenOrderAllowed">
-            {(openOrderField) =>
-              openOrderField.state.value ? (
-                <form.Field name="negotiationTimeoutSec">
-                  {(field) => (
-                    <div className="grid grid-cols-2 gap-4">
-                      <Field>
-                        <FieldLabel htmlFor={field.name}>
-                          Negotiation Timeout (seconds)
-                        </FieldLabel>
-                        <Input
+                  {/* ─── Open Order & Negotiation (Trade only) ─── */}
+                  <SectionHeading>Open Order & Negotiation</SectionHeading>
+                  <form.Field name="isOpenOrderAllowed">
+                    {(field) => (
+                      <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div>
+                          <FieldLabel htmlFor={field.name} className="text-sm font-medium">
+                            Allow Open Orders
+                          </FieldLabel>
+                          <p className="text-xs text-muted-foreground">
+                            Broadcast this variant to eligible sellers for competitive pricing
+                          </p>
+                        </div>
+                        <Switch
                           id={field.name}
-                          type="number"
-                          value={field.state.value}
-                          onBlur={field.handleBlur}
-                          onChange={(e) =>
-                            field.handleChange(
-                              parseInt(e.target.value, 10) || 100,
-                            )
-                          }
-                          placeholder="100"
+                          checked={field.state.value}
+                          onCheckedChange={field.handleChange}
                         />
-                      </Field>
-                    </div>
-                  )}
-                </form.Field>
+                      </div>
+                    )}
+                  </form.Field>
+                  <form.Field name="isOpenOrderAllowed">
+                    {(openOrderField) =>
+                      openOrderField.state.value ? (
+                        <form.Field name="negotiationTimeoutSec">
+                          {(field) => (
+                            <div className="grid grid-cols-2 gap-4">
+                              <Field>
+                                <FieldLabel htmlFor={field.name}>
+                                  Negotiation Timeout (seconds)
+                                </FieldLabel>
+                                <Input
+                                  id={field.name}
+                                  type="number"
+                                  value={field.state.value}
+                                  onBlur={field.handleBlur}
+                                  onChange={(e) =>
+                                    field.handleChange(
+                                      parseInt(e.target.value, 10) || 100,
+                                    )
+                                  }
+                                  placeholder="100"
+                                />
+                              </Field>
+                            </div>
+                          )}
+                        </form.Field>
+                      ) : null
+                    }
+                  </form.Field>
+
+                  <Separator />
+
+                  {/* ─── Margin Rules (Trade only) ─── */}
+                  <SectionHeading>Margin Rules</SectionHeading>
+                  <div className="grid grid-cols-2 gap-4">
+                    <form.Field name="minMarginPercent">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Min Margin (%)</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="e.g. 5"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="minMarginAmount">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>Min Margin (৳)</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value ?? ""}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="e.g. 50"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                  </div>
+
+                  <Separator />
+
+                  {/* ─── Pack Return & Deposit (Trade only) ─── */}
+                  <SectionHeading>Pack Return & Deposit</SectionHeading>
+                  <form.Field name="isPackReturnRequired">
+                    {(field) => (
+                      <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div>
+                          <FieldLabel htmlFor={field.name} className="text-sm font-medium">
+                            Pack Return Required
+                          </FieldLabel>
+                          <p className="text-xs text-muted-foreground">
+                            Customer must return empty pack (e.g. gas cylinder, reusable sack)
+                          </p>
+                        </div>
+                        <Switch
+                          id={field.name}
+                          checked={field.state.value}
+                          onCheckedChange={field.handleChange}
+                        />
+                      </div>
+                    )}
+                  </form.Field>
+                  <form.Field name="isPackReturnRequired">
+                    {(packReturnField) =>
+                      packReturnField.state.value ? (
+                        <form.Field name="packDepositAmount">
+                          {(field) => (
+                            <div className="grid grid-cols-2 gap-4">
+                              <Field>
+                                <FieldLabel htmlFor={field.name}>
+                                  Pack Deposit Amount (৳)
+                                </FieldLabel>
+                                <Input
+                                  id={field.name}
+                                  value={field.state.value ?? ""}
+                                  onBlur={field.handleBlur}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  placeholder="e.g. 200"
+                                />
+                              </Field>
+                            </div>
+                          )}
+                        </form.Field>
+                      ) : null
+                    }
+                  </form.Field>
+                </>
               ) : null
             }
           </form.Field>
-
-          <Separator />
-
-          {/* ─── Margin Rules ─── */}
-          <SectionHeading>Margin Rules</SectionHeading>
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field name="minMarginPercent">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Min Margin (%)</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="e.g. 5"
-                  />
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="minMarginAmount">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Min Margin (৳)</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="e.g. 50"
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
-
-          <Separator />
-
-          {/* ─── Pack Return & Deposit ─── */}
-          <SectionHeading>Pack Return & Deposit</SectionHeading>
-          <form.Field name="isPackReturnRequired">
-            {(field) => (
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                  <FieldLabel htmlFor={field.name} className="text-sm font-medium">
-                    Pack Return Required
-                  </FieldLabel>
-                  <p className="text-xs text-muted-foreground">
-                    Customer must return empty pack (e.g. gas cylinder, reusable sack)
-                  </p>
-                </div>
-                <Switch
-                  id={field.name}
-                  checked={field.state.value}
-                  onCheckedChange={field.handleChange}
-                />
-              </div>
-            )}
-          </form.Field>
-          <form.Field name="isPackReturnRequired">
-            {(packReturnField) =>
-              packReturnField.state.value ? (
-                <form.Field name="packDepositAmount">
-                  {(field) => (
-                    <div className="grid grid-cols-2 gap-4">
-                      <Field>
-                        <FieldLabel htmlFor={field.name}>
-                          Pack Deposit Amount (৳)
-                        </FieldLabel>
-                        <Input
-                          id={field.name}
-                          value={field.state.value ?? ""}
-                          onBlur={field.handleBlur}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          placeholder="e.g. 200"
-                        />
-                      </Field>
-                    </div>
-                  )}
-                </form.Field>
-              ) : null
-            }
-          </form.Field>
-
-          <Separator />
 
           {/* ─── Additional Details ─── */}
           <SectionHeading>Additional Details</SectionHeading>
