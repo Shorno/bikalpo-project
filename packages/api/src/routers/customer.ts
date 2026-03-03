@@ -28,6 +28,9 @@ import {
   productReview,
   productVariant,
   subCategory,
+  inventory,
+  area,
+  sellerAreaMapping,
   supportTicket,
   supportTicketReply,
   user,
@@ -1509,6 +1512,212 @@ const queries = {
           lastOrderedAt: p.lastOrderedAt,
         })),
       };
+    }),
+
+  // ── Shops (Seller Store Discovery) ─────────────────────────
+
+  /** List approved shops for consumer browsing */
+  getShops: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops",
+      tags: ["Customer"],
+      summary: "List approved seller shops",
+    })
+    .input(
+      z.object({
+        search: z.string().optional(),
+        areaId: z.number().optional(),
+        page: z.number().default(1),
+        limit: z.number().default(12),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const page = input.page;
+      const limit = input.limit;
+      const offset = (page - 1) * limit;
+
+      const conditions: SQL[] = [
+        eq(user.role, "shop_owner"),
+        eq(user.sellerStatus, "approved"),
+      ];
+
+      if (input.search) {
+        conditions.push(
+          or(
+            ilike(user.shopName, `%${input.search}%`),
+            ilike(user.name, `%${input.search}%`),
+          )!,
+        );
+      }
+
+      // Area filter: find seller IDs in the selected area
+      if (input.areaId) {
+        const areaSellers = await db
+          .select({ sellerId: sellerAreaMapping.sellerId })
+          .from(sellerAreaMapping)
+          .where(eq(sellerAreaMapping.areaId, input.areaId));
+
+        const sellerIds = areaSellers.map((s) => s.sellerId);
+        if (sellerIds.length > 0) {
+          conditions.push(inArray(user.id, sellerIds));
+        } else {
+          // No sellers in this area — return empty
+          return {
+            shops: [],
+            pagination: { page, limit, totalCount: 0, totalPages: 0 },
+          };
+        }
+      }
+
+      const where = and(...conditions);
+
+      const [shops, countResult] = await Promise.all([
+        db
+          .select({
+            id: user.id,
+            name: user.name,
+            shopName: user.shopName,
+            shopSlug: user.shopSlug,
+            shopAddress: user.shopAddress,
+            businessType: user.businessType,
+            image: user.image,
+          })
+          .from(user)
+          .where(where)
+          .orderBy(asc(user.shopName))
+          .limit(limit)
+          .offset(offset),
+        db.select({ count: count() }).from(user).where(where),
+      ]);
+
+      const totalCount = countResult[0]?.count || 0;
+
+      return {
+        shops,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+        },
+      };
+    }),
+
+  /** Get a single shop by slug with their retail products */
+  getShopBySlug: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops/{slug}",
+      tags: ["Customer"],
+      summary: "Get shop details and retail products",
+    })
+    .input(z.object({ slug: z.string() }))
+    .handler(async ({ input }) => {
+      // 1. Find the shop owner by slug
+      const shop = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          shopAddress: user.shopAddress,
+          businessType: user.businessType,
+          image: user.image,
+        })
+        .from(user)
+        .where(
+          and(
+            eq(user.shopSlug, input.slug),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        )
+        .limit(1);
+
+      if (!shop[0]) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      const shopData = shop[0];
+
+      // 2. Get shop's retail inventory with product details
+      const inventoryItems = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, shopData.id),
+        ),
+        with: {
+          variant: {
+            with: {
+              product: {
+                columns: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  image: true,
+                  description: true,
+                },
+                with: {
+                  images: true,
+                  category: { columns: { name: true, slug: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // 3. Transform into product-centric view with shop prices
+      const productMap = new Map<number, any>();
+      for (const inv of inventoryItems) {
+        const prod = inv.variant?.product;
+        if (!prod) continue;
+
+        if (!productMap.has(prod.id)) {
+          productMap.set(prod.id, {
+            ...prod,
+            variants: [],
+          });
+        }
+
+        productMap.get(prod.id)!.variants.push({
+          variantId: inv.variantId,
+          sku: inv.variant?.sku,
+          unitLabel: inv.variant?.unitLabel,
+          quantitySelectorLabel: inv.variant?.quantitySelectorLabel,
+          basePrice: inv.variant?.price,
+          retailPrice: inv.retailPrice,
+          availableQty: inv.availableQty,
+        });
+      }
+
+      return {
+        shop: shopData,
+        products: Array.from(productMap.values()),
+      };
+    }),
+
+  /** List available areas for the area picker */
+  getAreas: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/areas",
+      tags: ["Customer"],
+      summary: "List available service areas",
+    })
+    .handler(async () => {
+      const areas = await db.query.area.findMany({
+        where: eq(area.isActive, true),
+        orderBy: [asc(area.name)],
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          parentId: true,
+        },
+      });
+      return { areas };
     }),
 };
 
