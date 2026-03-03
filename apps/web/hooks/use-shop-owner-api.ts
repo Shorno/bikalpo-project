@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { orpc } from "@/utils/orpc";
 
 // ────────────────────────────────────────────────────────────────
@@ -73,6 +73,29 @@ export function useMyInventory() {
         orpc.shopOwner.getMyInventory.queryOptions({
             input: undefined,
             staleTime: 1000 * 60 * 2,
+        }),
+    );
+}
+
+// ────────────────────────────────────────────────────────────────
+// MUTATION HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Update retail price for an inventory item */
+export function useUpdateRetailPrice() {
+    const queryClient = useQueryClient();
+
+    return useMutation(
+        orpc.shopOwner.updateRetailPrice.mutationOptions({
+            onSuccess: () => {
+                // Invalidate retail products and inventory caches
+                queryClient.invalidateQueries({
+                    queryKey: [["shopOwner", "getMyRetailProducts"]],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: [["shopOwner", "getMyInventory"]],
+                });
+            },
         }),
     );
 }

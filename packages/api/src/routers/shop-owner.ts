@@ -364,10 +364,102 @@ const managementQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Mutations (Shop Owner management actions)
+// ────────────────────────────────────────────────────────────────
+
+const mutations = {
+    /**
+     * Update retail selling price for a product in the shop owner's inventory.
+     * Validates that the price meets the minimum margin requirement.
+     */
+    updateRetailPrice: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/update-price",
+            tags: ["Shop Owner"],
+            summary: "Update retail selling price for an inventory item",
+        })
+        .input(
+            z.object({
+                inventoryId: z.number(),
+                retailPrice: z.string().refine(
+                    (v) => !isNaN(Number(v)) && Number(v) > 0,
+                    { message: "Price must be a positive number" },
+                ),
+            }),
+        )
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+            const newPrice = Number(input.retailPrice);
+
+            // 1. Get the inventory record and verify ownership
+            const invRecord = await db.query.inventory.findFirst({
+                where: and(
+                    eq(inventory.id, input.inventoryId),
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        columns: {
+                            id: true,
+                            price: true,             // base cost price
+                            minMarginPercent: true,
+                            minMarginAmount: true,
+                            productId: true,
+                        },
+                    },
+                },
+            });
+
+            if (!invRecord) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Inventory record not found or not owned by you",
+                });
+            }
+
+            // 2. Validate minimum margin
+            const basePrice = Number(invRecord.variant?.price || 0);
+            const minMarginPercent = Number(invRecord.variant?.minMarginPercent || 0);
+            const minMarginAmount = Number(invRecord.variant?.minMarginAmount || 0);
+
+            let minimumPrice = basePrice;
+            if (minMarginPercent > 0) {
+                minimumPrice = basePrice * (1 + minMarginPercent / 100);
+            }
+            if (minMarginAmount > 0) {
+                minimumPrice = Math.max(minimumPrice, basePrice + minMarginAmount);
+            }
+
+            if (newPrice < minimumPrice) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Price must be at least ৳${minimumPrice.toFixed(2)} (base ৳${basePrice.toFixed(2)} + required margin)`,
+                });
+            }
+
+            // 3. Update the inventory record's retail price
+            await db
+                .update(inventory)
+                .set({
+                    retailPrice: input.retailPrice,
+                    updatedAt: new Date(),
+                })
+                .where(eq(inventory.id, input.inventoryId));
+
+            return {
+                success: true,
+                inventoryId: input.inventoryId,
+                retailPrice: input.retailPrice,
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
 export const shopOwnerRouter = {
     ...b2bQueries,
     ...managementQueries,
+    ...mutations,
 };

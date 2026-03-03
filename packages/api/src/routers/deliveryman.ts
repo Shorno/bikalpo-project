@@ -5,6 +5,7 @@ import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, deliverymanProcedure, protectedProcedure } from "../index";
+import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 
 // Validation schemas
 const deliverymanIdSchema = z.object({
@@ -387,6 +388,9 @@ export const deliverymanRouter = {
                         status: "delivered",
                         deliveredAt: new Date(),
                     }).where(eq(order.id, deliveryInv.invoice.orderId));
+
+                    // Auto-convert B2B order to retail inventory
+                    await convertB2bOrderToRetailInventory(tx, deliveryInv.invoice.orderId);
                 }
 
                 await tx.update(deliveryGroup).set({

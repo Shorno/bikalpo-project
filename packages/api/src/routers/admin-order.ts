@@ -18,6 +18,7 @@ export const adminOrderRouter = {
                 status: z
                     .enum(["pending", "confirmed", "processing", "delivered", "cancelled"])
                     .optional(),
+                orderType: z.enum(["b2b", "b2c"]).optional(),
                 startDate: z.coerce.date().optional(),
                 endDate: z.coerce.date().optional(),
             }),
@@ -25,6 +26,7 @@ export const adminOrderRouter = {
         .handler(async ({ input: options }) => {
             const conditions = [];
             if (options.status) conditions.push(eq(order.status, options.status));
+            if (options.orderType) conditions.push(eq(order.orderType, options.orderType));
             if (options.startDate) conditions.push(gte(order.createdAt, options.startDate));
             if (options.endDate) conditions.push(eq(order.createdAt, options.endDate));
 

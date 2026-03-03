@@ -1760,11 +1760,15 @@ const mutations = {
 
       // Transaction: create order, deduct stock, clear cart
       const result = await db.transaction(async (tx) => {
+        // Auto-tag order type based on user role
+        const orderType = context.session.user.role === "shop_owner" ? "b2b" as const : "b2c" as const;
+
         const [newOrder] = await tx
           .insert(order)
           .values({
             orderNumber: generateOrderNumber(),
             userId,
+            orderType,
             subtotal: subtotal.toFixed(2),
             shippingCost: shippingCost.toFixed(2),
             discount: "0",
