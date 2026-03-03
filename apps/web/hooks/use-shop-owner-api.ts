@@ -78,6 +78,38 @@ export function useMyInventory() {
 }
 
 // ────────────────────────────────────────────────────────────────
+// ORDER & DASHBOARD HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Shop owner's B2B purchase orders */
+export function useMyOrders(params?: {
+    status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+    page?: number;
+    limit?: number;
+}) {
+    return useQuery(
+        orpc.shopOwner.getMyOrders.queryOptions({
+            input: {
+                status: params?.status,
+                page: params?.page ?? 1,
+                limit: params?.limit ?? 20,
+            },
+            staleTime: 1000 * 60,
+        }),
+    );
+}
+
+/** Dashboard summary stats */
+export function useDashboardStats() {
+    return useQuery(
+        orpc.shopOwner.getDashboardStats.queryOptions({
+            input: undefined,
+            staleTime: 1000 * 60,
+        }),
+    );
+}
+
+// ────────────────────────────────────────────────────────────────
 // MUTATION HOOKS
 // ────────────────────────────────────────────────────────────────
 
@@ -99,3 +131,4 @@ export function useUpdateRetailPrice() {
         }),
     );
 }
+

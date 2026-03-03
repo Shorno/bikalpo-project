@@ -1,22 +1,20 @@
 /**
  * B2B → Retail Inventory Conversion Helper
  *
- * When a B2B order is delivered, this converts the purchased TRADE variant
- * quantities into RETAIL variant inventory for the shop owner.
- *
- * Flow:
- *   1. Load order items with their variant info
- *   2. For each TRADE variant with a linkedRetailVariantId:
- *      - Calculate retail qty = ordered qty × conversionRatio × (1 - lossPercent/100)
- *      - Upsert into inventory (ownerType='shop', ownerId=order.userId)
+ * When a B2B order is delivered, this:
+ *   1. Deducts super-seller (admin) inventory for the TRADE variant
+ *   2. Converts to RETAIL variant quantity using conversionRatio & lossPercent
+ *   3. Adds to shop owner's retail inventory
+ *   4. Writes immutable stock ledger entries for full audit trail
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
     order,
     orderItem,
     productVariant,
     inventory,
+    stockLedger,
 } from "@bikalpo-project/db/schema";
 
 /**
@@ -42,7 +40,7 @@ export async function convertB2bOrderToRetailInventory(
         where: eq(orderItem.orderId, orderId),
     });
 
-    // 3. For each item, find the TRADE variant → check for linked RETAIL variant
+    // 3. For each item, find the TRADE variant → convert → update inventory + ledger
     for (const item of items) {
         if (!item.variantId) continue;
 
@@ -59,45 +57,111 @@ export async function convertB2bOrderToRetailInventory(
 
         if (!tradeVariant) continue;
 
-        // Determine target retail variant
-        const retailVariantId = tradeVariant.linkedRetailVariantId;
-
-        // If no linked retail variant, use the same variant (direct inventory add)
-        const targetVariantId = retailVariantId ?? tradeVariant.id;
-
-        // Calculate conversion
+        const orderedQty = Number(item.quantity);
+        const targetRetailVariantId =
+            tradeVariant.linkedRetailVariantId ?? tradeVariant.id;
         const conversionRatio = Number(tradeVariant.conversionRatio || 1);
         const lossPercent = Number(tradeVariant.conversionLossPercent || 0);
-        const rawQty = item.quantity * conversionRatio;
-        const retailQty = rawQty * (1 - lossPercent / 100);
+        const retailQty =
+            orderedQty * conversionRatio * (1 - lossPercent / 100);
 
-        // 4. Upsert into inventory for the shop owner
-        const existing = await tx.query.inventory.findFirst({
+        // ─── A. Deduct super-seller (admin) inventory for the TRADE variant ───
+
+        const superSellerInv = await tx.query.inventory.findFirst({
             where: and(
-                eq(inventory.ownerType, "shop"),
-                eq(inventory.ownerId, orderData.userId),
-                eq(inventory.variantId, targetVariantId),
+                eq(inventory.ownerType, "super_seller"),
+                eq(inventory.variantId, tradeVariant.id),
             ),
         });
 
-        if (existing) {
-            // Add to existing stock
+        if (superSellerInv) {
+            const newSuperSellerQty = Math.max(
+                0,
+                Number(superSellerInv.availableQty) - orderedQty,
+            );
+
             await tx
                 .update(inventory)
                 .set({
-                    availableQty: sql`(${inventory.availableQty}::numeric + ${retailQty.toFixed(2)}::numeric)::text`,
+                    availableQty: newSuperSellerQty.toFixed(2),
                     updatedAt: new Date(),
                 })
-                .where(eq(inventory.id, existing.id));
+                .where(eq(inventory.id, superSellerInv.id));
+
+            // Ledger: OUT — stock dispatched from super-seller
+            await tx.insert(stockLedger).values({
+                variantId: tradeVariant.id,
+                ownerType: "super_seller",
+                ownerId: superSellerInv.ownerId,
+                changeType: "out" as const,
+                qty: orderedQty.toFixed(2),
+                reason: `B2B order #${orderId} delivered to shop`,
+                referenceType: "order" as const,
+                referenceId: String(orderId),
+                balanceAfter: newSuperSellerQty.toFixed(2),
+            });
+
+            // Ledger: CONVERT_OUT — TRADE stock consumed for conversion
+            await tx.insert(stockLedger).values({
+                variantId: tradeVariant.id,
+                ownerType: "super_seller",
+                ownerId: superSellerInv.ownerId,
+                changeType: "convert_out" as const,
+                qty: orderedQty.toFixed(2),
+                reason: `Converted to retail for order #${orderId}`,
+                referenceType: "conversion" as const,
+                referenceId: String(orderId),
+                balanceAfter: newSuperSellerQty.toFixed(2),
+            });
+        }
+
+        // ─── B. Upsert shop owner's RETAIL inventory ───
+
+        const shopInv = await tx.query.inventory.findFirst({
+            where: and(
+                eq(inventory.ownerType, "shop"),
+                eq(inventory.ownerId, orderData.userId),
+                eq(inventory.variantId, targetRetailVariantId),
+            ),
+        });
+
+        let newShopBalance: string;
+
+        if (shopInv) {
+            const updatedQty =
+                Number(shopInv.availableQty) + retailQty;
+            newShopBalance = updatedQty.toFixed(2);
+
+            await tx
+                .update(inventory)
+                .set({
+                    availableQty: newShopBalance,
+                    updatedAt: new Date(),
+                })
+                .where(eq(inventory.id, shopInv.id));
         } else {
-            // Create new inventory record
+            newShopBalance = retailQty.toFixed(2);
+
             await tx.insert(inventory).values({
                 ownerType: "shop" as const,
                 ownerId: orderData.userId,
-                variantId: targetVariantId,
-                availableQty: retailQty.toFixed(2),
+                variantId: targetRetailVariantId,
+                availableQty: newShopBalance,
                 reservedQty: "0",
             });
         }
+
+        // Ledger: CONVERT_IN — RETAIL stock gained by shop owner
+        await tx.insert(stockLedger).values({
+            variantId: targetRetailVariantId,
+            ownerType: "shop",
+            ownerId: orderData.userId,
+            changeType: "convert_in" as const,
+            qty: retailQty.toFixed(2),
+            reason: `B2B order #${orderId} converted TRADE→RETAIL (ratio: ${conversionRatio}, loss: ${lossPercent}%)`,
+            referenceType: "conversion" as const,
+            referenceId: String(orderId),
+            balanceAfter: newShopBalance,
+        });
     }
 }

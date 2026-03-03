@@ -44,7 +44,9 @@ import {
   gte,
   ilike,
   inArray,
+  isNull,
   lte,
+  or,
   sql,
   sum,
   type SQL,
@@ -355,9 +357,16 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
 
-      // Get variants (B2C retail only)
+      // Get variants — filter to consumer-visible variants only (exclude TRADE-only)
       const variants = await db.query.productVariant.findMany({
-        where: eq(productVariant.productId, found.id),
+        where: and(
+          eq(productVariant.productId, found.id),
+          or(
+            eq(productVariant.visibilityRole, "consumer"),
+            eq(productVariant.visibilityRole, "all"),
+            isNull(productVariant.visibilityRole),
+          ),
+        ),
         orderBy: [asc(productVariant.sortOrder)],
       });
 

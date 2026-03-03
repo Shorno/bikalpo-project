@@ -18,6 +18,7 @@ import {
     productVariant,
     subCategory,
     inventory,
+    order,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -33,6 +34,7 @@ import {
     lte,
     or,
     sql,
+    sum,
     type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
@@ -455,6 +457,154 @@ const mutations = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Order & Dashboard Queries
+// ────────────────────────────────────────────────────────────────
+
+const orderQueries = {
+    /**
+     * Get shop owner's own orders (B2B purchases from admin).
+     */
+    getMyOrders: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/my-orders",
+            tags: ["Shop Owner"],
+            summary: "Get shop owner's B2B purchase orders",
+        })
+        .input(
+            z.object({
+                status: z
+                    .enum([
+                        "pending",
+                        "confirmed",
+                        "processing",
+                        "delivered",
+                        "cancelled",
+                    ])
+                    .optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const page = input.page;
+            const limit = input.limit;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [eq(order.userId, userId)];
+            if (input.status) conditions.push(eq(order.status, input.status));
+
+            const where = and(...conditions);
+
+            const [orders, countResult] = await Promise.all([
+                db.query.order.findMany({
+                    where,
+                    with: {
+                        items: {
+                            columns: {
+                                id: true,
+                                productName: true,
+                                productImage: true,
+                                quantity: true,
+                                unitPrice: true,
+                                totalPrice: true,
+                            },
+                        },
+                    },
+                    orderBy: [desc(order.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db
+                    .select({ count: count() })
+                    .from(order)
+                    .where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count || 0;
+
+            return {
+                orders,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    /**
+     * Get dashboard summary stats for the shop owner.
+     */
+    getDashboardStats: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/dashboard-stats",
+            tags: ["Shop Owner"],
+            summary: "Get shop owner dashboard summary stats",
+        })
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // Total B2B orders placed
+            const [orderStats] = await db
+                .select({
+                    totalOrders: count(order.id),
+                    totalSpent: sum(order.total),
+                })
+                .from(order)
+                .where(eq(order.userId, userId));
+
+            // Pending orders
+            const [pendingStats] = await db
+                .select({ count: count(order.id) })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, userId),
+                        eq(order.status, "pending"),
+                    ),
+                );
+
+            // Delivered orders
+            const [deliveredStats] = await db
+                .select({ count: count(order.id) })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, userId),
+                        eq(order.status, "delivered"),
+                    ),
+                );
+
+            // Retail catalog size (inventory items)
+            const [inventoryStats] = await db
+                .select({
+                    totalProducts: count(inventory.id),
+                    totalStock: sum(inventory.availableQty),
+                })
+                .from(inventory)
+                .where(
+                    and(
+                        eq(inventory.ownerType, "shop"),
+                        eq(inventory.ownerId, userId),
+                    ),
+                );
+
+            return {
+                totalOrders: orderStats?.totalOrders || 0,
+                totalSpent: Number(orderStats?.totalSpent || 0),
+                pendingOrders: pendingStats?.count || 0,
+                deliveredOrders: deliveredStats?.count || 0,
+                retailProducts: inventoryStats?.totalProducts || 0,
+                totalStock: Number(inventoryStats?.totalStock || 0),
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -462,4 +612,5 @@ export const shopOwnerRouter = {
     ...b2bQueries,
     ...managementQueries,
     ...mutations,
+    ...orderQueries,
 };

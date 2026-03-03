@@ -1,83 +1,191 @@
 "use client";
 
-import { Store, MapPin, ShoppingBag, User, CheckCircle2 } from "lucide-react";
+import {
+    Store,
+    MapPin,
+    ShoppingBag,
+    User,
+    CheckCircle2,
+    Package,
+    TrendingUp,
+    Clock,
+    Truck,
+} from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useDashboardStats } from "@/hooks/use-shop-owner-api";
 
 export default function ShopOwnerDashboardPage() {
-    const { data: session, isPending } = authClient.useSession();
-
-    if (isPending) {
-        return (
-            <div className="container mx-auto px-4 py-8">
-                <Skeleton className="h-8 w-64 mb-4" />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Skeleton className="h-40 w-full rounded-lg" />
-                    <Skeleton className="h-40 w-full rounded-lg" />
-                </div>
-            </div>
-        );
-    }
+    const { data: session, isPending: sessionLoading } =
+        authClient.useSession();
+    const { data: stats, isLoading: statsLoading } = useDashboardStats();
 
     const user = session?.user;
+    const loading = sessionLoading || statsLoading;
 
     return (
-        <div className="container mx-auto px-4 py-8">
-            <h1 className="text-2xl font-bold text-gray-900 mb-6">
-                Shop Owner Dashboard
-            </h1>
+        <div className="space-y-6">
+            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
 
             {/* Shop Info Card */}
-            <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+            <div className="bg-white rounded-lg shadow-sm border p-6">
                 <div className="flex items-start gap-4">
                     <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
                         <Store className="w-6 h-6 text-emerald-600" />
                     </div>
                     <div className="flex-1">
-                        <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                            {user?.shopName || user?.name || "My Shop"}
-                            {user?.sellerStatus === "approved" && (
-                                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                            )}
-                        </h2>
-                        <div className="mt-3 space-y-2 text-sm text-gray-600">
-                            <div className="flex items-center gap-2">
-                                <User className="w-4 h-4 text-gray-400" />
-                                <span>Owner: {user?.ownerName || user?.name || "—"}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <ShoppingBag className="w-4 h-4 text-gray-400" />
-                                <span className="capitalize">Type: {user?.businessType || "—"}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <MapPin className="w-4 h-4 text-gray-400" />
-                                <span>Address: {user?.shopAddress || "Not set"}</span>
-                            </div>
-                        </div>
+                        {sessionLoading ? (
+                            <Skeleton className="h-6 w-48" />
+                        ) : (
+                            <>
+                                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                                    {user?.shopName || user?.name || "My Shop"}
+                                    {user?.sellerStatus === "approved" && (
+                                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                                    )}
+                                </h2>
+                                <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-600">
+                                    <div className="flex items-center gap-1.5">
+                                        <User className="w-3.5 h-3.5 text-gray-400" />
+                                        <span>
+                                            {user?.ownerName ||
+                                                user?.name ||
+                                                "—"}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <ShoppingBag className="w-3.5 h-3.5 text-gray-400" />
+                                        <span className="capitalize">
+                                            {user?.businessType || "—"}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                                        <span>
+                                            {user?.shopAddress || "Not set"}
+                                        </span>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
 
-            {/* Session Debug Info */}
-            <div className="bg-gray-50 rounded-lg border p-6">
-                <h3 className="text-sm font-medium text-gray-500 mb-3">Session Info</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                        <span className="text-gray-500">Role:</span>{" "}
-                        <span className="font-medium">{user?.role || "—"}</span>
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard
+                    icon={
+                        <ShoppingBag className="w-5 h-5 text-blue-600" />
+                    }
+                    label="Total Orders"
+                    value={
+                        loading ? null : String(stats?.totalOrders || 0)
+                    }
+                    bg="bg-blue-50"
+                />
+                <StatCard
+                    icon={<Clock className="w-5 h-5 text-amber-600" />}
+                    label="Pending"
+                    value={
+                        loading ? null : String(stats?.pendingOrders || 0)
+                    }
+                    bg="bg-amber-50"
+                />
+                <StatCard
+                    icon={<Truck className="w-5 h-5 text-emerald-600" />}
+                    label="Delivered"
+                    value={
+                        loading
+                            ? null
+                            : String(stats?.deliveredOrders || 0)
+                    }
+                    bg="bg-emerald-50"
+                />
+                <StatCard
+                    icon={<Package className="w-5 h-5 text-purple-600" />}
+                    label="Retail Products"
+                    value={
+                        loading
+                            ? null
+                            : String(stats?.retailProducts || 0)
+                    }
+                    bg="bg-purple-50"
+                />
+            </div>
+
+            {/* Summary Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg border shadow-sm p-6">
+                    <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-500">
+                            Total Spent (B2B)
+                        </span>
                     </div>
-                    <div>
-                        <span className="text-gray-500">Email:</span>{" "}
-                        <span className="font-medium">{user?.email || "—"}</span>
+                    {loading ? (
+                        <Skeleton className="h-7 w-32 mt-1" />
+                    ) : (
+                        <p className="text-2xl font-bold text-gray-900">
+                            ৳
+                            {(stats?.totalSpent || 0).toLocaleString(
+                                "en-BD",
+                            )}
+                        </p>
+                    )}
+                </div>
+
+                <div className="bg-white rounded-lg border shadow-sm p-6">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Package className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-500">
+                            Total Retail Stock
+                        </span>
                     </div>
-                    <div>
-                        <span className="text-gray-500">Seller Status:</span>{" "}
-                        <span className="font-medium capitalize">{user?.sellerStatus || "—"}</span>
-                    </div>
-                    <div>
-                        <span className="text-gray-500">Shop Slug:</span>{" "}
-                        <span className="font-medium">{user?.shopSlug || "—"}</span>
-                    </div>
+                    {loading ? (
+                        <Skeleton className="h-7 w-32 mt-1" />
+                    ) : (
+                        <p className="text-2xl font-bold text-gray-900">
+                            {(stats?.totalStock || 0).toLocaleString(
+                                "en-BD",
+                            )}{" "}
+                            units
+                        </p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function StatCard({
+    icon,
+    label,
+    value,
+    bg,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    value: string | null;
+    bg: string;
+}) {
+    return (
+        <div className="bg-white rounded-lg border shadow-sm p-4">
+            <div className="flex items-center gap-3">
+                <div
+                    className={`w-10 h-10 ${bg} rounded-lg flex items-center justify-center`}
+                >
+                    {icon}
+                </div>
+                <div>
+                    <p className="text-xs text-gray-500">{label}</p>
+                    {value === null ? (
+                        <Skeleton className="h-6 w-12 mt-0.5" />
+                    ) : (
+                        <p className="text-xl font-bold text-gray-900">
+                            {value}
+                        </p>
+                    )}
                 </div>
             </div>
         </div>
