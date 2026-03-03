@@ -132,3 +132,42 @@ export function useUpdateRetailPrice() {
     );
 }
 
+// ────────────────────────────────────────────────────────────────
+// INCOMING B2C ORDER HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Incoming B2C consumer orders for this shop */
+export function useIncomingOrders(params?: {
+    status?: "all" | "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+    page?: number;
+    limit?: number;
+}) {
+    return useQuery(
+        orpc.shopOwner.getIncomingOrders.queryOptions({
+            input: {
+                status: params?.status ?? "all",
+                page: params?.page ?? 1,
+                limit: params?.limit ?? 20,
+            },
+            staleTime: 1000 * 30,
+        }),
+    );
+}
+
+/** Update status of an incoming B2C order */
+export function useUpdateIncomingOrderStatus() {
+    const queryClient = useQueryClient();
+
+    return useMutation(
+        orpc.shopOwner.updateIncomingOrderStatus.mutationOptions({
+            onSuccess: () => {
+                queryClient.invalidateQueries({
+                    queryKey: orpc.shopOwner.getIncomingOrders.key(),
+                });
+                queryClient.invalidateQueries({
+                    queryKey: orpc.shopOwner.getDashboardStats.key(),
+                });
+            },
+        }),
+    );
+}

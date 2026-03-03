@@ -19,6 +19,8 @@ import {
     subCategory,
     inventory,
     order,
+    orderItem,
+    user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -605,6 +607,157 @@ const orderQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Incoming B2C Orders (consumers buying from this shop)
+// ────────────────────────────────────────────────────────────────
+
+const incomingOrderQueries = {
+    /** List B2C consumer orders placed to this shop */
+    getIncomingOrders: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/incoming-orders",
+            tags: ["Shop Owner"],
+            summary: "Get incoming B2C consumer orders for this shop",
+        })
+        .input(
+            z.object({
+                status: z.enum(["all", "pending", "confirmed", "processing", "delivered", "cancelled"]).default("all"),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const page = input.page;
+            const limit = input.limit;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [
+                eq(order.shopId, userId),
+                eq(order.orderType, "b2c"),
+            ];
+
+            if (input.status !== "all") {
+                conditions.push(eq(order.status, input.status));
+            }
+
+            const where = and(...conditions);
+
+            const [orders, countResult] = await Promise.all([
+                db
+                    .select({
+                        id: order.id,
+                        orderNumber: order.orderNumber,
+                        status: order.status,
+                        total: order.total,
+                        paymentMethod: order.paymentMethod,
+                        paymentStatus: order.paymentStatus,
+                        shippingName: order.shippingName,
+                        shippingPhone: order.shippingPhone,
+                        shippingAddress: order.shippingAddress,
+                        shippingCity: order.shippingCity,
+                        shippingArea: order.shippingArea,
+                        customerNote: order.customerNote,
+                        createdAt: order.createdAt,
+                        customerId: order.userId,
+                        customerName: user.name,
+                    })
+                    .from(order)
+                    .leftJoin(user, eq(order.userId, user.id))
+                    .where(where)
+                    .orderBy(desc(order.createdAt))
+                    .limit(limit)
+                    .offset(offset),
+                db
+                    .select({ count: count() })
+                    .from(order)
+                    .where(where),
+            ]);
+
+            // Fetch items for each order
+            const orderIds = orders.map((o) => o.id);
+            const items = orderIds.length > 0
+                ? await db
+                    .select()
+                    .from(orderItem)
+                    .where(inArray(orderItem.orderId, orderIds))
+                : [];
+
+            const itemsByOrder = new Map<number, typeof items>();
+            for (const item of items) {
+                const existing = itemsByOrder.get(item.orderId) || [];
+                existing.push(item);
+                itemsByOrder.set(item.orderId, existing);
+            }
+
+            const totalCount = Number(countResult[0]?.count) || 0;
+
+            return {
+                orders: orders.map((o) => ({
+                    ...o,
+                    items: itemsByOrder.get(o.id) || [],
+                })),
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    /** Update status of an incoming B2C order (confirm / cancel) */
+    updateIncomingOrderStatus: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/incoming-orders/update-status",
+            tags: ["Shop Owner"],
+            summary: "Update status of an incoming B2C order",
+        })
+        .input(
+            z.object({
+                orderId: z.number(),
+                status: z.enum(["confirmed", "processing", "delivered", "cancelled"]),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.shopId, userId),
+                    eq(order.orderType, "b2c"),
+                ),
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Order not found or not owned by your shop",
+                });
+            }
+
+            const updateData: Record<string, any> = {
+                status: input.status,
+            };
+
+            if (input.status === "confirmed") updateData.confirmedAt = new Date();
+            if (input.status === "delivered") updateData.deliveredAt = new Date();
+            if (input.status === "cancelled") updateData.cancelledAt = new Date();
+
+            await db
+                .update(order)
+                .set(updateData)
+                .where(eq(order.id, input.orderId));
+
+            return {
+                success: true,
+                message: `Order ${existingOrder.orderNumber} updated to ${input.status}`,
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -613,4 +766,5 @@ export const shopOwnerRouter = {
     ...managementQueries,
     ...mutations,
     ...orderQueries,
+    ...incomingOrderQueries,
 };

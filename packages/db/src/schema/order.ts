@@ -54,6 +54,9 @@ export const order = pgTable(
         // Order type: b2b (shop→admin wholesale) or b2c (consumer→shop retail)
         orderType: b2bOrderTypeEnum("order_type").default("b2c").notNull(),
 
+        // For B2C orders: which shop this order is placed with (null = B2B/admin)
+        shopId: text("shop_id").references(() => user.id, { onDelete: "set null" }),
+
         // Order totals
         subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
         shippingCost: decimal("shipping_cost", { precision: 10, scale: 2 })
@@ -114,6 +117,7 @@ export const order = pgTable(
         index("order_status_idx").on(table.status),
         index("order_orderNumber_idx").on(table.orderNumber),
         index("order_orderType_idx").on(table.orderType),
+        index("order_shopId_idx").on(table.shopId),
     ],
 );
 

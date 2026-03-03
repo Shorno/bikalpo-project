@@ -7,13 +7,16 @@ import {
     ShoppingBag,
     Package,
     AlertCircle,
+    ShoppingCart,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
 import { useQuery } from "@tanstack/react-query";
+import { useAddToCart } from "@/hooks/use-customer-api";
 
 export default function ShopStorePage({
     params,
@@ -27,6 +30,7 @@ export default function ShopStorePage({
             enabled: !!slug,
         }),
     );
+    const addToCart = useAddToCart();
 
     const shop = data?.shop;
     const products = data?.products ?? [];
@@ -51,6 +55,18 @@ export default function ShopStorePage({
             </div>
         );
     }
+
+    const handleAddToCart = (
+        productId: number,
+        variantId: number | undefined,
+    ) => {
+        addToCart.mutate({
+            productId,
+            variantId,
+            shopId: shop.id,
+            quantity: 1,
+        });
+    };
 
     return (
         <div className="container mx-auto px-4 py-8">
@@ -127,13 +143,15 @@ export default function ShopStorePage({
                             firstVariant?.basePrice;
 
                         return (
-                            <Link
+                            <div
                                 key={product.id}
-                                href={`/products/${product.slug}`}
-                                className="group"
+                                className="bg-white rounded-xl border shadow-sm overflow-hidden transition-all hover:shadow-md"
                             >
-                                <div className="bg-white rounded-xl border shadow-sm overflow-hidden transition-all hover:shadow-md group-hover:-translate-y-0.5">
-                                    {/* Product Image */}
+                                {/* Product Image — links to detail */}
+                                <Link
+                                    href={`/products/${product.slug}`}
+                                    className="group block"
+                                >
                                     <div className="aspect-square bg-gray-50 relative overflow-hidden">
                                         {img ? (
                                             <Image
@@ -153,50 +171,72 @@ export default function ShopStorePage({
                                             </Badge>
                                         )}
                                     </div>
+                                </Link>
 
-                                    {/* Product Info */}
-                                    <div className="p-4">
-                                        <h3 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">
+                                {/* Product Info + Add to Cart */}
+                                <div className="p-4">
+                                    <Link
+                                        href={`/products/${product.slug}`}
+                                    >
+                                        <h3 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2 hover:text-emerald-600 transition-colors">
                                             {product.name}
                                         </h3>
+                                    </Link>
 
-                                        {/* Variants/Price */}
-                                        <div className="flex items-end justify-between">
-                                            {price ? (
-                                                <p className="text-lg font-bold text-emerald-600">
-                                                    ৳
-                                                    {Number(
-                                                        price,
-                                                    ).toLocaleString(
-                                                        "en-BD",
-                                                    )}
-                                                </p>
-                                            ) : (
-                                                <p className="text-sm text-gray-400">
-                                                    Price not set
-                                                </p>
-                                            )}
-
-                                            {product.variants?.length >
-                                                1 && (
-                                                    <span className="text-xs text-gray-400">
-                                                        {
-                                                            product.variants
-                                                                .length
-                                                        }{" "}
-                                                        variants
-                                                    </span>
+                                    <div className="flex items-end justify-between mb-3">
+                                        {price ? (
+                                            <p className="text-lg font-bold text-emerald-600">
+                                                ৳
+                                                {Number(
+                                                    price,
+                                                ).toLocaleString(
+                                                    "en-BD",
                                                 )}
-                                        </div>
-
-                                        {firstVariant?.unitLabel && (
-                                            <p className="text-xs text-gray-400 mt-1">
-                                                {firstVariant.unitLabel}
+                                            </p>
+                                        ) : (
+                                            <p className="text-sm text-gray-400">
+                                                Price not set
                                             </p>
                                         )}
+
+                                        {product.variants?.length >
+                                            1 && (
+                                                <span className="text-xs text-gray-400">
+                                                    {
+                                                        product.variants
+                                                            .length
+                                                    }{" "}
+                                                    variants
+                                                </span>
+                                            )}
                                     </div>
+
+                                    {firstVariant?.unitLabel && (
+                                        <p className="text-xs text-gray-400 mb-3">
+                                            {firstVariant.unitLabel}
+                                        </p>
+                                    )}
+
+                                    {/* Add to Cart Button */}
+                                    <Button
+                                        size="sm"
+                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                                        disabled={
+                                            !price ||
+                                            addToCart.isPending
+                                        }
+                                        onClick={() =>
+                                            handleAddToCart(
+                                                product.id,
+                                                firstVariant?.variantId,
+                                            )
+                                        }
+                                    >
+                                        <ShoppingCart className="w-4 h-4 mr-2" />
+                                        Add to Cart
+                                    </Button>
                                 </div>
-                            </Link>
+                            </div>
                         );
                     })}
                 </div>
@@ -225,7 +265,8 @@ function StoreSkeleton() {
                         <Skeleton className="aspect-square w-full" />
                         <div className="p-4">
                             <Skeleton className="h-4 w-full mb-2" />
-                            <Skeleton className="h-6 w-20" />
+                            <Skeleton className="h-6 w-20 mb-3" />
+                            <Skeleton className="h-8 w-full" />
                         </div>
                     </div>
                 ))}

@@ -41,6 +41,10 @@ export const cartItem = pgTable(
         variantId: integer("variant_id").references(() => productVariant.id, {
             onDelete: "cascade",
         }),
+        /** Shop owner the consumer is buying from (null = buying from admin/super-seller) */
+        shopId: text("shop_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
         quantity: integer("quantity").notNull().default(1),
         price: decimal("price", { precision: 10, scale: 2 }).notNull(), // Price at time of adding
         createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -53,6 +57,7 @@ export const cartItem = pgTable(
         index("cartItem_cartId_idx").on(table.cartId),
         index("cartItem_productId_idx").on(table.productId),
         index("cartItem_variantId_idx").on(table.variantId),
+        index("cartItem_shopId_idx").on(table.shopId),
     ],
 );
 

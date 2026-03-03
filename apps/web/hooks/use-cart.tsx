@@ -17,15 +17,18 @@ import { orpc } from "@/utils/orpc";
 export interface CartItem {
   id: number; // cart item id
   productId: number;
+  variantId?: number | null;
   name: string;
   slug: string;
-  categorySlug: string;
+  categorySlug?: string;
   price: number;
   currentPrice: number;
   image: string;
   size: string;
   quantity: number;
   inStock: boolean;
+  shopId?: string | null;
+  shopName?: string | null;
 }
 
 interface CartContextType {
@@ -58,7 +61,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     try {
       const cartData = await orpc.customer.getCart.call();
       if (isMounted.current) {
-        setItems((cartData as CartData).items as CartItem[]);
+        setItems((cartData as CartData).items as unknown as CartItem[]);
       }
     } catch (error) {
       console.error("Failed to fetch cart:", error);

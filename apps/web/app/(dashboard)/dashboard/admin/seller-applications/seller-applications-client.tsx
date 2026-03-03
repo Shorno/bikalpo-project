@@ -49,8 +49,9 @@ type Application = {
     tradeLicenseNumber: string | null;
     status: string;
     adminNotes: string | null;
-    reviewedAt: string | null;
-    createdAt: string;
+    reviewedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
     user?: {
         id: string;
         name: string;

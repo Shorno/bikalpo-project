@@ -147,7 +147,7 @@ export function VariantFormDialog({
       onSubmit: variantFormSchema,
     },
     onSubmit: async ({ value }) => {
-      const draftData: DraftVariant = {
+      const draftData = {
         sku: value.sku || undefined,
         unitLabel: value.unitLabel,
         quantitySelectorLabel: value.quantitySelectorLabel || undefined,
@@ -184,7 +184,7 @@ export function VariantFormDialog({
         care: value.care || undefined,
         note: value.note || undefined,
         sortOrder: value.sortOrder ?? 0,
-      };
+      } as DraftVariant;
 
       if (isDraftMode && onSubmitDraft) {
         onSubmitDraft(draftData);

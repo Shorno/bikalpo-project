@@ -733,9 +733,29 @@ const queries = {
 
       if (!userCart) return { items: [], totalItems: 0, totalPrice: 0 };
 
+      // Resolve shop names for B2C items
+      const shopIds = [
+        ...new Set(
+          userCart.items
+            .map((i) => i.shopId)
+            .filter((id): id is string => !!id),
+        ),
+      ];
+      const shopMap = new Map<string, string>();
+      if (shopIds.length > 0) {
+        const shops = await db
+          .select({ id: user.id, shopName: user.shopName, name: user.name })
+          .from(user)
+          .where(inArray(user.id, shopIds));
+        for (const s of shops) {
+          shopMap.set(s.id, s.shopName || s.name);
+        }
+      }
+
       const items = userCart.items.map((item) => ({
         id: item.id,
         productId: item.productId,
+        variantId: item.variantId,
         name: item.product.name,
         slug: item.product.slug,
         image: item.product.image,
@@ -744,6 +764,8 @@ const queries = {
         currentPrice: Number(item.product.price),
         quantity: item.quantity,
         inStock: item.product.inStock,
+        shopId: item.shopId,
+        shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
       }));
 
       const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
@@ -1741,6 +1763,7 @@ const mutations = {
         productId: z.number(),
         quantity: z.number().min(1).default(1),
         variantId: z.number().optional(),
+        shopId: z.string().optional(), // B2C: which shop to buy from
       }),
     )
     .handler(async ({ context, input }) => {
@@ -1756,6 +1779,21 @@ const mutations = {
           message: "Product is out of stock",
         });
 
+      // Determine price: shop retail price (B2C) or admin product price
+      let itemPrice = productData.price;
+      if (input.shopId && input.variantId) {
+        const shopInv = await db.query.inventory.findFirst({
+          where: and(
+            eq(inventory.ownerType, "shop"),
+            eq(inventory.ownerId, input.shopId),
+            eq(inventory.variantId, input.variantId),
+          ),
+        });
+        if (shopInv?.retailPrice) {
+          itemPrice = shopInv.retailPrice;
+        }
+      }
+
       // Get or create cart
       let userCart = await db.query.cart.findFirst({
         where: eq(cart.userId, userId),
@@ -1765,12 +1803,16 @@ const mutations = {
         userCart = newCart!;
       }
 
-      // Check if item exists
+      // Check if same item + shop combo exists
+      const dupConditions = [
+        eq(cartItem.cartId, userCart.id),
+        eq(cartItem.productId, input.productId),
+      ];
+      if (input.shopId) {
+        dupConditions.push(eq(cartItem.shopId, input.shopId));
+      }
       const existing = await db.query.cartItem.findFirst({
-        where: and(
-          eq(cartItem.cartId, userCart.id),
-          eq(cartItem.productId, input.productId),
-        ),
+        where: and(...dupConditions),
       });
 
       if (existing) {
@@ -1778,7 +1820,7 @@ const mutations = {
           .update(cartItem)
           .set({
             quantity: existing.quantity + input.quantity,
-            price: productData.price,
+            price: itemPrice,
           })
           .where(eq(cartItem.id, existing.id));
       } else {
@@ -1786,8 +1828,9 @@ const mutations = {
           cartId: userCart.id,
           productId: input.productId,
           variantId: input.variantId ?? null,
+          shopId: input.shopId ?? null,
           quantity: input.quantity,
-          price: productData.price,
+          price: itemPrice,
         });
       }
 
@@ -1920,6 +1963,7 @@ const mutations = {
       const orderItems: Array<{
         productId: number;
         variantId: number | null;
+        shopId: string | null;
         productName: string;
         productImage: string;
         productSize: string;
@@ -1961,6 +2005,7 @@ const mutations = {
         orderItems.push({
           productId: item.productId,
           variantId: item.variantId ?? null,
+          shopId: item.shopId ?? null,
           productName: item.product.name,
           productImage: item.product.image,
           productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
@@ -1981,12 +2026,18 @@ const mutations = {
         // Auto-tag order type based on user role
         const orderType = context.session.user.role === "shop_owner" ? "b2b" as const : "b2c" as const;
 
+        // For B2C orders: determine the shop from cart items
+        const b2cShopId = orderType === "b2c"
+          ? orderItems.find((oi) => oi.shopId)?.shopId ?? null
+          : null;
+
         const [newOrder] = await tx
           .insert(order)
           .values({
             orderNumber: generateOrderNumber(),
             userId,
             orderType,
+            shopId: b2cShopId,
             subtotal: subtotal.toFixed(2),
             shippingCost: shippingCost.toFixed(2),
             discount: "0",
@@ -2021,7 +2072,22 @@ const mutations = {
 
         // Deduct stock
         for (const oi of orderItems) {
-          if (oi.variantId) {
+          if (oi.shopId && oi.variantId) {
+            // B2C: deduct from shop's retail inventory
+            await tx
+              .update(inventory)
+              .set({
+                availableQty: sql`(${inventory.availableQty}::numeric - ${oi.quantity})::text`,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(inventory.ownerType, "shop"),
+                  eq(inventory.ownerId, oi.shopId),
+                  eq(inventory.variantId, oi.variantId),
+                ),
+              );
+          } else if (oi.variantId) {
             await tx
               .update(productVariant)
               .set({
