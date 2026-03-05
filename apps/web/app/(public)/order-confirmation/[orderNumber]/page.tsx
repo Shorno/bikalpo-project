@@ -1,4 +1,4 @@
-import { OrderDetailClient } from "@/components/shop/order-detail-client";
+import { OrderConfirmationClient } from "@/components/shop/order-confirmation-client";
 
 interface OrderConfirmationPageProps {
     params: Promise<{ orderNumber: string }>;
@@ -9,5 +9,5 @@ export default async function OrderConfirmationPage({
 }: OrderConfirmationPageProps) {
     const { orderNumber } = await params;
 
-    return <OrderDetailClient orderNumber={orderNumber} />;
+    return <OrderConfirmationClient orderNumber={orderNumber} />;
 }

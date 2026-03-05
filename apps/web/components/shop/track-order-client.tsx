@@ -219,7 +219,7 @@ export function TrackOrderClient() {
 
       {/* Action Button */}
       <Button asChild className="w-full">
-        <Link href={`/shop/account/orders/${order.id}`}>
+        <Link href={`/account/orders/${order.orderNumber}`}>
           View Full Order Details
         </Link>
       </Button>
