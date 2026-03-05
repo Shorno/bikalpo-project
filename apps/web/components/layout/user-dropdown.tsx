@@ -167,20 +167,20 @@ export function UserDropdown() {
           // Consumer role - show account navigation + become a seller link
           <>
             <DropdownMenuItem asChild>
-              <Link href="/shop/account" className="cursor-pointer">
+              <Link href="/account" className="cursor-pointer">
                 <UserCircle className="mr-2 h-4 w-4" />
                 My Account
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/shop/account/orders" className="cursor-pointer">
+              <Link href="/account/orders" className="cursor-pointer">
                 <Package className="mr-2 h-4 w-4" />
                 Orders
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link
-                href="/shop/account/estimates"
+                href="/account/estimates"
                 className="cursor-pointer"
               >
                 <Receipt className="mr-2 h-4 w-4" />
@@ -189,7 +189,7 @@ export function UserDropdown() {
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link
-                href="/shop/account/payments"
+                href="/account/payments"
                 className="cursor-pointer"
               >
                 <CreditCard className="mr-2 h-4 w-4" />
@@ -198,7 +198,7 @@ export function UserDropdown() {
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link
-                href="/shop/account/addresses"
+                href="/account/addresses"
                 className="cursor-pointer"
               >
                 <MapPin className="mr-2 h-4 w-4" />
