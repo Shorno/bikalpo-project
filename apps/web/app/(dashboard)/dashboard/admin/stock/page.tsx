@@ -1,4 +1,4 @@
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, ScrollText } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { StockFilterBar } from "@/components/features/stock/stock-filter-bar";
@@ -13,8 +13,8 @@ export default async function StockInventoryPage({
   searchParams = {},
 }: {
   searchParams?:
-    | Promise<Record<string, string | string[] | undefined>>
-    | Record<string, string | string[] | undefined>;
+  | Promise<Record<string, string | string[] | undefined>>
+  | Record<string, string | string[] | undefined>;
 }) {
   const sp = (await Promise.resolve(searchParams ?? {})) as Record<
     string,
@@ -89,12 +89,20 @@ export default async function StockInventoryPage({
             add it to a product, stock updates here automatically.
           </p>
         </div>
-        <Button variant="outline" asChild>
-          <Link href="/dashboard/admin/item-requests">
-            <ClipboardList className="mr-2 size-4" />
-            Item Requests
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/admin/stock/ledger">
+              <ScrollText className="mr-2 size-4" />
+              Stock Ledger
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/admin/item-requests">
+              <ClipboardList className="mr-2 size-4" />
+              Item Requests
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <Suspense fallback={<div className="h-10" />}>
