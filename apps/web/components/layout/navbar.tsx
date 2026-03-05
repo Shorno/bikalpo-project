@@ -6,19 +6,19 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
 import { UserDropdown } from "./user-dropdown";
-import {authClient} from "@/lib/auth-client";
+import { authClient } from "@/lib/auth-client";
 
 export function Navbar() {
   const isMobile = useIsMobile();
-  const {data} = authClient.useSession()
+  const { data } = authClient.useSession()
   console.log(data)
 
   return (
     <nav className="sticky top-0 z-50 bg-white shadow-sm">
       <div className="border-b">
         <div className="container mx-auto">
-          <div className="relative flex h-16 items-center justify-between gap-4 px-4">
-            <div className="flex items-center gap-2 z-10">
+          <div className="flex h-16 items-center gap-4 px-4">
+            <div className="flex items-center gap-2 shrink-0">
               <MobileMenu />
               <Link href="/" className="flex items-center shrink-0">
                 <Image
@@ -30,12 +30,19 @@ export function Navbar() {
               </Link>
             </div>
 
-            {/* Absolutely centered search bar */}
-            <div className="hidden md:block absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl px-4">
+            {/* Navigation links */}
+            <div className="hidden md:flex items-center gap-4 shrink-0">
+              <Link href="/store" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+                Shops
+              </Link>
+            </div>
+
+            {/* Search bar - takes remaining space */}
+            <div className="hidden md:block flex-1 max-w-xl mx-auto">
               <SearchInput className="w-full" variant="public" />
             </div>
 
-            <div className="flex items-center gap-1 sm:gap-2 shrink-0 z-10">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <CartButton />
               <UserDropdown />
             </div>

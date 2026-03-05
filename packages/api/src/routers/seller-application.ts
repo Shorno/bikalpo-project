@@ -9,10 +9,38 @@
 import { ORPCError } from "@orpc/server";
 import { db } from "@bikalpo-project/db";
 import { sellerApplication, user } from "@bikalpo-project/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, ilike } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, adminProcedure } from "../index";
+
+// ════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════
+
+/** Generate a URL-safe slug from a shop name, ensuring uniqueness */
+async function generateUniqueShopSlug(shopName: string): Promise<string> {
+    const base = shopName
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .slice(0, 50);
+
+    // Check if slug already exists
+    const existing = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(eq(user.shopSlug, base))
+        .limit(1);
+
+    if (existing.length === 0) return base;
+
+    // Append random suffix if slug collision
+    const suffix = Math.random().toString(36).slice(2, 6);
+    return `${base}-${suffix}`;
+}
 
 // ════════════════════════════════════════════════════════════════
 // SCHEMAS
@@ -234,6 +262,9 @@ export const sellerApplicationRouter = {
                 })
                 .where(eq(sellerApplication.id, input.applicationId));
 
+            // Generate a unique shop slug from the shop name
+            const shopSlug = await generateUniqueShopSlug(application.shopName);
+
             // Upgrade user role to shop_owner and set capability flags
             await db
                 .update(user)
@@ -243,6 +274,9 @@ export const sellerApplicationRouter = {
                     sellerStatus: "approved",
                     businessType: application.businessType,
                     shopAddress: application.shopAddress,
+                    shopName: application.shopName,
+                    shopSlug,
+                    ownerName: application.ownerName,
                 })
                 .where(eq(user.id, application.userId));
 

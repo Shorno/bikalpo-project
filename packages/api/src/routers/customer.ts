@@ -360,16 +360,9 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
 
-      // Get variants — filter to consumer-visible variants only (exclude TRADE-only)
+      // Get all variants for the product — role-based filtering is done client-side
       const variants = await db.query.productVariant.findMany({
-        where: and(
-          eq(productVariant.productId, found.id),
-          or(
-            eq(productVariant.visibilityRole, "consumer"),
-            eq(productVariant.visibilityRole, "all"),
-            isNull(productVariant.visibilityRole),
-          ),
-        ),
+        where: eq(productVariant.productId, found.id),
         orderBy: [asc(productVariant.sortOrder)],
       });
 
@@ -1562,6 +1555,7 @@ const queries = {
       const conditions: SQL[] = [
         eq(user.role, "shop_owner"),
         eq(user.sellerStatus, "approved"),
+        sql`${user.shopSlug} IS NOT NULL`,
       ];
 
       if (input.search) {
