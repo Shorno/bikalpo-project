@@ -64,10 +64,13 @@ export function UserDropdown() {
   const isSeller = userRole === "shop_owner" && user.isSeller;
   const dashboardPath = DASHBOARD_PATHS[userRole] || "/dashboard";
 
-  // Shop owner dashboard is on the shop subdomain
-  const shopDashboardUrl = process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL
-    ? `${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL}/dashboard`
-    : `${window.location.protocol}//shop.${window.location.host}/dashboard`;
+  // Shop owner dashboard – if already on shop subdomain, just use relative path
+  const isOnShopSubdomain = typeof window !== "undefined" && window.location.host.startsWith("shop.");
+  const shopDashboardUrl = isOnShopSubdomain
+    ? "/dashboard"
+    : process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL
+      ? `${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL}/dashboard`
+      : `${window.location.protocol}//shop.${window.location.host}/dashboard`;
 
   const initials = user.name
     ? user.name

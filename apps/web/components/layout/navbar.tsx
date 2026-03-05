@@ -11,7 +11,6 @@ import { authClient } from "@/lib/auth-client";
 export function Navbar() {
   const isMobile = useIsMobile();
   const { data } = authClient.useSession()
-  console.log(data)
 
   return (
     <nav className="sticky top-0 z-50 bg-white shadow-sm">

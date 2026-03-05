@@ -719,6 +719,15 @@ const queries = {
                   inStock: true,
                 },
               },
+              variant: {
+                columns: {
+                  id: true,
+                  unitLabel: true,
+                  price: true,
+                  weightKg: true,
+                  sku: true,
+                },
+              },
             },
           },
         },
@@ -745,21 +754,36 @@ const queries = {
         }
       }
 
-      const items = userCart.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        variantId: item.variantId,
-        name: item.product.name,
-        slug: item.product.slug,
-        image: item.product.image,
-        size: item.product.size,
-        price: Number(item.price),
-        currentPrice: Number(item.product.price),
-        quantity: item.quantity,
-        inStock: item.product.inStock,
-        shopId: item.shopId,
-        shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
-      }));
+      const items = userCart.items.map((item) => {
+        const variant = item.variant;
+        // Use variant-specific data when available
+        const displayName = variant
+          ? `${item.product.name} — ${variant.unitLabel}`
+          : item.product.name;
+        const displaySize = variant
+          ? variant.unitLabel
+          : item.product.size;
+        const currentPrice = variant
+          ? Number(variant.price)
+          : Number(item.product.price);
+
+        return {
+          id: item.id,
+          productId: item.productId,
+          variantId: item.variantId,
+          name: displayName,
+          slug: item.product.slug,
+          categorySlug: undefined as string | undefined,
+          image: item.product.image,
+          size: displaySize,
+          price: Number(item.price),
+          currentPrice,
+          quantity: item.quantity,
+          inStock: item.product.inStock,
+          shopId: item.shopId,
+          shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
+        };
+      });
 
       const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
       const totalPrice = items.reduce(
@@ -1773,18 +1797,33 @@ const mutations = {
           message: "Product is out of stock",
         });
 
-      // Determine price: shop retail price (B2C) or admin product price
+      // Determine price: shop retail price (B2C) > variant base price > product price
       let itemPrice = productData.price;
-      if (input.shopId && input.variantId) {
-        const shopInv = await db.query.inventory.findFirst({
-          where: and(
-            eq(inventory.ownerType, "shop"),
-            eq(inventory.ownerId, input.shopId),
-            eq(inventory.variantId, input.variantId),
-          ),
-        });
-        if (shopInv?.retailPrice) {
-          itemPrice = shopInv.retailPrice;
+
+      if (input.variantId) {
+        // First: check if there's a shop-specific retail price (B2C)
+        if (input.shopId) {
+          const shopInv = await db.query.inventory.findFirst({
+            where: and(
+              eq(inventory.ownerType, "shop"),
+              eq(inventory.ownerId, input.shopId),
+              eq(inventory.variantId, input.variantId),
+            ),
+          });
+          if (shopInv?.retailPrice) {
+            itemPrice = shopInv.retailPrice;
+          }
+        }
+
+        // If no shop price was found, use the variant's own base price
+        if (itemPrice === productData.price) {
+          const variantData = await db.query.productVariant.findFirst({
+            where: eq(productVariant.id, input.variantId),
+            columns: { price: true },
+          });
+          if (variantData?.price) {
+            itemPrice = variantData.price;
+          }
         }
       }
 
@@ -1797,11 +1836,16 @@ const mutations = {
         userCart = newCart!;
       }
 
-      // Check if same item + shop combo exists
+      // Check if same item + variant + shop combo exists
       const dupConditions = [
         eq(cartItem.cartId, userCart.id),
         eq(cartItem.productId, input.productId),
       ];
+      if (input.variantId) {
+        dupConditions.push(eq(cartItem.variantId, input.variantId));
+      } else {
+        dupConditions.push(isNull(cartItem.variantId));
+      }
       if (input.shopId) {
         dupConditions.push(eq(cartItem.shopId, input.shopId));
       }
