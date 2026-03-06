@@ -14,6 +14,7 @@ type VariantRow = {
   orderUnit: string | null;
   quantitySelectorOptions: QuantitySelectorOption[] | null;
   sortOrder: number | null;
+  sku?: string | null;
 };
 
 type ProductSpecsProps = {
@@ -116,6 +117,7 @@ export function ProductSpecs({
 
   const emptyPlaceholder = "—";
   const allSpecs: { label: string; value: string }[] = [
+    ...(primaryVariant?.sku ? [{ label: "SKU", value: primaryVariant.sku }] : []),
     { label: "Weight", value: weight || emptyPlaceholder },
     { label: "Category", value: categoryName || emptyPlaceholder },
     ...(subCategoryName

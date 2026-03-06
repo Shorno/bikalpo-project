@@ -13,9 +13,9 @@ import {
 
 const navLinks = [
   { href: "/", label: "Home" },
-  { href: "/deals", label: "Today's Deals" },
-  { href: "/new-arrivals", label: "New Arrivals" },
-  { href: "/best-sellers", label: "Best Sellers" },
+  { href: "/products", label: "Products" },
+  { href: "/store", label: "Shops" },
+  { href: "/verified-customers", label: "Verified B2B Customers" },
 ];
 
 const categories = [

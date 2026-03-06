@@ -28,6 +28,9 @@ import {
   productReview,
   productVariant,
   subCategory,
+  inventory,
+  area,
+  sellerAreaMapping,
   supportTicket,
   supportTicketReply,
   user,
@@ -44,7 +47,9 @@ import {
   gte,
   ilike,
   inArray,
+  isNull,
   lte,
+  or,
   sql,
   sum,
   type SQL,
@@ -355,7 +360,7 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
 
-      // Get variants (B2C retail only)
+      // Get all variants for the product — role-based filtering is done client-side
       const variants = await db.query.productVariant.findMany({
         where: eq(productVariant.productId, found.id),
         orderBy: [asc(productVariant.sortOrder)],
@@ -714,6 +719,15 @@ const queries = {
                   inStock: true,
                 },
               },
+              variant: {
+                columns: {
+                  id: true,
+                  unitLabel: true,
+                  price: true,
+                  weightKg: true,
+                  sku: true,
+                },
+              },
             },
           },
         },
@@ -721,18 +735,55 @@ const queries = {
 
       if (!userCart) return { items: [], totalItems: 0, totalPrice: 0 };
 
-      const items = userCart.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        name: item.product.name,
-        slug: item.product.slug,
-        image: item.product.image,
-        size: item.product.size,
-        price: Number(item.price),
-        currentPrice: Number(item.product.price),
-        quantity: item.quantity,
-        inStock: item.product.inStock,
-      }));
+      // Resolve shop names for B2C items
+      const shopIds = [
+        ...new Set(
+          userCart.items
+            .map((i) => i.shopId)
+            .filter((id): id is string => !!id),
+        ),
+      ];
+      const shopMap = new Map<string, string>();
+      if (shopIds.length > 0) {
+        const shops = await db
+          .select({ id: user.id, shopName: user.shopName, name: user.name })
+          .from(user)
+          .where(inArray(user.id, shopIds));
+        for (const s of shops) {
+          shopMap.set(s.id, s.shopName || s.name);
+        }
+      }
+
+      const items = userCart.items.map((item) => {
+        const variant = item.variant;
+        // Use variant-specific data when available
+        const displayName = variant
+          ? `${item.product.name} — ${variant.unitLabel}`
+          : item.product.name;
+        const displaySize = variant
+          ? variant.unitLabel
+          : item.product.size;
+        const currentPrice = variant
+          ? Number(variant.price)
+          : Number(item.product.price);
+
+        return {
+          id: item.id,
+          productId: item.productId,
+          variantId: item.variantId,
+          name: displayName,
+          slug: item.product.slug,
+          categorySlug: undefined as string | undefined,
+          image: item.product.image,
+          size: displaySize,
+          price: Number(item.price),
+          currentPrice,
+          quantity: item.quantity,
+          inStock: item.product.inStock,
+          shopId: item.shopId,
+          shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
+        };
+      });
 
       const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
       const totalPrice = items.reduce(
@@ -1501,6 +1552,327 @@ const queries = {
         })),
       };
     }),
+
+  // ── Shops (Seller Store Discovery) ─────────────────────────
+
+  /** List approved shops for consumer browsing */
+  getShops: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops",
+      tags: ["Customer"],
+      summary: "List approved seller shops",
+    })
+    .input(
+      z.object({
+        search: z.string().optional(),
+        areaId: z.number().optional(),
+        page: z.number().default(1),
+        limit: z.number().default(12),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const page = input.page;
+      const limit = input.limit;
+      const offset = (page - 1) * limit;
+
+      const conditions: SQL[] = [
+        eq(user.role, "shop_owner"),
+        eq(user.sellerStatus, "approved"),
+        sql`${user.shopSlug} IS NOT NULL`,
+      ];
+
+      if (input.search) {
+        conditions.push(
+          or(
+            ilike(user.shopName, `%${input.search}%`),
+            ilike(user.name, `%${input.search}%`),
+          )!,
+        );
+      }
+
+      // Area filter: find seller IDs in the selected area
+      if (input.areaId) {
+        const areaSellers = await db
+          .select({ sellerId: sellerAreaMapping.sellerId })
+          .from(sellerAreaMapping)
+          .where(eq(sellerAreaMapping.areaId, input.areaId));
+
+        const sellerIds = areaSellers.map((s) => s.sellerId);
+        if (sellerIds.length > 0) {
+          conditions.push(inArray(user.id, sellerIds));
+        } else {
+          // No sellers in this area — return empty
+          return {
+            shops: [],
+            pagination: { page, limit, totalCount: 0, totalPages: 0 },
+          };
+        }
+      }
+
+      const where = and(...conditions);
+
+      const [shops, countResult] = await Promise.all([
+        db
+          .select({
+            id: user.id,
+            name: user.name,
+            shopName: user.shopName,
+            shopSlug: user.shopSlug,
+            shopAddress: user.shopAddress,
+            businessType: user.businessType,
+            image: user.image,
+          })
+          .from(user)
+          .where(where)
+          .orderBy(asc(user.shopName))
+          .limit(limit)
+          .offset(offset),
+        db.select({ count: count() }).from(user).where(where),
+      ]);
+
+      const totalCount = countResult[0]?.count || 0;
+
+      return {
+        shops,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+        },
+      };
+    }),
+
+  /** Get a single shop by slug with their retail products */
+  getShopBySlug: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops/{slug}",
+      tags: ["Customer"],
+      summary: "Get shop details and retail products",
+    })
+    .input(z.object({ slug: z.string() }))
+    .handler(async ({ input }) => {
+      // 1. Find the shop owner by slug
+      const shop = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          shopAddress: user.shopAddress,
+          businessType: user.businessType,
+          image: user.image,
+        })
+        .from(user)
+        .where(
+          and(
+            eq(user.shopSlug, input.slug),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        )
+        .limit(1);
+
+      if (!shop[0]) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      const shopData = shop[0];
+
+      // 2. Get shop's retail inventory with product details
+      const inventoryItems = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, shopData.id),
+        ),
+        with: {
+          variant: {
+            with: {
+              product: {
+                columns: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  image: true,
+                  description: true,
+                },
+                with: {
+                  images: true,
+                  category: { columns: { name: true, slug: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // 3. Transform into product-centric view with shop prices
+      const productMap = new Map<number, any>();
+      for (const inv of inventoryItems) {
+        const prod = inv.variant?.product;
+        if (!prod) continue;
+
+        if (!productMap.has(prod.id)) {
+          productMap.set(prod.id, {
+            ...prod,
+            variants: [],
+          });
+        }
+
+        productMap.get(prod.id)!.variants.push({
+          variantId: inv.variantId,
+          sku: inv.variant?.sku,
+          unitLabel: inv.variant?.unitLabel,
+          quantitySelectorLabel: inv.variant?.quantitySelectorLabel,
+          basePrice: inv.variant?.price,
+          retailPrice: inv.retailPrice,
+          availableQty: inv.availableQty,
+        });
+      }
+
+      return {
+        shop: shopData,
+        products: Array.from(productMap.values()),
+      };
+    }),
+
+  /** Get all sellers who have a specific product in stock */
+  getProductSellers: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/products/{productId}/sellers",
+      tags: ["Customer"],
+      summary: "Get sellers selling a product with their prices",
+    })
+    .input(z.object({ productId: z.number() }))
+    .handler(async ({ input }) => {
+      // 1. Get all active variant IDs for this product
+      // We check all variant types because the conversion may store
+      // inventory against the TRADE variant when linkedRetailVariantId is null
+      const activeVariants = await db
+        .select({ id: productVariant.id })
+        .from(productVariant)
+        .where(
+          and(
+            eq(productVariant.productId, input.productId),
+            eq(productVariant.isActive, true),
+          ),
+        );
+
+      const variantIds = activeVariants.map((v) => v.id);
+      if (variantIds.length === 0) {
+        return { sellers: [] };
+      }
+
+      // 2. Find all shop inventories for these variants with stock > 0
+      const shopInventories = await db
+        .select({
+          shopId: inventory.ownerId,
+          variantId: inventory.variantId,
+          retailPrice: inventory.retailPrice,
+          availableQty: inventory.availableQty,
+        })
+        .from(inventory)
+        .where(
+          and(
+            eq(inventory.ownerType, "shop"),
+            inArray(inventory.variantId, variantIds),
+            sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+          ),
+        );
+
+      if (shopInventories.length === 0) {
+        return { sellers: [] };
+      }
+
+      // 3. Get unique shop IDs and fetch shop details
+      const shopIds = [...new Set(shopInventories.map((inv) => inv.shopId))];
+      const shops = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          shopAddress: user.shopAddress,
+          image: user.image,
+        })
+        .from(user)
+        .where(
+          and(
+            inArray(user.id, shopIds),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        );
+
+      const shopMap = new Map(shops.map((s) => [s.id, s]));
+
+      // 4. Group inventories by shop, picking the lowest price variant per shop
+      const sellerMap = new Map<
+        string,
+        {
+          shopId: string;
+          shopName: string | null;
+          shopSlug: string | null;
+          shopImage: string | null;
+          shopAddress: string | null;
+          retailPrice: string | null;
+          availableQty: string;
+        }
+      >();
+
+      for (const inv of shopInventories) {
+        const shop = shopMap.get(inv.shopId);
+        if (!shop) continue; // Not approved or not found
+
+        const existing = sellerMap.get(inv.shopId);
+        const currentPrice = Number(inv.retailPrice || 0);
+        const existingPrice = Number(existing?.retailPrice || Infinity);
+
+        if (!existing || currentPrice < existingPrice) {
+          sellerMap.set(inv.shopId, {
+            shopId: shop.id,
+            shopName: shop.shopName || shop.name,
+            shopSlug: shop.shopSlug,
+            shopImage: shop.image,
+            shopAddress: shop.shopAddress,
+            retailPrice: inv.retailPrice,
+            availableQty: inv.availableQty,
+          });
+        }
+      }
+
+      // Sort by price ascending
+      const sellers = Array.from(sellerMap.values()).sort(
+        (a, b) => Number(a.retailPrice || 0) - Number(b.retailPrice || 0),
+      );
+
+      return { sellers };
+    }),
+
+  /** List available areas for the area picker */
+  getAreas: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/areas",
+      tags: ["Customer"],
+      summary: "List available service areas",
+    })
+    .handler(async () => {
+      const areas = await db.query.area.findMany({
+        where: eq(area.isActive, true),
+        orderBy: [asc(area.name)],
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          parentId: true,
+        },
+      });
+      return { areas };
+    }),
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -1523,6 +1895,7 @@ const mutations = {
         productId: z.number(),
         quantity: z.number().min(1).default(1),
         variantId: z.number().optional(),
+        shopId: z.string().optional(), // B2C: which shop to buy from
       }),
     )
     .handler(async ({ context, input }) => {
@@ -1538,6 +1911,59 @@ const mutations = {
           message: "Product is out of stock",
         });
 
+      // Determine price: shop retail price (B2C) > variant base price > product price
+      let itemPrice = productData.price;
+
+      if (input.variantId) {
+        // First: check if there's a shop-specific retail price (B2C)
+        if (input.shopId) {
+          // Try exact variant match first
+          let shopInv = await db.query.inventory.findFirst({
+            where: and(
+              eq(inventory.ownerType, "shop"),
+              eq(inventory.ownerId, input.shopId),
+              eq(inventory.variantId, input.variantId),
+            ),
+          });
+
+          // If not found, the shop's inventory might be on a different variant
+          // (e.g. TRADE variant when consumer browsed RETAIL variant)
+          // Search by product: find any inventory this shop has for this product
+          if (!shopInv) {
+            const productVariants = await db.query.productVariant.findMany({
+              where: eq(productVariant.productId, input.productId),
+              columns: { id: true },
+            });
+            const variantIds = productVariants.map((v) => v.id);
+            if (variantIds.length > 0) {
+              shopInv = await db.query.inventory.findFirst({
+                where: and(
+                  eq(inventory.ownerType, "shop"),
+                  eq(inventory.ownerId, input.shopId),
+                  inArray(inventory.variantId, variantIds),
+                  sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                ),
+              });
+            }
+          }
+
+          if (shopInv?.retailPrice) {
+            itemPrice = shopInv.retailPrice;
+          }
+        }
+
+        // If no shop price was found, use the variant's own base price
+        if (itemPrice === productData.price) {
+          const variantData = await db.query.productVariant.findFirst({
+            where: eq(productVariant.id, input.variantId),
+            columns: { price: true },
+          });
+          if (variantData?.price) {
+            itemPrice = variantData.price;
+          }
+        }
+      }
+
       // Get or create cart
       let userCart = await db.query.cart.findFirst({
         where: eq(cart.userId, userId),
@@ -1547,12 +1973,21 @@ const mutations = {
         userCart = newCart!;
       }
 
-      // Check if item exists
+      // Check if same item + variant + shop combo exists
+      const dupConditions = [
+        eq(cartItem.cartId, userCart.id),
+        eq(cartItem.productId, input.productId),
+      ];
+      if (input.variantId) {
+        dupConditions.push(eq(cartItem.variantId, input.variantId));
+      } else {
+        dupConditions.push(isNull(cartItem.variantId));
+      }
+      if (input.shopId) {
+        dupConditions.push(eq(cartItem.shopId, input.shopId));
+      }
       const existing = await db.query.cartItem.findFirst({
-        where: and(
-          eq(cartItem.cartId, userCart.id),
-          eq(cartItem.productId, input.productId),
-        ),
+        where: and(...dupConditions),
       });
 
       if (existing) {
@@ -1560,7 +1995,7 @@ const mutations = {
           .update(cartItem)
           .set({
             quantity: existing.quantity + input.quantity,
-            price: productData.price,
+            price: itemPrice,
           })
           .where(eq(cartItem.id, existing.id));
       } else {
@@ -1568,8 +2003,9 @@ const mutations = {
           cartId: userCart.id,
           productId: input.productId,
           variantId: input.variantId ?? null,
+          shopId: input.shopId ?? null,
           quantity: input.quantity,
-          price: productData.price,
+          price: itemPrice,
         });
       }
 
@@ -1702,6 +2138,7 @@ const mutations = {
       const orderItems: Array<{
         productId: number;
         variantId: number | null;
+        shopId: string | null;
         productName: string;
         productImage: string;
         productSize: string;
@@ -1723,9 +2160,32 @@ const mutations = {
             message: `${item.product.name} is out of stock`,
           });
 
-        const stockQty = item.variant
-          ? item.variant.stockQuantity
-          : item.product.stockQuantity;
+        // Check stock: for B2C (with shopId), check shop inventory; otherwise check variant/product stock
+        let stockQty: number;
+        if (item.shopId) {
+          // B2C: check shop's inventory (may be on a different variant than the one selected)
+          const productVariants = await db.query.productVariant.findMany({
+            where: eq(productVariant.productId, item.productId),
+            columns: { id: true },
+          });
+          const variantIds = productVariants.map((v) => v.id);
+          const shopInv = variantIds.length > 0
+            ? await db.query.inventory.findFirst({
+              where: and(
+                eq(inventory.ownerType, "shop"),
+                eq(inventory.ownerId, item.shopId),
+                inArray(inventory.variantId, variantIds),
+                sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+              ),
+            })
+            : null;
+          stockQty = shopInv ? Number(shopInv.availableQty) : 0;
+        } else {
+          stockQty = item.variant
+            ? item.variant.stockQuantity
+            : item.product.stockQuantity;
+        }
+
         if (stockQty < item.quantity) {
           throw new ORPCError("BAD_REQUEST", {
             message: `Insufficient stock for ${item.product.name}. Available: ${stockQty}`,
@@ -1743,6 +2203,7 @@ const mutations = {
         orderItems.push({
           productId: item.productId,
           variantId: item.variantId ?? null,
+          shopId: item.shopId ?? null,
           productName: item.product.name,
           productImage: item.product.image,
           productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
@@ -1760,11 +2221,21 @@ const mutations = {
 
       // Transaction: create order, deduct stock, clear cart
       const result = await db.transaction(async (tx) => {
+        // Auto-tag order type based on user role
+        const orderType = context.session.user.role === "shop_owner" ? "b2b" as const : "b2c" as const;
+
+        // For B2C orders: determine the shop from cart items
+        const b2cShopId = orderType === "b2c"
+          ? orderItems.find((oi) => oi.shopId)?.shopId ?? null
+          : null;
+
         const [newOrder] = await tx
           .insert(order)
           .values({
             orderNumber: generateOrderNumber(),
             userId,
+            orderType,
+            shopId: b2cShopId,
             subtotal: subtotal.toFixed(2),
             shippingCost: shippingCost.toFixed(2),
             discount: "0",
@@ -1799,7 +2270,35 @@ const mutations = {
 
         // Deduct stock
         for (const oi of orderItems) {
-          if (oi.variantId) {
+          if (oi.shopId && oi.variantId) {
+            // B2C: deduct from shop's retail inventory
+            // The shop's inventory variant may differ from the cart's variant
+            // (e.g. TRADE vs RETAIL), so find the actual inventory record
+            const productVars = await tx.query.productVariant.findMany({
+              where: eq(productVariant.productId, oi.productId),
+              columns: { id: true },
+            });
+            const vIds = productVars.map((v) => v.id);
+            if (vIds.length > 0) {
+              const shopInvRecord = await tx.query.inventory.findFirst({
+                where: and(
+                  eq(inventory.ownerType, "shop"),
+                  eq(inventory.ownerId, oi.shopId),
+                  inArray(inventory.variantId, vIds),
+                ),
+                columns: { id: true },
+              });
+              if (shopInvRecord) {
+                await tx
+                  .update(inventory)
+                  .set({
+                    availableQty: sql`${inventory.availableQty}::numeric - ${oi.quantity}`,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(inventory.id, shopInvRecord.id));
+              }
+            }
+          } else if (oi.variantId) {
             await tx
               .update(productVariant)
               .set({

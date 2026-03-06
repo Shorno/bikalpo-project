@@ -8,12 +8,15 @@ import type {
 } from "@bikalpo-project/db/schema";
 import { ProductSpecs } from "@/components/features/products/product-specs";
 import { ProductActions } from "@/components/features/products/product-actions";
+import { ProductSellers } from "@/components/features/products/product-sellers";
+import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
 /* ── Types ────────────────────────────────────────── */
 
 export interface DetailVariant {
   id: number;
+  sku: string | null;
   unitLabel: string;
   price: string;
   weightKg: string | null;
@@ -21,6 +24,8 @@ export interface DetailVariant {
   origin: string | null;
   shelfLife: string | null;
   orderMin: string | null;
+  orderMax: string | null;
+  orderIncrement: string | null;
   orderUnit: string | null;
   quantitySelectorOptions: QuantitySelectorOption[] | null;
   sortOrder: number | null;
@@ -59,12 +64,30 @@ export function ProductDetailClient({
   productSize,
   features,
 }: ProductDetailClientProps) {
+  const { data: session } = authClient.useSession();
+  const userRole = session?.user?.role as string | undefined;
+
+  // Filter variants by user role: shop_owner → TRADE, consumer → RETAIL, guest → all
+  const roleFiltered = useMemo(() => {
+    const active = variants.filter((v) => v.isActive !== false);
+    if (!userRole) return active; // guest: show everything
+
+    if (userRole === "shop_owner") {
+      const trade = active.filter((v) => v.variantType === "trade");
+      return trade.length > 0 ? trade : active; // fallback to all if no TRADE variants exist
+    }
+
+    if (userRole === "consumer") {
+      const retail = active.filter((v) => v.variantType === "retail");
+      return retail.length > 0 ? retail : active; // fallback to all if no RETAIL variants exist
+    }
+
+    return active; // admin or other roles: show all
+  }, [variants, userRole]);
+
   const sorted = useMemo(
-    () =>
-      [...variants]
-        .filter((v) => v.isActive !== false)
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
-    [variants],
+    () => [...roleFiltered].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+    [roleFiltered],
   );
 
   const [selectedId, setSelectedId] = useState<number>(
@@ -73,7 +96,18 @@ export function ProductDetailClient({
 
   const selected = sorted.find((v) => v.id === selectedId) ?? sorted[0] ?? null;
 
-  const displayPrice = selected ? Number(selected.price) : Number(product.price);
+  // Seller selection state
+  const [selectedSeller, setSelectedSeller] = useState<{
+    shopId: string;
+    shopName: string;
+    retailPrice: number;
+  } | null>(null);
+
+  const displayPrice = selectedSeller
+    ? selectedSeller.retailPrice
+    : selected
+      ? Number(selected.price)
+      : Number(product.price);
   const displayStock = selected ? (selected.stockQuantity ?? 0) : product.stockQuantity;
   const displaySize = selected ? selected.unitLabel : product.size;
   const hasMultiple = sorted.length > 1;
@@ -147,6 +181,13 @@ export function ProductDetailClient({
         </div>
       )}
 
+      {/* ── Sellers selling this product ── */}
+      <ProductSellers
+        productId={product.id}
+        selectedSeller={selectedSeller}
+        onSelectSeller={setSelectedSeller}
+      />
+
       {/* ── Specs ── */}
       <div className="mb-6">
         <ProductSpecs
@@ -155,7 +196,7 @@ export function ProductDetailClient({
           productSize={productSize}
           subCategoryName={subCategoryName ?? null}
           features={features}
-          variants={selected ? [selected] : undefined}
+          variants={selected ? [{ ...selected, sku: selected.sku }] : undefined}
         />
       </div>
 
@@ -170,6 +211,11 @@ export function ProductDetailClient({
           inStock: product.inStock,
           stockQuantity: displayStock,
         }}
+        variantId={selected?.id}
+        shopId={selectedSeller?.shopId}
+        orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
+        orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}
+        orderIncrement={selected?.orderIncrement ? Number(selected.orderIncrement) : undefined}
         categoryName={categoryName}
         brandName={brandName ?? undefined}
       />

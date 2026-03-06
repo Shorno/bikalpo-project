@@ -10,6 +10,7 @@ import {
     SettingsIcon,
     HeadphonesIcon,
     BarChart3Icon,
+    InboxIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
@@ -40,13 +41,23 @@ const shopOwnerNavGroups: NavGroup[] = [
         ],
     },
     {
-        label: "Shop Management",
+        label: "Orders",
         items: [
             {
-                title: "Incoming Orders",
+                title: "Consumer Orders",
+                url: `${SHOP_DASHBOARD_BASE}/incoming-orders`,
+                icon: InboxIcon,
+            },
+            {
+                title: "My B2B Orders",
                 url: `${SHOP_DASHBOARD_BASE}/orders`,
                 icon: ShoppingCartIcon,
             },
+        ],
+    },
+    {
+        label: "Shop Management",
+        items: [
             {
                 title: "Products",
                 url: `${SHOP_DASHBOARD_BASE}/products`,

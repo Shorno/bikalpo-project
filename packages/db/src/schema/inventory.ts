@@ -51,6 +51,9 @@ export const inventory = pgTable(
             .default("0")
             .notNull(),
 
+        /** Shop owner's retail selling price (set by shop owner) */
+        retailPrice: decimal("retail_price", { precision: 10, scale: 2 }),
+
         updatedAt: timestamp("updated_at")
             .defaultNow()
             .$onUpdate(() => new Date())

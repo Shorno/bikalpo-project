@@ -78,7 +78,7 @@ export function OrderCard({ order }: OrderCardProps) {
               asChild
               className="shrink-0 border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
             >
-              <Link href={`/account/orders/${order.id}`}>Details</Link>
+              <Link href={`/account/orders/${order.orderNumber}`}>Details</Link>
             </Button>
           </div>
         </div>

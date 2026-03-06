@@ -21,15 +21,18 @@ import { authClient } from "@/lib/auth-client";
 export interface CartItem {
   id: number;
   productId: number;
+  variantId?: number | null;
   name: string;
   slug: string;
-  categorySlug: string;
+  categorySlug?: string;
   price: number;
   currentPrice: number;
   image: string;
   size: string;
   quantity: number;
   inStock: boolean;
+  shopId?: string | null;
+  shopName?: string | null;
 }
 
 interface CartContextType {
@@ -65,7 +68,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
 
   const items: CartItem[] = useMemo(() => {
     if (!session || !cartData?.items) return [];
-    return cartData.items as CartItem[];
+    return cartData.items as unknown as CartItem[];
   }, [session, cartData]);
 
   const isLoading =

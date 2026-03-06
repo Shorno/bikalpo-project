@@ -7,6 +7,7 @@ import {
   OrderStatusButton,
 } from "@/components/shop/layout/order-status-badge";
 import SearchInput from "@/components/features/home/search/search-input";
+import { CartButton } from "@/components/layout/cart-button";
 import { MobileMenu } from "@/components/layout/mobile-menu";
 import { UserDropdown } from "@/components/layout/user-dropdown";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -37,6 +38,7 @@ export function ShopNavbar() {
             </div>
 
             <div className="flex items-center gap-1 sm:gap-2 shrink-0 z-10">
+              <CartButton />
               {/* Mobile: Compact status badge inside navbar */}
               <MobileOrderStatus />
               {/* Desktop: Full status button */}

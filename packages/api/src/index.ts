@@ -70,3 +70,20 @@ const requireDeliveryman = o.middleware(async ({ context, next }) => {
 
 export const deliverymanProcedure = publicProcedure.use(requireDeliveryman);
 
+// Shop Owner procedure - requires authenticated user with shop_owner role
+const requireShopOwner = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  if (context.session.user.role !== "shop_owner") {
+    throw new ORPCError("FORBIDDEN", { message: "Shop owner access required" });
+  }
+  return next({
+    context: {
+      session: context.session,
+    },
+  });
+});
+
+export const shopOwnerProcedure = publicProcedure.use(requireShopOwner);
+

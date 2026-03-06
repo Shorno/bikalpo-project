@@ -43,7 +43,7 @@ async function handleApprove(userId: string) {
 
 async function handleSetRole(userId: string, role: UserRole) {
   try {
-    await client.customerManagement.setRole({ userId, role });
+    await client.customerManagement.setRole({ userId, role: role as any });
     toast.success(`Role changed to ${role}`);
   } catch (error) {
     toast.error(error instanceof Error ? error.message : "Failed to set role");

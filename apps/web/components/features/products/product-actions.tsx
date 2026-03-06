@@ -16,38 +16,54 @@ interface ProductActionsProps {
     inStock: boolean;
     stockQuantity: number;
   };
+  variantId?: number;
+  orderMin?: number;
+  orderMax?: number;
+  orderIncrement?: number;
   variant?: "default" | "emerald";
   categoryName?: string;
   brandName?: string;
+  shopId?: string;
 }
 
 export function ProductActions({
   product,
+  variantId,
+  orderMin = 1,
+  orderMax,
+  orderIncrement = 1,
   variant = "default",
   categoryName,
   brandName,
+  shopId,
 }: ProductActionsProps) {
-  const [quantity, setQuantity] = useState(1);
+  const effectiveMin = Math.max(1, orderMin);
+  const effectiveMax = orderMax ? Math.min(orderMax, product.stockQuantity) : product.stockQuantity;
+  const step = Math.max(1, orderIncrement);
+
+  const [quantity, setQuantity] = useState(effectiveMin);
   const [isAdding, setIsAdding] = useState(false);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const { addItem } = useCart();
 
   const handleIncrement = () => {
-    if (quantity < product.stockQuantity) {
-      setQuantity((prev) => prev + 1);
+    const next = quantity + step;
+    if (next <= effectiveMax) {
+      setQuantity(next);
     }
   };
 
   const handleDecrement = () => {
-    if (quantity > 1) {
-      setQuantity((prev) => prev - 1);
+    const next = quantity - step;
+    if (next >= effectiveMin) {
+      setQuantity(next);
     }
   };
 
   const handleAddToCart = async () => {
     setIsAdding(true);
     try {
-      await addItem(product.id, quantity);
+      await addItem(product.id, quantity, variantId, shopId);
     } finally {
       setIsAdding(false);
     }
