@@ -87,11 +87,11 @@ export default function ShopProductsPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {data.items.map((item: any) => {
+                                {data.items.map((item) => {
                                     const prod = item.variant?.product;
                                     const variant = item.variant;
                                     const img =
-                                        prod?.images?.[0]?.url || prod?.image;
+                                        prod?.images?.[0]?.imageUrl || prod?.image;
 
                                     return (
                                         <TableRow key={item.id}>
@@ -134,7 +134,7 @@ export default function ShopProductsPage() {
                                                 {prod?.category?.name || "—"}
                                             </TableCell>
                                             <TableCell className="text-right font-medium">
-                                                {item.quantity ?? 0}
+                                                {Number(item.availableQty ?? 0)}
                                             </TableCell>
                                             <TableCell className="text-right text-sm">
                                                 ৳
@@ -145,7 +145,7 @@ export default function ShopProductsPage() {
                                                 ).toLocaleString("en-BD")}
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                {(item.quantity ?? 0) > 0 ? (
+                                                {Number(item.availableQty ?? 0) > 0 ? (
                                                     <Badge
                                                         variant="outline"
                                                         className="text-emerald-600 border-emerald-200 bg-emerald-50"
@@ -186,8 +186,8 @@ export default function ShopProductsPage() {
                                         key={p}
                                         onClick={() => setPage(p)}
                                         className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${p === page
-                                                ? "bg-primary text-white border-primary"
-                                                : "bg-white text-gray-700 hover:bg-gray-50"
+                                            ? "bg-primary text-white border-primary"
+                                            : "bg-white text-gray-700 hover:bg-gray-50"
                                             }`}
                                     >
                                         {p}

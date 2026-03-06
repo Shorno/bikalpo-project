@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Package, Truck } from "lucide-react";
+import { ArrowRight, KeyRound, Package, Truck } from "lucide-react";
 import Link from "next/link";
 import { useActiveOrder } from "@/hooks/use-customer-api";
 import { cn } from "@/lib/utils";
@@ -73,6 +73,8 @@ export function OrderStatusButton() {
 
   const Icon = config.icon || Package;
   const orderTotal = order.total ? Number(order.total) : 0;
+  const otp = deliveryInfo?.otp ?? null;
+  const isOutForDelivery = displayStatus === "out_for_delivery";
 
   // Standard status display
   return (
@@ -86,9 +88,16 @@ export function OrderStatusButton() {
     >
       <div className="flex items-center gap-1.5">
         <Icon className={cn("h-4 w-4", config.textColor)} />
-        <span className={cn("text-sm font-medium", config.textColor)}>
-          {config.label}
-        </span>
+        {isOutForDelivery && otp ? (
+          <div className="flex items-center gap-1 bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+            <KeyRound className="h-3 w-3" />
+            <span className="text-xs font-bold tracking-wider">{otp}</span>
+          </div>
+        ) : (
+          <span className={cn("text-sm font-medium", config.textColor)}>
+            {config.label}
+          </span>
+        )}
       </div>
 
       {orderTotal > 0 && (
@@ -128,8 +137,10 @@ export function MobileOrderStatus() {
   };
 
   const Icon = config.icon || Package;
+  const otp = deliveryInfo?.otp ?? null;
+  const isOutForDelivery = displayStatus === "out_for_delivery";
 
-  // Standard status - compact icon + label
+  // Standard status - compact icon + label + OTP
   return (
     <Link
       href="/shop/account/track"
@@ -147,9 +158,15 @@ export function MobileOrderStatus() {
       >
         <Icon className="h-2.5 w-2.5 text-white" />
       </div>
-      <span className={cn("text-xs font-medium", config.textColor)}>
-        {config.label}
-      </span>
+      {isOutForDelivery && otp ? (
+        <span className="text-xs font-bold text-emerald-700 tracking-wider">
+          OTP: {otp}
+        </span>
+      ) : (
+        <span className={cn("text-xs font-medium", config.textColor)}>
+          {config.label}
+        </span>
+      )}
     </Link>
   );
 }
