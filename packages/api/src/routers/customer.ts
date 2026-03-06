@@ -1748,22 +1748,20 @@ const queries = {
     })
     .input(z.object({ productId: z.number() }))
     .handler(async ({ input }) => {
-      // 1. Get all RETAIL variant IDs for this product
-      const retailVariants = await db
+      // 1. Get all active variant IDs for this product
+      // We check all variant types because the conversion may store
+      // inventory against the TRADE variant when linkedRetailVariantId is null
+      const activeVariants = await db
         .select({ id: productVariant.id })
         .from(productVariant)
         .where(
           and(
             eq(productVariant.productId, input.productId),
             eq(productVariant.isActive, true),
-            or(
-              eq(productVariant.variantType, "retail"),
-              isNull(productVariant.variantType),
-            ),
           ),
         );
 
-      const variantIds = retailVariants.map((v) => v.id);
+      const variantIds = activeVariants.map((v) => v.id);
       if (variantIds.length === 0) {
         return { sellers: [] };
       }
@@ -1919,13 +1917,36 @@ const mutations = {
       if (input.variantId) {
         // First: check if there's a shop-specific retail price (B2C)
         if (input.shopId) {
-          const shopInv = await db.query.inventory.findFirst({
+          // Try exact variant match first
+          let shopInv = await db.query.inventory.findFirst({
             where: and(
               eq(inventory.ownerType, "shop"),
               eq(inventory.ownerId, input.shopId),
               eq(inventory.variantId, input.variantId),
             ),
           });
+
+          // If not found, the shop's inventory might be on a different variant
+          // (e.g. TRADE variant when consumer browsed RETAIL variant)
+          // Search by product: find any inventory this shop has for this product
+          if (!shopInv) {
+            const productVariants = await db.query.productVariant.findMany({
+              where: eq(productVariant.productId, input.productId),
+              columns: { id: true },
+            });
+            const variantIds = productVariants.map((v) => v.id);
+            if (variantIds.length > 0) {
+              shopInv = await db.query.inventory.findFirst({
+                where: and(
+                  eq(inventory.ownerType, "shop"),
+                  eq(inventory.ownerId, input.shopId),
+                  inArray(inventory.variantId, variantIds),
+                  sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                ),
+              });
+            }
+          }
+
           if (shopInv?.retailPrice) {
             itemPrice = shopInv.retailPrice;
           }
@@ -2139,9 +2160,32 @@ const mutations = {
             message: `${item.product.name} is out of stock`,
           });
 
-        const stockQty = item.variant
-          ? item.variant.stockQuantity
-          : item.product.stockQuantity;
+        // Check stock: for B2C (with shopId), check shop inventory; otherwise check variant/product stock
+        let stockQty: number;
+        if (item.shopId) {
+          // B2C: check shop's inventory (may be on a different variant than the one selected)
+          const productVariants = await db.query.productVariant.findMany({
+            where: eq(productVariant.productId, item.productId),
+            columns: { id: true },
+          });
+          const variantIds = productVariants.map((v) => v.id);
+          const shopInv = variantIds.length > 0
+            ? await db.query.inventory.findFirst({
+              where: and(
+                eq(inventory.ownerType, "shop"),
+                eq(inventory.ownerId, item.shopId),
+                inArray(inventory.variantId, variantIds),
+                sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+              ),
+            })
+            : null;
+          stockQty = shopInv ? Number(shopInv.availableQty) : 0;
+        } else {
+          stockQty = item.variant
+            ? item.variant.stockQuantity
+            : item.product.stockQuantity;
+        }
+
         if (stockQty < item.quantity) {
           throw new ORPCError("BAD_REQUEST", {
             message: `Insufficient stock for ${item.product.name}. Available: ${stockQty}`,
@@ -2228,19 +2272,32 @@ const mutations = {
         for (const oi of orderItems) {
           if (oi.shopId && oi.variantId) {
             // B2C: deduct from shop's retail inventory
-            await tx
-              .update(inventory)
-              .set({
-                availableQty: sql`(${inventory.availableQty}::numeric - ${oi.quantity})::text`,
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
+            // The shop's inventory variant may differ from the cart's variant
+            // (e.g. TRADE vs RETAIL), so find the actual inventory record
+            const productVars = await tx.query.productVariant.findMany({
+              where: eq(productVariant.productId, oi.productId),
+              columns: { id: true },
+            });
+            const vIds = productVars.map((v) => v.id);
+            if (vIds.length > 0) {
+              const shopInvRecord = await tx.query.inventory.findFirst({
+                where: and(
                   eq(inventory.ownerType, "shop"),
                   eq(inventory.ownerId, oi.shopId),
-                  eq(inventory.variantId, oi.variantId),
+                  inArray(inventory.variantId, vIds),
                 ),
-              );
+                columns: { id: true },
+              });
+              if (shopInvRecord) {
+                await tx
+                  .update(inventory)
+                  .set({
+                    availableQty: sql`${inventory.availableQty}::numeric - ${oi.quantity}`,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(inventory.id, shopInvRecord.id));
+              }
+            }
           } else if (oi.variantId) {
             await tx
               .update(productVariant)

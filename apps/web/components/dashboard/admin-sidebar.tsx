@@ -61,6 +61,11 @@ const adminNavGroups: NavGroup[] = [
         icon: Boxes,
       },
       {
+        title: "Stock Ledger",
+        url: `${ADMIN_BASE}/stock/ledger`,
+        icon: ClipboardListIcon,
+      },
+      {
         title: "Categories",
         url: `${ADMIN_BASE}/categories`,
         icon: ListIcon,

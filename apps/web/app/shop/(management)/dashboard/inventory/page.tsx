@@ -26,12 +26,12 @@ export default function InventoryPage() {
     // Calculate summary stats
     const items = data?.items ?? [];
     const totalItems = items.length;
-    const inStockItems = items.filter((i: any) => (i.quantity ?? 0) > 0).length;
+    const inStockItems = items.filter((i) => Number(i.availableQty ?? 0) > 0).length;
     const lowStockItems = items.filter(
-        (i: any) => (i.quantity ?? 0) > 0 && (i.quantity ?? 0) <= 5,
+        (i) => Number(i.availableQty ?? 0) > 0 && Number(i.availableQty ?? 0) <= 5,
     ).length;
     const outOfStockItems = items.filter(
-        (i: any) => (i.quantity ?? 0) === 0,
+        (i) => Number(i.availableQty ?? 0) === 0,
     ).length;
 
     return (
@@ -108,12 +108,12 @@ export default function InventoryPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {items.map((item: any) => {
+                            {items.map((item) => {
                                 const prod = item.variant?.product;
                                 const variant = item.variant;
                                 const img =
-                                    prod?.images?.[0]?.url || prod?.image;
-                                const qty = item.quantity ?? 0;
+                                    prod?.images?.[0]?.imageUrl || prod?.image;
+                                const qty = Number(item.availableQty ?? 0);
 
                                 const stockStatus =
                                     qty === 0
