@@ -8,6 +8,7 @@ import type {
 } from "@bikalpo-project/db/schema";
 import { ProductSpecs } from "@/components/features/products/product-specs";
 import { ProductActions } from "@/components/features/products/product-actions";
+import { ProductSellers } from "@/components/features/products/product-sellers";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -95,7 +96,18 @@ export function ProductDetailClient({
 
   const selected = sorted.find((v) => v.id === selectedId) ?? sorted[0] ?? null;
 
-  const displayPrice = selected ? Number(selected.price) : Number(product.price);
+  // Seller selection state
+  const [selectedSeller, setSelectedSeller] = useState<{
+    shopId: string;
+    shopName: string;
+    retailPrice: number;
+  } | null>(null);
+
+  const displayPrice = selectedSeller
+    ? selectedSeller.retailPrice
+    : selected
+      ? Number(selected.price)
+      : Number(product.price);
   const displayStock = selected ? (selected.stockQuantity ?? 0) : product.stockQuantity;
   const displaySize = selected ? selected.unitLabel : product.size;
   const hasMultiple = sorted.length > 1;
@@ -169,6 +181,13 @@ export function ProductDetailClient({
         </div>
       )}
 
+      {/* ── Sellers selling this product ── */}
+      <ProductSellers
+        productId={product.id}
+        selectedSeller={selectedSeller}
+        onSelectSeller={setSelectedSeller}
+      />
+
       {/* ── Specs ── */}
       <div className="mb-6">
         <ProductSpecs
@@ -193,6 +212,7 @@ export function ProductDetailClient({
           stockQuantity: displayStock,
         }}
         variantId={selected?.id}
+        shopId={selectedSeller?.shopId}
         orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
         orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}
         orderIncrement={selected?.orderIncrement ? Number(selected.orderIncrement) : undefined}

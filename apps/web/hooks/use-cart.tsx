@@ -33,7 +33,7 @@ export interface CartItem {
 
 interface CartContextType {
   items: CartItem[];
-  addItem: (productId: number, quantity?: number, variantId?: number) => Promise<void>;
+  addItem: (productId: number, quantity?: number, variantId?: number, shopId?: string) => Promise<void>;
   removeItem: (cartItemId: number) => Promise<void>;
   updateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
@@ -90,13 +90,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
     };
   }, [session, refreshCart]);
 
-  const addItem = async (productId: number, quantity: number = 1, variantId?: number) => {
+  const addItem = async (productId: number, quantity: number = 1, variantId?: number, shopId?: string) => {
     setIsLoading(true);
     try {
       const result = await orpc.customer.addToCart.call({
         productId,
         quantity,
         variantId,
+        shopId,
       });
       await refreshCart();
       toast.success(result.message || "Item added to cart");

@@ -149,7 +149,7 @@ export default function ShopStorePage({
                             >
                                 {/* Product Image — links to detail */}
                                 <Link
-                                    href={`/products/${product.slug}`}
+                                    href={`/products/${product.category?.slug ?? "all"}/${product.slug}`}
                                     className="group block"
                                 >
                                     <div className="aspect-square bg-gray-50 relative overflow-hidden">
@@ -176,7 +176,7 @@ export default function ShopStorePage({
                                 {/* Product Info + Add to Cart */}
                                 <div className="p-4">
                                     <Link
-                                        href={`/products/${product.slug}`}
+                                        href={`/products/${product.category?.slug ?? "all"}/${product.slug}`}
                                     >
                                         <h3 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2 hover:text-emerald-600 transition-colors">
                                             {product.name}

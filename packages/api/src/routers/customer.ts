@@ -1738,6 +1738,122 @@ const queries = {
       };
     }),
 
+  /** Get all sellers who have a specific product in stock */
+  getProductSellers: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/products/{productId}/sellers",
+      tags: ["Customer"],
+      summary: "Get sellers selling a product with their prices",
+    })
+    .input(z.object({ productId: z.number() }))
+    .handler(async ({ input }) => {
+      // 1. Get all RETAIL variant IDs for this product
+      const retailVariants = await db
+        .select({ id: productVariant.id })
+        .from(productVariant)
+        .where(
+          and(
+            eq(productVariant.productId, input.productId),
+            eq(productVariant.isActive, true),
+            or(
+              eq(productVariant.variantType, "retail"),
+              isNull(productVariant.variantType),
+            ),
+          ),
+        );
+
+      const variantIds = retailVariants.map((v) => v.id);
+      if (variantIds.length === 0) {
+        return { sellers: [] };
+      }
+
+      // 2. Find all shop inventories for these variants with stock > 0
+      const shopInventories = await db
+        .select({
+          shopId: inventory.ownerId,
+          variantId: inventory.variantId,
+          retailPrice: inventory.retailPrice,
+          availableQty: inventory.availableQty,
+        })
+        .from(inventory)
+        .where(
+          and(
+            eq(inventory.ownerType, "shop"),
+            inArray(inventory.variantId, variantIds),
+            sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+          ),
+        );
+
+      if (shopInventories.length === 0) {
+        return { sellers: [] };
+      }
+
+      // 3. Get unique shop IDs and fetch shop details
+      const shopIds = [...new Set(shopInventories.map((inv) => inv.shopId))];
+      const shops = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          shopAddress: user.shopAddress,
+          image: user.image,
+        })
+        .from(user)
+        .where(
+          and(
+            inArray(user.id, shopIds),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        );
+
+      const shopMap = new Map(shops.map((s) => [s.id, s]));
+
+      // 4. Group inventories by shop, picking the lowest price variant per shop
+      const sellerMap = new Map<
+        string,
+        {
+          shopId: string;
+          shopName: string | null;
+          shopSlug: string | null;
+          shopImage: string | null;
+          shopAddress: string | null;
+          retailPrice: string | null;
+          availableQty: string;
+        }
+      >();
+
+      for (const inv of shopInventories) {
+        const shop = shopMap.get(inv.shopId);
+        if (!shop) continue; // Not approved or not found
+
+        const existing = sellerMap.get(inv.shopId);
+        const currentPrice = Number(inv.retailPrice || 0);
+        const existingPrice = Number(existing?.retailPrice || Infinity);
+
+        if (!existing || currentPrice < existingPrice) {
+          sellerMap.set(inv.shopId, {
+            shopId: shop.id,
+            shopName: shop.shopName || shop.name,
+            shopSlug: shop.shopSlug,
+            shopImage: shop.image,
+            shopAddress: shop.shopAddress,
+            retailPrice: inv.retailPrice,
+            availableQty: inv.availableQty,
+          });
+        }
+      }
+
+      // Sort by price ascending
+      const sellers = Array.from(sellerMap.values()).sort(
+        (a, b) => Number(a.retailPrice || 0) - Number(b.retailPrice || 0),
+      );
+
+      return { sellers };
+    }),
+
   /** List available areas for the area picker */
   getAreas: publicProcedure
     .route({

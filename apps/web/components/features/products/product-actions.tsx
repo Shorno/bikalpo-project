@@ -23,6 +23,7 @@ interface ProductActionsProps {
   variant?: "default" | "emerald";
   categoryName?: string;
   brandName?: string;
+  shopId?: string;
 }
 
 export function ProductActions({
@@ -34,6 +35,7 @@ export function ProductActions({
   variant = "default",
   categoryName,
   brandName,
+  shopId,
 }: ProductActionsProps) {
   const effectiveMin = Math.max(1, orderMin);
   const effectiveMax = orderMax ? Math.min(orderMax, product.stockQuantity) : product.stockQuantity;
@@ -61,7 +63,7 @@ export function ProductActions({
   const handleAddToCart = async () => {
     setIsAdding(true);
     try {
-      await addItem(product.id, quantity, variantId);
+      await addItem(product.id, quantity, variantId, shopId);
     } finally {
       setIsAdding(false);
     }
