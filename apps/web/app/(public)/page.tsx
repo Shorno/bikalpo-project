@@ -3,6 +3,7 @@ import { OrpcBrandsCarousel } from "@/components/features/home/orpc-brands-carou
 import { OrpcCategoriesCarousel } from "@/components/features/home/orpc-categories-carousel";
 import { OrpcFeaturedProducts } from "@/components/features/home/orpc-featured-products";
 import { WeekendDeals } from "@/components/features/home/weekend-deals";
+import { Sidebar } from "@/components/layout/sidebar";
 import { FeatureBadge } from "@/components/shared/feature-badge";
 import { HomeBannerCarousel } from "../../components/features/home/home-banner-carousel";
 
@@ -35,7 +36,16 @@ export default async function HomePage() {
   return (
     <>
       {/* Hero Banner Carousel */}
-      <HomeBannerCarousel />
+      <section className="bg-white pt-2">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[230px_minmax(0,1fr)]">
+            <div className="hidden lg:block">
+              <Sidebar fixed={false} />
+            </div>
+            <HomeBannerCarousel className="overflow-hidden rounded-sm" />
+          </div>
+        </div>
+      </section>
 
       {/* Feature Badges */}
       <section className="bg-white border-b">

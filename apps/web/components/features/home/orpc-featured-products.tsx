@@ -42,6 +42,9 @@ export function OrpcFeaturedProducts({
     page: "1",
   });
 
+  // Always call hooks at the top level, before any returns
+  const { addItem } = useCart();
+
   if (isLoading) {
     return (
       <section className={cn("py-6", className)}>
@@ -65,7 +68,6 @@ export function OrpcFeaturedProducts({
   }
 
   const products = data.products.slice(0, limit);
-  const { addItem } = useCart();
 
   return (
     <section className={cn("py-6", className)}>

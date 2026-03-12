@@ -5,7 +5,6 @@ import { Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { BusinessApplicationForm } from "@/components/features/auth/business-application-form";
-import { Navbar } from "@/components/layout/navbar";
 import { orpc } from "@/utils/orpc";
 
 function ApplyBusinessContent() {
@@ -26,24 +25,18 @@ function ApplyBusinessContent() {
 
   if (isLoading) {
     return (
-      <>
-        <Navbar />
-        <div className="flex min-h-[calc(100dvh-80px)] items-center justify-center bg-[#FAF6F6]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </>
+      <div className="flex min-h-[calc(100dvh-120px)] items-center justify-center bg-[#FAF6F6]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
   // Redirect while not in edit mode
   if (data && data.status && !isEditMode) {
     return (
-      <>
-        <Navbar />
-        <div className="flex min-h-[calc(100dvh-80px)] items-center justify-center bg-[#FAF6F6]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </>
+      <div className="flex min-h-[calc(100dvh-120px)] items-center justify-center bg-[#FAF6F6]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
@@ -68,36 +61,30 @@ function ApplyBusinessContent() {
       : undefined;
 
   return (
-    <>
-      <Navbar />
-      <div className="flex min-h-[calc(100dvh-80px)] flex-col items-center bg-[#FAF6F6] px-4 py-8 pt-24 md:px-8">
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-            {isEditMode ? "Edit Your Application" : "Become a Business Seller"}
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            {isEditMode
-              ? "Update your application details below"
-              : "Complete the application below to start selling on our platform"}
-          </p>
-        </div>
-        <BusinessApplicationForm
-          initialData={initialData}
-          isEditMode={isEditMode && !!data}
-        />
+    <div className="flex min-h-[calc(100dvh-120px)] flex-col items-center bg-[#FAF6F6] px-4 py-8 pt-24 md:px-8">
+      <div className="mb-6 text-center">
+        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+          {isEditMode ? "Edit Your Application" : "Become a Business Seller"}
+        </h1>
+        <p className="mt-2 text-muted-foreground">
+          {isEditMode
+            ? "Update your application details below"
+            : "Complete the application below to start selling on our platform"}
+        </p>
       </div>
-    </>
+      <BusinessApplicationForm
+        initialData={initialData}
+        isEditMode={isEditMode && !!data}
+      />
+    </div>
   );
 }
 
 function LoadingFallback() {
   return (
-    <>
-      <Navbar />
-      <div className="flex min-h-[calc(100dvh-80px)] items-center justify-center bg-[#FAF6F6]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    </>
+    <div className="flex min-h-[calc(100dvh-120px)] items-center justify-center bg-[#FAF6F6]">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
   );
 }
 

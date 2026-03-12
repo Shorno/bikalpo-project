@@ -9,6 +9,7 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
+import { cn } from "@/lib/utils";
 
 const banners = [
   {
@@ -31,9 +32,13 @@ const banners = [
   },
 ];
 
-export function HomeBannerCarousel() {
+interface HomeBannerCarouselProps {
+  className?: string;
+}
+
+export function HomeBannerCarousel({ className }: HomeBannerCarouselProps) {
   return (
-    <section className="w-full bg-primary/10">
+    <section className={cn("w-full bg-primary/10", className)}>
       <Carousel opts={{ loop: true }} className="w-full">
         <CarouselContent>
           {banners.map((banner) => (

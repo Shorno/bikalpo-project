@@ -1,24 +1,16 @@
 "use client";
-import {
-  ChevronRight,
-  LayoutGrid,
-  Phone,
-  Smartphone,
-  Store,
-} from "lucide-react";
+import { Phone, Smartphone, Store } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import SearchInput from "@/components/features/home/search/search-input";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useActiveCategories } from "@/hooks/use-customer-api";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
 import { UserDropdown } from "./user-dropdown";
 import { authClient } from "@/lib/auth-client";
-import { cn } from "@/lib/utils";
+import { EnhancedCategoryDropdown } from "./enhanced-category-dropdown";
 
 const topNavLinks = [
   { label: "Ramadan Special", href: "/products?tag=ramadan" },
@@ -30,8 +22,6 @@ const topNavLinks = [
 export function Navbar() {
   const isMobile = useIsMobile();
   const { data: session } = authClient.useSession();
-  const { data: categoriesData } = useActiveCategories();
-  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
 
   return (
     <nav className="sticky top-0 z-50 bg-white shadow-md">
@@ -102,33 +92,8 @@ export function Navbar() {
       <div className="hidden md:block bg-white border-b">
         <div className="container mx-auto px-4">
           <div className="flex items-center h-10">
-            {/* Shop by Category */}
-            <div
-              className="relative"
-              onMouseEnter={() => setCategoryMenuOpen(true)}
-              onMouseLeave={() => setCategoryMenuOpen(false)}
-            >
-              <button className="flex items-center gap-2 h-10 px-3 bg-primary text-white text-sm font-medium shrink-0">
-                <LayoutGrid className="size-4" />
-                <span>SHOP BY CATEGORY</span>
-              </button>
-
-              {/* Category dropdown */}
-              {categoryMenuOpen && categoriesData?.categories && (
-                <div className="absolute top-full left-0 w-56 bg-white shadow-xl border z-50">
-                  {categoriesData.categories.map((cat) => (
-                    <Link
-                      key={cat.slug}
-                      href={`/products/${cat.slug}`}
-                      className="flex items-center justify-between px-4 py-2.5 text-sm text-gray-700 hover:bg-primary hover:text-white transition-colors"
-                    >
-                      <span>{cat.name}</span>
-                      <ChevronRight className="size-3.5 opacity-60" />
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Enhanced Shop by Category */}
+            <EnhancedCategoryDropdown />
 
             <Separator orientation="vertical" className="h-6 mx-1" />
 
