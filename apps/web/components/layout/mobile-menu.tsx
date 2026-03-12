@@ -1,6 +1,20 @@
 "use client";
 
-import { Menu } from "lucide-react";
+import {
+  Menu,
+  ChevronRight,
+  ShoppingBag,
+  Baby,
+  Shirt,
+  Home,
+  Sparkles,
+  Stethoscope,
+  Package,
+  PenTool,
+  Gamepad2,
+  Smartphone,
+} from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,64 +24,89 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { useActiveCategories } from "@/hooks/use-customer-api";
 
-const navLinks = [
-  { href: "/", label: "Home" },
-  { href: "/products", label: "Products" },
-  { href: "/store", label: "Shops" },
-  { href: "/verified-customers", label: "Verified B2B Customers" },
-];
+// Icon mapping for categories
+const categoryIcons: Record<string, any> = {
+  food: ShoppingBag,
+  "baby-food": Baby,
+  diapers: Baby,
+  cleaning: Sparkles,
+  "pet-care": Package,
+  beauty: Stethoscope,
+  fashion: Shirt,
+  "home-kitchen": Home,
+  stationeries: PenTool,
+  toys: Gamepad2,
+  gadget: Smartphone,
+};
 
-const categories = [
-  { href: "/category/electronics", label: "Electronics" },
-  { href: "/category/food", label: "Food" },
-  { href: "/category/grocery", label: "Grocery" },
-  { href: "/category/fashion", label: "Fashion" },
-  { href: "/category/home-garden", label: "Home & Garden" },
-];
+function getCategoryIcon(slug: string) {
+  const key = Object.keys(categoryIcons).find((k) =>
+    slug.toLowerCase().includes(k),
+  );
+  return key ? categoryIcons[key] : Package;
+}
 
 export function MobileMenu() {
+  const { data: categoriesData } = useActiveCategories();
+
   return (
     <Sheet>
-      <SheetTrigger asChild className="md:hidden">
-        <Button variant="ghost" size="icon">
-          <Menu className="size-5" />
+      <SheetTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-white hover:bg-white/10"
+          aria-label="Menu"
+        >
+          <Menu className="size-6" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-[300px] px-6">
-        <SheetHeader className="pb-4 border-b">
-          <SheetTitle>Menu</SheetTitle>
+      <SheetContent
+        side="left"
+        className="w-[85vw] max-w-[320px] p-0 overflow-y-auto"
+      >
+        <SheetHeader className="px-4 py-4 bg-gray-50 border-b">
+          <SheetTitle className="text-left text-sm font-bold uppercase tracking-wide flex items-center gap-2">
+            <Menu className="size-4" />
+            SHOP BY CATEGORY
+          </SheetTitle>
         </SheetHeader>
-        <div className="mt-6 flex flex-col gap-6 px-2">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Categories
-            </p>
-            {categories.map((cat) => (
-              <Link
-                key={cat.href}
-                href={cat.href}
-                className="block py-2.5 text-sm hover:text-primary transition-colors"
-              >
-                {cat.label}
-              </Link>
-            ))}
+
+        {/* Categories List */}
+        {categoriesData?.categories && categoriesData.categories.length > 0 && (
+          <div className="py-2">
+            {categoriesData.categories.map((cat, index) => {
+              const IconComponent = getCategoryIcon(cat.slug);
+              return (
+                <Link
+                  key={cat.slug}
+                  href={`/products/${cat.slug}`}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0"
+                >
+                  <div className="shrink-0">
+                    {cat.image ? (
+                      <Image
+                        src={cat.image}
+                        alt={cat.name}
+                        width={24}
+                        height={24}
+                        className="object-contain"
+                      />
+                    ) : (
+                      <IconComponent className="size-6 text-gray-600" />
+                    )}
+                  </div>
+                  <span className="flex-1 text-sm font-medium text-gray-900">
+                    {cat.name}
+                  </span>
+                  <ChevronRight className="size-4 text-gray-400 shrink-0" />
+                </Link>
+              );
+            })}
           </div>
-          <div className="border-t pt-6 space-y-1">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Quick Links
-            </p>
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="block py-2.5 text-sm hover:text-primary transition-colors"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+        )}
       </SheetContent>
     </Sheet>
   );

@@ -4,7 +4,7 @@ import { Loader2, Minus, PackagePlus, Plus, ShoppingCart } from "lucide-react";
 import { useState } from "react";
 import { RequestFormModal } from "@/components/features/item-request/request-form-modal";
 import { Button } from "@/components/ui/button";
-import { useCart } from "@/hooks/use-cart";
+import { useCart } from "@/hooks/use-orpc-cart";
 
 interface ProductActionsProps {
   product: {
@@ -38,7 +38,9 @@ export function ProductActions({
   shopId,
 }: ProductActionsProps) {
   const effectiveMin = Math.max(1, orderMin);
-  const effectiveMax = orderMax ? Math.min(orderMax, product.stockQuantity) : product.stockQuantity;
+  const effectiveMax = orderMax
+    ? Math.min(orderMax, product.stockQuantity)
+    : product.stockQuantity;
   const step = Math.max(1, orderIncrement);
 
   const [quantity, setQuantity] = useState(effectiveMin);
@@ -63,7 +65,7 @@ export function ProductActions({
   const handleAddToCart = async () => {
     setIsAdding(true);
     try {
-      await addItem(product.id, quantity, variantId, shopId);
+      await addItem(product.id, quantity);
     } finally {
       setIsAdding(false);
     }

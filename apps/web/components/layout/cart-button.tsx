@@ -3,7 +3,7 @@
 import { ShoppingCart } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useCart } from "@/hooks/use-cart";
+import { useCart } from "@/hooks/use-orpc-cart";
 import { CartDrawer } from "./cart-drawer";
 
 interface CartButtonProps {
