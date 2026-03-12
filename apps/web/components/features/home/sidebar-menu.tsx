@@ -9,7 +9,7 @@ import {
   User,
 } from "lucide-react";
 import Link from "next/link";
-import { useCart } from "@/hooks/use-cart";
+import { useCart } from "@/hooks/use-orpc-cart";
 import { cn } from "@/lib/utils";
 
 export function SidebarMenu() {

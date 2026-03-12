@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { RequestFormModal } from "@/components/features/item-request/request-form-modal";
 import { Button } from "@/components/ui/button";
-import { useCart } from "@/hooks/use-cart";
+import { useCart } from "@/hooks/use-orpc-cart";
 import { formatPrice } from "@/utils/currency";
 
 interface ProductCardProps {

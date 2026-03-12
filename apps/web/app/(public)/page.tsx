@@ -1,136 +1,92 @@
-import Image from "next/image";
-import Link from "next/link";
-import { HeroButtons } from "@/components/features/home/hero-buttons";
+import { Clock, CreditCard, Headphones, ShieldCheck } from "lucide-react";
 import { OrpcBrandsCarousel } from "@/components/features/home/orpc-brands-carousel";
 import { OrpcCategoriesCarousel } from "@/components/features/home/orpc-categories-carousel";
 import { OrpcFeaturedProducts } from "@/components/features/home/orpc-featured-products";
-import { VerifiedCustomersSection } from "@/components/features/home/verified-customers-section";
-import { OrpcCategoryListing } from "@/components/features/products/orpc-category-listing";
-import { Button } from "@/components/ui/button";
-import { getVerifiedUsersForHome } from "@/lib/public-data";
+import { WeekendDeals } from "@/components/features/home/weekend-deals";
+import { FeatureBadge } from "@/components/shared/feature-badge";
+import { HomeBannerCarousel } from "../../components/features/home/home-banner-carousel";
 
 export const revalidate = 1800;
 
-export default async function HomePage() {
-  // const verifiedUsers = await getVerifiedUsersForHome(revalidate);
+const featureBadges = [
+  {
+    icon: Clock,
+    title: "Fast Delivery",
+    subtitle: "Free shipping over ৳1500",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Authorized Products",
+    subtitle: "Within 30 days for an exchange",
+  },
+  {
+    icon: Headphones,
+    title: "Customer Service Support",
+    subtitle: "8am to 10pm",
+  },
+  {
+    icon: CreditCard,
+    title: "Flexible Payments",
+    subtitle: "Pay with multiple credit cards",
+  },
+];
 
+export default async function HomePage() {
   return (
     <>
-      <section className="relative h-125 flex items-center justify-center overflow-hidden">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{
-            backgroundImage: "url('/images/hero-cover.jpg')",
-          }}
-        >
-          <div className="absolute inset-0 bg-black/60" />
-        </div>
+      {/* Hero Banner Carousel */}
+      <HomeBannerCarousel />
 
-        <div className="relative z-10 text-center px-4 max-w-4xl">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4">
-            Wholesale & B2B Supplies Delivered
-            <br />
-            to Your Business
-          </h1>
-          <p className="text-lg text-white/90 mb-8">
-            Fast delivery, best pricing, verified B2B marketplace.
-          </p>
-          <HeroButtons />
+      {/* Feature Badges */}
+      <section className="bg-white border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {featureBadges.map((badge) => (
+              <FeatureBadge
+                key={badge.title}
+                icon={badge.icon}
+                title={badge.title}
+                subtitle={badge.subtitle}
+              />
+            ))}
+          </div>
         </div>
       </section>
 
-      <OrpcBrandsCarousel />
-
+      {/* Categories Carousel */}
       <OrpcCategoriesCarousel />
 
-      <div className="container mx-auto">
-        <OrpcCategoryListing />
-      </div>
+      {/* Brands */}
+      <OrpcBrandsCarousel />
 
+      {/* Weekend Deals */}
+      <WeekendDeals />
+
+      {/* Recommended For You */}
       <OrpcFeaturedProducts
-        title="New Arrivals"
-        subtitle="Check out our latest products"
-        type="new-arrivals"
+        title="Recommended For You"
+        type="featured"
         limit={8}
-        href="/products?sort=newest"
+        href="/products"
       />
 
+      {/* Hot & Trending */}
       <OrpcFeaturedProducts
-        title="Best Selling"
-        subtitle="Most popular products this month"
+        title="Hot & Trending Right Now 🔥"
         type="best-selling"
         limit={8}
         href="/products?sort=popular"
         className="bg-gray-50"
       />
 
-      {/*<VerifiedCustomersSection customers={verifiedUsers} />-*/}
-
-      <section className="relative py-20 overflow-hidden">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{
-            backgroundImage:
-              "url('https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1600&h=600&fit=crop')",
-          }}
-        >
-          <div className="absolute inset-0 bg-black/70" />
-        </div>
-
-        <div className="relative z-10 container mx-auto px-4 text-center">
-          <h2 className="text-4xl md:text-5xl font-bold text-white mb-8">
-            Join 10,000+ Verified B2B Buyers
-          </h2>
-          <div className="flex items-center justify-center gap-4 flex-wrap">
-            <Button size="lg" asChild>
-              <Link href="/signup">Register Your Business</Link>
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="bg-transparent text-white border-white hover:bg-white/10"
-              asChild
-            >
-              <Link href="/verified-customers">
-                Check Verified Customer List
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section className="py-16 bg-white">
-        <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900 mb-6">
-                Order Faster with our Web
-              </h2>
-              <Link
-                href="https://play.google.com/store"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Image
-                  src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg"
-                  alt="Get it on Google Play"
-                  width={200}
-                  height={60}
-                  className="hover:opacity-80 transition-opacity"
-                />
-              </Link>
-            </div>
-            <div className="relative w-48 h-48 bg-white p-4 rounded-lg border-2 border-gray-200">
-              <Image
-                src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://bikalpo.com/download"
-                alt="QR Code to Download App"
-                fill
-                className="object-contain p-2"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* New Arrivals */}
+      <OrpcFeaturedProducts
+        title="New Arrivals"
+        subtitle="Fresh products just added"
+        type="new-arrivals"
+        limit={8}
+        href="/products?sort=newest"
+      />
     </>
   );
 }

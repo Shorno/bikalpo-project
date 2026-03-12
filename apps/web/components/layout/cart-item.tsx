@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { CartItem as CartItemType } from "@/hooks/use-cart";
+import type { CartItem as CartItemType } from "@/hooks/use-orpc-cart";
 
 interface CartItemProps {
   item: CartItemType;

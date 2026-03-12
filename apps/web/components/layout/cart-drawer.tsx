@@ -10,7 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useCart } from "@/hooks/use-cart";
+import { useCart } from "@/hooks/use-orpc-cart";
 import { CartItem } from "./cart-item";
 
 interface CartDrawerProps {

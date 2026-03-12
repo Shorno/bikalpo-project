@@ -27,20 +27,20 @@ function BrandItem({ brand }: { brand: ActiveBrand }) {
       href={`/products?brand=${brand.slug}`}
       className="flex flex-col items-center group"
     >
-      <div className="w-16 h-16 sm:w-24 sm:h-24 lg:w-28 lg:h-28 rounded-full bg-white border border-gray-200 flex items-center justify-center mb-2 sm:mb-3 group-hover:border-blue-300 group-hover:shadow-md transition-all overflow-hidden p-2 sm:p-3">
+      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white border-2 border-gray-100 flex items-center justify-center mb-2 group-hover:border-primary/30 group-hover:shadow-md transition-all overflow-hidden p-2">
         {brand.logo ? (
           <Image
             src={brand.logo}
             alt={brand.name}
-            width={80}
-            height={80}
-            className="object-contain grayscale group-hover:grayscale-0 transition-all w-10 h-10 sm:w-16 sm:h-16 lg:w-20 lg:h-20"
+            width={60}
+            height={60}
+            className="object-contain grayscale group-hover:grayscale-0 transition-all"
           />
         ) : (
-          <Building2 className="w-8 h-8 sm:w-12 sm:h-12 lg:w-14 lg:h-14 text-gray-400" />
+          <Building2 className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" />
         )}
       </div>
-      <span className="text-xs sm:text-sm lg:text-base font-medium text-gray-900 text-center line-clamp-1">
+      <span className="text-xs font-medium text-gray-700 text-center line-clamp-1 group-hover:text-primary transition-colors">
         {brand.name}
       </span>
     </Link>
@@ -52,16 +52,14 @@ export function OrpcBrandsCarousel() {
 
   if (isLoading) {
     return (
-      <section className="py-10 sm:py-12 bg-gray-50">
-        <div className="container mx-auto px-4 md:px-0">
-          <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8 sm:mb-12">
-            Top Brands
-          </h2>
+      <section className="py-6 bg-gray-50 border-b">
+        <div className="container mx-auto px-4">
+          <Skeleton className="h-6 w-28 mb-4" />
           <div className="flex justify-center gap-6">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex flex-col items-center">
-                <Skeleton className="w-24 h-24 rounded-full mb-2" />
-                <Skeleton className="h-4 w-16" />
+                <Skeleton className="w-20 h-20 rounded-full mb-2" />
+                <Skeleton className="h-3 w-14" />
               </div>
             ))}
           </div>
@@ -77,21 +75,15 @@ export function OrpcBrandsCarousel() {
   const brands = data.brands;
 
   return (
-    <section className="py-10 sm:py-12 bg-gray-50">
-      <div className="container mx-auto px-4 md:px-0">
-        <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8 sm:mb-12">
-          Top Brands
-        </h2>
+    <section className="py-6 bg-gray-50 border-b">
+      <div className="container mx-auto px-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900">Top Brands</h2>
+        </div>
 
-        {/* Mobile Carousel - single horizontal row */}
-        <div className="sm:hidden px-8">
-          <Carousel
-            opts={{
-              align: "start",
-              loop: true,
-            }}
-            className="w-full"
-          >
+        {/* Mobile Carousel */}
+        <div className="sm:hidden px-6">
+          <Carousel opts={{ align: "start", loop: true }} className="w-full">
             <CarouselContent className="-ml-3">
               {brands.map((brand) => (
                 <CarouselItem
@@ -107,27 +99,21 @@ export function OrpcBrandsCarousel() {
           </Carousel>
         </div>
 
-        {/* Tablet & Desktop Carousel */}
-        <div className="hidden sm:block px-12">
-          <Carousel
-            opts={{
-              align: "start",
-              loop: true,
-            }}
-            className="w-full"
-          >
+        {/* Desktop Carousel */}
+        <div className="hidden sm:block px-10">
+          <Carousel opts={{ align: "start", loop: true }} className="w-full">
             <CarouselContent className="-ml-4">
               {brands.map((brand) => (
                 <CarouselItem
                   key={brand.id}
-                  className="pl-4 basis-1/3 md:basis-1/4 lg:basis-1/6"
+                  className="pl-4 basis-1/4 md:basis-1/5 lg:basis-[12.5%] xl:basis-[10%]"
                 >
                   <BrandItem brand={brand} />
                 </CarouselItem>
               ))}
             </CarouselContent>
-            <CarouselPrevious className="-left-6" />
-            <CarouselNext className="-right-6" />
+            <CarouselPrevious className="-left-5" />
+            <CarouselNext className="-right-5" />
           </Carousel>
         </div>
       </div>

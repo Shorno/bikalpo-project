@@ -4,11 +4,12 @@
  */
 "use client";
 
-import { ChevronRight } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent } from "@/components/ui/card";
 import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
+import { useCart } from "@/hooks/use-orpc-cart";
+import { ProductCard } from "@/components/shared/product-card";
+import { SectionHeader } from "@/components/shared/section-header";
 import { cn } from "@/lib/utils";
 
 interface OrpcFeaturedProductsProps {
@@ -28,7 +29,6 @@ export function OrpcFeaturedProducts({
   href,
   className,
 }: OrpcFeaturedProductsProps) {
-  // Determine sort based on type
   const sortConfig =
     type === "new-arrivals"
       ? { sort: "newest" }
@@ -44,13 +44,13 @@ export function OrpcFeaturedProducts({
 
   if (isLoading) {
     return (
-      <section className={cn("py-8", className)}>
+      <section className={cn("py-6", className)}>
         <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between mb-6">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-24" />
+          <div className="flex items-center justify-between mb-4">
+            <Skeleton className="h-7 w-48" />
+            <Skeleton className="h-4 w-20" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
             {Array.from({ length: limit }).map((_, i) => (
               <ProductCardSkeleton key={i} />
             ))}
@@ -61,79 +61,27 @@ export function OrpcFeaturedProducts({
   }
 
   if (isError || !data?.products || data.products.length === 0) {
-    return null; // Don't show section if no products
+    return null;
   }
 
   const products = data.products.slice(0, limit);
-  type FeaturedProduct = (typeof products)[number];
+  const { addItem } = useCart();
 
   return (
-    <section className={cn("py-8", className)}>
+    <section className={cn("py-6", className)}>
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
-              {title}
-            </h2>
-            {subtitle && (
-              <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
-            )}
-          </div>
-          {href && (
-            <Link
-              href={href}
-              className="inline-flex items-center text-sm text-emerald-600 hover:text-emerald-700 font-medium"
-            >
-              View All
-              <ChevronRight className="h-4 w-4 ml-0.5" />
-            </Link>
-          )}
-        </div>
+        <SectionHeader title={title} viewAllHref={href} />
+        {subtitle && (
+          <p className="text-xs text-gray-500 -mt-2 mb-3">{subtitle}</p>
+        )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {products.map((product: FeaturedProduct) => (
-            <Link
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          {products.map((product) => (
+            <ProductCard
               key={product.id}
-              href={`/products/${(product as any).category?.slug ?? "all"}/${product.slug}`}
-              className="group bg-white border rounded-lg overflow-hidden hover:shadow-lg transition-all"
-            >
-              <div className="aspect-square relative overflow-hidden bg-gray-100">
-                <Image
-                  src={product.image || "/placeholder-product.png"}
-                  alt={product.name}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-300"
-                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                />
-                {!product.inStock && (
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                    <span className="text-white text-xs font-semibold px-3 py-1 bg-red-500 rounded">
-                      Out of Stock
-                    </span>
-                  </div>
-                )}
-                {type === "new-arrivals" && (
-                  <div className="absolute top-2 left-2">
-                    <span className="text-white text-xs font-semibold px-2 py-1 bg-emerald-500 rounded">
-                      New
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div className="p-3">
-                <h3 className="text-sm font-medium text-gray-900 line-clamp-2 group-hover:text-emerald-600 transition-colors">
-                  {product.name}
-                </h3>
-                {product.size && (
-                  <p className="text-xs text-gray-500 mt-1">{product.size}</p>
-                )}
-                <div className="mt-2">
-                  <p className="text-lg font-bold text-gray-900">
-                    ৳{Number(product.price || 0).toLocaleString("en-BD")}
-                  </p>
-                </div>
-              </div>
-            </Link>
+              product={product}
+              onAddToCart={(id) => addItem(id, 1)}
+            />
           ))}
         </div>
       </div>
@@ -143,13 +91,16 @@ export function OrpcFeaturedProducts({
 
 function ProductCardSkeleton() {
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <Card className="overflow-hidden rounded-md gap-0 py-0">
       <Skeleton className="aspect-square w-full" />
-      <div className="p-3 space-y-2">
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-3 w-2/3" />
-        <Skeleton className="h-5 w-20" />
-      </div>
-    </div>
+      <CardContent className="p-2.5 space-y-2">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-3/4" />
+        <div className="flex justify-between items-center">
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-7 w-14" />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
