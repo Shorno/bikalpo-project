@@ -7,6 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { DELIVERY_BASE } from "@/lib/routes";
 import { client } from "@/utils/orpc";
 
+export const dynamic = "force-dynamic";
+
 export default async function DeliveryDashboardPage() {
   let stats;
   let activeGroups;

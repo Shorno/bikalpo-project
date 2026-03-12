@@ -2,6 +2,8 @@ import { RotateCcw } from "lucide-react";
 import { type client, orpc, queryClient } from "@/utils/orpc";
 import { ReturnsClient } from "./returns-client";
 
+export const dynamic = "force-dynamic";
+
 export default async function ReturnsPage() {
   type ReturnItem = Awaited<
     ReturnType<typeof client.returns.getAll>
