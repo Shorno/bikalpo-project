@@ -35,7 +35,7 @@ export interface CartItem {
   shopName?: string | null;
 }
 
-interface CartContextType {
+export interface CartContextType {
   items: CartItem[];
   addItem: (productId: number, quantity?: number) => Promise<void>;
   removeItem: (cartItemId: number) => Promise<void>;
@@ -48,7 +48,9 @@ interface CartContextType {
   isLoading: boolean;
 }
 
-const CartContext = createContext<CartContextType | undefined>(undefined);
+export const CartContext = createContext<CartContextType | undefined>(
+  undefined,
+);
 
 export function OrpcCartProvider({ children }: { children: ReactNode }) {
   const { data: session } = authClient.useSession();

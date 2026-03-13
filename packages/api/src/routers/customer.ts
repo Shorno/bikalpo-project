@@ -21,6 +21,8 @@ import {
   estimate,
   invoice,
   itemRequest,
+  offer,
+  comboOffer,
   order,
   orderItem,
   payment,
@@ -61,8 +63,6 @@ import { protectedProcedure, publicProcedure } from "../index";
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
 // ────────────────────────────────────────────────────────────────
-
-
 
 const productFiltersSchema = z.object({
   category: z.string().optional().nullable(),
@@ -308,8 +308,14 @@ const queries = {
       ]);
 
       const totalCount = countResult[0]?.count || 0;
+      // Serialize products with proper price conversion
+      const serializedProducts = products.map((p) => ({
+        ...p,
+        price: parseFloat(p.price),
+      }));
+
       return {
-        products,
+        products: serializedProducts,
         pagination: {
           page,
           limit,
@@ -335,7 +341,11 @@ const queries = {
         with: { category: { columns: { name: true, slug: true } } },
         limit: 10,
       });
-      return { products: results };
+      const serializedResults = results.map((p) => ({
+        ...p,
+        price: parseFloat(p.price),
+      }));
+      return { products: serializedResults };
     }),
 
   /** Get product by slug with all relations */
@@ -366,6 +376,16 @@ const queries = {
         orderBy: [asc(productVariant.sortOrder)],
       });
 
+      // Serialize product and variants with proper price conversion
+      const foundSerialized = {
+        ...found,
+        price: parseFloat(found.price),
+      };
+      const variantsSerialized = variants.map((v) => ({
+        ...v,
+        price: parseFloat(v.price),
+      }));
+
       // Get review stats
       const reviewStats = await db
         .select({
@@ -376,8 +396,8 @@ const queries = {
         .where(eq(productReview.productId, found.id));
 
       return {
-        product: found,
-        variants,
+        product: foundSerialized,
+        variants: variantsSerialized,
         reviewStats: {
           averageRating: reviewStats[0]?.averageRating
             ? parseFloat(reviewStats[0].averageRating)
@@ -489,7 +509,16 @@ const queries = {
             limit: prodLimit,
             orderBy: [desc(product.createdAt)],
           });
-          return { ...cat, products, totalProducts: products.length };
+          // Serialize products with proper price conversion
+          const serializedProducts = products.map((p) => ({
+            ...p,
+            price: parseFloat(p.price),
+          }));
+          return {
+            ...cat,
+            products: serializedProducts,
+            totalProducts: serializedProducts.length,
+          };
         }),
       );
 
@@ -760,9 +789,7 @@ const queries = {
         const displayName = variant
           ? `${item.product.name} — ${variant.unitLabel}`
           : item.product.name;
-        const displaySize = variant
-          ? variant.unitLabel
-          : item.product.size;
+        const displaySize = variant ? variant.unitLabel : item.product.size;
         const currentPrice = variant
           ? Number(variant.price)
           : Number(item.product.price);
@@ -1070,8 +1097,8 @@ const queries = {
       );
       const products = productIds.length
         ? await db.query.product.findMany({
-          where: inArray(product.id, productIds),
-        })
+            where: inArray(product.id, productIds),
+          })
         : [];
       const productsById = new Map(products.map((p) => [p.id, p]));
 
@@ -1342,6 +1369,70 @@ const queries = {
       return { updates };
     }),
 
+  // ── Offers ──────────────────────────────────────────────────
+
+  /** Get active offers for homepage display */
+  getActiveOffers: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/offers",
+      tags: ["Customer"],
+      summary: "Get active offers",
+      description: "Get all active offers to display on the homepage",
+    })
+    .input(
+      z
+        .object({
+          limit: z.number().min(1).max(50).default(10),
+        })
+        .optional(),
+    )
+    .handler(async ({ input }) => {
+      const limit = input?.limit || 10;
+      const activeOffers = await db
+        .select()
+        .from(offer)
+        .where(eq(offer.active, true))
+        .orderBy(desc(offer.priority), desc(offer.createdAt))
+        .limit(limit);
+      return { offers: activeOffers };
+    }),
+
+  /** Get combo offers by category */
+  getComboOffers: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/combo-offers",
+      tags: ["Customer"],
+      summary: "Get combo offers",
+      description: "Get all active combo offers filtered by category",
+    })
+    .input(
+      z
+        .object({
+          category: z.string().optional(),
+          limit: z.number().min(1).max(50).default(12),
+        })
+        .optional(),
+    )
+    .handler(async ({ input }) => {
+      const limit = input?.limit || 12;
+      const conditions = [eq(comboOffer.active, true)];
+
+      if (input?.category) {
+        conditions.push(eq(comboOffer.category, input.category));
+      }
+
+      const offers = await db
+        .select()
+        .from(comboOffer)
+        .where(and(...conditions))
+        .orderBy(desc(comboOffer.priority), desc(comboOffer.createdAt))
+        .limit(limit);
+
+      return { offers };
+    }),
+
   // ── Verified Users ──────────────────────────────────────────
 
   /** Get verified users with filtering & pagination */
@@ -1442,7 +1533,9 @@ const queries = {
           case "most_orders":
             return b.totalOrders - a.totalOrders;
           case "newest":
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            return (
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
           case "top_buyers":
           default:
             return b.totalOrders - a.totalOrders;
@@ -1532,9 +1625,7 @@ const queries = {
           .from(category)
           .where(inArray(category.id, categoryIds));
 
-        categoryMap = Object.fromEntries(
-          categories.map((c) => [c.id, c.name]),
-        );
+        categoryMap = Object.fromEntries(categories.map((c) => [c.id, c.name]));
       }
 
       return {
@@ -1543,9 +1634,7 @@ const queries = {
           productName: p.productName,
           productImage: p.productImage,
           productSize: p.productSize,
-          categoryName: p.categoryId
-            ? categoryMap[p.categoryId] || null
-            : null,
+          categoryName: p.categoryId ? categoryMap[p.categoryId] || null : null,
           totalQuantity: Number(p.totalQuantity) || 0,
           totalOrders: Number(p.totalOrders) || 0,
           lastOrderedAt: p.lastOrderedAt,
@@ -2169,16 +2258,17 @@ const mutations = {
             columns: { id: true },
           });
           const variantIds = productVariants.map((v) => v.id);
-          const shopInv = variantIds.length > 0
-            ? await db.query.inventory.findFirst({
-              where: and(
-                eq(inventory.ownerType, "shop"),
-                eq(inventory.ownerId, item.shopId),
-                inArray(inventory.variantId, variantIds),
-                sql`CAST(${inventory.availableQty} AS numeric) > 0`,
-              ),
-            })
-            : null;
+          const shopInv =
+            variantIds.length > 0
+              ? await db.query.inventory.findFirst({
+                  where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, item.shopId),
+                    inArray(inventory.variantId, variantIds),
+                    sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                  ),
+                })
+              : null;
           stockQty = shopInv ? Number(shopInv.availableQty) : 0;
         } else {
           stockQty = item.variant
@@ -2222,12 +2312,16 @@ const mutations = {
       // Transaction: create order, deduct stock, clear cart
       const result = await db.transaction(async (tx) => {
         // Auto-tag order type based on user role
-        const orderType = context.session.user.role === "shop_owner" ? "b2b" as const : "b2c" as const;
+        const orderType =
+          context.session.user.role === "shop_owner"
+            ? ("b2b" as const)
+            : ("b2c" as const);
 
         // For B2C orders: determine the shop from cart items
-        const b2cShopId = orderType === "b2c"
-          ? orderItems.find((oi) => oi.shopId)?.shopId ?? null
-          : null;
+        const b2cShopId =
+          orderType === "b2c"
+            ? (orderItems.find((oi) => oi.shopId)?.shopId ?? null)
+            : null;
 
         const [newOrder] = await tx
           .insert(order)
@@ -2672,13 +2766,7 @@ const mutations = {
         ),
         shippingInfo: shippingInfoSchema,
         paymentMethod: z
-          .enum([
-            "cash_on_delivery",
-            "bkash",
-            "nagad",
-            "bank_transfer",
-            "card",
-          ])
+          .enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
           .default("cash_on_delivery"),
       }),
     )
@@ -2845,9 +2933,7 @@ const mutations = {
       z.object({
         subject: z.string().min(1).max(200),
         message: z.string().min(1),
-        priority: z
-          .enum(["low", "medium", "high"])
-          .default("medium"),
+        priority: z.enum(["low", "medium", "high"]).default("medium"),
       }),
     )
     .handler(async ({ context, input }) => {
@@ -2944,7 +3030,11 @@ const mutations = {
       const userId = context.session.user.id;
       const userRole = context.session.user.role;
 
-      if (userRole !== "admin" && userRole !== "salesman" && userRole !== "customer") {
+      if (
+        userRole !== "admin" &&
+        userRole !== "salesman" &&
+        userRole !== "customer"
+      ) {
         throw new ORPCError("FORBIDDEN", { message: "Unauthorized" });
       }
 
@@ -2983,7 +3073,10 @@ const mutations = {
         });
       }
 
-      if (estimateData.status !== "approved" && estimateData.status !== "sent") {
+      if (
+        estimateData.status !== "approved" &&
+        estimateData.status !== "sent"
+      ) {
         throw new ORPCError("BAD_REQUEST", {
           message: `Only sent or approved estimates can be converted. Current status: ${estimateData.status}`,
         });

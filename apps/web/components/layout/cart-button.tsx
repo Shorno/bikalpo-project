@@ -1,19 +1,36 @@
 "use client";
 
 import { ShoppingCart } from "lucide-react";
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useCart } from "@/hooks/use-orpc-cart";
 import { CartDrawer } from "./cart-drawer";
+import { CartContext } from "@/hooks/use-orpc-cart";
 
 interface CartButtonProps {
   variant?: "default" | "emerald";
 }
 
 export function CartButton({ variant = "default" }: CartButtonProps) {
-  const { totalItems, isHydrated } = useCart();
+  const context = useContext(CartContext);
   const [isOpen, setIsOpen] = useState(false);
   const isEmerald = variant === "emerald";
+
+  // If context is not available, render a placeholder
+  if (!context) {
+    return (
+      <Button
+        variant="ghost"
+        className={`relative ${isEmerald ? "text-emerald-950 hover:bg-emerald-50 hover:text-emerald-700" : ""}`}
+        disabled
+      >
+        <ShoppingCart className="size-5" />
+        Cart
+        <span className="sr-only">Shopping Cart</span>
+      </Button>
+    );
+  }
+
+  const { totalItems, isHydrated } = context;
 
   return (
     <>

@@ -29,6 +29,8 @@ export function OrpcFeaturedProducts({
   href,
   className,
 }: OrpcFeaturedProductsProps) {
+  const { addItem } = useCart();
+
   const sortConfig =
     type === "new-arrivals"
       ? { sort: "newest" }
@@ -65,7 +67,6 @@ export function OrpcFeaturedProducts({
   }
 
   const products = data.products.slice(0, limit);
-  const { addItem } = useCart();
 
   return (
     <section className={cn("py-6", className)}>
