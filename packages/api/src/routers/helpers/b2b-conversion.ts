@@ -25,6 +25,8 @@ export async function convertB2bOrderToRetailInventory(
     tx: any,
     orderId: number,
 ) {
+    console.log(`[B2B-CONVERT] Starting conversion for order #${orderId}`);
+
     // 1. Load the order to check if it's B2B
     const orderData = await tx.query.order.findFirst({
         where: eq(order.id, orderId),
@@ -32,8 +34,10 @@ export async function convertB2bOrderToRetailInventory(
     });
 
     if (!orderData || orderData.orderType !== "b2b") {
+        console.log(`[B2B-CONVERT] Skipping: orderType=${orderData?.orderType}`);
         return; // Skip non-B2B orders
     }
+    console.log(`[B2B-CONVERT] Order is B2B, userId=${orderData.userId}`);
 
     // 2. Load order items
     const items = await tx.query.orderItem.findMany({
@@ -42,10 +46,21 @@ export async function convertB2bOrderToRetailInventory(
 
     // 3. For each item, find the TRADE variant → convert → update inventory + ledger
     for (const item of items) {
-        if (!item.variantId) continue;
+        // Resolve variant: use order item's variant, or fall back to product's first variant
+        let resolvedVariantId = item.variantId;
+        console.log(`[B2B-CONVERT] Item productId=${item.productId}, variantId=${item.variantId}`);
+        if (!resolvedVariantId) {
+            const firstVariant = await tx.query.productVariant.findFirst({
+                where: eq(productVariant.productId, item.productId),
+                columns: { id: true },
+            });
+            console.log(`[B2B-CONVERT] No variantId, fallback variant=${firstVariant?.id ?? 'NONE'}`);
+            if (!firstVariant) continue; // No variant exists for this product, skip
+            resolvedVariantId = firstVariant.id;
+        }
 
         const tradeVariant = await tx.query.productVariant.findFirst({
-            where: eq(productVariant.id, item.variantId),
+            where: eq(productVariant.id, resolvedVariantId),
             columns: {
                 id: true,
                 variantType: true,

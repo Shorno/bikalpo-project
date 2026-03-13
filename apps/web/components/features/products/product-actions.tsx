@@ -65,7 +65,7 @@ export function ProductActions({
   const handleAddToCart = async () => {
     setIsAdding(true);
     try {
-      await addItem(product.id, quantity);
+      await addItem(product.id, quantity, variantId, shopId);
     } finally {
       setIsAdding(false);
     }
