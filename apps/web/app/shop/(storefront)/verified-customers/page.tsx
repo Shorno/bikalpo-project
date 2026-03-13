@@ -12,6 +12,8 @@ interface VerifiedCustomersPageProps {
   }>;
 }
 
+export const dynamic = "force-dynamic";
+
 export default function VerifiedCustomersPage({
   searchParams,
 }: VerifiedCustomersPageProps) {

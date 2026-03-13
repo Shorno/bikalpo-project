@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getVerifiedUsers, getVerifiedUsersCount } from "@/lib/public-data";
 
 export const revalidate = 1800;
+export const dynamic = "force-dynamic";
 
 interface VerifiedCustomersPageProps {
   searchParams: Promise<{
