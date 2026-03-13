@@ -118,7 +118,18 @@ export function ReorderProductPicker({
                   <div
                     key={product.id}
                     className="relative flex cursor-pointer select-none items-center rounded-lg px-3 py-2.5 text-sm hover:bg-emerald-50 group transition-colors"
-                    onClick={() => handleSelect(product)}
+                    onClick={() =>
+                      handleSelect({
+                        id: product.id,
+                        name: product.name,
+                        slug: product.slug,
+                        image: product.image,
+                        price: String(product.price),
+                        size: product.size,
+                        stockQuantity: product.stockQuantity,
+                        inStock: product.inStock,
+                      })
+                    }
                   >
                     <div className="flex items-center gap-3 w-full">
                       <div className="h-12 w-12 rounded-lg border bg-muted/30 overflow-hidden flex-shrink-0">

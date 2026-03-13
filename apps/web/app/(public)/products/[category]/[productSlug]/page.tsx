@@ -18,6 +18,10 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
   const productData = await getProductBySlug(productSlug, revalidate);
   const product = productData?.product;
   const variants = productData?.variants;
+  const normalizedVariants = (variants ?? []).map((variant) => ({
+    ...variant,
+    price: String(variant.price),
+  }));
 
   if (!product) {
     notFound();
@@ -99,13 +103,13 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                 product={{
                   id: product.id,
                   name: product.name,
-                  price: product.price,
+                  price: String(product.price),
                   image: product.image,
                   size: product.size,
                   inStock: product.inStock,
                   stockQuantity: product.stockQuantity,
                 }}
-                variants={variants ?? []}
+                variants={normalizedVariants}
                 categoryName={product.category.name}
                 brandName={product.brand?.name}
                 subCategoryName={product.subCategory?.name}

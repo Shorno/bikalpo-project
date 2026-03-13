@@ -13,10 +13,11 @@ import { useEffect, useState } from "react";
 import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/product-detail-client";
 import { ProductCard } from "@/components/features/products/product-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useProductReviews } from "@/hooks/use-customer-api";
 import {
-  useProductReviews,
-} from "@/hooks/use-customer-api";
-import { useRoleAwareProducts, useRoleAwareProductDetails } from "@/hooks/use-role-aware-products";
+  useRoleAwareProducts,
+  useRoleAwareProductDetails,
+} from "@/hooks/use-role-aware-products";
 
 interface ShopProductDetailProps {
   slug: string;
@@ -41,6 +42,10 @@ export function ProductDetailClient({
 
   const product = data.product;
   const variants = data.variants ?? [];
+  const normalizedVariants = variants.map((variant) => ({
+    ...variant,
+    price: String(variant.price),
+  }));
 
   // Combine main image with additional images
   const allImages = [
@@ -119,13 +124,13 @@ export function ProductDetailClient({
                 product={{
                   id: product.id,
                   name: product.name,
-                  price: product.price,
+                  price: String(product.price),
                   image: product.image,
                   size: product.size,
                   inStock: product.inStock,
                   stockQuantity: product.stockQuantity,
                 }}
-                variants={variants}
+                variants={normalizedVariants}
                 categoryName={product.category?.name || ""}
                 brandName={product.brand?.name}
                 subCategoryName={product.subCategory?.name}
@@ -138,32 +143,72 @@ export function ProductDetailClient({
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      <svg
+                        className="w-5 h-5 text-blue-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
                       </svg>
                     </div>
                     <span>Quality Assured</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      <svg
+                        className="w-5 h-5 text-blue-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 10V3L4 14h7v7l9-11h-7z"
+                        />
                       </svg>
                     </div>
                     <span>Fast Delivery</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      <svg
+                        className="w-5 h-5 text-blue-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                        />
                       </svg>
                     </div>
                     <span>Secure Payment</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                      <svg
+                        className="w-5 h-5 text-blue-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"
+                        />
                       </svg>
                     </div>
                     <span>24/7 Support</span>
@@ -273,10 +318,9 @@ function ShopImageGallery({
               key={idx}
               type="button"
               onClick={() => setSelectedImage(idx)}
-              className={`shrink-0 w-16 h-16 relative rounded-md overflow-hidden border-2 transition-colors ${selectedImage === idx
-                ? "border-primary"
-                : "border-gray-200"
-                }`}
+              className={`shrink-0 w-16 h-16 relative rounded-md overflow-hidden border-2 transition-colors ${
+                selectedImage === idx ? "border-primary" : "border-gray-200"
+              }`}
             >
               <Image
                 src={img}
@@ -333,10 +377,11 @@ function ShopProductReviews({ productId }: { productId: number }) {
               {Array.from({ length: 5 }).map((_, i) => (
                 <Star
                   key={i}
-                  className={`w-5 h-5 ${i < Math.round(stats.averageRating)
-                    ? "fill-yellow-400 text-yellow-400"
-                    : "text-gray-300"
-                    }`}
+                  className={`w-5 h-5 ${
+                    i < Math.round(stats.averageRating)
+                      ? "fill-yellow-400 text-yellow-400"
+                      : "text-gray-300"
+                  }`}
                 />
               ))}
             </div>
@@ -363,10 +408,11 @@ function ShopProductReviews({ productId }: { productId: number }) {
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Star
                         key={i}
-                        className={`w-3 h-3 ${i < review.rating
-                          ? "fill-yellow-400 text-yellow-400"
-                          : "text-gray-300"
-                          }`}
+                        className={`w-3 h-3 ${
+                          i < review.rating
+                            ? "fill-yellow-400 text-yellow-400"
+                            : "text-gray-300"
+                        }`}
                       />
                     ))}
                   </div>
