@@ -1398,6 +1398,28 @@ const queries = {
       return { offers: activeOffers };
     }),
 
+  /** Get single active offer details */
+  getOfferById: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/offers/{id}",
+      tags: ["Customer"],
+      summary: "Get offer by id",
+      description: "Get a single active offer details by id",
+    })
+    .input(z.object({ id: z.number().int() }))
+    .handler(async ({ input }) => {
+      const foundOffer = await db.query.offer.findFirst({
+        where: and(eq(offer.id, input.id), eq(offer.active, true)),
+      });
+
+      if (!foundOffer) {
+        throw new ORPCError("NOT_FOUND", { message: "Offer not found" });
+      }
+
+      return { offer: foundOffer };
+    }),
+
   /** Get combo offers by category */
   getComboOffers: publicProcedure
     .route({

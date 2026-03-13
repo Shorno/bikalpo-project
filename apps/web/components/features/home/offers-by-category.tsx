@@ -250,7 +250,7 @@ export function OffersByCategory() {
 
                         {/* CTA Button */}
                         <Link
-                          href="/products?sort=discount"
+                          href={`/offers/${offer.id}`}
                           className="block pt-1"
                         >
                           <Button
