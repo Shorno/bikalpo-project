@@ -19,6 +19,7 @@ import { productVariant } from "./product-variant";
 export const inventoryOwnerTypeEnum = pgEnum("inventory_owner_type", [
     "super_seller",
     "shop",
+    "warehouse",
 ]);
 
 /**

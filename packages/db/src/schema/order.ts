@@ -57,6 +57,9 @@ export const order = pgTable(
         // For B2C orders: which shop this order is placed with (null = B2B/admin)
         shopId: text("shop_id").references(() => user.id, { onDelete: "set null" }),
 
+        // For warehouse orders: which warehouse this order is placed with
+        warehouseId: text("warehouse_id").references(() => user.id, { onDelete: "set null" }),
+
         // Order totals
         subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
         shippingCost: decimal("shipping_cost", { precision: 10, scale: 2 })

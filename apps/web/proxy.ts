@@ -168,6 +168,18 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow warehouse storefront, application, and status routes for ALL users (including staff)
+  if (
+    pathname.startsWith("/w/") ||
+    pathname.startsWith("/apply-warehouse") ||
+    pathname.startsWith("/warehouse-application-status")
+  ) {
+    if (!token && (pathname.startsWith("/apply-warehouse") || pathname.startsWith("/warehouse-application-status"))) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    return NextResponse.next();
+  }
+
   // If logged in as staff trying to access public pages, redirect to dashboard
   const staffRoles = ["admin", "salesman", "deliveryman", "shop_owner"];
   if (token && role && staffRoles.includes(role)) {

@@ -36,6 +36,8 @@ function getRedirectForRole(role: string): string {
       return "/dashboard";
     case "deliveryman":
       return "/dashboard";
+    case "warehouse":
+      return "/dashboard";
     default:
       return "/";
   }

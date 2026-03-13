@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
-import { ADMIN_BASE, DELIVERY_BASE, SALES_BASE } from "@/lib/routes";
+import { ADMIN_BASE, DELIVERY_BASE, SALES_BASE, WAREHOUSE_BASE } from "@/lib/routes";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -32,6 +32,9 @@ export default function DashboardPage() {
         break;
       case "shop_owner":
         router.replace(ADMIN_BASE);
+        break;
+      case "warehouse":
+        router.replace(WAREHOUSE_BASE);
         break;
       case "consumer":
         // Consumers go to home page

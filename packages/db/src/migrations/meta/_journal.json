@@ -15,6 +15,13 @@
       "when": 1772481032467,
       "tag": "0001_adorable_supreme_intelligence",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773435622274,
+      "tag": "0002_confused_ironclad",
+      "breakpoints": true
     }
   ]
 }
