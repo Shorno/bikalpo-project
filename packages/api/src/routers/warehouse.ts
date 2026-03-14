@@ -123,6 +123,11 @@ const storefrontQueries = {
         .handler(async ({ input }) => {
             const {
                 slug,
+                category: categorySlug,
+                subcategory,
+                brand: brandSlug,
+                minPrice,
+                maxPrice,
                 search,
                 sort = "newest",
                 page: pageStr = "1",
