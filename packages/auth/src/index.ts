@@ -6,7 +6,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
 import { admin as adminPlugin, bearer, openAPI } from "better-auth/plugins";
-import { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman } from "./permissions";
+import { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman, warehouse } from "./permissions";
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -32,6 +32,7 @@ export const auth = betterAuth({
         admin: adminRole,
         salesman,
         deliveryman,
+        warehouse,
       },
       defaultRole: "consumer",
     }),
@@ -85,6 +86,19 @@ export const auth = betterAuth({
         defaultValue: 0,
       },
       serviceArea: {
+        type: "string",
+        required: false,
+      },
+      // === Warehouse fields ===
+      warehouseName: {
+        type: "string",
+        required: false,
+      },
+      warehouseSlug: {
+        type: "string",
+        required: false,
+      },
+      warehouseAddress: {
         type: "string",
         required: false,
       },
@@ -149,4 +163,4 @@ export type Session = typeof auth.$Infer.Session;
 export type User = Session["user"];
 
 // Re-export permissions for client usage
-export { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman } from "./permissions";
+export { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman, warehouse } from "./permissions";

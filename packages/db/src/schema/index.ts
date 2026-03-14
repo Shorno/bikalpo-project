@@ -27,3 +27,4 @@ export * from "./stock-ledger";
 export * from "./support";
 export * from "./user-profile";
 export * from "./variant-conversion-map";
+export * from "./warehouse-application";

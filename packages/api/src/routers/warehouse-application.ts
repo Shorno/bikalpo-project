@@ -1,14 +1,14 @@
 /**
- * Seller Application ORPC Router
+ * Warehouse Application ORPC Router
  *
- * Handles business seller application lifecycle:
- * - Consumer submits application
+ * Handles warehouse application lifecycle:
+ * - Consumer submits warehouse application
  * - Consumer checks own application status
  * - Admin lists, approves, and rejects applications
  */
 import { ORPCError } from "@orpc/server";
 import { db } from "@bikalpo-project/db";
-import { sellerApplication, user } from "@bikalpo-project/db/schema";
+import { warehouseApplication, user } from "@bikalpo-project/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 
@@ -18,9 +18,9 @@ import { protectedProcedure, adminProcedure } from "../index";
 // HELPERS
 // ════════════════════════════════════════════════════════════════
 
-/** Generate a URL-safe slug from a shop name, ensuring uniqueness */
-async function generateUniqueShopSlug(shopName: string): Promise<string> {
-    const base = shopName
+/** Generate a URL-safe slug from a warehouse name, ensuring uniqueness */
+async function generateUniqueWarehouseSlug(warehouseName: string): Promise<string> {
+    const base = warehouseName
         .toLowerCase()
         .trim()
         .replace(/[^a-z0-9\s-]/g, "")
@@ -32,7 +32,7 @@ async function generateUniqueShopSlug(shopName: string): Promise<string> {
     const existing = await db
         .select({ id: user.id })
         .from(user)
-        .where(eq(user.shopSlug, base))
+        .where(eq(user.warehouseSlug, base))
         .limit(1);
 
     if (existing.length === 0) return base;
@@ -47,11 +47,10 @@ async function generateUniqueShopSlug(shopName: string): Promise<string> {
 // ════════════════════════════════════════════════════════════════
 
 const submitApplicationSchema = z.object({
-    shopName: z.string().min(2).max(100),
+    warehouseName: z.string().min(2).max(100),
     ownerName: z.string().min(2).max(100),
     phoneNumber: z.string().min(10),
-    businessType: z.enum(["retail", "restaurant"]),
-    shopAddress: z.string().min(5).max(500),
+    warehouseAddress: z.string().min(5).max(500),
     tradeLicenseNumber: z.string().optional(),
     documents: z.array(z.string()).optional(),
 });
@@ -65,43 +64,42 @@ const reviewApplicationSchema = z.object({
 // ROUTER
 // ════════════════════════════════════════════════════════════════
 
-export const sellerApplicationRouter = {
+export const warehouseApplicationRouter = {
     // ── Consumer: Submit Application ─────────────────────────────
 
     submit: protectedProcedure
         .route({
             method: "POST",
-            path: "/seller-applications",
-            tags: ["Seller Application"],
-            summary: "Submit a new seller application",
+            path: "/warehouse-applications",
+            tags: ["Warehouse Application"],
+            summary: "Submit a new warehouse application",
         })
         .input(submitApplicationSchema)
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
 
             // Check if user already has a pending or approved application
-            const existing = await db.query.sellerApplication.findFirst({
-                where: eq(sellerApplication.userId, userId),
-                orderBy: [desc(sellerApplication.createdAt)],
+            const existing = await db.query.warehouseApplication.findFirst({
+                where: eq(warehouseApplication.userId, userId),
+                orderBy: [desc(warehouseApplication.createdAt)],
             });
 
             if (existing && (existing.status === "pending" || existing.status === "approved")) {
                 throw new ORPCError("CONFLICT", {
                     message: existing.status === "pending"
-                        ? "You already have a pending application"
-                        : "Your application has already been approved",
+                        ? "You already have a pending warehouse application"
+                        : "Your warehouse application has already been approved",
                 });
             }
 
             const [application] = await db
-                .insert(sellerApplication)
+                .insert(warehouseApplication)
                 .values({
                     userId,
-                    shopName: input.shopName,
+                    warehouseName: input.warehouseName,
                     ownerName: input.ownerName,
                     phoneNumber: input.phoneNumber,
-                    businessType: input.businessType,
-                    shopAddress: input.shopAddress,
+                    warehouseAddress: input.warehouseAddress,
                     tradeLicenseNumber: input.tradeLicenseNumber || null,
                     documents: input.documents || [],
                 })
@@ -115,16 +113,16 @@ export const sellerApplicationRouter = {
     getMyApplication: protectedProcedure
         .route({
             method: "GET",
-            path: "/seller-applications/my",
-            tags: ["Seller Application"],
-            summary: "Get current user's latest seller application",
+            path: "/warehouse-applications/my",
+            tags: ["Warehouse Application"],
+            summary: "Get current user's latest warehouse application",
         })
         .handler(async ({ context }) => {
             const userId = context.session.user.id;
 
-            const application = await db.query.sellerApplication.findFirst({
-                where: eq(sellerApplication.userId, userId),
-                orderBy: [desc(sellerApplication.createdAt)],
+            const application = await db.query.warehouseApplication.findFirst({
+                where: eq(warehouseApplication.userId, userId),
+                orderBy: [desc(warehouseApplication.createdAt)],
             });
 
             if (!application) {
@@ -139,9 +137,9 @@ export const sellerApplicationRouter = {
     getById: adminProcedure
         .route({
             method: "GET",
-            path: "/seller-applications/{applicationId}",
-            tags: ["Seller Application"],
-            summary: "Get a single seller application by ID (admin only)",
+            path: "/warehouse-applications/{applicationId}",
+            tags: ["Warehouse Application"],
+            summary: "Get a single warehouse application by ID (admin only)",
         })
         .input(
             z.object({
@@ -149,8 +147,8 @@ export const sellerApplicationRouter = {
             }),
         )
         .handler(async ({ input }) => {
-            const application = await db.query.sellerApplication.findFirst({
-                where: eq(sellerApplication.id, input.applicationId),
+            const application = await db.query.warehouseApplication.findFirst({
+                where: eq(warehouseApplication.id, input.applicationId),
                 with: {
                     user: {
                         columns: {
@@ -173,7 +171,7 @@ export const sellerApplicationRouter = {
             });
 
             if (!application) {
-                throw new ORPCError("NOT_FOUND", { message: "Application not found" });
+                throw new ORPCError("NOT_FOUND", { message: "Warehouse application not found" });
             }
 
             return application;
@@ -184,9 +182,9 @@ export const sellerApplicationRouter = {
     list: adminProcedure
         .route({
             method: "GET",
-            path: "/seller-applications",
-            tags: ["Seller Application"],
-            summary: "List all seller applications (admin only)",
+            path: "/warehouse-applications",
+            tags: ["Warehouse Application"],
+            summary: "List all warehouse applications (admin only)",
         })
         .input(
             z.object({
@@ -199,10 +197,10 @@ export const sellerApplicationRouter = {
             const conditions = [];
 
             if (input.status) {
-                conditions.push(eq(sellerApplication.status, input.status));
+                conditions.push(eq(warehouseApplication.status, input.status));
             }
 
-            const applications = await db.query.sellerApplication.findMany({
+            const applications = await db.query.warehouseApplication.findMany({
                 where: conditions.length > 0 ? conditions[0] : undefined,
                 with: {
                     user: {
@@ -215,7 +213,7 @@ export const sellerApplicationRouter = {
                         },
                     },
                 },
-                orderBy: [desc(sellerApplication.createdAt)],
+                orderBy: [desc(warehouseApplication.createdAt)],
                 limit: input.limit,
                 offset: (input.page - 1) * input.limit,
             });
@@ -228,18 +226,18 @@ export const sellerApplicationRouter = {
     approve: adminProcedure
         .route({
             method: "POST",
-            path: "/seller-applications/{applicationId}/approve",
-            tags: ["Seller Application"],
-            summary: "Approve a seller application (admin only)",
+            path: "/warehouse-applications/{applicationId}/approve",
+            tags: ["Warehouse Application"],
+            summary: "Approve a warehouse application (admin only)",
         })
         .input(reviewApplicationSchema)
         .handler(async ({ input, context }) => {
-            const application = await db.query.sellerApplication.findFirst({
-                where: eq(sellerApplication.id, input.applicationId),
+            const application = await db.query.warehouseApplication.findFirst({
+                where: eq(warehouseApplication.id, input.applicationId),
             });
 
             if (!application) {
-                throw new ORPCError("NOT_FOUND", { message: "Application not found" });
+                throw new ORPCError("NOT_FOUND", { message: "Warehouse application not found" });
             }
 
             if (application.status !== "pending") {
@@ -248,39 +246,33 @@ export const sellerApplicationRouter = {
                 });
             }
 
-            // Determine if seller-enabled based on business type
-            const isSeller = application.businessType === "retail";
-
             // Update application status
             await db
-                .update(sellerApplication)
+                .update(warehouseApplication)
                 .set({
                     status: "approved",
                     adminNotes: input.adminNotes || null,
                     reviewedBy: context.session.user.id,
                     reviewedAt: new Date(),
                 })
-                .where(eq(sellerApplication.id, input.applicationId));
+                .where(eq(warehouseApplication.id, input.applicationId));
 
-            // Generate a unique shop slug from the shop name
-            const shopSlug = await generateUniqueShopSlug(application.shopName);
+            // Generate a unique warehouse slug
+            const warehouseSlug = await generateUniqueWarehouseSlug(application.warehouseName);
 
-            // Upgrade user role to shop_owner and set capability flags
+            // Upgrade user role to warehouse and set warehouse fields
             await db
                 .update(user)
                 .set({
-                    role: "shop_owner",
-                    isSeller,
-                    sellerStatus: "approved",
-                    businessType: application.businessType,
-                    shopAddress: application.shopAddress,
-                    shopName: application.shopName,
-                    shopSlug,
+                    role: "warehouse",
+                    warehouseName: application.warehouseName,
+                    warehouseSlug,
+                    warehouseAddress: application.warehouseAddress,
                     ownerName: application.ownerName,
                 })
                 .where(eq(user.id, application.userId));
 
-            return { success: true, isSeller };
+            return { success: true };
         }),
 
     // ── Admin: Reject Application ───────────────────────────────
@@ -288,18 +280,18 @@ export const sellerApplicationRouter = {
     reject: adminProcedure
         .route({
             method: "POST",
-            path: "/seller-applications/{applicationId}/reject",
-            tags: ["Seller Application"],
-            summary: "Reject a seller application (admin only)",
+            path: "/warehouse-applications/{applicationId}/reject",
+            tags: ["Warehouse Application"],
+            summary: "Reject a warehouse application (admin only)",
         })
         .input(reviewApplicationSchema)
         .handler(async ({ input, context }) => {
-            const application = await db.query.sellerApplication.findFirst({
-                where: eq(sellerApplication.id, input.applicationId),
+            const application = await db.query.warehouseApplication.findFirst({
+                where: eq(warehouseApplication.id, input.applicationId),
             });
 
             if (!application) {
-                throw new ORPCError("NOT_FOUND", { message: "Application not found" });
+                throw new ORPCError("NOT_FOUND", { message: "Warehouse application not found" });
             }
 
             if (application.status !== "pending") {
@@ -309,14 +301,14 @@ export const sellerApplicationRouter = {
             }
 
             await db
-                .update(sellerApplication)
+                .update(warehouseApplication)
                 .set({
                     status: "rejected",
                     adminNotes: input.adminNotes || null,
                     reviewedBy: context.session.user.id,
                     reviewedAt: new Date(),
                 })
-                .where(eq(sellerApplication.id, input.applicationId));
+                .where(eq(warehouseApplication.id, input.applicationId));
 
             return { success: true };
         }),
@@ -326,30 +318,29 @@ export const sellerApplicationRouter = {
     update: protectedProcedure
         .route({
             method: "POST",
-            path: "/seller-applications/update",
-            tags: ["Seller Application"],
-            summary: "Update own pending/rejected seller application",
+            path: "/warehouse-applications/update",
+            tags: ["Warehouse Application"],
+            summary: "Update own pending/rejected warehouse application",
         })
         .input(submitApplicationSchema)
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
 
-            const existing = await db.query.sellerApplication.findFirst({
-                where: eq(sellerApplication.userId, userId),
-                orderBy: [desc(sellerApplication.createdAt)],
+            const existing = await db.query.warehouseApplication.findFirst({
+                where: eq(warehouseApplication.userId, userId),
+                orderBy: [desc(warehouseApplication.createdAt)],
             });
 
             // If no existing application, create a new one
             if (!existing) {
                 const [application] = await db
-                    .insert(sellerApplication)
+                    .insert(warehouseApplication)
                     .values({
                         userId,
-                        shopName: input.shopName,
+                        warehouseName: input.warehouseName,
                         ownerName: input.ownerName,
                         phoneNumber: input.phoneNumber,
-                        businessType: input.businessType,
-                        shopAddress: input.shopAddress,
+                        warehouseAddress: input.warehouseAddress,
                         tradeLicenseNumber: input.tradeLicenseNumber || null,
                         documents: input.documents || [],
                     })
@@ -365,13 +356,12 @@ export const sellerApplicationRouter = {
 
             // Update the existing application and reset to pending
             const [updated] = await db
-                .update(sellerApplication)
+                .update(warehouseApplication)
                 .set({
-                    shopName: input.shopName,
+                    warehouseName: input.warehouseName,
                     ownerName: input.ownerName,
                     phoneNumber: input.phoneNumber,
-                    businessType: input.businessType,
-                    shopAddress: input.shopAddress,
+                    warehouseAddress: input.warehouseAddress,
                     tradeLicenseNumber: input.tradeLicenseNumber || null,
                     documents: input.documents || [],
                     status: "pending",
@@ -379,7 +369,7 @@ export const sellerApplicationRouter = {
                     reviewedBy: null,
                     reviewedAt: null,
                 })
-                .where(eq(sellerApplication.id, existing.id))
+                .where(eq(warehouseApplication.id, existing.id))
                 .returning();
 
             return updated;

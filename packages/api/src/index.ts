@@ -87,3 +87,20 @@ const requireShopOwner = o.middleware(async ({ context, next }) => {
 
 export const shopOwnerProcedure = publicProcedure.use(requireShopOwner);
 
+// Warehouse procedure - requires authenticated user with warehouse role
+const requireWarehouse = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  if (context.session.user.role !== "warehouse") {
+    throw new ORPCError("FORBIDDEN", { message: "Warehouse access required" });
+  }
+  return next({
+    context: {
+      session: context.session,
+    },
+  });
+});
+
+export const warehouseProcedure = publicProcedure.use(requireWarehouse);
+

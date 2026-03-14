@@ -25,6 +25,11 @@ export const user = pgTable("user", {
     // === B2B + B2C Shop Owner fields ===
     shopName: text("shop_name"),
     shopSlug: text("shop_slug"), // for public store URL: /store/{shop_slug}
+
+    // === Warehouse fields ===
+    warehouseName: text("warehouse_name"),
+    warehouseSlug: text("warehouse_slug"), // for warehouse URL: /warehouse/{warehouse_slug}
+    warehouseAddress: text("warehouse_address"),
     /** Whether this seller can receive open order broadcasts */
     canAcceptOpenOrder: boolean("can_accept_open_order").default(false),
     /** Current count of pending OTP confirmations (max 2 for open orders) */
