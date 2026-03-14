@@ -87,3 +87,17 @@ export const admin = ac.newRole({
     seller_application: ["create", "read", "update", "list"],
     ...adminAc.statements,
 });
+
+/**
+ * Warehouse role - product supply source
+ * Can sell to shop owners and other warehouses, manage inventory and orders
+ */
+export const warehouse = ac.newRole({
+    order: ["create", "read", "update", "list"],
+    product: ["read", "list"],
+    delivery: ["read", "list"],
+    estimate: ["create", "read", "update", "list"],
+    shop: [],
+    inventory: ["read", "list"],
+    seller_application: [],
+});

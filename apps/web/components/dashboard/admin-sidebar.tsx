@@ -20,6 +20,7 @@ import {
   TruckIcon,
   Undo2Icon,
   Users2Icon,
+  WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
@@ -160,6 +161,11 @@ const adminNavGroups: NavGroup[] = [
         title: "Seller Applications",
         url: `${ADMIN_BASE}/seller-applications`,
         icon: StoreIcon,
+      },
+      {
+        title: "Warehouse Applications",
+        url: `${ADMIN_BASE}/warehouse-applications`,
+        icon: WarehouseIcon,
       },
       {
         title: "Salesmen",

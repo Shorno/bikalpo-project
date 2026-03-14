@@ -6,7 +6,8 @@ export type UserRole =
   | "consumer"
   | "admin"
   | "salesman"
-  | "deliveryman";
+  | "deliveryman"
+  | "warehouse";
 
 type SessionPayload = AuthSession | null;
 

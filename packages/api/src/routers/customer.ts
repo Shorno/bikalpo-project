@@ -2271,6 +2271,14 @@ const mutations = {
             message: `${item.product.name} is out of stock`,
           });
 
+        // B2B orders (shop_owner) MUST have a variant selected
+        if (context.session.user.role === "shop_owner" && !item.variantId) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `Please select a variant for ${item.product.name} before placing a B2B order`,
+          });
+        }
+
+
         // Check stock: for B2C (with shopId), check shop inventory; otherwise check variant/product stock
         let stockQty: number;
         if (item.shopId) {
