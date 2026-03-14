@@ -9,28 +9,18 @@
 
 import { db } from "@bikalpo-project/db";
 import {
-    brand,
-    category,
-    product,
-    productVariant,
     inventory,
     order,
     orderItem,
     user,
-    subCategory,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
     and,
-    asc,
     count,
     desc,
     eq,
-    gte,
-    ilike,
     inArray,
-    lte,
-    or,
     sql,
     sum,
     type SQL,
@@ -96,7 +86,7 @@ const storefrontQueries = {
                 throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
             }
 
-            const warehouse = warehouseUser[0];
+            const warehouse = warehouseUser[0]!;
 
             // Count products in this warehouse's inventory
             const [productCount] = await db
@@ -133,12 +123,6 @@ const storefrontQueries = {
         .handler(async ({ input }) => {
             const {
                 slug,
-                category: categorySlug,
-                subcategory,
-                brand: brandSlug,
-                minPrice,
-                maxPrice,
-                inStock: inStockStr,
                 search,
                 sort = "newest",
                 page: pageStr = "1",
@@ -161,7 +145,7 @@ const storefrontQueries = {
                 throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
             }
 
-            const warehouseId = warehouseUser[0].id;
+            const warehouseId = warehouseUser[0]!.id;
             const page = Math.max(1, parseInt(pageStr ?? "1", 10) || 1);
             const limit = Math.min(50, Math.max(1, parseInt(limitStr ?? "12", 10) || 12));
             const offset = (page - 1) * limit;
@@ -282,7 +266,7 @@ const storefrontQueries = {
                 throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
             }
 
-            const warehouseId = warehouseUser[0].id;
+            const warehouseId = warehouseUser[0]!.id;
 
             // Get all categories that have items in this warehouse's inventory
             const inventoryItems = await db.query.inventory.findMany({

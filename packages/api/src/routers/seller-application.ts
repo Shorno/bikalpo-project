@@ -9,7 +9,7 @@
 import { ORPCError } from "@orpc/server";
 import { db } from "@bikalpo-project/db";
 import { sellerApplication, user } from "@bikalpo-project/db/schema";
-import { eq, desc, and, ilike } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, adminProcedure } from "../index";
