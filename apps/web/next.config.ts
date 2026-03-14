@@ -37,7 +37,9 @@ const nextConfig: NextConfig = {
       {
         hostname: "png.pngtree.com",
       },
-
+      {
+        hostname: "img.freepik.com",
+      },
     ],
     contentDispositionType: "inline",
   },

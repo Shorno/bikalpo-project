@@ -3,6 +3,8 @@ import { OrpcBrandsCarousel } from "@/components/features/home/orpc-brands-carou
 import { OrpcCategoriesCarousel } from "@/components/features/home/orpc-categories-carousel";
 import { OrpcFeaturedProducts } from "@/components/features/home/orpc-featured-products";
 import { WeekendDeals } from "@/components/features/home/weekend-deals";
+import { OffersByCategory } from "@/components/features/home/offers-by-category";
+
 import { FeatureBadge } from "@/components/shared/feature-badge";
 import { HomeBannerCarousel } from "../../components/features/home/home-banner-carousel";
 
@@ -52,6 +54,9 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Hot Offers Section */}
+      <OffersByCategory />
 
       {/* Categories Carousel */}
       <OrpcCategoriesCarousel />

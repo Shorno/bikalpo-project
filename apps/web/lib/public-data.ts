@@ -22,14 +22,22 @@ export interface ProductPaginationData {
 
 export async function getVerifiedUsersForHome(revalidate = 1800) {
   const client = getPublicOrpcClient(revalidate);
-  const result = await client.verifiedUser.getForHome();
-  return result.users ?? [];
+  try {
+    const result = await client.verifiedUser.getForHome();
+    return result.users ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function getVerifiedUsersCount(revalidate = 1800) {
   const client = getPublicOrpcClient(revalidate);
-  const result = await client.customer.getVerifiedUsersCount();
-  return result.count ?? 0;
+  try {
+    const result = await client.customer.getVerifiedUsersCount();
+    return result.count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 export async function getVerifiedUsers(
@@ -43,7 +51,17 @@ export async function getVerifiedUsers(
   revalidate = 1800,
 ) {
   const client = getPublicOrpcClient(revalidate);
-  return client.customer.getVerifiedUsers(params ?? {});
+  try {
+    return await client.customer.getVerifiedUsers(params ?? {});
+  } catch {
+    return {
+      users: [],
+      areas: [],
+      totalPages: 1,
+      currentPage: 1,
+      totalCount: 0,
+    };
+  }
 }
 
 export async function getCategoryBySlug(slug: string, revalidate = 600) {
