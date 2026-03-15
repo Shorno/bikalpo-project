@@ -77,6 +77,11 @@ const adminNavGroups: NavGroup[] = [
         url: `${ADMIN_BASE}/brands`,
         icon: TagIcon,
       },
+      {
+        title: "Customer Home Tabs",
+        url: `${ADMIN_BASE}/customer-home-tabs`,
+        icon: ListIcon,
+      },
     ],
   },
   {

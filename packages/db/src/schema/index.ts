@@ -8,6 +8,7 @@ export * from "./cart";
 export * from "./category";
 export * from "./combo-offer";
 export * from "./customer-assignment";
+export * from "./customer-home-tab";
 export * from "./delivery";
 export * from "./delivery-rule";
 export * from "./estimate";

@@ -8,16 +8,15 @@ import { DashboardVerifiedCustomersSection } from "@/components/features/home/da
 import { OrpcCategoryListing } from "@/components/features/products/orpc-category-listing";
 import { useVerifiedUsersForHome } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
-
+import { ShopDashboardClient } from "./shop-dashboard-client";
+import { requireCustomer } from "@/utils/auth";
 export default function ShopDashboardPage() {
   const { data: session } = authClient.useSession();
-
 
   const { data: verifiedUsersData } = useVerifiedUsersForHome();
   const verifiedUsers = verifiedUsersData?.users ?? [];
 
   const shopName = session?.user?.name || "Our Valued Partner";
-
 
   return (
     <div>
