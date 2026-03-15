@@ -204,6 +204,16 @@ const adminNavGroups: NavGroup[] = [
       },
     ],
   },
+  {
+    label: "Landing Page",
+    items: [
+      {
+        title: "Packages",
+        url: `${ADMIN_BASE}/packages`,
+        icon: PackageIcon,
+      },
+    ],
+  },
 ];
 
 export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
