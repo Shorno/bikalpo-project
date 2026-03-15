@@ -53,6 +53,11 @@ const adminNavGroups: NavGroup[] = [
     label: "Catalog",
     items: [
       {
+        title: "Types",
+        url: `${ADMIN_BASE}/types`,
+        icon: Boxes,
+      },
+      {
         title: "Products",
         url: `${ADMIN_BASE}/products`,
         icon: PackageIcon,
@@ -165,6 +170,11 @@ const adminNavGroups: NavGroup[] = [
       {
         title: "Warehouse Applications",
         url: `${ADMIN_BASE}/warehouse-applications`,
+        icon: WarehouseIcon,
+      },
+      {
+        title: "Warehouse Assignments",
+        url: `${ADMIN_BASE}/warehouse-assignments`,
         icon: WarehouseIcon,
       },
       {

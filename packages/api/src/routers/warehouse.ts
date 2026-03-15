@@ -678,6 +678,713 @@ const orderQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Supplier CRUD (warehouse role only)
+// ────────────────────────────────────────────────────────────────
+
+import {
+    supplier,
+    purchase,
+    purchaseItem,
+    stockLedger,
+    product as productTable,
+    productVariant,
+} from "@bikalpo-project/db/schema";
+
+// ────────────────────────────────────────────────────────────────
+// Product Variant Search (for purchase form)
+// ────────────────────────────────────────────────────────────────
+
+const variantQueries = {
+    // Search product variants for the purchase form dropdown
+    searchVariants: warehouseProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+            }),
+        )
+        .handler(async ({ input }) => {
+            const conditions: SQL[] = [eq(productTable.status, "active")];
+
+            if (input.search) {
+                conditions.push(
+                    sql`${productTable.name} ILIKE ${`%${input.search}%`}`,
+                );
+            }
+
+            const results = await db
+                .select({
+                    variantId: productVariant.id,
+                    productId: productTable.id,
+                    productName: productTable.name,
+                    unitLabel: productVariant.unitLabel,
+                    weightKg: productVariant.weightKg,
+                    price: productVariant.price,
+                    sku: productVariant.sku,
+                    packagingType: productVariant.packagingType,
+                })
+                .from(productVariant)
+                .innerJoin(productTable, eq(productVariant.productId, productTable.id))
+                .where(and(...conditions))
+                .orderBy(productTable.name)
+                .limit(50);
+
+            return { variants: results };
+        }),
+};
+
+const supplierQueries = {
+    // Get all suppliers for the current warehouse
+    getSuppliers: warehouseProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const conditions: SQL[] = [eq(supplier.addedBy, userId)];
+
+            if (input.search) {
+                conditions.push(
+                    sql`(${supplier.name} ILIKE ${`%${input.search}%`} OR ${supplier.company} ILIKE ${`%${input.search}%`})`,
+                );
+            }
+
+            const suppliers = await db
+                .select()
+                .from(supplier)
+                .where(and(...conditions))
+                .orderBy(desc(supplier.createdAt));
+
+            return { suppliers };
+        }),
+
+    // Create a new supplier
+    createSupplier: warehouseProcedure
+        .input(
+            z.object({
+                name: z.string().min(1),
+                company: z.string().optional(),
+                contactPerson: z.string().optional(),
+                phone: z.string().optional(),
+                email: z.string().email().optional().or(z.literal("")),
+                address: z.string().optional(),
+                notes: z.string().optional(),
+                creditLimit: z.string().optional(),
+                returnPackAgreement: z.boolean().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const [created] = await db
+                .insert(supplier)
+                .values({
+                    name: input.name,
+                    company: input.company || null,
+                    contactPerson: input.contactPerson || null,
+                    phone: input.phone || null,
+                    email: input.email || null,
+                    address: input.address || null,
+                    notes: input.notes || null,
+                    creditLimit: input.creditLimit || "0",
+                    returnPackAgreement: input.returnPackAgreement ?? false,
+                    addedBy: userId,
+                })
+                .returning();
+
+            return { supplier: created };
+        }),
+
+    // Update a supplier
+    updateSupplier: warehouseProcedure
+        .input(
+            z.object({
+                id: z.number(),
+                name: z.string().min(1),
+                company: z.string().optional(),
+                contactPerson: z.string().optional(),
+                phone: z.string().optional(),
+                email: z.string().email().optional().or(z.literal("")),
+                address: z.string().optional(),
+                notes: z.string().optional(),
+                creditLimit: z.string().optional(),
+                returnPackAgreement: z.boolean().optional(),
+                isActive: z.boolean().optional(),
+                status: z.enum(["active", "suspended"]).optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const [updated] = await db
+                .update(supplier)
+                .set({
+                    name: input.name,
+                    company: input.company || null,
+                    contactPerson: input.contactPerson || null,
+                    phone: input.phone || null,
+                    email: input.email || null,
+                    address: input.address || null,
+                    notes: input.notes || null,
+                    creditLimit: input.creditLimit ?? undefined,
+                    returnPackAgreement: input.returnPackAgreement ?? undefined,
+                    isActive: input.isActive,
+                    status: input.status ?? undefined,
+                })
+                .where(and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)))
+                .returning();
+
+            if (!updated) {
+                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            }
+
+            return { supplier: updated };
+        }),
+
+    // Delete a supplier
+    deleteSupplier: warehouseProcedure
+        .input(z.object({ id: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            await db
+                .delete(supplier)
+                .where(and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)));
+
+            return { success: true };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
+// Purchase CRUD + Receive Stock (warehouse role only)
+// ────────────────────────────────────────────────────────────────
+
+const purchaseQueries = {
+    // List purchases for current warehouse
+    getPurchases: warehouseProcedure
+        .input(
+            z.object({
+                status: z.enum(["draft", "received", "partial", "cancelled"]).optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { page, limit, status } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [eq(purchase.warehouseId, userId)];
+            if (status) conditions.push(eq(purchase.status, status));
+
+            const [purchases, countResult] = await Promise.all([
+                db.query.purchase.findMany({
+                    where: and(...conditions),
+                    with: {
+                        supplier: true,
+                        items: true,
+                    },
+                    orderBy: [desc(purchase.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db
+                    .select({ count: count() })
+                    .from(purchase)
+                    .where(and(...conditions)),
+            ]);
+
+            return {
+                purchases,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount: countResult[0]?.count || 0,
+                    totalPages: Math.ceil((countResult[0]?.count || 0) / limit),
+                },
+            };
+        }),
+
+    // Create a new purchase order
+    createPurchase: warehouseProcedure
+        .input(
+            z.object({
+                supplierId: z.number(),
+                supplierInvoiceNo: z.string().optional(),
+                purchaseDate: z.string().optional(),
+                transportCost: z.string().optional(),
+                paymentType: z.enum(["cash", "credit"]).optional(),
+                note: z.string().optional(),
+                items: z.array(
+                    z.object({
+                        variantId: z.number().optional(),
+                        productName: z.string(),
+                        quantity: z.string(),
+                        unitCost: z.string(),
+                        batchNo: z.string().optional(),
+                        expiryDate: z.string().optional(),
+                    }),
+                ).min(1),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Verify supplier belongs to this warehouse
+            const sup = await db.query.supplier.findFirst({
+                where: and(eq(supplier.id, input.supplierId), eq(supplier.addedBy, userId)),
+            });
+            if (!sup) {
+                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            }
+
+            // Generate purchase number
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+            const randomSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+            const purchaseNumber = `PO-${dateStr}-${randomSuffix}`;
+
+            // Calculate totals
+            let subtotal = 0;
+            const itemsToInsert = input.items.map((item) => {
+                const qty = parseFloat(item.quantity);
+                const cost = parseFloat(item.unitCost);
+                const totalCost = qty * cost;
+                subtotal += totalCost;
+                return {
+                    variantId: item.variantId || null,
+                    productName: item.productName,
+                    quantity: item.quantity,
+                    unitCost: item.unitCost,
+                    totalCost: totalCost.toFixed(2),
+                    batchNo: item.batchNo || null,
+                    expiryDate: item.expiryDate || null,
+                };
+            });
+
+            const transportCost = parseFloat(input.transportCost || "0");
+            const grandTotal = subtotal + transportCost;
+
+            // Create purchase + items in transaction
+            const result = await db.transaction(async (tx) => {
+                const [created] = await tx
+                    .insert(purchase)
+                    .values({
+                        purchaseNumber,
+                        supplierId: input.supplierId,
+                        warehouseId: userId,
+                        supplierInvoiceNo: input.supplierInvoiceNo || null,
+                        purchaseDate: input.purchaseDate || null,
+                        subtotal: subtotal.toFixed(2),
+                        transportCost: transportCost.toFixed(2),
+                        total: grandTotal.toFixed(2),
+                        paymentType: input.paymentType || "cash",
+                        note: input.note || null,
+                        status: "draft",
+                    })
+                    .returning();
+
+                if (!created) throw new ORPCError("INTERNAL_SERVER_ERROR");
+
+                await tx.insert(purchaseItem).values(
+                    itemsToInsert.map((item) => ({
+                        ...item,
+                        purchaseId: created.id,
+                    })),
+                );
+
+                return created;
+            });
+
+            return { purchase: result };
+        }),
+
+    // Receive a purchase — adds stock to inventory + creates ledger entries
+    receivePurchase: warehouseProcedure
+        .input(z.object({ purchaseId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingPurchase = await db.query.purchase.findFirst({
+                where: and(
+                    eq(purchase.id, input.purchaseId),
+                    eq(purchase.warehouseId, userId),
+                ),
+                with: { items: true },
+            });
+
+            if (!existingPurchase) {
+                throw new ORPCError("NOT_FOUND", { message: "Purchase not found" });
+            }
+
+            if (existingPurchase.status === "received") {
+                throw new ORPCError("CONFLICT", { message: "Purchase already received" });
+            }
+
+            if (existingPurchase.status === "cancelled") {
+                throw new ORPCError("CONFLICT", { message: "Purchase was cancelled" });
+            }
+
+            await db.transaction(async (tx) => {
+                // For each item, update inventory and create ledger entry
+                for (const item of existingPurchase.items) {
+                    const qty = parseFloat(item.quantity);
+
+                    // Only update inventory/ledger for items with a linked product variant
+                    if (item.variantId) {
+                        // Upsert inventory record
+                        const existingInv = await tx.query.inventory.findFirst({
+                            where: and(
+                                eq(inventory.ownerType, "warehouse"),
+                                eq(inventory.ownerId, userId),
+                                eq(inventory.variantId, item.variantId),
+                            ),
+                        });
+
+                        if (existingInv) {
+                            const newQty = parseFloat(existingInv.availableQty) + qty;
+                            await tx
+                                .update(inventory)
+                                .set({ availableQty: newQty.toFixed(2) })
+                                .where(eq(inventory.id, existingInv.id));
+                        } else {
+                            await tx.insert(inventory).values({
+                                ownerType: "warehouse",
+                                ownerId: userId,
+                                variantId: item.variantId,
+                                availableQty: qty.toFixed(2),
+                            });
+                        }
+
+                        // Get updated balance for ledger
+                        const updatedInv = await tx.query.inventory.findFirst({
+                            where: and(
+                                eq(inventory.ownerType, "warehouse"),
+                                eq(inventory.ownerId, userId),
+                                eq(inventory.variantId, item.variantId),
+                            ),
+                        });
+
+                        // Create stock ledger entry
+                        await tx.insert(stockLedger).values({
+                            variantId: item.variantId,
+                            ownerType: "warehouse",
+                            ownerId: userId,
+                            changeType: "in",
+                            qty: qty.toFixed(2),
+                            reason: `Purchase received: ${existingPurchase.purchaseNumber}`,
+                            referenceType: "manual",
+                            referenceId: existingPurchase.id.toString(),
+                            balanceAfter: updatedInv?.availableQty || qty.toFixed(2),
+                            createdById: userId,
+                        });
+                    }
+
+                    // Update received qty on purchase item
+                    await tx
+                        .update(purchaseItem)
+                        .set({ receivedQty: item.quantity })
+                        .where(eq(purchaseItem.id, item.id));
+                }
+
+                // Mark purchase as received
+                await tx
+                    .update(purchase)
+                    .set({
+                        status: "received",
+                        receivedAt: new Date(),
+                    })
+                    .where(eq(purchase.id, existingPurchase.id));
+
+                // If payment type is credit, add to supplier's outstanding payable
+                if (existingPurchase.paymentType === "credit") {
+                    const sup = await tx.query.supplier.findFirst({
+                        where: eq(supplier.id, existingPurchase.supplierId),
+                    });
+                    if (sup) {
+                        const newPayable = parseFloat(sup.currentPayable) + parseFloat(existingPurchase.total);
+                        await tx
+                            .update(supplier)
+                            .set({ currentPayable: newPayable.toFixed(2) })
+                            .where(eq(supplier.id, sup.id));
+                    }
+                }
+            });
+
+            return { success: true };
+        }),
+
+    // Cancel a purchase
+    cancelPurchase: warehouseProcedure
+        .input(z.object({ purchaseId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const [updated] = await db
+                .update(purchase)
+                .set({ status: "cancelled" })
+                .where(
+                    and(
+                        eq(purchase.id, input.purchaseId),
+                        eq(purchase.warehouseId, userId),
+                        eq(purchase.status, "draft"),
+                    ),
+                )
+                .returning();
+
+            if (!updated) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Purchase not found or cannot be cancelled",
+                });
+            }
+
+            return { success: true };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
+// Product Activation (Phase C) — browse assigned categories and
+// add products to warehouse inventory
+// ────────────────────────────────────────────────────────────────
+
+import {
+    warehouseCategoryAssignment,
+    category as categoryTable,
+    subCategory as subCategoryTable,
+} from "@bikalpo-project/db/schema";
+
+const productActivation = {
+    /**
+     * Get products from the warehouse's admin-assigned categories.
+     * Each variant is annotated with { inInventory: boolean }.
+     */
+    getAssignedProducts: warehouseProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                categoryId: z.number().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get assigned category IDs for this warehouse
+            const assignments = await db.query.warehouseCategoryAssignment.findMany({
+                where: eq(warehouseCategoryAssignment.warehouseId, userId),
+                columns: { categoryId: true },
+            });
+
+            const assignedCategoryIds = [...new Set(assignments.map((a) => a.categoryId))];
+            if (assignedCategoryIds.length === 0) {
+                return { products: [], assignedCategories: [] };
+            }
+
+            // 2. Get assigned categories with names
+            const assignedCategories = await db
+                .select({ id: categoryTable.id, name: categoryTable.name })
+                .from(categoryTable)
+                .where(inArray(categoryTable.id, assignedCategoryIds));
+
+            // 3. Filter by categoryId if provided
+            const catFilter = input.categoryId
+                ? [input.categoryId]
+                : assignedCategoryIds;
+
+            // 4. Get products from those categories with variants
+            const products = await db.query.product.findMany({
+                where: and(
+                    inArray(productTable.categoryId, catFilter),
+                    eq(productTable.status, "active"),
+                    input.search
+                        ? sql`${productTable.name} ILIKE ${`%${input.search}%`}`
+                        : undefined,
+                ),
+                with: {
+                    category: { columns: { name: true } },
+                    subCategory: { columns: { name: true } },
+                    brand: { columns: { name: true } },
+                    images: { limit: 1 },
+                    variants: {
+                        where: eq(productVariant.isActive, true),
+                        columns: {
+                            id: true,
+                            sku: true,
+                            unitLabel: true,
+                            weightKg: true,
+                            price: true,
+                            packagingType: true,
+                            packType: true,
+                        },
+                    },
+                },
+                orderBy: [productTable.name],
+            });
+
+            // 5. Check which variants are already in this warehouse's inventory
+            const existingInventory = await db
+                .select({ variantId: inventory.variantId })
+                .from(inventory)
+                .where(
+                    and(
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, userId),
+                    ),
+                );
+
+            const inventoryVariantIds = new Set(existingInventory.map((i) => i.variantId));
+
+            // 6. Annotate each variant with inInventory flag
+            const annotatedProducts = products.map((p) => ({
+                ...p,
+                variants: p.variants.map((v) => ({
+                    ...v,
+                    inInventory: inventoryVariantIds.has(v.id),
+                })),
+            }));
+
+            return {
+                products: annotatedProducts,
+                assignedCategories,
+            };
+        }),
+
+    /**
+     * Add a product variant to the warehouse's inventory.
+     */
+    addToInventory: warehouseProcedure
+        .input(
+            z.object({
+                variantId: z.number(),
+                retailPrice: z.string().min(1),
+                initialStock: z.string().default("0"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Check if already in inventory
+            const existing = await db.query.inventory.findFirst({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                    eq(inventory.variantId, input.variantId),
+                ),
+            });
+
+            if (existing) {
+                throw new ORPCError("CONFLICT", {
+                    message: "This variant is already in your inventory",
+                });
+            }
+
+            // Verify the variant exists and belongs to an assigned category
+            const variant = await db.query.productVariant.findFirst({
+                where: eq(productVariant.id, input.variantId),
+                with: {
+                    product: { columns: { categoryId: true } },
+                },
+            });
+
+            if (!variant) {
+                throw new ORPCError("NOT_FOUND", { message: "Variant not found" });
+            }
+
+            // Check category assignment
+            const assignment = await db.query.warehouseCategoryAssignment.findFirst({
+                where: and(
+                    eq(warehouseCategoryAssignment.warehouseId, userId),
+                    eq(warehouseCategoryAssignment.categoryId, variant.product.categoryId),
+                ),
+            });
+
+            if (!assignment) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "Your warehouse is not assigned to this product's category",
+                });
+            }
+
+            const [created] = await db
+                .insert(inventory)
+                .values({
+                    ownerType: "warehouse",
+                    ownerId: userId,
+                    variantId: input.variantId,
+                    availableQty: input.initialStock,
+                    retailPrice: input.retailPrice,
+                })
+                .returning();
+
+            return { inventory: created };
+        }),
+
+    /**
+     * Update an existing inventory item (price, quantity).
+     */
+    updateInventoryItem: warehouseProcedure
+        .input(
+            z.object({
+                inventoryId: z.number(),
+                retailPrice: z.string().optional(),
+                availableQty: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.inventory.findFirst({
+                where: and(
+                    eq(inventory.id, input.inventoryId),
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Inventory item not found" });
+            }
+
+            const updateData: Record<string, any> = {};
+            if (input.retailPrice !== undefined) updateData.retailPrice = input.retailPrice;
+            if (input.availableQty !== undefined) updateData.availableQty = input.availableQty;
+
+            const [updated] = await db
+                .update(inventory)
+                .set(updateData)
+                .where(eq(inventory.id, input.inventoryId))
+                .returning();
+
+            return { inventory: updated };
+        }),
+
+    /**
+     * Remove a product variant from warehouse inventory.
+     */
+    removeFromInventory: warehouseProcedure
+        .input(z.object({ inventoryId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const [deleted] = await db
+                .delete(inventory)
+                .where(
+                    and(
+                        eq(inventory.id, input.inventoryId),
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, userId),
+                    ),
+                )
+                .returning();
+
+            if (!deleted) {
+                throw new ORPCError("NOT_FOUND", { message: "Inventory item not found" });
+            }
+
+            return { success: true };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -685,4 +1392,8 @@ export const warehouseRouter = {
     ...storefrontQueries,
     ...managementQueries,
     ...orderQueries,
+    ...variantQueries,
+    ...supplierQueries,
+    ...purchaseQueries,
+    ...productActivation,
 };

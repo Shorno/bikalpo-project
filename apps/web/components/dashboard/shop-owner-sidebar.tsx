@@ -11,6 +11,7 @@ import {
     HeadphonesIcon,
     BarChart3Icon,
     InboxIcon,
+    WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
@@ -52,6 +53,11 @@ const shopOwnerNavGroups: NavGroup[] = [
                 title: "My B2B Orders",
                 url: `${SHOP_DASHBOARD_BASE}/orders`,
                 icon: ShoppingCartIcon,
+            },
+            {
+                title: "Order from Warehouse",
+                url: `${SHOP_DASHBOARD_BASE}/order-from-warehouse`,
+                icon: WarehouseIcon,
             },
         ],
     },

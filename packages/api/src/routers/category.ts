@@ -13,6 +13,7 @@ const createCategorySchema = z.object({
     image: z.string().url().max(255),
     isActive: z.boolean().default(true),
     displayOrder: z.number().int().min(0).default(0),
+    typeId: z.number().int().nullable().optional(),
 });
 
 const updateCategorySchema = createCategorySchema.extend({

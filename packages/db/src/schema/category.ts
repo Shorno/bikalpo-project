@@ -7,12 +7,19 @@ import {
     varchar,
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
+import { productType } from "./product-type";
 
 export const category = pgTable("category", {
     id: serial("id").primaryKey(),
     name: varchar("name", { length: 100 }).notNull(),
     slug: varchar("slug", { length: 100 }).notNull().unique(),
     image: varchar("image", { length: 255 }).notNull(),
+
+    /** Parent product type (Type → Category → SubCategory) */
+    typeId: integer("type_id").references(() => productType.id, {
+        onDelete: "set null",
+    }),
+
     isActive: boolean("is_active").default(true).notNull(),
     displayOrder: integer("display_order").default(0).notNull(),
     ...timestamps,
@@ -31,7 +38,11 @@ export const subCategory = pgTable("sub_category", {
     ...timestamps,
 });
 
-export const categoryRelations = relations(category, ({ many }) => ({
+export const categoryRelations = relations(category, ({ one, many }) => ({
+    type: one(productType, {
+        fields: [category.typeId],
+        references: [productType.id],
+    }),
     subCategory: many(subCategory),
 }));
 

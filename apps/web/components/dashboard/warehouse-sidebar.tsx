@@ -10,6 +10,8 @@ import {
     HeadphonesIcon,
     InboxIcon,
     WarehouseIcon,
+    TruckIcon,
+    UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
@@ -65,6 +67,21 @@ const warehouseNavGroups: NavGroup[] = [
                 title: "Products",
                 url: `${WAREHOUSE_BASE}/products`,
                 icon: PackageIcon,
+            },
+        ],
+    },
+    {
+        label: "Procurement",
+        items: [
+            {
+                title: "Suppliers",
+                url: `${WAREHOUSE_BASE}/suppliers`,
+                icon: UsersIcon,
+            },
+            {
+                title: "Purchases",
+                url: `${WAREHOUSE_BASE}/purchases`,
+                icon: TruckIcon,
             },
         ],
     },
