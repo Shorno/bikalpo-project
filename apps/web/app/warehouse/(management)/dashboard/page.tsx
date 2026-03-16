@@ -1,5 +1,7 @@
 "use client";
 
+import { orpc } from "@/utils/orpc";
+import { useQuery } from "@tanstack/react-query";
 import {
     Warehouse,
     MapPin,
@@ -10,15 +12,21 @@ import {
     TrendingUp,
     Clock,
     InboxIcon,
+    AlertTriangle,
+    BoxIcon,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Skeleton } from "@/components/ui/skeleton";
+import Link from "next/link";
 
 export default function WarehouseDashboardPage() {
-    const { data: session, isPending: sessionLoading } =
-        authClient.useSession();
-
+    const { data: session, isPending: sessionLoading } = authClient.useSession();
     const user = session?.user as any;
+
+    const { data: stats, isLoading: statsLoading } = useQuery({
+        queryKey: ["warehouse", "getDashboardStats"],
+        queryFn: () => orpc.warehouse.getDashboardStats.call({}),
+    });
 
     return (
         <div className="space-y-6">
@@ -60,26 +68,29 @@ export default function WarehouseDashboardPage() {
                 <StatCard
                     icon={<InboxIcon className="w-5 h-5 text-blue-600" />}
                     label="Incoming Orders"
-                    value="0"
+                    value={statsLoading ? null : String(stats?.totalOrders ?? 0)}
                     bg="bg-blue-50"
+                    href="/warehouse/dashboard/incoming-orders"
                 />
                 <StatCard
                     icon={<Clock className="w-5 h-5 text-amber-600" />}
                     label="Pending"
-                    value="0"
+                    value={statsLoading ? null : String(stats?.pendingOrders ?? 0)}
                     bg="bg-amber-50"
+                    href="/warehouse/dashboard/incoming-orders"
                 />
                 <StatCard
                     icon={<ShoppingBag className="w-5 h-5 text-emerald-600" />}
                     label="Fulfilled"
-                    value="0"
+                    value={statsLoading ? null : String(stats?.deliveredOrders ?? 0)}
                     bg="bg-emerald-50"
                 />
                 <StatCard
                     icon={<Package className="w-5 h-5 text-purple-600" />}
                     label="Products"
-                    value="0"
+                    value={statsLoading ? null : String(stats?.totalProducts ?? 0)}
                     bg="bg-purple-50"
+                    href="/warehouse/dashboard/products"
                 />
             </div>
 
@@ -88,27 +99,49 @@ export default function WarehouseDashboardPage() {
                 <div className="bg-white rounded-lg border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-1">
                         <TrendingUp className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm font-medium text-gray-500">
-                            Total Revenue
-                        </span>
+                        <span className="text-sm font-medium text-gray-500">Total Revenue</span>
                     </div>
-                    <p className="text-2xl font-bold text-gray-900">
-                        ৳0
-                    </p>
+                    {statsLoading ? (
+                        <Skeleton className="h-8 w-32 mt-1" />
+                    ) : (
+                        <p className="text-2xl font-bold text-gray-900">
+                            ৳{(stats?.totalRevenue ?? 0).toLocaleString()}
+                        </p>
+                    )}
                 </div>
 
                 <div className="bg-white rounded-lg border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-1">
-                        <Package className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm font-medium text-gray-500">
-                            Total Stock
-                        </span>
+                        <BoxIcon className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-500">Total Stock</span>
                     </div>
-                    <p className="text-2xl font-bold text-gray-900">
-                        0 units
-                    </p>
+                    {statsLoading ? (
+                        <Skeleton className="h-8 w-32 mt-1" />
+                    ) : (
+                        <p className="text-2xl font-bold text-gray-900">
+                            {Math.round(stats?.totalStock ?? 0).toLocaleString()} units
+                        </p>
+                    )}
                 </div>
             </div>
+
+            {/* Quick Actions */}
+            {stats && stats.pendingOrders > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                    <div className="flex-1">
+                        <p className="text-sm font-medium text-amber-800">
+                            You have {stats.pendingOrders} pending order{stats.pendingOrders !== 1 ? "s" : ""} to review
+                        </p>
+                    </div>
+                    <Link
+                        href="/warehouse/dashboard/incoming-orders"
+                        className="px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700"
+                    >
+                        Review Orders
+                    </Link>
+                </div>
+            )}
         </div>
     );
 }
@@ -118,18 +151,18 @@ function StatCard({
     label,
     value,
     bg,
+    href,
 }: {
     icon: React.ReactNode;
     label: string;
     value: string | null;
     bg: string;
+    href?: string;
 }) {
-    return (
-        <div className="bg-white rounded-lg border shadow-sm p-4">
+    const content = (
+        <div className={`bg-white rounded-lg border shadow-sm p-4 ${href ? "hover:border-gray-300 transition-colors cursor-pointer" : ""}`}>
             <div className="flex items-center gap-3">
-                <div
-                    className={`w-10 h-10 ${bg} rounded-lg flex items-center justify-center`}
-                >
+                <div className={`w-10 h-10 ${bg} rounded-lg flex items-center justify-center`}>
                     {icon}
                 </div>
                 <div>
@@ -137,12 +170,15 @@ function StatCard({
                     {value === null ? (
                         <Skeleton className="h-6 w-12 mt-0.5" />
                     ) : (
-                        <p className="text-xl font-bold text-gray-900">
-                            {value}
-                        </p>
+                        <p className="text-xl font-bold text-gray-900">{value}</p>
                     )}
                 </div>
             </div>
         </div>
     );
+
+    if (href) {
+        return <Link href={href}>{content}</Link>;
+    }
+    return content;
 }
