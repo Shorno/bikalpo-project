@@ -852,7 +852,9 @@ const warehouseOrderQueries = {
                     });
                 }
 
-                const unitPrice = inv.retailPrice || inv.variant?.price || "0";
+                const rp = Number(inv.retailPrice || 0);
+                const vp = Number(inv.variant?.price || 0);
+                const unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
                 validatedItems.push({

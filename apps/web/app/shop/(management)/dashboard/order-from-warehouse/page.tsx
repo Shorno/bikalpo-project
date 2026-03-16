@@ -271,8 +271,12 @@ export default function OrderFromWarehousePage() {
                                 products.map((item: any) => {
                                     const product = item.product || item.variant?.product;
                                     const variant = item.variant;
-                                    const price = item.retailPrice || variant?.price || "0";
+                                    // Use retailPrice from inventory, fall back to variant price
+                                    const rp = Number(item.retailPrice || 0);
+                                    const vp = Number(variant?.price || 0);
+                                    const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
                                     const inCart = cart.find((c) => c.variantId === (variant?.id || item.variantId));
+                                    const productImage = product?.images?.[0]?.imageUrl || product?.image || "";
 
                                     return (
                                         <div
@@ -281,8 +285,8 @@ export default function OrderFromWarehousePage() {
                                                 inCart ? "border-blue-200 bg-blue-50/50" : "border-gray-100 hover:border-gray-200"
                                             }`}
                                         >
-                                            {product?.image && (
-                                                <img src={product.image} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                                            {productImage && (
+                                                <img src={productImage} alt="" className="w-10 h-10 rounded-lg object-cover" />
                                             )}
                                             <div className="flex-1 min-w-0">
                                                 <div className="text-sm font-medium text-gray-900 truncate">
@@ -291,6 +295,7 @@ export default function OrderFromWarehousePage() {
                                                 <div className="text-[10px] text-gray-400">
                                                     {variant?.unitLabel} — {variant?.weightKg}kg
                                                     {variant?.sku && ` • ${variant.sku}`}
+                                                    <span className="ml-2 text-emerald-500">Stock: {item.availableQty}</span>
                                                 </div>
                                             </div>
                                             <div className="text-sm font-semibold text-emerald-700 shrink-0">
@@ -323,7 +328,7 @@ export default function OrderFromWarehousePage() {
                                                                 unitLabel: variant?.unitLabel || "",
                                                                 weightKg: variant?.weightKg || "",
                                                                 retailPrice: price,
-                                                                productImage: product?.image || "",
+                                                                productImage: productImage,
                                                             })
                                                         }
                                                         className="px-2 py-1 text-[10px] bg-blue-50 text-blue-600 border border-blue-200 rounded font-medium hover:bg-blue-100"
