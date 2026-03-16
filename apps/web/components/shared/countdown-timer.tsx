@@ -24,7 +24,7 @@ export function CountdownTimer({ targetDate }: CountdownTimerProps) {
 
   useEffect(() => {
     const calculateTimeLeft = () => {
-      const difference = targetDate.getTime() - new Date().getTime();
+      const difference = targetDate.getTime() - Date.now();
 
       if (difference > 0) {
         setTimeLeft({

@@ -45,7 +45,7 @@ function getRedirectForRole(role: string): string {
 
 export function LoginForm() {
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
+  const _router = useRouter();
 
   const form = useForm({
     defaultValues: {
@@ -75,7 +75,8 @@ export function LoginForm() {
         // Shop owners go to shop subdomain
         if (role === "shop_owner") {
           const shopDomain =
-            process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001";
+            process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
+            "http://shop.bikalpo.localhost:3001";
           window.location.href = shopDomain;
           return;
         }

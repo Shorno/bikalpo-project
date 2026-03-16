@@ -167,7 +167,8 @@ export function proxy(request: NextRequest) {
       if (role === "shop_owner") {
         // Shop owners go to shop subdomain
         const shopDomain =
-          process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001";
+          process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
+          "http://shop.bikalpo.localhost:3001";
         return NextResponse.redirect(new URL("/", shopDomain));
       }
       // Staff go to dashboard
@@ -200,7 +201,11 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/apply-warehouse") ||
     pathname.startsWith("/warehouse-application-status")
   ) {
-    if (!token && (pathname.startsWith("/apply-warehouse") || pathname.startsWith("/warehouse-application-status"))) {
+    if (
+      !token &&
+      (pathname.startsWith("/apply-warehouse") ||
+        pathname.startsWith("/warehouse-application-status"))
+    ) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
     return NextResponse.next();
@@ -211,7 +216,8 @@ export function proxy(request: NextRequest) {
   if (token && role && staffRoles.includes(role)) {
     if (role === "shop_owner") {
       const shopDomain =
-        process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001";
+        process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
+        "http://shop.bikalpo.localhost:3001";
       return NextResponse.redirect(new URL("/", shopDomain));
     }
     return NextResponse.redirect(new URL("/dashboard", request.url));

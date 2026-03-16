@@ -64,7 +64,10 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
   // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(e.target as Node)
+      ) {
         setFocused(false);
       }
     }
@@ -116,7 +119,9 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-100">
             {!query.trim() ? (
-              <p className="text-sm font-medium text-gray-700">Suggested Products</p>
+              <p className="text-sm font-medium text-gray-700">
+                Suggested Products
+              </p>
             ) : isLoading ? (
               <div className="flex items-center gap-2 text-sm text-gray-500">
                 <Loader2 className="size-4 animate-spin" />
@@ -156,7 +161,9 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
                         fill
                         className="object-cover"
                         onError={() =>
-                          setImageErrors((prev) => new Set(prev).add(product.id))
+                          setImageErrors((prev) =>
+                            new Set(prev).add(product.id),
+                          )
                         }
                         unoptimized={product.image.startsWith("http")}
                       />
@@ -172,7 +179,9 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
                     <h4 className="text-sm font-medium text-gray-900 truncate">
                       {product.name}
                     </h4>
-                    <p className="text-xs text-gray-500">{product.category.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {product.category.name}
+                    </p>
                   </div>
 
                   {/* Price */}

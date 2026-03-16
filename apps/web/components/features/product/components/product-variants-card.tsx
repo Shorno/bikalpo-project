@@ -72,10 +72,14 @@ function VariantListItem({
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             {variant.variantType && (
               <Badge
-                variant={variant.variantType === "trade" ? "default" : "secondary"}
+                variant={
+                  variant.variantType === "trade" ? "default" : "secondary"
+                }
                 className="text-[10px] h-5"
               >
-                {variant.variantType === "trade" ? "Trade (B2B)" : "Retail (B2C)"}
+                {variant.variantType === "trade"
+                  ? "Trade (B2B)"
+                  : "Retail (B2C)"}
               </Badge>
             )}
             {variant.packType && (
@@ -85,7 +89,9 @@ function VariantListItem({
             )}
             {variant.visibilityRole && variant.visibilityRole !== "all" && (
               <Badge variant="outline" className="text-[10px] h-5">
-                {variant.visibilityRole === "shop_owner" ? "Shop Owners" : "Consumers"}
+                {variant.visibilityRole === "shop_owner"
+                  ? "Shop Owners"
+                  : "Consumers"}
               </Badge>
             )}
             {!variant.isActive && (
@@ -94,12 +100,18 @@ function VariantListItem({
               </Badge>
             )}
             {variant.isOpenOrderAllowed && (
-              <Badge variant="outline" className="text-[10px] h-5 text-blue-600 border-blue-300">
+              <Badge
+                variant="outline"
+                className="text-[10px] h-5 text-blue-600 border-blue-300"
+              >
                 Open Order
               </Badge>
             )}
             {variant.isPackReturnRequired && (
-              <Badge variant="outline" className="text-[10px] h-5 text-amber-600 border-amber-300">
+              <Badge
+                variant="outline"
+                className="text-[10px] h-5 text-amber-600 border-amber-300"
+              >
                 Pack Return
               </Badge>
             )}
@@ -107,10 +119,22 @@ function VariantListItem({
         </div>
       </div>
       <div className="flex gap-1 shrink-0">
-        <Button type="button" variant="ghost" size="icon" className="size-8" onClick={onEdit}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={onEdit}
+        >
           <Pencil className="size-3.5" />
         </Button>
-        <Button type="button" variant="ghost" size="icon" className="size-8" onClick={onDelete}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={onDelete}
+        >
           <Trash2 className="size-3.5 text-destructive" />
         </Button>
       </div>
@@ -186,8 +210,8 @@ export function ProductVariantsCard({
             <div className="flex flex-col items-center justify-center py-8 text-center border rounded-lg bg-muted/30">
               <Package className="size-8 text-muted-foreground mb-2" />
               <p className="text-sm text-muted-foreground">
-                No variants yet. Add one to sell by unit (Sack, Carton, kg, etc.)
-                with its own price and order rules.
+                No variants yet. Add one to sell by unit (Sack, Carton, kg,
+                etc.) with its own price and order rules.
               </p>
             </div>
           ) : (
@@ -206,10 +230,7 @@ export function ProductVariantsCard({
       </Card>
 
       {variants.length >= 2 && (
-        <VariantConversionPanel
-          productId={productId}
-          variants={variants}
-        />
+        <VariantConversionPanel productId={productId} variants={variants} />
       )}
 
       <VariantFormDialog

@@ -36,7 +36,6 @@ export function UserDropdown() {
   const { data: session, isPending } = authClient.useSession();
   const [isMounted, setIsMounted] = React.useState(false);
 
-
   React.useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -65,7 +64,10 @@ export function UserDropdown() {
   const dashboardPath = DASHBOARD_PATHS[userRole] || "/dashboard";
 
   // Shop owner dashboard – if already on shop/b2b subdomain, just use relative path
-  const isOnShopSubdomain = typeof window !== "undefined" && (window.location.host.startsWith("shop.") || window.location.host.startsWith("b2b."));
+  const isOnShopSubdomain =
+    typeof window !== "undefined" &&
+    (window.location.host.startsWith("shop.") ||
+      window.location.host.startsWith("b2b."));
   const shopDashboardUrl = isOnShopSubdomain
     ? "/dashboard"
     : process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL
@@ -74,11 +76,11 @@ export function UserDropdown() {
 
   const initials = user.name
     ? user.name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2)
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
     : "U";
 
   const handleLogout = async () => {
@@ -88,7 +90,9 @@ export function UserDropdown() {
         onSuccess: () => {
           // Strip shop. or b2b. prefix to go back to main domain
           const currentOrigin = window.location.origin;
-          const mainDomain = currentOrigin.replace("://shop.", "://").replace("://b2b.", "://");
+          const mainDomain = currentOrigin
+            .replace("://shop.", "://")
+            .replace("://b2b.", "://");
           window.location.href = `${mainDomain}/login`;
         },
       },
@@ -179,28 +183,19 @@ export function UserDropdown() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link
-                href="/account/estimates"
-                className="cursor-pointer"
-              >
+              <Link href="/account/estimates" className="cursor-pointer">
                 <Receipt className="mr-2 h-4 w-4" />
                 Estimates
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link
-                href="/account/payments"
-                className="cursor-pointer"
-              >
+              <Link href="/account/payments" className="cursor-pointer">
                 <CreditCard className="mr-2 h-4 w-4" />
                 Payments
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link
-                href="/account/addresses"
-                className="cursor-pointer"
-              >
+              <Link href="/account/addresses" className="cursor-pointer">
                 <MapPin className="mr-2 h-4 w-4" />
                 Addresses
               </Link>

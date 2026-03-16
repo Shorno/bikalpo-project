@@ -24,13 +24,13 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { client } from "@/utils/orpc";
 import {
+  ORDER_UNITS,
   PACK_TYPES,
   PACKAGING_TYPES,
-  ORDER_UNITS,
   variantFormSchema,
 } from "@/schema/variant.schema";
+import { client } from "@/utils/orpc";
 
 type CreateVariantInput = Parameters<
   typeof client.adminProductVariant.create
@@ -108,7 +108,8 @@ export function VariantFormDialog({
       sku: source?.sku ?? "",
       unitLabel: source?.unitLabel ?? "",
       quantitySelectorLabel: source?.quantitySelectorLabel ?? "",
-      variantType: (source?.variantType as "trade" | "retail" | undefined) ?? undefined,
+      variantType:
+        (source?.variantType as "trade" | "retail" | undefined) ?? undefined,
       packType: (source?.packType as string | undefined) ?? undefined,
       packagingType: source?.packagingType ?? "loose",
       weightKg: source?.weightKg ?? "",
@@ -117,7 +118,8 @@ export function VariantFormDialog({
       sellUnit: source?.sellUnit ?? "",
       packWeightKg: source?.packWeightKg ?? "",
       innerPackSizeKg: source?.innerPackSizeKg ?? "",
-      packCountInside: source?.packCountInside ?? (undefined as number | undefined),
+      packCountInside:
+        source?.packCountInside ?? (undefined as number | undefined),
       pricingType: source?.pricingType ?? "per_unit",
       price: source?.price ?? "",
       orderMin: source?.orderMin ?? "1",
@@ -127,7 +129,12 @@ export function VariantFormDialog({
       stockQuantity: source?.stockQuantity ?? 0,
       reorderLevel: source?.reorderLevel ?? 0,
       orderType: (source?.orderType as "b2b" | "b2c" | undefined) ?? undefined,
-      visibilityRole: (source?.visibilityRole as "shop_owner" | "consumer" | "all" | undefined) ?? "all",
+      visibilityRole:
+        (source?.visibilityRole as
+          | "shop_owner"
+          | "consumer"
+          | "all"
+          | undefined) ?? "all",
       isActive: source?.isActive ?? true,
       isOpenOrderAllowed: source?.isOpenOrderAllowed ?? false,
       negotiationTimeoutSec: source?.negotiationTimeoutSec ?? 100,
@@ -143,7 +150,7 @@ export function VariantFormDialog({
       sortOrder: source?.sortOrder ?? 0,
     },
     validators: {
-      // @ts-ignore
+      // @ts-expect-error
       onSubmit: variantFormSchema,
     },
     onSubmit: async ({ value }) => {
@@ -206,7 +213,9 @@ export function VariantFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl p-8">
         <DialogHeader>
-          <DialogTitle className="text-xl">{isEdit ? "Edit Variant" : "Add Variant"}</DialogTitle>
+          <DialogTitle className="text-xl">
+            {isEdit ? "Edit Variant" : "Add Variant"}
+          </DialogTitle>
           <p className="text-sm text-muted-foreground">
             Configure this variant's packaging, pricing, and order rules.
           </p>
@@ -238,7 +247,8 @@ export function VariantFormDialog({
             </form.Field>
             <form.Field name="unitLabel">
               {(field) => {
-                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                const isInvalid =
+                  field.state.meta.isTouched && !field.state.meta.isValid;
                 return (
                   <Field data-invalid={isInvalid}>
                     <FieldLabel htmlFor={field.name}>Unit Label *</FieldLabel>
@@ -249,7 +259,9 @@ export function VariantFormDialog({
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder="Sack, Carton, kg"
                     />
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                    {isInvalid && (
+                      <FieldError errors={field.state.meta.errors} />
+                    )}
                   </Field>
                 );
               }}
@@ -257,7 +269,9 @@ export function VariantFormDialog({
             <form.Field name="quantitySelectorLabel">
               {(field) => (
                 <Field>
-                  <FieldLabel htmlFor={field.name}>Qty Selector Label</FieldLabel>
+                  <FieldLabel htmlFor={field.name}>
+                    Qty Selector Label
+                  </FieldLabel>
                   <Input
                     id={field.name}
                     value={field.state.value ?? ""}
@@ -282,7 +296,9 @@ export function VariantFormDialog({
                   <Select
                     value={field.state.value ?? "none"}
                     onValueChange={(v) =>
-                      field.handleChange(v === "none" ? undefined : (v as "trade" | "retail"))
+                      field.handleChange(
+                        v === "none" ? undefined : (v as "trade" | "retail"),
+                      )
                     }
                   >
                     <SelectTrigger>
@@ -348,7 +364,8 @@ export function VariantFormDialog({
           <div className="grid grid-cols-3 gap-4">
             <form.Field name="weightKg">
               {(field) => {
-                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                const isInvalid =
+                  field.state.meta.isTouched && !field.state.meta.isValid;
                 return (
                   <Field data-invalid={isInvalid}>
                     <FieldLabel htmlFor={field.name}>Weight (kg) *</FieldLabel>
@@ -359,7 +376,9 @@ export function VariantFormDialog({
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder="50"
                     />
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                    {isInvalid && (
+                      <FieldError errors={field.state.meta.errors} />
+                    )}
                   </Field>
                 );
               }}
@@ -367,7 +386,9 @@ export function VariantFormDialog({
             <form.Field name="pieceWeightKg">
               {(field) => (
                 <Field>
-                  <FieldLabel htmlFor={field.name}>Piece Weight (kg)</FieldLabel>
+                  <FieldLabel htmlFor={field.name}>
+                    Piece Weight (kg)
+                  </FieldLabel>
                   <Input
                     id={field.name}
                     value={field.state.value ?? ""}
@@ -389,7 +410,9 @@ export function VariantFormDialog({
                     onBlur={field.handleBlur}
                     onChange={(e) =>
                       field.handleChange(
-                        e.target.value ? parseInt(e.target.value, 10) : undefined,
+                        e.target.value
+                          ? parseInt(e.target.value, 10)
+                          : undefined,
                       )
                     }
                     placeholder="10"
@@ -402,7 +425,7 @@ export function VariantFormDialog({
           <form.Field name="packType">
             {(packTypeField) =>
               packTypeField.state.value === "carton" ||
-                packTypeField.state.value === "box" ? (
+              packTypeField.state.value === "box" ? (
                 <>
                   <Separator />
 
@@ -412,7 +435,9 @@ export function VariantFormDialog({
                     <form.Field name="sellUnit">
                       {(field) => (
                         <Field>
-                          <FieldLabel htmlFor={field.name}>Sell Unit</FieldLabel>
+                          <FieldLabel htmlFor={field.name}>
+                            Sell Unit
+                          </FieldLabel>
                           <Input
                             id={field.name}
                             value={field.state.value ?? ""}
@@ -426,7 +451,9 @@ export function VariantFormDialog({
                     <form.Field name="packWeightKg">
                       {(field) => (
                         <Field>
-                          <FieldLabel htmlFor={field.name}>Pack Weight (kg)</FieldLabel>
+                          <FieldLabel htmlFor={field.name}>
+                            Pack Weight (kg)
+                          </FieldLabel>
                           <Input
                             id={field.name}
                             value={field.state.value ?? ""}
@@ -440,7 +467,9 @@ export function VariantFormDialog({
                     <form.Field name="innerPackSizeKg">
                       {(field) => (
                         <Field>
-                          <FieldLabel htmlFor={field.name}>Inner Pack (kg)</FieldLabel>
+                          <FieldLabel htmlFor={field.name}>
+                            Inner Pack (kg)
+                          </FieldLabel>
                           <Input
                             id={field.name}
                             value={field.state.value ?? ""}
@@ -454,7 +483,9 @@ export function VariantFormDialog({
                     <form.Field name="packCountInside">
                       {(field) => (
                         <Field>
-                          <FieldLabel htmlFor={field.name}>Count Inside</FieldLabel>
+                          <FieldLabel htmlFor={field.name}>
+                            Count Inside
+                          </FieldLabel>
                           <Input
                             id={field.name}
                             type="number"
@@ -462,7 +493,9 @@ export function VariantFormDialog({
                             onBlur={field.handleBlur}
                             onChange={(e) =>
                               field.handleChange(
-                                e.target.value ? parseInt(e.target.value, 10) : undefined,
+                                e.target.value
+                                  ? parseInt(e.target.value, 10)
+                                  : undefined,
                               )
                             }
                             placeholder="10"
@@ -502,7 +535,8 @@ export function VariantFormDialog({
             </form.Field>
             <form.Field name="price">
               {(field) => {
-                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                const isInvalid =
+                  field.state.meta.isTouched && !field.state.meta.isValid;
                 return (
                   <Field data-invalid={isInvalid}>
                     <FieldLabel htmlFor={field.name}>Price (৳) *</FieldLabel>
@@ -513,7 +547,9 @@ export function VariantFormDialog({
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder="0.00"
                     />
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                    {isInvalid && (
+                      <FieldError errors={field.state.meta.errors} />
+                    )}
                   </Field>
                 );
               }}
@@ -642,7 +678,9 @@ export function VariantFormDialog({
                   <Select
                     value={field.state.value ?? "none"}
                     onValueChange={(v) =>
-                      field.handleChange(v === "none" ? undefined : (v as "b2b" | "b2c"))
+                      field.handleChange(
+                        v === "none" ? undefined : (v as "b2b" | "b2c"),
+                      )
                     }
                   >
                     <SelectTrigger>
@@ -672,7 +710,9 @@ export function VariantFormDialog({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="shop_owner">Shop Owners Only</SelectItem>
+                      <SelectItem value="shop_owner">
+                        Shop Owners Only
+                      </SelectItem>
                       <SelectItem value="consumer">Consumers Only</SelectItem>
                     </SelectContent>
                   </Select>
@@ -684,7 +724,10 @@ export function VariantFormDialog({
             {(field) => (
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
-                  <FieldLabel htmlFor={field.name} className="text-sm font-medium">
+                  <FieldLabel
+                    htmlFor={field.name}
+                    className="text-sm font-medium"
+                  >
                     Active
                   </FieldLabel>
                   <p className="text-xs text-muted-foreground">
@@ -712,11 +755,15 @@ export function VariantFormDialog({
                     {(field) => (
                       <div className="flex items-center justify-between rounded-lg border p-3">
                         <div>
-                          <FieldLabel htmlFor={field.name} className="text-sm font-medium">
+                          <FieldLabel
+                            htmlFor={field.name}
+                            className="text-sm font-medium"
+                          >
                             Allow Open Orders
                           </FieldLabel>
                           <p className="text-xs text-muted-foreground">
-                            Broadcast this variant to eligible sellers for competitive pricing
+                            Broadcast this variant to eligible sellers for
+                            competitive pricing
                           </p>
                         </div>
                         <Switch
@@ -765,7 +812,9 @@ export function VariantFormDialog({
                     <form.Field name="minMarginPercent">
                       {(field) => (
                         <Field>
-                          <FieldLabel htmlFor={field.name}>Min Margin (%)</FieldLabel>
+                          <FieldLabel htmlFor={field.name}>
+                            Min Margin (%)
+                          </FieldLabel>
                           <Input
                             id={field.name}
                             value={field.state.value ?? ""}
@@ -779,7 +828,9 @@ export function VariantFormDialog({
                     <form.Field name="minMarginAmount">
                       {(field) => (
                         <Field>
-                          <FieldLabel htmlFor={field.name}>Min Margin (৳)</FieldLabel>
+                          <FieldLabel htmlFor={field.name}>
+                            Min Margin (৳)
+                          </FieldLabel>
                           <Input
                             id={field.name}
                             value={field.state.value ?? ""}
@@ -800,11 +851,15 @@ export function VariantFormDialog({
                     {(field) => (
                       <div className="flex items-center justify-between rounded-lg border p-3">
                         <div>
-                          <FieldLabel htmlFor={field.name} className="text-sm font-medium">
+                          <FieldLabel
+                            htmlFor={field.name}
+                            className="text-sm font-medium"
+                          >
                             Pack Return Required
                           </FieldLabel>
                           <p className="text-xs text-muted-foreground">
-                            Customer must return empty pack (e.g. gas cylinder, reusable sack)
+                            Customer must return empty pack (e.g. gas cylinder,
+                            reusable sack)
                           </p>
                         </div>
                         <Switch
@@ -829,7 +884,9 @@ export function VariantFormDialog({
                                   id={field.name}
                                   value={field.state.value ?? ""}
                                   onBlur={field.handleBlur}
-                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  onChange={(e) =>
+                                    field.handleChange(e.target.value)
+                                  }
                                   placeholder="e.g. 200"
                                 />
                               </Field>

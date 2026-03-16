@@ -1,18 +1,18 @@
 "use client";
 
 import {
-  Menu,
-  ChevronRight,
-  ShoppingBag,
   Baby,
-  Shirt,
+  ChevronRight,
+  Gamepad2,
   Home,
-  Sparkles,
-  Stethoscope,
+  Menu,
   Package,
   PenTool,
-  Gamepad2,
+  Shirt,
+  ShoppingBag,
   Smartphone,
+  Sparkles,
+  Stethoscope,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";

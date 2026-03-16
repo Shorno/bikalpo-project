@@ -18,7 +18,10 @@ export function HomepageCategorySidebar() {
       <div className="bg-white border-l border-r border-b border-gray-200 rounded-b-md shadow-sm h-full">
         <ul className="divide-y divide-gray-50">
           {Array.from({ length: 12 }).map((_, i) => (
-            <li key={i} className="flex items-center justify-between px-4 py-2.5">
+            <li
+              key={i}
+              className="flex items-center justify-between px-4 py-2.5"
+            >
               <Skeleton className="h-4 w-3/4" />
               <Skeleton className="h-3.5 w-3.5 rounded-full shrink-0" />
             </li>

@@ -7,6 +7,7 @@
 import { Building2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { SectionHeader } from "@/components/shared/section-header";
 import {
   Carousel,
   CarouselContent,
@@ -15,7 +16,6 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SectionHeader } from "@/components/shared/section-header";
 import { useActiveBrands } from "@/hooks/use-customer-api";
 
 type ActiveBrand = NonNullable<

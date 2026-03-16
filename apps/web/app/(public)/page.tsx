@@ -1,12 +1,11 @@
 import { Clock, CreditCard, Headphones, ShieldCheck } from "lucide-react";
-import { OrpcAnnouncementBanner } from "@/components/features/home/orpc-announcement-banner";
-import { HomepageCategorySidebar } from "@/components/features/home/homepage-category-sidebar";
 import { HomeBannerCarousel } from "@/components/features/home/home-banner-carousel";
+import { HomepageCategorySidebar } from "@/components/features/home/homepage-category-sidebar";
+import { OffersByCategory } from "@/components/features/home/offers-by-category";
 import { OrpcBrandsCarousel } from "@/components/features/home/orpc-brands-carousel";
 import { OrpcCategoriesCarousel } from "@/components/features/home/orpc-categories-carousel";
 import { OrpcFeaturedProducts } from "@/components/features/home/orpc-featured-products";
 import { WeekendDeals } from "@/components/features/home/weekend-deals";
-import { OffersByCategory } from "@/components/features/home/offers-by-category";
 import { FeatureBadge } from "@/components/shared/feature-badge";
 
 export const revalidate = 1800;

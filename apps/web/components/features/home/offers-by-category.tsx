@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import Image from "next/image";
 import { ShoppingCart, Sparkles, Zap } from "lucide-react";
+import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,8 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { client } from "@/utils/orpc";
 import { cn } from "@/lib/utils";
+import { client } from "@/utils/orpc";
 
 const OFFER_TYPES = [
   "Weekly Offers",
@@ -201,7 +201,7 @@ export function OffersByCategory() {
   const [selectedType, setSelectedType] = useState("Weekly Offers");
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["active-offers-all"],
     queryFn: () => client.customer.getActiveOffers({ limit: 50 }),
     retry: 2,

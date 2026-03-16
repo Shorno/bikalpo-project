@@ -1,9 +1,8 @@
 "use client";
-import { Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { BusinessApplicationForm } from "@/components/features/auth/business-application-form";
 import { Navbar } from "@/components/layout/navbar";
 import { orpc } from "@/utils/orpc";
@@ -19,7 +18,7 @@ function ApplyBusinessContent() {
 
   useEffect(() => {
     // If user has an application and NOT in edit mode, redirect to status
-    if (data && data.status && !isEditMode) {
+    if (data?.status && !isEditMode) {
       router.replace("/application-status");
     }
   }, [data, isEditMode, router]);
@@ -36,7 +35,7 @@ function ApplyBusinessContent() {
   }
 
   // Redirect while not in edit mode
-  if (data && data.status && !isEditMode) {
+  if (data?.status && !isEditMode) {
     return (
       <>
         <Navbar />

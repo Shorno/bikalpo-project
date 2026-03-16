@@ -13,8 +13,8 @@ export default async function StockInventoryPage({
   searchParams = {},
 }: {
   searchParams?:
-  | Promise<Record<string, string | string[] | undefined>>
-  | Record<string, string | string[] | undefined>;
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
 }) {
   const sp = (await Promise.resolve(searchParams ?? {})) as Record<
     string,

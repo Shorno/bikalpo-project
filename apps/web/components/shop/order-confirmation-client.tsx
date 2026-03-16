@@ -60,7 +60,9 @@ function OrderConfirmationSkeleton() {
   );
 }
 
-export function OrderConfirmationClient({ orderNumber }: OrderDetailClientProps) {
+export function OrderConfirmationClient({
+  orderNumber,
+}: OrderDetailClientProps) {
   const { data, isLoading, isError } = useOrderByNumber(orderNumber);
   type OrderItem = NonNullable<
     NonNullable<typeof data>["order"]
@@ -126,7 +128,11 @@ export function OrderConfirmationClient({ orderNumber }: OrderDetailClientProps)
                       {order.shippingAddress}
                     </p>
                     <p className="text-sm text-gray-600">
-                      {[order.shippingArea, order.shippingCity, order.shippingPostalCode]
+                      {[
+                        order.shippingArea,
+                        order.shippingCity,
+                        order.shippingPostalCode,
+                      ]
                         .filter(Boolean)
                         .join(", ")}
                     </p>
@@ -140,7 +146,9 @@ export function OrderConfirmationClient({ orderNumber }: OrderDetailClientProps)
 
                 {order.shippingEmail && (
                   <div className="flex items-start gap-3">
-                    <span className="text-gray-400 text-sm mt-0.5 shrink-0">@</span>
+                    <span className="text-gray-400 text-sm mt-0.5 shrink-0">
+                      @
+                    </span>
                     <p className="text-sm text-gray-600">
                       {order.shippingEmail}
                     </p>
@@ -173,9 +181,7 @@ export function OrderConfirmationClient({ orderNumber }: OrderDetailClientProps)
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             {/* Receipt Header */}
             <div className="p-5 pb-4">
-              <h2 className="text-lg font-bold text-gray-900">
-                Order Summary
-              </h2>
+              <h2 className="text-lg font-bold text-gray-900">Order Summary</h2>
             </div>
 
             {/* Order Meta */}

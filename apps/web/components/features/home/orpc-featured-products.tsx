@@ -4,12 +4,12 @@
  */
 "use client";
 
-import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
-import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
-import { useCart } from "@/hooks/use-orpc-cart";
 import { ProductCard } from "@/components/shared/product-card";
 import { SectionHeader } from "@/components/shared/section-header";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useCart } from "@/hooks/use-orpc-cart";
+import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
 import { cn } from "@/lib/utils";
 
 interface OrpcFeaturedProductsProps {

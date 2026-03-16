@@ -50,19 +50,9 @@ export const createProductSchema = z.object({
   // These fields are auto-managed (synced from variants)
   size: z.string().max(50).default("—").optional(),
   price: z.string().default("0").optional(),
-  stockQuantity: z
-    .number()
-    .int()
-    .min(0)
-    .default(0)
-    .optional(),
+  stockQuantity: z.number().int().min(0).default(0).optional(),
   sku: z.string().max(100).trim().optional(),
-  reorderLevel: z
-    .number()
-    .int()
-    .min(0)
-    .default(0)
-    .optional(),
+  reorderLevel: z.number().int().min(0).default(0).optional(),
   supplier: z.string().max(500).trim().optional(),
   image: z
     .url("Please enter a valid image URL.")

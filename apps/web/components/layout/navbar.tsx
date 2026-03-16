@@ -1,24 +1,17 @@
 "use client";
-import {
-  ChevronRight,
-  Menu,
-  Phone,
-  Search,
-  Smartphone,
-  Store,
-} from "lucide-react";
+import { ChevronRight, Menu, Phone, Smartphone, Store } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveCategories } from "@/hooks/use-customer-api";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { authClient } from "@/lib/auth-client";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
 import { NavbarSearch } from "./navbar-search";
 import { UserDropdown } from "./user-dropdown";
-import { authClient } from "@/lib/auth-client";
 
 const topNavLinks = [
   { label: "RAMADAN SPECIAL", href: "/products?tag=ramadan" },

@@ -156,7 +156,8 @@ export default function EditCategoryDialog({
                   ))}
                 </select>
                 <FieldDescription>
-                  Assign this category to a product type (Type → Category → SubCategory)
+                  Assign this category to a product type (Type → Category →
+                  SubCategory)
                 </FieldDescription>
               </Field>
             )}

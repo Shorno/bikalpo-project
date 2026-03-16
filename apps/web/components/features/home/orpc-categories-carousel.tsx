@@ -83,7 +83,10 @@ export function OrpcCategoriesCarousel() {
     return (
       <div className="flex gap-3">
         {Array.from({ length: 7 }).map((_, i) => (
-          <Skeleton key={i} className="flex-1 aspect-[3/4] rounded-xl min-w-0" />
+          <Skeleton
+            key={i}
+            className="flex-1 aspect-[3/4] rounded-xl min-w-0"
+          />
         ))}
       </div>
     );

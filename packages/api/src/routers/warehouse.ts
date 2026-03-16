@@ -1150,6 +1150,7 @@ const purchaseQueries = {
 
 import {
     warehouseCategoryAssignment,
+    category as categoryTable,
 } from "@bikalpo-project/db/schema";
 
 const productActivation = {
