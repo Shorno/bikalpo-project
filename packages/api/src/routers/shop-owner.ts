@@ -758,6 +758,264 @@ const incomingOrderQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Warehouse Order Queries (Shop ordering from Warehouses)
+// ────────────────────────────────────────────────────────────────
+
+const warehouseOrderQueries = {
+    /**
+     * Place an order to a warehouse.
+     * Creates order + items, deducts warehouse inventory.
+     */
+    placeWarehouseOrder: shopOwnerProcedure
+        .input(
+            z.object({
+                warehouseSlug: z.string(),
+                items: z.array(
+                    z.object({
+                        variantId: z.number(),
+                        quantity: z.number().min(1),
+                    }),
+                ).min(1),
+                shippingName: z.string().min(1),
+                shippingPhone: z.string().min(1),
+                shippingAddress: z.string().min(1),
+                shippingCity: z.string().min(1),
+                shippingArea: z.string().optional(),
+                customerNote: z.string().optional(),
+                paymentMethod: z.enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"]).default("cash_on_delivery"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Find warehouse
+            const warehouseUser = await db
+                .select({ id: user.id, name: user.name, warehouseName: user.warehouseName })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.warehouseSlug, input.warehouseSlug),
+                        eq(user.role, "warehouse"),
+                    ),
+                )
+                .limit(1);
+
+            if (warehouseUser.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
+            }
+
+            const warehouseId = warehouseUser[0]!.id;
+
+            // 2. Validate each item: check inventory + get prices
+            const validatedItems: {
+                variantId: number;
+                quantity: number;
+                unitPrice: string;
+                totalPrice: string;
+                productName: string;
+                productImage: string;
+                productSize: string;
+                productId: number;
+                inventoryId: number;
+                currentQty: string;
+            }[] = [];
+
+            for (const item of input.items) {
+                // Find inventory record
+                const inv = await db.query.inventory.findFirst({
+                    where: and(
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, warehouseId),
+                        eq(inventory.variantId, item.variantId),
+                    ),
+                    with: {
+                        variant: {
+                            with: {
+                                product: {
+                                    columns: { id: true, name: true, image: true, size: true },
+                                },
+                            },
+                        },
+                    },
+                });
+
+                if (!inv) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: `Variant ${item.variantId} is not available in this warehouse`,
+                    });
+                }
+
+                const availableQty = Number(inv.availableQty);
+                if (availableQty < item.quantity) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Insufficient stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
+                    });
+                }
+
+                const rp = Number(inv.retailPrice || 0);
+                const vp = Number(inv.variant?.price || 0);
+                const unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
+                const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
+
+                validatedItems.push({
+                    variantId: item.variantId,
+                    quantity: item.quantity,
+                    unitPrice,
+                    totalPrice,
+                    productName: inv.variant?.product?.name || "Unknown",
+                    productImage: inv.variant?.product?.image || "",
+                    productSize: inv.variant?.unitLabel || inv.variant?.product?.size || "",
+                    productId: inv.variant?.product?.id || 0,
+                    inventoryId: inv.id,
+                    currentQty: inv.availableQty,
+                });
+            }
+
+            // 3. Calculate totals
+            const subtotal = validatedItems.reduce((sum, item) => sum + Number(item.totalPrice), 0);
+            const total = subtotal; // No shipping cost for B2B
+
+            // 4. Generate order number
+            const orderNumber = `WO-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+            // 5. Create order + items + deduct inventory in a transaction
+            const result = await db.transaction(async (tx) => {
+                // Create order
+                const [newOrder] = await tx
+                    .insert(order)
+                    .values({
+                        orderNumber,
+                        userId,
+                        orderType: "b2b",
+                        warehouseId,
+                        subtotal: subtotal.toFixed(2),
+                        total: total.toFixed(2),
+                        status: "pending",
+                        paymentStatus: "pending",
+                        paymentMethod: input.paymentMethod,
+                        shippingName: input.shippingName,
+                        shippingPhone: input.shippingPhone,
+                        shippingAddress: input.shippingAddress,
+                        shippingCity: input.shippingCity,
+                        shippingArea: input.shippingArea || null,
+                        customerNote: input.customerNote || null,
+                    })
+                    .returning();
+
+                // Create order items
+                for (const item of validatedItems) {
+                    await tx.insert(orderItem).values({
+                        orderId: newOrder!.id,
+                        productId: item.productId,
+                        variantId: item.variantId,
+                        productName: item.productName,
+                        productImage: item.productImage,
+                        productSize: item.productSize,
+                        quantity: item.quantity,
+                        unitPrice: item.unitPrice,
+                        totalPrice: item.totalPrice,
+                    });
+                }
+
+                // Deduct inventory
+                for (const item of validatedItems) {
+                    const newQty = (Number(item.currentQty) - item.quantity).toFixed(2);
+                    await tx
+                        .update(inventory)
+                        .set({ availableQty: newQty })
+                        .where(eq(inventory.id, item.inventoryId));
+                }
+
+                return newOrder!;
+            });
+
+            return {
+                success: true,
+                order: result,
+                message: `Order ${orderNumber} placed successfully to ${warehouseUser[0]!.warehouseName || warehouseUser[0]!.name}`,
+            };
+        }),
+
+    /**
+     * Get orders the shop placed to warehouses.
+     */
+    getMyWarehouseOrders: shopOwnerProcedure
+        .input(
+            z.object({
+                status: z.enum(["pending", "confirmed", "processing", "delivered", "cancelled"]).optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { page, limit } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [
+                eq(order.userId, userId),
+                sql`${order.warehouseId} IS NOT NULL`,
+            ];
+            if (input.status) conditions.push(eq(order.status, input.status));
+
+            const where = and(...conditions);
+
+            const [orders, countResult] = await Promise.all([
+                db.query.order.findMany({
+                    where,
+                    with: {
+                        items: {
+                            columns: {
+                                id: true,
+                                productName: true,
+                                productImage: true,
+                                quantity: true,
+                                unitPrice: true,
+                                totalPrice: true,
+                            },
+                        },
+                    },
+                    orderBy: [desc(order.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db
+                    .select({ count: count() })
+                    .from(order)
+                    .where(where),
+            ]);
+
+            // Get warehouse names
+            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            let warehouseMap = new Map<string, string>();
+            if (warehouseIds.length > 0) {
+                const warehouses = await db
+                    .select({ id: user.id, warehouseName: user.warehouseName, name: user.name })
+                    .from(user)
+                    .where(inArray(user.id, warehouseIds as string[]));
+                for (const w of warehouses) {
+                    warehouseMap.set(w.id, w.warehouseName || w.name || "Unknown");
+                }
+            }
+
+            const totalCount = countResult[0]?.count || 0;
+
+            return {
+                orders: orders.map((o: any) => ({
+                    ...o,
+                    warehouseName: warehouseMap.get(o.warehouseId) || "Unknown Warehouse",
+                })),
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(Number(totalCount) / limit),
+                },
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -767,4 +1025,5 @@ export const shopOwnerRouter = {
     ...mutations,
     ...orderQueries,
     ...incomingOrderQueries,
+    ...warehouseOrderQueries,
 };
