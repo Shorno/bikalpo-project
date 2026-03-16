@@ -8,17 +8,6 @@ import { useEffect, useRef, useState } from "react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { client } from "@/utils/orpc";
 
-type SearchResult = {
-  id: number;
-  name: string;
-  slug: string;
-  image: string;
-  price: number;
-  size: string;
-  inStock: boolean;
-  category: { name: string; slug: string };
-};
-
 interface NavbarSearchProps {
   className?: string;
 }
@@ -41,7 +30,7 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
         limit: "6",
         page: "1",
       });
-      return products as SearchResult[];
+      return products;
     },
     staleTime: 1000 * 60 * 10,
   });
@@ -51,11 +40,11 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
   const { data: results = [], isLoading } = useQuery({
     queryKey: ["search-products", debouncedQuery],
     queryFn: async () => {
-      if (!debouncedQuery.trim()) return [];
+      if (!debouncedQuery.trim()) return [] as Awaited<ReturnType<typeof client.product.search>>["products"];
       const { products } = await client.product.search({
         query: debouncedQuery,
       });
-      return products as SearchResult[];
+      return products;
     },
     enabled: debouncedQuery.trim().length > 0,
     staleTime: 1000 * 60 * 5,
