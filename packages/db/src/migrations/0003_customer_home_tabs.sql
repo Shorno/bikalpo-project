@@ -1,4 +1,4 @@
-CREATE TABLE "customer_home_tab" (
+CREATE TABLE IF NOT EXISTS "customer_home_tab" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"name" varchar(150) NOT NULL,
 	"slug" varchar(150) NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE "customer_home_tab" (
 	CONSTRAINT "customer_home_tab_slug_unique" UNIQUE("slug")
 );
 --> statement-breakpoint
-CREATE TABLE "customer_home_tab_product" (
+CREATE TABLE IF NOT EXISTS "customer_home_tab_product" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"tab_id" integer NOT NULL,
 	"name" varchar(150) NOT NULL,
