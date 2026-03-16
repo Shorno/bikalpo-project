@@ -37,7 +37,6 @@ export function SupportPageClient({ tickets }: SupportPageClientProps) {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
-            // biome-ignore lint/a11y/useButtonType: necessary change
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}

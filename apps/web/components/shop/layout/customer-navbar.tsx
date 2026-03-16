@@ -2,14 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import {
-  MobileOrderStatus,
-  OrderStatusButton,
-} from "@/components/shop/layout/order-status-badge";
 import SearchInput from "@/components/features/home/search/search-input";
 import { CartButton } from "@/components/layout/cart-button";
 import { MobileMenu } from "@/components/layout/mobile-menu";
 import { UserDropdown } from "@/components/layout/user-dropdown";
+import {
+  MobileOrderStatus,
+  OrderStatusButton,
+} from "@/components/shop/layout/order-status-badge";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export function ShopNavbar() {

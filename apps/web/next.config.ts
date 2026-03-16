@@ -40,6 +40,9 @@ const nextConfig: NextConfig = {
       {
         hostname: "img.freepik.com",
       },
+      {
+        hostname: "lh3.googleusercontent.com",
+      },
     ],
     contentDispositionType: "inline",
   },

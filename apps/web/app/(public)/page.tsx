@@ -1,12 +1,12 @@
 import { Clock, CreditCard, Headphones, ShieldCheck } from "lucide-react";
+import { HomeBannerCarousel } from "@/components/features/home/home-banner-carousel";
+import { HomepageCategorySidebar } from "@/components/features/home/homepage-category-sidebar";
+import { OffersByCategory } from "@/components/features/home/offers-by-category";
 import { OrpcBrandsCarousel } from "@/components/features/home/orpc-brands-carousel";
 import { OrpcCategoriesCarousel } from "@/components/features/home/orpc-categories-carousel";
 import { OrpcFeaturedProducts } from "@/components/features/home/orpc-featured-products";
 import { WeekendDeals } from "@/components/features/home/weekend-deals";
-import { OffersByCategory } from "@/components/features/home/offers-by-category";
-
 import { FeatureBadge } from "@/components/shared/feature-badge";
-import { HomeBannerCarousel } from "../../components/features/home/home-banner-carousel";
 
 export const revalidate = 1800;
 
@@ -36,8 +36,25 @@ const featureBadges = [
 export default async function HomePage() {
   return (
     <>
-      {/* Hero Banner Carousel */}
-      <HomeBannerCarousel />
+      {/* ── Shwapno-style Hero: Category sidebar + Banner + Categories below ── */}
+      <section className="bg-white">
+        <div className="container mx-auto px-4">
+          <div className="flex gap-4">
+            {/* Left: Category sidebar (desktop only) */}
+            <div className="hidden lg:block w-60 shrink-0">
+              <HomepageCategorySidebar />
+            </div>
+
+            {/* Right: Banner + Categories below */}
+            <div className="flex-1 min-w-0">
+              <HomeBannerCarousel />
+              <div className="mt-3">
+                <OrpcCategoriesCarousel />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Feature Badges */}
       <section className="bg-white border-b">
@@ -57,9 +74,6 @@ export default async function HomePage() {
 
       {/* Hot Offers Section */}
       <OffersByCategory />
-
-      {/* Categories Carousel */}
-      <OrpcCategoriesCarousel />
 
       {/* Brands */}
       <OrpcBrandsCarousel />

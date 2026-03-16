@@ -3,8 +3,8 @@
 import { ShoppingCart } from "lucide-react";
 import { useContext, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { CartDrawer } from "./cart-drawer";
 import { CartContext } from "@/hooks/use-orpc-cart";
+import { CartDrawer } from "./cart-drawer";
 
 interface CartButtonProps {
   variant?: "default" | "emerald";

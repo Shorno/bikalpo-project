@@ -331,9 +331,7 @@ export function SignupForm() {
               Want to sell on our platform?
             </p>
             <Button asChild variant="outline" className="w-full">
-              <Link href="/apply-business">
-                Become a Business Seller
-              </Link>
+              <Link href="/apply-business">Become a Business Seller</Link>
             </Button>
           </div>
 

@@ -47,14 +47,14 @@ export function ProductCard({
 
   return (
     <Link href={productUrl} className="group block">
-      <Card className="overflow-hidden border hover:shadow-lg transition-shadow rounded-lg h-full">
-        <div className="relative aspect-square overflow-hidden bg-gray-50">
+      <Card className="overflow-hidden border hover:shadow-lg transition-shadow rounded-lg h-full p-0 gap-0">
+        <div className="relative aspect-[4/3] overflow-hidden bg-gray-50">
           {product.image ? (
             <Image
               src={product.image}
               alt={product.name}
               fill
-              className="object-cover group-hover:scale-105 transition-transform duration-300"
+              className="object-contain group-hover:scale-105 transition-transform duration-300"
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 200px"
             />
           ) : (
@@ -75,19 +75,19 @@ export function ProductCard({
             </Badge>
           )}
         </div>
-        <CardContent className="p-3">
+        <CardContent className="p-2.5">
           {showDeliveryTime && (
-            <p className="text-[10px] text-gray-500 italic mb-1">
+            <p className="text-[10px] text-gray-500 italic mb-0.5">
               Delivery 1-2 hours
             </p>
           )}
-          <h3 className="text-xs font-medium text-gray-800 line-clamp-2 leading-snug mb-1.5 group-hover:text-primary transition-colors min-h-[2.25rem]">
+          <h3 className="text-xs font-medium text-gray-800 line-clamp-2 leading-snug mb-1 group-hover:text-primary transition-colors">
             {product.name}
           </h3>
           {product.size && (
-            <p className="text-[11px] text-gray-400 mb-1">{product.size}</p>
+            <p className="text-[11px] text-gray-400 mb-0.5">{product.size}</p>
           )}
-          <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center justify-between mt-1">
             <div>
               {product.originalPrice && (
                 <p className="text-[10px] text-gray-400 line-through">
@@ -97,7 +97,6 @@ export function ProductCard({
               <p className="text-sm font-bold text-primary">
                 ৳{Number(product.price || 0).toLocaleString("en-BD")}
               </p>
-              <p className="text-[9px] text-gray-500">Per Piece</p>
             </div>
             {product.inStock && onAddToCart && (
               <Button

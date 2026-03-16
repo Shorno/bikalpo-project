@@ -4,12 +4,12 @@
  */
 "use client";
 
-import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
-import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
-import { useCart } from "@/hooks/use-orpc-cart";
 import { ProductCard } from "@/components/shared/product-card";
 import { SectionHeader } from "@/components/shared/section-header";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useCart } from "@/hooks/use-orpc-cart";
+import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
 import { cn } from "@/lib/utils";
 
 interface OrpcFeaturedProductsProps {
@@ -76,7 +76,7 @@ export function OrpcFeaturedProducts({
           <p className="text-xs text-gray-500 -mt-2 mb-3">{subtitle}</p>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {products.map((product) => (
             <ProductCard
               key={product.id}

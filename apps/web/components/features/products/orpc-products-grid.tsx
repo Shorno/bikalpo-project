@@ -130,10 +130,11 @@ export function OrpcProductsGrid() {
                 ...Object.fromEntries(searchParams.entries()),
                 page: page.toString(),
               }).toString()}`}
-              className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${page === currentPage
+              className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                page === currentPage
                   ? "bg-primary text-white border-primary"
                   : "bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+              }`}
             >
               {page}
             </Link>

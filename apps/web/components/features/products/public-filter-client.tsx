@@ -103,7 +103,6 @@ export function PublicFilterClient({
           Filters
         </div>
         {hasActiveFilters && (
-          // biome-ignore lint/a11y/useButtonType: ...
           <button
             onClick={clearAllFilters}
             className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 transition-colors"

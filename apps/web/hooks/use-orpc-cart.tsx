@@ -37,7 +37,12 @@ export interface CartItem {
 
 export interface CartContextType {
   items: CartItem[];
-  addItem: (productId: number, quantity?: number, variantId?: number, shopId?: string) => Promise<void>;
+  addItem: (
+    productId: number,
+    quantity?: number,
+    variantId?: number,
+    shopId?: string,
+  ) => Promise<void>;
   removeItem: (cartItemId: number) => Promise<void>;
   updateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
@@ -61,7 +66,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
     isLoading: isFetching,
     isFetched,
     refetch,
-  } = useCartQuery();
+  } = useCartQuery(!!session);
 
   const addToCartMutation = useAddToCart();
   const updateMutation = useUpdateCartItem();
@@ -86,12 +91,22 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
     0,
   );
 
-  const addItem = async (productId: number, quantity = 1, variantId?: number, shopId?: string) => {
+  const addItem = async (
+    productId: number,
+    quantity = 1,
+    variantId?: number,
+    shopId?: string,
+  ) => {
     if (!session) {
       showLoginModal();
       return;
     }
-    await addToCartMutation.mutateAsync({ productId, quantity, variantId, shopId });
+    await addToCartMutation.mutateAsync({
+      productId,
+      quantity,
+      variantId,
+      shopId,
+    });
   };
 
   const removeItem = async (cartItemId: number) => {

@@ -1,12 +1,13 @@
 /**
  * ORPC-powered Brands Carousel
- * Fetches and displays brands using the customer API
+ * Shwapno-style rounded cards matching the categories carousel
  */
 "use client";
 
 import { Building2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { SectionHeader } from "@/components/shared/section-header";
 import {
   Carousel,
   CarouselContent,
@@ -27,20 +28,20 @@ function BrandItem({ brand }: { brand: ActiveBrand }) {
       href={`/products?brand=${brand.slug}`}
       className="flex flex-col items-center group"
     >
-      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white border-2 border-gray-100 flex items-center justify-center mb-2 group-hover:border-primary/30 group-hover:shadow-md transition-all overflow-hidden p-2">
+      <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-xl bg-white border border-gray-100 shadow-sm flex items-center justify-center mb-2 group-hover:shadow-md group-hover:border-primary/20 transition-all overflow-hidden p-3">
         {brand.logo ? (
           <Image
             src={brand.logo}
             alt={brand.name}
-            width={60}
-            height={60}
-            className="object-contain grayscale group-hover:grayscale-0 transition-all"
+            width={100}
+            height={100}
+            className="object-contain"
           />
         ) : (
-          <Building2 className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" />
+          <Building2 className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400" />
         )}
       </div>
-      <span className="text-xs font-medium text-gray-700 text-center line-clamp-1 group-hover:text-primary transition-colors">
+      <span className="text-xs sm:text-sm font-medium text-gray-700 text-center line-clamp-1 group-hover:text-primary transition-colors">
         {brand.name}
       </span>
     </Link>
@@ -52,14 +53,14 @@ export function OrpcBrandsCarousel() {
 
   if (isLoading) {
     return (
-      <section className="py-6 bg-gray-50 border-b">
+      <section className="py-6 bg-gray-50">
         <div className="container mx-auto px-4">
           <Skeleton className="h-6 w-28 mb-4" />
-          <div className="flex justify-center gap-6">
+          <div className="flex gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex flex-col items-center">
-                <Skeleton className="w-20 h-20 rounded-full mb-2" />
-                <Skeleton className="h-3 w-14" />
+                <Skeleton className="w-32 h-32 rounded-xl mb-2" />
+                <Skeleton className="h-3 w-16" />
               </div>
             ))}
           </div>
@@ -69,20 +70,18 @@ export function OrpcBrandsCarousel() {
   }
 
   if (isError || !data?.brands || data.brands.length === 0) {
-    return null; // Don't show section if no brands
+    return null;
   }
 
   const brands = data.brands;
 
   return (
-    <section className="py-6 bg-gray-50 border-b">
+    <section className="py-6 bg-gray-50">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Top Brands</h2>
-        </div>
+        <SectionHeader title="Top Brands" viewAllHref="/products?view=brands" />
 
         {/* Mobile Carousel */}
-        <div className="sm:hidden px-6">
+        <div className="sm:hidden">
           <Carousel opts={{ align: "start", loop: true }} className="w-full">
             <CarouselContent className="-ml-3">
               {brands.map((brand) => (
@@ -100,7 +99,7 @@ export function OrpcBrandsCarousel() {
         </div>
 
         {/* Desktop Carousel */}
-        <div className="hidden sm:block px-10">
+        <div className="hidden sm:block">
           <Carousel opts={{ align: "start", loop: true }} className="w-full">
             <CarouselContent className="-ml-4">
               {brands.map((brand) => (

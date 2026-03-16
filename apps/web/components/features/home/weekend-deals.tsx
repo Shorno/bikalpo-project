@@ -1,10 +1,10 @@
 "use client";
 
-import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
-import { useCart } from "@/hooks/use-orpc-cart";
+import { CountdownTimer } from "@/components/shared/countdown-timer";
 import { ProductCard } from "@/components/shared/product-card";
 import { SectionHeader } from "@/components/shared/section-header";
-import { CountdownTimer } from "@/components/shared/countdown-timer";
+import { useCart } from "@/hooks/use-orpc-cart";
+import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
 import { cn } from "@/lib/utils";
 
 interface WeekendDealsProps {

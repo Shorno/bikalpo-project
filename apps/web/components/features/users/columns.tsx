@@ -4,7 +4,6 @@ import type { ColumnDef } from "@tanstack/react-table";
 import {
   ArrowUpDown,
   Ban,
-  Check,
   Monitor,
   MoreHorizontal,
   Shield,
@@ -30,7 +29,7 @@ import { client } from "@/utils/orpc";
 import { getRoleConfig, type UserRole, type UserWithSessions } from "./types";
 import { UserSessionsDialog } from "./user-sessions-dialog";
 
-async function handleApprove(userId: string) {
+async function _handleApprove(userId: string) {
   try {
     await client.customerManagement.approve({ customerId: userId });
     toast.success("User approved successfully");

@@ -1,9 +1,8 @@
 "use client";
-import { Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { WarehouseApplicationForm } from "@/components/features/auth/warehouse-application-form";
 import { Navbar } from "@/components/layout/navbar";
 import { orpc } from "@/utils/orpc";
@@ -19,7 +18,7 @@ function ApplyWarehouseContent() {
 
   useEffect(() => {
     // If user has an application and NOT in edit mode, redirect to status
-    if (data && data.status && !isEditMode) {
+    if (data?.status && !isEditMode) {
       router.replace("/warehouse-application-status");
     }
   }, [data, isEditMode, router]);
@@ -36,7 +35,7 @@ function ApplyWarehouseContent() {
   }
 
   // Redirect while not in edit mode
-  if (data && data.status && !isEditMode) {
+  if (data?.status && !isEditMode) {
     return (
       <>
         <Navbar />
@@ -72,7 +71,9 @@ function ApplyWarehouseContent() {
       <div className="flex min-h-[calc(100dvh-80px)] flex-col items-center bg-[#FAF6F6] px-4 py-8 pt-24 md:px-8">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-            {isEditMode ? "Edit Your Application" : "Become a Warehouse Supplier"}
+            {isEditMode
+              ? "Edit Your Application"
+              : "Become a Warehouse Supplier"}
           </h1>
           <p className="mt-2 text-muted-foreground">
             {isEditMode

@@ -455,10 +455,10 @@ export default function ReorderPage({
                           </span>
                           {parseFloat(item.currentPrice) !==
                             parseFloat(item.originalPrice) && (
-                              <span className="text-xs text-gray-400 line-through">
-                                {formatPrice(item.originalPrice)}
-                              </span>
-                            )}
+                            <span className="text-xs text-gray-400 line-through">
+                              {formatPrice(item.originalPrice)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

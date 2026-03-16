@@ -1,8 +1,8 @@
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
-import { CustomerHomeProductTabs } from "@/components/features/home/customer-home-product-tabs";
 import { ShopHero } from "@/components/features/home/customer-hero";
+import { CustomerHomeProductTabs } from "@/components/features/home/customer-home-product-tabs";
 import { ShopSidebar } from "@/components/features/home/customer-sidebar";
 import { DashboardVerifiedCustomersSection } from "@/components/features/home/dashboard-verified-customers-section";
 import { useVerifiedUsersForHome } from "@/hooks/use-customer-api";

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import { WarehouseSidebar } from "@/components/dashboard/warehouse-sidebar";
 import { SiteHeader } from "@/components/dashboard/site-header";
+import { WarehouseSidebar } from "@/components/dashboard/warehouse-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { requireRole } from "@/utils/auth";
 

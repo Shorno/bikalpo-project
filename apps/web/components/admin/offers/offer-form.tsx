@@ -1,12 +1,13 @@
 "use client";
 
 import type { Offer } from "@bikalpo-project/db/schema";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -155,7 +156,7 @@ export function OfferForm({ offer, open, onOpenChange }: OfferFormProps) {
       });
       setBannerImage("");
     }
-  }, [offer, open, form]);
+  }, [offer, form]);
 
   const onSubmit = async (values: OfferFormValues) => {
     try {
@@ -437,9 +438,10 @@ export function OfferForm({ offer, open, onOpenChange }: OfferFormProps) {
                   </FormControl>
                   {bannerImage && (
                     <div className="mt-2 relative w-full aspect-video bg-muted rounded overflow-hidden">
-                      <img
+                      <Image
                         src={bannerImage}
                         alt="Preview"
+                        fill
                         className="w-full h-full object-cover"
                       />
                     </div>
