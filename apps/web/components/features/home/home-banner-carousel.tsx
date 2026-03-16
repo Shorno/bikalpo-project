@@ -40,7 +40,7 @@ export function HomeBannerCarousel() {
             <CarouselItem key={banner.id}>
               <Link
                 href={banner.href}
-                className="block relative w-full aspect-[16/5] overflow-hidden bg-gray-200 rounded-sm"
+                className="block relative w-full h-[180px] lg:h-[200px] overflow-hidden bg-gray-200 rounded-sm"
               >
                 <Image
                   src={banner.image}

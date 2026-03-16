@@ -15,17 +15,15 @@ export function HomepageCategorySidebar() {
 
   if (isLoading) {
     return (
-      <div className="bg-white border border-gray-200 rounded-sm overflow-hidden">
-        <div className="bg-primary text-white px-4 py-3 text-sm font-bold uppercase">
-          Categories
-        </div>
-        <div className="divide-y divide-gray-100">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="px-4 py-3">
+      <div className="bg-white border-l border-r border-b border-gray-200 rounded-b-md shadow-sm h-full">
+        <ul className="divide-y divide-gray-50">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <li key={i} className="flex items-center justify-between px-4 py-2.5">
               <Skeleton className="h-4 w-3/4" />
-            </div>
+              <Skeleton className="h-3.5 w-3.5 rounded-full shrink-0" />
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     );
   }

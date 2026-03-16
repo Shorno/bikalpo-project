@@ -37,7 +37,7 @@ const featureBadges = [
 export default async function HomePage() {
   return (
     <>
-      {/* ── Shwapno-style Hero: Category sidebar + Banner ──────── */}
+      {/* ── Shwapno-style Hero: Category sidebar + Banner + Categories below ── */}
       <section className="bg-white">
         <div className="container mx-auto px-4">
           <div className="flex gap-4">
@@ -46,9 +46,12 @@ export default async function HomePage() {
               <HomepageCategorySidebar />
             </div>
 
-            {/* Right: Hero banner carousel */}
+            {/* Right: Banner + Categories below */}
             <div className="flex-1 min-w-0">
               <HomeBannerCarousel />
+              <div className="mt-3">
+                <OrpcCategoriesCarousel />
+              </div>
             </div>
           </div>
         </div>
@@ -72,9 +75,6 @@ export default async function HomePage() {
 
       {/* Hot Offers Section */}
       <OffersByCategory />
-
-      {/* Categories Carousel */}
-      <OrpcCategoriesCarousel />
 
       {/* Brands */}
       <OrpcBrandsCarousel />

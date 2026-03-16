@@ -1,6 +1,6 @@
 /**
  * ORPC-powered Categories Carousel
- * Shwapno-style rounded cards with category images
+ * Shwapno-style: tall image cards with colored pill labels
  */
 "use client";
 
@@ -15,35 +15,63 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SectionHeader } from "@/components/shared/section-header";
 import { useActiveCategories } from "@/hooks/use-customer-api";
 
 type ActiveCategory = NonNullable<
   ReturnType<typeof useActiveCategories>["data"]
 >["categories"][number];
 
-function CategoryItem({ category }: { category: ActiveCategory }) {
+// Rotating accent colors for category pills
+const PILL_COLORS = [
+  "bg-amber-400 text-amber-900",
+  "bg-emerald-400 text-emerald-900",
+  "bg-sky-400 text-sky-900",
+  "bg-rose-400 text-rose-900",
+  "bg-violet-400 text-violet-900",
+  "bg-orange-400 text-orange-900",
+  "bg-teal-400 text-teal-900",
+  "bg-pink-400 text-pink-900",
+  "bg-lime-400 text-lime-900",
+  "bg-cyan-400 text-cyan-900",
+  "bg-fuchsia-400 text-fuchsia-900",
+  "bg-yellow-400 text-yellow-900",
+];
+
+function CategoryCard({
+  category,
+  colorIndex,
+}: {
+  category: ActiveCategory;
+  colorIndex: number;
+}) {
+  const pillColor = PILL_COLORS[colorIndex % PILL_COLORS.length];
+
   return (
-    <Link
-      href={`/products/${category.slug}`}
-      className="flex flex-col items-center group"
-    >
-      <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-xl bg-white border border-gray-100 shadow-sm flex items-center justify-center mb-2 group-hover:shadow-md group-hover:border-primary/20 transition-all overflow-hidden">
+    <Link href={`/products/${category.slug}`} className="group block">
+      <div className="relative rounded-xl overflow-hidden bg-gray-100 aspect-[3/4] shadow-sm group-hover:shadow-lg transition-shadow">
+        {/* Category image */}
         {category.image ? (
           <Image
             src={category.image}
             alt={category.name}
-            width={100}
-            height={100}
-            className="object-contain w-18 h-18 sm:w-22 sm:h-22"
+            fill
+            className="object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
-          <Package className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400" />
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-gray-100 to-gray-200">
+            <Package className="size-10 text-gray-300" />
+          </div>
         )}
+
+        {/* Category name pill at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 flex justify-center pb-3">
+          <span
+            className={`px-4 py-1.5 rounded-full text-xs font-bold shadow-md ${pillColor}`}
+          >
+            {category.name}
+          </span>
+        </div>
       </div>
-      <span className="text-xs sm:text-sm font-medium text-gray-700 text-center line-clamp-2 group-hover:text-primary transition-colors">
-        {category.name}
-      </span>
     </Link>
   );
 }
@@ -53,19 +81,11 @@ export function OrpcCategoriesCarousel() {
 
   if (isLoading) {
     return (
-      <section className="py-6 bg-gray-50">
-        <div className="container mx-auto px-4">
-          <Skeleton className="h-6 w-40 mb-4" />
-          <div className="flex gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex flex-col items-center">
-                <Skeleton className="w-24 h-24 rounded-xl mb-2" />
-                <Skeleton className="h-3 w-16" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <div className="flex gap-3">
+        {Array.from({ length: 7 }).map((_, i) => (
+          <Skeleton key={i} className="flex-1 aspect-[3/4] rounded-xl min-w-0" />
+        ))}
+      </div>
     );
   }
 
@@ -76,46 +96,42 @@ export function OrpcCategoriesCarousel() {
   const categories = data.categories;
 
   return (
-    <section className="py-6 bg-gray-50">
-      <div className="container mx-auto px-4">
-        <SectionHeader title="Shop by Category" viewAllHref="/products" />
-
-        {/* Mobile Carousel */}
-        <div className="sm:hidden">
-          <Carousel opts={{ align: "start", loop: true }} className="w-full">
-            <CarouselContent className="-ml-3">
-              {categories.map((category) => (
-                <CarouselItem
-                  key={category.slug}
-                  className="pl-3 basis-[28%] min-w-0 shrink-0"
-                >
-                  <CategoryItem category={category} />
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-            <CarouselPrevious className="left-0 z-10" />
-            <CarouselNext className="right-0 z-10" />
-          </Carousel>
-        </div>
-
-        {/* Desktop Carousel */}
-        <div className="hidden sm:block">
-          <Carousel opts={{ align: "start", loop: true }} className="w-full">
-            <CarouselContent className="-ml-4">
-              {categories.map((category) => (
-                <CarouselItem
-                  key={category.slug}
-                  className="pl-4 basis-1/4 md:basis-1/5 lg:basis-[12.5%] xl:basis-[10%]"
-                >
-                  <CategoryItem category={category} />
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-            <CarouselPrevious className="-left-5" />
-            <CarouselNext className="-right-5" />
-          </Carousel>
-        </div>
+    <>
+      {/* Mobile Carousel */}
+      <div className="sm:hidden">
+        <Carousel opts={{ align: "start", loop: true }} className="w-full">
+          <CarouselContent className="-ml-2">
+            {categories.map((category, i) => (
+              <CarouselItem
+                key={category.slug}
+                className="pl-2 basis-[35%] min-w-0 shrink-0"
+              >
+                <CategoryCard category={category} colorIndex={i} />
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+          <CarouselPrevious className="left-0 z-10" />
+          <CarouselNext className="right-0 z-10" />
+        </Carousel>
       </div>
-    </section>
+
+      {/* Desktop Carousel */}
+      <div className="hidden sm:block">
+        <Carousel opts={{ align: "start", loop: true }} className="w-full">
+          <CarouselContent className="-ml-3">
+            {categories.map((category, i) => (
+              <CarouselItem
+                key={category.slug}
+                className="pl-3 basis-1/4 md:basis-1/5 lg:basis-1/6 xl:basis-[14.28%]"
+              >
+                <CategoryCard category={category} colorIndex={i} />
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+          <CarouselPrevious className="-left-4" />
+          <CarouselNext className="-right-4" />
+        </Carousel>
+      </div>
+    </>
   );
 }
