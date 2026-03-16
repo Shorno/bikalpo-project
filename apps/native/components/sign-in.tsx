@@ -54,8 +54,8 @@ function SignIn() {
       <Text style={[styles.title, { color: theme.text }]}>Sign In</Text>
 
       {error ? (
-        <View style={[styles.errorContainer, { backgroundColor: theme.notification + "20" }]}>
-          <Text style={[styles.errorText, { color: theme.notification }]}>{error}</Text>
+        <View style={[styles.errorContainer, { backgroundColor: "rgba(220, 38, 38, 0.15)" }]}>
+          <Text style={[styles.errorText, { color: "#dc2626" }]}>{error}</Text>
         </View>
       ) : null}
 
