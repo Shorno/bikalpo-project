@@ -61,7 +61,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
     isLoading: isFetching,
     isFetched,
     refetch,
-  } = useCartQuery();
+  } = useCartQuery(!!session);
 
   const addToCartMutation = useAddToCart();
   const updateMutation = useUpdateCartItem();

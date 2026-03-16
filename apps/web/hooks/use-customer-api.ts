@@ -158,9 +158,13 @@ export function useActiveOrder() {
   return useQuery(orpc.customer.getActiveOrder.queryOptions());
 }
 
-/** Cart */
-export function useCartQuery() {
-  return useQuery(orpc.customer.getCart.queryOptions());
+/** Cart – skips the request when the caller signals the user is not authenticated */
+export function useCartQuery(enabled = true) {
+  return useQuery(
+    orpc.customer.getCart.queryOptions({
+      input: enabled ? undefined : skipToken,
+    }),
+  );
 }
 
 /** Customer profile */
