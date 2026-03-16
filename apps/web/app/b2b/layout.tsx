@@ -1,7 +1,7 @@
 import { LandingNavbar } from "@/components/features/landing/landing-navbar";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 
-export default function LandingLayout({
+export default function B2bLayout({
     children,
 }: {
     children: React.ReactNode;

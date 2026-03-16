@@ -9,7 +9,7 @@ import { client } from "@/utils/orpc";
 
 export const revalidate = 300; // Revalidate every 5 minutes
 
-export default async function HomePage() {
+export default async function B2bHomePage() {
     // Fetch pricing plans server-side
     let plans = [];
     try {

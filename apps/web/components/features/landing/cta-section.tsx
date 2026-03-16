@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function CtaSection() {
     return (
-        <section className="py-24">
+        <section className="py-12 sm:py-24">
             <div className="max-w-7xl mx-auto px-6">
                 <div
                     className="rounded-3xl p-12 lg:p-20 text-center relative overflow-hidden"
@@ -30,7 +30,7 @@ export function CtaSection() {
                             Start Free Trial
                         </Link>
                         <Link
-                            href="/home/contact"
+                            href="/contact"
                             className="px-10 py-4 bg-[#0d47a1] text-white border border-white/20 font-bold rounded-lg hover:bg-[#0d47a1]/80 transition-colors"
                         >
                             Book a Meeting

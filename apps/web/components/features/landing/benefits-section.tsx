@@ -23,7 +23,7 @@ const benefits = [
 
 export function BenefitsSection() {
     return (
-        <section className="py-24">
+        <section className="py-12 sm:py-24">
             <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-2 lg:grid-cols-4 gap-8">
                 {benefits.map((benefit) => (
                     <div key={benefit.title} className="text-center">

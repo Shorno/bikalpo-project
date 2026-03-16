@@ -52,7 +52,7 @@ const advantages = [
 
 export function AdvantageDetail() {
     return (
-        <section className="py-24 px-6 overflow-hidden">
+        <section className="py-12 sm:py-24 px-6 overflow-hidden">
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
                 {/* Left: Advantage Items */}
                 <div className="relative">

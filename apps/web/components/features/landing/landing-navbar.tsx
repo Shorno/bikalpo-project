@@ -5,10 +5,10 @@ import { useState } from "react";
 import { Menu, X } from "lucide-react";
 
 const navLinks = [
-    { label: "Home", href: "/home" },
-    { label: "Features", href: "/home/features" },
-    { label: "Pricing", href: "/home#pricing" },
-    { label: "Contact", href: "/home/contact" },
+    { label: "Home", href: "/" },
+    { label: "Features", href: "/features" },
+    { label: "Pricing", href: "/#pricing" },
+    { label: "Contact", href: "/contact" },
 ];
 
 export function LandingNavbar() {
@@ -16,9 +16,9 @@ export function LandingNavbar() {
 
     return (
         <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200/10">
-            <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+            <div className="max-w-7xl mx-auto px-6 h-14 md:h-20 flex items-center justify-between">
                 <div className="flex items-center gap-12">
-                    <Link href="/home">
+                    <Link href="/">
                         <span
                             className="text-2xl font-extrabold tracking-tight"
                             style={{

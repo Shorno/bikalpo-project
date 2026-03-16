@@ -40,9 +40,11 @@ export function proxy(request: NextRequest) {
   const allowedOrigins = [
     process.env.NEXT_PUBLIC_AUTH_URL,
     process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL,
+    process.env.NEXT_PUBLIC_B2B_SUBDOMAIN_URL,
     "http://localhost:3001",
-    "http://b2b.localhost:3001",
-    "http://shop.b2b.localhost:3001",
+    "http://bikalpo.localhost:3001",
+    "http://shop.bikalpo.localhost:3001",
+    "http://b2b.bikalpo.localhost:3001",
   ].filter(Boolean) as string[];
 
   // Handle CORS for API routes
@@ -86,9 +88,33 @@ export function proxy(request: NextRequest) {
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
   const isStaffRoute = STAFF_ROUTES.some((route) => pathname.startsWith(route));
 
-  // Detect shop subdomain (shop owner portal)
+  // Detect subdomains
   const isShopSubdomain = hostname.startsWith("shop.");
+  const isB2bSubdomain = hostname.startsWith("b2b.");
 
+  // === B2B SUBDOMAIN (Public marketing/landing page) ===
+  if (isB2bSubdomain) {
+    // B2B is public — allow auth routes as normal
+    if (isAuthRoute) {
+      if (token) {
+        return NextResponse.redirect(new URL("/", request.url));
+      }
+      return NextResponse.next();
+    }
+
+    // Skip rewrite if already accessing /b2b routes internally
+    if (pathname.startsWith("/b2b")) {
+      return NextResponse.next();
+    }
+
+    // Rewrite to /b2b folder
+    const rewritePath = pathname === "/" ? "/b2b" : `/b2b${pathname}`;
+    const rewriteUrl = new URL(rewritePath, request.url);
+    rewriteUrl.search = request.nextUrl.search;
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
+  // === SHOP SUBDOMAIN (Shop Owner Portal — requires auth) ===
   if (isShopSubdomain) {
     // === SHOP SUBDOMAIN (Shop Owner Portal) ===
 
@@ -116,13 +142,13 @@ export function proxy(request: NextRequest) {
     // Redirect to main domain login if not authenticated
     if (!token) {
       // Use the frontend URL, not the auth/backend URL
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^shop\./, "")}`;
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^(shop|b2b)\./, "")}`;
       return NextResponse.redirect(new URL("/login", mainDomain));
     }
 
     // If logged in but not a shop_owner, redirect to main domain
     if (role && role !== "shop_owner") {
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^shop\./, "")}`;
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^(shop|b2b)\./, "")}`;
       return NextResponse.redirect(new URL("/", mainDomain));
     }
 
@@ -141,7 +167,7 @@ export function proxy(request: NextRequest) {
       if (role === "shop_owner") {
         // Shop owners go to shop subdomain
         const shopDomain =
-          process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.b2b.localhost:3001";
+          process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001";
         return NextResponse.redirect(new URL("/", shopDomain));
       }
       // Staff go to dashboard
@@ -185,7 +211,7 @@ export function proxy(request: NextRequest) {
   if (token && role && staffRoles.includes(role)) {
     if (role === "shop_owner") {
       const shopDomain =
-        process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.b2b.localhost:3001";
+        process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001";
       return NextResponse.redirect(new URL("/", shopDomain));
     }
     return NextResponse.redirect(new URL("/dashboard", request.url));

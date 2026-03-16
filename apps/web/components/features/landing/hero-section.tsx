@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function HeroSection() {
     return (
-        <section className="relative pt-24 pb-20 overflow-hidden">
+        <section className="relative pt-10 sm:pt-24 pb-12 sm:pb-20 overflow-hidden">
             <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
                 <div className="relative z-10">
                     {/* Trust badge */}
@@ -80,7 +80,7 @@ export function HeroSection() {
                             Start Free Trial
                         </Link>
                         <Link
-                            href="/home/contact"
+                            href="/contact"
                             className="px-8 py-4 rounded-lg bg-white text-[#003178] font-bold border border-gray-200/30 hover:bg-gray-50 transition-colors"
                         >
                             Book a Meeting

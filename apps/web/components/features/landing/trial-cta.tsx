@@ -32,7 +32,7 @@ export function TrialCta() {
                             Start Free Trial
                         </Link>
                         <Link
-                            href="/home/contact"
+                            href="/contact"
                             className="w-full sm:w-auto px-8 py-4 bg-transparent text-white border border-white/30 font-bold rounded-lg hover:bg-white/10 transition-colors"
                         >
                             Book a Meeting

@@ -75,7 +75,7 @@ export function LoginForm() {
         // Shop owners go to shop subdomain
         if (role === "shop_owner") {
           const shopDomain =
-            process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.b2b.localhost:3001";
+            process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001";
           window.location.href = shopDomain;
           return;
         }

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
 import { PricingHeroSection } from "@/components/features/landing/pricing-hero";
 import { PricingCards } from "@/components/features/landing/pricing-cards";
 import { EnterpriseSection } from "@/components/features/landing/enterprise-section";

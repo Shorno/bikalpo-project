@@ -3,7 +3,7 @@ import Link from "next/link";
 export function EnterpriseSection() {
     return (
         <section
-            className="px-6 py-24"
+            className="px-6 py-12 sm:py-24"
             style={{ backgroundColor: "#edeeef" }}
         >
             <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-16 items-center">
@@ -60,7 +60,7 @@ export function EnterpriseSection() {
                         </div>
                     </div>
                     <Link
-                        href="/home/contact"
+                        href="/contact"
                         className="inline-block px-8 py-3 rounded-lg text-white font-bold shadow-lg shadow-[#003178]/20"
                         style={{
                             background:

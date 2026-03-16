@@ -13,7 +13,7 @@ export function PricingSection({ plans }: PricingSectionProps) {
     );
 
     return (
-        <section id="pricing" className="py-24" style={{ backgroundColor: "rgba(231,232,233,0.5)" }}>
+        <section id="pricing" className="py-12 sm:py-24" style={{ backgroundColor: "rgba(231,232,233,0.5)" }}>
             <div className="max-w-7xl mx-auto px-6">
                 <div className="text-center mb-16">
                     <h2
