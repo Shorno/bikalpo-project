@@ -1,8 +1,6 @@
 import { db } from "@bikalpo-project/db";
 import {
     warehouseCategoryAssignment,
-    category as categoryTable,
-    subCategory as subCategoryTable,
 } from "@bikalpo-project/db/schema";
 import { user } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";

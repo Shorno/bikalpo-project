@@ -13,7 +13,6 @@ export * from "./delivery";
 export * from "./delivery-rule";
 export * from "./estimate";
 export * from "./inventory";
-export * from "./landing-pricing-plan";
 export * from "./invoice";
 export * from "./item-request";
 export * from "./offer";
