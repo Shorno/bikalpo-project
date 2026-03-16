@@ -6,6 +6,7 @@ import { adminProductTypeRouter } from "./admin-product-type";
 import { adminEmployeeReportRouter } from "./admin-employee-report";
 import { adminBrandUpdateRouter } from "./admin-brand-update";
 import { adminAnnouncementRouter } from "./admin-announcement";
+import { adminCustomerHomeTabRouter } from "./admin-customer-home-tab";
 import { adminEstimateRouter } from "./admin-estimate";
 import { adminInvoiceRouter } from "./admin-invoice";
 import { adminItemRequestRouter } from "./admin-item-request";
@@ -53,6 +54,7 @@ export const appRouter = {
   adminEmployeeReport: adminEmployeeReportRouter,
   adminBrandUpdate: adminBrandUpdateRouter,
   adminAnnouncement: adminAnnouncementRouter,
+  adminCustomerHomeTab: adminCustomerHomeTabRouter,
   adminEstimate: adminEstimateRouter,
   adminInvoice: adminInvoiceRouter,
   adminItemRequest: adminItemRequestRouter,

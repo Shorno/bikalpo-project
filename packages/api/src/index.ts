@@ -19,6 +19,22 @@ const requireAuth = o.middleware(async ({ context, next }) => {
 
 export const protectedProcedure = publicProcedure.use(requireAuth);
 
+const requireConsumer = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  if (context.session.user.role !== "consumer") {
+    throw new ORPCError("FORBIDDEN", { message: "Customer access required" });
+  }
+  return next({
+    context: {
+      session: context.session,
+    },
+  });
+});
+
+export const consumerProcedure = publicProcedure.use(requireConsumer);
+
 // Admin-only procedure - requires authenticated user with admin role
 const requireAdmin = o.middleware(async ({ context, next }) => {
   if (!context.session?.user) {
@@ -59,7 +75,9 @@ const requireDeliveryman = o.middleware(async ({ context, next }) => {
     throw new ORPCError("UNAUTHORIZED");
   }
   if (context.session.user.role !== "deliveryman") {
-    throw new ORPCError("FORBIDDEN", { message: "Deliveryman access required" });
+    throw new ORPCError("FORBIDDEN", {
+      message: "Deliveryman access required",
+    });
   }
   return next({
     context: {
@@ -103,4 +121,3 @@ const requireWarehouse = o.middleware(async ({ context, next }) => {
 });
 
 export const warehouseProcedure = publicProcedure.use(requireWarehouse);
-

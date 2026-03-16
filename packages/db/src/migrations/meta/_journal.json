@@ -19,10 +19,15 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1773438003779,
-      "tag": "0002_robust_felicia_hardy",
       "when": 1773435622274,
       "tag": "0002_confused_ironclad",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1773530000000,
+      "tag": "0003_customer_home_tabs",
       "breakpoints": true
     }
   ]

@@ -103,6 +103,15 @@ export function useCategoriesWithProducts(limit?: number) {
   );
 }
 
+/** Curated customer home tabs with products */
+export function useCustomerHomeProductTabs() {
+  return useQuery(
+    orpc.customer.getHomeProductTabs.queryOptions({
+      staleTime: 1000 * 60 * 5,
+    }),
+  );
+}
+
 /** Subcategories by category slug */
 export function useSubcategoriesByCategory(slug: string) {
   return useQuery(
