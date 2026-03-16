@@ -13,7 +13,7 @@ type SearchResult = {
   name: string;
   slug: string;
   image: string;
-  price: string;
+  price: number;
   size: string;
   inStock: boolean;
   category: { name: string; slug: string };
