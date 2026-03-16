@@ -12,11 +12,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import SearchInput from "@/components/features/home/search/search-input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveCategories } from "@/hooks/use-customer-api";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
+import { NavbarSearch } from "./navbar-search";
 import { UserDropdown } from "./user-dropdown";
 import { authClient } from "@/lib/auth-client";
 
@@ -40,9 +40,9 @@ export function Navbar() {
     <nav className="sticky top-0 z-50 shadow-md">
       {/* ── Row 1: Main header (red/primary) ──────────────────── */}
       <div className="bg-primary">
-        <div className="container mx-auto">
-          <div className="flex h-16 items-center gap-4 px-4">
-            {/* Mobile menu + Logo */}
+        <div className="container mx-auto px-4">
+          <div className="flex h-16 items-center justify-between gap-4">
+            {/* Left: Logo */}
             <div className="flex items-center gap-2 shrink-0">
               <div className="md:hidden">
                 <MobileMenu />
@@ -59,17 +59,13 @@ export function Navbar() {
               </Link>
             </div>
 
-            {/* Search bar — large, prominent, with yellow button */}
-            <div className="flex-1 max-w-2xl mx-4 hidden md:block">
-              <SearchInput
-                className="w-full [&_input]:bg-white [&_input]:rounded-none [&_input]:h-10 [&_input]:text-sm [&_input]:placeholder:text-gray-400 [&_.input-group]:rounded-sm [&_.input-group]:border-0 [&_.input-group]:h-10 [&_svg]:text-primary"
-                variant="public"
-              />
+            {/* Center: Inline search with dropdown */}
+            <div className="flex-1 max-w-xl hidden md:block">
+              <NavbarSearch />
             </div>
 
-            {/* Right actions */}
-            <div className="flex items-center gap-2 shrink-0 ml-auto md:ml-0">
-              {/* App download */}
+            {/* Right: Actions */}
+            <div className="flex items-center gap-3 shrink-0">
               <Button
                 variant="ghost"
                 size="sm"
@@ -82,12 +78,10 @@ export function Navbar() {
                 </Link>
               </Button>
 
-              {/* Cart */}
               <div className="text-white [&_button]:text-white [&_button:hover]:bg-white/10 [&_button:hover]:text-white [&_.absolute]:bg-white [&_.absolute]:text-primary">
                 <CartButton />
               </div>
 
-              {/* Auth */}
               <div className="[&_button]:bg-white [&_button]:text-primary [&_button]:font-semibold [&_button:hover]:bg-white/90 [&_a]:bg-white [&_a]:text-primary [&_a]:font-semibold [&_a:hover]:bg-white/90">
                 <UserDropdown />
               </div>
@@ -98,14 +92,14 @@ export function Navbar() {
 
       {/* Mobile search row */}
       <div className="md:hidden px-4 py-2 border-b bg-gray-50">
-        <SearchInput className="w-full" variant="public" />
+        <NavbarSearch />
       </div>
 
-      {/* ── Row 2: Category nav bar (white bg, like Shwapno) ──── */}
+      {/* ── Row 2: Category nav bar (white bg) ──────────────── */}
       <div className="hidden md:block bg-white border-b">
         <div className="container mx-auto px-4">
           <div className="flex items-center h-10">
-            {/* Shop by Category — text style with menu icon, not a button */}
+            {/* Shop by Category */}
             <div
               className="relative"
               onMouseEnter={() => {
@@ -118,7 +112,6 @@ export function Navbar() {
                 <span>SHOP BY CATEGORY</span>
               </button>
 
-              {/* Category dropdown */}
               {categoryMenuOpen && categoriesData?.categories && (
                 <div className="absolute top-[100%] left-0 w-60 bg-white shadow-xl border-x border-b border-gray-200 z-50 rounded-b-sm">
                   <div className="py-1">
@@ -137,10 +130,9 @@ export function Navbar() {
               )}
             </div>
 
-            {/* Divider */}
             <div className="w-px h-5 bg-gray-300 mx-1" />
 
-            {/* Nav links — uppercase, spaced */}
+            {/* Nav links */}
             <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
               {topNavLinks.map((link) => (
                 <Link
