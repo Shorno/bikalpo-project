@@ -24,11 +24,24 @@ export const queryClient = new QueryClient({
 
 export const link = new RPCLink({
   url: `${env.NEXT_PUBLIC_SERVER_URL}/rpc`,
-  fetch(url, options: RequestInit | undefined) {
-    return fetch(url, {
-      ...options,
-      credentials: "include",
-    });
+  async fetch(url, options: RequestInit | undefined) {
+    console.log("orpc fetch", { url, backend: env.NEXT_PUBLIC_SERVER_URL });
+    try {
+      return await fetch(url, {
+        ...options,
+        credentials: "include",
+      });
+    } catch (error: any) {
+      console.error("orpc fetch failed", { error, url });
+      if (error?.cause?.code === "ECONNREFUSED") {
+        // During build / prerender when backend is not available, return a graceful 503.
+        return new Response(null, {
+          status: 503,
+          statusText: "Backend unavailable",
+        });
+      }
+      throw error;
+    }
   },
   headers: async () => {
     if (typeof window !== "undefined") {
