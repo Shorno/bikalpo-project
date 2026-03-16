@@ -73,7 +73,7 @@ export default function WarehouseIncomingOrdersPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: (params: { orderId: number; status: string }) =>
+    mutationFn: (params: Parameters<typeof orpc.warehouse.updateIncomingOrderStatus.call>[0]) =>
       orpc.warehouse.updateIncomingOrderStatus.call(params),
     onSuccess: () => {
       queryClient.invalidateQueries({
