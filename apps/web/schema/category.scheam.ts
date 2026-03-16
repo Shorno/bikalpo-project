@@ -25,7 +25,7 @@ export const createCategorySchema = z.object({
     .min(0, "Display order must be 0 or greater.")
     .default(0)
     .nonoptional(),
-  typeId: z.number().int().nullable().optional(),
+  typeId: z.number().int().nullable(),
 });
 
 export const createSubcategorySchema = createCategorySchema.extend({
