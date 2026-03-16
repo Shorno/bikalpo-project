@@ -7,7 +7,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useActiveCategories } from "@/hooks/use-customer-api";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { authClient } from "@/lib/auth-client";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
 import { NavbarSearch } from "./navbar-search";
@@ -23,7 +22,6 @@ const topNavLinks = [
 export function Navbar() {
   const isMobile = useIsMobile();
   const pathname = usePathname();
-  const { data: session } = authClient.useSession();
   const { data: categoriesData } = useActiveCategories();
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
 
@@ -106,7 +104,7 @@ export function Navbar() {
               </button>
 
               {categoryMenuOpen && categoriesData?.categories && (
-                <div className="absolute top-[100%] left-0 w-60 bg-white shadow-xl border-x border-b border-gray-200 z-50 rounded-b-sm">
+                <div className="absolute top-full left-0 w-60 bg-white shadow-xl border-x border-b border-gray-200 z-50 rounded-b-sm">
                   <div className="py-1">
                     {categoriesData.categories.map((cat) => (
                       <Link
