@@ -20,6 +20,9 @@
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/drawer": "^7.1.1",
     "@react-navigation/native": "^7.0.14",
+    "@tamagui/config": "2.0.0-rc.26",
+    "@tamagui/core": "2.0.0-rc.26",
+    "@tamagui/font-inter": "2.0.0-rc.26",
     "@tanstack/react-form": "^1.0.5",
     "@tanstack/react-query": "^5.85.5",
     "better-auth": "catalog:",
@@ -27,6 +30,7 @@
     "expo": "^54.0.1",
     "expo-constants": "~18.0.8",
     "expo-crypto": "~15.0.6",
+    "expo-font": "^55.0.4",
     "expo-linking": "~8.0.7",
     "expo-navigation-bar": "~5.0.8",
     "expo-network": "~8.0.7",
@@ -45,11 +49,14 @@
     "react-native-screens": "~4.16.0",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "^0.5.1",
+    "tamagui": "2.0.0-rc.26",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@babel/core": "^7.26.10",
     "@bikalpo-project/config": "workspace:*",
+    "@tamagui/babel-plugin": "2.0.0-rc.26",
+    "@tamagui/metro-plugin": "2.0.0-rc.26",
     "@types/react": "~19.1.10",
     "typescript": "catalog:"
   }

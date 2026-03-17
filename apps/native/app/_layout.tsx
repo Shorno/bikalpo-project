@@ -1,69 +1,58 @@
-import { DarkTheme, DefaultTheme, type Theme, ThemeProvider } from "@react-navigation/native";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import React, { useRef } from "react";
-import { Platform, StyleSheet } from "react-native";
+import React, { useEffect } from "react";
+import { StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { TamaguiProvider } from "tamagui";
 
-import { setAndroidNavigationBar } from "@/lib/android-navigation-bar";
-import { NAV_THEME } from "@/lib/constants";
-import { useColorScheme } from "@/lib/use-color-scheme";
 import { queryClient } from "@/utils/orpc";
+import { tamaguiConfig } from "../tamagui.config";
 
-const LIGHT_THEME: Theme = {
-  ...DefaultTheme,
-  colors: NAV_THEME.light,
-};
-const DARK_THEME: Theme = {
-  ...DarkTheme,
-  colors: NAV_THEME.dark,
-};
+SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
-  initialRouteName: "(drawer)",
+  initialRouteName: "index",
 };
-
-const useIsomorphicLayoutEffect =
-  Platform.OS === "web" && typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#fff",
   },
 });
 
 export default function RootLayout() {
-  const hasMounted = useRef(false);
-  const { colorScheme, isDarkColorScheme } = useColorScheme();
-  const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
+  const [fontsLoaded] = useFonts({
+    Inter: require("@tamagui/font-inter/otf/Inter-Medium.otf"),
+    InterBold: require("@tamagui/font-inter/otf/Inter-Bold.otf"),
+  });
 
-  useIsomorphicLayoutEffect(() => {
-    if (hasMounted.current) {
-      return;
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
     }
-    setAndroidNavigationBar(colorScheme);
-    setIsColorSchemeLoaded(true);
-    hasMounted.current = true;
-  }, []);
+  }, [fontsLoaded]);
 
-  if (!isColorSchemeLoaded) {
+  if (!fontsLoaded) {
     return null;
   }
 
   return (
-    <>
+    <TamaguiProvider config={tamaguiConfig} defaultTheme="light">
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
-          <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-          <GestureHandlerRootView style={styles.container}>
-            <Stack>
-              <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-              <Stack.Screen name="modal" options={{ title: "Modal", presentation: "modal" }} />
-            </Stack>
-          </GestureHandlerRootView>
-        </ThemeProvider>
+        <StatusBar style="dark" />
+        <GestureHandlerRootView style={styles.container}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: "#fff" },
+            }}
+          />
+        </GestureHandlerRootView>
       </QueryClientProvider>
-    </>
+    </TamaguiProvider>
   );
 }
