@@ -68,6 +68,16 @@ export default function RootLayout() {
             <Stack.Screen name="onboarding" />
             <Stack.Screen name="login" />
             <Stack.Screen name="register" />
+            <Stack.Screen name="account/orders" />
+            <Stack.Screen name="account/order-detail" />
+            <Stack.Screen name="account/addresses" />
+            <Stack.Screen name="account/address-form" />
+            <Stack.Screen name="account/edit-profile" />
+            <Stack.Screen name="account/tickets" />
+            <Stack.Screen name="account/ticket-detail" />
+            <Stack.Screen name="account/create-ticket" />
+            <Stack.Screen name="account/faq" />
+            <Stack.Screen name="account/change-password" />
           </Stack>
         </GestureHandlerRootView>
       </QueryClientProvider>
