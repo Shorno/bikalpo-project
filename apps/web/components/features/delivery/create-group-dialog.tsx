@@ -98,7 +98,7 @@ export function CreateGroupDialog() {
           queryKey: orpc.deliveryman.getUnassignedInvoices.queryKey(),
         });
         queryClient.invalidateQueries({
-          queryKey: orpc.deliveryman.getGroups.queryKey(),
+          queryKey: orpc.deliveryman.getGroups.queryKey({ input: {} }),
         });
         toast.success("Delivery group created successfully");
         form.reset();

@@ -221,7 +221,6 @@ export default function InventoryPage() {
 // ────────────────────────────────────────────────────────────────
 
 function WarehouseUrlModal({ onClose }: { onClose: () => void }) {
-  const _router = useRouter();
   const [url, setUrl] = useState("");
   const [parsedSlug, setParsedSlug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

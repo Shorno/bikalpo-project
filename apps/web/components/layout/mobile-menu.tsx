@@ -77,7 +77,7 @@ export function MobileMenu() {
         {/* Categories List */}
         {categoriesData?.categories && categoriesData.categories.length > 0 && (
           <div className="py-2">
-            {categoriesData.categories.map((cat, index) => {
+            {categoriesData.categories.map((cat) => {
               const IconComponent = getCategoryIcon(cat.slug);
               return (
                 <Link

@@ -1,69 +1,95 @@
-import { DarkTheme, DefaultTheme, type Theme, ThemeProvider } from "@react-navigation/native";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { useFonts } from "expo-font";
+import { Stack, router } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import React, { useRef } from "react";
-import { Platform, StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
+import { StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { TamaguiProvider } from "tamagui";
+import * as SecureStore from "expo-secure-store";
+import { Toaster } from "sonner-native";
 
-import { setAndroidNavigationBar } from "@/lib/android-navigation-bar";
-import { NAV_THEME } from "@/lib/constants";
-import { useColorScheme } from "@/lib/use-color-scheme";
 import { queryClient } from "@/utils/orpc";
+import { tamaguiConfig } from "../tamagui.config";
 
-const LIGHT_THEME: Theme = {
-  ...DefaultTheme,
-  colors: NAV_THEME.light,
-};
-const DARK_THEME: Theme = {
-  ...DarkTheme,
-  colors: NAV_THEME.dark,
-};
-
-export const unstable_settings = {
-  initialRouteName: "(drawer)",
-};
-
-const useIsomorphicLayoutEffect =
-  Platform.OS === "web" && typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
+SplashScreen.preventAutoHideAsync();
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#fff",
   },
 });
 
 export default function RootLayout() {
-  const hasMounted = useRef(false);
-  const { colorScheme, isDarkColorScheme } = useColorScheme();
-  const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
+  const [isReady, setIsReady] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
-  useIsomorphicLayoutEffect(() => {
-    if (hasMounted.current) {
-      return;
+  const [fontsLoaded] = useFonts({
+    Inter: require("@tamagui/font-inter/otf/Inter-Medium.otf"),
+    InterBold: require("@tamagui/font-inter/otf/Inter-Bold.otf"),
+  });
+
+  useEffect(() => {
+    async function checkOnboarding() {
+      const completed = await SecureStore.getItemAsync("onboarding_completed");
+      setShowOnboarding(completed !== "true");
+      setIsReady(true);
     }
-    setAndroidNavigationBar(colorScheme);
-    setIsColorSchemeLoaded(true);
-    hasMounted.current = true;
+    checkOnboarding();
   }, []);
 
-  if (!isColorSchemeLoaded) {
+  useEffect(() => {
+    if (fontsLoaded && isReady) {
+      SplashScreen.hideAsync();
+      if (showOnboarding) {
+        router.replace("/onboarding");
+      }
+    }
+  }, [fontsLoaded, isReady, showOnboarding]);
+
+  if (!fontsLoaded || !isReady) {
     return null;
   }
 
   return (
-    <>
+    <TamaguiProvider config={tamaguiConfig} defaultTheme="light">
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
-          <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-          <GestureHandlerRootView style={styles.container}>
-            <Stack>
-              <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-              <Stack.Screen name="modal" options={{ title: "Modal", presentation: "modal" }} />
-            </Stack>
-          </GestureHandlerRootView>
-        </ThemeProvider>
+        <StatusBar style="dark" />
+        <GestureHandlerRootView style={styles.container}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: "#fff" },
+              animation: "fade",
+            }}
+          >
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="onboarding" />
+            <Stack.Screen name="login" />
+            <Stack.Screen name="register" />
+            <Stack.Screen name="account/orders" />
+            <Stack.Screen name="account/order-detail" />
+            <Stack.Screen name="account/addresses" />
+            <Stack.Screen name="account/address-form" />
+            <Stack.Screen name="account/edit-profile" />
+            <Stack.Screen name="account/tickets" />
+            <Stack.Screen name="account/ticket-detail" />
+            <Stack.Screen name="account/create-ticket" />
+            <Stack.Screen name="account/faq" />
+            <Stack.Screen name="account/change-password" />
+            <Stack.Screen name="product-detail" />
+          </Stack>
+          <Toaster
+            position="top-center"
+            offset={60}
+            swipeToDismissDirection="up"
+            richColors
+            closeButton
+          />
+        </GestureHandlerRootView>
       </QueryClientProvider>
-    </>
+    </TamaguiProvider>
   );
 }
