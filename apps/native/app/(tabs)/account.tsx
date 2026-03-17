@@ -48,8 +48,8 @@ export default function AccountScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
+    <View style={styles.container}>
+      {/* Sticky Header */}
       <View style={styles.header}>
         <Text fontSize="$7" fontWeight="bold" color="#1A1A2E">
           Profile
@@ -59,6 +59,7 @@ export default function AccountScreen() {
         </Pressable>
       </View>
 
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
       {/* Profile Card */}
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
@@ -229,7 +230,8 @@ export default function AccountScreen() {
       </View>
 
       <View style={{ height: 30 }} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
