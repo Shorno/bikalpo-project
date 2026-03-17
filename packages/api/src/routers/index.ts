@@ -2,9 +2,11 @@ import type { RouterClient } from "@orpc/server";
 
 import { protectedProcedure, publicProcedure } from "../index";
 import { adminOfferRouter } from "./admin-offer";
+import { adminProductTypeRouter } from "./admin-product-type";
 import { adminEmployeeReportRouter } from "./admin-employee-report";
 import { adminBrandUpdateRouter } from "./admin-brand-update";
 import { adminAnnouncementRouter } from "./admin-announcement";
+import { adminCustomerHomeTabRouter } from "./admin-customer-home-tab";
 import { adminEstimateRouter } from "./admin-estimate";
 import { adminInvoiceRouter } from "./admin-invoice";
 import { adminItemRequestRouter } from "./admin-item-request";
@@ -32,6 +34,9 @@ import { sellerApplicationRouter } from "./seller-application";
 import { shopOwnerRouter } from "./shop-owner";
 import { warehouseApplicationRouter } from "./warehouse-application";
 import { warehouseRouter } from "./warehouse";
+import { adminLandingRouter } from "./admin-landing";
+import { landingRouter } from "./landing";
+import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -45,9 +50,11 @@ export const appRouter = {
   }),
   audit: auditRouter,
   adminOffer: adminOfferRouter,
+  adminProductType: adminProductTypeRouter,
   adminEmployeeReport: adminEmployeeReportRouter,
   adminBrandUpdate: adminBrandUpdateRouter,
   adminAnnouncement: adminAnnouncementRouter,
+  adminCustomerHomeTab: adminCustomerHomeTabRouter,
   adminEstimate: adminEstimateRouter,
   adminInvoice: adminInvoiceRouter,
   adminItemRequest: adminItemRequestRouter,
@@ -75,6 +82,9 @@ export const appRouter = {
   shopOwner: shopOwnerRouter,
   warehouseApplication: warehouseApplicationRouter,
   warehouse: warehouseRouter,
+  adminLanding: adminLandingRouter,
+  landing: landingRouter,
+  adminWarehouseAssignment: adminWarehouseAssignmentRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

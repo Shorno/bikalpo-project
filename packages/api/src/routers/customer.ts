@@ -23,6 +23,8 @@ import {
   itemRequest,
   offer,
   comboOffer,
+  customerHomeTab,
+  customerHomeTabProduct,
   order,
   orderItem,
   payment,
@@ -58,7 +60,11 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { protectedProcedure, publicProcedure } from "../index";
+import {
+  consumerProcedure,
+  protectedProcedure,
+  publicProcedure,
+} from "../index";
 
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
@@ -523,6 +529,42 @@ const queries = {
       );
 
       return { categories: result.filter((c) => c.products.length > 0) };
+    }),
+
+  /** Get curated customer home tabs with products */
+  getHomeProductTabs: consumerProcedure
+    .route({
+      method: "GET",
+      path: "/customer/home-product-tabs",
+      tags: ["Customer"],
+      summary: "Get curated home product tabs",
+    })
+    .handler(async () => {
+      const tabs = await db.query.customerHomeTab.findMany({
+        where: eq(customerHomeTab.isActive, true),
+        orderBy: [asc(customerHomeTab.displayOrder), asc(customerHomeTab.id)],
+        with: {
+          products: {
+            where: eq(customerHomeTabProduct.isActive, true),
+            orderBy: [
+              asc(customerHomeTabProduct.displayOrder),
+              asc(customerHomeTabProduct.id),
+            ],
+          },
+        },
+      });
+
+      return {
+        tabs: tabs
+          .map((tab) => ({
+            ...tab,
+            products: tab.products.map((item) => ({
+              ...item,
+              price: Number(item.price),
+            })),
+          }))
+          .filter((tab) => tab.products.length > 0),
+      };
     }),
 
   /** Get subcategories by category slug */
@@ -2277,7 +2319,6 @@ const mutations = {
             message: `Please select a variant for ${item.product.name} before placing a B2B order`,
           });
         }
-
 
         // Check stock: for B2C (with shopId), check shop inventory; otherwise check variant/product stock
         let stockQty: number;

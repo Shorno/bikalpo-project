@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { redirect } from "next/navigation";
 import { AccountSidebar } from "@/components/account/account-sidebar";
 import { checkAuth } from "@/utils/auth";

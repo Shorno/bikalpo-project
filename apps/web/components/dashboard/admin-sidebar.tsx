@@ -53,6 +53,11 @@ const adminNavGroups: NavGroup[] = [
     label: "Catalog",
     items: [
       {
+        title: "Types",
+        url: `${ADMIN_BASE}/types`,
+        icon: Boxes,
+      },
+      {
         title: "Products",
         url: `${ADMIN_BASE}/products`,
         icon: PackageIcon,
@@ -76,6 +81,11 @@ const adminNavGroups: NavGroup[] = [
         title: "Brands",
         url: `${ADMIN_BASE}/brands`,
         icon: TagIcon,
+      },
+      {
+        title: "Customer Home Tabs",
+        url: `${ADMIN_BASE}/customer-home-tabs`,
+        icon: ListIcon,
       },
     ],
   },
@@ -168,6 +178,11 @@ const adminNavGroups: NavGroup[] = [
         icon: WarehouseIcon,
       },
       {
+        title: "Warehouse Assignments",
+        url: `${ADMIN_BASE}/warehouse-assignments`,
+        icon: WarehouseIcon,
+      },
+      {
         title: "Salesmen",
         url: `${ADMIN_BASE}/salesmen`,
         icon: Users2Icon,
@@ -201,6 +216,16 @@ const adminNavGroups: NavGroup[] = [
         title: "System Activity",
         url: `${ADMIN_BASE}/audit`,
         icon: ActivityIcon,
+      },
+    ],
+  },
+  {
+    label: "Landing Page",
+    items: [
+      {
+        title: "Packages",
+        url: `${ADMIN_BASE}/packages`,
+        icon: PackageIcon,
       },
     ],
   },

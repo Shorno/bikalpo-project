@@ -10,13 +10,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/product-detail-client";
 import { ProductCard } from "@/components/features/products/product-card";
+import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/product-detail-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
 import {
-  useRoleAwareProducts,
   useRoleAwareProductDetails,
+  useRoleAwareProducts,
 } from "@/hooks/use-role-aware-products";
 
 interface ShopProductDetailProps {

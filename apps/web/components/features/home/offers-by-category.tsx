@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ShoppingCart, Sparkles, Zap } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
-import { Sparkles, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { client } from "@/utils/orpc";
 
 const OFFER_TYPES = [
@@ -21,10 +26,182 @@ const normalizeOfferType = (type: string | null | undefined) => {
   return OFFER_TYPES.includes(trimmedType || "") ? trimmedType : "More Offers";
 };
 
+type Offer = {
+  id: number;
+  title: string;
+  description?: string | null;
+  type: string | undefined;
+  bannerImage: string;
+  badge?: string | null;
+  discountPercentage?: number | null;
+  comboPrice?: number | null;
+  originalPrice?: number | null;
+  products?: string | null;
+  endDate?: string | null;
+  imageUrl?: string | null;
+};
+
+function OfferDetailModal({
+  offer,
+  open,
+  onOpenChange,
+}: {
+  offer: Offer | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!offer) return null;
+
+  const productList = offer.products
+    ? offer.products.split(",").map((p) => p.trim())
+    : [];
+
+  const savings =
+    offer.originalPrice && offer.comboPrice
+      ? offer.originalPrice - offer.comboPrice
+      : 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg p-0 overflow-hidden rounded-2xl max-h-[85vh] flex flex-col gap-0">
+        <DialogHeader className="sr-only">
+          <DialogTitle>{offer.title}</DialogTitle>
+        </DialogHeader>
+
+        {/* Image */}
+        <div className="relative w-full h-48 sm:h-56 bg-gray-100 shrink-0">
+          {offer.bannerImage ? (
+            <Image
+              src={offer.bannerImage}
+              alt={offer.title}
+              fill
+              className="object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-amber-300 to-orange-400 flex items-center justify-center">
+              <span className="text-white text-5xl font-bold opacity-30">
+                {offer.discountPercentage}%
+              </span>
+            </div>
+          )}
+
+          {/* Discount badge */}
+          {offer.discountPercentage && (
+            <div className="absolute top-3 left-3 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
+              {offer.discountPercentage}% OFF
+            </div>
+          )}
+
+          {/* Badge */}
+          {offer.badge && (
+            <div className="absolute top-3 right-12 bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
+              {offer.badge}
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Title */}
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">{offer.title}</h3>
+            {offer.description && (
+              <p className="text-sm text-gray-500 mt-1">{offer.description}</p>
+            )}
+          </div>
+
+          {/* Products list */}
+          {productList.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">
+                What&apos;s included:
+              </p>
+              <ul className="space-y-1.5">
+                {productList.map((product, idx) => (
+                  <li
+                    key={idx}
+                    className="flex items-center gap-2 text-sm text-gray-600"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0" />
+                    {product}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Price block */}
+          {(offer.comboPrice || offer.originalPrice) && (
+            <div className="bg-gray-50 rounded-xl p-4">
+              <div className="flex items-baseline gap-3">
+                {offer.comboPrice && (
+                  <span className="text-2xl font-bold text-gray-900">
+                    ৳{offer.comboPrice}
+                  </span>
+                )}
+                {offer.originalPrice &&
+                  offer.comboPrice &&
+                  offer.originalPrice > offer.comboPrice && (
+                    <span className="text-base text-gray-400 line-through">
+                      ৳{offer.originalPrice}
+                    </span>
+                  )}
+              </div>
+              {savings > 0 && (
+                <p className="text-sm text-teal-600 font-medium mt-1">
+                  You save ৳{savings}!
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* End date */}
+          {offer.endDate && (
+            <p className="text-xs text-gray-500">
+              Offer ends:{" "}
+              {new Date(offer.endDate).toLocaleDateString("en-US", {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="border-t border-gray-100 p-4 flex gap-3 shrink-0">
+          <Button
+            variant="outline"
+            className="flex-1 h-11 gap-2 border-teal-500 text-teal-600 hover:bg-teal-50"
+            onClick={() => {
+              // TODO: integrate with cart
+              onOpenChange(false);
+            }}
+          >
+            <ShoppingCart className="size-4" />
+            Add to Cart
+          </Button>
+          <Button
+            className="flex-1 h-11 gap-2 bg-teal-500 hover:bg-teal-600 text-white"
+            onClick={() => {
+              // TODO: integrate with buy now
+              onOpenChange(false);
+            }}
+          >
+            <Zap className="size-4" />
+            Buy Now
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function OffersByCategory() {
   const [selectedType, setSelectedType] = useState("Weekly Offers");
+  const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["active-offers-all"],
     queryFn: () => client.customer.getActiveOffers({ limit: 50 }),
     retry: 2,
@@ -61,233 +238,134 @@ export function OffersByCategory() {
 
   if (isLoading) {
     return (
-      <section className="bg-white border-b">
-        <div className="container mx-auto px-4 py-8">
-          <div className="h-96 bg-gray-200 rounded-lg animate-pulse" />
+      <section className="bg-white">
+        <div className="container mx-auto px-4 py-6">
+          <div className="h-40 bg-gray-100 rounded-2xl animate-pulse" />
         </div>
       </section>
     );
   }
 
-  if (allOffers.length === 0) {
-    if (isError) {
-      return (
-        <section className="bg-white border-b">
-          <div className="container mx-auto px-4 py-8">
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 sm:p-5">
-              <p className="text-sm text-amber-900 font-medium">
-                Could not load offers right now.
-              </p>
-              <p className="text-xs text-amber-800 mt-1 break-words">
-                {error instanceof Error ? error.message : "Unknown error"}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3"
-                onClick={() => void refetch()}
-              >
-                Retry
-              </Button>
-            </div>
-          </div>
-        </section>
-      );
-    }
-
-    return null;
-  }
+  if (allOffers.length === 0) return null;
 
   return (
-    <section className="bg-gradient-to-b from-white to-gray-50 border-b">
-      <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-10 md:py-12">
-        {/* Section Header */}
-        <div className="flex items-center gap-2 sm:gap-3 mb-6 sm:mb-8">
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900">
-            🔥 Deals / Offers
-          </h2>
-        </div>
+    <>
+      {/* Offer Detail Modal */}
+      <OfferDetailModal
+        offer={selectedOffer}
+        open={!!selectedOffer}
+        onOpenChange={(open) => {
+          if (!open) setSelectedOffer(null);
+        }}
+      />
 
-        {/* Tabs */}
-        <Tabs
-          value={selectedType}
-          onValueChange={setSelectedType}
-          className="w-full"
-        >
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-6 sm:mb-8">
-            {OFFER_TYPES.map((type) => (
-              <TabsTrigger
-                key={type}
-                value={type}
-                className="text-xs sm:text-sm"
-                disabled={!availableTypes.includes(type)}
-              >
-                {type}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+      <section className="bg-white">
+        <div className="container mx-auto px-4 py-6">
+          <div className="bg-gray-50 rounded-2xl px-4 sm:px-6 py-5">
+            {/* Tab navigation */}
+            <div className="flex gap-6 sm:gap-8 border-b border-gray-200 mb-5">
+              {availableTypes.map((type) => {
+                const isActive = selectedType === type;
+                return (
+                  <button
+                    key={type}
+                    onClick={() => setSelectedType(type)}
+                    className={cn(
+                      "pb-2.5 text-sm font-medium whitespace-nowrap transition-colors relative",
+                      isActive
+                        ? "text-teal-600"
+                        : "text-gray-500 hover:text-gray-800",
+                    )}
+                  >
+                    {type}
+                    {isActive && (
+                      <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-teal-500 rounded-full" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
 
-          <TabsContent value={selectedType} className="space-y-4 sm:space-y-6">
+            {/* Offer cards */}
             {visibleOffers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                <Sparkles className="w-12 h-12 mb-3 opacity-20" />
-                <p>No {selectedType.toLowerCase()} available at the moment</p>
+              <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                <Sparkles className="w-10 h-10 mb-2 opacity-20" />
+                <p className="text-sm">
+                  No {selectedType.toLowerCase()} available right now
+                </p>
               </div>
             ) : (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-5">
-                  {visibleOffers.slice(0, 6).map((offer) => (
-                    <div
-                      key={offer.id}
-                      className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100"
-                    >
-                      {/* Image Section */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {visibleOffers.slice(0, 8).map((offer) => (
+                  <button
+                    key={offer.id}
+                    onClick={() => setSelectedOffer(offer as Offer)}
+                    className="group flex items-center gap-3 bg-white rounded-xl border border-gray-100 p-2.5 hover:shadow-md transition-shadow text-left"
+                  >
+                    {/* Left: Image */}
+                    <div className="relative w-20 h-20 shrink-0 rounded-lg overflow-hidden bg-gray-100">
                       {offer.bannerImage ? (
-                        <div className="relative w-full h-40 sm:h-48 md:h-56 bg-gray-100 overflow-hidden">
-                          <Image
-                            src={offer.bannerImage}
-                            alt={offer.title}
-                            fill
-                            className="object-cover group-hover:scale-110 transition-transform duration-300"
-                          />
-                        </div>
+                        <Image
+                          src={offer.bannerImage}
+                          alt={offer.title}
+                          fill
+                          className="object-cover"
+                        />
                       ) : (
-                        <div className="w-full h-40 sm:h-48 md:h-56 bg-gradient-to-br from-amber-400 via-orange-400 to-red-500 flex items-center justify-center relative overflow-hidden">
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-                          <span className="text-white text-4xl sm:text-5xl md:text-6xl font-bold opacity-30 relative z-10">
+                        <div className="w-full h-full bg-gradient-to-br from-amber-300 to-orange-400 flex items-center justify-center">
+                          <span className="text-white text-2xl font-bold opacity-40">
                             {offer.discountPercentage}%
                           </span>
                         </div>
                       )}
+                    </div>
 
-                      {/* Badge */}
-                      {offer.badge && (
-                        <div className="absolute top-2 sm:top-3 right-2 sm:right-3 z-20">
-                          <span className="inline-block bg-red-600 text-white px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-bold shadow-lg">
-                            {offer.badge}
-                          </span>
-                        </div>
+                    {/* Right: Content */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-sm sm:text-base text-gray-900 line-clamp-1">
+                        {offer.title}
+                      </h3>
+                      {offer.products && (
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+                          {offer.products}
+                        </p>
+                      )}
+                      {offer.description && !offer.products && (
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+                          {offer.description}
+                        </p>
                       )}
 
-                      {/* Discount Badge - Top Left */}
-                      <div className="absolute top-2 sm:top-3 left-2 sm:left-3 z-20">
-                        <div className="inline-block bg-emerald-500 text-white rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 shadow-lg">
-                          <div className="text-sm sm:text-base font-bold">
-                            {offer.discountPercentage}%
-                          </div>
-                          <div className="text-xs font-semibold">OFF</div>
+                      <div className="flex items-center gap-3 mt-2.5">
+                        <div className="flex items-baseline gap-1.5">
+                          {offer.comboPrice && (
+                            <span className="text-lg sm:text-xl font-bold text-gray-900">
+                              ৳{offer.comboPrice}
+                            </span>
+                          )}
+                          {offer.originalPrice &&
+                            offer.comboPrice &&
+                            offer.originalPrice > offer.comboPrice && (
+                              <span className="text-xs text-gray-400 line-through">
+                                ৳{offer.originalPrice}
+                              </span>
+                            )}
                         </div>
-                      </div>
 
-                      {/* Content Section */}
-                      <div className="p-3 sm:p-4 md:p-5 space-y-2 sm:space-y-3">
-                        <h3 className="font-bold text-sm sm:text-base md:text-lg text-gray-900 line-clamp-2">
-                          {offer.title}
-                        </h3>
-
-                        {offer.description && (
-                          <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">
-                            {offer.description}
-                          </p>
-                        )}
-
-                        {/* Products List */}
-                        {offer.products && (
-                          <div className="text-xs text-gray-500 space-y-1">
-                            <div className="font-semibold text-gray-700">
-                              Includes:
-                            </div>
-                            {offer.products
-                              .split(",")
-                              .slice(0, 2)
-                              .map((product, idx) => (
-                                <div key={idx} className="text-gray-600">
-                                  • {product.trim()}
-                                </div>
-                              ))}
-                            {offer.products.split(",").length > 2 && (
-                              <div className="text-gray-600">
-                                +{offer.products.split(",").length - 2} more
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Price Block */}
-                        {(offer.comboPrice || offer.originalPrice) && (
-                          <div className="pt-1">
-                            <div className="flex items-end gap-2">
-                              {offer.comboPrice ? (
-                                <span className="text-2xl sm:text-3xl font-bold text-emerald-600 leading-none">
-                                  ৳ {offer.comboPrice}
-                                </span>
-                              ) : null}
-                              {offer.originalPrice &&
-                              offer.comboPrice &&
-                              offer.originalPrice > offer.comboPrice ? (
-                                <span className="text-sm text-gray-400 line-through">
-                                  ৳ {offer.originalPrice}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Date Info */}
-                        {offer.endDate && (
-                          <div className="text-xs text-gray-500 pt-1 border-t">
-                            Ends:{" "}
-                            {new Date(offer.endDate).toLocaleDateString(
-                              "en-US",
-                              {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              },
-                            )}
-                          </div>
-                        )}
-
-                        {/* CTA Button */}
-                        <Link
-                          href={`/offers/${offer.id}`}
-                          className="block pt-1"
-                        >
-                          <Button
-                            variant="outline"
-                            className="w-full text-xs sm:text-sm h-8 sm:h-9 group-hover:bg-emerald-50 group-hover:border-emerald-300 transition-colors"
-                          >
-                            {offer.type === "Combo Deals"
-                              ? "View Combo"
-                              : "View Offer"}
-                            <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 ml-1.5" />
-                          </Button>
-                        </Link>
+                        <span className="inline-flex items-center px-3.5 py-1.5 bg-teal-500 hover:bg-teal-600 text-white text-xs font-semibold rounded-full transition-colors">
+                          {offer.type === "Combo Deals"
+                            ? "View Combo"
+                            : "View Offer"}
+                        </span>
                       </div>
                     </div>
-                  ))}
-                </div>
-
-                {visibleOffers.length > 6 && (
-                  <div className="flex justify-center mt-8 sm:mt-10">
-                    <Link
-                      href={`/products?offer_type=${encodeURIComponent(selectedType)}`}
-                    >
-                      <Button
-                        size="lg"
-                        className="text-sm sm:text-base gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
-                      >
-                        View All {selectedType} ({visibleOffers.length})
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
-                    </Link>
-                  </div>
-                )}
-              </>
+                  </button>
+                ))}
+              </div>
             )}
-          </TabsContent>
-        </Tabs>
-      </div>
-    </section>
+          </div>
+        </div>
+      </section>
+    </>
   );
 }

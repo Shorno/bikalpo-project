@@ -1,181 +1,324 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-    BoxesIcon,
-    Plus,
-    Warehouse,
-    MapPin,
-    Loader2,
-    ExternalLink,
-    AlertCircle,
+  AlertTriangle,
+  ArrowUpDown,
+  BoxesIcon,
+  Check,
+  Pencil,
+  Search,
+  X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
-import { orpc } from "@/utils/orpc";
-import { useQuery } from "@tanstack/react-query";
+import Image from "next/image";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { orpc } from "@/utils/orpc";
 
 export default function WarehouseInventoryPage() {
-    const [modalOpen, setModalOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editPrice, setEditPrice] = useState("");
+  const [editQty, setEditQty] = useState("");
 
-    return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
-                    <p className="text-sm text-muted-foreground">Manage your warehouse stock</p>
-                </div>
-                <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-                    <DialogTrigger asChild>
-                        <Button className="bg-amber-600 hover:bg-amber-700">
-                            <Plus className="w-4 h-4 mr-2" />
-                            Add Product
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                        <DialogHeader>
-                            <DialogTitle>Add Product from Another Warehouse</DialogTitle>
-                            <DialogDescription>
-                                Paste a warehouse storefront URL to browse and order products.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <WarehouseUrlModal onClose={() => setModalOpen(false)} />
-                    </DialogContent>
-                </Dialog>
-            </div>
-            <div className="flex flex-col items-center justify-center py-24 text-center border rounded-lg bg-muted/30">
-                <BoxesIcon className="size-12 text-muted-foreground mb-3" />
-                <p className="text-muted-foreground text-lg font-medium">No inventory items yet</p>
-                <p className="text-sm text-muted-foreground mt-1">Your inventory will appear here once products are added.</p>
-                <Button
-                    className="mt-4 bg-amber-600 hover:bg-amber-700"
-                    onClick={() => setModalOpen(true)}
-                >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Product from Warehouse
-                </Button>
-            </div>
+  const { data, isLoading } = useQuery({
+    queryKey: ["warehouse", "getMyInventory", { search, page: 1, limit: 200 }],
+    queryFn: () =>
+      orpc.warehouse.getMyInventory.call({ search, page: 1, limit: 200 }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: {
+      inventoryId: number;
+      retailPrice?: string;
+      availableQty?: string;
+    }) => orpc.warehouse.updateInventoryItem.call(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["warehouse", "getMyInventory"],
+      });
+      setEditingId(null);
+    },
+  });
+
+  const items = data?.items ?? [];
+
+  // Stats
+  const totalProducts = items.length;
+  const totalStock = items.reduce(
+    (sum: number, i: any) => sum + Number(i.availableQty || 0),
+    0,
+  );
+  const lowStockCount = items.filter(
+    (i: any) =>
+      Number(i.availableQty || 0) <= 5 && Number(i.availableQty || 0) > 0,
+  ).length;
+  const outOfStockCount = items.filter(
+    (i: any) => Number(i.availableQty || 0) === 0,
+  ).length;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <BoxesIcon className="text-amber-600" size={24} />
+          Inventory
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Manage your warehouse stock levels and pricing
+        </p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
+          <div className="text-xs text-gray-400 uppercase font-semibold">
+            Products
+          </div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">
+            {totalProducts}
+          </div>
         </div>
-    );
-}
+        <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
+          <div className="text-xs text-gray-400 uppercase font-semibold">
+            Total Stock
+          </div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">
+            {totalStock.toLocaleString()}
+          </div>
+        </div>
+        <div className="bg-white border border-amber-200 rounded-lg px-4 py-3 bg-amber-50/50">
+          <div className="text-xs text-amber-600 uppercase font-semibold">
+            Low Stock
+          </div>
+          <div className="text-2xl font-bold text-amber-600 mt-1">
+            {lowStockCount}
+          </div>
+        </div>
+        <div className="bg-white border border-red-200 rounded-lg px-4 py-3 bg-red-50/50">
+          <div className="text-xs text-red-500 uppercase font-semibold">
+            Out of Stock
+          </div>
+          <div className="text-2xl font-bold text-red-500 mt-1">
+            {outOfStockCount}
+          </div>
+        </div>
+      </div>
 
-// ────────────────────────────────────────────────────────────────
-// Warehouse URL Modal (same as shop owner version)
-// ────────────────────────────────────────────────────────────────
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search
+          size={14}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+        />
+        <input
+          type="text"
+          placeholder="Search by product name or SKU..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none"
+        />
+      </div>
 
-function WarehouseUrlModal({ onClose }: { onClose: () => void }) {
-    const router = useRouter();
-    const [url, setUrl] = useState("");
-    const [parsedSlug, setParsedSlug] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+      {/* Table */}
+      {isLoading ? (
+        <div className="text-center py-12 text-gray-400 text-sm">
+          Loading inventory...
+        </div>
+      ) : items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center border rounded-lg bg-gray-50/50">
+          <BoxesIcon className="text-gray-300 mb-3" size={48} />
+          <p className="text-gray-500 text-lg font-medium">
+            No inventory items
+          </p>
+          <p className="text-sm text-gray-400 mt-1">
+            Go to{" "}
+            <a
+              href="/warehouse/dashboard/products"
+              className="text-amber-600 underline font-medium"
+            >
+              Products
+            </a>{" "}
+            to add products to your inventory.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
+                  Product / Variant
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
+                  Category
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
+                  Base Price
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
+                  Retail Price
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
+                  <span className="flex items-center justify-end gap-1">
+                    <ArrowUpDown size={10} /> Stock
+                  </span>
+                </th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
+                  Status
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item: any) => {
+                const product = item.variant?.product;
+                const variant = item.variant;
+                const qty = Number(item.availableQty || 0);
+                const isEditing = editingId === item.id;
+                const isLowStock = qty > 0 && qty <= 5;
+                const isOutOfStock = qty === 0;
 
-    function parseSlug(input: string): string | null {
-        const trimmed = input.trim();
-        if (!trimmed) return null;
-        if (!trimmed.includes("/")) return trimmed;
-        const match = trimmed.match(/\/(?:warehouse|w)\/([^/?#]+)/);
-        return match ? match[1] : null;
-    }
-
-    function handlePreview() {
-        setError(null);
-        const slug = parseSlug(url);
-        if (!slug) {
-            setError("Please enter a valid warehouse URL or slug.");
-            return;
-        }
-        setParsedSlug(slug);
-    }
-
-    const { data: warehouse, isLoading, error: fetchError } = useQuery(
-        orpc.warehouse.getStorefrontBySlug.queryOptions({
-            input: { slug: parsedSlug! },
-            enabled: !!parsedSlug,
-        }),
-    );
-
-    const warehouseNotFound = fetchError && parsedSlug;
-
-    return (
-        <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-                <label className="text-sm font-medium">Warehouse URL or Slug</label>
-                <div className="flex gap-2">
-                    <Input
-                        placeholder="e.g. /warehouse/zenstore or zenstore"
-                        value={url}
-                        onChange={(e) => {
-                            setUrl(e.target.value);
-                            setParsedSlug(null);
-                            setError(null);
-                        }}
-                        onKeyDown={(e) => e.key === "Enter" && handlePreview()}
-                    />
-                    <Button onClick={handlePreview} disabled={!url.trim()}>
-                        Preview
-                    </Button>
-                </div>
-                {error && <p className="text-sm text-red-500">{error}</p>}
-            </div>
-
-            {isLoading && parsedSlug && (
-                <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-5 h-5 animate-spin text-amber-600" />
-                </div>
-            )}
-
-            {warehouseNotFound && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
-                    <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
-                    <p className="text-sm text-red-600 font-medium">Warehouse not found</p>
-                    <p className="text-xs text-red-500 mt-1">Check the URL and try again.</p>
-                </div>
-            )}
-
-            {warehouse && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-3">
-                    <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
-                            <Warehouse className="w-6 h-6 text-amber-600" />
-                        </div>
+                return (
+                  <tr
+                    key={item.id}
+                    className="border-b last:border-b-0 hover:bg-gray-50/50 transition-colors"
+                  >
+                    {/* Product */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {product?.images?.[0] && (
+                          <Image
+                            src={product.images[0].imageUrl}
+                            alt={product?.name}
+                            width={36}
+                            height={36}
+                            className="w-9 h-9 rounded-lg object-cover"
+                          />
+                        )}
                         <div>
-                            <h3 className="font-semibold text-gray-900">
-                                {warehouse.warehouseName || warehouse.name}
-                            </h3>
-                            {warehouse.warehouseAddress && (
-                                <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
-                                    <MapPin className="w-3 h-3" />
-                                    {warehouse.warehouseAddress}
-                                </p>
-                            )}
-                            <p className="text-sm text-amber-700 font-medium mt-1">
-                                {warehouse.productCount} products available
-                            </p>
+                          <div className="font-medium text-gray-900 line-clamp-1">
+                            {product?.name || "Unknown"}
+                          </div>
+                          <div className="text-[10px] text-gray-400">
+                            {variant?.unitLabel} — {variant?.weightKg}kg
+                            {variant?.sku && ` • ${variant.sku}`}
+                          </div>
                         </div>
-                    </div>
-                    <Button
-                        className="w-full bg-amber-600 hover:bg-amber-700"
-                        onClick={() => {
-                            onClose();
-                            const baseUrl = window.location.origin.replace(/^(https?:\/\/)(?:shop\.|warehouse\.)/, "$1");
-                            window.location.href = `${baseUrl}/w/${parsedSlug}`;
-                        }}
-                    >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        Visit Warehouse Store
-                    </Button>
-                </div>
-            )}
+                      </div>
+                    </td>
+
+                    {/* Category */}
+                    <td className="px-4 py-3 text-xs text-gray-500">
+                      {product?.category?.name || "—"}
+                    </td>
+
+                    {/* Base Price */}
+                    <td className="px-4 py-3 text-right text-gray-500">
+                      ৳{Number(variant?.price || 0).toLocaleString()}
+                    </td>
+
+                    {/* Retail Price (editable) */}
+                    <td className="px-4 py-3 text-right">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={editPrice}
+                          onChange={(e) => setEditPrice(e.target.value)}
+                          className="w-24 px-2 py-1 text-xs text-right border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 outline-none"
+                        />
+                      ) : (
+                        <span className="font-semibold text-emerald-700">
+                          ৳{Number(item.retailPrice || 0).toLocaleString()}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Stock (editable) */}
+                    <td className="px-4 py-3 text-right">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={editQty}
+                          onChange={(e) => setEditQty(e.target.value)}
+                          className="w-20 px-2 py-1 text-xs text-right border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 outline-none"
+                        />
+                      ) : (
+                        <span
+                          className={`font-medium ${isOutOfStock ? "text-red-500" : isLowStock ? "text-amber-600" : "text-gray-900"}`}
+                        >
+                          {qty.toLocaleString()}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3 text-center">
+                      {isOutOfStock ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded-full font-medium">
+                          <AlertTriangle size={10} /> Out
+                        </span>
+                      ) : isLowStock ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-full font-medium">
+                          <AlertTriangle size={10} /> Low
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full font-medium">
+                          In Stock
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-3 text-right">
+                      {isEditing ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => {
+                              updateMutation.mutate({
+                                inventoryId: item.id,
+                                retailPrice: editPrice,
+                                availableQty: editQty,
+                              });
+                            }}
+                            disabled={updateMutation.isPending}
+                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                            title="Save"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            onClick={() => setEditingId(null)}
+                            className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                            title="Cancel"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingId(item.id);
+                            setEditPrice(item.retailPrice || "0");
+                            setEditQty(item.availableQty || "0");
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                          title="Edit price & stock"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-    );
+      )}
+    </div>
+  );
 }

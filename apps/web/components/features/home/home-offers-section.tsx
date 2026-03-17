@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { ChevronRight, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { Sparkles, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { client } from "@/utils/orpc";
 

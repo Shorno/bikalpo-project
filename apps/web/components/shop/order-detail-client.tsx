@@ -4,13 +4,7 @@
 "use client";
 
 import { format } from "date-fns";
-import {
-  ArrowLeft,
-  MapPin,
-  Package,
-  Phone,
-  User,
-} from "lucide-react";
+import { ArrowLeft, MapPin, Package, Phone, User } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -201,8 +195,7 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
               Payment
             </h3>
             <p className="text-sm text-gray-700 font-medium">
-              {paymentMethodLabels[order.paymentMethod] ||
-                order.paymentMethod}
+              {paymentMethodLabels[order.paymentMethod] || order.paymentMethod}
             </p>
           </div>
 
@@ -223,7 +216,11 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
                 <div className="text-gray-600">
                   <p>{order.shippingAddress}</p>
                   <p>
-                    {[order.shippingArea, order.shippingCity, order.shippingPostalCode]
+                    {[
+                      order.shippingArea,
+                      order.shippingCity,
+                      order.shippingPostalCode,
+                    ]
                       .filter(Boolean)
                       .join(", ")}
                   </p>
@@ -248,7 +245,10 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
 
           {/* Actions */}
           <div className="space-y-2">
-            <Button asChild className="w-full bg-emerald-600 hover:bg-emerald-700 gap-2">
+            <Button
+              asChild
+              className="w-full bg-emerald-600 hover:bg-emerald-700 gap-2"
+            >
               <Link href="/account/track">
                 <Package className="h-4 w-4" />
                 Track Order

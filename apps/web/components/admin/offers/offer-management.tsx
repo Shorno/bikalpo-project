@@ -8,8 +8,7 @@ import {
   getPaginationRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { format } from "date-fns";
-import { ChevronLeft, ChevronRight, Plus, Percent } from "lucide-react";
+import { ChevronLeft, ChevronRight, Percent, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createOfferColumns } from "@/components/admin/offers/offer-columns";
@@ -24,7 +23,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -37,10 +35,10 @@ import {
 } from "@/components/ui/table";
 import { client } from "@/utils/orpc";
 
-export function OfferManagement() {
-  const getErrorMessage = (error: unknown) =>
-    error instanceof Error ? error.message : "Something went wrong";
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "Something went wrong";
 
+export function OfferManagement() {
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
@@ -83,7 +81,7 @@ export function OfferManagement() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
-  const handleEdit = (offer: Offer) => {
+  const _handleEdit = (offer: Offer) => {
     setEditingOffer(offer);
     setFormOpen(true);
   };

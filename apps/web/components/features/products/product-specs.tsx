@@ -110,14 +110,16 @@ export function ProductSpecs({
       : "1 unit";
   const bulkUnits = primaryVariant?.quantitySelectorOptions?.length
     ? formatBulkUnits(
-      primaryVariant.quantitySelectorOptions,
-      primaryVariant.unitLabel,
-    )
+        primaryVariant.quantitySelectorOptions,
+        primaryVariant.unitLabel,
+      )
     : undefined;
 
   const emptyPlaceholder = "—";
   const allSpecs: { label: string; value: string }[] = [
-    ...(primaryVariant?.sku ? [{ label: "SKU", value: primaryVariant.sku }] : []),
+    ...(primaryVariant?.sku
+      ? [{ label: "SKU", value: primaryVariant.sku }]
+      : []),
     { label: "Weight", value: weight || emptyPlaceholder },
     { label: "Category", value: categoryName || emptyPlaceholder },
     ...(subCategoryName
@@ -126,7 +128,9 @@ export function ProductSpecs({
     { label: "Brand", value: brandName ?? emptyPlaceholder },
     ...(origin ? [{ label: "Origin", value: origin }] : []),
     ...(shelfLife ? [{ label: "Shelf Life", value: shelfLife }] : []),
-    ...(packagingType ? [{ label: "Packaging Type", value: packagingType }] : []),
+    ...(packagingType
+      ? [{ label: "Packaging Type", value: packagingType }]
+      : []),
     ...(moisture ? [{ label: "Moisture", value: moisture }] : []),
     ...(grainLength ? [{ label: "Grain Length", value: grainLength }] : []),
   ];

@@ -1,10 +1,10 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, Calendar, Tag } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Calendar, Tag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";

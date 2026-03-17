@@ -33,14 +33,14 @@ const banners = [
 
 export function HomeBannerCarousel() {
   return (
-    <section className="w-full bg-primary/10">
+    <div className="w-full">
       <Carousel opts={{ loop: true }} className="w-full">
         <CarouselContent>
           {banners.map((banner) => (
             <CarouselItem key={banner.id}>
               <Link
                 href={banner.href}
-                className="block relative w-full aspect-[16/5] overflow-hidden bg-primary/20"
+                className="block relative w-full h-[180px] lg:h-[200px] overflow-hidden bg-gray-200 rounded-sm"
               >
                 <Image
                   src={banner.image}
@@ -56,6 +56,6 @@ export function HomeBannerCarousel() {
         <CarouselPrevious className="left-3" />
         <CarouselNext className="right-3" />
       </Carousel>
-    </section>
+    </div>
   );
 }

@@ -270,7 +270,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                         );
                       }}
                     </form.Field>
-
                   </div>
 
                   <form.Field name="description">
@@ -303,7 +302,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 />
               )}
 
-
               {/* ── Features ── */}
               <Card>
                 <CardHeader className="pb-4">
@@ -332,9 +330,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                     <ImageIcon className="h-4 w-4 text-muted-foreground" />
                     <CardTitle className="text-base">Media</CardTitle>
                   </div>
-                  <CardDescription>
-                    Add photos of your product
-                  </CardDescription>
+                  <CardDescription>Add photos of your product</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

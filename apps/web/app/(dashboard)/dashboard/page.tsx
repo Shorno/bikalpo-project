@@ -4,7 +4,12 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
-import { ADMIN_BASE, DELIVERY_BASE, SALES_BASE, WAREHOUSE_BASE } from "@/lib/routes";
+import {
+  ADMIN_BASE,
+  DELIVERY_BASE,
+  SALES_BASE,
+  WAREHOUSE_BASE,
+} from "@/lib/routes";
 
 export default function DashboardPage() {
   const router = useRouter();

@@ -43,11 +43,11 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { useCart } from "@/hooks/use-orpc-cart";
 import {
   useEstimatedDeliveryCost,
   usePlaceOrder,
 } from "@/hooks/use-customer-api";
+import { useCart } from "@/hooks/use-orpc-cart";
 import { authClient } from "@/lib/auth-client";
 
 const CITIES = [

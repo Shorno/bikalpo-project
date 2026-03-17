@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import Link from "next/link";
 import type {
   ProductFeatureGroup,
   QuantitySelectorOption,
 } from "@bikalpo-project/db/schema";
-import { ProductSpecs } from "@/components/features/products/product-specs";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 import { ProductActions } from "@/components/features/products/product-actions";
 import { ProductSellers } from "@/components/features/products/product-sellers";
+import { ProductSpecs } from "@/components/features/products/product-specs";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -86,13 +86,12 @@ export function ProductDetailClient({
   }, [variants, userRole]);
 
   const sorted = useMemo(
-    () => [...roleFiltered].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+    () =>
+      [...roleFiltered].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     [roleFiltered],
   );
 
-  const [selectedId, setSelectedId] = useState<number>(
-    sorted[0]?.id ?? -1,
-  );
+  const [selectedId, setSelectedId] = useState<number>(sorted[0]?.id ?? -1);
 
   const selected = sorted.find((v) => v.id === selectedId) ?? sorted[0] ?? null;
 
@@ -108,7 +107,9 @@ export function ProductDetailClient({
     : selected
       ? Number(selected.price)
       : Number(product.price);
-  const displayStock = selected ? (selected.stockQuantity ?? 0) : product.stockQuantity;
+  const displayStock = selected
+    ? (selected.stockQuantity ?? 0)
+    : product.stockQuantity;
   const displaySize = selected ? selected.unitLabel : product.size;
   const hasMultiple = sorted.length > 1;
 
@@ -215,7 +216,9 @@ export function ProductDetailClient({
         shopId={selectedSeller?.shopId}
         orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
         orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}
-        orderIncrement={selected?.orderIncrement ? Number(selected.orderIncrement) : undefined}
+        orderIncrement={
+          selected?.orderIncrement ? Number(selected.orderIncrement) : undefined
+        }
         categoryName={categoryName}
         brandName={brandName ?? undefined}
       />

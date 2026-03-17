@@ -2,7 +2,7 @@
 
 import type { Category } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -40,6 +40,15 @@ export default function EditCategoryDialog({
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
+  // Fetch product types for dropdown
+  const { data: typesData } = useQuery({
+    queryKey: ["adminProductType", "getActiveTypes"],
+    queryFn: () => orpc.adminProductType.getActiveTypes.call({}),
+    enabled: open,
+  });
+
+  const types = typesData?.types ?? [];
+
   const mutation = useMutation(
     orpc.category.update.mutationOptions({
       onSuccess: (result) => {
@@ -64,6 +73,7 @@ export default function EditCategoryDialog({
       image: category.image,
       isActive: category.isActive,
       displayOrder: category.displayOrder,
+      typeId: category.typeId ?? null,
     },
 
     validators: {
@@ -122,6 +132,35 @@ export default function EditCategoryDialog({
                 </Field>
               );
             }}
+          </form.Field>
+
+          {/* Product Type Selector */}
+          <form.Field name="typeId">
+            {(field) => (
+              <Field>
+                <FieldLabel htmlFor="typeId">Product Type</FieldLabel>
+                <select
+                  id="typeId"
+                  value={field.state.value ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    field.handleChange(val ? Number(val) : null);
+                  }}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">— No Type —</option>
+                  {types.map((t: any) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <FieldDescription>
+                  Assign this category to a product type (Type → Category →
+                  SubCategory)
+                </FieldDescription>
+              </Field>
+            )}
           </form.Field>
 
           {/* Category Name */}

@@ -15,7 +15,20 @@ export default function ProductList() {
   });
 
   const products = data?.products ?? [];
-  console.log("📦 Products response:", JSON.stringify(products.map(p => ({ id: p.id, name: p.name, price: p.price, stockQuantity: p.stockQuantity, size: p.size })), null, 2));
+  console.log(
+    "📦 Products response:",
+    JSON.stringify(
+      products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        stockQuantity: p.stockQuantity,
+        size: p.size,
+      })),
+      null,
+      2,
+    ),
+  );
 
   if (isLoading) {
     return <TableSkeleton />;

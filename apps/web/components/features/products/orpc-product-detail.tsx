@@ -11,10 +11,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  useAddToCart,
-  useProductReviews,
-} from "@/hooks/use-customer-api";
+import { useAddToCart, useProductReviews } from "@/hooks/use-customer-api";
 import { useRoleAwareProductDetails } from "@/hooks/use-role-aware-products";
 
 interface OrpcProductDetailProps {
@@ -117,10 +114,11 @@ export function OrpcProductDetail({
                       key={idx}
                       type="button"
                       onClick={() => setSelectedImage(idx)}
-                      className={`shrink-0 w-16 h-16 relative rounded-md overflow-hidden border-2 transition-colors ${selectedImage === idx
+                      className={`shrink-0 w-16 h-16 relative rounded-md overflow-hidden border-2 transition-colors ${
+                        selectedImage === idx
                           ? "border-primary"
                           : "border-gray-200"
-                        }`}
+                      }`}
                     >
                       <Image
                         src={img}
@@ -171,10 +169,11 @@ export function OrpcProductDetail({
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Star
                         key={i}
-                        className={`w-4 h-4 ${i < Math.round(reviewStats.averageRating)
+                        className={`w-4 h-4 ${
+                          i < Math.round(reviewStats.averageRating)
                             ? "fill-yellow-400 text-yellow-400"
                             : "text-gray-300"
-                          }`}
+                        }`}
                       />
                     ))}
                   </div>
@@ -324,10 +323,11 @@ function OrpcProductReviews({ productId }: { productId: number }) {
               {Array.from({ length: 5 }).map((_, i) => (
                 <Star
                   key={i}
-                  className={`w-5 h-5 ${i < Math.round(stats.averageRating)
+                  className={`w-5 h-5 ${
+                    i < Math.round(stats.averageRating)
                       ? "fill-yellow-400 text-yellow-400"
                       : "text-gray-300"
-                    }`}
+                  }`}
                 />
               ))}
             </div>
@@ -354,10 +354,11 @@ function OrpcProductReviews({ productId }: { productId: number }) {
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Star
                         key={i}
-                        className={`w-3 h-3 ${i < review.rating
+                        className={`w-3 h-3 ${
+                          i < review.rating
                             ? "fill-yellow-400 text-yellow-400"
                             : "text-gray-300"
-                          }`}
+                        }`}
                       />
                     ))}
                   </div>

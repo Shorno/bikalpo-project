@@ -16,33 +16,33 @@ import { orpc } from "@/utils/orpc";
 
 /** Paginated wholesale product listing (TRADE variants only) */
 export function useShopOwnerProducts(filters: {
-    category?: string | null;
-    subcategory?: string | null;
-    brand?: string | null;
-    minPrice?: string | null;
-    maxPrice?: string | null;
-    inStock?: string | null;
-    search?: string | null;
-    sort?: string | null;
-    page?: string;
-    limit?: string;
+  category?: string | null;
+  subcategory?: string | null;
+  brand?: string | null;
+  minPrice?: string | null;
+  maxPrice?: string | null;
+  inStock?: string | null;
+  search?: string | null;
+  sort?: string | null;
+  page?: string;
+  limit?: string;
 }) {
-    return useQuery(
-        orpc.shopOwner.getProducts.queryOptions({
-            input: filters,
-            staleTime: 1000 * 60 * 2,
-        }),
-    );
+  return useQuery(
+    orpc.shopOwner.getProducts.queryOptions({
+      input: filters,
+      staleTime: 1000 * 60 * 2,
+    }),
+  );
 }
 
 /** Product detail with TRADE variants only */
 export function useShopOwnerProductDetails(slug: string) {
-    return useQuery(
-        orpc.shopOwner.getProductDetails.queryOptions({
-            input: { slug },
-            enabled: !!slug,
-        }),
-    );
+  return useQuery(
+    orpc.shopOwner.getProductDetails.queryOptions({
+      input: { slug },
+      enabled: !!slug,
+    }),
+  );
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -51,30 +51,30 @@ export function useShopOwnerProductDetails(slug: string) {
 
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
-    search?: string;
-    page?: number;
-    limit?: number;
+  search?: string;
+  page?: number;
+  limit?: number;
 }) {
-    return useQuery(
-        orpc.shopOwner.getMyRetailProducts.queryOptions({
-            input: {
-                search: params?.search,
-                page: params?.page ?? 1,
-                limit: params?.limit ?? 20,
-            },
-            staleTime: 1000 * 60 * 2,
-        }),
-    );
+  return useQuery(
+    orpc.shopOwner.getMyRetailProducts.queryOptions({
+      input: {
+        search: params?.search,
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 60 * 2,
+    }),
+  );
 }
 
 /** Shop owner's inventory summary */
 export function useMyInventory() {
-    return useQuery(
-        orpc.shopOwner.getMyInventory.queryOptions({
-            input: undefined,
-            staleTime: 1000 * 60 * 2,
-        }),
-    );
+  return useQuery(
+    orpc.shopOwner.getMyInventory.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2,
+    }),
+  );
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -83,30 +83,30 @@ export function useMyInventory() {
 
 /** Shop owner's B2B purchase orders */
 export function useMyOrders(params?: {
-    status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
-    page?: number;
-    limit?: number;
+  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+  page?: number;
+  limit?: number;
 }) {
-    return useQuery(
-        orpc.shopOwner.getMyOrders.queryOptions({
-            input: {
-                status: params?.status,
-                page: params?.page ?? 1,
-                limit: params?.limit ?? 20,
-            },
-            staleTime: 1000 * 60,
-        }),
-    );
+  return useQuery(
+    orpc.shopOwner.getMyOrders.queryOptions({
+      input: {
+        status: params?.status,
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 60,
+    }),
+  );
 }
 
 /** Dashboard summary stats */
 export function useDashboardStats() {
-    return useQuery(
-        orpc.shopOwner.getDashboardStats.queryOptions({
-            input: undefined,
-            staleTime: 1000 * 60,
-        }),
-    );
+  return useQuery(
+    orpc.shopOwner.getDashboardStats.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60,
+    }),
+  );
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -115,21 +115,21 @@ export function useDashboardStats() {
 
 /** Update retail price for an inventory item */
 export function useUpdateRetailPrice() {
-    const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
 
-    return useMutation(
-        orpc.shopOwner.updateRetailPrice.mutationOptions({
-            onSuccess: () => {
-                // Invalidate retail products and inventory caches
-                queryClient.invalidateQueries({
-                    queryKey: [["shopOwner", "getMyRetailProducts"]],
-                });
-                queryClient.invalidateQueries({
-                    queryKey: [["shopOwner", "getMyInventory"]],
-                });
-            },
-        }),
-    );
+  return useMutation(
+    orpc.shopOwner.updateRetailPrice.mutationOptions({
+      onSuccess: () => {
+        // Invalidate retail products and inventory caches
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyRetailProducts"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyInventory"]],
+        });
+      },
+    }),
+  );
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -138,36 +138,42 @@ export function useUpdateRetailPrice() {
 
 /** Incoming B2C consumer orders for this shop */
 export function useIncomingOrders(params?: {
-    status?: "all" | "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
-    page?: number;
-    limit?: number;
+  status?:
+    | "all"
+    | "pending"
+    | "confirmed"
+    | "processing"
+    | "delivered"
+    | "cancelled";
+  page?: number;
+  limit?: number;
 }) {
-    return useQuery(
-        orpc.shopOwner.getIncomingOrders.queryOptions({
-            input: {
-                status: params?.status ?? "all",
-                page: params?.page ?? 1,
-                limit: params?.limit ?? 20,
-            },
-            staleTime: 1000 * 30,
-        }),
-    );
+  return useQuery(
+    orpc.shopOwner.getIncomingOrders.queryOptions({
+      input: {
+        status: params?.status ?? "all",
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
 }
 
 /** Update status of an incoming B2C order */
 export function useUpdateIncomingOrderStatus() {
-    const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
 
-    return useMutation(
-        orpc.shopOwner.updateIncomingOrderStatus.mutationOptions({
-            onSuccess: () => {
-                queryClient.invalidateQueries({
-                    queryKey: orpc.shopOwner.getIncomingOrders.key(),
-                });
-                queryClient.invalidateQueries({
-                    queryKey: orpc.shopOwner.getDashboardStats.key(),
-                });
-            },
-        }),
-    );
+  return useMutation(
+    orpc.shopOwner.updateIncomingOrderStatus.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getIncomingOrders.key(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getDashboardStats.key(),
+        });
+      },
+    }),
+  );
 }

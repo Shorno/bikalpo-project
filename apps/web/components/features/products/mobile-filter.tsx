@@ -159,7 +159,7 @@ export function MobileFilter({
       </SheetTrigger>
       <SheetContent
         side="left"
-        className="w-[80%] sm:w-[350px] p-0 [&>button]:hidden"
+        className="w-[80%] sm:w-87.5 p-0 [&>button]:hidden"
       >
         <SheetHeader className="px-4 py-3 border-b bg-gray-50/80">
           <div className="flex items-center justify-between gap-2">
@@ -169,7 +169,6 @@ export function MobileFilter({
             </SheetTitle>
             <div className="flex items-center gap-3">
               {hasActiveFilters && (
-                // biome-ignore lint/a11y/useButtonType: fine
                 <button
                   onClick={clearAllFilters}
                   className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 transition-colors"
