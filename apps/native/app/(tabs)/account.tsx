@@ -229,7 +229,7 @@ export default function AccountScreen() {
         </Pressable>
       </View>
 
-      <View style={{ height: 30 }} />
+      <View style={{ height: 100 }} />
       </ScrollView>
     </View>
   );

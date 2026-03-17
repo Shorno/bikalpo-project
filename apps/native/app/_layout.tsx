@@ -8,6 +8,7 @@ import { StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { TamaguiProvider } from "tamagui";
 import * as SecureStore from "expo-secure-store";
+import { Toaster } from "sonner-native";
 
 import { queryClient } from "@/utils/orpc";
 import { tamaguiConfig } from "../tamagui.config";
@@ -78,7 +79,15 @@ export default function RootLayout() {
             <Stack.Screen name="account/create-ticket" />
             <Stack.Screen name="account/faq" />
             <Stack.Screen name="account/change-password" />
+            <Stack.Screen name="product-detail" />
           </Stack>
+          <Toaster
+            position="top-center"
+            offset={60}
+            swipeToDismissDirection="up"
+            richColors
+            closeButton
+          />
         </GestureHandlerRootView>
       </QueryClientProvider>
     </TamaguiProvider>

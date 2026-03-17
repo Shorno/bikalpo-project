@@ -18,7 +18,7 @@ export default function CategoriesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
       <View style={styles.header}>
         <Text fontSize="$7" fontWeight="bold" color="#1A1A2E">
           Categories

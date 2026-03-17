@@ -1,5 +1,6 @@
 import { View, Image, StyleSheet, Pressable, Dimensions } from "react-native";
 import { Text } from "tamagui";
+import { router } from "expo-router";
 
 const CARD_WIDTH = (Dimensions.get("window").width - 48 - 12) / 2;
 
@@ -7,6 +8,7 @@ interface ProductCardProps {
   name: string;
   price: string;
   image: string;
+  slug?: string;
   category?: string;
   onPress?: () => void;
   variant?: "horizontal" | "grid";
@@ -16,11 +18,20 @@ export function ProductCard({
   name,
   price,
   image,
+  slug,
   category,
   onPress,
   variant = "grid",
 }: ProductCardProps) {
   const isHorizontal = variant === "horizontal";
+
+  const handlePress = () => {
+    if (onPress) {
+      onPress();
+    } else if (slug) {
+      router.push({ pathname: "/product-detail", params: { slug } });
+    }
+  };
 
   return (
     <Pressable
@@ -28,7 +39,7 @@ export function ProductCard({
         isHorizontal ? styles.horizontalCard : styles.gridCard,
         pressed && { opacity: 0.85 },
       ]}
-      onPress={onPress}
+      onPress={handlePress}
     >
       <Image
         source={{ uri: image }}

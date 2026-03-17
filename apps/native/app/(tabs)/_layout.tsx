@@ -1,65 +1,29 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { FloatingTabBar } from "../../components/floating-tab-bar";
 
 export default function TabLayout() {
   return (
     <Tabs
+      tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#F5A623",
-        tabBarInactiveTintColor: "#8E8E93",
-        tabBarStyle: {
-          backgroundColor: "#fff",
-          borderTopColor: "#F0F0F0",
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 4,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontFamily: "Inter",
-        },
         sceneStyle: {
           backgroundColor: "#fff",
         },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="categories"
-        options={{
-          title: "Categories",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="grid-outline" size={size} color={color} />
-          ),
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: "Home" }} />
+      <Tabs.Screen name="categories" options={{ title: "Categories" }} />
       <Tabs.Screen
         name="cart"
         options={{
           title: "Cart",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="cart-outline" size={size} color={color} />
-          ),
+          // Uncomment and set dynamically when you have cart state:
+          // tabBarBadge: cartItemCount,
         }}
       />
-      <Tabs.Screen
-        name="account"
-        options={{
-          title: "Account",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
-          ),
-        }}
-      />
+      <Tabs.Screen name="account" options={{ title: "Account" }} />
     </Tabs>
   );
 }
+

@@ -189,6 +189,7 @@ export default function HomeScreen() {
                 name={item.name}
                 price={String(item.price)}
                 image={item.image}
+                slug={item.slug}
                 category={item.category?.name}
                 variant="horizontal"
               />
@@ -217,6 +218,7 @@ export default function HomeScreen() {
                 name={item.name}
                 price={String(item.price)}
                 image={item.image}
+                slug={item.slug}
                 category={item.category?.name}
                 variant="grid"
               />
@@ -225,8 +227,8 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Bottom spacing for tab bar */}
-      <View style={{ height: 20 }} />
+      {/* Bottom spacing for floating tab bar */}
+      <View style={{ height: 100 }} />
     </ScrollView>
   );
 }
