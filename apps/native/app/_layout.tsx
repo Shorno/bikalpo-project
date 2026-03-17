@@ -1,21 +1,18 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { TamaguiProvider } from "tamagui";
+import * as SecureStore from "expo-secure-store";
 
 import { queryClient } from "@/utils/orpc";
 import { tamaguiConfig } from "../tamagui.config";
 
 SplashScreen.preventAutoHideAsync();
-
-export const unstable_settings = {
-  initialRouteName: "index",
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -25,18 +22,33 @@ const styles = StyleSheet.create({
 });
 
 export default function RootLayout() {
+  const [isReady, setIsReady] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
   const [fontsLoaded] = useFonts({
     Inter: require("@tamagui/font-inter/otf/Inter-Medium.otf"),
     InterBold: require("@tamagui/font-inter/otf/Inter-Bold.otf"),
   });
 
   useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
+    async function checkOnboarding() {
+      const completed = await SecureStore.getItemAsync("onboarding_completed");
+      setShowOnboarding(completed !== "true");
+      setIsReady(true);
     }
-  }, [fontsLoaded]);
+    checkOnboarding();
+  }, []);
 
-  if (!fontsLoaded) {
+  useEffect(() => {
+    if (fontsLoaded && isReady) {
+      SplashScreen.hideAsync();
+      if (showOnboarding) {
+        router.replace("/onboarding");
+      }
+    }
+  }, [fontsLoaded, isReady, showOnboarding]);
+
+  if (!fontsLoaded || !isReady) {
     return null;
   }
 
@@ -49,8 +61,12 @@ export default function RootLayout() {
             screenOptions={{
               headerShown: false,
               contentStyle: { backgroundColor: "#fff" },
+              animation: "fade",
             }}
-          />
+          >
+            <Stack.Screen name="index" />
+            <Stack.Screen name="onboarding" />
+          </Stack>
         </GestureHandlerRootView>
       </QueryClientProvider>
     </TamaguiProvider>
