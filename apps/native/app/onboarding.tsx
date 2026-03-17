@@ -91,7 +91,7 @@ export default function Onboarding() {
                 fontSize="$8"
                 fontWeight="bold"
                 color="#1A1A2E"
-                textAlign="center"
+                text="center"
                 style={{ lineHeight: 36 }}
               >
                 {item.title}
@@ -99,7 +99,7 @@ export default function Onboarding() {
               <Text
                 fontSize="$4"
                 color="#8E8E93"
-                textAlign="center"
+                text="center"
                 mt="$3"
                 style={{ lineHeight: 22, paddingHorizontal: 20 }}
               >
