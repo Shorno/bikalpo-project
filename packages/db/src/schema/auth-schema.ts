@@ -30,6 +30,17 @@ export const user = pgTable("user", {
     warehouseName: text("warehouse_name"),
     warehouseSlug: text("warehouse_slug"), // for warehouse URL: /warehouse/{warehouse_slug}
     warehouseAddress: text("warehouse_address"),
+
+    // === Location coordinates ===
+    /** Shop owner's shop location (latitude) */
+    shopLat: text("shop_lat"),
+    /** Shop owner's shop location (longitude) */
+    shopLng: text("shop_lng"),
+    /** Warehouse location (latitude) */
+    warehouseLat: text("warehouse_lat"),
+    /** Warehouse location (longitude) */
+    warehouseLng: text("warehouse_lng"),
+
     /** Whether this seller can receive open order broadcasts */
     canAcceptOpenOrder: boolean("can_accept_open_order").default(false),
     /** Current count of pending OTP confirmations (max 2 for open orders) */
