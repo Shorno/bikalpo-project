@@ -32,7 +32,7 @@ export const link = new RPCLink({
         credentials: "include",
       });
     } catch (error: any) {
-      console.error("orpc fetch failed", "msg:", String(error), "cause:", error?.cause, "url:", url);
+      console.error("orpc fetch failed", { error, url });
       if (error?.cause?.code === "ECONNREFUSED") {
         // During build / prerender when backend is not available, return a graceful 503.
         return new Response(null, {

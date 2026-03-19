@@ -5,7 +5,6 @@ import {
   Boxes,
   ClipboardListIcon,
   ContactIcon,
-  CreditCardIcon,
   DollarSignIcon,
   FileTextIcon,
   GiftIcon,
@@ -163,11 +162,6 @@ const adminNavGroups: NavGroup[] = [
         url: `${ADMIN_BASE}/offers`,
         icon: GiftIcon,
       },
-      {
-        title: "Blog Posts",
-        url: `${ADMIN_BASE}/blog`,
-        icon: FileTextIcon,
-      },
     ],
   },
   {
@@ -187,11 +181,6 @@ const adminNavGroups: NavGroup[] = [
         title: "Warehouse Assignments",
         url: `${ADMIN_BASE}/warehouse-assignments`,
         icon: WarehouseIcon,
-      },
-      {
-        title: "Subscriptions",
-        url: `${ADMIN_BASE}/subscriptions`,
-        icon: CreditCardIcon,
       },
       {
         title: "Salesmen",

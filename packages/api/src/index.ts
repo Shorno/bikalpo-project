@@ -105,53 +105,6 @@ const requireShopOwner = o.middleware(async ({ context, next }) => {
 
 export const shopOwnerProcedure = publicProcedure.use(requireShopOwner);
 
-// Active subscription procedure - requires shop_owner with active trial or paid subscription
-const requireActiveSubscription = o.middleware(async ({ context, next }) => {
-  if (!context.session?.user) {
-    throw new ORPCError("UNAUTHORIZED");
-  }
-  if (context.session.user.role !== "shop_owner") {
-    throw new ORPCError("FORBIDDEN", { message: "Shop owner access required" });
-  }
-
-  // Check subscription status from DB
-  const { db } = await import("@bikalpo-project/db");
-  const { shopSubscription } = await import("@bikalpo-project/db/schema");
-  const { eq, desc } = await import("drizzle-orm");
-
-  const [sub] = await db
-    .select()
-    .from(shopSubscription)
-    .where(eq(shopSubscription.userId, context.session.user.id))
-    .orderBy(desc(shopSubscription.createdAt))
-    .limit(1);
-
-  if (!sub) {
-    throw new ORPCError("FORBIDDEN", {
-      message: "No active subscription. Please subscribe to continue.",
-    });
-  }
-
-  const now = new Date();
-  const isActive =
-    (sub.status === "trial" && sub.trialEnd && new Date(sub.trialEnd) > now) ||
-    (sub.status === "active" && sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) > now);
-
-  if (!isActive) {
-    throw new ORPCError("FORBIDDEN", {
-      message: "Your subscription has expired. Please renew to continue.",
-    });
-  }
-
-  return next({
-    context: {
-      session: context.session,
-    },
-  });
-});
-
-export const activeSubscriptionProcedure = publicProcedure.use(requireActiveSubscription);
-
 // Warehouse procedure - requires authenticated user with warehouse role
 const requireWarehouse = o.middleware(async ({ context, next }) => {
   if (!context.session?.user) {
