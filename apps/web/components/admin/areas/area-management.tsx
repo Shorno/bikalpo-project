@@ -15,6 +15,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { AreaForm } from "@/components/admin/areas/area-form";
+import { AreaSellerAssignment } from "@/components/admin/areas/area-seller-assignment";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -60,6 +61,7 @@ export function AreaManagement() {
     const [formOpen, setFormOpen] = useState(false);
     const [editingArea, setEditingArea] = useState<AreaWithStats | null>(null);
     const [deleteId, setDeleteId] = useState<number | null>(null);
+    const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
 
     // Fetch areas
     const { data: areas = [], isLoading } = useQuery({
@@ -271,6 +273,19 @@ export function AreaManagement() {
                                             <Edit className="h-4 w-4" />
                                         </Button>
                                         <Button
+                                            variant={selectedAreaId === area.id ? "secondary" : "ghost"}
+                                            size="icon"
+                                            className="h-8 w-8"
+                                            onClick={() =>
+                                                setSelectedAreaId(
+                                                    selectedAreaId === area.id ? null : area.id,
+                                                )
+                                            }
+                                            title="Manage Sellers"
+                                        >
+                                            <Users className="h-4 w-4 text-blue-500" />
+                                        </Button>
+                                        <Button
                                             variant="ghost"
                                             size="icon"
                                             className="h-8 w-8"
@@ -415,6 +430,19 @@ export function AreaManagement() {
                                                 <Edit className="h-4 w-4" />
                                             </Button>
                                             <Button
+                                                variant={selectedAreaId === area.id ? "secondary" : "ghost"}
+                                                size="icon"
+                                                className="h-8 w-8"
+                                                onClick={() =>
+                                                    setSelectedAreaId(
+                                                        selectedAreaId === area.id ? null : area.id,
+                                                    )
+                                                }
+                                                title="Manage Sellers"
+                                            >
+                                                <Users className="h-4 w-4 text-blue-500" />
+                                            </Button>
+                                            <Button
                                                 variant="ghost"
                                                 size="icon"
                                                 className="h-8 w-8"
@@ -449,6 +477,14 @@ export function AreaManagement() {
                     </TableBody>
                 </Table>
             </div>
+
+            {/* Seller Assignment Panel */}
+            {selectedAreaId && (
+                <AreaSellerAssignment
+                    areaId={selectedAreaId}
+                    areaName={areas.find((a: AreaWithStats) => a.id === selectedAreaId)?.name || ""}
+                />
+            )}
 
             {/* Form Dialog */}
             <AreaForm
