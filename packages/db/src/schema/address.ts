@@ -23,6 +23,10 @@ export const address = pgTable(
         city: text("city").notNull(),
         area: text("area"),
         postalCode: text("postal_code"),
+        /** Geocoded latitude */
+        lat: text("lat"),
+        /** Geocoded longitude */
+        lng: text("lng"),
         isDefault: boolean("is_default").default(false).notNull(),
         createdAt: timestamp("created_at").defaultNow().notNull(),
         updatedAt: timestamp("updated_at").defaultNow().notNull(),

@@ -65,6 +65,11 @@ import {
   protectedProcedure,
   publicProcedure,
 } from "../index";
+import {
+  findAreasForPoint,
+  findSellersNearPoint,
+  computeOrderAreaFields,
+} from "../services/location-service";
 
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
@@ -92,6 +97,8 @@ const shippingInfoSchema = z.object({
   area: z.string().optional(),
   postalCode: z.string().optional(),
   customerNote: z.string().optional(),
+  lat: z.string().optional(),
+  lng: z.string().optional(),
 });
 
 const addressFormSchema = z.object({
@@ -2026,6 +2033,40 @@ const queries = {
       });
       return { areas };
     }),
+
+  /** Find areas containing a given lat/lng point */
+  getNearbyAreas: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/areas/nearby",
+      tags: ["Customer"],
+      summary: "Find areas containing a location",
+    })
+    .input(z.object({ lat: z.string(), lng: z.string() }))
+    .handler(async ({ input }) => {
+      const lat = parseFloat(input.lat);
+      const lng = parseFloat(input.lng);
+      if (isNaN(lat) || isNaN(lng)) return { areas: [] };
+      const matches = await findAreasForPoint(lat, lng);
+      return { areas: matches };
+    }),
+
+  /** Find sellers reachable from a given lat/lng */
+  getNearbySellers: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/sellers/nearby",
+      tags: ["Customer"],
+      summary: "Find sellers serving a location",
+    })
+    .input(z.object({ lat: z.string(), lng: z.string() }))
+    .handler(async ({ input }) => {
+      const lat = parseFloat(input.lat);
+      const lng = parseFloat(input.lng);
+      if (isNaN(lat) || isNaN(lng)) return { sellers: [] };
+      const sellers = await findSellersNearPoint(lat, lng);
+      return { sellers };
+    }),
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -2380,6 +2421,11 @@ const mutations = {
       );
       const total = subtotal + shippingCost;
 
+      // Compute area fields from consumer location
+      const consumerLat = input.shippingInfo.lat ? parseFloat(input.shippingInfo.lat) : null;
+      const consumerLng = input.shippingInfo.lng ? parseFloat(input.shippingInfo.lng) : null;
+      const areaFields = await computeOrderAreaFields(consumerLat, consumerLng);
+
       // Transaction: create order, deduct stock, clear cart
       const result = await db.transaction(async (tx) => {
         // Auto-tag order type based on user role
@@ -2416,6 +2462,11 @@ const mutations = {
             shippingArea: input.shippingInfo.area,
             shippingPostalCode: input.shippingInfo.postalCode,
             customerNote: input.shippingInfo.customerNote,
+            // Populate area fields from consumer location
+            ...(areaFields.consumerAreaId && { consumerAreaId: areaFields.consumerAreaId }),
+            ...(areaFields.matchedAreaId && { matchedAreaId: areaFields.matchedAreaId }),
+            ...(areaFields.locationLat && { locationLat: areaFields.locationLat }),
+            ...(areaFields.locationLng && { locationLng: areaFields.locationLng }),
           })
           .returning();
 
