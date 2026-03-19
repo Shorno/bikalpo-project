@@ -45,9 +45,9 @@ const formSchema = z.object({
         ),
     description: z.string().optional().default(""),
     parentId: z.number().int().optional().nullable(),
-    centerLat: z.string().optional().nullable(),
-    centerLng: z.string().optional().nullable(),
-    radiusKm: z.string().optional().nullable(),
+    centerLat: z.string().optional().default(""),
+    centerLng: z.string().optional().default(""),
+    radiusKm: z.string().optional().default(""),
     isActive: z.boolean().default(true),
     sortOrder: z.number().int().default(0),
 });
@@ -105,9 +105,6 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
             radiusKm: area?.radiusKm || "",
             isActive: area?.isActive ?? true,
             sortOrder: area?.sortOrder ?? 0,
-        },
-        validators: {
-            onSubmit: formSchema,
         },
         onSubmit: async ({ value }) => {
             setIsSubmitting(true);
@@ -197,12 +194,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                                 {field.state.meta.isTouched &&
                                     field.state.meta.errors.length > 0 && (
                                         <p className="text-sm text-red-500">
-                                            {typeof field.state.meta
-                                                .errors[0] === "string"
-                                                ? field.state.meta.errors[0]
-                                                : field.state.meta.errors[0]
-                                                        ?.message ||
-                                                  "Invalid value"}
+                                            {String(field.state.meta.errors[0])}
                                         </p>
                                     )}
                             </Field>
@@ -228,12 +220,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                                 {field.state.meta.isTouched &&
                                     field.state.meta.errors.length > 0 && (
                                         <p className="text-sm text-red-500">
-                                            {typeof field.state.meta
-                                                .errors[0] === "string"
-                                                ? field.state.meta.errors[0]
-                                                : field.state.meta.errors[0]
-                                                        ?.message ||
-                                                  "Invalid value"}
+                                            {String(field.state.meta.errors[0])}
                                         </p>
                                     )}
                             </Field>

@@ -266,7 +266,7 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <NavGrouped groups={adminNavGroups} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data} />}
+        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data as any} />}
       </SidebarFooter>
     </Sidebar>
   );

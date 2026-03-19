@@ -24,7 +24,7 @@ export default function ShopSettingsPage() {
     );
   }
 
-  const user = session?.user;
+  const user = session?.user as any;
   const status = user?.sellerStatus || "pending";
 
   const statusColors: Record<string, string> = {

@@ -143,12 +143,14 @@ export default function CustomerCheckoutPage() {
         setFormData({
           name: address.recipientName,
           phone: address.phone,
-          email: "", // Email not stored in address
+          email: "",
           address: address.address,
           city: address.city,
           area: address.area || "",
           postalCode: address.postalCode || "",
           customerNote: "",
+          lat: "",
+          lng: "",
         });
       } else {
         setSelectedAddressId(null);
@@ -162,6 +164,8 @@ export default function CustomerCheckoutPage() {
           area: "",
           postalCode: "",
           customerNote: "",
+          lat: "",
+          lng: "",
         });
       }
     },

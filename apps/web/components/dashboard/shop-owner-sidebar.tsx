@@ -117,7 +117,7 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <Link href="/" className="flex items-center gap-2">
                 <StoreIcon className="w-5 h-5 text-emerald-600" />
                 <p className="text-lg font-bold">
-                  {data?.user?.shopName || "My Shop"}
+                  {(data?.user as any)?.shopName || "My Shop"}
                 </p>
               </Link>
             </SidebarMenuButton>
@@ -128,7 +128,7 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <NavGrouped groups={shopOwnerNavGroups} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data} />}
+        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data as any} />}
       </SidebarFooter>
     </Sidebar>
   );

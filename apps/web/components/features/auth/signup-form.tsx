@@ -49,7 +49,7 @@ export function SignupForm() {
             password: value.password,
             name: value.name,
             phoneNumber: value.phoneNumber,
-          },
+          } as any,
           {
             onSuccess: () => {
               toast.success("Account created successfully!");
