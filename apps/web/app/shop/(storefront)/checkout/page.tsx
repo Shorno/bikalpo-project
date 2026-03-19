@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -49,6 +50,21 @@ import {
 } from "@/hooks/use-customer-api";
 import { useCart } from "@/hooks/use-orpc-cart";
 import { authClient } from "@/lib/auth-client";
+
+const AddressPicker = dynamic(
+  () =>
+    import("@/components/shared/address-picker").then(
+      (mod) => mod.AddressPicker,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[200px] bg-muted animate-pulse rounded-lg flex items-center justify-center text-sm text-muted-foreground">
+        Loading map...
+      </div>
+    ),
+  },
+);
 
 const CITIES = [
   "Dhaka",
@@ -96,6 +112,8 @@ export default function CustomerCheckoutPage() {
     area: "",
     postalCode: "",
     customerNote: "",
+    lat: "",
+    lng: "",
   });
 
   // Pre-fill form with user data
@@ -206,6 +224,8 @@ export default function CustomerCheckoutPage() {
           area: formData.area || undefined,
           postalCode: formData.postalCode || undefined,
           customerNote: formData.customerNote || undefined,
+          lat: formData.lat || undefined,
+          lng: formData.lng || undefined,
         },
         paymentMethod,
       });
@@ -487,6 +507,19 @@ export default function CustomerCheckoutPage() {
                         className="h-9 text-sm"
                       />
                     </div>
+                  </div>
+
+                  {/* Location Picker Map */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Pin Your Location (Optional)</Label>
+                    <AddressPicker
+                      lat={formData.lat}
+                      lng={formData.lng}
+                      onLocationChange={(lat, lng) =>
+                        setFormData((prev) => ({ ...prev, lat, lng }))
+                      }
+                      height="200px"
+                    />
                   </div>
                 </CardContent>
               </Card>
