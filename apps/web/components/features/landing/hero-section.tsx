@@ -68,7 +68,7 @@ export function HeroSection() {
           {/* CTAs */}
           <div className="flex flex-wrap gap-4">
             <Link
-              href="/sign-up"
+              href="/b2b/register"
               className="px-8 py-4 rounded-lg text-white font-bold shadow-lg shadow-[#003178]/20 hover:scale-[1.02] transition-transform"
               style={{
                 background: "linear-gradient(135deg, #003178 0%, #0d47a1 100%)",

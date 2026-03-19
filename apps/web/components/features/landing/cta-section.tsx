@@ -23,7 +23,7 @@ export function CtaSection() {
           </p>
           <div className="flex flex-wrap justify-center gap-6 relative z-10">
             <Link
-              href="/sign-up"
+              href="/b2b/register"
               className="px-10 py-4 bg-white text-[#003178] font-bold rounded-lg shadow-xl hover:scale-105 transition-transform"
             >
               Start Free Trial

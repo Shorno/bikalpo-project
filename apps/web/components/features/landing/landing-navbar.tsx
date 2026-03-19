@@ -54,6 +54,15 @@ export function LandingNavbar() {
           >
             Sign In
           </Link>
+          <Link
+            href="/b2b/register"
+            className="hidden sm:inline-flex px-6 py-2.5 text-sm font-bold text-white rounded-lg hover:scale-[1.02] transition-all"
+            style={{
+              background: "linear-gradient(135deg, #003178 0%, #0d47a1 100%)",
+            }}
+          >
+            Register
+          </Link>
           <button
             className="md:hidden p-2 text-gray-600"
             onClick={() => setMobileOpen(!mobileOpen)}
@@ -86,6 +95,16 @@ export function LandingNavbar() {
             onClick={() => setMobileOpen(false)}
           >
             Sign In
+          </Link>
+          <Link
+            href="/b2b/register"
+            className="block text-sm font-bold text-white py-2.5 px-4 rounded-lg text-center"
+            style={{
+              background: "linear-gradient(135deg, #003178 0%, #0d47a1 100%)",
+            }}
+            onClick={() => setMobileOpen(false)}
+          >
+            Register
           </Link>
         </div>
       )}
