@@ -8,6 +8,7 @@ import {
     varchar,
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
+import { area } from "./area";
 
 /**
  * Delivery rules — separate from product variants (e.g. managed in a separate tab).
@@ -19,7 +20,10 @@ export const deliveryRule = pgTable("delivery_rule", {
     name: varchar("name", { length: 150 }), // e.g. "Standard", "Express"
 
     // Optional: scope by area (null = applies to all areas)
-    area: varchar("area", { length: 100 }),
+    area: varchar("area", { length: 100 }), // Legacy text field
+
+    /** FK to area table for proper zone-based delivery pricing */
+    areaId: integer("area_id").references(() => area.id, { onDelete: "set null" }),
 
     // Weight band (kg): rule applies when order total weight is in [minWeightKg, maxWeightKg]
     minWeightKg: decimal("min_weight_kg", { precision: 10, scale: 2 }),

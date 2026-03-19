@@ -37,6 +37,9 @@ import { warehouseRouter } from "./warehouse";
 import { adminLandingRouter } from "./admin-landing";
 import { landingRouter } from "./landing";
 import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
+import { adminAreaRouter } from "./admin-area";
+import { adminSellerAreaRouter } from "./admin-seller-area";
+import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -85,6 +88,9 @@ export const appRouter = {
   adminLanding: adminLandingRouter,
   landing: landingRouter,
   adminWarehouseAssignment: adminWarehouseAssignmentRouter,
+  adminArea: adminAreaRouter,
+  adminSellerArea: adminSellerAreaRouter,
+  adminAreaAnalytics: adminAreaAnalyticsRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

@@ -1,6 +1,7 @@
 import {
   boolean,
   integer,
+  jsonb,
   pgTable,
   serial,
   text,
@@ -25,6 +26,8 @@ export const offer = pgTable("offer", {
   endDate: varchar("end_date", { length: 20 }),
   priority: integer("priority").default(0),
   badge: varchar("badge", { length: 100 }),
+  /** Area IDs this offer targets (null = all areas) */
+  targetAreaIds: jsonb("target_area_ids").$type<number[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
