@@ -478,19 +478,32 @@ export function OrpcCheckout() {
                         setFormData((prev) => ({ ...prev, lat, lng }))
                       }
                       onAddressResolved={(resolved) => {
+                        const addressParts = [
+                          resolved.road,
+                          resolved.area,
+                          resolved.district,
+                        ].filter(Boolean);
+                        const builtAddress =
+                          addressParts.length > 0
+                            ? addressParts.join(", ")
+                            : resolved.displayName.split(",").slice(0, 3).join(",").trim();
+
+                        const nominatimLocation = [
+                          resolved.city,
+                          resolved.district,
+                          resolved.state,
+                        ]
+                          .join(" ")
+                          .toLowerCase();
+                        const matchedCity = CITIES.find((c) =>
+                          nominatimLocation.includes(c.toLowerCase()),
+                        );
+
                         setFormData((prev) => ({
                           ...prev,
-                          address: resolved.road
-                            ? `${resolved.road}${resolved.area ? `, ${resolved.area}` : ""}`
-                            : prev.address,
+                          address: builtAddress || prev.address,
                           area: resolved.area || prev.area,
-                          city:
-                            CITIES.find(
-                              (c) =>
-                                c.toLowerCase() ===
-                                resolved.city.toLowerCase(),
-                            ) ||
-                            prev.city,
+                          city: matchedCity || prev.city,
                           postalCode:
                             resolved.postalCode || prev.postalCode,
                         }));
