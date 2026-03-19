@@ -2262,6 +2262,28 @@ const mutations = {
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
 
+      // ── Shop owner subscription check ──
+      if (context.session.user.role === "shop_owner") {
+        const { shopSubscription } = await import("@bikalpo-project/db/schema");
+        const latestSub = await db
+          .select()
+          .from(shopSubscription)
+          .where(eq(shopSubscription.userId, userId))
+          .orderBy(desc(shopSubscription.createdAt))
+          .limit(1);
+        const sub = latestSub[0];
+        const now = new Date();
+        const isActive =
+          sub &&
+          ((sub.status === "trial" && sub.trialEnd && new Date(sub.trialEnd) > now) ||
+           (sub.status === "active" && sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) > now));
+        if (!isActive) {
+          throw new ORPCError("FORBIDDEN", {
+            message: "Your subscription has expired. Please renew to continue placing orders.",
+          });
+        }
+      }
+
       // Check for active order
       const activeOrder = await db.query.order.findFirst({
         where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,

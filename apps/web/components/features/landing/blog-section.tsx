@@ -1,27 +1,17 @@
-const blogPosts = [
-  {
-    category: "Strategy",
-    title: "How to Scale Your Retail Business in 2024",
-    image:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuA1Q-CRpV6EW8_v0mxFLCmL9yAUUOq5cf84ZlE1oUHhU6NQndwsK-4Va6BdSDGVp5rvAKk9IUHMYiG6jxw8VFfrvH43a1GQn-rojOEvD1v_G2cDu01iKeOwqHRb1ZfeNuo8MDRuuwEOD4nTZShYZ-NavY5Hs1rGLFfRi0MYQdIVtstZmu-zdnwyb8A429naCdY9PBCaQe3D3VZpMJmrsPNGy81GR3E7C7jMkj4sTxUpO73K57qQr1cZdfrEtDerVwV0ulBhPpeiyNk",
-  },
-  {
-    category: "Updates",
-    title: "New: Smart Inventory Predictions are Here",
-    image:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuBx0qTjHeCWJLWE67B584ljBDfA4ujgcJ722DR0yKfcpiSFq7CZWlZ-AqKZbA80IYEOQcfGB2x3cxJC_HUWhzx17DGWFj897TPbNfHszS_NjCyQlyvZQBlRvIqs9mpm5ypnGfJgCqxswKOIUmPIqmaMJfP-VBWniON9gII2NiOUN0DEjMnk-yyRGXkPU0W5TfdGPjQ3wvvy0uLDa9E7bBQtYjMEHHNluXAdbb2_gYWxEbTlZV24-E54hCG3HUxQ7oGh62545wdQd30",
-  },
-  {
-    category: "Guides",
-    title: "Maximizing ROI with Bikalpo SMS Automation",
-    image:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuASuSCd-DAgjWey_of7uUNZ7Brznk9AvrsRr3x-G0bKLcLibO36glniKFV3Bb8LK75-LlPAi3aZP5C9fyzgwOvZo36IzT8dfQArWI_-8uU5V8rptNFzaAmZu7gnz8hX57iMNAYnSjAjRzcNvVc9QSqxM0YdzZeWVwQlDTk_NCnOdpsfvyI2LG-USOiMbsODQe7zTDYjACwzq7Yj1mdyBFTS2E8Uj10XHNXmZBYM_Isswl_sA5qsYMaX_GoKl9DNcrz6HPDhe1uJpo4",
-  },
-];
+"use client";
 
-import Image from "next/image";
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import { orpc } from "@/utils/orpc";
 
 export function BlogSection() {
+  const { data: posts = [] } = useQuery({
+    ...orpc.landing.getBlogPosts.queryOptions({ input: { limit: 3 } }),
+  });
+
+  // Don't render section if no published posts
+  if (posts.length === 0) return null;
+
   return (
     <section className="py-12 sm:py-24" style={{ backgroundColor: "#f3f4f5" }}>
       <div className="max-w-7xl mx-auto px-6">
@@ -37,30 +27,35 @@ export function BlogSection() {
               Business strategies and platform updates.
             </p>
           </div>
-          <a
-            href="#"
+          <Link
+            href="/b2b/blog"
             className="text-[#003178] font-bold flex items-center gap-2 group"
           >
             View All Posts{" "}
             <span className="material-symbols-outlined group-hover:translate-x-1 transition-transform">
               arrow_forward
             </span>
-          </a>
+          </Link>
         </div>
         <div className="grid md:grid-cols-3 gap-8">
-          {blogPosts.map((post) => (
-            <div
-              key={post.title}
-              className="bg-white rounded-xl overflow-hidden group"
+          {posts.map((post) => (
+            <Link
+              key={post.id}
+              href={`/b2b/blog/${post.slug}`}
+              className="bg-white rounded-xl overflow-hidden group block"
             >
-              <div className="h-48 overflow-hidden">
-                <Image
-                  alt={post.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  width={400}
-                  height={192}
-                  src={post.image}
-                />
+              <div className="h-48 overflow-hidden bg-gray-100">
+                {post.image && post.image.startsWith("http") ? (
+                  <img
+                    alt={post.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    src={post.image}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400 text-4xl font-bold">
+                    📝
+                  </div>
+                )}
               </div>
               <div className="p-6">
                 <span className="text-xs font-bold text-[#003178] uppercase tracking-widest mb-3 block">
@@ -68,23 +63,23 @@ export function BlogSection() {
                 </span>
                 <h4
                   className="text-lg font-bold mb-4 line-clamp-2"
-                  style={{
-                    fontFamily: "'Manrope', sans-serif",
-                  }}
+                  style={{ fontFamily: "'Manrope', sans-serif" }}
                 >
                   {post.title}
                 </h4>
-                <a
-                  href="#"
-                  className="text-sm font-bold flex items-center gap-2 hover:text-[#003178] transition-colors"
-                >
+                {post.excerpt && (
+                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+                    {post.excerpt}
+                  </p>
+                )}
+                <span className="text-sm font-bold flex items-center gap-2 hover:text-[#003178] transition-colors">
                   Read More{" "}
                   <span className="material-symbols-outlined text-sm">
                     chevron_right
                   </span>
-                </a>
+                </span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

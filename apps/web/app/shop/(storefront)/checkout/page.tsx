@@ -215,12 +215,8 @@ export default function CustomerCheckoutPage() {
         clearCart();
         router.push(`/order-confirmation/${result.order.orderNumber}`);
       }
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Something went wrong. Please try again.";
-      toast.error(message);
+    } catch {
+      // Error toast is already shown by usePlaceOrder's onError handler
     }
   };
 

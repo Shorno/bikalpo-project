@@ -41,7 +41,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { shopOwnerProcedure } from "../index";
+import { shopOwnerProcedure, activeSubscriptionProcedure } from "../index";
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -376,7 +376,7 @@ const mutations = {
      * Update retail selling price for a product in the shop owner's inventory.
      * Validates that the price meets the minimum margin requirement.
      */
-    updateRetailPrice: shopOwnerProcedure
+    updateRetailPrice: activeSubscriptionProcedure
         .route({
             method: "POST",
             path: "/shop-owner/update-price",
@@ -550,14 +550,31 @@ const orderQueries = {
         .handler(async ({ context }) => {
             const userId = context.session.user.id;
 
-            // Total B2B orders placed
-            const [orderStats] = await db
+            // Total orders count (all non-cancelled)
+            const [orderCountStats] = await db
                 .select({
                     totalOrders: count(order.id),
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, userId),
+                        sql`${order.status} != 'cancelled'`,
+                    ),
+                );
+
+            // Total spent (only delivered orders)
+            const [spentStats] = await db
+                .select({
                     totalSpent: sum(order.total),
                 })
                 .from(order)
-                .where(eq(order.userId, userId));
+                .where(
+                    and(
+                        eq(order.userId, userId),
+                        eq(order.status, "delivered"),
+                    ),
+                );
 
             // Pending orders
             const [pendingStats] = await db
@@ -596,8 +613,8 @@ const orderQueries = {
                 );
 
             return {
-                totalOrders: orderStats?.totalOrders || 0,
-                totalSpent: Number(orderStats?.totalSpent || 0),
+                totalOrders: orderCountStats?.totalOrders || 0,
+                totalSpent: Number(spentStats?.totalSpent || 0),
                 pendingOrders: pendingStats?.count || 0,
                 deliveredOrders: deliveredStats?.count || 0,
                 retailProducts: inventoryStats?.totalProducts || 0,
@@ -707,7 +724,7 @@ const incomingOrderQueries = {
         }),
 
     /** Update status of an incoming B2C order (confirm / cancel) */
-    updateIncomingOrderStatus: shopOwnerProcedure
+    updateIncomingOrderStatus: activeSubscriptionProcedure
         .route({
             method: "POST",
             path: "/shop-owner/incoming-orders/update-status",
@@ -766,7 +783,7 @@ const warehouseOrderQueries = {
      * Place an order to a warehouse.
      * Creates order + items, deducts warehouse inventory.
      */
-    placeWarehouseOrder: shopOwnerProcedure
+    placeWarehouseOrder: activeSubscriptionProcedure
         .input(
             z.object({
                 warehouseSlug: z.string(),
