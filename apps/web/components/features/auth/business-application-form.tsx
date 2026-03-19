@@ -31,6 +31,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { sellerApplicationSchema } from "@/schema/auth.schema";
 import { getPublicIdFromUrl } from "@/utils/getPublicIdFromUrl";
+import { fileToDataUrl } from "@/lib/cloudinary";
 import { client } from "@/utils/orpc";
 
 function getErrorMessage(error: unknown): string {
@@ -89,8 +90,9 @@ function DocumentUploadField({
       }
       setIsUploading(true);
       try {
+        const fileDataUrl = await fileToDataUrl(file);
         const result = await client.cloudinary.upload({
-          file,
+          file: fileDataUrl,
           folder: "seller-documents",
         });
         if (result.success) {

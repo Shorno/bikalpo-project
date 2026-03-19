@@ -16,6 +16,7 @@ const topNavLinks = [
   { label: "RAMADAN SPECIAL", href: "/products?tag=ramadan" },
   { label: "GREAT DEALS", href: "/products?sort=discount" },
   { label: "BUY & SAVE MORE", href: "/products?tag=bundle" },
+  { label: "TO-LET", href: "/to-let" },
   { label: "OUR BRANDS", href: "/products?view=brands" },
 ];
 

@@ -158,6 +158,11 @@ const adminNavGroups: NavGroup[] = [
         icon: TagIcon,
       },
       {
+        title: "To-Let Listings",
+        url: `${ADMIN_BASE}/to-let`,
+        icon: StoreIcon,
+      },
+      {
         title: "Offers",
         url: `${ADMIN_BASE}/offers`,
         icon: GiftIcon,

@@ -37,6 +37,7 @@ import { warehouseRouter } from "./warehouse";
 import { adminLandingRouter } from "./admin-landing";
 import { landingRouter } from "./landing";
 import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
+import { adminToLetRouter, toLetRouter } from "./tolet";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -84,6 +85,8 @@ export const appRouter = {
   warehouse: warehouseRouter,
   adminLanding: adminLandingRouter,
   landing: landingRouter,
+  toLet: toLetRouter,
+  adminToLet: adminToLetRouter,
   adminWarehouseAssignment: adminWarehouseAssignmentRouter,
 };
 export type AppRouter = typeof appRouter;

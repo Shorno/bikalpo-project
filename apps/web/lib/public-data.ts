@@ -102,6 +102,18 @@ export async function getSubcategoriesByCategory(
   return result.subcategories ?? [];
 }
 
+export async function getToLetListings(revalidate = 600) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.toLet.getAll();
+  return result ?? [];
+}
+
+export async function getToLetById(id: number, revalidate = 600) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.toLet.getById({ id });
+  return result ?? null;
+}
+
 export async function getProductBySlug(slug: string, revalidate = 300) {
   const client = getPublicOrpcClient(revalidate);
 
