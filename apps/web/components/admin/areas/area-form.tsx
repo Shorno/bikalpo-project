@@ -2,6 +2,7 @@
 
 import { useForm } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -28,6 +29,11 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { client } from "@/utils/orpc";
 
+const AreaPolygonEditor = dynamic(
+    () => import("@/components/admin/areas/area-polygon-editor"),
+    { ssr: false, loading: () => <div className="h-[350px] bg-muted animate-pulse rounded-lg" /> },
+);
+
 const formSchema = z.object({
     name: z.string().min(2, "Name must be at least 2 characters"),
     slug: z
@@ -53,6 +59,7 @@ interface AreaFormProps {
         slug: string;
         description: string | null;
         parentId: number | null;
+        polygon: number[][][] | null;
         centerLat: string | null;
         centerLng: string | null;
         radiusKm: string | null;
@@ -77,6 +84,7 @@ function generateSlug(name: string): string {
 
 export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [polygonCoords, setPolygonCoords] = useState<number[][][] | null>(area?.polygon ?? null);
     const isEditing = !!area;
 
     // Fetch parent area options
@@ -109,6 +117,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                     slug: value.slug,
                     description: value.description || undefined,
                     parentId: value.parentId || undefined,
+                    polygon: polygonCoords || undefined,
                     centerLat: value.centerLat || undefined,
                     centerLng: value.centerLng || undefined,
                     radiusKm: value.radiusKm || undefined,
@@ -144,7 +153,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>
                         {isEditing ? "Edit Area" : "New Area"}
@@ -299,17 +308,29 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                         )}
                     </form.Field>
 
-                    {/* Location - Center Point + Radius */}
+                    {/* Map + Location */}
                     <div className="border rounded-lg p-4 space-y-3">
                         <h3 className="text-sm font-medium text-muted-foreground">
-                            Location (Optional)
+                            Area Boundary & Location
                         </h3>
-                        <div className="grid grid-cols-2 gap-3">
+                        <AreaPolygonEditor
+                            polygon={polygonCoords}
+                            centerLat={form.getFieldValue("centerLat")}
+                            centerLng={form.getFieldValue("centerLng")}
+                            radiusKm={form.getFieldValue("radiusKm")}
+                            onPolygonChange={(coords) => setPolygonCoords(coords)}
+                            onCenterChange={(lat, lng) => {
+                                form.setFieldValue("centerLat", lat);
+                                form.setFieldValue("centerLng", lng);
+                            }}
+                            height="350px"
+                        />
+                        <div className="grid grid-cols-3 gap-3">
                             <form.Field name="centerLat">
                                 {(field) => (
                                     <Field>
                                         <FieldLabel htmlFor={field.name}>
-                                            Center Latitude
+                                            Center Lat
                                         </FieldLabel>
                                         <Input
                                             id={field.name}
@@ -330,7 +351,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                                 {(field) => (
                                     <Field>
                                         <FieldLabel htmlFor={field.name}>
-                                            Center Longitude
+                                            Center Lng
                                         </FieldLabel>
                                         <Input
                                             id={field.name}
@@ -347,26 +368,26 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                                     </Field>
                                 )}
                             </form.Field>
+                            <form.Field name="radiusKm">
+                                {(field) => (
+                                    <Field>
+                                        <FieldLabel htmlFor={field.name}>
+                                            Radius (km)
+                                        </FieldLabel>
+                                        <Input
+                                            id={field.name}
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={field.state.value}
+                                            onChange={(e) =>
+                                                field.handleChange(e.target.value)
+                                            }
+                                            placeholder="5"
+                                        />
+                                    </Field>
+                                )}
+                            </form.Field>
                         </div>
-                        <form.Field name="radiusKm">
-                            {(field) => (
-                                <Field>
-                                    <FieldLabel htmlFor={field.name}>
-                                        Radius (km)
-                                    </FieldLabel>
-                                    <Input
-                                        id={field.name}
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={field.state.value}
-                                        onChange={(e) =>
-                                            field.handleChange(e.target.value)
-                                        }
-                                        placeholder="5"
-                                    />
-                                </Field>
-                            )}
-                        </form.Field>
                     </div>
 
                     {/* Active + Sort Order */}
