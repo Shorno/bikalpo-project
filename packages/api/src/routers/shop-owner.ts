@@ -21,6 +21,8 @@ import {
     order,
     orderItem,
     user,
+    area,
+    sellerAreaMapping,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -42,6 +44,10 @@ import {
 import { z } from "zod";
 
 import { shopOwnerProcedure } from "../index";
+import {
+    isSellerAuthorizedForArea,
+    calculateSellerDistance,
+} from "../services/location-service";
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -365,6 +371,45 @@ const managementQueries = {
 
             return { items };
         }),
+
+    /**
+     * Get areas assigned to this shop owner.
+     */
+    getMyAssignedAreas: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/my-areas",
+            tags: ["Shop Owner"],
+            summary: "Get areas assigned to this shop owner",
+        })
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const mappings = await db
+                .select({
+                    id: sellerAreaMapping.id,
+                    areaId: sellerAreaMapping.areaId,
+                    isActive: sellerAreaMapping.isActive,
+                    overrideRadiusKm: sellerAreaMapping.overrideRadiusKm,
+                    areaName: area.name,
+                    areaSlug: area.slug,
+                    areaDescription: area.description,
+                    areaCenterLat: area.centerLat,
+                    areaCenterLng: area.centerLng,
+                    areaRadiusKm: area.radiusKm,
+                })
+                .from(sellerAreaMapping)
+                .innerJoin(area, eq(sellerAreaMapping.areaId, area.id))
+                .where(
+                    and(
+                        eq(sellerAreaMapping.sellerId, userId),
+                        eq(sellerAreaMapping.isActive, true),
+                        eq(area.isActive, true),
+                    ),
+                );
+
+            return { areas: mappings };
+        }),
 };
 
 // ────────────────────────────────────────────────────────────────
@@ -658,6 +703,9 @@ const incomingOrderQueries = {
                         shippingCity: order.shippingCity,
                         shippingArea: order.shippingArea,
                         customerNote: order.customerNote,
+                        locationLat: order.locationLat,
+                        locationLng: order.locationLng,
+                        consumerAreaId: order.consumerAreaId,
                         createdAt: order.createdAt,
                         customerId: order.userId,
                         customerName: user.name,
