@@ -477,6 +477,24 @@ export function OrpcCheckout() {
                       onLocationChange={(lat, lng) =>
                         setFormData((prev) => ({ ...prev, lat, lng }))
                       }
+                      onAddressResolved={(resolved) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          address: resolved.road
+                            ? `${resolved.road}${resolved.area ? `, ${resolved.area}` : ""}`
+                            : prev.address,
+                          area: resolved.area || prev.area,
+                          city:
+                            CITIES.find(
+                              (c) =>
+                                c.toLowerCase() ===
+                                resolved.city.toLowerCase(),
+                            ) ||
+                            prev.city,
+                          postalCode:
+                            resolved.postalCode || prev.postalCode,
+                        }));
+                      }}
                       height="200px"
                     />
                   </div>

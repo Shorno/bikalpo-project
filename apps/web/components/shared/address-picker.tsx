@@ -23,6 +23,24 @@ L.Icon.Default.mergeOptions({
         "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+/** Resolved address from reverse geocoding */
+export interface ResolvedAddress {
+    /** Full formatted address */
+    displayName: string;
+    /** Road / house number */
+    road: string;
+    /** Neighbourhood / suburb / area */
+    area: string;
+    /** City / town */
+    city: string;
+    /** Postal code */
+    postalCode: string;
+    /** District */
+    district: string;
+    /** State / division */
+    state: string;
+}
+
 interface AddressPickerProps {
     /** Current lat value (string) */
     lat?: string | null;
@@ -30,6 +48,8 @@ interface AddressPickerProps {
     lng?: string | null;
     /** Called when user picks a location on the map */
     onLocationChange: (lat: string, lng: string) => void;
+    /** Called when reverse geocoding resolves an address from the pin */
+    onAddressResolved?: (address: ResolvedAddress) => void;
     /** Optional height for the map container */
     height?: string;
     /** Whether the picker is disabled */
@@ -65,17 +85,63 @@ function FlyToLocation({ position }: { position: [number, number] | null }) {
     return null;
 }
 
+/** Reverse geocode using OSM Nominatim (free, no API key) */
+async function reverseGeocode(
+    lat: number,
+    lng: number,
+): Promise<ResolvedAddress | null> {
+    try {
+        const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1&accept-language=en`,
+            {
+                headers: {
+                    "User-Agent": "BikalpoApp/1.0",
+                },
+            },
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        const addr = data.address || {};
+
+        return {
+            displayName: data.display_name || "",
+            road: [addr.house_number, addr.road].filter(Boolean).join(" "),
+            area:
+                addr.neighbourhood ||
+                addr.suburb ||
+                addr.village ||
+                addr.hamlet ||
+                "",
+            city:
+                addr.city ||
+                addr.town ||
+                addr.county ||
+                addr.state_district ||
+                "",
+            postalCode: addr.postcode || "",
+            district: addr.state_district || addr.county || "",
+            state: addr.state || "",
+        };
+    } catch (err) {
+        console.error("Reverse geocoding failed:", err);
+        return null;
+    }
+}
+
 export function AddressPicker({
     lat,
     lng,
     onLocationChange,
+    onAddressResolved,
     height = "250px",
     disabled = false,
 }: AddressPickerProps) {
     const [isLocating, setIsLocating] = useState(false);
-    const [markerPosition, setMarkerPosition] = useState<[number, number] | null>(
-        null,
-    );
+    const [isResolving, setIsResolving] = useState(false);
+    const [markerPosition, setMarkerPosition] = useState<
+        [number, number] | null
+    >(null);
+    const [addressLabel, setAddressLabel] = useState<string>("");
     const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null);
 
     // Initialize marker from props
@@ -89,13 +155,31 @@ export function AddressPicker({
         }
     }, [lat, lng]);
 
-    const handleMapClick = useCallback(
-        (clickLat: number, clickLng: number) => {
+    /** Handle a location pick — update coords and reverse geocode */
+    const handleLocationPick = useCallback(
+        async (pickLat: number, pickLng: number) => {
             if (disabled) return;
-            setMarkerPosition([clickLat, clickLng]);
-            onLocationChange(clickLat.toFixed(6), clickLng.toFixed(6));
+            setMarkerPosition([pickLat, pickLng]);
+            onLocationChange(pickLat.toFixed(6), pickLng.toFixed(6));
+
+            // Reverse geocode to auto-fill address
+            setIsResolving(true);
+            setAddressLabel("Resolving address...");
+            const resolved = await reverseGeocode(pickLat, pickLng);
+            setIsResolving(false);
+
+            if (resolved) {
+                setAddressLabel(
+                    resolved.road || resolved.area || resolved.displayName,
+                );
+                onAddressResolved?.(resolved);
+            } else {
+                setAddressLabel(
+                    `${pickLat.toFixed(4)}, ${pickLng.toFixed(4)}`,
+                );
+            }
         },
-        [disabled, onLocationChange],
+        [disabled, onLocationChange, onAddressResolved],
     );
 
     const handleGeolocation = useCallback(() => {
@@ -110,8 +194,9 @@ export function AddressPicker({
                 const { latitude, longitude } = position.coords;
                 setMarkerPosition([latitude, longitude]);
                 setFlyTarget([latitude, longitude]);
-                onLocationChange(latitude.toFixed(6), longitude.toFixed(6));
                 setIsLocating(false);
+                // Trigger location pick → which will reverse geocode
+                handleLocationPick(latitude, longitude);
             },
             (error) => {
                 console.error("Geolocation error:", error);
@@ -122,26 +207,29 @@ export function AddressPicker({
             },
             { enableHighAccuracy: true, timeout: 10000 },
         );
-    }, [onLocationChange]);
+    }, [handleLocationPick]);
 
     const center = markerPosition || DEFAULT_CENTER;
 
     return (
         <div className="space-y-2">
             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <MapPin className="h-3.5 w-3.5" />
-                    <span>
-                        {markerPosition
-                            ? `${markerPosition[0].toFixed(4)}, ${markerPosition[1].toFixed(4)}`
-                            : "Tap the map or use GPS to set your location"}
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground min-w-0">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                        {isResolving
+                            ? "Resolving address..."
+                            : addressLabel ||
+                              (markerPosition
+                                  ? `${markerPosition[0].toFixed(4)}, ${markerPosition[1].toFixed(4)}`
+                                  : "Tap the map or use GPS to set your location")}
                     </span>
                 </div>
                 <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 text-xs gap-1"
+                    className="h-7 text-xs gap-1 shrink-0 ml-2"
                     onClick={handleGeolocation}
                     disabled={isLocating || disabled}
                 >
@@ -170,7 +258,11 @@ export function AddressPicker({
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     />
                     {!disabled && (
-                        <MapClickHandler onLocationChange={handleMapClick} />
+                        <MapClickHandler
+                            onLocationChange={(cLat, cLng) =>
+                                handleLocationPick(cLat, cLng)
+                            }
+                        />
                     )}
                     <FlyToLocation position={flyTarget} />
                     {markerPosition && <Marker position={markerPosition} />}
