@@ -11,6 +11,7 @@ import {
   HeadphonesIcon,
   LayoutDashboardIcon,
   ListIcon,
+  MapPinIcon,
   MegaphoneIcon,
   PackageIcon,
   ReceiptIcon,
@@ -117,6 +118,11 @@ const adminNavGroups: NavGroup[] = [
   {
     label: "Operations",
     items: [
+      {
+        title: "Areas",
+        url: `${ADMIN_BASE}/areas`,
+        icon: MapPinIcon,
+      },
       {
         title: "Delivery",
         url: `${ADMIN_BASE}/delivery`,
