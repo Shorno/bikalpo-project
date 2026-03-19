@@ -2,6 +2,7 @@
 
 import {
   ActivityIcon,
+  BarChart3,
   Boxes,
   ClipboardListIcon,
   ContactIcon,
@@ -122,6 +123,11 @@ const adminNavGroups: NavGroup[] = [
         title: "Areas",
         url: `${ADMIN_BASE}/areas`,
         icon: MapPinIcon,
+      },
+      {
+        title: "Area Analytics",
+        url: `${ADMIN_BASE}/area-analytics`,
+        icon: BarChart3,
       },
       {
         title: "Delivery",
