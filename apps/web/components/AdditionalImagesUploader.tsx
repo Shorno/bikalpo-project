@@ -10,6 +10,7 @@ import {
 import { CldImage } from "next-cloudinary";
 import React, { useCallback, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { fileToDataUrl } from "@/lib/cloudinary";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getPublicIdFromUrl } from "@/utils/getPublicIdFromUrl";
@@ -77,7 +78,11 @@ export default function AdditionalImagesUploader({
       startTransition(async () => {
         try {
           const uploadPromises = files.map(async (file) => {
-            return await client.cloudinary.upload({ file, folder });
+            const fileDataUrl = await fileToDataUrl(file);
+            return await client.cloudinary.upload({
+              file: fileDataUrl,
+              folder,
+            });
           });
 
           const results = await Promise.all(uploadPromises);

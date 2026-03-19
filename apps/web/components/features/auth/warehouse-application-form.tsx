@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { getPublicIdFromUrl } from "@/utils/getPublicIdFromUrl";
+import { fileToDataUrl } from "@/lib/cloudinary";
 import { client } from "@/utils/orpc";
 
 function _getErrorMessage(error: unknown): string {
@@ -84,8 +85,9 @@ function DocumentUploadField({
       }
       setIsUploading(true);
       try {
+        const fileDataUrl = await fileToDataUrl(file);
         const result = await client.cloudinary.upload({
-          file,
+          file: fileDataUrl,
           folder: "warehouse-documents",
         });
         if (result.success) {
