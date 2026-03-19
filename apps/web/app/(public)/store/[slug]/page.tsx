@@ -15,6 +15,7 @@ import { use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DeliveryAreaInfo } from "@/components/shared/seller-location-info";
 import { useAddToCart } from "@/hooks/use-customer-api";
 import { orpc } from "@/utils/orpc";
 
@@ -101,6 +102,15 @@ export default function ShopStorePage({
               )}
             </div>
           </div>
+        </div>
+
+        {/* Delivery Area Info */}
+        <div className="mt-6 pt-4 border-t border-emerald-100">
+          <DeliveryAreaInfo
+            shopLat={(shop as any).shopLat}
+            shopLng={(shop as any).shopLng}
+            shopAddress={shop.shopAddress}
+          />
         </div>
       </div>
 
