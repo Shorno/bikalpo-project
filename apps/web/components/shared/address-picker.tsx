@@ -154,6 +154,22 @@ export function AddressPicker({
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
+
+                // Bangladesh bounding box check
+                const inBangladesh =
+                    latitude >= 20.5 &&
+                    latitude <= 26.7 &&
+                    longitude >= 87.9 &&
+                    longitude <= 92.7;
+
+                if (!inBangladesh) {
+                    alert(
+                        "GPS returned a location outside Bangladesh. This can happen with VPN/proxy. Please click the map to pin your location instead.",
+                    );
+                    setIsLocating(false);
+                    return;
+                }
+
                 setMarkerPosition([latitude, longitude]);
                 setFlyTarget([latitude, longitude]);
                 setIsLocating(false);
