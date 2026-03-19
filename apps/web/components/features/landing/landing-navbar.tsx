@@ -48,12 +48,12 @@ export function LandingNavbar() {
             </span>
             <span className="text-sm font-medium text-gray-600">EN</span>
           </div>
-          <Link
-            href="/login"
+          <a
+            href={`${process.env.NEXT_PUBLIC_AUTH_URL ? process.env.NEXT_PUBLIC_AUTH_URL.replace(':3000', ':3001') : 'http://bikalpo.localhost:3001'}/login`}
             className="hidden sm:inline-flex px-6 py-2.5 text-sm font-semibold text-[#003178] border border-[#003178]/20 rounded-lg hover:bg-[#003178]/5 transition-all"
           >
             Sign In
-          </Link>
+          </a>
           <button
             className="md:hidden p-2 text-gray-600"
             onClick={() => setMobileOpen(!mobileOpen)}
@@ -80,13 +80,13 @@ export function LandingNavbar() {
               {link.label}
             </Link>
           ))}
-          <Link
-            href="/login"
+          <a
+            href={`${process.env.NEXT_PUBLIC_AUTH_URL ? process.env.NEXT_PUBLIC_AUTH_URL.replace(':3000', ':3001') : 'http://bikalpo.localhost:3001'}/login`}
             className="block text-sm font-semibold text-[#003178] py-2 mt-3 border-t border-gray-100 pt-4"
             onClick={() => setMobileOpen(false)}
           >
             Sign In
-          </Link>
+          </a>
         </div>
       )}
     </nav>

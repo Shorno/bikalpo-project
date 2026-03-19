@@ -2,6 +2,7 @@
 
 import {
   BoxesIcon,
+  CreditCardIcon,
   DollarSignIcon,
   HeadphonesIcon,
   InboxIcon,
@@ -83,6 +84,11 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Shop Settings",
     items: [
+      {
+        title: "Subscription",
+        url: `${SHOP_DASHBOARD_BASE}/subscription`,
+        icon: CreditCardIcon,
+      },
       {
         title: "Shop Profile",
         url: `${SHOP_DASHBOARD_BASE}/settings`,

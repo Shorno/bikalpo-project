@@ -13,6 +13,7 @@ import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, adminProcedure } from "../index";
+import { createTrialSubscription } from "./subscription";
 
 // ════════════════════════════════════════════════════════════════
 // HELPERS
@@ -279,6 +280,9 @@ export const sellerApplicationRouter = {
                     ownerName: application.ownerName,
                 })
                 .where(eq(user.id, application.userId));
+
+            // Auto-create trial subscription for the new shop owner
+            await createTrialSubscription(application.userId);
 
             return { success: true, isSeller };
         }),

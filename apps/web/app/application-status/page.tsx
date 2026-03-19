@@ -157,10 +157,17 @@ export default function ApplicationStatusPage() {
             )}
             {application.status === "approved" && (
               <Button
-                asChild
                 className="w-full bg-green-600 hover:bg-green-700"
+                onClick={() => {
+                  // Update the role cookie so proxy routes correctly
+                  const domain = window.location.hostname.replace(/^(shop|b2b)\./, "");
+                  document.cookie = `user-role=shop_owner; path=/; domain=.${domain}; max-age=${60 * 60 * 24 * 30}`;
+                  // Redirect to shop subdomain
+                  const shopUrl = process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || `${window.location.protocol}//shop.${domain}:${window.location.port}`;
+                  window.location.href = `${shopUrl}/dashboard`;
+                }}
               >
-                <Link href="/dashboard">Go to Seller Dashboard</Link>
+                Go to Seller Dashboard
               </Button>
             )}
             {application.status === "rejected" && (
