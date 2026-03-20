@@ -47,6 +47,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { client } from "@/utils/orpc";
+import { fileToDataUrl } from "@/lib/cloudinary";
 import { $createImageNode } from "./image-node";
 
 type BlockType =
@@ -197,8 +198,9 @@ export default function RichTextToolbar() {
 
     startUploadTransition(async () => {
       try {
+        const fileDataUrl = await fileToDataUrl(file);
         const result = await client.cloudinary.upload({
-          file,
+          file: fileDataUrl,
           folder: "product-descriptions",
         });
 

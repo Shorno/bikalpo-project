@@ -102,6 +102,23 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      // === Location coordinates ===
+      shopLat: {
+        type: "string",
+        required: false,
+      },
+      shopLng: {
+        type: "string",
+        required: false,
+      },
+      warehouseLat: {
+        type: "string",
+        required: false,
+      },
+      warehouseLng: {
+        type: "string",
+        required: false,
+      },
     },
   },
   advanced: {

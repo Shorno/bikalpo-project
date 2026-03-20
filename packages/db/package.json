@@ -8,6 +8,9 @@
     "./schema": {
       "default": "./src/schema/index.ts"
     },
+    "./spatial-helpers": {
+      "default": "./src/spatial-helpers.ts"
+    },
     "./*": {
       "default": "./src/*.ts"
     }

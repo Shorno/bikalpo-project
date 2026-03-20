@@ -4,6 +4,7 @@ import { AlertCircleIcon, ImageUpIcon, LoaderIcon, XIcon } from "lucide-react";
 import { CldImage } from "next-cloudinary";
 import React, { useCallback, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { fileToDataUrl } from "@/lib/cloudinary";
 import { getPublicIdFromUrl } from "@/utils/getPublicIdFromUrl";
 import { client } from "@/utils/orpc";
 
@@ -49,7 +50,11 @@ export default function ImageUploader({
 
       startTransition(async () => {
         try {
-          const result = await client.cloudinary.upload({ file, folder });
+          const fileDataUrl = await fileToDataUrl(file);
+          const result = await client.cloudinary.upload({
+            file: fileDataUrl,
+            folder,
+          });
 
           if (result.success) {
             setPreviewUrl(result.url);

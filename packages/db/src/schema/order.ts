@@ -60,6 +60,16 @@ export const order = pgTable(
         // For warehouse orders: which warehouse this order is placed with
         warehouseId: text("warehouse_id").references(() => user.id, { onDelete: "set null" }),
 
+        // === Area & Location tracking ===
+        /** The area the consumer placed the order from */
+        consumerAreaId: integer("consumer_area_id"),
+        /** The area that was matched to serve the order */
+        matchedAreaId: integer("matched_area_id"),
+        /** Consumer's latitude at order time */
+        locationLat: text("location_lat"),
+        /** Consumer's longitude at order time */
+        locationLng: text("location_lng"),
+
         // Order totals
         subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
         shippingCost: decimal("shipping_cost", { precision: 10, scale: 2 })
