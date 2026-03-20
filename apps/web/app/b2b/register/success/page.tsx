@@ -141,19 +141,19 @@ export default function RegisterSuccessPage() {
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
-            href="/b2b"
-            className="px-6 py-3 rounded-lg border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-all"
-          >
-            Back to Home
-          </Link>
-          <Link
-            href="/b2b/contact"
+            href="/b2b/status"
             className="px-6 py-3 rounded-lg text-white font-bold shadow-lg shadow-[#003178]/20 hover:scale-[1.01] transition-all"
             style={{
               background: "linear-gradient(135deg, #003178 0%, #0d47a1 100%)",
             }}
           >
-            Contact Support
+            Check Application Status
+          </Link>
+          <Link
+            href="/b2b"
+            className="px-6 py-3 rounded-lg border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-all"
+          >
+            Back to Home
           </Link>
         </div>
 

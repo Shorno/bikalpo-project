@@ -42,14 +42,8 @@ export function LandingNavbar() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="material-symbols-outlined text-gray-500 text-xl">
-              language
-            </span>
-            <span className="text-sm font-medium text-gray-600">EN</span>
-          </div>
           <Link
-            href="/login"
+            href="/b2b/login"
             className="hidden sm:inline-flex px-6 py-2.5 text-sm font-semibold text-[#003178] border border-[#003178]/20 rounded-lg hover:bg-[#003178]/5 transition-all"
           >
             Sign In
@@ -90,7 +84,7 @@ export function LandingNavbar() {
             </Link>
           ))}
           <Link
-            href="/login"
+            href="/b2b/login"
             className="block text-sm font-semibold text-[#003178] py-2 mt-3 border-t border-gray-100 pt-4"
             onClick={() => setMobileOpen(false)}
           >

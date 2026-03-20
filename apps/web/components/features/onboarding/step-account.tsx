@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { authClient } from "@/lib/auth-client";
+import { client } from "@/utils/orpc";
 
 interface StepAccountProps {
   data: {
@@ -18,31 +20,54 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
   const [otpSent, setOtpSent] = useState(false);
   const [otpValues, setOtpValues] = useState(["", "", "", "", "", ""]);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [otpAutoFilling, setOtpAutoFilling] = useState(false);
+  const [otpError, setOtpError] = useState("");
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const DUMMY_OTP = "123456";
+  const fullPhone = `+880${data.phone.replace(/^0+/, "")}`;
 
-  const handleSendOtp = () => {
+  const handleSendOtp = async () => {
     if (!data.phone || data.phone.length < 11) return;
-    setOtpSent(true);
-    setOtpAutoFilling(true);
+    setIsSending(true);
+    setOtpError("");
 
-    // Auto-fill dummy OTP with staggered animation
-    const otpDigits = DUMMY_OTP.split("");
-    otpDigits.forEach((digit, index) => {
-      setTimeout(() => {
-        setOtpValues((prev) => {
-          const newValues = [...prev];
-          newValues[index] = digit;
-          return newValues;
-        });
-        if (index === otpDigits.length - 1) {
+    try {
+      // Call real Better Auth phone plugin to send OTP
+      await authClient.phoneNumber.sendOtp({ phoneNumber: fullPhone });
+      setOtpSent(true);
+      setOtpAutoFilling(true);
+
+      // Auto-fill: fetch OTP from server and fill the input boxes
+      try {
+        const result = await client.devOtp.get({ phoneNumber: fullPhone });
+        if (result?.code) {
+          const digits = result.code.split("");
+          digits.forEach((digit: string, index: number) => {
+            setTimeout(() => {
+              setOtpValues((prev) => {
+                const newValues = [...prev];
+                newValues[index] = digit;
+                return newValues;
+              });
+              if (index === digits.length - 1) {
+                setOtpAutoFilling(false);
+              }
+            }, 200 * (index + 1) + 1000);
+          });
+        } else {
           setOtpAutoFilling(false);
         }
-      }, 200 * (index + 1) + 1500); // 1.5s delay then stagger
-    });
+      } catch {
+        setOtpAutoFilling(false);
+      }
+    } catch (err: any) {
+      setOtpError(err?.message || "Failed to send OTP");
+      setOtpAutoFilling(false);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleOtpChange = (index: number, value: string) => {
@@ -66,14 +91,31 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
     }
   };
 
-  const handleVerifyOtp = () => {
+  const handleVerifyOtp = async () => {
     const enteredOtp = otpValues.join("");
-    if (enteredOtp === DUMMY_OTP) {
-      setIsVerifying(true);
-      setTimeout(() => {
-        onUpdate({ ...data, otpVerified: true });
+    if (enteredOtp.length !== 6) return;
+
+    setIsVerifying(true);
+    setOtpError("");
+
+    try {
+      // Call real Better Auth phone verify — this creates the user + session
+      const result = await authClient.phoneNumber.verify({
+        phoneNumber: fullPhone,
+        code: enteredOtp,
+      });
+
+      if (result.error) {
+        setOtpError(result.error.message || "Invalid OTP");
         setIsVerifying(false);
-      }, 800);
+        return;
+      }
+
+      onUpdate({ ...data, otpVerified: true });
+      setIsVerifying(false);
+    } catch (err: any) {
+      setOtpError(err?.message || "Verification failed");
+      setIsVerifying(false);
     }
   };
 
@@ -132,10 +174,10 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
             {!data.otpVerified && (
               <button
                 onClick={handleSendOtp}
-                disabled={!data.phone || data.phone.length < 11 || otpAutoFilling}
+                disabled={!data.phone || data.phone.length < 11 || otpAutoFilling || isSending}
                 className="px-4 py-3 bg-[#003178] text-white text-sm font-semibold rounded-lg hover:bg-[#003178]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap"
               >
-                {otpSent ? "Resend" : "Send OTP"}
+                {isSending ? "Sending..." : otpSent ? "Resend" : "Send OTP"}
               </button>
             )}
           </div>
@@ -203,8 +245,13 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
               )}
             </button>
             <p className="text-center text-xs text-gray-400 mt-2">
-              Demo: OTP auto-fills as <strong>123456</strong>
+              Dev mode: OTP auto-fills from server
             </p>
+            {otpError && (
+              <p className="text-center text-xs text-red-500 mt-1 font-medium">
+                {otpError}
+              </p>
+            )}
           </div>
         )}
 
