@@ -313,18 +313,26 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                         <h3 className="text-sm font-medium text-muted-foreground">
                             Area Boundary & Location
                         </h3>
-                        <AreaPolygonEditor
-                            polygon={polygonCoords}
-                            centerLat={form.getFieldValue("centerLat")}
-                            centerLng={form.getFieldValue("centerLng")}
-                            radiusKm={form.getFieldValue("radiusKm")}
-                            onPolygonChange={(coords) => setPolygonCoords(coords)}
-                            onCenterChange={(lat, lng) => {
-                                form.setFieldValue("centerLat", lat);
-                                form.setFieldValue("centerLng", lng);
-                            }}
-                            height="350px"
-                        />
+                        <form.Subscribe selector={(state) => ({
+                            centerLat: state.values.centerLat,
+                            centerLng: state.values.centerLng,
+                            radiusKm: state.values.radiusKm,
+                        })}>
+                            {({ centerLat: lat, centerLng: lng, radiusKm: r }) => (
+                                <AreaPolygonEditor
+                                    polygon={polygonCoords}
+                                    centerLat={lat}
+                                    centerLng={lng}
+                                    radiusKm={r}
+                                    onPolygonChange={(coords) => setPolygonCoords(coords)}
+                                    onCenterChange={(newLat, newLng) => {
+                                        form.setFieldValue("centerLat", newLat);
+                                        form.setFieldValue("centerLng", newLng);
+                                    }}
+                                    height="350px"
+                                />
+                            )}
+                        </form.Subscribe>
                         <div className="grid grid-cols-3 gap-3">
                             <form.Field name="centerLat">
                                 {(field) => (
