@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
+import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 
 const DASHBOARD_PATHS: Record<string, string> = {
   admin: "/dashboard/admin",
@@ -35,6 +36,7 @@ const STAFF_ROLES = ["admin", "salesman", "deliveryman"];
 export function UserDropdown() {
   const { data: session, isPending } = authClient.useSession();
   const [isMounted, setIsMounted] = React.useState(false);
+  const { showLoginModal } = useLoginRequired();
 
   React.useEffect(() => {
     setIsMounted(true);
@@ -51,9 +53,7 @@ export function UserDropdown() {
 
   if (!session) {
     return (
-      <Button asChild>
-        <Link href="/login">Login</Link>
-      </Button>
+      <Button onClick={showLoginModal}>Login</Button>
     );
   }
 
@@ -93,7 +93,7 @@ export function UserDropdown() {
           const mainDomain = currentOrigin
             .replace("://shop.", "://")
             .replace("://b2b.", "://");
-          window.location.href = `${mainDomain}/login`;
+          window.location.href = `${mainDomain}/`;
         },
       },
     });
@@ -202,7 +202,7 @@ export function UserDropdown() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/apply-business" className="cursor-pointer">
+              <Link href="/b2b/register" className="cursor-pointer">
                 <Store className="mr-2 h-4 w-4" />
                 Become a Seller
               </Link>

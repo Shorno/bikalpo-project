@@ -54,6 +54,19 @@ const submitApplicationSchema = z.object({
     shopAddress: z.string().min(5).max(500),
     tradeLicenseNumber: z.string().optional(),
     documents: z.array(z.string()).optional(),
+    // Business profile
+    businessCategory: z.string().optional(),
+    yearsInBusiness: z.string().optional(),
+    monthlyRevenue: z.string().optional(),
+    // Location
+    latitude: z.string().optional(),
+    longitude: z.string().optional(),
+    area: z.string().optional(),
+    district: z.string().optional(),
+    division: z.string().optional(),
+    postCode: z.string().optional(),
+    // Plan
+    selectedPlan: z.string().optional(),
 });
 
 const reviewApplicationSchema = z.object({
@@ -104,6 +117,16 @@ export const sellerApplicationRouter = {
                     shopAddress: input.shopAddress,
                     tradeLicenseNumber: input.tradeLicenseNumber || null,
                     documents: input.documents || [],
+                    businessCategory: input.businessCategory || null,
+                    yearsInBusiness: input.yearsInBusiness || null,
+                    monthlyRevenue: input.monthlyRevenue || null,
+                    latitude: input.latitude || null,
+                    longitude: input.longitude || null,
+                    area: input.area || null,
+                    district: input.district || null,
+                    division: input.division || null,
+                    postCode: input.postCode || null,
+                    selectedPlan: input.selectedPlan || null,
                 })
                 .returning();
 
@@ -122,16 +145,21 @@ export const sellerApplicationRouter = {
         .handler(async ({ context }) => {
             const userId = context.session.user.id;
 
-            const application = await db.query.sellerApplication.findFirst({
+            // Try by userId first
+            let application = await db.query.sellerApplication.findFirst({
                 where: eq(sellerApplication.userId, userId),
                 orderBy: [desc(sellerApplication.createdAt)],
             });
 
-            if (!application) {
-                return null;
+            // Fallback: try by phone number (handles duplicate users from phone auth)
+            if (!application && context.session.user.phoneNumber) {
+                application = await db.query.sellerApplication.findFirst({
+                    where: eq(sellerApplication.phoneNumber, context.session.user.phoneNumber),
+                    orderBy: [desc(sellerApplication.createdAt)],
+                });
             }
 
-            return application;
+            return application || null;
         }),
 
     // ── Admin: Get Application by ID ─────────────────────────────
@@ -277,6 +305,8 @@ export const sellerApplicationRouter = {
                     shopName: application.shopName,
                     shopSlug,
                     ownerName: application.ownerName,
+                    shopLat: application.latitude || undefined,
+                    shopLng: application.longitude || undefined,
                 })
                 .where(eq(user.id, application.userId));
 
@@ -352,6 +382,16 @@ export const sellerApplicationRouter = {
                         shopAddress: input.shopAddress,
                         tradeLicenseNumber: input.tradeLicenseNumber || null,
                         documents: input.documents || [],
+                        businessCategory: input.businessCategory || null,
+                        yearsInBusiness: input.yearsInBusiness || null,
+                        monthlyRevenue: input.monthlyRevenue || null,
+                        latitude: input.latitude || null,
+                        longitude: input.longitude || null,
+                        area: input.area || null,
+                        district: input.district || null,
+                        division: input.division || null,
+                        postCode: input.postCode || null,
+                        selectedPlan: input.selectedPlan || null,
                     })
                     .returning();
                 return application;
@@ -374,6 +414,16 @@ export const sellerApplicationRouter = {
                     shopAddress: input.shopAddress,
                     tradeLicenseNumber: input.tradeLicenseNumber || null,
                     documents: input.documents || [],
+                    businessCategory: input.businessCategory || null,
+                    yearsInBusiness: input.yearsInBusiness || null,
+                    monthlyRevenue: input.monthlyRevenue || null,
+                    latitude: input.latitude || null,
+                    longitude: input.longitude || null,
+                    area: input.area || null,
+                    district: input.district || null,
+                    division: input.division || null,
+                    postCode: input.postCode || null,
+                    selectedPlan: input.selectedPlan || null,
                     status: "pending",
                     adminNotes: null,
                     reviewedBy: null,

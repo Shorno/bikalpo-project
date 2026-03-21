@@ -16,6 +16,19 @@ export const sellerApplication = pgTable(
         businessType: text("business_type").notNull(), // retail | restaurant
         shopAddress: text("shop_address").notNull(),
         tradeLicenseNumber: text("trade_license_number"),
+        // Business profile (from wizard step 2)
+        businessCategory: text("business_category"),
+        yearsInBusiness: text("years_in_business"),
+        monthlyRevenue: text("monthly_revenue"),
+        // Location (from wizard step 3 — Barikoi)
+        latitude: text("latitude"),
+        longitude: text("longitude"),
+        area: text("area"),
+        district: text("district"),
+        division: text("division"),
+        postCode: text("post_code"),
+        // Plan selection (from wizard step 5)
+        selectedPlan: text("selected_plan"),
         // Documents (array of file URLs)
         documents: json("documents").$type<string[]>().default([]),
         // Application status
