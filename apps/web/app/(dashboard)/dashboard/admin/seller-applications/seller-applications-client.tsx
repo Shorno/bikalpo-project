@@ -179,10 +179,7 @@ export function SellerApplicationsClient() {
         </div>
       </TableCell>
       <TableCell>
-        <div>
-          <p className="text-sm">{app.user?.email || "—"}</p>
-          <p className="text-xs text-muted-foreground">{app.phoneNumber}</p>
-        </div>
+        <p className="text-sm font-medium">{app.phoneNumber}</p>
       </TableCell>
       <TableCell className="max-w-[200px]">
         <p className="truncate text-sm" title={app.shopAddress}>

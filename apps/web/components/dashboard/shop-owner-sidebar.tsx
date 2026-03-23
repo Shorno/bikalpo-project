@@ -3,6 +3,7 @@
 import {
   BoxesIcon,
   DollarSignIcon,
+  ExternalLinkIcon,
   HeadphonesIcon,
   InboxIcon,
   LayoutDashboardIcon,
@@ -21,9 +22,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 
@@ -90,7 +88,7 @@ const shopOwnerNavGroups: NavGroup[] = [
       },
       {
         title: "Store Page",
-        url: `${SHOP_DASHBOARD_BASE}/store`,
+        url: `${SHOP_DASHBOARD_BASE}/stores`,
         icon: StoreIcon,
       },
       {
@@ -107,22 +105,25 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:p-1.5!"
-            >
-              <Link href="/" className="flex items-center gap-2">
-                <StoreIcon className="w-5 h-5 text-emerald-600" />
-                <p className="text-lg font-bold">
-                  {data?.user?.shopName || "My Shop"}
-                </p>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarHeader className="p-4">
+        <Link href="/dashboard" className="flex items-center gap-3 group">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-sm">
+            <StoreIcon className="w-5 h-5 text-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold truncate group-hover:text-emerald-600 transition-colors">
+              {data?.user?.shopName || "My Shop"}
+            </p>
+            <p className="text-xs text-muted-foreground">Shop Dashboard</p>
+          </div>
+        </Link>
+        <a
+          href="http://bikalpo.localhost:3001"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1 pl-12"
+        >
+          <ExternalLinkIcon className="w-3 h-3" />
+          bikalpo.com
+        </a>
       </SidebarHeader>
       <SidebarContent className="mt-4 thin-scrollbar">
         <NavGrouped groups={shopOwnerNavGroups} />

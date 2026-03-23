@@ -46,7 +46,7 @@ export default function ShopStorePage({
         <AlertCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
         <p className="text-gray-500 font-medium text-lg">Shop not found</p>
         <Link
-          href="/store"
+          href="/stores"
           className="text-sm text-emerald-600 hover:underline mt-2 inline-block"
         >
           ← Browse all shops
@@ -120,7 +120,7 @@ export default function ShopStorePage({
           Products ({products.length})
         </h2>
         <Link
-          href="/store"
+          href="/stores"
           className="text-sm text-emerald-600 hover:underline"
         >
           ← All shops

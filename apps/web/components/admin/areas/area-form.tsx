@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
@@ -27,6 +26,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { client } from "@/utils/orpc";
+import type { AddressInfo } from "@/components/admin/areas/area-polygon-editor";
 
 const AreaPolygonEditor = dynamic(
     () => import("@/components/admin/areas/area-polygon-editor"),
@@ -84,6 +84,7 @@ function generateSlug(name: string): string {
 export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [polygonCoords, setPolygonCoords] = useState<number[][][] | null>(area?.polygon ?? null);
+    const [resolvedAddress, setResolvedAddress] = useState<AddressInfo | null>(null);
     const isEditing = !!area;
 
     // Fetch parent area options
@@ -152,16 +153,11 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
+            <DialogContent className="sm:max-w-[800px]">
+                <DialogHeader className="pb-2">
                     <DialogTitle>
                         {isEditing ? "Edit Area" : "New Area"}
                     </DialogTitle>
-                    <DialogDescription>
-                        {isEditing
-                            ? "Update the area details below."
-                            : "Define a new service area or zone for seller assignment."}
-                    </DialogDescription>
                 </DialogHeader>
 
                 <form
@@ -169,10 +165,10 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                         e.preventDefault();
                         form.handleSubmit();
                     }}
-                    className="space-y-4"
+                    className="space-y-3"
                 >
                     {/* ── Compact Info Grid ── */}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-2">
                         {/* Name */}
                         <form.Field name="name">
                             {(field) => (
@@ -233,23 +229,6 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                             )}
                         </form.Field>
 
-                        {/* Description */}
-                        <form.Field name="description">
-                            {(field) => (
-                                <Field>
-                                    <FieldLabel htmlFor={field.name} className="text-xs">
-                                        Description
-                                    </FieldLabel>
-                                    <Input
-                                        id={field.name}
-                                        value={field.state.value}
-                                        onChange={(e) => field.handleChange(e.target.value)}
-                                        placeholder="Brief description"
-                                        className="h-9"
-                                    />
-                                </Field>
-                            )}
-                        </form.Field>
 
                         {/* Parent Area */}
                         <form.Field name="parentId">
@@ -284,7 +263,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                     </div>
 
                     {/* ── Map (Main Focus) ── */}
-                    <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
+                    <div className="border rounded-lg p-2 space-y-2 bg-muted/30">
                         <form.Subscribe selector={(state) => ({
                             centerLat: state.values.centerLat,
                             centerLng: state.values.centerLng,
@@ -301,57 +280,38 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                                         form.setFieldValue("centerLat", newLat);
                                         form.setFieldValue("centerLng", newLng);
                                     }}
-                                    height="400px"
+                                    onAddressResolved={setResolvedAddress}
+                                    height="280px"
                                 />
                             )}
                         </form.Subscribe>
 
-                        {/* Lat/Lng/Radius — inline row below map */}
-                        <div className="grid grid-cols-3 gap-2">
-                            <form.Field name="centerLat">
-                                {(field) => (
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-xs text-muted-foreground shrink-0 w-8">Lat</label>
-                                        <Input
-                                            id={field.name}
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={field.state.value}
-                                            onChange={(e) => field.handleChange(e.target.value)}
-                                            placeholder="23.8103"
-                                            className="h-8 text-xs"
-                                        />
+                        {/* Address + Radius — single row */}
+                        <div className="flex items-center gap-3">
+                            {resolvedAddress && (
+                                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                                    <span className="text-primary text-sm shrink-0">📍</span>
+                                    <div className="text-xs min-w-0 truncate">
+                                        <span className="font-medium text-foreground">{resolvedAddress.address}</span>
+                                        {resolvedAddress.area && (
+                                            <span className="text-muted-foreground"> • {resolvedAddress.area}</span>
+                                        )}
                                     </div>
-                                )}
-                            </form.Field>
-                            <form.Field name="centerLng">
-                                {(field) => (
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-xs text-muted-foreground shrink-0 w-8">Lng</label>
-                                        <Input
-                                            id={field.name}
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={field.state.value}
-                                            onChange={(e) => field.handleChange(e.target.value)}
-                                            placeholder="90.4125"
-                                            className="h-8 text-xs"
-                                        />
-                                    </div>
-                                )}
-                            </form.Field>
+                                </div>
+                            )}
+                            {!resolvedAddress && <div className="flex-1" />}
                             <form.Field name="radiusKm">
                                 {(field) => (
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-xs text-muted-foreground shrink-0 w-14">Radius</label>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <label className="text-xs text-muted-foreground">Radius (km)</label>
                                         <Input
                                             id={field.name}
                                             type="text"
                                             inputMode="decimal"
                                             value={field.state.value}
                                             onChange={(e) => field.handleChange(e.target.value)}
-                                            placeholder="5 km"
-                                            className="h-8 text-xs"
+                                            placeholder="5"
+                                            className="h-7 text-xs w-20"
                                         />
                                     </div>
                                 )}
@@ -360,7 +320,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                     </div>
 
                     {/* ── Bottom Row: Active + Sort + Actions ── */}
-                    <div className="flex items-center justify-between gap-4 pt-2">
+                    <div className="flex items-center justify-between gap-4 pt-1">
                         <div className="flex items-center gap-4">
                             <form.Field name="isActive">
                                 {(field) => (

@@ -155,7 +155,7 @@ export const adminAreaAnalyticsRouter = {
                     shippingCity: order.shippingCity,
                     shippingArea: order.shippingArea,
                     createdAt: order.createdAt,
-                    totalAmount: order.totalAmount,
+                    totalAmount: order.total,
                 })
                 .from(order)
                 .where(
