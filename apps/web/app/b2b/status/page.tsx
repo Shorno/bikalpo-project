@@ -11,7 +11,8 @@ export default function B2BStatusPage() {
   // Try seller application first
   const {
     data: sellerApp,
-    isLoading: sellerLoading,
+    isPending: sellerPending,
+    isFetching: sellerFetching,
   } = useQuery({
     ...orpc.sellerApplication.getMyApplication.queryOptions(),
     retry: false,
@@ -20,13 +21,14 @@ export default function B2BStatusPage() {
   // Also try warehouse application
   const {
     data: warehouseApp,
-    isLoading: warehouseLoading,
+    isPending: warehousePending,
+    isFetching: warehouseFetching,
   } = useQuery({
     ...orpc.warehouseApplication.getMyApplication.queryOptions(),
     retry: false,
   });
 
-  const loading = sellerLoading || warehouseLoading;
+  const loading = sellerPending || warehousePending || sellerFetching || warehouseFetching;
   const application = sellerApp || warehouseApp;
   const applicationType = sellerApp ? "seller" : "warehouse";
   const shopName = sellerApp
