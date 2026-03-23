@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { orpc } from "@/utils/orpc";
+import { Button } from "@/components/ui/button";
 
 export default function B2BStatusPage() {
   const router = useRouter();
@@ -399,15 +400,8 @@ export default function B2BStatusPage() {
 
             {/* CTA Buttons */}
             <div className="flex flex-col gap-3">
-              <Link
-                href="/dashboard"
-                className="w-full py-3.5 rounded-lg text-white font-bold text-sm text-center shadow-lg shadow-green-500/20 hover:scale-[1.01] transition-all"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
-                }}
-              >
-                <span className="flex items-center justify-center gap-2">
+              <Button asChild size="lg" className="w-full">
+                <Link href={`${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL}/dashboard`} className="gap-2">
                   <span
                     className="material-symbols-outlined text-lg"
                     style={{ fontVariationSettings: "'FILL' 1" }}
@@ -415,8 +409,8 @@ export default function B2BStatusPage() {
                     dashboard
                   </span>
                   Go to Shop Dashboard
-                </span>
-              </Link>
+                </Link>
+              </Button>
               <Link
                 href="/b2b"
                 className="text-xs text-gray-400 hover:text-gray-600 text-center"

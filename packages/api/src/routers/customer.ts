@@ -1727,6 +1727,8 @@ const queries = {
       z.object({
         search: z.string().optional(),
         areaId: z.number().optional(),
+        lat: z.string().optional(),
+        lng: z.string().optional(),
         page: z.number().default(1),
         limit: z.number().default(12),
       }),
@@ -1751,8 +1753,27 @@ const queries = {
         );
       }
 
+      // Location-based filter: find sellers near the consumer's location
+      let nearbySellerIds: string[] | null = null;
+      if (input.lat && input.lng) {
+        const lat = parseFloat(input.lat);
+        const lng = parseFloat(input.lng);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const nearbySellers = await findSellersNearPoint(lat, lng);
+          nearbySellerIds = nearbySellers.map((s) => s.sellerId);
+          if (nearbySellerIds.length > 0) {
+            conditions.push(inArray(user.id, nearbySellerIds));
+          } else {
+            return {
+              shops: [],
+              pagination: { page, limit, totalCount: 0, totalPages: 0 },
+            };
+          }
+        }
+      }
+
       // Area filter: find seller IDs in the selected area
-      if (input.areaId) {
+      if (input.areaId && !nearbySellerIds) {
         const areaSellers = await db
           .select({ sellerId: sellerAreaMapping.sellerId })
           .from(sellerAreaMapping)

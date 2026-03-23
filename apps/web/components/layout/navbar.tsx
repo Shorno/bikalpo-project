@@ -140,7 +140,7 @@ export function Navbar() {
             {/* Right side info */}
             <div className="ml-auto flex items-center gap-4 shrink-0">
               <Link
-                href="/store"
+                href="/stores"
                 className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
               >
                 <Store className="size-3.5" />
