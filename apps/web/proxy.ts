@@ -41,10 +41,12 @@ export function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_AUTH_URL,
     process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL,
     process.env.NEXT_PUBLIC_B2B_SUBDOMAIN_URL,
+    process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL,
     "http://localhost:3001",
     "http://bikalpo.localhost:3001",
     "http://shop.bikalpo.localhost:3001",
     "http://b2b.bikalpo.localhost:3001",
+    "http://warehouse.bikalpo.localhost:3001",
   ].filter(Boolean) as string[];
 
   // Handle CORS for API routes
@@ -91,6 +93,7 @@ export function proxy(request: NextRequest) {
   // Detect subdomains
   const isShopSubdomain = hostname.startsWith("shop.");
   const isB2bSubdomain = hostname.startsWith("b2b.");
+  const isWarehouseSubdomain = hostname.startsWith("warehouse.");
 
   // === B2B SUBDOMAIN (Public marketing/landing page) ===
   if (isB2bSubdomain) {
@@ -159,6 +162,40 @@ export function proxy(request: NextRequest) {
     return NextResponse.rewrite(rewriteUrl);
   }
 
+  // === WAREHOUSE SUBDOMAIN (Warehouse Owner Portal — requires auth) ===
+  if (isWarehouseSubdomain) {
+    // Auth routes - redirect logged-in users away from login/sign-up
+    if (isAuthRoute) {
+      if (token) {
+        return NextResponse.redirect(new URL("/", request.url));
+      }
+      return NextResponse.next();
+    }
+
+    // Skip if already accessing warehouse routes
+    if (pathname.startsWith("/warehouse")) {
+      return NextResponse.next();
+    }
+
+    // Redirect to main domain login if not authenticated
+    if (!token) {
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^warehouse\./, "")}`;
+      return NextResponse.redirect(new URL("/login", mainDomain));
+    }
+
+    // If logged in but not a warehouse user, redirect to main domain
+    if (role && role !== "warehouse") {
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^warehouse\./, "")}`;
+      return NextResponse.redirect(new URL("/", mainDomain));
+    }
+
+    // Rewrite to warehouse folder for warehouse users
+    const rewritePath = pathname === "/" ? "/warehouse" : `/warehouse${pathname}`;
+    const rewriteUrl = new URL(rewritePath, request.url);
+    rewriteUrl.search = request.nextUrl.search;
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
   // === MAIN DOMAIN ===
 
   // Auth routes - redirect logged-in users away from login/sign-up
@@ -170,6 +207,13 @@ export function proxy(request: NextRequest) {
           process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
           "http://shop.bikalpo.localhost:3001";
         return NextResponse.redirect(new URL("/", shopDomain));
+      }
+      if (role === "warehouse") {
+        // Warehouse users go to warehouse subdomain
+        const warehouseDomain =
+          process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL ||
+          "http://warehouse.bikalpo.localhost:3001";
+        return NextResponse.redirect(new URL("/", warehouseDomain));
       }
       // Staff go to dashboard
       return NextResponse.redirect(new URL("/dashboard", request.url));
@@ -212,13 +256,19 @@ export function proxy(request: NextRequest) {
   }
 
   // If logged in as staff trying to access public pages, redirect to dashboard
-  const staffRoles = ["admin", "salesman", "deliveryman", "shop_owner"];
+  const staffRoles = ["admin", "salesman", "deliveryman", "shop_owner", "warehouse"];
   if (token && role && staffRoles.includes(role)) {
     if (role === "shop_owner") {
       const shopDomain =
         process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
         "http://shop.bikalpo.localhost:3001";
       return NextResponse.redirect(new URL("/", shopDomain));
+    }
+    if (role === "warehouse") {
+      const warehouseDomain =
+        process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL ||
+        "http://warehouse.bikalpo.localhost:3001";
+      return NextResponse.redirect(new URL("/", warehouseDomain));
     }
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
