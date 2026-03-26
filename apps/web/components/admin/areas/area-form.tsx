@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
@@ -24,10 +23,10 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { client } from "@/utils/orpc";
+import type { AddressInfo } from "@/components/admin/areas/area-polygon-editor";
 
 const AreaPolygonEditor = dynamic(
     () => import("@/components/admin/areas/area-polygon-editor"),
@@ -85,6 +84,7 @@ function generateSlug(name: string): string {
 export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [polygonCoords, setPolygonCoords] = useState<number[][][] | null>(area?.polygon ?? null);
+    const [resolvedAddress, setResolvedAddress] = useState<AddressInfo | null>(null);
     const isEditing = !!area;
 
     // Fetch parent area options
@@ -150,16 +150,11 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
+            <DialogContent className="sm:max-w-[800px]">
+                <DialogHeader className="pb-2">
                     <DialogTitle>
                         {isEditing ? "Edit Area" : "New Area"}
                     </DialogTitle>
-                    <DialogDescription>
-                        {isEditing
-                            ? "Update the area details below."
-                            : "Define a new service area or zone for seller assignment."}
-                    </DialogDescription>
                 </DialogHeader>
 
                 <form
@@ -167,266 +162,212 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                         e.preventDefault();
                         form.handleSubmit();
                     }}
-                    className="space-y-4"
+                    className="space-y-3"
                 >
-                    {/* Name */}
-                    <form.Field name="name">
-                        {(field) => (
-                            <Field>
-                                <FieldLabel htmlFor={field.name}>
-                                    Name *
-                                </FieldLabel>
-                                <Input
-                                    id={field.name}
-                                    value={field.state.value}
-                                    onChange={(e) => {
-                                        field.handleChange(e.target.value);
-                                        // Auto-generate slug if not editing
-                                        if (!isEditing) {
-                                            form.setFieldValue(
-                                                "slug",
-                                                generateSlug(e.target.value),
-                                            );
-                                        }
-                                    }}
-                                    placeholder="e.g., Dhaka North"
-                                />
-                                {field.state.meta.isTouched &&
-                                    field.state.meta.errors.length > 0 && (
-                                        <p className="text-sm text-red-500">
-                                            {String(field.state.meta.errors[0])}
-                                        </p>
-                                    )}
-                            </Field>
-                        )}
-                    </form.Field>
+                    {/* ── Compact Info Grid ── */}
+                    <div className="grid grid-cols-3 gap-2">
+                        {/* Name */}
+                        <form.Field name="name">
+                            {(field) => (
+                                <Field>
+                                    <FieldLabel htmlFor={field.name} className="text-xs">
+                                        Name *
+                                    </FieldLabel>
+                                    <Input
+                                        id={field.name}
+                                        value={field.state.value}
+                                        onChange={(e) => {
+                                            field.handleChange(e.target.value);
+                                            if (!isEditing) {
+                                                form.setFieldValue(
+                                                    "slug",
+                                                    generateSlug(e.target.value),
+                                                );
+                                            }
+                                        }}
+                                        placeholder="e.g., Dhaka North"
+                                        className="h-9"
+                                    />
+                                    {field.state.meta.isTouched &&
+                                        field.state.meta.errors.length > 0 && (
+                                            <p className="text-xs text-red-500">
+                                                {typeof field.state.meta.errors[0] === "string"
+                                                    ? field.state.meta.errors[0]
+                                                    : field.state.meta.errors[0]?.message || "Invalid value"}
+                                            </p>
+                                        )}
+                                </Field>
+                            )}
+                        </form.Field>
 
-                    {/* Slug */}
-                    <form.Field name="slug">
-                        {(field) => (
-                            <Field>
-                                <FieldLabel htmlFor={field.name}>
-                                    Slug *
-                                </FieldLabel>
-                                <Input
-                                    id={field.name}
-                                    value={field.state.value}
-                                    onChange={(e) =>
-                                        field.handleChange(e.target.value)
-                                    }
-                                    placeholder="e.g., dhaka-north"
-                                    className="font-mono text-sm"
-                                />
-                                {field.state.meta.isTouched &&
-                                    field.state.meta.errors.length > 0 && (
-                                        <p className="text-sm text-red-500">
-                                            {String(field.state.meta.errors[0])}
-                                        </p>
-                                    )}
-                            </Field>
-                        )}
-                    </form.Field>
+                        {/* Slug */}
+                        <form.Field name="slug">
+                            {(field) => (
+                                <Field>
+                                    <FieldLabel htmlFor={field.name} className="text-xs">
+                                        Slug *
+                                    </FieldLabel>
+                                    <Input
+                                        id={field.name}
+                                        value={field.state.value}
+                                        onChange={(e) => field.handleChange(e.target.value)}
+                                        placeholder="e.g., dhaka-north"
+                                        className="font-mono text-sm h-9"
+                                    />
+                                    {field.state.meta.isTouched &&
+                                        field.state.meta.errors.length > 0 && (
+                                            <p className="text-xs text-red-500">
+                                                {typeof field.state.meta.errors[0] === "string"
+                                                    ? field.state.meta.errors[0]
+                                                    : field.state.meta.errors[0]?.message || "Invalid value"}
+                                            </p>
+                                        )}
+                                </Field>
+                            )}
+                        </form.Field>
 
-                    {/* Description */}
-                    <form.Field name="description">
-                        {(field) => (
-                            <Field>
-                                <FieldLabel htmlFor={field.name}>
-                                    Description
-                                </FieldLabel>
-                                <Textarea
-                                    id={field.name}
-                                    value={field.state.value}
-                                    onChange={(e) =>
-                                        field.handleChange(e.target.value)
-                                    }
-                                    placeholder="Brief description of this area"
-                                    rows={2}
-                                />
-                            </Field>
-                        )}
-                    </form.Field>
 
-                    {/* Parent Area */}
-                    <form.Field name="parentId">
-                        {(field) => (
-                            <Field>
-                                <FieldLabel>Parent Area</FieldLabel>
-                                <Select
-                                    value={
-                                        field.state.value?.toString() || "none"
-                                    }
-                                    onValueChange={(value) =>
-                                        field.handleChange(
-                                            value === "none"
-                                                ? null
-                                                : parseInt(value),
-                                        )
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="None (top-level)" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="none">
-                                            None (Top Level)
-                                        </SelectItem>
-                                        {parentAreas
-                                            .filter(
-                                                (p: { id: number }) =>
-                                                    p.id !== area?.id,
+                        {/* Parent Area */}
+                        <form.Field name="parentId">
+                            {(field) => (
+                                <Field>
+                                    <FieldLabel className="text-xs">Parent Area</FieldLabel>
+                                    <Select
+                                        value={field.state.value?.toString() || "none"}
+                                        onValueChange={(value) =>
+                                            field.handleChange(
+                                                value === "none" ? null : parseInt(value),
                                             )
-                                            .map(
-                                                (p: {
-                                                    id: number;
-                                                    name: string;
-                                                }) => (
-                                                    <SelectItem
-                                                        key={p.id}
-                                                        value={p.id.toString()}
-                                                    >
+                                        }
+                                    >
+                                        <SelectTrigger className="h-9">
+                                            <SelectValue placeholder="None (top-level)" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">None (Top Level)</SelectItem>
+                                            {parentAreas
+                                                .filter((p: { id: number }) => p.id !== area?.id)
+                                                .map((p: { id: number; name: string }) => (
+                                                    <SelectItem key={p.id} value={p.id.toString()}>
                                                         {p.name}
                                                     </SelectItem>
-                                                ),
-                                            )}
-                                    </SelectContent>
-                                </Select>
-                            </Field>
-                        )}
-                    </form.Field>
+                                                ))}
+                                        </SelectContent>
+                                    </Select>
+                                </Field>
+                            )}
+                        </form.Field>
+                    </div>
 
-                    {/* Map + Location */}
-                    <div className="border rounded-lg p-4 space-y-3">
-                        <h3 className="text-sm font-medium text-muted-foreground">
-                            Area Boundary & Location
-                        </h3>
-                        <AreaPolygonEditor
-                            polygon={polygonCoords}
-                            centerLat={form.getFieldValue("centerLat")}
-                            centerLng={form.getFieldValue("centerLng")}
-                            radiusKm={form.getFieldValue("radiusKm")}
-                            onPolygonChange={(coords) => setPolygonCoords(coords)}
-                            onCenterChange={(lat, lng) => {
-                                form.setFieldValue("centerLat", lat);
-                                form.setFieldValue("centerLng", lng);
-                            }}
-                            height="350px"
-                        />
-                        <div className="grid grid-cols-3 gap-3">
-                            <form.Field name="centerLat">
-                                {(field) => (
-                                    <Field>
-                                        <FieldLabel htmlFor={field.name}>
-                                            Center Lat
-                                        </FieldLabel>
-                                        <Input
-                                            id={field.name}
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={field.state.value}
-                                            onChange={(e) =>
-                                                field.handleChange(
-                                                    e.target.value,
-                                                )
-                                            }
-                                            placeholder="23.8103"
-                                        />
-                                    </Field>
-                                )}
-                            </form.Field>
-                            <form.Field name="centerLng">
-                                {(field) => (
-                                    <Field>
-                                        <FieldLabel htmlFor={field.name}>
-                                            Center Lng
-                                        </FieldLabel>
-                                        <Input
-                                            id={field.name}
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={field.state.value}
-                                            onChange={(e) =>
-                                                field.handleChange(
-                                                    e.target.value,
-                                                )
-                                            }
-                                            placeholder="90.4125"
-                                        />
-                                    </Field>
-                                )}
-                            </form.Field>
+                    {/* ── Map (Main Focus) ── */}
+                    <div className="border rounded-lg p-2 space-y-2 bg-muted/30">
+                        <form.Subscribe selector={(state) => ({
+                            centerLat: state.values.centerLat,
+                            centerLng: state.values.centerLng,
+                            radiusKm: state.values.radiusKm,
+                        })}>
+                            {({ centerLat: lat, centerLng: lng, radiusKm: r }) => (
+                                <AreaPolygonEditor
+                                    polygon={polygonCoords}
+                                    centerLat={lat}
+                                    centerLng={lng}
+                                    radiusKm={r}
+                                    onPolygonChange={(coords) => setPolygonCoords(coords)}
+                                    onCenterChange={(newLat, newLng) => {
+                                        form.setFieldValue("centerLat", newLat);
+                                        form.setFieldValue("centerLng", newLng);
+                                    }}
+                                    onAddressResolved={setResolvedAddress}
+                                    height="280px"
+                                />
+                            )}
+                        </form.Subscribe>
+
+                        {/* Address + Radius — single row */}
+                        <div className="flex items-center gap-3">
+                            {resolvedAddress && (
+                                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                                    <span className="text-primary text-sm shrink-0">📍</span>
+                                    <div className="text-xs min-w-0 truncate">
+                                        <span className="font-medium text-foreground">{resolvedAddress.address}</span>
+                                        {resolvedAddress.area && (
+                                            <span className="text-muted-foreground"> • {resolvedAddress.area}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            {!resolvedAddress && <div className="flex-1" />}
                             <form.Field name="radiusKm">
                                 {(field) => (
-                                    <Field>
-                                        <FieldLabel htmlFor={field.name}>
-                                            Radius (km)
-                                        </FieldLabel>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <label className="text-xs text-muted-foreground">Radius (km)</label>
                                         <Input
                                             id={field.name}
                                             type="text"
                                             inputMode="decimal"
                                             value={field.state.value}
-                                            onChange={(e) =>
-                                                field.handleChange(e.target.value)
-                                            }
+                                            onChange={(e) => field.handleChange(e.target.value)}
                                             placeholder="5"
+                                            className="h-7 text-xs w-20"
                                         />
-                                    </Field>
+                                    </div>
                                 )}
                             </form.Field>
                         </div>
                     </div>
 
-                    {/* Active + Sort Order */}
-                    <div className="flex items-center justify-between gap-4">
-                        <form.Field name="isActive">
-                            {(field) => (
-                                <div className="flex items-center gap-2">
-                                    <Switch
-                                        checked={field.state.value}
-                                        onCheckedChange={field.handleChange}
-                                    />
-                                    <Label>Active</Label>
-                                </div>
-                            )}
-                        </form.Field>
+                    {/* ── Bottom Row: Active + Sort + Actions ── */}
+                    <div className="flex items-center justify-between gap-4 pt-1">
+                        <div className="flex items-center gap-4">
+                            <form.Field name="isActive">
+                                {(field) => (
+                                    <div className="flex items-center gap-2">
+                                        <Switch
+                                            checked={field.state.value}
+                                            onCheckedChange={field.handleChange}
+                                        />
+                                        <Label className="text-sm">Active</Label>
+                                    </div>
+                                )}
+                            </form.Field>
 
-                        <form.Field name="sortOrder">
-                            {(field) => (
-                                <div className="flex items-center gap-2">
-                                    <Label>Sort Order</Label>
-                                    <Input
-                                        type="number"
-                                        className="w-20"
-                                        value={field.state.value}
-                                        onChange={(e) =>
-                                            field.handleChange(
-                                                parseInt(e.target.value) || 0,
-                                            )
-                                        }
-                                    />
-                                </div>
-                            )}
-                        </form.Field>
-                    </div>
+                            <form.Field name="sortOrder">
+                                {(field) => (
+                                    <div className="flex items-center gap-2">
+                                        <Label className="text-sm text-muted-foreground">Sort</Label>
+                                        <Input
+                                            type="number"
+                                            className="w-16 h-8"
+                                            value={field.state.value}
+                                            onChange={(e) =>
+                                                field.handleChange(parseInt(e.target.value) || 0)
+                                            }
+                                        />
+                                    </div>
+                                )}
+                            </form.Field>
+                        </div>
 
-                    <div className="flex justify-end gap-3 pt-4">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => onOpenChange(false)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={isSubmitting}>
-                            {isSubmitting && (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            )}
-                            {isEditing ? "Update" : "Create"}
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onOpenChange(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button type="submit" size="sm" disabled={isSubmitting}>
+                                {isSubmitting && (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                )}
+                                {isEditing ? "Update" : "Create"}
+                            </Button>
+                        </div>
                     </div>
                 </form>
             </DialogContent>
         </Dialog>
     );
 }
+

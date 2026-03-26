@@ -27,7 +27,7 @@ export function TrialCta() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              href="/sign-up"
+              href="/b2b/register"
               className="w-full sm:w-auto px-8 py-4 bg-white text-[#003178] font-bold rounded-lg shadow-xl hover:bg-gray-50 transition-colors"
             >
               Start Free Trial

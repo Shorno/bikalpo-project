@@ -27,8 +27,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
+  auth,
 }: Readonly<{
   children: React.ReactNode;
+  auth: React.ReactNode;
 }>) {
   return (
     <html lang="en">
@@ -36,7 +38,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} antialiased`}
         suppressHydrationWarning
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          {auth}
+        </Providers>
       </body>
     </html>
   );

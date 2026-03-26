@@ -47,6 +47,7 @@ import {
   returnProcessingFormSchema,
 } from "@/schema/return.schema";
 import { client, orpc } from "@/utils/orpc";
+import { fileToDataUrl } from "@/lib/cloudinary";
 
 interface ReturnProcessingFormProps {
   orderId: number;
@@ -195,8 +196,9 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
 
       setUploadingItemIndex(index);
       try {
+        const fileDataUrl = await fileToDataUrl(file);
         const result = await client.cloudinary.upload({
-          file,
+          file: fileDataUrl,
           folder: "returns/items",
         });
         if (result.success) {

@@ -488,6 +488,7 @@ export function AreaManagement() {
 
             {/* Form Dialog */}
             <AreaForm
+                key={editingArea?.id ?? "new"}
                 area={editingArea}
                 open={formOpen}
                 onOpenChange={handleFormClose}

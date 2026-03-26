@@ -8,7 +8,7 @@ export const user = pgTable("user", {
     emailVerified: boolean("email_verified").default(false).notNull(),
     image: text("image"),
     // Phone number fields
-    phoneNumber: text("phone_number"),
+    phoneNumber: text("phone_number").unique(),
     phoneNumberVerified: boolean("phone_number_verified").default(false),
     // Admin plugin fields
     role: text("role").default("consumer"),

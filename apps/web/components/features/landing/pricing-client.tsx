@@ -2,6 +2,7 @@
 
 import type { LandingPricingPlan } from "@bikalpo-project/db/schema";
 import { useState } from "react";
+import Link from "next/link";
 
 type PricingClientProps = {
   plans: LandingPricingPlan[];
@@ -112,8 +113,9 @@ export function PricingClient({ plans }: PricingClientProps) {
                       </li>
                     ))}
                   </ul>
-                  <button
-                    className={`w-full py-3 rounded-lg font-bold transition-all ${
+                  <Link
+                    href="/b2b/register"
+                    className={`block w-full py-3 rounded-lg font-bold transition-all text-center ${
                       plan.isPopular
                         ? "text-white shadow-lg shadow-[#003178]/20 py-4"
                         : "border border-[#003178] text-[#003178] hover:bg-[#003178]/5"
@@ -128,7 +130,7 @@ export function PricingClient({ plans }: PricingClientProps) {
                     }
                   >
                     {plan.ctaText || "Choose Plan"}
-                  </button>
+                  </Link>
                 </div>
               );
             })}
@@ -221,8 +223,9 @@ export function PricingClient({ plans }: PricingClientProps) {
                       </li>
                     ))}
                   </ul>
-                  <button
-                    className={`w-full py-3 rounded-lg font-bold transition-all ${
+                  <Link
+                    href="/b2b/register"
+                    className={`block w-full py-3 rounded-lg font-bold transition-all text-center ${
                       plan.popular
                         ? "text-white shadow-lg shadow-[#003178]/20 py-4"
                         : "border border-[#003178] text-[#003178] hover:bg-[#003178]/5"
@@ -237,7 +240,7 @@ export function PricingClient({ plans }: PricingClientProps) {
                     }
                   >
                     {plan.popular ? "Get Started Now" : "Choose Plan"}
-                  </button>
+                  </Link>
                 </div>
               );
             })}

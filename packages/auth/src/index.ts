@@ -5,8 +5,9 @@ import { env } from "@bikalpo-project/env/server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
-import { admin as adminPlugin, bearer, openAPI } from "better-auth/plugins";
+import { admin as adminPlugin, bearer, openAPI, phoneNumber } from "better-auth/plugins";
 import { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman, warehouse } from "./permissions";
+import { storeOtp } from "./otp-store";
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -35,6 +36,18 @@ export const auth = betterAuth({
         warehouse,
       },
       defaultRole: "consumer",
+    }),
+    phoneNumber({
+      otpLength: 6,
+      sendOTP: ({ phoneNumber: phone, code }) => {
+        // Store OTP in shared in-memory map (readable by dev-otp endpoint)
+        storeOtp(phone, code);
+        console.log(`[OTP] Phone: ${phone} → Code: ${code}`);
+      },
+      signUpOnVerification: {
+        getTempEmail: (phone) => `${phone.replace(/\+/g, "")}@bikalpo.com`,
+        getTempName: (phone) => phone,
+      },
     }),
   ],
   user: {

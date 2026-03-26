@@ -40,6 +40,9 @@ import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
 import { adminAreaRouter } from "./admin-area";
 import { adminSellerAreaRouter } from "./admin-seller-area";
 import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
+import { adminToLetRouter, toLetRouter } from "./tolet";
+import { barikoiRouter } from "./barikoi";
+import { devOtpRouter } from "./dev-otp";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -87,10 +90,14 @@ export const appRouter = {
   warehouse: warehouseRouter,
   adminLanding: adminLandingRouter,
   landing: landingRouter,
+  toLet: toLetRouter,
+  adminToLet: adminToLetRouter,
   adminWarehouseAssignment: adminWarehouseAssignmentRouter,
   adminArea: adminAreaRouter,
   adminSellerArea: adminSellerAreaRouter,
   adminAreaAnalytics: adminAreaAnalyticsRouter,
+  barikoi: barikoiRouter,
+  devOtp: devOtpRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
