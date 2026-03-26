@@ -401,14 +401,23 @@ export default function B2BStatusPage() {
             {/* CTA Buttons */}
             <div className="flex flex-col gap-3">
               <Button asChild size="lg" className="w-full">
-                <Link href={`${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL}/dashboard`} className="gap-2">
+                <Link
+                  href={
+                    applicationType === "warehouse"
+                      ? "/warehouse/dashboard"
+                      : `${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL}/dashboard`
+                  }
+                  className="gap-2"
+                >
                   <span
                     className="material-symbols-outlined text-lg"
                     style={{ fontVariationSettings: "'FILL' 1" }}
                   >
                     dashboard
                   </span>
-                  Go to Shop Dashboard
+                  {applicationType === "warehouse"
+                    ? "Go to Warehouse Dashboard"
+                    : "Go to Shop Dashboard"}
                 </Link>
               </Button>
               <Link
