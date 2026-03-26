@@ -2,10 +2,14 @@
  * B2B → Retail Inventory Conversion Helper
  *
  * When a B2B order is delivered, this:
- *   1. Deducts super-seller (admin) inventory for the TRADE variant
+ *   1. Deducts source inventory (warehouse or super_seller) for the TRADE variant
  *   2. Converts to RETAIL variant quantity using conversionRatio & lossPercent
  *   3. Adds to shop owner's retail inventory
  *   4. Writes immutable stock ledger entries for full audit trail
+ *
+ * Supports both flows:
+ *   - Warehouse → Shop (order.warehouseId is set)
+ *   - Super Seller → Shop (fallback when no warehouseId)
  */
 
 import { and, eq } from "drizzle-orm";
@@ -27,17 +31,25 @@ export async function convertB2bOrderToRetailInventory(
 ) {
     console.log(`[B2B-CONVERT] Starting conversion for order #${orderId}`);
 
-    // 1. Load the order to check if it's B2B
+    // 1. Load the order to check if it's B2B and determine source
     const orderData = await tx.query.order.findFirst({
         where: eq(order.id, orderId),
-        columns: { id: true, userId: true, orderType: true },
+        columns: { id: true, userId: true, orderType: true, warehouseId: true },
     });
 
     if (!orderData || orderData.orderType !== "b2b") {
         console.log(`[B2B-CONVERT] Skipping: orderType=${orderData?.orderType}`);
         return; // Skip non-B2B orders
     }
-    console.log(`[B2B-CONVERT] Order is B2B, userId=${orderData.userId}`);
+
+    // Determine source inventory owner type and ID
+    const sourceOwnerType: "warehouse" | "super_seller" = orderData.warehouseId
+        ? "warehouse"
+        : "super_seller";
+    const sourceOwnerId: string | null = orderData.warehouseId ?? null;
+    const sourceLabel = sourceOwnerType === "warehouse" ? "warehouse" : "super-seller";
+
+    console.log(`[B2B-CONVERT] Order is B2B, buyer=${orderData.userId}, source=${sourceLabel} (${sourceOwnerId ?? "any"})`);
 
     // 2. Load order items
     const items = await tx.query.orderItem.findMany({
@@ -80,54 +92,63 @@ export async function convertB2bOrderToRetailInventory(
         const retailQty =
             orderedQty * conversionRatio * (1 - lossPercent / 100);
 
-        // ─── A. Deduct super-seller (admin) inventory for the TRADE variant ───
+        // ─── A. Deduct source inventory (warehouse or super_seller) ───
 
-        const superSellerInv = await tx.query.inventory.findFirst({
-            where: and(
-                eq(inventory.ownerType, "super_seller"),
-                eq(inventory.variantId, tradeVariant.id),
-            ),
+        // Build query conditions for source inventory lookup
+        const sourceConditions = [
+            eq(inventory.ownerType, sourceOwnerType),
+            eq(inventory.variantId, tradeVariant.id),
+        ];
+        // If we know the specific owner (warehouse), filter by ownerId too
+        if (sourceOwnerId) {
+            sourceConditions.push(eq(inventory.ownerId, sourceOwnerId));
+        }
+
+        const sourceInv = await tx.query.inventory.findFirst({
+            where: and(...sourceConditions),
         });
 
-        if (superSellerInv) {
-            const newSuperSellerQty = Math.max(
+        if (sourceInv) {
+            const newSourceQty = Math.max(
                 0,
-                Number(superSellerInv.availableQty) - orderedQty,
+                Number(sourceInv.availableQty) - orderedQty,
             );
 
             await tx
                 .update(inventory)
                 .set({
-                    availableQty: newSuperSellerQty.toFixed(2),
+                    availableQty: newSourceQty.toFixed(2),
                     updatedAt: new Date(),
                 })
-                .where(eq(inventory.id, superSellerInv.id));
+                .where(eq(inventory.id, sourceInv.id));
 
-            // Ledger: OUT — stock dispatched from super-seller
+            // Ledger: OUT — stock dispatched from source
             await tx.insert(stockLedger).values({
                 variantId: tradeVariant.id,
-                ownerType: "super_seller",
-                ownerId: superSellerInv.ownerId,
+                ownerType: sourceOwnerType,
+                ownerId: sourceInv.ownerId,
                 changeType: "out" as const,
                 qty: orderedQty.toFixed(2),
-                reason: `B2B order #${orderId} delivered to shop`,
+                reason: `B2B order #${orderId} delivered to shop (from ${sourceLabel})`,
                 referenceType: "order" as const,
                 referenceId: String(orderId),
-                balanceAfter: newSuperSellerQty.toFixed(2),
+                balanceAfter: newSourceQty.toFixed(2),
             });
 
             // Ledger: CONVERT_OUT — TRADE stock consumed for conversion
             await tx.insert(stockLedger).values({
                 variantId: tradeVariant.id,
-                ownerType: "super_seller",
-                ownerId: superSellerInv.ownerId,
+                ownerType: sourceOwnerType,
+                ownerId: sourceInv.ownerId,
                 changeType: "convert_out" as const,
                 qty: orderedQty.toFixed(2),
-                reason: `Converted to retail for order #${orderId}`,
+                reason: `Converted to retail for order #${orderId} (from ${sourceLabel})`,
                 referenceType: "conversion" as const,
                 referenceId: String(orderId),
-                balanceAfter: newSuperSellerQty.toFixed(2),
+                balanceAfter: newSourceQty.toFixed(2),
             });
+        } else {
+            console.warn(`[B2B-CONVERT] No ${sourceLabel} inventory found for variant ${tradeVariant.id}${sourceOwnerId ? ` owner ${sourceOwnerId}` : ""}`);
         }
 
         // ─── B. Upsert shop owner's RETAIL inventory ───
@@ -173,7 +194,7 @@ export async function convertB2bOrderToRetailInventory(
             ownerId: orderData.userId,
             changeType: "convert_in" as const,
             qty: retailQty.toFixed(2),
-            reason: `B2B order #${orderId} converted TRADE→RETAIL (ratio: ${conversionRatio}, loss: ${lossPercent}%)`,
+            reason: `B2B order #${orderId} converted TRADE→RETAIL (ratio: ${conversionRatio}, loss: ${lossPercent}%, from ${sourceLabel})`,
             referenceType: "conversion" as const,
             referenceId: String(orderId),
             balanceAfter: newShopBalance,

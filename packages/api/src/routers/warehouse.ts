@@ -28,6 +28,7 @@ import {
 import { z } from "zod";
 
 import { publicProcedure, warehouseProcedure } from "../index";
+import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -597,10 +598,18 @@ const orderQueries = {
             if (input.status === "delivered") updateData.deliveredAt = new Date();
             if (input.status === "cancelled") updateData.cancelledAt = new Date();
 
-            await db
-                .update(order)
-                .set(updateData)
-                .where(eq(order.id, input.orderId));
+            // Use transaction for delivery to ensure atomic conversion
+            await db.transaction(async (tx) => {
+                await tx
+                    .update(order)
+                    .set(updateData)
+                    .where(eq(order.id, input.orderId));
+
+                // Auto-convert warehouse inventory → shop retail inventory on delivery
+                if (input.status === "delivered") {
+                    await convertB2bOrderToRetailInventory(tx, input.orderId);
+                }
+            });
 
             return {
                 success: true,
