@@ -12,6 +12,7 @@ import {
     inventory,
     order,
     orderItem,
+    stockLedger,
     user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
@@ -1323,6 +1324,21 @@ const productActivation = {
                 })
                 .returning();
 
+            // Write stock ledger entry for initial stock
+            if (Number(input.initialStock) > 0) {
+                await db.insert(stockLedger).values({
+                    variantId: input.variantId,
+                    ownerType: "warehouse",
+                    ownerId: userId,
+                    changeType: "in" as const,
+                    qty: input.initialStock,
+                    reason: "Initial stock added to warehouse inventory",
+                    referenceType: "manual" as const,
+                    balanceAfter: input.initialStock,
+                    createdById: userId,
+                });
+            }
+
             return { inventory: created };
         }),
 
@@ -1361,6 +1377,29 @@ const productActivation = {
                 .set(updateData)
                 .where(eq(inventory.id, input.inventoryId))
                 .returning();
+
+            // Write stock ledger entry if quantity changed
+            if (input.availableQty !== undefined) {
+                const oldQty = Number(existing.availableQty);
+                const newQty = Number(input.availableQty);
+                const diff = newQty - oldQty;
+
+                if (diff !== 0) {
+                    await db.insert(stockLedger).values({
+                        variantId: existing.variantId,
+                        ownerType: "warehouse",
+                        ownerId: userId,
+                        changeType: (diff > 0 ? "in" : "adjust") as "in" | "adjust",
+                        qty: Math.abs(diff).toFixed(2),
+                        reason: diff > 0
+                            ? `Warehouse stock increased by ${diff.toFixed(2)}`
+                            : `Warehouse stock adjusted by ${diff.toFixed(2)}`,
+                        referenceType: "manual" as const,
+                        balanceAfter: input.availableQty,
+                        createdById: userId,
+                    });
+                }
+            }
 
             return { inventory: updated };
         }),
