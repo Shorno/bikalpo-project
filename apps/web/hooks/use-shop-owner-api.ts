@@ -8,6 +8,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
 // ────────────────────────────────────────────────────────────────
@@ -132,6 +133,17 @@ export function useUpdateRetailPrice() {
   );
 }
 
+/** Update shop location */
+export function useUpdateShopLocation() {
+  return useMutation({
+    ...orpc.shopOwner.updateShopLocation.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Shop location updated!");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
 // ────────────────────────────────────────────────────────────────
 // INCOMING B2C ORDER HOOKS
 // ────────────────────────────────────────────────────────────────
@@ -176,4 +188,57 @@ export function useUpdateIncomingOrderStatus() {
       },
     }),
   );
+}
+
+// ────────────────────────────────────────────────────────────────
+// OPEN ORDER HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Available open order broadcasts for this shop */
+export function useOpenOrderPool() {
+  return useQuery(
+    orpc.shopOwner.getOpenOrderPool.queryOptions({
+      staleTime: 1000 * 5,
+      refetchInterval: 1000 * 10,
+    }),
+  );
+}
+
+/** Lock an open order bid */
+export function useLockOpenOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...orpc.shopOwner.lockOpenOrder.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Order locked! You have 100 seconds to submit your offer.");
+      qc.invalidateQueries({ queryKey: orpc.shopOwner.getOpenOrderPool.key() });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+/** Submit a bid offer */
+export function useSubmitOffer() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...orpc.shopOwner.submitOffer.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Offer submitted!");
+      qc.invalidateQueries({ queryKey: orpc.shopOwner.getOpenOrderPool.key() });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+/** Release a locked order */
+export function useReleaseOpenOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...orpc.shopOwner.releaseOpenOrder.mutationOptions(),
+    onSuccess: () => {
+      toast.info("Order released back to pool.");
+      qc.invalidateQueries({ queryKey: orpc.shopOwner.getOpenOrderPool.key() });
+    },
+    onError: (err) => toast.error(err.message),
+  });
 }

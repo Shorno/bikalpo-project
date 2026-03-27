@@ -18,6 +18,7 @@ export * from "./invoice";
 export * from "./item-request";
 export * from "./offer";
 export * from "./order";
+export * from "./open-order-bid";
 export * from "./order-return";
 export * from "./payment";
 export * from "./product";

@@ -3,17 +3,52 @@
 import {
   CheckCircle2,
   Globe,
+  Loader2,
   Mail,
   MapPin,
+  Save,
   ShoppingBag,
   Store,
   User,
 } from "lucide-react";
+import dynamic from "next/dynamic";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useUpdateShopLocation } from "@/hooks/use-shop-owner-api";
 import { authClient } from "@/lib/auth-client";
+
+const AddressPicker = dynamic(
+  () =>
+    import("@/components/shared/address-picker").then(
+      (mod) => mod.AddressPicker,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[250px] bg-muted animate-pulse rounded-lg flex items-center justify-center text-sm text-muted-foreground">
+        Loading map...
+      </div>
+    ),
+  },
+);
 
 export default function ShopSettingsPage() {
   const { data: session, isPending } = authClient.useSession();
+  const updateLocationMutation = useUpdateShopLocation();
+
+  const user = session?.user as any;
+  const [lat, setLat] = useState(user?.shopLat || "");
+  const [lng, setLng] = useState(user?.shopLng || "");
+
+  // Sync when session loads
+  if (user?.shopLat && !lat) setLat(user.shopLat);
+  if (user?.shopLng && !lng) setLng(user.shopLng);
+
+  const handleSaveLocation = async () => {
+    if (!lat || !lng) return;
+    await updateLocationMutation.mutateAsync({ lat, lng });
+  };
 
   if (isPending) {
     return (
@@ -24,7 +59,6 @@ export default function ShopSettingsPage() {
     );
   }
 
-  const user = session?.user;
   const status = user?.sellerStatus || "pending";
 
   const statusColors: Record<string, string> = {
@@ -92,6 +126,65 @@ export default function ShopSettingsPage() {
             label="Role"
             value={user?.role || "—"}
           />
+        </div>
+      </div>
+
+      {/* Location Picker Card */}
+      <div className="bg-white rounded-lg border shadow-sm">
+        <div className="p-6 border-b">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-emerald-600" />
+            Shop Location
+          </h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Pin your shop&apos;s exact location on the map. This is used to
+            match you with nearby open orders.
+          </p>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Current coordinates */}
+          {lat && lng && (
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-gray-500">Current coordinates:</span>
+              <code className="bg-gray-100 px-2 py-1 rounded text-xs">
+                {Number(lat).toFixed(6)}, {Number(lng).toFixed(6)}
+              </code>
+            </div>
+          )}
+
+          {/* Map */}
+          <AddressPicker
+            lat={lat}
+            lng={lng}
+            onLocationChange={(newLat, newLng) => {
+              setLat(newLat);
+              setLng(newLng);
+            }}
+            onAddressResolved={() => {}}
+            height="300px"
+          />
+
+          {/* Save button */}
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSaveLocation}
+              disabled={!lat || !lng || updateLocationMutation.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {updateLocationMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Location
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

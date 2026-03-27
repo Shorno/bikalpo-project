@@ -23,6 +23,8 @@ import {
     user,
     area,
     sellerAreaMapping,
+    openOrderBid,
+    openOrderBidItem,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -48,6 +50,10 @@ import {
     isSellerAuthorizedForArea,
     calculateSellerDistance,
 } from "../services/location-service";
+import {
+    DEFAULT_LOCK_TIMEOUT_SECONDS,
+    checkAndExpireBids,
+} from "../services/open-order-matching";
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -499,6 +505,42 @@ const mutations = {
                 success: true,
                 inventoryId: input.inventoryId,
                 retailPrice: input.retailPrice,
+            };
+        }),
+
+    /** Update shop location coordinates */
+    updateShopLocation: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/update-location",
+            tags: ["Shop Owner"],
+            summary: "Update shop location (lat/lng)",
+        })
+        .input(
+            z.object({
+                lat: z.string().refine((v) => !isNaN(Number(v)), {
+                    message: "Latitude must be a number",
+                }),
+                lng: z.string().refine((v) => !isNaN(Number(v)), {
+                    message: "Longitude must be a number",
+                }),
+            }),
+        )
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+
+            await db
+                .update(user)
+                .set({
+                    shopLat: input.lat,
+                    shopLng: input.lng,
+                })
+                .where(eq(user.id, userId));
+
+            return {
+                success: true,
+                message: "Shop location updated",
+                location: { lat: input.lat, lng: input.lng },
             };
         }),
 };
@@ -1064,6 +1106,311 @@ const warehouseOrderQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Open Order Endpoints (Shop Owner bidding)
+// ────────────────────────────────────────────────────────────────
+
+const openOrderEndpoints = {
+    /** List available open orders for this shop (broadcasts) */
+    getOpenOrderPool: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/open-orders/pool",
+            tags: ["Shop Owner", "Open Order"],
+            summary: "Get available open order broadcasts",
+        })
+        .handler(async ({ context }) => {
+            const shopId = context.session.user.id;
+
+            // Get all bids for this shop that are available or locked (by this shop)
+            const bids = await db
+                .select({
+                    bidId: openOrderBid.id,
+                    subOrderId: openOrderBid.subOrderId,
+                    status: openOrderBid.status,
+                    rank: openOrderBid.rank,
+                    distanceKm: openOrderBid.distanceKm,
+                    lockedAt: openOrderBid.lockedAt,
+                    expiresAt: openOrderBid.expiresAt,
+                    timeoutSeconds: openOrderBid.timeoutSeconds,
+                    createdAt: openOrderBid.createdAt,
+                    // Order data
+                    orderNumber: order.orderNumber,
+                    orderSubtotal: order.subtotal,
+                    subOrderLabel: order.subOrderLabel,
+                    broadcastExpiresAt: order.broadcastExpiresAt,
+                    shippingAddress: order.shippingAddress,
+                    shippingCity: order.shippingCity,
+                    shippingArea: order.shippingArea,
+                })
+                .from(openOrderBid)
+                .innerJoin(order, eq(order.id, openOrderBid.subOrderId))
+                .where(
+                    and(
+                        eq(openOrderBid.shopId, shopId),
+                        inArray(openOrderBid.status, ["available", "locked"]),
+                        inArray(order.status, ["matching_shop", "negotiating"]),
+                    ),
+                )
+                .orderBy(asc(openOrderBid.createdAt));
+
+            // For each bid, get the order items
+            const result = await Promise.all(
+                bids.map(async (bid) => {
+                    // Check for expired locks lazily
+                    if (bid.status === "locked" && bid.expiresAt && new Date() > bid.expiresAt) {
+                        await db
+                            .update(openOrderBid)
+                            .set({ status: "expired" })
+                            .where(eq(openOrderBid.id, bid.bidId));
+                        return null; // Skip expired bids
+                    }
+
+                    const items = await db.query.orderItem.findMany({
+                        where: eq(orderItem.orderId, bid.subOrderId),
+                    });
+
+                    return {
+                        bidId: bid.bidId,
+                        subOrderId: bid.subOrderId,
+                        status: bid.status,
+                        rank: bid.rank,
+                        distanceKm: bid.distanceKm,
+                        orderNumber: bid.orderNumber,
+                        subOrderLabel: bid.subOrderLabel,
+                        subtotal: bid.orderSubtotal,
+                        broadcastExpiresAt: bid.broadcastExpiresAt?.toISOString() ?? null,
+                        lockedAt: bid.lockedAt?.toISOString() ?? null,
+                        expiresAt: bid.expiresAt?.toISOString() ?? null,
+                        timeoutSeconds: bid.timeoutSeconds,
+                        shippingArea: bid.shippingArea ?? bid.shippingCity,
+                        items: items.map((i) => ({
+                            id: i.id,
+                            productName: i.productName,
+                            productImage: i.productImage,
+                            productSize: i.productSize,
+                            quantity: i.quantity,
+                            unitPrice: i.unitPrice,
+                            totalPrice: i.totalPrice,
+                        })),
+                    };
+                }),
+            );
+
+            return { pool: result.filter(Boolean) };
+        }),
+
+    /** Lock a bid — starts the countdown timer */
+    lockOpenOrder: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/open-orders/lock",
+            tags: ["Shop Owner", "Open Order"],
+            summary: "Lock an open order bid to start negotiating",
+        })
+        .input(z.object({ bidId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            // Get the bid
+            const bid = await db.query.openOrderBid.findFirst({
+                where: and(
+                    eq(openOrderBid.id, input.bidId),
+                    eq(openOrderBid.shopId, shopId),
+                ),
+            });
+
+            if (!bid) {
+                throw new ORPCError("NOT_FOUND", { message: "Bid not found" });
+            }
+            if (bid.status !== "available") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot lock bid with status '${bid.status}'`,
+                });
+            }
+
+            const now = new Date();
+            const expiresAt = new Date(now.getTime() + bid.timeoutSeconds * 1000);
+
+            // Lock the bid
+            const [updated] = await db
+                .update(openOrderBid)
+                .set({
+                    status: "locked",
+                    lockedAt: now,
+                    expiresAt,
+                })
+                .where(eq(openOrderBid.id, bid.id))
+                .returning();
+
+            // Update sub-order status to negotiating
+            await db
+                .update(order)
+                .set({ status: "negotiating" })
+                .where(eq(order.id, bid.subOrderId));
+
+            // Get bid items
+            const bidItems = await db.query.openOrderBidItem.findMany({
+                where: eq(openOrderBidItem.bidId, bid.id),
+            });
+
+            return {
+                success: true,
+                bid: {
+                    id: updated!.id,
+                    status: updated!.status,
+                    lockedAt: updated!.lockedAt?.toISOString(),
+                    expiresAt: updated!.expiresAt?.toISOString(),
+                    timeoutSeconds: updated!.timeoutSeconds,
+                },
+                items: bidItems.map((bi) => ({
+                    id: bi.id,
+                    orderItemId: bi.orderItemId,
+                    platformPrice: bi.platformPrice,
+                    sellerPrice: bi.sellerPrice,
+                })),
+            };
+        }),
+
+    /** Submit an offer with per-item prices and delivery charge */
+    submitOffer: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/open-orders/submit",
+            tags: ["Shop Owner", "Open Order"],
+            summary: "Submit a bid offer with prices",
+        })
+        .input(
+            z.object({
+                bidId: z.number(),
+                deliveryCharge: z.string(),
+                items: z.array(
+                    z.object({
+                        bidItemId: z.number(),
+                        sellerPrice: z.string(),
+                    }),
+                ),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            // Get the bid
+            const bid = await db.query.openOrderBid.findFirst({
+                where: and(
+                    eq(openOrderBid.id, input.bidId),
+                    eq(openOrderBid.shopId, shopId),
+                ),
+            });
+
+            if (!bid) {
+                throw new ORPCError("NOT_FOUND", { message: "Bid not found" });
+            }
+            if (bid.status !== "locked") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot submit offer on bid with status '${bid.status}'`,
+                });
+            }
+
+            // Check if lock has expired
+            if (bid.expiresAt && new Date() > bid.expiresAt) {
+                await db
+                    .update(openOrderBid)
+                    .set({ status: "expired" })
+                    .where(eq(openOrderBid.id, bid.id));
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Lock has expired. Please try a new order.",
+                });
+            }
+
+            // Update seller prices on each bid item
+            let totalItemCost = 0;
+            for (const item of input.items) {
+                // Get the bid item to know the quantity
+                const bidItem = await db.query.openOrderBidItem.findFirst({
+                    where: eq(openOrderBidItem.id, item.bidItemId),
+                });
+                if (!bidItem) continue;
+
+                await db
+                    .update(openOrderBidItem)
+                    .set({ sellerPrice: item.sellerPrice })
+                    .where(eq(openOrderBidItem.id, item.bidItemId));
+
+                // Get quantity from the order item
+                const oi = await db.query.orderItem.findFirst({
+                    where: eq(orderItem.id, bidItem.orderItemId),
+                });
+                totalItemCost += Number(item.sellerPrice) * (oi?.quantity ?? 1);
+            }
+
+            const totalBid = totalItemCost + Number(input.deliveryCharge);
+
+            // Update bid: submitted
+            const [updated] = await db
+                .update(openOrderBid)
+                .set({
+                    status: "submitted",
+                    submittedAt: new Date(),
+                    deliveryCharge: input.deliveryCharge,
+                    totalBid: totalBid.toFixed(2),
+                })
+                .where(eq(openOrderBid.id, bid.id))
+                .returning();
+
+            return {
+                success: true,
+                bid: {
+                    id: updated!.id,
+                    status: updated!.status,
+                    totalBid: updated!.totalBid,
+                    deliveryCharge: updated!.deliveryCharge,
+                    submittedAt: updated!.submittedAt?.toISOString(),
+                },
+            };
+        }),
+
+    /** Release a locked bid — order goes back to pool */
+    releaseOpenOrder: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/open-orders/release",
+            tags: ["Shop Owner", "Open Order"],
+            summary: "Release a locked open order bid",
+        })
+        .input(z.object({ bidId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            const bid = await db.query.openOrderBid.findFirst({
+                where: and(
+                    eq(openOrderBid.id, input.bidId),
+                    eq(openOrderBid.shopId, shopId),
+                ),
+            });
+
+            if (!bid) {
+                throw new ORPCError("NOT_FOUND", { message: "Bid not found" });
+            }
+            if (bid.status !== "locked") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot release bid with status '${bid.status}'`,
+                });
+            }
+
+            await db
+                .update(openOrderBid)
+                .set({
+                    status: "released",
+                    lockedAt: null,
+                    expiresAt: null,
+                })
+                .where(eq(openOrderBid.id, bid.id));
+
+            return { success: true };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -1074,4 +1421,5 @@ export const shopOwnerRouter = {
     ...orderQueries,
     ...incomingOrderQueries,
     ...warehouseOrderQueries,
+    ...openOrderEndpoints,
 };

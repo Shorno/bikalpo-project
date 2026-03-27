@@ -546,3 +546,30 @@ export function useCreateItemRequest() {
     onError: (err) => toast.error(err.message),
   });
 }
+
+// ────────────────────────────────────────────────────────────────
+// OPEN ORDER HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Place an open order (auto-match shops) */
+export function usePlaceOpenOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...orpc.customer.placeOpenOrder.mutationOptions(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() });
+      qc.invalidateQueries({ queryKey: orpc.customer.getMyOrders.key() });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+/** Get open order status (polls) */
+export function useOpenOrderStatus(orderId: number | undefined, refetchInterval?: number) {
+  return useQuery(
+    orpc.customer.getOpenOrderStatus.queryOptions({
+      input: orderId != null ? { orderId } : skipToken,
+      refetchInterval: refetchInterval ?? 5000,
+    }),
+  );
+}

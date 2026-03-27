@@ -39,6 +39,8 @@ import {
   supportTicketReply,
   user,
   userProfile,
+  openOrderBid,
+  openOrderBidItem,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -70,6 +72,15 @@ import {
   findSellersNearPoint,
   computeOrderAreaFields,
 } from "../services/location-service";
+import {
+  splitCartIntoSubOrders,
+  findEligibleSellers,
+  createBidsForSubOrder,
+  checkAndExpireBids,
+  checkBroadcastExpiry,
+  DEFAULT_BROADCAST_MINUTES,
+  type CartItemForSplit,
+} from "../services/open-order-matching";
 
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
@@ -3338,10 +3349,459 @@ const mutations = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// OPEN ORDER ENDPOINTS
+// ════════════════════════════════════════════════════════════════
+
+
+
+const openOrderEndpoints = {
+  /** Place an open order: auto-split + broadcast to sellers */
+  placeOpenOrder: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/customer/open-orders",
+      tags: ["Customer", "Open Order"],
+      summary: "Place an open order (auto-match shops)",
+    })
+    .input(
+      z.object({
+        shippingInfo: shippingInfoSchema,
+        paymentMethod: z
+          .enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
+          .default("cash_on_delivery"),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      // Validate location is provided
+      if (!input.shippingInfo.lat || !input.shippingInfo.lng) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Location (lat/lng) is required for open orders",
+        });
+      }
+
+      const consumerLat = parseFloat(input.shippingInfo.lat);
+      const consumerLng = parseFloat(input.shippingInfo.lng);
+      if (isNaN(consumerLat) || isNaN(consumerLng)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Invalid location coordinates",
+        });
+      }
+
+      // Get cart with product + variant + category data
+      const userCart = await db.query.cart.findFirst({
+        where: eq(cart.userId, userId),
+        with: {
+          items: {
+            with: { product: true, variant: true },
+          },
+        },
+      });
+
+      if (!userCart || userCart.items.length === 0) {
+        throw new ORPCError("BAD_REQUEST", { message: "Your cart is empty" });
+      }
+
+      // Build items with category info for splitting
+      const cartItemsForSplit: CartItemForSplit[] = [];
+      let subtotal = 0;
+
+      for (const item of userCart.items) {
+        if (!item.product) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Product not found for cart item",
+          });
+        }
+
+        // Get category name
+        let categoryName: string | null = null;
+        let categoryId: number | null = null;
+        if (item.product.categoryId) {
+          const cat = await db.query.category.findFirst({
+            where: eq(category.id, item.product.categoryId),
+            columns: { id: true, name: true },
+          });
+          if (cat) {
+            categoryId = cat.id;
+            categoryName = cat.name;
+          }
+        }
+
+        const itemTotal = Number(item.price) * item.quantity;
+        subtotal += itemTotal;
+
+        cartItemsForSplit.push({
+          productId: item.productId,
+          variantId: item.variantId ?? null,
+          shopId: null, // Open order: no shop selected
+          productName: item.product.name,
+          productImage: item.product.image,
+          productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
+          quantity: item.quantity,
+          unitPrice: item.price,
+          totalPrice: itemTotal.toFixed(2),
+          categoryId,
+          categoryName,
+        });
+      }
+
+      // Split into sub-order groups by category
+      const subOrderGroups = splitCartIntoSubOrders(cartItemsForSplit);
+
+      // Compute area fields
+      const areaFields = await computeOrderAreaFields(consumerLat, consumerLng);
+
+      // Broadcast expiry
+      const broadcastExpiresAt = new Date(
+        Date.now() + DEFAULT_BROADCAST_MINUTES * 60 * 1000,
+      );
+
+      // Transaction: create parent order + sub-orders + bids
+      const result = await db.transaction(async (tx) => {
+        // Create parent order
+        const [parentOrder] = await tx
+          .insert(order)
+          .values({
+            orderNumber: generateOrderNumber(),
+            userId,
+            orderType: "b2c",
+            isOpenOrder: true,
+            status: "matching_shop",
+            subtotal: subtotal.toFixed(2),
+            shippingCost: "0",
+            discount: "0",
+            total: subtotal.toFixed(2),
+            paymentStatus: "pending",
+            paymentMethod: input.paymentMethod,
+            shippingName: input.shippingInfo.name,
+            shippingPhone: input.shippingInfo.phone,
+            shippingEmail: input.shippingInfo.email,
+            shippingAddress: input.shippingInfo.address,
+            shippingCity: input.shippingInfo.city,
+            shippingArea: input.shippingInfo.area,
+            shippingPostalCode: input.shippingInfo.postalCode,
+            customerNote: input.shippingInfo.customerNote,
+            broadcastExpiresAt,
+            ...(areaFields.consumerAreaId && { consumerAreaId: areaFields.consumerAreaId }),
+            ...(areaFields.matchedAreaId && { matchedAreaId: areaFields.matchedAreaId }),
+            ...(areaFields.locationLat && { locationLat: areaFields.locationLat }),
+            ...(areaFields.locationLng && { locationLng: areaFields.locationLng }),
+          })
+          .returning();
+
+        const parentId = parentOrder!.id;
+
+        // Create sub-orders
+        const subOrders: Array<{
+          id: number;
+          label: string;
+          itemIds: number[];
+          items: CartItemForSplit[];
+        }> = [];
+
+        for (const group of subOrderGroups) {
+          let subOrderId: number;
+          let subOrderItemIds: number[];
+
+          if (subOrderGroups.length === 1) {
+            // Single group — use parent order directly (no split)
+            subOrderId = parentId;
+
+            // Insert order items on the parent
+            const insertedItems = await tx
+              .insert(orderItem)
+              .values(
+                group.items.map((it) => ({
+                  orderId: parentId,
+                  productId: it.productId,
+                  variantId: it.variantId,
+                  productName: it.productName,
+                  productImage: it.productImage,
+                  productSize: it.productSize,
+                  quantity: it.quantity,
+                  unitPrice: it.unitPrice,
+                  totalPrice: it.totalPrice,
+                })),
+              )
+              .returning();
+
+            subOrderItemIds = insertedItems.map((i) => i.id);
+
+            // Update parent with sub-order label
+            await tx
+              .update(order)
+              .set({ subOrderLabel: group.label })
+              .where(eq(order.id, parentId));
+          } else {
+            // Multiple groups — create child sub-orders
+            const groupSubtotal = group.items.reduce(
+              (sum, it) => sum + Number(it.totalPrice),
+              0,
+            );
+
+            const [subOrder] = await tx
+              .insert(order)
+              .values({
+                orderNumber: `${parentOrder!.orderNumber}-${subOrders.length + 1}`,
+                userId,
+                orderType: "b2c",
+                isOpenOrder: true,
+                parentOrderId: parentId,
+                subOrderLabel: group.label,
+                status: "matching_shop",
+                subtotal: groupSubtotal.toFixed(2),
+                shippingCost: "0",
+                discount: "0",
+                total: groupSubtotal.toFixed(2),
+                paymentStatus: "pending",
+                paymentMethod: input.paymentMethod,
+                shippingName: input.shippingInfo.name,
+                shippingPhone: input.shippingInfo.phone,
+                shippingAddress: input.shippingInfo.address,
+                shippingCity: input.shippingInfo.city,
+                shippingArea: input.shippingInfo.area,
+                broadcastExpiresAt,
+                ...(areaFields.consumerAreaId && { consumerAreaId: areaFields.consumerAreaId }),
+                ...(areaFields.locationLat && { locationLat: areaFields.locationLat }),
+                ...(areaFields.locationLng && { locationLng: areaFields.locationLng }),
+              })
+              .returning();
+
+            subOrderId = subOrder!.id;
+
+            const insertedItems = await tx
+              .insert(orderItem)
+              .values(
+                group.items.map((it) => ({
+                  orderId: subOrderId,
+                  productId: it.productId,
+                  variantId: it.variantId,
+                  productName: it.productName,
+                  productImage: it.productImage,
+                  productSize: it.productSize,
+                  quantity: it.quantity,
+                  unitPrice: it.unitPrice,
+                  totalPrice: it.totalPrice,
+                })),
+              )
+              .returning();
+
+            subOrderItemIds = insertedItems.map((i) => i.id);
+          }
+
+          subOrders.push({
+            id: subOrderId,
+            label: group.label,
+            itemIds: subOrderItemIds,
+            items: group.items,
+          });
+        }
+
+        // Clear cart
+        await tx.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
+
+        return { parentOrder: parentOrder!, subOrders };
+      });
+
+      // Post-transaction: find eligible sellers and create bids
+      for (const sub of result.subOrders) {
+        const sellers = await findEligibleSellers(
+          consumerLat,
+          consumerLng,
+          sub.items,
+        );
+
+        if (sellers.length > 0) {
+          await createBidsForSubOrder(sub.id, sellers, sub.itemIds);
+
+          // Emit WebSocket broadcast to each eligible shop
+          try {
+            const { io } = await import("../../server/src/socket" as any).catch(
+              () => ({ io: null }),
+            );
+            // We'll emit from the API layer using a direct import pattern
+            // For now, bids are created — shops will discover via polling
+          } catch {
+            // Socket not available in this context — shops will poll
+          }
+        } else {
+          // No eligible sellers — cancel this sub-order immediately
+          await db
+            .update(order)
+            .set({ status: "cancelled" })
+            .where(eq(order.id, sub.id));
+        }
+      }
+
+      return {
+        success: true,
+        order: {
+          id: result.parentOrder.id,
+          orderNumber: result.parentOrder.orderNumber,
+        },
+        subOrders: result.subOrders.map((s) => ({
+          id: s.id,
+          label: s.label,
+          itemCount: s.items.length,
+        })),
+        broadcastExpiresAt: broadcastExpiresAt.toISOString(),
+      };
+    }),
+
+  /** Get open order status (consumer polls this) */
+  getOpenOrderStatus: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/open-orders/{orderId}/status",
+      tags: ["Customer", "Open Order"],
+      summary: "Get open order status with bids",
+    })
+    .input(z.object({ orderId: z.number() }))
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      // Get the parent order
+      const parentOrder = await db.query.order.findFirst({
+        where: and(
+          eq(order.id, input.orderId),
+          eq(order.userId, userId),
+          eq(order.isOpenOrder, true),
+        ),
+        with: { items: true },
+      });
+
+      if (!parentOrder) {
+        throw new ORPCError("NOT_FOUND", { message: "Open order not found" });
+      }
+
+      // Get sub-orders (or use parent if no children)
+      let subOrders: typeof parentOrder[];
+      const children = await db.query.order.findMany({
+        where: and(
+          eq(order.parentOrderId, parentOrder.id),
+          eq(order.isOpenOrder, true),
+        ),
+        with: { items: true },
+      });
+
+      subOrders = children.length > 0 ? children : [parentOrder];
+
+      // For each sub-order, get bids and check timeouts
+      const subOrderData = await Promise.all(
+        subOrders.map(async (sub) => {
+          // Lazy timeout check
+          await checkAndExpireBids(sub.id);
+          const expiryResult = await checkBroadcastExpiry(sub.id);
+
+          // Refresh sub-order status after potential changes
+          const freshSub = await db.query.order.findFirst({
+            where: eq(order.id, sub.id),
+            with: { items: true },
+          });
+
+          // Get all bids for this sub-order
+          const bids = await db
+            .select({
+              id: openOrderBid.id,
+              shopId: openOrderBid.shopId,
+              status: openOrderBid.status,
+              rank: openOrderBid.rank,
+              distanceKm: openOrderBid.distanceKm,
+              totalBid: openOrderBid.totalBid,
+              deliveryCharge: openOrderBid.deliveryCharge,
+              isWinner: openOrderBid.isWinner,
+              lockedAt: openOrderBid.lockedAt,
+              submittedAt: openOrderBid.submittedAt,
+              expiresAt: openOrderBid.expiresAt,
+              shopName: user.shopName,
+            })
+            .from(openOrderBid)
+            .leftJoin(user, eq(user.id, openOrderBid.shopId))
+            .where(eq(openOrderBid.subOrderId, sub.id))
+            .orderBy(sql`CAST(${openOrderBid.totalBid} AS numeric) ASC NULLS LAST`);
+
+          // Get bid items for submitted bids
+          const submittedBidIds = bids
+            .filter((b) => b.status === "submitted" || b.isWinner)
+            .map((b) => b.id);
+
+          let bidItems: any[] = [];
+          if (submittedBidIds.length > 0) {
+            bidItems = await db
+              .select()
+              .from(openOrderBidItem)
+              .where(inArray(openOrderBidItem.bidId, submittedBidIds));
+          }
+
+          return {
+            subOrderId: sub.id,
+            label: freshSub?.subOrderLabel ?? sub.subOrderLabel,
+            status: freshSub?.status ?? sub.status,
+            items: (freshSub ?? sub).items.map((i) => ({
+              id: i.id,
+              productName: i.productName,
+              productImage: i.productImage,
+              productSize: i.productSize,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              totalPrice: i.totalPrice,
+            })),
+            bids: bids.map((b) => ({
+              bidId: b.id,
+              shopName: b.shopName ?? "Shop",
+              status: b.status,
+              distanceKm: b.distanceKm,
+              totalBid: b.totalBid,
+              deliveryCharge: b.deliveryCharge,
+              isWinner: b.isWinner,
+              expiresAt: b.expiresAt?.toISOString() ?? null,
+              items: bidItems
+                .filter((bi) => bi.bidId === b.id)
+                .map((bi) => ({
+                  orderItemId: bi.orderItemId,
+                  platformPrice: bi.platformPrice,
+                  sellerPrice: bi.sellerPrice,
+                })),
+            })),
+            offersReceived: bids.filter((b) => b.status === "submitted").length,
+            winnerShopName: bids.find((b) => b.isWinner)?.shopName ?? null,
+          };
+        }),
+      );
+
+      // Determine overall progress stage
+      const allStatuses = subOrderData.map((s) => s.status);
+      let stage: "splitting" | "broadcasting" | "negotiating" | "finalizing" | "confirmed" | "cancelled";
+
+      if (allStatuses.every((s) => s === "confirmed")) {
+        stage = "confirmed";
+      } else if (allStatuses.every((s) => s === "cancelled")) {
+        stage = "cancelled";
+      } else if (allStatuses.some((s) => s === "confirmed")) {
+        stage = "finalizing";
+      } else if (subOrderData.some((s) => s.offersReceived > 0)) {
+        stage = "negotiating";
+      } else {
+        stage = "broadcasting";
+      }
+
+      return {
+        orderId: parentOrder.id,
+        orderNumber: parentOrder.orderNumber,
+        stage,
+        broadcastExpiresAt: parentOrder.broadcastExpiresAt?.toISOString() ?? null,
+        subOrders: subOrderData,
+      };
+    }),
+};
+
+// ════════════════════════════════════════════════════════════════
 // Export combined customer router
 // ════════════════════════════════════════════════════════════════
 
 export const customerRouter = {
   ...queries,
   ...mutations,
+  ...openOrderEndpoints,
 };

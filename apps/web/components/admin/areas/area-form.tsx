@@ -44,9 +44,9 @@ const formSchema = z.object({
         ),
     description: z.string().optional().default(""),
     parentId: z.number().int().optional().nullable(),
-    centerLat: z.string().optional().nullable(),
-    centerLng: z.string().optional().nullable(),
-    radiusKm: z.string().optional().nullable(),
+    centerLat: z.string().optional().default(""),
+    centerLng: z.string().optional().default(""),
+    radiusKm: z.string().optional().default(""),
     isActive: z.boolean().default(true),
     sortOrder: z.number().int().default(0),
 });
@@ -105,9 +105,6 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
             radiusKm: area?.radiusKm || "",
             isActive: area?.isActive ?? true,
             sortOrder: area?.sortOrder ?? 0,
-        },
-        validators: {
-            onSubmit: formSchema,
         },
         onSubmit: async ({ value }) => {
             setIsSubmitting(true);

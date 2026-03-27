@@ -49,7 +49,7 @@ export function BaseSidebar({ navItems, ...props }: BaseSidebarProps) {
         <NavMain items={navItems} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data} />}
+        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data as any} />}
       </SidebarFooter>
     </Sidebar>
   );

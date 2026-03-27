@@ -17,9 +17,11 @@
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
+    "@socket.io/bun-engine": "^0.1.0",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
     "hono": "catalog:",
+    "socket.io": "^4.8.3",
     "zod": "catalog:"
   },
   "devDependencies": {

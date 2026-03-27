@@ -133,7 +133,7 @@ export function WarehouseSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <NavGrouped groups={warehouseNavGroups} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data} />}
+        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data as any} />}
       </SidebarFooter>
     </Sidebar>
   );

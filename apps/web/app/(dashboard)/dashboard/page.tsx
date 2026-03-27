@@ -39,8 +39,10 @@ export default function DashboardPage() {
         router.replace(ADMIN_BASE);
         break;
       case "warehouse":
-        router.replace(WAREHOUSE_BASE);
-        break;
+        window.location.href =
+          process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL ||
+          "http://warehouse.bikalpo.localhost:3001";
+        return;
       case "consumer":
         // Consumers go to home page
         router.replace("/");

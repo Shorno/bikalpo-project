@@ -170,6 +170,8 @@ export function OrpcCheckout() {
           area: address.area || "",
           postalCode: address.postalCode || "",
           customerNote: "",
+          lat: "",
+          lng: "",
         });
       } else {
         setSelectedAddressId(null);
@@ -182,6 +184,8 @@ export function OrpcCheckout() {
           area: "",
           postalCode: "",
           customerNote: "",
+          lat: "",
+          lng: "",
         });
       }
     },

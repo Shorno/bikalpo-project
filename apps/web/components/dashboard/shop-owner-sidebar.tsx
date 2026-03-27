@@ -8,6 +8,7 @@ import {
   InboxIcon,
   LayoutDashboardIcon,
   PackageIcon,
+  RadioIcon,
   SettingsIcon,
   ShoppingCartIcon,
   StoreIcon,
@@ -45,6 +46,11 @@ const shopOwnerNavGroups: NavGroup[] = [
         title: "Consumer Orders",
         url: `${SHOP_DASHBOARD_BASE}/incoming-orders`,
         icon: InboxIcon,
+      },
+      {
+        title: "Open Orders",
+        url: `${SHOP_DASHBOARD_BASE}/open-orders`,
+        icon: RadioIcon,
       },
       {
         title: "My B2B Orders",
@@ -124,12 +130,13 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <ExternalLinkIcon className="w-3 h-3" />
           bikalpo.com
         </a>
+
       </SidebarHeader>
       <SidebarContent className="mt-4 thin-scrollbar">
         <NavGrouped groups={shopOwnerNavGroups} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data} />}
+        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data as any} />}
       </SidebarFooter>
     </Sidebar>
   );
