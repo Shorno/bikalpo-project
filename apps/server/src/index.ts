@@ -10,6 +10,7 @@ import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { engine } from "./socket";
 
 const app = new Hono();
 
@@ -124,4 +125,21 @@ app.get("/", (c) => {
   });
 });
 
-export default app;
+// ─── Bun.serve export with Socket.IO integration ───
+
+const { websocket } = engine.handler();
+
+export default {
+  port: new URL(env.BETTER_AUTH_URL).port || 3000,
+  idleTimeout: 30, // Must be > Socket.IO pingInterval (25s default)
+  fetch(req: Request, server: any) {
+    const url = new URL(req.url);
+    // Route Socket.IO requests to the engine
+    if (url.pathname.startsWith("/socket.io/")) {
+      return engine.handleRequest(req, server);
+    }
+    // Everything else goes to Hono
+    return app.fetch(req, server);
+  },
+  websocket,
+};
