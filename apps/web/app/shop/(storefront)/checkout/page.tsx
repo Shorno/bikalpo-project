@@ -13,6 +13,7 @@ import {
   Minus,
   Phone,
   Plus,
+  Search,
   ShoppingBag,
   Smartphone,
   Trash2,
@@ -47,6 +48,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useEstimatedDeliveryCost,
   usePlaceOrder,
+  usePlaceOpenOrder,
 } from "@/hooks/use-customer-api";
 import { useCart } from "@/hooks/use-orpc-cart";
 import { authClient } from "@/lib/auth-client";
@@ -93,7 +95,8 @@ export default function CustomerCheckoutPage() {
   } = useCart();
   const { data: session } = authClient.useSession();
   const placeOrderMutation = usePlaceOrder();
-  const isSubmitting = placeOrderMutation.isPending;
+  const placeOpenOrderMutation = usePlaceOpenOrder();
+  const isSubmitting = placeOrderMutation.isPending || placeOpenOrderMutation.isPending;
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_delivery");
@@ -254,6 +257,51 @@ export default function CustomerCheckoutPage() {
       currency: "BDT",
       minimumFractionDigits: 0,
     }).format(price);
+  };
+
+  const handleOpenOrder = async () => {
+    if (!session?.user) {
+      toast.error("Please login to place an order");
+      router.push("/login");
+      return;
+    }
+    if (!validateForm()) return;
+    if (!formData.lat || !formData.lng) {
+      toast.error("Please pin your location on the map for open orders");
+      return;
+    }
+    if (items.length === 0) {
+      toast.error("Your cart is empty");
+      return;
+    }
+    try {
+      const result = await placeOpenOrderMutation.mutateAsync({
+        shippingInfo: {
+          name: formData.name,
+          phone: formData.phone,
+          email: formData.email || undefined,
+          address: formData.address,
+          city: formData.city,
+          area: formData.area || undefined,
+          postalCode: formData.postalCode || undefined,
+          customerNote: formData.customerNote || undefined,
+          lat: formData.lat,
+          lng: formData.lng,
+        },
+        paymentMethod,
+      });
+      if (result.order?.id) {
+        toast.success("Finding the best shops for you!");
+        clearCart();
+        router.push(`/shop/open-order-tracker/${result.order.id}`);
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.";
+      toast.error(message);
+    }
   };
 
   if (cartLoading) {
@@ -761,25 +809,57 @@ export default function CustomerCheckoutPage() {
                     </div>
                   </div>
 
-                  {/* Submit Button */}
-                  <Button
-                    type="submit"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700"
-                    size="lg"
-                    disabled={isSubmitting}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Place Order
-                      </>
-                    )}
-                  </Button>
+                  {/* Submit Buttons */}
+                  <div className="space-y-2">
+                    <Button
+                      type="submit"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700"
+                      size="lg"
+                      disabled={isSubmitting}
+                    >
+                      {placeOrderMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Place Order
+                        </>
+                      )}
+                    </Button>
+
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-white px-2 text-muted-foreground">or</span>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800"
+                      size="lg"
+                      disabled={isSubmitting}
+                      onClick={handleOpenOrder}
+                    >
+                      {placeOpenOrderMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Finding shops...
+                        </>
+                      ) : (
+                        <>
+                          <Search className="h-4 w-4 mr-2" />
+                          Find Best Shop
+                        </>
+                      )}
+                    </Button>
+                  </div>
 
                   <p className="text-xs text-center text-gray-500">
                     By placing this order, you agree to our terms
@@ -799,26 +879,42 @@ export default function CustomerCheckoutPage() {
             {formatPrice(totalPrice + shippingCost)}
           </span>
         </div>
-        <Button
-          type="submit"
-          form="checkout-form"
-          className="w-full bg-emerald-600 hover:bg-emerald-700"
-          size="lg"
-          disabled={isSubmitting}
-          onClick={handleSubmit}
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Processing...
-            </>
-          ) : (
-            <>
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Place Order
-            </>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            type="submit"
+            form="checkout-form"
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+            size="lg"
+            disabled={isSubmitting}
+            onClick={handleSubmit}
+          >
+            {placeOrderMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <CheckCircle className="h-4 w-4 mr-1" />
+                Order
+              </>
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 border-purple-200 text-purple-700"
+            size="lg"
+            disabled={isSubmitting}
+            onClick={handleOpenOrder}
+          >
+            {placeOpenOrderMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Search className="h-4 w-4 mr-1" />
+                Find Shop
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );
