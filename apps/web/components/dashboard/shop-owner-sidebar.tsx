@@ -8,6 +8,7 @@ import {
   InboxIcon,
   LayoutDashboardIcon,
   PackageIcon,
+  RadioIcon,
   SettingsIcon,
   ShoppingCartIcon,
   StoreIcon,
@@ -45,6 +46,11 @@ const shopOwnerNavGroups: NavGroup[] = [
         title: "Consumer Orders",
         url: `${SHOP_DASHBOARD_BASE}/incoming-orders`,
         icon: InboxIcon,
+      },
+      {
+        title: "Open Orders",
+        url: `${SHOP_DASHBOARD_BASE}/open-orders`,
+        icon: RadioIcon,
       },
       {
         title: "My B2B Orders",
