@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+    boolean,
     decimal,
     index,
     integer,
@@ -16,6 +17,8 @@ import { productVariant } from "./product-variant";
 // Order status enum
 export const orderStatusEnum = pgEnum("order_status", [
     "pending",
+    "matching_shop",
+    "negotiating",
     "confirmed",
     "processing",
     "delivered",
@@ -59,6 +62,16 @@ export const order = pgTable(
 
         // For warehouse orders: which warehouse this order is placed with
         warehouseId: text("warehouse_id").references(() => user.id, { onDelete: "set null" }),
+
+        // === Open Order fields ===
+        /** True if this is an open order (no shop pre-selected) */
+        isOpenOrder: boolean("is_open_order").default(false).notNull(),
+        /** Parent order ID for sub-orders (null = parent or normal order) */
+        parentOrderId: integer("parent_order_id"),
+        /** Category group label for sub-orders (e.g. "Fresh Grocery") */
+        subOrderLabel: text("sub_order_label"),
+        /** Broadcast deadline — all bids must be in by this time */
+        broadcastExpiresAt: timestamp("broadcast_expires_at"),
 
         // === Area & Location tracking ===
         /** The area the consumer placed the order from */
