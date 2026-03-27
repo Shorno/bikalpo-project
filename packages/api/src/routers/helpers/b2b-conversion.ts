@@ -19,6 +19,7 @@ import {
     productVariant,
     inventory,
     stockLedger,
+    variantConversionMap,
 } from "@bikalpo-project/db/schema";
 
 /**
@@ -85,12 +86,27 @@ export async function convertB2bOrderToRetailInventory(
         if (!tradeVariant) continue;
 
         const orderedQty = Number(item.quantity);
+
+        // Look up conversion rule from variantConversionMap (set by admin UI)
+        const conversionMap = await tx.query.variantConversionMap.findFirst({
+            where: eq(variantConversionMap.fromVariantId, tradeVariant.id),
+        });
+
+        // Use map rule first, then fall back to variant's own fields
         const targetRetailVariantId =
-            tradeVariant.linkedRetailVariantId ?? tradeVariant.id;
-        const conversionRatio = Number(tradeVariant.conversionRatio || 1);
+            conversionMap?.toVariantId ??
+            tradeVariant.linkedRetailVariantId ??
+            tradeVariant.id;
+        const conversionRatio = Number(
+            conversionMap?.conversionRatio ??
+            tradeVariant.conversionRatio ??
+            1
+        );
         const lossPercent = Number(tradeVariant.conversionLossPercent || 0);
         const retailQty =
             orderedQty * conversionRatio * (1 - lossPercent / 100);
+
+        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: map=${conversionMap ? 'YES' : 'NO'}, target=${targetRetailVariantId}, ratio=${conversionRatio}, orderedQty=${orderedQty}, retailQty=${retailQty}`);
 
         // ─── A. Deduct source inventory (warehouse or super_seller) ───
 
