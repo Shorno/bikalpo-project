@@ -20,6 +20,7 @@ import {
   StoreIcon,
   TagIcon,
   TruckIcon,
+  TrendingDownIcon,
   UserCheckIcon,
   UsersIcon,
   WarehouseIcon,
@@ -127,6 +128,8 @@ const warehouseNavGroups: NavGroup[] = [
     label: "Finance & Accounts",
     items: [
       { title: "Finance Dashboard", url: `${WH}/finance`, icon: WalletIcon },
+      { title: "Expenses", url: `${WH}/finance/expenses`, icon: TrendingDownIcon },
+      { title: "Payees", url: `${WH}/finance/payees`, icon: UsersIcon },
       { title: "Transactions", url: `${WH}/transactions`, icon: CreditCardIcon },
     ],
   },

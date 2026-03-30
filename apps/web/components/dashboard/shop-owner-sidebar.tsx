@@ -80,6 +80,7 @@ const shopOwnerNavGroups: NavGroup[] = [
     items: [
       { title: "Customers", url: `${D}/customers`, icon: UsersIcon },
       { title: "Suppliers", url: `${D}/suppliers`, icon: UsersIcon },
+      { title: "Payees", url: `${D}/payees`, icon: UsersIcon },
     ],
   },
   {
