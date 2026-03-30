@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   AlertCircle,
   ArrowRight,
@@ -418,10 +419,15 @@ export default function OrderFromWarehousePage() {
                       </div>
                       <div className="shrink-0">
                         {!canOrder ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] bg-gray-100 text-gray-500 border border-gray-200 rounded font-medium">
+                          <button
+                            onClick={() => {
+                              toast.info(`Access request sent for "${item.product?.name}". An admin will review your request.`);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] bg-amber-50 text-amber-600 border border-amber-200 rounded font-medium hover:bg-amber-100 cursor-pointer"
+                          >
                             <Lock size={10} />
                             Request Access
-                          </span>
+                          </button>
                         ) : inCart ? (
                           <div className="flex items-center gap-1">
                             <button

@@ -6,6 +6,7 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
+import { generateSku } from "./helpers/generate-sku";
 
 // Input schemas
 const productIdSchema = z.object({
@@ -90,8 +91,39 @@ export const productRouter = {
             description: "Create a new product",
         })
         .input(createProductSchema)
-        .handler(async ({ input }) => {
+        .handler(async ({ context, input }) => {
             const { additionalImages, ...productData } = input;
+
+            // Auto-generate SKU if not provided
+            let sku = (productData.sku ?? "").toString().trim() || null;
+            if (!sku) {
+                // Look up category and subcategory slugs
+                const cat = await db.query.category.findFirst({
+                    where: eq(categoryTable.id, productData.categoryId),
+                    columns: { slug: true },
+                });
+                let subCatSlug = "xx";
+                if (productData.subCategoryId) {
+                    const sub = await db.query.subCategory.findFirst({
+                        where: (s, { eq: eq2 }) => eq2(s.id, productData.subCategoryId!),
+                        columns: { slug: true },
+                    });
+                    subCatSlug = sub?.slug || "xx";
+                }
+                // Count existing products in this category for serial
+                const [countResult] = await db
+                    .select({ count: sql<number>`count(*)::int` })
+                    .from(product)
+                    .where(eq(product.categoryId, productData.categoryId));
+                const serial = (countResult?.count ?? 0) + 1;
+
+                sku = generateSku({
+                    subCategorySlug: subCatSlug,
+                    categorySlug: cat?.slug || "xx",
+                    serialNumber: serial,
+                    userId: context.session.user.id,
+                });
+            }
 
             const [newProduct] = await db
                 .insert(product)
@@ -99,7 +131,7 @@ export const productRouter = {
                     ...productData,
                     subCategoryId: productData.subCategoryId || null,
                     brandId: productData.brandId || null,
-                    sku: (productData.sku ?? "").toString().trim() || null,
+                    sku,
                     supplier: (productData.supplier ?? "").toString().trim() || null,
                     reorderLevel: productData.reorderLevel ?? 0,
                 })

@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
-import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import { product, productVariant, variantConversionMap } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
+import { generateSku } from "./helpers/generate-sku";
+import { eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 /**
  * After any variant change, sync the parent product's price/stock/size
@@ -134,12 +135,39 @@ export const adminProductVariantRouter = {
             description: "Create a new product variant",
         })
         .input(variantInput)
-        .handler(async ({ input }) => {
+        .handler(async ({ context, input }) => {
+            // Auto-generate SKU if not provided
+            let sku = input.sku?.trim() || null;
+            if (!sku) {
+                const parentProduct = await db.query.product.findFirst({
+                    where: eq(product.id, input.productId),
+                    columns: { categoryId: true, subCategoryId: true },
+                    with: {
+                        category: { columns: { slug: true } },
+                        subCategory: { columns: { slug: true } },
+                    },
+                });
+                // Count existing variants for serial
+                const [countResult] = await db
+                    .select({ count: sql<number>`count(*)::int` })
+                    .from(productVariant)
+                    .where(eq(productVariant.productId, input.productId));
+                const serial = (countResult?.count ?? 0) + 1;
+
+                sku = generateSku({
+                    subCategorySlug: (parentProduct as any)?.subCategory?.slug || "xx",
+                    categorySlug: (parentProduct as any)?.category?.slug || "xx",
+                    serialNumber: serial,
+                    sizeId: Math.round(parseFloat(input.weightKg || "0") * 10),
+                    userId: context.session.user.id,
+                });
+            }
+
             const [created] = await db
                 .insert(productVariant)
                 .values({
                     productId: input.productId,
-                    sku: input.sku ?? null,
+                    sku: sku,
                     unitLabel: input.unitLabel,
                     quantitySelectorLabel: input.quantitySelectorLabel ?? null,
                     packagingType: input.packagingType,
