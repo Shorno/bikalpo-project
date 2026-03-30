@@ -40,3 +40,7 @@ export * from "./warehouse-category-assignment";
 export * from "./shop-warehouse-connection";
 export * from "./shop-category-assignment";
 export * from "./tolet-listing";
+export * from "./payee";
+export * from "./expense-category";
+export * from "./expense";
+export * from "./financial-ledger";
