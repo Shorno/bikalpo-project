@@ -44,6 +44,10 @@ import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
 import { adminToLetRouter, toLetRouter } from "./tolet";
 import { barikoiRouter } from "./barikoi";
 import { devOtpRouter } from "./dev-otp";
+import { payeeRouter } from "./payee";
+import { expenseRouter } from "./expense";
+import { supplierPaymentRouter } from "./supplier-payment";
+import { profitLossRouter } from "./profit-loss";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -100,6 +104,10 @@ export const appRouter = {
   adminAreaAnalytics: adminAreaAnalyticsRouter,
   barikoi: barikoiRouter,
   devOtp: devOtpRouter,
+  payee: payeeRouter,
+  expense: expenseRouter,
+  supplierPayment: supplierPaymentRouter,
+  profitLoss: profitLossRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
