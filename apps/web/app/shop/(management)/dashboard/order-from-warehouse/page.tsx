@@ -5,7 +5,10 @@ import {
   AlertCircle,
   ArrowRight,
   CheckCircle2,
+  Clock,
+  Link2,
   Loader2,
+  Lock,
   MapPin,
   Minus,
   Package,
@@ -39,7 +42,7 @@ export default function OrderFromWarehousePage() {
 
   // Connect step
   const [warehouseInput, setWarehouseInput] = useState("");
-  const [warehouseSlug, setWarehouseSlug] = useState<string | null>(null);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
 
   // Browse step
   const [search, setSearch] = useState("");
@@ -55,38 +58,44 @@ export default function OrderFromWarehousePage() {
   // Success
   const [orderResult, setOrderResult] = useState<any>(null);
 
-  // Parse slug from URL or direct input
-  function parseSlug(input: string): string | null {
-    const trimmed = input.trim();
-    if (!trimmed) return null;
-    if (!trimmed.includes("/")) return trimmed;
-    const match = trimmed.match(/\/(?:warehouse|w)\/([^/?#]+)/);
-    return match ? match[1] : null;
-  }
+  // ─── STEP 7: Smart Memory — Recent Warehouses ───
+  const { data: connectedData, isLoading: loadingConnected } = useQuery({
+    queryKey: ["shopOwner", "getConnectedWarehouses"],
+    queryFn: () => orpc.shopOwner.getConnectedWarehouses.call(),
+  });
+  const recentWarehouses = connectedData?.warehouses ?? [];
 
-  // Warehouse info query
-  const {
-    data: warehouseInfo,
-    isLoading: loadingWarehouse,
-    error: warehouseError,
-  } = useQuery({
-    queryKey: ["warehouse", "getStorefrontBySlug", warehouseSlug],
-    queryFn: () =>
-      orpc.warehouse.getStorefrontBySlug.call({ slug: warehouseSlug! }),
-    enabled: !!warehouseSlug,
+  // ─── STEP 2-3: Connect to Warehouse (Category Matching) ───
+  const connectMutation = useMutation({
+    mutationFn: (slug: string) =>
+      orpc.shopOwner.connectToWarehouse.call({ warehouseSlug: slug }),
+    onSuccess: (data) => {
+      if (data.status === "connected" || data.status === "already_connected") {
+        setSelectedSlug(data.warehouse.warehouseSlug);
+        setStep("browse");
+      }
+      queryClient.invalidateQueries({
+        queryKey: ["shopOwner", "getConnectedWarehouses"],
+      });
+    },
   });
 
-  // Products query
+  // ─── STEP 4: Filtered Products ───
   const { data: productsData, isLoading: loadingProducts } = useQuery({
-    queryKey: ["warehouse", "getStorefrontProducts", warehouseSlug, search],
+    queryKey: [
+      "shopOwner",
+      "getWarehouseProductsFiltered",
+      selectedSlug,
+      search,
+    ],
     queryFn: () =>
-      orpc.warehouse.getStorefrontProducts.call({
-        slug: warehouseSlug!,
+      orpc.shopOwner.getWarehouseProductsFiltered.call({
+        warehouseSlug: selectedSlug!,
         search: search || undefined,
         page: "1",
         limit: "50",
       }),
-    enabled: !!warehouseSlug && step === "browse",
+    enabled: !!selectedSlug && step === "browse",
   });
 
   // Place order mutation
@@ -97,10 +106,19 @@ export default function OrderFromWarehousePage() {
       setStep("success");
       setCart([]);
       queryClient.invalidateQueries({
-        queryKey: ["shopOwner", "getMyWarehouseOrders"],
+        queryKey: ["shopOwner", "getConnectedWarehouses"],
       });
     },
   });
+
+  // Parse slug from URL or direct input
+  function parseSlug(input: string): string | null {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+    if (!trimmed.includes("/")) return trimmed;
+    const match = trimmed.match(/\/(?:warehouse|w)\/([^/?#]+)/);
+    return match ? match[1] : null;
+  }
 
   // Cart helpers
   function addToCart(item: CartItem) {
@@ -175,79 +193,133 @@ export default function OrderFromWarehousePage() {
 
       {/* ─── STEP 1: CONNECT ─── */}
       {step === "connect" && (
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-800">
-            Enter Warehouse URL or Slug
-          </h2>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="e.g. zenstore or /warehouse/zenstore"
-              value={warehouseInput}
-              onChange={(e) => {
-                setWarehouseInput(e.target.value);
-                setWarehouseSlug(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  setWarehouseSlug(parseSlug(warehouseInput));
-                }
-              }}
-              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-            />
-            <button
-              onClick={() => setWarehouseSlug(parseSlug(warehouseInput))}
-              disabled={!warehouseInput.trim()}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              Find
-            </button>
-          </div>
-
-          {loadingWarehouse && warehouseSlug && (
-            <div className="flex items-center justify-center py-6">
-              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-            </div>
-          )}
-
-          {warehouseError && warehouseSlug && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
-              <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
-              <p className="text-sm text-red-600 font-medium">
-                Warehouse not found
-              </p>
-            </div>
-          )}
-
-          {warehouseInfo && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
-                  <Warehouse className="w-6 h-6 text-blue-600" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900">
-                    {warehouseInfo.warehouseName || warehouseInfo.name}
-                  </h3>
-                  {warehouseInfo.warehouseAddress && (
-                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3 h-3" />
-                      {warehouseInfo.warehouseAddress}
-                    </p>
-                  )}
-                  <p className="text-sm text-blue-700 font-medium mt-1">
-                    {warehouseInfo.productCount} products available
-                  </p>
-                </div>
-                <button
-                  onClick={() => setStep("browse")}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-                >
-                  Browse Products
-                </button>
+        <div className="space-y-4">
+          {/* Recent Warehouses (Smart Memory) */}
+          {recentWarehouses.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-5">
+              <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-3">
+                <Clock size={14} className="text-blue-500" />
+                Recent Warehouses
+              </h2>
+              <div className="space-y-2">
+                {recentWarehouses.map((wh: any) => (
+                  <button
+                    key={wh.connectionId}
+                    onClick={() => {
+                      if (wh.warehouseSlug) {
+                        connectMutation.mutate(wh.warehouseSlug);
+                      }
+                    }}
+                    disabled={connectMutation.isPending}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-100 rounded-lg hover:border-blue-200 hover:bg-blue-50/50 transition-colors text-left"
+                  >
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                      <Warehouse className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {wh.warehouseName || wh.name}
+                      </p>
+                      {wh.warehouseAddress && (
+                        <p className="text-xs text-gray-400 truncate flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {wh.warehouseAddress}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs text-emerald-600 font-medium">
+                        {wh.productCount} products
+                      </span>
+                      {wh.lastOrderedAt && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          Last order:{" "}
+                          {new Date(wh.lastOrderedAt).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                    <ArrowRight size={14} className="text-gray-300 shrink-0" />
+                  </button>
+                ))}
               </div>
             </div>
           )}
+
+          {loadingConnected && recentWarehouses.length === 0 && (
+            <div className="text-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-500 mx-auto" />
+            </div>
+          )}
+
+          {/* Manual Entry */}
+          <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <Link2 size={14} className="text-gray-500" />
+              {recentWarehouses.length > 0
+                ? "Or Enter Warehouse ID / URL"
+                : "Enter Warehouse ID / URL"}
+            </h2>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. zenstore or /warehouse/zenstore"
+                value={warehouseInput}
+                onChange={(e) => setWarehouseInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const slug = parseSlug(warehouseInput);
+                    if (slug) connectMutation.mutate(slug);
+                  }
+                }}
+                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
+              />
+              <button
+                onClick={() => {
+                  const slug = parseSlug(warehouseInput);
+                  if (slug) connectMutation.mutate(slug);
+                }}
+                disabled={!warehouseInput.trim() || connectMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {connectMutation.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  "Connect"
+                )}
+              </button>
+            </div>
+
+            {/* Connection result */}
+            {connectMutation.isError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+                <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-1" />
+                <p className="text-sm text-red-600 font-medium">
+                  {(connectMutation.error as any)?.message ||
+                    "Warehouse not found"}
+                </p>
+              </div>
+            )}
+
+            {connectMutation.data?.status === "pending" && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">
+                      Connection Pending
+                    </p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      {connectMutation.data.message}
+                    </p>
+                    <p className="text-xs text-amber-600 mt-1">
+                      Your shop&apos;s allowed categories don&apos;t match this
+                      warehouse. An admin needs to approve the connection.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -256,14 +328,16 @@ export default function OrderFromWarehousePage() {
         <div className="space-y-4">
           {/* Warehouse banner */}
           <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
-            <span className="text-sm text-blue-700 font-medium">
-              🏭 {warehouseInfo?.warehouseName || warehouseInfo?.name}
+            <span className="text-sm text-blue-700 font-medium flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              🏭 Connected to: {selectedSlug}
             </span>
             <button
               onClick={() => {
                 setStep("connect");
-                setWarehouseSlug(null);
+                setSelectedSlug(null);
                 setCart([]);
+                setSearch("");
               }}
               className="text-xs text-blue-500 hover:underline"
             >
@@ -296,34 +370,31 @@ export default function OrderFromWarehousePage() {
               ) : products.length === 0 ? (
                 <div className="text-center py-8 bg-gray-50 rounded-lg">
                   <Package className="mx-auto text-gray-300 mb-2" size={32} />
-                  <p className="text-sm text-gray-500">No products available</p>
+                  <p className="text-sm text-gray-500">
+                    No products available
+                  </p>
                 </div>
               ) : (
                 products.map((item: any) => {
-                  const product = item.product || item.variant?.product;
-                  const variant = item.variant;
-                  // Use retailPrice from inventory, fall back to variant price
-                  const rp = Number(item.retailPrice || 0);
-                  const vp = Number(variant?.price || 0);
-                  const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
                   const inCart = cart.find(
-                    (c) => c.variantId === (variant?.id || item.variantId),
+                    (c) => c.variantId === item.variantId,
                   );
-                  const productImage =
-                    product?.images?.[0]?.imageUrl || product?.image || "";
+                  const canOrder = item.canOrder !== false;
 
                   return (
                     <div
-                      key={item.inventoryId || variant?.id}
+                      key={item.inventoryId}
                       className={`flex items-center gap-3 p-3 border rounded-lg transition-colors ${
-                        inCart
-                          ? "border-blue-200 bg-blue-50/50"
-                          : "border-gray-100 hover:border-gray-200"
+                        !canOrder
+                          ? "border-gray-100 bg-gray-50/50 opacity-75"
+                          : inCart
+                            ? "border-blue-200 bg-blue-50/50"
+                            : "border-gray-100 hover:border-gray-200"
                       }`}
                     >
-                      {productImage && (
+                      {item.product?.image && (
                         <Image
-                          src={productImage}
+                          src={item.product.image}
                           alt=""
                           width={40}
                           height={40}
@@ -332,26 +403,29 @@ export default function OrderFromWarehousePage() {
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-gray-900 truncate">
-                          {product?.name || "Unknown"}
+                          {item.product?.name || "Unknown"}
                         </div>
                         <div className="text-[10px] text-gray-400">
-                          {variant?.unitLabel} — {variant?.weightKg}kg
-                          {variant?.sku && ` • ${variant.sku}`}
+                          {item.variant?.unitLabel} — {item.variant?.weightKg}kg
+                          {item.variant?.sku && ` • ${item.variant.sku}`}
                           <span className="ml-2 text-emerald-500">
                             Stock: {item.availableQty}
                           </span>
                         </div>
                       </div>
                       <div className="text-sm font-semibold text-emerald-700 shrink-0">
-                        ৳{Number(price).toLocaleString()}
+                        ৳{Number(item.price).toLocaleString()}
                       </div>
                       <div className="shrink-0">
-                        {inCart ? (
+                        {!canOrder ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] bg-gray-100 text-gray-500 border border-gray-200 rounded font-medium">
+                            <Lock size={10} />
+                            Request Access
+                          </span>
+                        ) : inCart ? (
                           <div className="flex items-center gap-1">
                             <button
-                              onClick={() =>
-                                updateQty(variant?.id || item.variantId, -1)
-                              }
+                              onClick={() => updateQty(item.variantId, -1)}
                               className="w-6 h-6 flex items-center justify-center text-gray-500 hover:bg-gray-200 rounded"
                             >
                               <Minus size={12} />
@@ -360,9 +434,7 @@ export default function OrderFromWarehousePage() {
                               {inCart.quantity}
                             </span>
                             <button
-                              onClick={() =>
-                                updateQty(variant?.id || item.variantId, 1)
-                              }
+                              onClick={() => updateQty(item.variantId, 1)}
                               className="w-6 h-6 flex items-center justify-center text-blue-600 hover:bg-blue-100 rounded"
                             >
                               <Plus size={12} />
@@ -372,13 +444,13 @@ export default function OrderFromWarehousePage() {
                           <button
                             onClick={() =>
                               addToCart({
-                                variantId: variant?.id || item.variantId,
+                                variantId: item.variantId,
                                 quantity: 1,
-                                productName: product?.name || "Unknown",
-                                unitLabel: variant?.unitLabel || "",
-                                weightKg: variant?.weightKg || "",
-                                retailPrice: price,
-                                productImage: productImage,
+                                productName: item.product?.name || "Unknown",
+                                unitLabel: item.variant?.unitLabel || "",
+                                weightKg: item.variant?.weightKg || "",
+                                retailPrice: item.price,
+                                productImage: item.product?.image || "",
                               })
                             }
                             className="px-2 py-1 text-[10px] bg-blue-50 text-blue-600 border border-blue-200 rounded font-medium hover:bg-blue-100"
@@ -557,7 +629,8 @@ export default function OrderFromWarehousePage() {
 
           {orderMutation.isError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
-              {(orderMutation.error as any)?.message || "Failed to place order"}
+              {(orderMutation.error as any)?.message ||
+                "Failed to place order"}
             </div>
           )}
 
@@ -580,7 +653,7 @@ export default function OrderFromWarehousePage() {
                   return;
                 }
                 orderMutation.mutate({
-                  warehouseSlug: warehouseSlug!,
+                  warehouseSlug: selectedSlug!,
                   items: cart.map((c) => ({
                     variantId: c.variantId,
                     quantity: c.quantity,
@@ -623,7 +696,7 @@ export default function OrderFromWarehousePage() {
             <button
               onClick={() => {
                 setStep("connect");
-                setWarehouseSlug(null);
+                setSelectedSlug(null);
                 setOrderResult(null);
               }}
               className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
@@ -631,7 +704,7 @@ export default function OrderFromWarehousePage() {
               New Order
             </button>
             <a
-              href="/shop/dashboard/orders"
+              href="/dashboard/orders"
               className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
             >
               View My Orders
