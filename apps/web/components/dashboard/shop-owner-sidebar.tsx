@@ -52,6 +52,7 @@ const shopOwnerNavGroups: NavGroup[] = [
       { title: "My Store", url: `${D}/stores`, icon: StoreIcon },
       { title: "Stock", url: `${D}/inventory`, icon: BoxesIcon },
       { title: "Purchases", url: `${D}/orders`, icon: ShoppingCartIcon },
+      { title: "Order from Warehouse", url: `${D}/order-from-warehouse`, icon: PackageIcon },
       { title: "Suppliers", url: `${D}/suppliers`, icon: UsersIcon },
     ],
   },

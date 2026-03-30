@@ -1446,6 +1446,12 @@ const warehouseConnectionEndpoints = {
      * creates/updates connection record.
      */
     connectToWarehouse: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/connect-to-warehouse",
+            tags: ["Shop Owner"],
+            summary: "Connect to a warehouse (with category matching)",
+        })
         .input(
             z.object({
                 warehouseSlug: z.string().min(1),
@@ -1595,7 +1601,14 @@ const warehouseConnectionEndpoints = {
      * Step 7: Get recently connected warehouses (smart memory).
      * Sorted by lastOrderedAt descending.
      */
-    getConnectedWarehouses: shopOwnerProcedure.handler(
+    getConnectedWarehouses: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/connected-warehouses",
+            tags: ["Shop Owner"],
+            summary: "Get recently connected warehouses (smart memory)",
+        })
+        .handler(
         async ({ context }) => {
             const shopId = context.session.user.id;
 
@@ -1655,6 +1668,12 @@ const warehouseConnectionEndpoints = {
      * Products outside → canOrder: false ("Request Access")
      */
     getWarehouseProductsFiltered: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/warehouse-products-filtered",
+            tags: ["Shop Owner"],
+            summary: "Get warehouse products filtered by shop allowed categories",
+        })
         .input(
             z.object({
                 warehouseSlug: z.string().min(1),

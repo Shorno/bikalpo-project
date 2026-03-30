@@ -200,6 +200,11 @@ const adminNavGroups: NavGroup[] = [
         icon: WarehouseIcon,
       },
       {
+        title: "Shop Category Assignments",
+        url: `${ADMIN_BASE}/shop-category-assignments`,
+        icon: StoreIcon,
+      },
+      {
         title: "Salesmen",
         url: `${ADMIN_BASE}/salesmen`,
         icon: Users2Icon,
