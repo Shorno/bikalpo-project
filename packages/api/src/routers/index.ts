@@ -37,6 +37,7 @@ import { warehouseRouter } from "./warehouse";
 import { adminLandingRouter } from "./admin-landing";
 import { landingRouter } from "./landing";
 import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
+import { adminShopCategoryAssignmentRouter } from "./admin-shop-category-assignment";
 import { adminAreaRouter } from "./admin-area";
 import { adminSellerAreaRouter } from "./admin-seller-area";
 import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
@@ -93,6 +94,7 @@ export const appRouter = {
   toLet: toLetRouter,
   adminToLet: adminToLetRouter,
   adminWarehouseAssignment: adminWarehouseAssignmentRouter,
+  adminShopCategoryAssignment: adminShopCategoryAssignmentRouter,
   adminArea: adminAreaRouter,
   adminSellerArea: adminSellerAreaRouter,
   adminAreaAnalytics: adminAreaAnalyticsRouter,
