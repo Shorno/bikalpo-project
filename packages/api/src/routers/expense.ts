@@ -239,6 +239,7 @@ export const expenseRouter = {
             tags: ["Expense Management"],
             summary: "Get expense categories",
         })
+        .input(z.object({}).optional())
         .handler(async ({ context }) => {
             // Ensure system categories exist
             const existingSystem = await db.query.expenseCategory.findMany({

@@ -129,6 +129,8 @@ const warehouseNavGroups: NavGroup[] = [
     items: [
       { title: "Finance Dashboard", url: `${WH}/finance`, icon: WalletIcon },
       { title: "Expenses", url: `${WH}/finance/expenses`, icon: TrendingDownIcon },
+      { title: "Payable", url: `${WH}/finance/payable`, icon: CreditCardIcon },
+      { title: "Profit & Loss", url: `${WH}/finance/profit-loss`, icon: BarChart3Icon },
       { title: "Payees", url: `${WH}/finance/payees`, icon: UsersIcon },
       { title: "Transactions", url: `${WH}/transactions`, icon: CreditCardIcon },
     ],
