@@ -4,6 +4,7 @@ import {
   BarChart3Icon,
   BookOpenIcon,
   BoxesIcon,
+  ClipboardListIcon,
   CreditCardIcon,
   DollarSignIcon,
   FileTextIcon,
@@ -51,7 +52,8 @@ const shopOwnerNavGroups: NavGroup[] = [
     items: [
       { title: "My Store", url: `${D}/stores`, icon: StoreIcon },
       { title: "Stock", url: `${D}/inventory`, icon: BoxesIcon },
-      { title: "Purchases", url: `${D}/orders`, icon: ShoppingCartIcon },
+      { title: "My Orders", url: `${D}/orders`, icon: ShoppingCartIcon },
+      { title: "Purchase Entry", url: `${D}/purchases`, icon: ClipboardListIcon },
       { title: "Order from Warehouse", url: `${D}/order-from-warehouse`, icon: PackageIcon },
       { title: "Suppliers", url: `${D}/suppliers`, icon: UsersIcon },
     ],
