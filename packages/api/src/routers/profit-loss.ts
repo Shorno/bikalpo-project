@@ -1,6 +1,6 @@
 import { db } from "@bikalpo-project/db";
 import { expense, expenseCategory, order, purchase } from "@bikalpo-project/db/schema";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -29,6 +29,7 @@ export const profitLossRouter = {
             const ownerId = context.session.user.id;
 
             // Revenue = total from completed/delivered orders (as shop or warehouse)
+            // Cast createdAt to date to avoid timezone issues
             const [revenueResult] = await db
                 .select({ total: sql<string>`COALESCE(SUM(${order.total}::numeric), 0)::text` })
                 .from(order)
@@ -36,12 +37,13 @@ export const profitLossRouter = {
                     and(
                         sql`(${order.shopId} = ${ownerId} OR ${order.warehouseId} = ${ownerId})`,
                         sql`${order.status} IN ('confirmed', 'delivered')`,
-                        gte(order.createdAt, new Date(`${startDate}T00:00:00Z`)),
-                        lte(order.createdAt, new Date(`${endDate}T23:59:59Z`)),
+                        sql`${order.createdAt}::date >= ${startDate}::date`,
+                        sql`${order.createdAt}::date <= ${endDate}::date`,
                     ),
                 );
 
             // COGS = total from received purchases
+            // Use purchaseDate (date column) to avoid timestamp timezone issues
             const [cogsResult] = await db
                 .select({ total: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)::text` })
                 .from(purchase)
@@ -49,8 +51,8 @@ export const profitLossRouter = {
                     and(
                         eq(purchase.warehouseId, ownerId),
                         eq(purchase.status, "received"),
-                        gte(purchase.createdAt, new Date(`${startDate}T00:00:00Z`)),
-                        lte(purchase.createdAt, new Date(`${endDate}T23:59:59Z`)),
+                        sql`${purchase.purchaseDate}::date >= ${startDate}::date`,
+                        sql`${purchase.purchaseDate}::date <= ${endDate}::date`,
                     ),
                 );
 

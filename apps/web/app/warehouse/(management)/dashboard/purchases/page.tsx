@@ -280,7 +280,7 @@ export default function PurchasesPage() {
                         </div>
                         <input type="number" step="1" min="1" value={item.quantity} onChange={(e) => updateItem(i, "quantity", e.target.value)}
                           className="px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
-                        <input type="number" step="0.01" min="0" value={item.unitCost} onChange={(e) => updateItem(i, "unitCost", e.target.value)}
+                        <input type="number" step="any" min="0" value={item.unitCost} onChange={(e) => updateItem(i, "unitCost", e.target.value)}
                           className="px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
                         <button type="button" onClick={() => removeItem(i)} className="p-1 text-gray-400 hover:text-red-500 rounded">
                           <Trash2 size={14} />
@@ -295,12 +295,12 @@ export default function PurchasesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Transport Cost (৳)</label>
-                  <input type="number" step="0.01" min="0" value={form.transportCost} onChange={(e) => setForm({ ...form, transportCost: e.target.value })}
+                  <input type="number" step="any" min="0" value={form.transportCost} onChange={(e) => setForm({ ...form, transportCost: e.target.value })}
                     placeholder="0" className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Discount (৳)</label>
-                  <input type="number" step="0.01" min="0" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })}
+                  <input type="number" step="any" min="0" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })}
                     placeholder="0" className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
