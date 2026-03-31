@@ -114,7 +114,7 @@ export const purchaseRouter = {
 
             // Create financial ledger entry
             await db.insert(financialLedger).values({
-                entryType: "purchase",
+                entryType: input.paymentType === "credit" ? "purchase_credit" : "purchase_cash",
                 amount: String(total),
                 direction: "debit",
                 referenceType: "purchase",
