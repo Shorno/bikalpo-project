@@ -24,7 +24,9 @@ export const profitLossRouter = {
         .handler(async ({ context, input }) => {
             const { year, month } = input;
             const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-            const endDate = new Date(year, month, 0).toISOString().slice(0, 10); // Last day of month
+            // Build endDate without toISOString() to avoid UTC timezone shift
+            const lastDay = new Date(year, month, 0).getDate();
+            const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
             const ownerId = context.session.user.id;
 

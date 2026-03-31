@@ -5,11 +5,12 @@ import { and, desc, eq, gte, ilike, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import { localDateStamp, localDateString } from "../utils/date";
 
 /** Generate unique expense number: EXP-YYYYMMDD-NNN */
 async function generateExpenseNumber(ownerId: string): Promise<string> {
     const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
+    const dateStr = localDateStamp(today);
     const prefix = `EXP-${dateStr}-`;
 
     const [result] = await db
@@ -80,7 +81,7 @@ export const expenseRouter = {
                     categoryId: input.categoryId,
                     payeeId: input.payeeId || null,
                     amount: input.amount,
-                    paymentDate: input.paymentDate || new Date().toISOString().slice(0, 10),
+                    paymentDate: input.paymentDate || localDateString(),
                     paymentMethod: input.paymentMethod,
                     referenceNo: input.referenceNo || null,
                     attachment: input.attachment || null,

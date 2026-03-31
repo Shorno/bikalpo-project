@@ -5,11 +5,12 @@ import { and, desc, eq, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import { localDateStamp, localDateString } from "../utils/date";
 
 /** Generate unique purchase number: PO-YYYYMMDD-NNN */
 async function generatePurchaseNumber(warehouseId: string): Promise<string> {
     const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
+    const dateStr = localDateStamp(today);
     const prefix = `PO-${dateStr}-`;
 
     const [result] = await db
@@ -77,7 +78,7 @@ export const purchaseRouter = {
                     supplierId: input.supplierId,
                     warehouseId: ownerId,
                     supplierInvoiceNo: input.supplierInvoiceNo || null,
-                    purchaseDate: input.purchaseDate || new Date().toISOString().slice(0, 10),
+                    purchaseDate: input.purchaseDate || localDateString(),
                     subtotal: String(subtotal),
                     discount: String(discount),
                     total: String(total),

@@ -16,6 +16,7 @@ import {
     user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
+import { localDateStamp } from "../utils/date";
 import {
     and,
     count,
@@ -951,7 +952,7 @@ const purchaseQueries = {
 
             // Generate purchase number
             const now = new Date();
-            const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+            const dateStr = localDateStamp(now);
             const randomSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
             const purchaseNumber = `PO-${dateStr}-${randomSuffix}`;
 
