@@ -229,9 +229,17 @@ export const stockOverviewRouter = {
                 const groupKey = `${packKey}_${row.weightKg}`;
 
                 if (!variantGroupMap.has(groupKey)) {
+                    // Build a generic group label from pack type + weight
+                    // e.g. "Carton (12.00kg)" instead of "Carton 12×1L (IFAD)"
+                    const packLabel = packKey.charAt(0).toUpperCase() + packKey.slice(1);
+                    const wt = parseFloat(row.weightKg || "0");
+                    const genericLabel = isLoose
+                        ? `Loose (per KG)`
+                        : `${packLabel} (${wt % 1 === 0 ? wt.toFixed(0) : wt}kg)`;
+
                     variantGroupMap.set(groupKey, {
                         packType: packKey,
-                        unitLabel: row.unitLabel,
+                        unitLabel: genericLabel,
                         weightKg: row.weightKg,
                         items: [],
                     });
