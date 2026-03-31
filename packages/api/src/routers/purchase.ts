@@ -154,4 +154,27 @@ export const purchaseRouter = {
                 columns: { id: true, name: true, company: true, phone: true, creditLimit: true, currentPayable: true },
             });
         }),
+
+    /** Get products from admin catalog with variants for purchase dropdown */
+    getProducts: protectedProcedure
+        .route({ method: "POST", path: "/purchases/products", tags: ["Purchase Management"], summary: "Get products for purchase" })
+        .input(z.object({ search: z.string().optional() }).optional())
+        .handler(async ({ input }) => {
+            const { product, productVariant } = await import("@bikalpo-project/db/schema");
+            const conditions = [eq(product.status, "active")];
+            if (input?.search?.trim()) {
+                conditions.push(ilike(product.name, `%${input.search.trim()}%`));
+            }
+            return db.query.product.findMany({
+                where: and(...conditions),
+                orderBy: [desc(product.createdAt)],
+                limit: 50,
+                columns: { id: true, name: true },
+                with: {
+                    variants: {
+                        columns: { id: true, sku: true, unitLabel: true, weightKg: true, price: true, packagingType: true },
+                    },
+                },
+            });
+        }),
 };
