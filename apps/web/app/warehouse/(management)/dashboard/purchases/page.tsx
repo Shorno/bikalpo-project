@@ -2,265 +2,301 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
+  AlertCircle,
+  Calendar,
+  ClipboardList,
+  Loader2,
   Package,
   Plus,
-  Truck,
-  XCircle,
+  Trash2,
+  X,
 } from "lucide-react";
-import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-yellow-100 text-yellow-700",
-  received: "bg-green-100 text-green-700",
-  partial: "bg-blue-100 text-blue-700",
-  cancelled: "bg-red-100 text-red-700",
-};
-
-const STATUS_TABS = [
-  { value: undefined as string | undefined, label: "All" },
-  { value: "draft", label: "Draft" },
-  { value: "received", label: "Received" },
-  { value: "cancelled", label: "Cancelled" },
-];
+interface LineItem {
+  productName: string;
+  quantity: string;
+  unitCost: string;
+}
 
 export default function PurchasesPage() {
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [page, setPage] = useState(1);
+  const [showForm, setShowForm] = useState(false);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["warehouse", "purchases", statusFilter, page],
-    queryFn: () =>
-      orpc.warehouse.getPurchases.call({
-        status: statusFilter as any,
-        page,
-        limit: 20,
-      }),
+  // Queries
+  const { data: purchases, isLoading } = useQuery(
+    orpc.purchase.list.queryOptions({}),
+  );
+
+  const { data: suppliers } = useQuery(
+    orpc.purchase.getSuppliers.queryOptions({}),
+  );
+
+  // Form state
+  const [form, setForm] = useState({
+    supplierId: 0,
+    purchaseDate: new Date().toISOString().slice(0, 10),
+    supplierInvoiceNo: "",
+    paymentType: "cash" as "cash" | "credit",
+    transportCost: "",
+    discount: "",
+    note: "",
   });
+  const [items, setItems] = useState<LineItem[]>([{ productName: "", quantity: "", unitCost: "" }]);
 
-  const receiveMutation = useMutation({
-    mutationFn: (purchaseId: number) =>
-      orpc.warehouse.receivePurchase.call({ purchaseId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "purchases"] });
-    },
-  });
+  const createMutation = useMutation(
+    orpc.purchase.create.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(result.message);
+        queryClient.invalidateQueries({ queryKey: orpc.purchase.list.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.supplierPayment.getPayableSummary.key() });
+        setShowForm(false);
+        resetForm();
+      },
+      onError: (err) => toast.error(err.message),
+    }),
+  );
 
-  const cancelMutation = useMutation({
-    mutationFn: (purchaseId: number) =>
-      orpc.warehouse.cancelPurchase.call({ purchaseId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "purchases"] });
-    },
-  });
+  const resetForm = () => {
+    setForm({ supplierId: 0, purchaseDate: new Date().toISOString().slice(0, 10), supplierInvoiceNo: "", paymentType: "cash", transportCost: "", discount: "", note: "" });
+    setItems([{ productName: "", quantity: "", unitCost: "" }]);
+  };
 
-  const purchases = data?.purchases ?? [];
-  const pagination = data?.pagination;
+  const addItem = () => setItems([...items, { productName: "", quantity: "", unitCost: "" }]);
+  const removeItem = (i: number) => { if (items.length > 1) setItems(items.filter((_, idx) => idx !== i)); };
+  const updateItem = (i: number, field: keyof LineItem, val: string) => {
+    const updated = [...items];
+    updated[i] = { ...updated[i]!, [field]: val };
+    setItems(updated);
+  };
+
+  const subtotal = items.reduce((sum, item) => {
+    const q = parseFloat(item.quantity) || 0;
+    const c = parseFloat(item.unitCost) || 0;
+    return sum + q * c;
+  }, 0);
+  const discount = parseFloat(form.discount) || 0;
+  const transport = parseFloat(form.transportCost) || 0;
+  const total = subtotal - discount + transport;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (form.supplierId === 0) { toast.error("Select a supplier"); return; }
+    const validItems = items.filter(i => i.productName.trim() && i.quantity && i.unitCost);
+    if (validItems.length === 0) { toast.error("Add at least one item"); return; }
+
+    createMutation.mutate({
+      supplierId: form.supplierId,
+      purchaseDate: form.purchaseDate,
+      supplierInvoiceNo: form.supplierInvoiceNo || undefined,
+      paymentType: form.paymentType,
+      transportCost: form.transportCost || undefined,
+      discount: form.discount || undefined,
+      note: form.note || undefined,
+      items: validItems,
+    });
+  };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Truck className="text-emerald-600" size={24} />
+            <ClipboardList className="w-6 h-6 text-blue-600" />
             Purchases
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Track stock purchases from your suppliers
+            Record stock purchases from suppliers. Credit purchases create payables.
           </p>
         </div>
-        <Link
-          href="/warehouse/dashboard/purchases/new"
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium"
-        >
-          <Plus size={16} />
-          New Purchase
-        </Link>
-      </div>
-
-      {/* Status Filter Tabs */}
-      <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-lg w-fit">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab.label}
-            onClick={() => {
-              setStatusFilter(tab.value);
-              setPage(1);
-            }}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              statusFilter === tab.value
-                ? "bg-white shadow text-gray-900"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        <button onClick={() => { resetForm(); setShowForm(true); }}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition">
+          <Plus size={16} /> New Purchase
+        </button>
       </div>
 
       {/* Purchase List */}
-      {isLoading ? (
-        <div className="text-center py-12 text-gray-400">Loading...</div>
-      ) : purchases.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-          <Package className="mx-auto text-gray-300 mb-3" size={48} />
-          <p className="text-gray-500 font-medium">No purchases yet</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Create a purchase order to add stock to your warehouse
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {purchases.map((p: any) => (
-            <div
-              key={p.id}
-              className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:border-emerald-200 transition-colors"
-            >
-              {/* Purchase Header Row */}
-              <div
-                className="p-4 flex items-center justify-between cursor-pointer"
-                onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
-              >
-                <div className="flex items-center gap-4">
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">
-                      {p.purchaseNumber}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {p.supplier?.name || "Unknown Supplier"}
-                    </p>
-                  </div>
-                  <span
-                    className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full ${STATUS_COLORS[p.status] || "bg-gray-100 text-gray-600"}`}
-                  >
-                    {p.status}
-                  </span>
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>
+        ) : (purchases ?? []).length === 0 ? (
+          <div className="p-12 text-center">
+            <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm text-gray-500">No purchases recorded yet</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b text-gray-600 text-left">
+              <tr>
+                <th className="px-4 py-3 font-medium">Purchase #</th>
+                <th className="px-4 py-3 font-medium">Supplier</th>
+                <th className="px-4 py-3 font-medium">Date</th>
+                <th className="px-4 py-3 font-medium">Items</th>
+                <th className="px-4 py-3 font-medium">Payment</th>
+                <th className="px-4 py-3 font-medium text-right">Total</th>
+                <th className="px-4 py-3 font-medium text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {(purchases ?? []).map((p: any) => (
+                <tr key={p.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-mono text-xs text-blue-600">{p.purchaseNumber}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{p.supplier?.name}</td>
+                  <td className="px-4 py-3 text-gray-600">
+                    <div className="flex items-center gap-1"><Calendar size={12} className="text-gray-400" />{p.purchaseDate}</div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">{p.items?.length ?? 0} items</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${p.paymentType === "credit" ? "bg-orange-50 text-orange-700" : "bg-green-50 text-green-700"}`}>
+                      {p.paymentType === "credit" ? "Credit" : "Cash"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-gray-900">৳{Number(p.total).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-full font-medium">{p.status}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* New Purchase Form */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <ClipboardList size={20} className="text-blue-600" /> New Purchase Entry
+              </h2>
+              <button onClick={() => setShowForm(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-4">
+              {/* Supplier + Date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Supplier *</label>
+                  <select value={form.supplierId} onChange={(e) => setForm({ ...form, supplierId: Number(e.target.value) })}
+                    className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    <option value={0}>Select supplier</option>
+                    {(suppliers ?? []).map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.name}{s.company ? ` (${s.company})` : ""}</option>
+                    ))}
+                  </select>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="font-bold text-gray-900">
-                      ৳{parseFloat(p.total).toLocaleString()}
-                    </p>
-                    <p className="text-[10px] text-gray-400">
-                      {p.items?.length || 0} items •{" "}
-                      {new Date(p.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  {expandedId === p.id ? (
-                    <ChevronUp size={16} className="text-gray-400" />
-                  ) : (
-                    <ChevronDown size={16} className="text-gray-400" />
-                  )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Date</label>
+                  <input type="date" value={form.purchaseDate} onChange={(e) => setForm({ ...form, purchaseDate: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
 
-              {/* Expanded Details */}
-              {expandedId === p.id && (
-                <div className="border-t border-gray-100 px-4 pb-4">
-                  {/* Items Table */}
-                  <table className="w-full mt-3 text-sm">
-                    <thead>
-                      <tr className="text-xs text-gray-400 uppercase">
-                        <th className="text-left py-2">Product</th>
-                        <th className="text-right py-2">Qty</th>
-                        <th className="text-right py-2">Unit Cost</th>
-                        <th className="text-right py-2">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {p.items?.map((item: any) => (
-                        <tr key={item.id} className="border-t border-gray-50">
-                          <td className="py-2 text-gray-700">
-                            {item.productName}
-                          </td>
-                          <td className="py-2 text-right text-gray-600">
-                            {item.quantity}
-                          </td>
-                          <td className="py-2 text-right text-gray-600">
-                            ৳{parseFloat(item.unitCost).toLocaleString()}
-                          </td>
-                          <td className="py-2 text-right font-medium text-gray-900">
-                            ৳{parseFloat(item.totalCost).toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {/* Payment Type + Invoice */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Payment Type *</label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setForm({ ...form, paymentType: "cash" })}
+                      className={`flex-1 py-2 text-sm font-medium rounded-lg border transition ${form.paymentType === "cash" ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                      💵 Cash
+                    </button>
+                    <button type="button" onClick={() => setForm({ ...form, paymentType: "credit" })}
+                      className={`flex-1 py-2 text-sm font-medium rounded-lg border transition ${form.paymentType === "credit" ? "bg-orange-600 text-white border-orange-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                      📝 Credit
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Invoice No</label>
+                  <input type="text" value={form.supplierInvoiceNo} onChange={(e) => setForm({ ...form, supplierInvoiceNo: e.target.value })}
+                    placeholder="Optional" className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
 
-                  {p.note && (
-                    <p className="text-xs text-gray-500 mt-3 bg-gray-50 p-2 rounded">
-                      Note: {p.note}
-                    </p>
-                  )}
-
-                  {/* Actions */}
-                  {p.status === "draft" && (
-                    <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100">
-                      <button
-                        onClick={() => {
-                          if (
-                            confirm(
-                              "Mark this purchase as received? Stock will be added to your inventory.",
-                            )
-                          )
-                            receiveMutation.mutate(p.id);
-                        }}
-                        disabled={receiveMutation.isPending}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 disabled:opacity-50"
-                      >
-                        <CheckCircle2 size={13} />
-                        Mark Received
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm("Cancel this purchase?"))
-                            cancelMutation.mutate(p.id);
-                        }}
-                        disabled={cancelMutation.isPending}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 text-red-600 text-xs rounded-lg hover:bg-red-50 disabled:opacity-50"
-                      >
-                        <XCircle size={13} />
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-
-                  {p.status === "received" && p.receivedAt && (
-                    <p className="flex items-center gap-1 text-xs text-green-600 mt-3">
-                      <CheckCircle2 size={12} />
-                      Received on {new Date(p.receivedAt).toLocaleDateString()}
-                    </p>
-                  )}
+              {/* Credit Warning */}
+              {form.paymentType === "credit" && (
+                <div className="flex items-start gap-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <AlertCircle size={14} className="text-orange-600 mt-0.5 shrink-0" />
+                  <p className="text-xs text-orange-700">
+                    Credit purchase will add the total amount to the supplier's <strong>Outstanding Payable</strong>. Pay later from Finance → Payable.
+                  </p>
                 </div>
               )}
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Pagination */}
-      {pagination && pagination.totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-6">
-          {Array.from({ length: pagination.totalPages }, (_, i) => (
-            <button
-              key={i}
-              onClick={() => setPage(i + 1)}
-              className={`px-3 py-1 text-sm rounded ${
-                page === i + 1
-                  ? "bg-emerald-600 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              {i + 1}
-            </button>
-          ))}
+              {/* Line Items */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-semibold text-gray-700">Items *</label>
+                  <button type="button" onClick={addItem} className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                    <Plus size={12} /> Add Row
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-[1fr_80px_100px_32px] gap-2 text-xs text-gray-500 font-medium px-1">
+                    <span>Product Name</span><span>Qty</span><span>Unit Cost (৳)</span><span></span>
+                  </div>
+                  {items.map((item, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_80px_100px_32px] gap-2">
+                      <input type="text" value={item.productName} onChange={(e) => updateItem(i, "productName", e.target.value)}
+                        placeholder="Product name" className="px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input type="number" step="1" min="1" value={item.quantity} onChange={(e) => updateItem(i, "quantity", e.target.value)}
+                        placeholder="0" className="px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input type="number" step="0.01" min="0" value={item.unitCost} onChange={(e) => updateItem(i, "unitCost", e.target.value)}
+                        placeholder="0.00" className="px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <button type="button" onClick={() => removeItem(i)}
+                        className="p-1 text-gray-400 hover:text-red-500 rounded self-center" disabled={items.length === 1}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Transport + Discount */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Transport Cost (৳)</label>
+                  <input type="number" step="0.01" min="0" value={form.transportCost} onChange={(e) => setForm({ ...form, transportCost: e.target.value })}
+                    placeholder="0" className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Discount (৳)</label>
+                  <input type="number" step="0.01" min="0" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })}
+                    placeholder="0" className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} rows={2}
+                  className="w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+              </div>
+
+              {/* Totals Summary */}
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
+                <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>৳{subtotal.toLocaleString()}</span></div>
+                {discount > 0 && <div className="flex justify-between text-gray-600"><span>Discount</span><span className="text-green-600">-৳{discount.toLocaleString()}</span></div>}
+                {transport > 0 && <div className="flex justify-between text-gray-600"><span>Transport</span><span>+৳{transport.toLocaleString()}</span></div>}
+                <div className="flex justify-between font-bold text-gray-900 border-t pt-1"><span>Total</span><span>৳{total.toLocaleString()}</span></div>
+              </div>
+
+              {/* Submit */}
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowForm(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition">Cancel</button>
+                <button type="submit" disabled={createMutation.isPending}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 transition">
+                  {createMutation.isPending && <Loader2 size={14} className="animate-spin" />}
+                  Save Purchase
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
