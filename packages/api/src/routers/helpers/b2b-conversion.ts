@@ -76,10 +76,12 @@ export async function convertB2bOrderToRetailInventory(
             where: eq(productVariant.id, resolvedVariantId),
             columns: {
                 id: true,
+                productId: true,
                 variantType: true,
                 linkedRetailVariantId: true,
                 conversionRatio: true,
                 conversionLossPercent: true,
+                brandId: true,
             },
         });
 
@@ -93,10 +95,39 @@ export async function convertB2bOrderToRetailInventory(
         });
 
         // Use map rule first, then fall back to variant's own fields
-        const targetRetailVariantId =
+        let targetRetailVariantId =
             conversionMap?.toVariantId ??
             tradeVariant.linkedRetailVariantId ??
             tradeVariant.id;
+
+        // Brand-aware conversion: if the target retail variant doesn't match
+        // the trade variant's brand, try to find a matching retail variant
+        // with the same brand + same product
+        if (tradeVariant.brandId && targetRetailVariantId !== tradeVariant.id) {
+            const targetRetailVariant = await tx.query.productVariant.findFirst({
+                where: eq(productVariant.id, targetRetailVariantId),
+                columns: { id: true, brandId: true, productId: true, packType: true, weightKg: true },
+            });
+
+            if (targetRetailVariant && targetRetailVariant.brandId !== tradeVariant.brandId) {
+                // Try to find a retail variant with matching brand + same pack type + same weight
+                const brandMatchedRetail = await tx.query.productVariant.findFirst({
+                    where: and(
+                        eq(productVariant.productId, targetRetailVariant.productId),
+                        eq(productVariant.brandId, tradeVariant.brandId),
+                        eq(productVariant.variantType, "retail"),
+                        eq(productVariant.isActive, true),
+                    ),
+                    columns: { id: true },
+                });
+
+                if (brandMatchedRetail) {
+                    targetRetailVariantId = brandMatchedRetail.id;
+                    console.log(`[B2B-CONVERT] Brand-aware: switched to variant ${brandMatchedRetail.id} matching brand ${tradeVariant.brandId}`);
+                }
+            }
+        }
+
         const conversionRatio = Number(
             conversionMap?.conversionRatio ??
             tradeVariant.conversionRatio ??
@@ -106,7 +137,7 @@ export async function convertB2bOrderToRetailInventory(
         const retailQty =
             orderedQty * conversionRatio * (1 - lossPercent / 100);
 
-        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: map=${conversionMap ? 'YES' : 'NO'}, target=${targetRetailVariantId}, ratio=${conversionRatio}, orderedQty=${orderedQty}, retailQty=${retailQty}`);
+        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: map=${conversionMap ? 'YES' : 'NO'}, target=${targetRetailVariantId}, ratio=${conversionRatio}, brand=${tradeVariant.brandId ?? 'none'}, orderedQty=${orderedQty}, retailQty=${retailQty}`);
 
         // ─── A. Deduct source inventory (warehouse or super_seller) ───
 
