@@ -99,15 +99,15 @@ export default function DispatchOrdersPage() {
     setLoading(true);
     try {
       if (activeTab === "unassigned") {
-        const data = await apiFetch("/api/delivery/invoices/unassigned");
+        const data = await apiFetch("/delivery/invoices/unassigned");
         setUnassignedInvoices(data.invoices || []);
       } else if (activeTab === "active") {
-        const data = await apiFetch("/api/delivery-groups/list");
+        const data = await apiFetch("/delivery-groups/list");
         setActiveGroups((data.groups || []).filter((g: any) =>
           ["assigned", "out_for_delivery"].includes(g.status)
         ));
       } else if (activeTab === "approval") {
-        const data = await apiFetch("/api/delivery/pending-approvals");
+        const data = await apiFetch("/delivery/pending-approvals");
         setPendingApprovals(data.groups || []);
       }
     } catch (err) {
@@ -122,7 +122,7 @@ export default function DispatchOrdersPage() {
   // Fetch deliverymen for assignment
   const fetchDeliverymen = async () => {
     try {
-      const data = await apiFetch("/api/delivery/for-assignment");
+      const data = await apiFetch("/delivery/for-assignment");
       setDeliverymen(data.deliverymen || []);
     } catch (err) {
       console.error(err);
@@ -144,7 +144,7 @@ export default function DispatchOrdersPage() {
 
     setCreateLoading(true);
     try {
-      await apiFetch("/api/delivery-groups/create", {
+      await apiFetch("/delivery-groups/create", {
         method: "POST",
         body: JSON.stringify({
           groupName: groupName.trim(),
@@ -169,7 +169,7 @@ export default function DispatchOrdersPage() {
   const handleApprove = async (groupId: number) => {
     setActionLoading(`approve-${groupId}`);
     try {
-      await apiFetch(`/api/delivery-groups/${groupId}/approve`, {
+      await apiFetch(`/delivery-groups/${groupId}/approve`, {
         method: "POST",
         body: JSON.stringify({ groupId, cashReceived: true, packReceived: true, supervisorNote: approvalNote || undefined }),
       });
@@ -187,7 +187,7 @@ export default function DispatchOrdersPage() {
     if (!approvalNote.trim()) return alert("Enter a note for the flag");
     setActionLoading(`flag-${groupId}`);
     try {
-      await apiFetch(`/api/delivery-groups/${groupId}/flag`, {
+      await apiFetch(`/delivery-groups/${groupId}/flag`, {
         method: "POST",
         body: JSON.stringify({ groupId, supervisorNote: approvalNote }),
       });

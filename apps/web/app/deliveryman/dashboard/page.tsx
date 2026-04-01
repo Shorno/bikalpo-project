@@ -94,7 +94,7 @@ export default function DeliverymanDashboard() {
   const fetchGroups = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiFetch("/api/my-deliveries");
+      const data = await apiFetch("/my-deliveries");
       setGroups(data.groups || []);
       if (data.groups?.length === 1) setExpandedGroup(data.groups[0].id);
     } catch (err) {
@@ -123,7 +123,7 @@ export default function DeliverymanDashboard() {
     setActionLoading(`start-${groupId}`);
     try {
       const pos = await getPosition();
-      await apiFetch(`/api/deliveries/${groupId}/start`, {
+      await apiFetch(`/deliveries/${groupId}/start`, {
         method: "POST",
         body: JSON.stringify({ id: groupId, lat: pos?.lat, lng: pos?.lng }),
       });
@@ -141,7 +141,7 @@ export default function DeliverymanDashboard() {
     setActionLoading(`deliver-${deliveryInvoiceId}`);
     try {
       const pos = await getPosition();
-      await apiFetch("/api/deliveries/mark-delivered", {
+      await apiFetch("/deliveries/mark-delivered", {
         method: "POST",
         body: JSON.stringify({
           deliveryInvoiceId,
@@ -171,7 +171,7 @@ export default function DeliverymanDashboard() {
     setActionLoading(`fail-${deliveryInvoiceId}`);
     try {
       const pos = await getPosition();
-      await apiFetch("/api/deliveries/mark-failed", {
+      await apiFetch("/deliveries/mark-failed", {
         method: "POST",
         body: JSON.stringify({
           deliveryInvoiceId,
@@ -196,7 +196,7 @@ export default function DeliverymanDashboard() {
     setActionLoading(`end-${groupId}`);
     try {
       const pos = await getPosition();
-      const data = await apiFetch(`/api/deliveries/${groupId}/end-route`, {
+      const data = await apiFetch(`/deliveries/${groupId}/end-route`, {
         method: "POST",
         body: JSON.stringify({ groupId, lat: pos?.lat, lng: pos?.lng }),
       });

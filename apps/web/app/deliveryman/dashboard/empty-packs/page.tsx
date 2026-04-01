@@ -32,7 +32,7 @@ export default function EmptyPacksPage() {
 
   const fetchGroups = useCallback(async () => {
     try {
-      const data = await apiFetch("/api/my-deliveries");
+      const data = await apiFetch("/my-deliveries");
       setGroups(data.groups || []);
     } catch (err) {
       console.error(err);
@@ -47,7 +47,7 @@ export default function EmptyPacksPage() {
     if (!showModal || !packDescription.trim()) return alert("Enter pack description");
     setSubmitLoading(true);
     try {
-      await apiFetch("/api/deliveries/collect-empty-pack", {
+      await apiFetch("/deliveries/collect-empty-pack", {
         method: "POST",
         body: JSON.stringify({
           deliveryGroupInvoiceId: showModal,

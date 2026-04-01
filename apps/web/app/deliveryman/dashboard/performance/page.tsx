@@ -36,7 +36,7 @@ export default function PerformancePage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch(`${apiBase}/api/stats`, {
+        const res = await fetch(`${apiBase}/stats`, {
           credentials: "include",
         });
         if (res.ok) {

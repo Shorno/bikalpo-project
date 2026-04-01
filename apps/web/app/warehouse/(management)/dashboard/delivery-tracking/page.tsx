@@ -32,7 +32,7 @@ export default function DeliveryTrackingPage() {
   const fetchGroups = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiFetch("/api/delivery-groups/list");
+      const data = await apiFetch("/delivery-groups/list");
       setGroups(data.groups || []);
     } catch (err) {
       console.error(err);

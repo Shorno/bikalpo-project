@@ -29,7 +29,7 @@ export default function ActiveRoutePage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await apiFetch("/api/my-deliveries");
+        const data = await apiFetch("/my-deliveries");
         setGroups(data.groups || []);
       } catch (err) {
         console.error(err);
@@ -53,7 +53,7 @@ export default function ActiveRoutePage() {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
-            await apiFetch("/api/deliveries/ping-location", {
+            await apiFetch("/deliveries/ping-location", {
               method: "POST",
               body: JSON.stringify({
                 groupId: activeGroup.id,

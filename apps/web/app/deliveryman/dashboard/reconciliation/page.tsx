@@ -60,7 +60,7 @@ export default function ReconciliationPage() {
 
   const fetchGroups = useCallback(async () => {
     try {
-      const data = await apiFetch("/api/my-deliveries");
+      const data = await apiFetch("/my-deliveries");
       setGroups(data.groups || []);
     } catch (err) {
       console.error(err);
@@ -74,7 +74,7 @@ export default function ReconciliationPage() {
   const fetchReconciliation = useCallback(async (groupId: number) => {
     try {
       setReconcLoading(true);
-      const data = await apiFetch(`/api/deliveries/${groupId}/reconciliation?groupId=${groupId}`);
+      const data = await apiFetch(`/deliveries/${groupId}/reconciliation?groupId=${groupId}`);
       setReconciliation(data);
     } catch (err) {
       console.error(err);
@@ -91,7 +91,7 @@ export default function ReconciliationPage() {
     if (!selectedGroupId) return;
     setSubmitLoading(true);
     try {
-      await apiFetch(`/api/deliveries/${selectedGroupId}/submit-packs`, {
+      await apiFetch(`/deliveries/${selectedGroupId}/submit-packs`, {
         method: "POST",
         body: JSON.stringify({ groupId: selectedGroupId }),
       });
