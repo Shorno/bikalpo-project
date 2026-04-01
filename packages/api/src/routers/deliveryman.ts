@@ -1,7 +1,18 @@
 import { db } from "@bikalpo-project/db";
-import { deliveryGroup, deliveryGroupInvoice, deliveryRule, invoice, user, order, orderReturn } from "@bikalpo-project/db/schema";
+import {
+    deliveryGroup,
+    deliveryGroupInvoice,
+    deliveryKpi,
+    deliveryLocationPing,
+    deliveryRule,
+    emptyPack,
+    invoice,
+    user,
+    order,
+    orderReturn,
+} from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql, sum, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, deliverymanProcedure, protectedProcedure } from "../index";
@@ -317,9 +328,13 @@ export const deliverymanRouter = {
             method: "POST",
             path: "/deliveries/{id}/start",
             tags: ["Deliveryman"],
-            summary: "Start delivery trip",
+            summary: "Start delivery trip with GPS check-in",
         })
-        .input(z.object({ id: z.number() }))
+        .input(z.object({
+            id: z.number(),
+            lat: z.number().optional(),
+            lng: z.number().optional(),
+        }))
         .handler(async ({ input, context }) => {
             const group = await db.query.deliveryGroup.findFirst({
                 where: eq(deliveryGroup.id, input.id),
@@ -333,11 +348,26 @@ export const deliverymanRouter = {
             const generateOtp = () => Math.floor(1000 + Math.random() * 9000).toString();
 
             await db.transaction(async (tx) => {
-                await tx.update(deliveryGroup).set({ status: "out_for_delivery" }).where(eq(deliveryGroup.id, input.id));
+                await tx.update(deliveryGroup).set({
+                    status: "out_for_delivery",
+                    startLat: input.lat?.toString() ?? null,
+                    startLng: input.lng?.toString() ?? null,
+                    startedAt: new Date(),
+                }).where(eq(deliveryGroup.id, input.id));
 
                 for (const groupInv of group.invoices) {
                     await tx.update(deliveryGroupInvoice).set({ deliveryOtp: generateOtp() }).where(eq(deliveryGroupInvoice.id, groupInv.id));
                     await tx.update(invoice).set({ deliveryStatus: "out_for_delivery" }).where(eq(invoice.id, groupInv.invoiceId));
+                }
+
+                // Record initial GPS ping
+                if (input.lat && input.lng) {
+                    await tx.insert(deliveryLocationPing).values({
+                        groupId: input.id,
+                        deliverymanId: context.session.user.id,
+                        lat: input.lat.toString(),
+                        lng: input.lng.toString(),
+                    });
                 }
             });
 
@@ -352,12 +382,19 @@ export const deliverymanRouter = {
             method: "POST",
             path: "/deliveries/mark-delivered",
             tags: ["Deliveryman"],
-            summary: "Mark invoice as delivered",
+            summary: "Mark invoice as delivered with payment and GPS",
         })
         .input(z.object({
             deliveryInvoiceId: z.number(),
             deliveryPhoto: z.string().url().optional().nullable(),
             deliveryOtp: z.string().length(4),
+            // GPS at delivery location
+            lat: z.number().optional(),
+            lng: z.number().optional(),
+            // Payment collection
+            paymentMethod: z.enum(["cash", "bkash", "nagad", "bank_transfer", "other"]).optional(),
+            amountCollected: z.number().optional(),
+            transactionId: z.string().optional(),
         }))
         .handler(async ({ input, context }) => {
             const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
@@ -372,17 +409,26 @@ export const deliverymanRouter = {
             if (deliveryInv.deliveryOtp !== input.deliveryOtp) throw new ORPCError("BAD_REQUEST", { message: "Invalid OTP" });
 
             await db.transaction(async (tx) => {
+                // Update delivery group invoice with all data
                 await tx.update(deliveryGroupInvoice).set({
                     status: "delivered",
                     deliveredAt: new Date(),
                     deliveryPhoto: input.deliveryPhoto,
+                    deliveryLat: input.lat?.toString() ?? null,
+                    deliveryLng: input.lng?.toString() ?? null,
+                    paymentMethod: input.paymentMethod ?? null,
+                    amountCollected: input.amountCollected?.toString() ?? "0",
+                    transactionId: input.transactionId ?? null,
                 }).where(eq(deliveryGroupInvoice.id, input.deliveryInvoiceId));
 
+                // Update invoice status
                 await tx.update(invoice).set({
                     deliveryStatus: "delivered",
                     deliveredAt: new Date(),
+                    paymentStatus: input.amountCollected ? "collected" : "unpaid",
                 }).where(eq(invoice.id, deliveryInv.invoiceId));
 
+                // Update order status
                 if (deliveryInv.invoice?.orderId) {
                     await tx.update(order).set({
                         status: "delivered",
@@ -393,10 +439,27 @@ export const deliverymanRouter = {
                     await convertB2bOrderToRetailInventory(tx, deliveryInv.invoice.orderId);
                 }
 
+                // Update delivery group counters + running payment total
+                const cashAdd = input.paymentMethod === "cash" ? (input.amountCollected || 0) : 0;
+                const digitalAdd = input.paymentMethod && input.paymentMethod !== "cash" ? (input.amountCollected || 0) : 0;
+
                 await tx.update(deliveryGroup).set({
                     completedInvoices: sql`${deliveryGroup.completedInvoices} + 1`,
+                    totalCashCollected: sql`${deliveryGroup.totalCashCollected}::numeric + ${cashAdd}`,
+                    totalDigitalCollected: sql`${deliveryGroup.totalDigitalCollected}::numeric + ${digitalAdd}`,
                 }).where(eq(deliveryGroup.id, deliveryInv.groupId));
 
+                // Record GPS ping at delivery location
+                if (input.lat && input.lng) {
+                    await tx.insert(deliveryLocationPing).values({
+                        groupId: deliveryInv.groupId,
+                        deliverymanId: context.session.user.id,
+                        lat: input.lat.toString(),
+                        lng: input.lng.toString(),
+                    });
+                }
+
+                // Check if all invoices are processed → auto-close group
                 const [remaining] = await tx.select({ count: count() }).from(deliveryGroupInvoice).where(and(
                     eq(deliveryGroupInvoice.groupId, deliveryInv.groupId),
                     eq(deliveryGroupInvoice.status, "pending")
@@ -425,11 +488,14 @@ export const deliverymanRouter = {
             method: "POST",
             path: "/deliveries/mark-failed",
             tags: ["Deliveryman"],
-            summary: "Mark invoice as failed",
+            summary: "Mark invoice as failed with proof",
         })
         .input(z.object({
             deliveryInvoiceId: z.number(),
             failedReason: z.string().min(1),
+            failedPhoto: z.string().url().optional().nullable(),
+            lat: z.number().optional(),
+            lng: z.number().optional(),
         }))
         .handler(async ({ input, context }) => {
             const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
@@ -446,9 +512,22 @@ export const deliverymanRouter = {
                 await tx.update(deliveryGroupInvoice).set({
                     status: "failed",
                     failedReason: input.failedReason,
+                    failedPhoto: input.failedPhoto ?? null,
+                    deliveryLat: input.lat?.toString() ?? null,
+                    deliveryLng: input.lng?.toString() ?? null,
                 }).where(eq(deliveryGroupInvoice.id, input.deliveryInvoiceId));
 
                 await tx.update(invoice).set({ deliveryStatus: "failed" }).where(eq(invoice.id, deliveryInv.invoiceId));
+
+                // Record GPS ping
+                if (input.lat && input.lng) {
+                    await tx.insert(deliveryLocationPing).values({
+                        groupId: deliveryInv.groupId,
+                        deliverymanId: context.session.user.id,
+                        lat: input.lat.toString(),
+                        lng: input.lng.toString(),
+                    });
+                }
 
                 const [remaining] = await tx.select({ count: count() }).from(deliveryGroupInvoice).where(and(
                     eq(deliveryGroupInvoice.groupId, deliveryInv.groupId),
@@ -1075,6 +1154,454 @@ export const deliverymanRouter = {
                 showOtp: true,
                 deliveryStatus: deliveryInvoice.status,
             };
+        }),
+
+    // ==================== NEW DELIVERY WORKFLOW ENDPOINTS ====================
+
+    /**
+     * Periodic GPS ping during delivery route
+     */
+    pingLocation: deliverymanProcedure
+        .route({
+            method: "POST",
+            path: "/deliveries/ping-location",
+            tags: ["Deliveryman"],
+            summary: "Send periodic GPS ping during delivery",
+        })
+        .input(z.object({
+            groupId: z.number(),
+            lat: z.number(),
+            lng: z.number(),
+            accuracy: z.number().optional(),
+            speed: z.number().optional(),
+            batteryLevel: z.number().int().min(0).max(100).optional(),
+        }))
+        .handler(async ({ input, context }) => {
+            // Verify group belongs to this deliveryman and is active
+            const group = await db.query.deliveryGroup.findFirst({
+                where: and(
+                    eq(deliveryGroup.id, input.groupId),
+                    eq(deliveryGroup.deliverymanId, context.session.user.id),
+                ),
+                columns: { id: true, status: true },
+            });
+
+            if (!group) throw new ORPCError("NOT_FOUND");
+            if (group.status !== "out_for_delivery") return { success: true }; // silently skip if not active
+
+            await db.insert(deliveryLocationPing).values({
+                groupId: input.groupId,
+                deliverymanId: context.session.user.id,
+                lat: input.lat.toString(),
+                lng: input.lng.toString(),
+                accuracy: input.accuracy?.toString() ?? null,
+                speed: input.speed?.toString() ?? null,
+                batteryLevel: input.batteryLevel ?? null,
+            });
+
+            return { success: true };
+        }),
+
+    /**
+     * Collect empty pack from customer during delivery
+     */
+    collectEmptyPack: deliverymanProcedure
+        .route({
+            method: "POST",
+            path: "/deliveries/collect-empty-pack",
+            tags: ["Deliveryman"],
+            summary: "Record empty pack collection",
+        })
+        .input(z.object({
+            deliveryGroupInvoiceId: z.number(),
+            variantId: z.number().optional(),
+            brandId: z.number().optional(),
+            packDescription: z.string().optional(),
+            quantityCollected: z.number().int().min(1),
+            photoProof: z.string().url().optional(),
+            notes: z.string().optional(),
+        }))
+        .handler(async ({ input, context }) => {
+            // Verify the delivery invoice belongs to this deliveryman
+            const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
+                where: eq(deliveryGroupInvoice.id, input.deliveryGroupInvoiceId),
+                with: { group: true },
+            });
+
+            if (!deliveryInv) throw new ORPCError("NOT_FOUND");
+            if (deliveryInv.group.deliverymanId !== context.session.user.id) {
+                throw new ORPCError("FORBIDDEN");
+            }
+
+            const [created] = await db.insert(emptyPack).values({
+                deliveryGroupInvoiceId: input.deliveryGroupInvoiceId,
+                variantId: input.variantId ?? null,
+                brandId: input.brandId ?? null,
+                packDescription: input.packDescription ?? null,
+                quantityCollected: input.quantityCollected,
+                photoProof: input.photoProof ?? null,
+                status: "collected",
+                notes: input.notes ?? null,
+            }).returning();
+
+            return { success: true, emptyPack: created };
+        }),
+
+    /**
+     * End delivery route — GPS check-out + auto-calculate reconciliation
+     */
+    endRoute: deliverymanProcedure
+        .route({
+            method: "POST",
+            path: "/deliveries/{groupId}/end-route",
+            tags: ["Deliveryman"],
+            summary: "End delivery route with GPS check-out",
+        })
+        .input(z.object({
+            groupId: z.number(),
+            lat: z.number().optional(),
+            lng: z.number().optional(),
+        }))
+        .handler(async ({ input, context }) => {
+            const group = await db.query.deliveryGroup.findFirst({
+                where: and(
+                    eq(deliveryGroup.id, input.groupId),
+                    eq(deliveryGroup.deliverymanId, context.session.user.id),
+                ),
+                with: { invoices: { with: { invoice: true } } },
+            });
+
+            if (!group) throw new ORPCError("NOT_FOUND");
+            if (group.status === "assigned") throw new ORPCError("BAD_REQUEST", { message: "Trip not started yet" });
+
+            // Check if there are still pending invoices
+            const pendingCount = group.invoices.filter(i => i.status === "pending").length;
+            if (pendingCount > 0) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `${pendingCount} invoice(s) still pending. Complete or fail all before ending route.`,
+                });
+            }
+
+            // Calculate expected total from delivered invoices
+            const expectedTotal = group.invoices
+                .filter(i => i.status === "delivered" && i.invoice)
+                .reduce((sum, i) => sum + parseFloat(i.invoice?.grandTotal || "0"), 0);
+
+            await db.transaction(async (tx) => {
+                const hasFailed = group.invoices.some(i => i.status === "failed");
+
+                await tx.update(deliveryGroup).set({
+                    status: hasFailed ? "partial" : "completed",
+                    completedAt: new Date(),
+                    endLat: input.lat?.toString() ?? null,
+                    endLng: input.lng?.toString() ?? null,
+                    expectedTotal: expectedTotal.toString(),
+                }).where(eq(deliveryGroup.id, input.groupId));
+
+                // Record final GPS ping
+                if (input.lat && input.lng) {
+                    await tx.insert(deliveryLocationPing).values({
+                        groupId: input.groupId,
+                        deliverymanId: context.session.user.id,
+                        lat: input.lat.toString(),
+                        lng: input.lng.toString(),
+                    });
+                }
+            });
+
+            return {
+                success: true,
+                reconciliation: {
+                    expectedTotal,
+                    totalCashCollected: parseFloat(group.totalCashCollected || "0"),
+                    totalDigitalCollected: parseFloat(group.totalDigitalCollected || "0"),
+                    totalCollected: parseFloat(group.totalCashCollected || "0") + parseFloat(group.totalDigitalCollected || "0"),
+                    difference: expectedTotal - (parseFloat(group.totalCashCollected || "0") + parseFloat(group.totalDigitalCollected || "0")),
+                    deliveredCount: group.invoices.filter(i => i.status === "delivered").length,
+                    failedCount: group.invoices.filter(i => i.status === "failed").length,
+                },
+            };
+        }),
+
+    /**
+     * Get reconciliation summary for a completed/partial group
+     */
+    getReconciliation: deliverymanProcedure
+        .route({
+            method: "GET",
+            path: "/deliveries/{groupId}/reconciliation",
+            tags: ["Deliveryman"],
+            summary: "Get end-of-day reconciliation summary",
+        })
+        .input(z.object({ groupId: z.number() }))
+        .handler(async ({ input, context }) => {
+            const group = await db.query.deliveryGroup.findFirst({
+                where: and(
+                    eq(deliveryGroup.id, input.groupId),
+                    eq(deliveryGroup.deliverymanId, context.session.user.id),
+                ),
+                with: {
+                    invoices: {
+                        with: { invoice: true },
+                    },
+                },
+            });
+
+            if (!group) throw new ORPCError("NOT_FOUND");
+
+            // Get empty packs for this group
+            const groupInvoiceIds = group.invoices.map(i => i.id);
+            const packs = groupInvoiceIds.length > 0
+                ? await db.select().from(emptyPack).where(
+                    inArray(emptyPack.deliveryGroupInvoiceId, groupInvoiceIds),
+                )
+                : [];
+
+            const expectedTotal = group.invoices
+                .filter(i => i.status === "delivered" && i.invoice)
+                .reduce((sum, i) => sum + parseFloat(i.invoice?.grandTotal || "0"), 0);
+
+            const totalCash = parseFloat(group.totalCashCollected || "0");
+            const totalDigital = parseFloat(group.totalDigitalCollected || "0");
+
+            return {
+                groupId: group.id,
+                groupName: group.groupName,
+                status: group.status,
+                supervisorApproval: group.supervisorApproval,
+
+                deliveries: {
+                    total: group.invoices.length,
+                    delivered: group.invoices.filter(i => i.status === "delivered").length,
+                    failed: group.invoices.filter(i => i.status === "failed").length,
+                    pending: group.invoices.filter(i => i.status === "pending").length,
+                },
+
+                payment: {
+                    expectedTotal,
+                    totalCashCollected: totalCash,
+                    totalDigitalCollected: totalDigital,
+                    totalCollected: totalCash + totalDigital,
+                    difference: expectedTotal - (totalCash + totalDigital),
+                    isBalanced: Math.abs(expectedTotal - (totalCash + totalDigital)) < 0.01,
+                },
+
+                emptyPacks: {
+                    totalCollected: packs.reduce((s, p) => s + (p.quantityCollected || 0), 0),
+                    items: packs,
+                },
+
+                timestamps: {
+                    startedAt: group.startedAt,
+                    completedAt: group.completedAt,
+                },
+            };
+        }),
+
+    /**
+     * Batch submit collected empty packs to supervisor
+     */
+    submitPacks: deliverymanProcedure
+        .route({
+            method: "POST",
+            path: "/deliveries/{groupId}/submit-packs",
+            tags: ["Deliveryman"],
+            summary: "Submit collected packs to supervisor",
+        })
+        .input(z.object({
+            groupId: z.number(),
+        }))
+        .handler(async ({ input, context }) => {
+            const group = await db.query.deliveryGroup.findFirst({
+                where: and(
+                    eq(deliveryGroup.id, input.groupId),
+                    eq(deliveryGroup.deliverymanId, context.session.user.id),
+                ),
+                with: { invoices: true },
+            });
+
+            if (!group) throw new ORPCError("NOT_FOUND");
+
+            // Mark all collected packs for this group as submitted
+            const groupInvoiceIds = group.invoices.map(i => i.id);
+            if (groupInvoiceIds.length > 0) {
+                await db.update(emptyPack).set({
+                    status: "submitted",
+                    submittedAt: new Date(),
+                }).where(
+                    and(
+                        inArray(emptyPack.deliveryGroupInvoiceId, groupInvoiceIds),
+                        eq(emptyPack.status, "collected"),
+                    ),
+                );
+            }
+
+            return { success: true };
+        }),
+
+    // ==================== SUPERVISOR / ADMIN APPROVAL ENDPOINTS ====================
+
+    /**
+     * Get delivery groups pending supervisor approval
+     */
+    getPendingApprovals: adminProcedure
+        .route({
+            method: "GET",
+            path: "/delivery/pending-approvals",
+            tags: ["Delivery Management"],
+            summary: "Get groups pending supervisor approval",
+        })
+        .handler(async () => {
+            const groups = await db.query.deliveryGroup.findMany({
+                where: and(
+                    sql`${deliveryGroup.status} IN ('completed', 'partial')`,
+                    eq(deliveryGroup.supervisorApproval, "pending"),
+                ),
+                with: {
+                    deliveryman: {
+                        columns: { id: true, name: true, phoneNumber: true },
+                    },
+                    invoices: {
+                        with: { invoice: true },
+                    },
+                },
+                orderBy: [desc(deliveryGroup.completedAt)],
+            });
+
+            return {
+                groups: groups.map(g => {
+                    const delivered = g.invoices.filter(i => i.status === "delivered");
+                    const expectedTotal = delivered.reduce(
+                        (sum, i) => sum + parseFloat(i.invoice?.grandTotal || "0"), 0,
+                    );
+                    const totalCollected = parseFloat(g.totalCashCollected || "0") + parseFloat(g.totalDigitalCollected || "0");
+
+                    return {
+                        ...g,
+                        reconciliation: {
+                            expectedTotal,
+                            totalCollected,
+                            difference: expectedTotal - totalCollected,
+                            isBalanced: Math.abs(expectedTotal - totalCollected) < 0.01,
+                        },
+                    };
+                }),
+            };
+        }),
+
+    /**
+     * Approve and close a delivery group (admin)
+     */
+    approveAndClose: adminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-groups/{groupId}/approve",
+            tags: ["Delivery Management"],
+            summary: "Approve cash + packs and close delivery group",
+        })
+        .input(z.object({
+            groupId: z.number(),
+            cashReceived: z.boolean().default(true),
+            packReceived: z.boolean().default(true),
+            supervisorNote: z.string().optional(),
+        }))
+        .handler(async ({ input, context }) => {
+            const group = await db.query.deliveryGroup.findFirst({
+                where: eq(deliveryGroup.id, input.groupId),
+                with: { invoices: { with: { invoice: true } } },
+            });
+
+            if (!group) throw new ORPCError("NOT_FOUND");
+            if (!["completed", "partial"].includes(group.status)) {
+                throw new ORPCError("BAD_REQUEST", { message: "Group must be completed/partial to approve" });
+            }
+
+            await db.transaction(async (tx) => {
+                // Update group approval
+                await tx.update(deliveryGroup).set({
+                    supervisorApproval: "approved",
+                    cashReconciled: input.cashReceived,
+                    packReconciled: input.packReceived,
+                    supervisorNote: input.supervisorNote ?? null,
+                    approvedBy: context.session.user.id,
+                    approvedAt: new Date(),
+                }).where(eq(deliveryGroup.id, input.groupId));
+
+                // Verify empty packs if approved
+                if (input.packReceived) {
+                    const invoiceIds = group.invoices.map(i => i.id);
+                    if (invoiceIds.length > 0) {
+                        await tx.update(emptyPack).set({
+                            status: "verified",
+                            verifiedBy: context.session.user.id,
+                            verifiedAt: new Date(),
+                        }).where(
+                            and(
+                                inArray(emptyPack.deliveryGroupInvoiceId, invoiceIds),
+                                eq(emptyPack.status, "submitted"),
+                            ),
+                        );
+                    }
+                }
+
+                // Update delivered invoices to settled
+                for (const inv of group.invoices) {
+                    if (inv.status === "delivered") {
+                        await tx.update(invoice).set({
+                            paymentStatus: "settled",
+                        }).where(eq(invoice.id, inv.invoiceId));
+                    }
+                }
+
+                // Log daily KPI
+                const delivered = group.invoices.filter(i => i.status === "delivered");
+                const failed = group.invoices.filter(i => i.status === "failed");
+                const totalDeliveries = delivered.length + failed.length;
+                const successRate = totalDeliveries > 0
+                    ? ((delivered.length / totalDeliveries) * 100).toFixed(2)
+                    : "100.00";
+
+                const today = new Date().toISOString().split("T")[0]!;
+
+                await tx.insert(deliveryKpi).values({
+                    deliverymanId: group.deliverymanId,
+                    date: today,
+                    totalDeliveries,
+                    successful: delivered.length,
+                    failed: failed.length,
+                    totalCashCollected: group.totalCashCollected,
+                    totalDigitalCollected: group.totalDigitalCollected,
+                    expectedTotal: group.expectedTotal,
+                    successRate,
+                });
+            });
+
+            return { success: true, message: "Delivery group approved and closed" };
+        }),
+
+    /**
+     * Flag a delivery group for discrepancy (admin)
+     */
+    flagGroup: adminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-groups/{groupId}/flag",
+            tags: ["Delivery Management"],
+            summary: "Flag delivery group for discrepancy",
+        })
+        .input(z.object({
+            groupId: z.number(),
+            supervisorNote: z.string().min(1),
+        }))
+        .handler(async ({ input, context }) => {
+            await db.update(deliveryGroup).set({
+                supervisorApproval: "flagged",
+                supervisorNote: input.supervisorNote,
+                approvedBy: context.session.user.id,
+                approvedAt: new Date(),
+            }).where(eq(deliveryGroup.id, input.groupId));
+
+            return { success: true };
         }),
 
     // ==================== DELIVERY RULES PROCEDURES ====================
