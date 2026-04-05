@@ -7,6 +7,7 @@ import {
     deliveryRule,
     emptyPack,
     invoice,
+    invoiceItem,
     user,
     order,
     orderReturn,
@@ -15,7 +16,7 @@ import { ORPCError } from "@orpc/server";
 import { and, asc, count, desc, eq, inArray, sql, sum, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
-import { adminProcedure, deliverymanProcedure, protectedProcedure } from "../index";
+import { adminProcedure, deliverymanProcedure, protectedProcedure, warehouseOrAdminProcedure } from "../index";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 
 // Validation schemas
@@ -617,7 +618,7 @@ export const deliverymanRouter = {
     /**
      * Get unassigned invoices (admin) for creating delivery groups
      */
-    getUnassignedInvoices: adminProcedure
+    getUnassignedInvoices: warehouseOrAdminProcedure
         .route({
             method: "GET",
             path: "/delivery/invoices/unassigned",
@@ -640,11 +641,14 @@ export const deliverymanRouter = {
                         columns: {
                             id: true,
                             orderNumber: true,
+                            shippingName: true,
+                            shippingPhone: true,
                             shippingAddress: true,
                             shippingCity: true,
                             shippingArea: true,
                         },
                     },
+                    items: true,
                 },
                 orderBy: [desc(invoice.createdAt)],
             });
@@ -655,7 +659,7 @@ export const deliverymanRouter = {
     /**
      * Alias: get deliverymen for assignment (for create-group dialog compatibility)
      */
-    getForAssignment: adminProcedure
+    getForAssignment: warehouseOrAdminProcedure
         .route({
             method: "GET",
             path: "/delivery/for-assignment",
@@ -702,7 +706,7 @@ export const deliverymanRouter = {
     /**
      * Create delivery group with selected invoices
      */
-    createGroup: adminProcedure
+    createGroup: warehouseOrAdminProcedure
         .route({
             method: "POST",
             path: "/delivery-groups/create",
@@ -793,7 +797,7 @@ export const deliverymanRouter = {
     /**
      * Alias: get delivery groups (for create-group dialog compatibility)
      */
-    getGroups: adminProcedure
+    getGroups: warehouseOrAdminProcedure
         .route({
             method: "GET",
             path: "/delivery-groups/list",
@@ -847,7 +851,7 @@ export const deliverymanRouter = {
     /**
      * Get all delivery groups (admin)
      */
-    getDeliveryGroups: adminProcedure
+    getDeliveryGroups: warehouseOrAdminProcedure
         .route({
             method: "GET",
             path: "/delivery-groups",
@@ -899,7 +903,7 @@ export const deliverymanRouter = {
     /**
      * Get delivery group by ID (admin)
      */
-    getGroupById: adminProcedure
+    getGroupById: warehouseOrAdminProcedure
         .route({
             method: "GET",
             path: "/delivery-groups/{id}",
@@ -951,7 +955,7 @@ export const deliverymanRouter = {
     /**
      * Assign deliveryman to a group (admin)
      */
-    assignDeliveryman: adminProcedure
+    assignDeliveryman: warehouseOrAdminProcedure
         .route({
             method: "POST",
             path: "/delivery-groups/{groupId}/assign",
@@ -1013,7 +1017,7 @@ export const deliverymanRouter = {
     /**
      * Get deliverymen available for assignment (admin)
      */
-    getDeliverymenForAssignment: adminProcedure
+    getDeliverymenForAssignment: warehouseOrAdminProcedure
         .route({
             method: "GET",
             path: "/deliverymen-for-assignment",
@@ -1066,7 +1070,7 @@ export const deliverymanRouter = {
     /**
      * Delete delivery group (admin)
      */
-    deleteGroup: adminProcedure
+    deleteGroup: warehouseOrAdminProcedure
         .route({
             method: "POST",
             path: "/delivery-groups/{id}/delete",
@@ -1444,7 +1448,7 @@ export const deliverymanRouter = {
     /**
      * Get delivery groups pending supervisor approval
      */
-    getPendingApprovals: adminProcedure
+    getPendingApprovals: warehouseOrAdminProcedure
         .route({
             method: "GET",
             path: "/delivery/pending-approvals",
@@ -1492,7 +1496,7 @@ export const deliverymanRouter = {
     /**
      * Approve and close a delivery group (admin)
      */
-    approveAndClose: adminProcedure
+    approveAndClose: warehouseOrAdminProcedure
         .route({
             method: "POST",
             path: "/delivery-groups/{groupId}/approve",
@@ -1582,7 +1586,7 @@ export const deliverymanRouter = {
     /**
      * Flag a delivery group for discrepancy (admin)
      */
-    flagGroup: adminProcedure
+    flagGroup: warehouseOrAdminProcedure
         .route({
             method: "POST",
             path: "/delivery-groups/{groupId}/flag",

@@ -121,3 +121,20 @@ const requireWarehouse = o.middleware(async ({ context, next }) => {
 });
 
 export const warehouseProcedure = publicProcedure.use(requireWarehouse);
+
+// Warehouse OR Admin procedure - allows both roles for delivery management
+const requireWarehouseOrAdmin = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  if (context.session.user.role !== "warehouse" && context.session.user.role !== "admin") {
+    throw new ORPCError("FORBIDDEN", { message: "Warehouse or admin access required" });
+  }
+  return next({
+    context: {
+      session: context.session,
+    },
+  });
+});
+
+export const warehouseOrAdminProcedure = publicProcedure.use(requireWarehouseOrAdmin);

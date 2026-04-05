@@ -6,15 +6,20 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Edit3,
   InboxIcon,
   MapPin,
+  Minus,
   Package,
   Phone,
+  Plus,
+  Save,
+  Trash2,
   Truck,
   User,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { orpc } from "@/utils/orpc";
 
 /* ─── Status tab definitions ─── */
@@ -94,6 +99,90 @@ function OrderActions({
   );
 }
 
+/* ─── Editable item row ─── */
+function EditableItemRow({
+  item,
+  isEditing,
+  editQty,
+  onQtyChange,
+}: {
+  item: any;
+  isEditing: boolean;
+  editQty: number;
+  onQtyChange: (qty: number) => void;
+}) {
+  const unitPrice = Number(item.unitPrice);
+  const displayQty = isEditing ? editQty : item.quantity;
+  const displayTotal = isEditing ? (unitPrice * editQty).toFixed(2) : item.totalPrice;
+  const isRemoved = isEditing && editQty === 0;
+
+  return (
+    <div className={`flex items-center justify-between bg-white rounded-lg p-3 border transition-all ${
+      isRemoved ? "border-red-200 bg-red-50/50 opacity-60" : "border-gray-100"
+    }`}>
+      <div className="flex items-center gap-3">
+        {item.productImage ? (
+          <img src={item.productImage} alt="" className="w-8 h-8 rounded object-cover" />
+        ) : (
+          <div className="w-8 h-8 bg-gray-100 rounded flex items-center justify-center">
+            <Package size={14} className="text-gray-400" />
+          </div>
+        )}
+        <div>
+          <div className={`text-sm font-medium ${isRemoved ? "line-through text-gray-400" : "text-gray-900"}`}>
+            {item.productName}
+          </div>
+          <div className="text-xs text-gray-500">{item.productSize}</div>
+        </div>
+      </div>
+
+      {isEditing ? (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => onQtyChange(Math.max(0, editQty - 1))}
+              className="px-2 py-1.5 hover:bg-gray-100 transition-colors text-gray-600"
+            >
+              {editQty === 1 ? <Trash2 size={14} className="text-red-500" /> : <Minus size={14} />}
+            </button>
+            <input
+              type="number"
+              min={0}
+              value={editQty}
+              onChange={(e) => onQtyChange(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-12 text-center text-sm font-semibold border-x border-gray-200 py-1.5 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <button
+              onClick={() => onQtyChange(editQty + 1)}
+              className="px-2 py-1.5 hover:bg-gray-100 transition-colors text-gray-600"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+          <div className="text-xs text-gray-500 min-w-[60px] text-right">
+            × ৳{unitPrice.toLocaleString()}
+          </div>
+          <div className={`text-sm font-bold min-w-[70px] text-right ${
+            isRemoved ? "text-red-500 line-through" : "text-gray-900"
+          }`}>
+            ৳{Number(displayTotal).toLocaleString()}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <div className="text-sm font-semibold">{displayQty}×</div>
+            <div className="text-xs text-gray-500">৳{unitPrice.toLocaleString()} each</div>
+          </div>
+          <div className="text-sm font-bold text-gray-900 min-w-[60px] text-right">
+            ৳{Number(displayTotal).toLocaleString()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Order card ─── */
 function OrderCard({
   order: o,
@@ -101,12 +190,16 @@ function OrderCard({
   onToggle,
   onAction,
   loading,
+  onSaveItems,
+  savingItems,
 }: {
   order: any;
   expanded: boolean;
   onToggle: () => void;
   onAction: (orderId: number, newStatus: string) => void;
   loading: boolean;
+  onSaveItems: (orderId: number, items: { itemId: number; quantity: number }[]) => void;
+  savingItems: boolean;
 }) {
   const itemCount = o.items?.length ?? 0;
   const date = new Date(o.createdAt);
@@ -117,6 +210,46 @@ function OrderCard({
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editQuantities, setEditQuantities] = useState<Record<number, number>>({});
+
+  const startEditing = useCallback(() => {
+    const initial: Record<number, number> = {};
+    (o.items || []).forEach((item: any) => {
+      initial[item.id] = item.quantity;
+    });
+    setEditQuantities(initial);
+    setIsEditing(true);
+  }, [o.items]);
+
+  const cancelEditing = () => {
+    setIsEditing(false);
+    setEditQuantities({});
+  };
+
+  const hasChanges = (o.items || []).some(
+    (item: any) => editQuantities[item.id] !== undefined && editQuantities[item.id] !== item.quantity
+  );
+
+  const editedTotal = isEditing
+    ? (o.items || []).reduce((sum: number, item: any) => {
+        const qty = editQuantities[item.id] ?? item.quantity;
+        return sum + Number(item.unitPrice) * qty;
+      }, 0)
+    : Number(o.total);
+
+  const handleSave = () => {
+    const items = (o.items || [])
+      .filter((item: any) => editQuantities[item.id] !== undefined && editQuantities[item.id] !== item.quantity)
+      .map((item: any) => ({ itemId: item.id, quantity: editQuantities[item.id]! }));
+
+    if (items.length > 0) {
+      onSaveItems(o.id, items);
+      setIsEditing(false);
+      setEditQuantities({});
+    }
+  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
@@ -147,7 +280,9 @@ function OrderCard({
 
         <div className="flex items-center gap-3 flex-shrink-0 ml-4">
           <div className="text-right">
-            <div className="font-bold text-gray-900">৳{Number(o.total).toLocaleString()}</div>
+            <div className={`font-bold ${isEditing && hasChanges ? "text-blue-600" : "text-gray-900"}`}>
+              ৳{editedTotal.toLocaleString()}
+            </div>
             <div className="text-[10px] text-gray-400 uppercase">{o.paymentMethod?.replace(/_/g, " ")}</div>
           </div>
           {expanded ? <ChevronDown size={18} className="text-gray-400" /> : <ChevronRight size={18} className="text-gray-400" />}
@@ -159,33 +294,60 @@ function OrderCard({
         <div className="border-t border-gray-100">
           {/* Items */}
           <div className="px-4 py-3 bg-gray-50/50">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Order Items</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Order Items
+              </div>
+              {o.status === "pending" && !isEditing && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); startEditing(); }}
+                  className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors"
+                >
+                  <Edit3 size={12} /> Edit Quantities
+                </button>
+              )}
+              {isEditing && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={cancelEditing}
+                    className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={!hasChanges || savingItems}
+                    className="flex items-center gap-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
+                  >
+                    <Save size={12} /> Save Changes
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="space-y-2">
               {(o.items || []).map((item: any) => (
-                <div key={item.id} className="flex items-center justify-between bg-white rounded-lg p-3 border border-gray-100">
-                  <div className="flex items-center gap-3">
-                    {item.productImage ? (
-                      <img src={item.productImage} alt="" className="w-8 h-8 rounded object-cover" />
-                    ) : (
-                      <div className="w-8 h-8 bg-gray-100 rounded flex items-center justify-center">
-                        <Package size={14} className="text-gray-400" />
-                      </div>
-                    )}
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{item.productName}</div>
-                      <div className="text-xs text-gray-500">{item.productSize}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold">{item.quantity}×</div>
-                    <div className="text-xs text-gray-500">৳{Number(item.unitPrice).toLocaleString()} each</div>
-                  </div>
-                  <div className="text-sm font-bold text-gray-900 min-w-[60px] text-right">
-                    ৳{Number(item.totalPrice).toLocaleString()}
-                  </div>
-                </div>
+                <EditableItemRow
+                  key={item.id}
+                  item={item}
+                  isEditing={isEditing}
+                  editQty={editQuantities[item.id] ?? item.quantity}
+                  onQtyChange={(qty) =>
+                    setEditQuantities((prev) => ({ ...prev, [item.id]: qty }))
+                  }
+                />
               ))}
             </div>
+
+            {/* Edited total summary */}
+            {isEditing && hasChanges && (
+              <div className="mt-3 flex items-center justify-between px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <span className="text-xs font-medium text-blue-700">Updated Total</span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs text-gray-400 line-through">৳{Number(o.total).toLocaleString()}</span>
+                  <span className="text-sm font-bold text-blue-700">৳{editedTotal.toLocaleString()}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Shipping + Actions */}
@@ -248,6 +410,19 @@ export default function SupplyOrdersPage() {
     },
   });
 
+  // Update items mutation
+  const updateItems = useMutation({
+    mutationFn: ({ orderId, items }: { orderId: number; items: { itemId: number; quantity: number }[] }) =>
+      orpc.warehouse.updateIncomingOrderItems.call({ orderId, items }),
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["warehouse", "incoming-orders"] });
+      alert(result.message || "Items updated!");
+    },
+    onError: (err: any) => {
+      alert(`Error: ${err.message || "Failed to update items"}`);
+    },
+  });
+
   const handleAction = (orderId: number, newStatus: string) => {
     const confirmMsg =
       newStatus === "delivered"
@@ -259,6 +434,10 @@ export default function SupplyOrdersPage() {
     if (confirm(confirmMsg)) {
       updateStatus.mutate({ orderId, status: newStatus });
     }
+  };
+
+  const handleSaveItems = (orderId: number, items: { itemId: number; quantity: number }[]) => {
+    updateItems.mutate({ orderId, items });
   };
 
   const orders = data?.orders ?? [];
@@ -333,6 +512,8 @@ export default function SupplyOrdersPage() {
               onToggle={() => setExpandedId(expandedId === o.id ? null : o.id)}
               onAction={handleAction}
               loading={updateStatus.isPending}
+              onSaveItems={handleSaveItems}
+              savingItems={updateItems.isPending}
             />
           ))}
         </div>

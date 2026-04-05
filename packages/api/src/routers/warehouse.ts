@@ -613,9 +613,143 @@ const orderQueries = {
                 }
             });
 
+            // Auto-generate invoice when order is confirmed (no admin approval needed)
+            if (input.status === "confirmed") {
+                try {
+                    const { generateInvoiceFromOrder } = await import("./helpers/generate-invoice");
+                    await generateInvoiceFromOrder(input.orderId);
+                } catch (err: any) {
+                    // Ignore "already exists" error (idempotent), re-throw others
+                    if (!err.message?.includes("already exists")) {
+                        console.error("Invoice generation failed:", err);
+                    }
+                }
+            }
+
             return {
                 success: true,
                 message: `Order ${existingOrder.orderNumber} updated to ${input.status}`,
+            };
+        }),
+
+    /**
+     * Update item quantities on a pending incoming order.
+     * Warehouse can adjust quantities before confirming if stock is insufficient.
+     */
+    updateIncomingOrderItems: warehouseProcedure
+        .input(
+            z.object({
+                orderId: z.number(),
+                items: z.array(z.object({
+                    itemId: z.number(),
+                    quantity: z.number().min(0),
+                })),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.warehouseId, userId),
+                ),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Order not found or not assigned to your warehouse",
+                });
+            }
+
+            if (existingOrder.status !== "pending") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Can only edit items on pending orders",
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                for (const update of input.items) {
+                    const existingItem = existingOrder.items.find((i) => i.id === update.itemId);
+                    if (!existingItem) continue;
+
+                    if (update.quantity === 0) {
+                        // Remove item entirely
+                        await tx.delete(orderItem).where(eq(orderItem.id, update.itemId));
+
+                        // Restore inventory
+                        if (existingItem.variantId) {
+                            await tx
+                                .update(inventory)
+                                .set({
+                                    availableQty: sql`(CAST(${inventory.availableQty} AS numeric) + ${existingItem.quantity})::text`,
+                                })
+                                .where(
+                                    and(
+                                        eq(inventory.ownerType, "warehouse"),
+                                        eq(inventory.ownerId, userId),
+                                        eq(inventory.variantId, existingItem.variantId),
+                                    ),
+                                );
+                        }
+                    } else if (update.quantity !== existingItem.quantity) {
+                        const diff = update.quantity - existingItem.quantity;
+                        const unitPrice = Number(existingItem.unitPrice);
+                        const newTotal = (unitPrice * update.quantity).toFixed(2);
+
+                        await tx
+                            .update(orderItem)
+                            .set({
+                                quantity: update.quantity,
+                                totalPrice: newTotal,
+                            })
+                            .where(eq(orderItem.id, update.itemId));
+
+                        // Adjust inventory (negative diff = restore stock, positive = deduct)
+                        if (existingItem.variantId) {
+                            await tx
+                                .update(inventory)
+                                .set({
+                                    availableQty: sql`(CAST(${inventory.availableQty} AS numeric) - ${diff})::text`,
+                                })
+                                .where(
+                                    and(
+                                        eq(inventory.ownerType, "warehouse"),
+                                        eq(inventory.ownerId, userId),
+                                        eq(inventory.variantId, existingItem.variantId),
+                                    ),
+                                );
+                        }
+                    }
+                }
+
+                // Recalculate order totals
+                const updatedItems = await tx.query.orderItem.findMany({
+                    where: eq(orderItem.orderId, input.orderId),
+                });
+
+                if (updatedItems.length === 0) {
+                    // All items removed → cancel order
+                    await tx
+                        .update(order)
+                        .set({ status: "cancelled", cancelledAt: new Date() })
+                        .where(eq(order.id, input.orderId));
+                } else {
+                    const subtotal = updatedItems.reduce((s, i) => s + Number(i.totalPrice), 0);
+                    await tx
+                        .update(order)
+                        .set({
+                            subtotal: subtotal.toFixed(2),
+                            total: subtotal.toFixed(2),
+                        })
+                        .where(eq(order.id, input.orderId));
+                }
+            });
+
+            return {
+                success: true,
+                message: "Order items updated",
             };
         }),
 

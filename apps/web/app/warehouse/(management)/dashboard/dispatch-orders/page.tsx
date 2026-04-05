@@ -61,6 +61,7 @@ export default function DispatchOrdersPage() {
   // Unassigned tab
   const [unassignedInvoices, setUnassignedInvoices] = useState<UnassignedInvoice[]>([]);
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
+  const [expandedInvoice, setExpandedInvoice] = useState<number | null>(null);
 
   // Create group modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -268,34 +269,146 @@ export default function DispatchOrdersPage() {
                       {selectedInvoices.length === unassignedInvoices.length ? "Deselect All" : "Select All"}
                     </button>
                   </div>
-                  {unassignedInvoices.map(inv => (
-                    <div
-                      key={inv.id}
-                      onClick={() => toggleInvoice(inv.id)}
-                      className={`bg-white rounded-lg border p-4 cursor-pointer transition-colors ${
-                        selectedInvoices.includes(inv.id) ? "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-200" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                          selectedInvoices.includes(inv.id) ? "bg-emerald-600 border-emerald-600" : "border-gray-300"
-                        }`}>
-                          {selectedInvoices.includes(inv.id) && <CheckCircle2Icon className="w-3.5 h-3.5 text-white" />}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <p className="font-medium text-sm text-gray-900">
-                              {inv.customer?.shopName || inv.customer?.name || `Invoice #${inv.invoiceNumber}`}
-                            </p>
-                            <span className="font-semibold text-sm text-gray-800">৳{parseFloat(inv.grandTotal).toLocaleString()}</span>
+                  {unassignedInvoices.map(inv => {
+                    const isExpanded = expandedInvoice === inv.id;
+                    return (
+                      <div
+                        key={inv.id}
+                        className={`bg-white rounded-lg border overflow-hidden transition-colors ${
+                          selectedInvoices.includes(inv.id) ? "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-200" : ""
+                        }`}
+                      >
+                        {/* Invoice header row */}
+                        <div className="flex items-center gap-3 p-4">
+                          {/* Checkbox */}
+                          <div
+                            onClick={() => toggleInvoice(inv.id)}
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 ${
+                              selectedInvoices.includes(inv.id) ? "bg-emerald-600 border-emerald-600" : "border-gray-300 hover:border-gray-400"
+                            }`}
+                          >
+                            {selectedInvoices.includes(inv.id) && <CheckCircle2Icon className="w-3.5 h-3.5 text-white" />}
                           </div>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {inv.order?.shippingArea || ""} {inv.order?.shippingCity ? `• ${inv.order.shippingCity}` : ""}
-                          </p>
+
+                          {/* Main info (clickable to expand) */}
+                          <div
+                            className="flex-1 cursor-pointer hover:bg-gray-50/50 rounded-md -m-1 p-1 transition-colors"
+                            onClick={() => setExpandedInvoice(isExpanded ? null : inv.id)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-sm text-gray-900">
+                                  {inv.customer?.shopName || inv.customer?.name || `Invoice #${inv.invoiceNumber}`}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  {inv.invoiceNumber} • {inv.order?.shippingArea || ""} {inv.order?.shippingCity ? `• ${inv.order.shippingCity}` : ""}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-sm text-gray-800">৳{parseFloat(inv.grandTotal).toLocaleString()}</span>
+                                {isExpanded
+                                  ? <ChevronUpIcon className="w-4 h-4 text-gray-400" />
+                                  : <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                                }
+                              </div>
+                            </div>
+                          </div>
                         </div>
+
+                        {/* Expanded details */}
+                        {isExpanded && (
+                          <div className="border-t border-gray-100 bg-gray-50/50">
+                            {/* Invoice items */}
+                            {(inv as any).items?.length > 0 && (
+                              <div className="px-4 py-3">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Invoice Items</p>
+                                <div className="space-y-1.5">
+                                  {(inv as any).items.map((item: any) => (
+                                    <div key={item.id} className="flex items-center justify-between bg-white rounded-lg p-2.5 border border-gray-100 text-sm">
+                                      <div className="flex items-center gap-2">
+                                        {item.productImage ? (
+                                          <img src={item.productImage} alt="" className="w-7 h-7 rounded object-cover" />
+                                        ) : (
+                                          <div className="w-7 h-7 bg-gray-100 rounded flex items-center justify-center">
+                                            <PackageIcon className="w-3.5 h-3.5 text-gray-400" />
+                                          </div>
+                                        )}
+                                        <div>
+                                          <span className="font-medium text-gray-900">{item.productName}</span>
+                                          {item.productSku && <span className="text-xs text-gray-400 ml-1">({item.productSku})</span>}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-xs text-gray-600">
+                                        <span>{item.quantity} × ৳{Number(item.unitPrice).toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-900">৳{Number(item.lineTotal).toLocaleString()}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Customer & shipping info */}
+                            <div className="px-4 py-3 border-t border-gray-100 grid grid-cols-2 gap-4 text-xs text-gray-600">
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] font-semibold text-gray-400 uppercase">Customer</p>
+                                <div className="flex items-center gap-1.5">
+                                  <UserIcon className="w-3 h-3 text-gray-400" />
+                                  <span>{inv.customer?.name || "N/A"}</span>
+                                </div>
+                                {inv.customer?.phoneNumber && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-gray-400">📞</span>
+                                    <span>{inv.customer.phoneNumber}</span>
+                                  </div>
+                                )}
+                                {inv.customer?.shopName && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-gray-400">🏪</span>
+                                    <span>{inv.customer.shopName}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] font-semibold text-gray-400 uppercase">Shipping</p>
+                                {(inv.order as any)?.shippingName && (
+                                  <div className="flex items-center gap-1.5">
+                                    <UserIcon className="w-3 h-3 text-gray-400" />
+                                    <span>{(inv.order as any).shippingName}</span>
+                                  </div>
+                                )}
+                                {(inv.order as any)?.shippingPhone && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-gray-400">📞</span>
+                                    <span>{(inv.order as any).shippingPhone}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-start gap-1.5">
+                                  <MapPinIcon className="w-3 h-3 text-gray-400 mt-0.5" />
+                                  <span>
+                                    {inv.order?.shippingAddress}
+                                    {inv.order?.shippingCity ? `, ${inv.order.shippingCity}` : ""}
+                                    {inv.order?.shippingArea ? ` (${inv.order.shippingArea})` : ""}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Invoice summary */}
+                            <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-between text-xs">
+                              <span className="text-gray-500">
+                                Order: <span className="font-mono font-medium text-gray-700">{inv.order?.orderNumber || "—"}</span>
+                              </span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-gray-400">{(inv as any).items?.length || 0} items</span>
+                                <span className="font-bold text-gray-900">Total: ৳{parseFloat(inv.grandTotal).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </>
               )}
             </div>
