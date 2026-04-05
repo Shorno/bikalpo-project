@@ -16,6 +16,7 @@ export const createCategorySchema = z.object({
     )
     .trim(),
   image: z
+    .string()
     .url("Please enter a valid image URL.")
     .max(255, "Image URL must be at most 255 characters."),
   isActive: z.boolean().default(true).nonoptional(),
@@ -25,7 +26,7 @@ export const createCategorySchema = z.object({
     .min(0, "Display order must be 0 or greater.")
     .default(0)
     .nonoptional(),
-  typeId: z.number().int().nullable(),
+  typeId: z.number().int().nullable().optional(),
 });
 
 export const createSubcategorySchema = createCategorySchema.extend({

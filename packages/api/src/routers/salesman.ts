@@ -5,6 +5,7 @@ import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, salesmanProcedure } from "../index";
+import { localDateStamp } from "../utils/date";
 
 // Validation schemas
 const salesmanIdSchema = z.object({
@@ -525,7 +526,7 @@ export const salesmanRouter = {
 
             // Generate estimate number: EST-YYYYMMDD-XXXX
             const generateEstimateNumber = () => {
-                const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+                const date = localDateStamp();
                 const random = Math.random().toString(36).slice(2, 6).toUpperCase();
                 return `EST-${date}-${random}`;
             };

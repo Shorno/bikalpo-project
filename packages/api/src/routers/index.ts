@@ -37,12 +37,19 @@ import { warehouseRouter } from "./warehouse";
 import { adminLandingRouter } from "./admin-landing";
 import { landingRouter } from "./landing";
 import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
+import { adminShopCategoryAssignmentRouter } from "./admin-shop-category-assignment";
 import { adminAreaRouter } from "./admin-area";
 import { adminSellerAreaRouter } from "./admin-seller-area";
 import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
 import { adminToLetRouter, toLetRouter } from "./tolet";
 import { barikoiRouter } from "./barikoi";
 import { devOtpRouter } from "./dev-otp";
+import { payeeRouter } from "./payee";
+import { expenseRouter } from "./expense";
+import { supplierPaymentRouter } from "./supplier-payment";
+import { profitLossRouter } from "./profit-loss";
+import { purchaseRouter } from "./purchase";
+import { stockOverviewRouter } from "./stock-overview";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -93,11 +100,18 @@ export const appRouter = {
   toLet: toLetRouter,
   adminToLet: adminToLetRouter,
   adminWarehouseAssignment: adminWarehouseAssignmentRouter,
+  adminShopCategoryAssignment: adminShopCategoryAssignmentRouter,
   adminArea: adminAreaRouter,
   adminSellerArea: adminSellerAreaRouter,
   adminAreaAnalytics: adminAreaAnalyticsRouter,
   barikoi: barikoiRouter,
   devOtp: devOtpRouter,
+  payee: payeeRouter,
+  expense: expenseRouter,
+  supplierPayment: supplierPaymentRouter,
+  profitLoss: profitLossRouter,
+  purchase: purchaseRouter,
+  stockOverview: stockOverviewRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

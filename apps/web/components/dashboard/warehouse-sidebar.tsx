@@ -1,17 +1,34 @@
 "use client";
 
 import {
+  BarChart3Icon,
+  BookOpenIcon,
   BoxesIcon,
+  ClipboardListIcon,
+  CreditCardIcon,
+  FileTextIcon,
   HeadphonesIcon,
   InboxIcon,
   LayoutDashboardIcon,
+  MegaphoneIcon,
   PackageIcon,
+  PercentIcon,
+  RotateCcwIcon,
   SettingsIcon,
+  ShieldIcon,
   ShoppingCartIcon,
   StoreIcon,
+  TagIcon,
   TruckIcon,
+  TrendingDownIcon,
+  UserCheckIcon,
   UsersIcon,
   WarehouseIcon,
+  WalletIcon,
+  NetworkIcon,
+  PackageSearchIcon,
+  ClipboardIcon,
+  ArrowRightLeftIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
@@ -27,7 +44,8 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
-import { WAREHOUSE_BASE } from "@/lib/routes";
+
+const WH = "/warehouse/dashboard";
 
 const warehouseNavGroups: NavGroup[] = [
   {
@@ -35,74 +53,95 @@ const warehouseNavGroups: NavGroup[] = [
     items: [
       {
         title: "Dashboard",
-        url: WAREHOUSE_BASE,
+        url: WH,
         icon: LayoutDashboardIcon,
       },
     ],
   },
   {
-    label: "Orders",
+    label: "Inventory",
     items: [
-      {
-        title: "Incoming Orders",
-        url: `${WAREHOUSE_BASE}/incoming-orders`,
-        icon: InboxIcon,
-      },
-      {
-        title: "My Orders",
-        url: `${WAREHOUSE_BASE}/orders`,
-        icon: ShoppingCartIcon,
-      },
+      { title: "My Store", url: `${WH}/store`, icon: StoreIcon },
+      { title: "Stock", url: `${WH}/stock`, icon: BoxesIcon },
+      { title: "Product Catalog", url: `${WH}/products`, icon: PackageIcon },
+      { title: "Stock Adjustment", url: `${WH}/stock-adjustment`, icon: ArrowRightLeftIcon },
     ],
   },
   {
-    label: "Warehouse Management",
+    label: "Supply Management",
     items: [
-      {
-        title: "Inventory",
-        url: `${WAREHOUSE_BASE}/inventory`,
-        icon: BoxesIcon,
-      },
-      {
-        title: "Products",
-        url: `${WAREHOUSE_BASE}/products`,
-        icon: PackageIcon,
-      },
+      { title: "Supply Orders", url: `${WH}/supply-orders`, icon: InboxIcon },
+      { title: "Dispatch Orders", url: `${WH}/dispatch-orders`, icon: TruckIcon },
+      { title: "Delivery Tracking", url: `${WH}/delivery-tracking`, icon: PackageSearchIcon },
+      { title: "Returns", url: `${WH}/returns`, icon: RotateCcwIcon },
     ],
   },
   {
-    label: "Procurement",
+    label: "Sales Management",
     items: [
-      {
-        title: "Suppliers",
-        url: `${WAREHOUSE_BASE}/suppliers`,
-        icon: UsersIcon,
-      },
-      {
-        title: "Purchases",
-        url: `${WAREHOUSE_BASE}/purchases`,
-        icon: TruckIcon,
-      },
+      { title: "Sales", url: `${WH}/sales`, icon: ShoppingCartIcon },
+      { title: "Customer", url: `${WH}/customers`, icon: UsersIcon },
+      { title: "Sales History", url: `${WH}/sales-history`, icon: FileTextIcon },
+      { title: "Daybook", url: `${WH}/daybook`, icon: BookOpenIcon },
+    ],
+  },
+  {
+    label: "Purchase Management",
+    items: [
+      { title: "Purchase Orders", url: `${WH}/purchases`, icon: ClipboardListIcon },
+      { title: "Suppliers", url: `${WH}/suppliers`, icon: UsersIcon },
+      { title: "Purchase History", url: `${WH}/purchase-history`, icon: FileTextIcon },
+    ],
+  },
+  {
+    label: "Team Management",
+    items: [
+      { title: "Sales Team", url: `${WH}/sales-team`, icon: UserCheckIcon },
+      { title: "Delivery Team", url: `${WH}/delivery-team`, icon: TruckIcon },
+      { title: "Staff Performance", url: `${WH}/staff-performance`, icon: BarChart3Icon },
+    ],
+  },
+  {
+    label: "Network Stores",
+    items: [
+      { title: "Connected Stores", url: `${WH}/connected-stores`, icon: NetworkIcon },
+      { title: "Store Requests", url: `${WH}/store-requests`, icon: InboxIcon },
+    ],
+  },
+  {
+    label: "Promotions",
+    items: [
+      { title: "Promo Campaigns", url: `${WH}/promo-campaigns`, icon: MegaphoneIcon },
+      { title: "Discount Offers", url: `${WH}/discount-offers`, icon: PercentIcon },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      { title: "Inventory Report", url: `${WH}/reports/inventory`, icon: ClipboardIcon },
+      { title: "Supply Report", url: `${WH}/reports/supply`, icon: TruckIcon },
+      { title: "Purchase Report", url: `${WH}/reports/purchase`, icon: FileTextIcon },
+      { title: "Team Performance", url: `${WH}/reports/team-performance`, icon: BarChart3Icon },
+    ],
+  },
+  {
+    label: "Finance & Accounts",
+    items: [
+      { title: "Finance Dashboard", url: `${WH}/finance`, icon: WalletIcon },
+      { title: "Expenses", url: `${WH}/finance/expenses`, icon: TrendingDownIcon },
+      { title: "Payable", url: `${WH}/finance/payable`, icon: CreditCardIcon },
+      { title: "Profit & Loss", url: `${WH}/finance/profit-loss`, icon: BarChart3Icon },
+      { title: "Payees", url: `${WH}/finance/payees`, icon: UsersIcon },
+      { title: "Transactions", url: `${WH}/transactions`, icon: CreditCardIcon },
     ],
   },
   {
     label: "Settings",
     items: [
-      {
-        title: "Warehouse Profile",
-        url: `${WAREHOUSE_BASE}/settings`,
-        icon: SettingsIcon,
-      },
-      {
-        title: "Storefront",
-        url: `${WAREHOUSE_BASE}/store`,
-        icon: StoreIcon,
-      },
-      {
-        title: "Support",
-        url: `${WAREHOUSE_BASE}/support`,
-        icon: HeadphonesIcon,
-      },
+      { title: "Warehouse Profile", url: `${WH}/settings`, icon: SettingsIcon },
+      { title: "Payment Accounts", url: `${WH}/payment-accounts`, icon: CreditCardIcon },
+      { title: "User Roles", url: `${WH}/user-roles`, icon: ShieldIcon },
+      { title: "Support", url: `${WH}/support`, icon: HeadphonesIcon },
     ],
   },
 ];

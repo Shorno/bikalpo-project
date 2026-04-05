@@ -1,5 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
+    boolean,
+    decimal,
     index,
     integer,
     pgEnum,
@@ -26,6 +28,19 @@ export const deliveryInvoiceStatusEnum = pgEnum("delivery_invoice_status", [
     "failed",
 ]);
 
+// Supervisor approval status
+export const supervisorApprovalEnum = pgEnum("supervisor_approval", [
+    "pending",
+    "approved",
+    "flagged",
+]);
+
+// Payment collection method
+export const paymentCollectionMethodEnum = pgEnum(
+    "payment_collection_method",
+    ["cash", "bkash", "nagad", "bank_transfer", "other"],
+);
+
 export const deliveryGroup = pgTable(
     "delivery_group",
     {
@@ -50,6 +65,39 @@ export const deliveryGroup = pgTable(
 
         // Notes
         notes: text("notes"),
+
+        // ── GPS tracking ──
+        startLat: decimal("start_lat", { precision: 10, scale: 7 }),
+        startLng: decimal("start_lng", { precision: 10, scale: 7 }),
+        endLat: decimal("end_lat", { precision: 10, scale: 7 }),
+        endLng: decimal("end_lng", { precision: 10, scale: 7 }),
+        startedAt: timestamp("started_at"),
+
+        // ── Cash/Digital reconciliation ──
+        totalCashCollected: decimal("total_cash_collected", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        totalDigitalCollected: decimal("total_digital_collected", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        expectedTotal: decimal("expected_total", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        cashReconciled: boolean("cash_reconciled").default(false).notNull(),
+        packReconciled: boolean("pack_reconciled").default(false).notNull(),
+
+        // ── Supervisor approval ──
+        supervisorApproval: supervisorApprovalEnum("supervisor_approval")
+            .default("pending")
+            .notNull(),
+        supervisorNote: text("supervisor_note"),
+        approvedBy: text("approved_by").references(() => user.id, {
+            onDelete: "set null",
+        }),
+        approvedAt: timestamp("approved_at"),
 
         // Timestamps
         createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -91,6 +139,21 @@ export const deliveryGroupInvoice = pgTable(
         // Optional: proof of delivery
         deliveryPhoto: text("delivery_photo"),
         deliveryOtp: text("delivery_otp"),
+
+        // ── GPS at delivery location ──
+        deliveryLat: decimal("delivery_lat", { precision: 10, scale: 7 }),
+        deliveryLng: decimal("delivery_lng", { precision: 10, scale: 7 }),
+
+        // ── Payment collection ──
+        paymentMethod: paymentCollectionMethodEnum("payment_method"),
+        amountCollected: decimal("amount_collected", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        transactionId: text("transaction_id"),
+
+        // ── Failed delivery proof ──
+        failedPhoto: text("failed_photo"),
 
         createdAt: timestamp("created_at").defaultNow().notNull(),
     },

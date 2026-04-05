@@ -25,6 +25,9 @@ import {
     sellerAreaMapping,
     openOrderBid,
     openOrderBidItem,
+    shopWarehouseConnection,
+    shopCategoryAssignment,
+    warehouseCategoryAssignment,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -1019,6 +1022,28 @@ const warehouseOrderQueries = {
                 return newOrder!;
             });
 
+            // 6. Upsert shop↔warehouse connection (smart memory)
+            const existing = await db.query.shopWarehouseConnection.findFirst({
+                where: and(
+                    eq(shopWarehouseConnection.shopId, userId),
+                    eq(shopWarehouseConnection.warehouseId, warehouseId),
+                ),
+            });
+            if (existing) {
+                await db
+                    .update(shopWarehouseConnection)
+                    .set({ lastOrderedAt: new Date() })
+                    .where(eq(shopWarehouseConnection.id, existing.id));
+            } else {
+                await db.insert(shopWarehouseConnection).values({
+                    shopId: userId,
+                    warehouseId,
+                    status: "active",
+                    connectedAt: new Date(),
+                    lastOrderedAt: new Date(),
+                });
+            }
+
             return {
                 success: true,
                 order: result,
@@ -1411,6 +1436,387 @@ const openOrderEndpoints = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Warehouse Connection & Category Matching (Steps 2-7)
+// ────────────────────────────────────────────────────────────────
+
+const warehouseConnectionEndpoints = {
+    /**
+     * Step 2-3: Connect to a warehouse.
+     * Validates warehouse exists, runs category matching engine,
+     * creates/updates connection record.
+     */
+    connectToWarehouse: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/connect-to-warehouse",
+            tags: ["Shop Owner"],
+            summary: "Connect to a warehouse (with category matching)",
+        })
+        .input(
+            z.object({
+                warehouseSlug: z.string().min(1),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            // 1. Validate warehouse exists
+            const warehouseUser = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    warehouseName: user.warehouseName,
+                    warehouseAddress: user.warehouseAddress,
+                    warehouseSlug: user.warehouseSlug,
+                })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.warehouseSlug, input.warehouseSlug),
+                        eq(user.role, "warehouse"),
+                    ),
+                )
+                .limit(1);
+
+            if (warehouseUser.length === 0) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Invalid Warehouse — warehouse not found",
+                });
+            }
+
+            const warehouseId = warehouseUser[0]!.id;
+
+            // 2. Check if already connected
+            const existingConn = await db.query.shopWarehouseConnection.findFirst({
+                where: and(
+                    eq(shopWarehouseConnection.shopId, shopId),
+                    eq(shopWarehouseConnection.warehouseId, warehouseId),
+                ),
+            });
+
+            if (existingConn && existingConn.status === "active") {
+                return {
+                    status: "already_connected" as const,
+                    connectionId: existingConn.id,
+                    warehouse: warehouseUser[0]!,
+                    matchedCategories: [],
+                };
+            }
+
+            // 3. Category Matching Engine
+            // Get shop's allowed subcategory IDs
+            const shopCategories = await db
+                .select({
+                    categoryId: shopCategoryAssignment.categoryId,
+                    subcategoryId: shopCategoryAssignment.subcategoryId,
+                })
+                .from(shopCategoryAssignment)
+                .where(eq(shopCategoryAssignment.shopId, shopId));
+
+            // Get warehouse's assigned subcategory IDs
+            const warehouseCategories = await db
+                .select({
+                    categoryId: warehouseCategoryAssignment.categoryId,
+                    subcategoryId: warehouseCategoryAssignment.subcategoryId,
+                })
+                .from(warehouseCategoryAssignment)
+                .where(eq(warehouseCategoryAssignment.warehouseId, warehouseId));
+
+            // Compute intersection
+            const shopSubcatIds = new Set(
+                shopCategories
+                    .map((sc) => sc.subcategoryId)
+                    .filter(Boolean) as number[],
+            );
+            const shopCatIds = new Set(
+                shopCategories.map((sc) => sc.categoryId),
+            );
+
+            const matchedSubcategoryIds: number[] = [];
+            for (const wc of warehouseCategories) {
+                // Match if shop has the specific subcategory, OR if shop has the
+                // whole category (subcategoryId = null) and warehouse has a subcategory in it
+                if (wc.subcategoryId && shopSubcatIds.has(wc.subcategoryId)) {
+                    matchedSubcategoryIds.push(wc.subcategoryId);
+                } else if (shopCatIds.has(wc.categoryId)) {
+                    // Shop is allowed for the whole category
+                    if (wc.subcategoryId) matchedSubcategoryIds.push(wc.subcategoryId);
+                }
+            }
+
+            // If no shop categories assigned yet, allow all (flexible for new setups)
+            const hasShopCategories = shopCategories.length > 0;
+            const hasMatch = !hasShopCategories || matchedSubcategoryIds.length > 0;
+
+            if (hasMatch) {
+                // Auto-connect
+                if (existingConn) {
+                    await db
+                        .update(shopWarehouseConnection)
+                        .set({
+                            status: "active",
+                            connectedAt: new Date(),
+                        })
+                        .where(eq(shopWarehouseConnection.id, existingConn.id));
+                } else {
+                    await db.insert(shopWarehouseConnection).values({
+                        shopId,
+                        warehouseId,
+                        status: "active",
+                        connectedAt: new Date(),
+                    });
+                }
+
+                return {
+                    status: "connected" as const,
+                    warehouse: warehouseUser[0]!,
+                    matchedCategories: matchedSubcategoryIds,
+                };
+            } else {
+                // No match — pending
+                if (existingConn) {
+                    await db
+                        .update(shopWarehouseConnection)
+                        .set({ status: "pending" })
+                        .where(eq(shopWarehouseConnection.id, existingConn.id));
+                } else {
+                    await db.insert(shopWarehouseConnection).values({
+                        shopId,
+                        warehouseId,
+                        status: "pending",
+                    });
+                }
+
+                return {
+                    status: "pending" as const,
+                    warehouse: warehouseUser[0]!,
+                    matchedCategories: [],
+                    message:
+                        "No matching categories found. Connection is pending admin approval.",
+                };
+            }
+        }),
+
+    /**
+     * Step 7: Get recently connected warehouses (smart memory).
+     * Sorted by lastOrderedAt descending.
+     */
+    getConnectedWarehouses: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/connected-warehouses",
+            tags: ["Shop Owner"],
+            summary: "Get recently connected warehouses (smart memory)",
+        })
+        .handler(
+        async ({ context }) => {
+            const shopId = context.session.user.id;
+
+            const connections = await db
+                .select({
+                    connectionId: shopWarehouseConnection.id,
+                    status: shopWarehouseConnection.status,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                    warehouseId: user.id,
+                    warehouseName: user.warehouseName,
+                    warehouseSlug: user.warehouseSlug,
+                    warehouseAddress: user.warehouseAddress,
+                    name: user.name,
+                })
+                .from(shopWarehouseConnection)
+                .innerJoin(
+                    user,
+                    eq(shopWarehouseConnection.warehouseId, user.id),
+                )
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.shopId, shopId),
+                        eq(shopWarehouseConnection.status, "active"),
+                    ),
+                )
+                .orderBy(desc(shopWarehouseConnection.lastOrderedAt));
+
+            // Get product counts for each warehouse
+            const result = await Promise.all(
+                connections.map(async (conn) => {
+                    const [countResult] = await db
+                        .select({ count: count() })
+                        .from(inventory)
+                        .where(
+                            and(
+                                eq(inventory.ownerType, "warehouse"),
+                                eq(inventory.ownerId, conn.warehouseId),
+                                sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                            ),
+                        );
+
+                    return {
+                        ...conn,
+                        productCount: countResult?.count || 0,
+                    };
+                }),
+            );
+
+            return { warehouses: result };
+        },
+    ),
+
+    /**
+     * Step 4: Get warehouse products filtered by shop's allowed categories.
+     * Products in shop's allowed categories → canOrder: true
+     * Products outside → canOrder: false ("Request Access")
+     */
+    getWarehouseProductsFiltered: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/warehouse-products-filtered",
+            tags: ["Shop Owner"],
+            summary: "Get warehouse products filtered by shop allowed categories",
+        })
+        .input(
+            z.object({
+                warehouseSlug: z.string().min(1),
+                search: z.string().optional(),
+                page: z.string().default("1"),
+                limit: z.string().default("50"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            // Find warehouse
+            const warehouseUser = await db
+                .select({ id: user.id })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.warehouseSlug, input.warehouseSlug),
+                        eq(user.role, "warehouse"),
+                    ),
+                )
+                .limit(1);
+
+            if (warehouseUser.length === 0) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Warehouse not found",
+                });
+            }
+
+            const warehouseId = warehouseUser[0]!.id;
+
+            // Get shop's allowed subcategory IDs and category IDs
+            const shopAssignments = await db
+                .select({
+                    categoryId: shopCategoryAssignment.categoryId,
+                    subcategoryId: shopCategoryAssignment.subcategoryId,
+                })
+                .from(shopCategoryAssignment)
+                .where(eq(shopCategoryAssignment.shopId, shopId));
+
+            const allowedSubcatIds = new Set(
+                shopAssignments
+                    .map((a) => a.subcategoryId)
+                    .filter(Boolean) as number[],
+            );
+            const allowedCatIds = new Set(
+                shopAssignments.map((a) => a.categoryId),
+            );
+            const hasAssignments = shopAssignments.length > 0;
+
+            // Get warehouse inventory with product info
+            const page = Math.max(1, Number(input.page) || 1);
+            const limit = Math.min(100, Math.max(1, Number(input.limit) || 50));
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [
+                eq(inventory.ownerType, "warehouse"),
+                eq(inventory.ownerId, warehouseId),
+                sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+            ];
+
+            if (input.search) {
+                const s = `%${input.search}%`;
+                conditions.push(
+                    or(
+                        ilike(product.name, s),
+                        ilike(productVariant.sku ?? "", s),
+                    )!,
+                );
+            }
+
+            const items = await db
+                .select({
+                    inventoryId: inventory.id,
+                    variantId: inventory.variantId,
+                    availableQty: inventory.availableQty,
+                    retailPrice: inventory.retailPrice,
+                    productId: product.id,
+                    productName: product.name,
+                    productImage: product.image,
+                    productSize: product.size,
+                    productCategoryId: product.categoryId,
+                    productSubCategoryId: product.subCategoryId,
+                    variantUnitLabel: productVariant.unitLabel,
+                    variantWeightKg: productVariant.weightKg,
+                    variantSku: productVariant.sku,
+                    variantPrice: productVariant.price,
+                })
+                .from(inventory)
+                .innerJoin(
+                    productVariant,
+                    eq(inventory.variantId, productVariant.id),
+                )
+                .innerJoin(
+                    product,
+                    eq(productVariant.productId, product.id),
+                )
+                .where(and(...conditions))
+                .orderBy(asc(product.name))
+                .limit(limit)
+                .offset(offset);
+
+            // Annotate each product with canOrder flag
+            const products = items.map((item) => {
+                let canOrder = true;
+                if (hasAssignments) {
+                    const subCatMatch = item.productSubCategoryId
+                        ? allowedSubcatIds.has(item.productSubCategoryId)
+                        : false;
+                    const catMatch = allowedCatIds.has(item.productCategoryId);
+                    canOrder = subCatMatch || catMatch;
+                }
+
+                const rp = Number(item.retailPrice || 0);
+                const vp = Number(item.variantPrice || 0);
+                const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
+
+                return {
+                    inventoryId: item.inventoryId,
+                    variantId: item.variantId,
+                    availableQty: item.availableQty,
+                    price,
+                    canOrder,
+                    product: {
+                        id: item.productId,
+                        name: item.productName,
+                        image: item.productImage,
+                        size: item.productSize,
+                    },
+                    variant: {
+                        unitLabel: item.variantUnitLabel,
+                        weightKg: item.variantWeightKg,
+                        sku: item.variantSku,
+                        price: item.variantPrice,
+                    },
+                };
+            });
+
+            return { products };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -1422,4 +1828,5 @@ export const shopOwnerRouter = {
     ...incomingOrderQueries,
     ...warehouseOrderQueries,
     ...openOrderEndpoints,
+    ...warehouseConnectionEndpoints,
 };

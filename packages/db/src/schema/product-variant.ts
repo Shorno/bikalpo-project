@@ -11,6 +11,7 @@ import {
     varchar,
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
+import { brand } from "./brand";
 import { product } from "./product";
 
 /** Quantity selector option: e.g. { value: 1, unit: "kg", label: "Per Unit - 1 kg" } */
@@ -108,6 +109,17 @@ export const productVariant = pgTable("product_variant", {
     note: text("note"),
     sortOrder: integer("sort_order").default(0).notNull(),
 
+    // === Variant-Level Identity Fields ===
+
+    /** Brand for this variant (e.g. Ifad, Fresh, Teer) — enables same product with multiple brands */
+    brandId: integer("brand_id").references(() => brand.id, { onDelete: "set null" }),
+
+    /** Color attribute for fashion variants (e.g. "Black", "Red") */
+    color: varchar("color", { length: 50 }),
+
+    /** Size attribute for fashion variants (e.g. "S", "M", "L", "XL") */
+    size: varchar("size", { length: 50 }),
+
     // === B2B + B2C Fields ===
 
     /** TRADE (B2B wholesale) or RETAIL (B2C consumer) — null for legacy variants */
@@ -190,6 +202,10 @@ export const productVariantRelations = relations(productVariant, ({ one }) => ({
     product: one(product, {
         fields: [productVariant.productId],
         references: [product.id],
+    }),
+    brand: one(brand, {
+        fields: [productVariant.brandId],
+        references: [brand.id],
     }),
     // Self-referencing: linked retail variant for conversion
     linkedRetailVariant: one(productVariant, {

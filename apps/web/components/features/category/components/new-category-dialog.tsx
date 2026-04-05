@@ -57,6 +57,7 @@ export default function NewCategoryDialog() {
       image: "",
       isActive: true,
       displayOrder: 0,
+      typeId: null as number | null,
     },
 
     validators: {

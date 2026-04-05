@@ -4,6 +4,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  KeyRound,
   Package,
   ShoppingBag,
   Truck,
@@ -29,6 +30,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useMyOrders } from "@/hooks/use-shop-owner-api";
+import { useQuery } from "@tanstack/react-query";
+import { orpc } from "@/utils/orpc";
 
 const statusConfig: Record<
   string,
@@ -67,6 +70,31 @@ type OrderStatus =
   | "processing"
   | "delivered"
   | "cancelled";
+
+function DeliveryOtpBadge({ orderId, status }: { orderId: number; status: string }) {
+  const showForStatuses = ["confirmed", "processing"];
+  const { data, isLoading } = useQuery({
+    queryKey: ["delivery-otp", orderId],
+    queryFn: () => orpc.deliveryman.getOrderDeliveryOtp.call({ orderId }),
+    enabled: showForStatuses.includes(status),
+    refetchInterval: 30000, // refresh every 30s
+  });
+
+  if (!showForStatuses.includes(status)) return <span className="text-xs text-gray-300">—</span>;
+  if (isLoading) return <Skeleton className="h-6 w-16" />;
+  if (!data?.showOtp || !data.otp) return <span className="text-xs text-gray-400">Awaiting dispatch</span>;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 border-2 border-emerald-300 rounded-lg">
+        <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
+        <span className="font-mono text-base font-bold tracking-widest text-emerald-700">
+          {data.otp}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
@@ -139,6 +167,7 @@ export default function OrdersPage() {
                   <TableHead>Items</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Delivery OTP</TableHead>
                   <TableHead>Date</TableHead>
                 </TableRow>
               </TableHeader>
@@ -183,6 +212,9 @@ export default function OrdersPage() {
                           {config.icon}
                           {config.label}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DeliveryOtpBadge orderId={o.id} status={o.status} />
                       </TableCell>
                       <TableCell className="text-sm text-gray-500">
                         {new Date(o.createdAt).toLocaleDateString("en-BD", {

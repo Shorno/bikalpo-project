@@ -1,18 +1,30 @@
 "use client";
 
 import {
+  BarChart3Icon,
+  BookOpenIcon,
   BoxesIcon,
+  ClipboardListIcon,
+  CreditCardIcon,
   DollarSignIcon,
-  ExternalLinkIcon,
+  FileTextIcon,
+  GiftIcon,
   HeadphonesIcon,
-  InboxIcon,
   LayoutDashboardIcon,
+  MegaphoneIcon,
   PackageIcon,
-  RadioIcon,
+  PercentIcon,
+  ReceiptIcon,
   SettingsIcon,
+  ShieldIcon,
   ShoppingCartIcon,
+  SmartphoneIcon,
   StoreIcon,
-  WarehouseIcon,
+  TrendingDownIcon,
+  TrendingUpIcon,
+  UsersIcon,
+  WalletIcon,
+  ExternalLinkIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
@@ -26,82 +38,88 @@ import {
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 
-const SHOP_DASHBOARD_BASE = "/dashboard";
+const D = "/dashboard";
 
 const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Overview",
     items: [
-      {
-        title: "Dashboard",
-        url: SHOP_DASHBOARD_BASE,
-        icon: LayoutDashboardIcon,
-      },
+      { title: "Dashboard", url: D, icon: LayoutDashboardIcon },
     ],
   },
   {
-    label: "Orders",
+    label: "Inventory & Supply",
     items: [
-      {
-        title: "Consumer Orders",
-        url: `${SHOP_DASHBOARD_BASE}/incoming-orders`,
-        icon: InboxIcon,
-      },
-      {
-        title: "Open Orders",
-        url: `${SHOP_DASHBOARD_BASE}/open-orders`,
-        icon: RadioIcon,
-      },
-      {
-        title: "My B2B Orders",
-        url: `${SHOP_DASHBOARD_BASE}/orders`,
-        icon: ShoppingCartIcon,
-      },
-      {
-        title: "Order from Warehouse",
-        url: `${SHOP_DASHBOARD_BASE}/order-from-warehouse`,
-        icon: WarehouseIcon,
-      },
+      { title: "My Store", url: `${D}/stores`, icon: StoreIcon },
+      { title: "Stock", url: `${D}/inventory`, icon: BoxesIcon },
+      { title: "Purchases", url: `${D}/orders`, icon: ShoppingCartIcon },
+      { title: "Order from Warehouse", url: `${D}/order-from-warehouse`, icon: PackageIcon },
+      { title: "Suppliers", url: `${D}/suppliers`, icon: UsersIcon },
     ],
   },
   {
-    label: "Shop Management",
+    label: "Sales",
     items: [
-      {
-        title: "Products",
-        url: `${SHOP_DASHBOARD_BASE}/products`,
-        icon: PackageIcon,
-      },
-      {
-        title: "Inventory",
-        url: `${SHOP_DASHBOARD_BASE}/inventory`,
-        icon: BoxesIcon,
-      },
-      {
-        title: "Pricing",
-        url: `${SHOP_DASHBOARD_BASE}/pricing`,
-        icon: DollarSignIcon,
-      },
+      { title: "Sales", url: `${D}/sales`, icon: ShoppingCartIcon },
+      { title: "Daybook", url: `${D}/daybook`, icon: BookOpenIcon },
+      { title: "EMI Management", url: `${D}/emi`, icon: ReceiptIcon },
     ],
   },
   {
-    label: "Shop Settings",
+    label: "Finance & Accounts",
     items: [
-      {
-        title: "Shop Profile",
-        url: `${SHOP_DASHBOARD_BASE}/settings`,
-        icon: SettingsIcon,
-      },
-      {
-        title: "Store Page",
-        url: `${SHOP_DASHBOARD_BASE}/stores`,
-        icon: StoreIcon,
-      },
-      {
-        title: "Support",
-        url: `${SHOP_DASHBOARD_BASE}/support`,
-        icon: HeadphonesIcon,
-      },
+      { title: "Income", url: `${D}/finance/income`, icon: TrendingUpIcon },
+      { title: "Expenses", url: `${D}/finance/expenses`, icon: TrendingDownIcon },
+      { title: "Receivable", url: `${D}/finance/receivable`, icon: DollarSignIcon },
+      { title: "Payable", url: `${D}/finance/payable`, icon: WalletIcon },
+      { title: "Ledger", url: `${D}/finance/ledger`, icon: FileTextIcon },
+      { title: "Profit & Loss", url: `${D}/finance/profit-loss`, icon: BarChart3Icon },
+    ],
+  },
+  {
+    label: "Contacts & Locations",
+    items: [
+      { title: "Customers", url: `${D}/customers`, icon: UsersIcon },
+      { title: "Suppliers", url: `${D}/suppliers`, icon: UsersIcon },
+      { title: "Payees", url: `${D}/payees`, icon: UsersIcon },
+    ],
+  },
+  {
+    label: "E-Commerce Store",
+    items: [
+      { title: "Product Sync", url: `${D}/product-sync`, icon: PackageIcon },
+      { title: "Order Management", url: `${D}/incoming-orders`, icon: ShoppingCartIcon },
+    ],
+  },
+  {
+    label: "Marketing",
+    items: [
+      { title: "SMS Marketing", url: `${D}/sms-marketing`, icon: SmartphoneIcon },
+      { title: "Promotions", url: `${D}/promotions`, icon: MegaphoneIcon },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      { title: "Sales Report", url: `${D}/reports/sales`, icon: BarChart3Icon },
+      { title: "Purchase Report", url: `${D}/reports/purchase`, icon: FileTextIcon },
+      { title: "Stock Movement", url: `${D}/reports/stock-movement`, icon: BoxesIcon },
+    ],
+  },
+  {
+    label: "Referral",
+    items: [
+      { title: "Refer & Earn", url: `${D}/referral`, icon: GiftIcon },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { title: "Business Profile", url: `${D}/settings`, icon: SettingsIcon },
+      { title: "Payment Accounts", url: `${D}/payment-accounts`, icon: CreditCardIcon },
+      { title: "User Roles", url: `${D}/user-roles`, icon: ShieldIcon },
+      { title: "Invoice Settings", url: `${D}/invoice-settings`, icon: FileTextIcon },
+      { title: "Support", url: `${D}/support`, icon: HeadphonesIcon },
     ],
   },
 ];
@@ -130,7 +148,6 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <ExternalLinkIcon className="w-3 h-3" />
           bikalpo.com
         </a>
-
       </SidebarHeader>
       <SidebarContent className="mt-4 thin-scrollbar">
         <NavGrouped groups={shopOwnerNavGroups} />
