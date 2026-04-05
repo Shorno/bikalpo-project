@@ -830,7 +830,6 @@ import {
     supplier,
     purchase,
     purchaseItem,
-    stockLedger,
     product as productTable,
     productVariant,
 } from "@bikalpo-project/db/schema";
