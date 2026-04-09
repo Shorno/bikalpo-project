@@ -200,11 +200,6 @@ export default function WarehouseProductsPage() {
                             {product.category.name}
                           </span>
                         )}
-                        {product.brand && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-500 rounded">
-                            {product.brand.name}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -220,10 +215,15 @@ export default function WarehouseProductsPage() {
                             : "bg-gray-50 border border-gray-100"
                         }`}
                       >
-                        <div className="flex items-center gap-2 flex-1">
+                        <div className="flex items-center gap-2 flex-1 flex-wrap">
                           <span className="font-medium text-gray-700">
                             {variant.unitLabel} — {variant.weightKg}kg
                           </span>
+                          {variant.innerPackSizeKg && (
+                            <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                              {variant.innerPackSizeKg}kg × {variant.packCountInside || Math.floor(Number(variant.weightKg) / Number(variant.innerPackSizeKg))} pcs
+                            </span>
+                          )}
                           {variant.sku && (
                             <span className="text-gray-400">
                               SKU: {variant.sku}

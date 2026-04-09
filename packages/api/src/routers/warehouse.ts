@@ -172,7 +172,6 @@ const storefrontQueries = {
                                 with: {
                                     category: { columns: { name: true, slug: true } },
                                     subCategory: { columns: { name: true, slug: true } },
-                                    brand: { columns: { name: true, slug: true, logo: true } },
                                     images: { limit: 1 },
                                 },
                             },
@@ -194,7 +193,9 @@ const storefrontQueries = {
                     if (!prod.subCategory?.slug || !slugs.includes(prod.subCategory.slug)) return false;
                 }
                 if (brandSlug) {
-                    if (prod.brand?.slug !== brandSlug) return false;
+                    // Filter by variant-level brand
+                    const variantBrand = (inv.variant as any)?.brand;
+                    if (variantBrand?.slug !== brandSlug) return false;
                 }
                 if (search) {
                     if (!prod.name.toLowerCase().includes(search.toLowerCase())) return false;
@@ -353,10 +354,10 @@ const managementQueries = {
                 with: {
                     variant: {
                         with: {
+                            brand: { columns: { id: true, name: true } },
                             product: {
                                 with: {
                                     category: { columns: { name: true, slug: true } },
-                                    brand: { columns: { name: true } },
                                     images: { limit: 1 },
                                 },
                             },
@@ -1346,7 +1347,6 @@ const productActivation = {
                 with: {
                     category: { columns: { name: true } },
                     subCategory: { columns: { name: true } },
-                    brand: { columns: { name: true } },
                     images: { limit: 1 },
                     variants: {
                         where: eq(productVariant.isActive, true),
@@ -1358,6 +1358,8 @@ const productActivation = {
                             price: true,
                             packagingType: true,
                             packType: true,
+                            innerPackSizeKg: true,
+                            packCountInside: true,
                         },
                     },
                 },

@@ -74,8 +74,15 @@ function StockBreakdown({ productId, ownerType }: { productId: number; ownerType
                   <Package size={14} className="text-amber-600" />
                 )}
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                  {isLoose ? "Loose / Open" : `${group.unitLabel} (${group.weightKg}kg)`}
+                  {isLoose
+                    ? "Loose / Open"
+                    : group.unitLabel}
                 </span>
+                {!isLoose && group.innerPackSizeKg && (
+                  <span className="text-[10px] text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                    {group.innerPackSizeKg}kg × {group.packCountInside || Math.floor(parseFloat(group.weightKg) / parseFloat(group.innerPackSizeKg))} pcs inside
+                  </span>
+                )}
               </div>
               <span className="text-xs font-semibold text-gray-500">
                 {groupTotal.toLocaleString()} {isLoose ? "KG" : "pcs"}
