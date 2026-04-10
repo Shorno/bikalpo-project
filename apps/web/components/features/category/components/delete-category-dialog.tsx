@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,20 +15,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { orpc } from "@/utils/orpc";
 
 interface DeleteCategoryDialogProps {
   category: Category & { subCategory?: SubCategory[] };
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
 }
 
 export default function DeleteCategoryDialog({
   category,
-  open,
-  onOpenChange,
 }: DeleteCategoryDialogProps) {
+  const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
   const hasSubcategories =
     category.subCategory && category.subCategory.length > 0;
@@ -38,7 +37,7 @@ export default function DeleteCategoryDialog({
       onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
         toast.success(result.message);
-        onOpenChange(false);
+        setOpen(false);
       },
       onError: (error) => {
         toast.error(
@@ -54,7 +53,13 @@ export default function DeleteCategoryDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="w-full justify-start text-destructive hover:text-destructive">
+          <Trash2 className="h-4 w-4 mr-2" />
+          Delete
+        </Button>
+      </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">

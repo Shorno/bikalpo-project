@@ -68,6 +68,7 @@ const adminNavGroups: NavGroup[] = [
         items: [
           { title: "Types", url: `${ADMIN_BASE}/types` },
           { title: "Categories", url: `${ADMIN_BASE}/categories` },
+          { title: "Sub Categories", url: `${ADMIN_BASE}/subcategories` },
           { title: "Brands", url: `${ADMIN_BASE}/brands` },
         ],
       },

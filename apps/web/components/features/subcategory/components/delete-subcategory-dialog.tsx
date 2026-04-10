@@ -4,6 +4,7 @@ import type { SubCategory } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Trash2 } from "lucide-react";
 import * as React from "react";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -16,17 +17,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 import { client } from "@/utils/orpc";
 
 interface DeleteSubcategoryDialogProps {
   subcategory: SubCategory;
-  variant?: "default" | "icon";
 }
 
 export default function DeleteSubcategoryDialog({
   subcategory,
-  variant = "default",
 }: DeleteSubcategoryDialogProps) {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
@@ -39,6 +37,7 @@ export default function DeleteSubcategoryDialog({
         queryKey: ["admin-subcategories", subcategory.categoryId],
       });
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
       toast.success("Subcategory deleted successfully");
       setOpen(false);
     },
@@ -54,24 +53,10 @@ export default function DeleteSubcategoryDialog({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>
-        {variant === "icon" ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-destructive hover:text-destructive"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </Button>
-        )}
+        <Button variant="ghost" size="sm" className="w-full justify-start text-destructive hover:text-destructive">
+          <Trash2 className="h-4 w-4 mr-2" />
+          Delete
+        </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>

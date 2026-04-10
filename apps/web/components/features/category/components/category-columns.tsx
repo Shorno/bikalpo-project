@@ -160,12 +160,8 @@ export function useCategoryColumns() {
 }
 
 import * as React from "react";
-import { Pencil, Trash2 } from "lucide-react";
 
 function CategoryActions({ category }: { category: CategoryWithSubcategories }) {
-  const [editOpen, setEditOpen] = React.useState(false);
-  const [deleteOpen, setDeleteOpen] = React.useState(false);
-
   return (
     <div className="flex justify-center">
       <DropdownMenu>
@@ -183,31 +179,11 @@ function CategoryActions({ category }: { category: CategoryWithSubcategories }) 
             </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
-            <Pencil className="h-4 w-4 mr-2" />
-            Edit
-          </DropdownMenuItem>
+          <EditCategoryDialog category={category} />
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onSelect={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </DropdownMenuItem>
+          <DeleteCategoryDialog category={category} />
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <EditCategoryDialog
-        category={category}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-      />
-      <DeleteCategoryDialog
-        category={category}
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-      />
     </div>
   );
 }

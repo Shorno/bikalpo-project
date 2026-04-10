@@ -3,7 +3,7 @@
 import type { Category } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader } from "lucide-react";
+import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
@@ -15,6 +15,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Field,
@@ -38,15 +39,12 @@ import { orpc } from "@/utils/orpc";
 
 interface EditCategoryDialogProps {
   category: Category;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
 }
 
 export default function EditCategoryDialog({
   category,
-  open,
-  onOpenChange,
 }: EditCategoryDialogProps) {
+  const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
   // Fetch product types for dropdown — only when dialog is open
@@ -61,7 +59,7 @@ export default function EditCategoryDialog({
       onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
         toast.success(result.message);
-        onOpenChange(false);
+        setOpen(false);
       },
       onError: (error) => {
         toast.error(
@@ -97,7 +95,13 @@ export default function EditCategoryDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="w-full justify-start">
+          <Pencil className="h-4 w-4 mr-2" />
+          Edit
+        </Button>
+      </DialogTrigger>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Category</DialogTitle>
@@ -264,7 +268,7 @@ export default function EditCategoryDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => setOpen(false)}
             disabled={mutation.isPending}
           >
             Cancel
