@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  Brand,
   Category,
   Product,
   ProductImage,
@@ -26,8 +25,7 @@ export interface ProductWithRelations extends Product {
   images: ProductImage[];
   category: Category;
   subCategory: SubCategory | null;
-  brand?: Brand | null;
-  variants?: ProductVariant[];
+  variants?: (ProductVariant & { brand?: { id: number; name: string } | null })[];
 }
 
 export function useProductColumns() {
@@ -91,10 +89,15 @@ export function useProductColumns() {
       header: () => <div className="text-center">Brand</div>,
       cell: ({ row }) => {
         const product = row.original;
+        // Derive brands from variants (variant-level brand only)
+        const variantBrands = (product.variants ?? [])
+          .map((v) => v.brand?.name)
+          .filter(Boolean);
+        const uniqueBrands = [...new Set(variantBrands)];
         return (
           <div className="text-center">
-            {product.brand ? (
-              <span className="font-medium">{product.brand.name}</span>
+            {uniqueBrands.length > 0 ? (
+              <span className="font-medium">{uniqueBrands.join(", ")}</span>
             ) : (
               <span className="text-muted-foreground">—</span>
             )}
@@ -128,9 +131,17 @@ export function useProductColumns() {
       },
       cell: ({ row }) => {
         const price = parseFloat(row.getValue("price"));
-        const formatted = new Intl.NumberFormat("en-US", {
+        if (!price || price === 0) {
+          return (
+            <div className="text-center text-sm text-amber-600 font-medium">
+              Set by shop owners
+            </div>
+          );
+        }
+        const formatted = new Intl.NumberFormat("en-BD", {
           style: "currency",
-          currency: "USD",
+          currency: "BDT",
+          minimumFractionDigits: 2,
         }).format(price);
         return <div className="text-center font-medium">{formatted}</div>;
       },

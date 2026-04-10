@@ -25,7 +25,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { client } from "@/utils/orpc";
-import { VariantConversionPanel } from "./variant-conversion-panel";
 import { VariantFormDialog } from "./variant-form-dialog";
 
 function VariantListItem({
@@ -56,8 +55,8 @@ function VariantListItem({
             )}
           </div>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span className="text-sm font-semibold text-primary">
-              ৳{variant.price}
+            <span className={`text-sm font-semibold ${variant.variantType === "trade" ? "text-amber-600" : "text-primary"}`}>
+              {variant.variantType === "trade" ? "Price set by shop owner" : `৳${variant.price}`}
             </span>
             <span className="text-muted-foreground">·</span>
             <span className="text-xs text-muted-foreground capitalize">
@@ -70,6 +69,11 @@ function VariantListItem({
             </span>
           </div>
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            {(variant as any).brand?.name && (
+              <Badge variant="outline" className="text-[10px] h-5 text-indigo-600 border-indigo-300">
+                {(variant as any).brand.name}
+              </Badge>
+            )}
             {variant.variantType && (
               <Badge
                 variant={
@@ -229,13 +233,16 @@ export function ProductVariantsCard({
         </CardContent>
       </Card>
 
-      {variants.length >= 2 && (
-        <VariantConversionPanel productId={productId} variants={variants} />
-      )}
+
 
       <VariantFormDialog
         productId={productId}
         variant={editingVariant}
+        lockedVariantType={
+          variants.length > 0
+            ? (variants.find((v) => v.variantType)?.variantType as "trade" | "retail" | undefined) ?? null
+            : null
+        }
         open={dialogOpen}
         onOpenChange={handleDialogOpenChange}
       />

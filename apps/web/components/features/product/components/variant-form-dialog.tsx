@@ -27,9 +27,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   ORDER_UNITS,
   PACK_TYPES,
-  PACKAGING_TYPES,
   variantFormSchema,
 } from "@/schema/variant.schema";
+import { useBrands } from "@/hooks/use-brands";
 import { client } from "@/utils/orpc";
 
 type CreateVariantInput = Parameters<
@@ -47,6 +47,8 @@ type VariantFormDialogProps = {
   variant?: ProductVariant | null;
   /** Prefill when adding/editing a draft variant (create product flow) */
   draftInitial?: DraftVariant | null;
+  /** If set, locks the variant type selector to this value (product already has variants of this type) */
+  lockedVariantType?: "trade" | "retail" | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** When set, dialog works in draft mode: submit calls this instead of createVariant */
@@ -61,10 +63,74 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
+function BrandField({ form }: { form: any }) {
+  const { data: brands = [] } = useBrands();
+  return (
+    <form.Field name="brandId">
+      {(field: any) => (
+        <Field>
+          <FieldLabel>Brand</FieldLabel>
+          <Select
+            value={field.state.value?.toString() || "none"}
+            onValueChange={(v: string) =>
+              field.handleChange(
+                v === "none" ? undefined : parseInt(v, 10),
+              )
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select brand" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No brand</SelectItem>
+              {brands.map((brand: any) => (
+                <SelectItem key={brand.id} value={brand.id.toString()}>
+                  {brand.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      )}
+    </form.Field>
+  );
+}
+
+/** Get measurement unit based on pack type */
+function getMeasurementUnit(packType?: string): { label: string; short: string } {
+  const liquidTypes = ["bottle", "can", "jar"];
+  if (packType && liquidTypes.includes(packType)) {
+    return { label: "Volume (L)", short: "L" };
+  }
+  return { label: "Weight (kg)", short: "kg" };
+}
+
+/** Auto-generate unit label from pack type and weight */
+function generateUnitLabel(packType: string | undefined, weightKg: string): string {
+  if (!weightKg || !packType) return "";
+  const packLabel = PACK_TYPES.find((p) => p.value === packType)?.label ?? packType;
+  const unit = getMeasurementUnit(packType).short;
+  return `${packLabel} (${weightKg} ${unit})`;
+}
+
+/** Auto-generate SKU: e.g. CTN-50KG-T-A7X3 */
+function generateSku(packType: string | undefined, weightKg: string, variantType: string | undefined): string {
+  const packCode: Record<string, string> = {
+    sack: "SCK", carton: "CTN", packet: "PKT", loose: "LSE",
+    bottle: "BTL", can: "CAN", jar: "JAR", pouch: "PCH", box: "BOX",
+  };
+  const pt = packCode[packType || ""] || "VAR";
+  const wt = weightKg ? `${weightKg}KG` : "0KG";
+  const vt = variantType === "trade" ? "T" : variantType === "retail" ? "R" : "X";
+  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${pt}-${wt}-${vt}-${rand}`;
+}
+
 export function VariantFormDialog({
   productId = null,
   variant = null,
   draftInitial = null,
+  lockedVariantType = null,
   open,
   onOpenChange,
   onSubmitDraft,
@@ -107,34 +173,18 @@ export function VariantFormDialog({
     defaultValues: {
       sku: source?.sku ?? "",
       unitLabel: source?.unitLabel ?? "",
-      quantitySelectorLabel: source?.quantitySelectorLabel ?? "",
+      brandId: source?.brandId ?? (undefined as number | undefined),
       variantType:
-        (source?.variantType as "trade" | "retail" | undefined) ?? undefined,
+        (source?.variantType as "trade" | "retail" | undefined) ?? lockedVariantType ?? undefined,
       packType: (source?.packType as string | undefined) ?? undefined,
-      packagingType: source?.packagingType ?? "loose",
       weightKg: source?.weightKg ?? "",
-      pieceWeightKg: source?.pieceWeightKg ?? "",
-      piecesPerUnit: source?.piecesPerUnit ?? (undefined as number | undefined),
-      sellUnit: source?.sellUnit ?? "",
-      packWeightKg: source?.packWeightKg ?? "",
       innerPackSizeKg: source?.innerPackSizeKg ?? "",
-      packCountInside:
-        source?.packCountInside ?? (undefined as number | undefined),
       pricingType: source?.pricingType ?? "per_unit",
       price: source?.price ?? "",
       orderMin: source?.orderMin ?? "1",
       orderMax: source?.orderMax ?? "",
       orderIncrement: source?.orderIncrement ?? "1",
       orderUnit: source?.orderUnit ?? "piece",
-      stockQuantity: source?.stockQuantity ?? 0,
-      reorderLevel: source?.reorderLevel ?? 0,
-      orderType: (source?.orderType as "b2b" | "b2c" | undefined) ?? undefined,
-      visibilityRole:
-        (source?.visibilityRole as
-          | "shop_owner"
-          | "consumer"
-          | "all"
-          | undefined) ?? "all",
       isActive: source?.isActive ?? true,
       isOpenOrderAllowed: source?.isOpenOrderAllowed ?? false,
       negotiationTimeoutSec: source?.negotiationTimeoutSec ?? 100,
@@ -144,8 +194,6 @@ export function VariantFormDialog({
       packDepositAmount: source?.packDepositAmount ?? "",
       origin: source?.origin ?? "",
       shelfLife: source?.shelfLife ?? "",
-      packagingNote: source?.packagingNote ?? "",
-      care: source?.care ?? "",
       note: source?.note ?? "",
       sortOrder: source?.sortOrder ?? 0,
     },
@@ -154,30 +202,43 @@ export function VariantFormDialog({
       onSubmit: variantFormSchema,
     },
     onSubmit: async ({ value }) => {
+      // Auto-calculate derived fields
+      const autoUnitLabel = value.unitLabel || generateUnitLabel(value.packType, value.weightKg);
+      const totalW = Number(value.weightKg) || 0;
+      const innerW = Number(value.innerPackSizeKg) || 0;
+      const autoPiecesPerUnit = innerW > 0 ? Math.floor(totalW / innerW) : undefined;
+
       const draftData = {
-        sku: value.sku || undefined,
-        unitLabel: value.unitLabel,
-        quantitySelectorLabel: value.quantitySelectorLabel || undefined,
+        sku: value.sku || generateSku(value.packType, value.weightKg, value.variantType),
+        unitLabel: autoUnitLabel,
+        quantitySelectorLabel: autoUnitLabel,
+        brandId: value.brandId || undefined,
         variantType: value.variantType || undefined,
         packType: value.packType || undefined,
-        packagingType: value.packagingType,
+        // Keep packagingType for DB compat — derive from packType
+        packagingType: value.packType || "loose",
         weightKg: value.weightKg,
-        pieceWeightKg: value.pieceWeightKg || undefined,
-        piecesPerUnit: value.piecesPerUnit || undefined,
-        sellUnit: value.sellUnit || undefined,
-        packWeightKg: value.packWeightKg || undefined,
+        pieceWeightKg: value.innerPackSizeKg || undefined,
+        piecesPerUnit: autoPiecesPerUnit,
+        // Fill redundant DB fields automatically
+        sellUnit: value.packType
+          ? PACK_TYPES.find((p) => p.value === value.packType)?.label
+          : undefined,
+        packWeightKg: value.weightKg || undefined,
         innerPackSizeKg: value.innerPackSizeKg || undefined,
-        packCountInside: value.packCountInside || undefined,
+        packCountInside: autoPiecesPerUnit,
         pricingType: value.pricingType,
-        price: value.price,
+        price: value.variantType === "trade" ? "0" : value.price,
         orderMin: value.orderMin || "1",
         orderMax: value.orderMax || undefined,
         orderIncrement: value.orderIncrement || "1",
         orderUnit: value.orderUnit || "piece",
-        stockQuantity: value.stockQuantity ?? 0,
-        reorderLevel: value.reorderLevel ?? 0,
-        orderType: value.orderType || undefined,
-        visibilityRole: value.visibilityRole || undefined,
+        // Stock managed by warehouse, default to 0
+        stockQuantity: 0,
+        reorderLevel: 0,
+        // Derive visibility from variant type
+        orderType: value.variantType === "trade" ? "b2b" : value.variantType === "retail" ? "b2c" : undefined,
+        visibilityRole: value.variantType === "trade" ? "shop_owner" : value.variantType === "retail" ? "consumer" : "all",
         isActive: value.isActive ?? true,
         isOpenOrderAllowed: value.isOpenOrderAllowed ?? false,
         negotiationTimeoutSec: value.negotiationTimeoutSec ?? 100,
@@ -187,8 +248,6 @@ export function VariantFormDialog({
         packDepositAmount: value.packDepositAmount || undefined,
         origin: value.origin || undefined,
         shelfLife: value.shelfLife || undefined,
-        packagingNote: value.packagingNote || undefined,
-        care: value.care || undefined,
         note: value.note || undefined,
         sortOrder: value.sortOrder ?? 0,
       } as DraftVariant;
@@ -211,7 +270,7 @@ export function VariantFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl p-8">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl p-8">
         <DialogHeader>
           <DialogTitle className="text-xl">
             {isEdit ? "Edit Variant" : "Add Variant"}
@@ -240,55 +299,36 @@ export function VariantFormDialog({
                     value={field.state.value ?? ""}
                     onBlur={field.handleBlur}
                     onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="e.g. AT-IF-L-1020"
+                    placeholder="Auto-generated"
                   />
                 </Field>
               )}
             </form.Field>
             <form.Field name="unitLabel">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Unit Label *</FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="Sack, Carton, kg"
-                    />
-                    {isInvalid && (
-                      <FieldError errors={field.state.meta.errors} />
-                    )}
-                  </Field>
-                );
-              }}
-            </form.Field>
-            <form.Field name="quantitySelectorLabel">
               {(field) => (
                 <Field>
-                  <FieldLabel htmlFor={field.name}>
-                    Qty Selector Label
-                  </FieldLabel>
+                  <FieldLabel htmlFor={field.name}>Unit Label</FieldLabel>
                   <Input
                     id={field.name}
-                    value={field.state.value ?? ""}
+                    value={field.state.value}
                     onBlur={field.handleBlur}
                     onChange={(e) => field.handleChange(e.target.value)}
                     placeholder="Sack (50 kg)"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Leave empty to auto-generate from pack info
+                  </p>
                 </Field>
               )}
             </form.Field>
+            <BrandField form={form} />
           </div>
 
           <Separator />
 
-          {/* ─── Type & Packaging ─── */}
-          <SectionHeading>Type & Packaging</SectionHeading>
-          <div className="grid grid-cols-3 gap-4">
+          {/* ─── Type & Pack ─── */}
+          <SectionHeading>Type & Pack</SectionHeading>
+          <div className="grid grid-cols-2 gap-4">
             <form.Field name="variantType">
               {(field) => (
                 <Field>
@@ -300,6 +340,7 @@ export function VariantFormDialog({
                         v === "none" ? undefined : (v as "trade" | "retail"),
                       )
                     }
+                    disabled={!!lockedVariantType}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select" />
@@ -310,6 +351,11 @@ export function VariantFormDialog({
                       <SelectItem value="retail">Retail (B2C)</SelectItem>
                     </SelectContent>
                   </Select>
+                  {lockedVariantType && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Locked — this product already has {lockedVariantType === "trade" ? "Trade (B2B)" : "Retail (B2C)"} variants
+                    </p>
+                  )}
                 </Field>
               )}
             </form.Field>
@@ -338,223 +384,182 @@ export function VariantFormDialog({
                 </Field>
               )}
             </form.Field>
-            <form.Field name="packagingType">
-              {(field) => (
-                <Field>
-                  <FieldLabel>Packaging Type *</FieldLabel>
-                  <Select
-                    value={field.state.value}
-                    onValueChange={field.handleChange}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PACKAGING_TYPES.map((pt) => (
-                        <SelectItem key={pt.value} value={pt.value}>
-                          {pt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
           </div>
-          <div className="grid grid-cols-3 gap-4">
-            <form.Field name="weightKg">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
+          <div className="grid grid-cols-2 gap-4">
+            <form.Subscribe selector={(state) => state.values.packType}>
+              {(packType) => {
+                const mu = getMeasurementUnit(packType ?? undefined);
                 return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Weight (kg) *</FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="50"
-                    />
-                    {isInvalid && (
-                      <FieldError errors={field.state.meta.errors} />
-                    )}
-                  </Field>
+                  <form.Field name="weightKg">
+                    {(field) => {
+                      const isInvalid =
+                        field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name}>Total {mu.label} *</FieldLabel>
+                          <Input
+                            id={field.name}
+                            value={field.state.value}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder={mu.short === "L" ? "5" : "50"}
+                          />
+                          {isInvalid && (
+                            <FieldError errors={field.state.meta.errors} />
+                          )}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
                 );
               }}
-            </form.Field>
-            <form.Field name="pieceWeightKg">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>
-                    Piece Weight (kg)
-                  </FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="For carton"
-                  />
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="piecesPerUnit">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Pieces / Unit</FieldLabel>
-                  <Input
-                    id={field.name}
-                    type="number"
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) =>
-                      field.handleChange(
-                        e.target.value
-                          ? parseInt(e.target.value, 10)
-                          : undefined,
-                      )
-                    }
-                    placeholder="10"
-                  />
-                </Field>
-              )}
-            </form.Field>
+            </form.Subscribe>
+            <form.Subscribe selector={(state) => state.values.packType}>
+              {(packType) => {
+                const isLoose = packType === "loose";
+                if (isLoose) return null;
+                const mu = getMeasurementUnit(packType ?? undefined);
+                return (
+                  <form.Field name="innerPackSizeKg">
+                    {(field) => (
+                      <Field>
+                        <FieldLabel htmlFor={field.name}>
+                          Inner Pack Size ({mu.short})
+                        </FieldLabel>
+                        <Input
+                          id={field.name}
+                          value={field.state.value ?? ""}
+                          onBlur={field.handleBlur}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          placeholder={mu.short === "L" ? "e.g. 1" : "e.g. 5"}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Size of each inner pack (e.g. {mu.short === "L" ? "1L per bottle" : "5kg per pack"} inside a carton)
+                        </p>
+                      </Field>
+                    )}
+                  </form.Field>
+                );
+              }}
+            </form.Subscribe>
           </div>
 
-          <form.Field name="packType">
-            {(packTypeField) =>
-              packTypeField.state.value === "carton" ||
-              packTypeField.state.value === "box" ? (
-                <>
-                  <Separator />
+          {/* Auto-calculated pack info preview */}
+          <form.Subscribe selector={(state) => ({
+            w: state.values.weightKg,
+            i: state.values.innerPackSizeKg,
+            p: state.values.packType,
+          })}>
+            {({ w, i, p }) => {
+              const totalW = Number(w) || 0;
+              if (totalW <= 0) return null;
 
-                  {/* ─── Pack Structure (carton/box only) ─── */}
-                  <SectionHeading>Pack Structure</SectionHeading>
-                  <div className="grid grid-cols-4 gap-4">
-                    <form.Field name="sellUnit">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel htmlFor={field.name}>
-                            Sell Unit
-                          </FieldLabel>
-                          <Input
-                            id={field.name}
-                            value={field.state.value ?? ""}
-                            onBlur={field.handleBlur}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="Sack, KG"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
-                    <form.Field name="packWeightKg">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel htmlFor={field.name}>
-                            Pack Weight (kg)
-                          </FieldLabel>
-                          <Input
-                            id={field.name}
-                            value={field.state.value ?? ""}
-                            onBlur={field.handleBlur}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="50"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
-                    <form.Field name="innerPackSizeKg">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel htmlFor={field.name}>
-                            Inner Pack (kg)
-                          </FieldLabel>
-                          <Input
-                            id={field.name}
-                            value={field.state.value ?? ""}
-                            onBlur={field.handleBlur}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="5"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
-                    <form.Field name="packCountInside">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel htmlFor={field.name}>
-                            Count Inside
-                          </FieldLabel>
-                          <Input
-                            id={field.name}
-                            type="number"
-                            value={field.state.value ?? ""}
-                            onBlur={field.handleBlur}
-                            onChange={(e) =>
-                              field.handleChange(
-                                e.target.value
-                                  ? parseInt(e.target.value, 10)
-                                  : undefined,
-                              )
-                            }
-                            placeholder="10"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
+              const isLoose = p === "loose";
+              const packLabel = PACK_TYPES.find(pt => pt.value === p)?.label || "Unit";
+
+              const mu = getMeasurementUnit(p ?? undefined);
+              const unit = mu.short;
+
+              if (isLoose) {
+                return (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Pack:</strong> {w}{unit} — Loose (sold by {unit === "L" ? "volume" : "weight"})
                   </div>
-                </>
-              ) : null
-            }
-          </form.Field>
+                );
+              }
+
+              const innerW = Number(i) || 0;
+              const pieces = innerW > 0 ? Math.floor(totalW / innerW) : 0;
+              if (pieces <= 0) {
+                return (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Pack:</strong> {w}{unit} — {packLabel}
+                  </div>
+                );
+              }
+              return (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Pack:</strong> {w}{unit} ({i}{unit} × {pieces} pcs) — {packLabel}
+                </div>
+              );
+            }}
+          </form.Subscribe>
 
           <Separator />
 
           {/* ─── Pricing ─── */}
           <SectionHeading>Pricing</SectionHeading>
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field name="pricingType">
-              {(field) => (
-                <Field>
-                  <FieldLabel>Pricing Type</FieldLabel>
-                  <Select
-                    value={field.state.value}
-                    onValueChange={field.handleChange}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="per_unit">Per Unit</SelectItem>
-                      <SelectItem value="bulk_rate">Bulk Rate</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="price">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Price (৳) *</FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="0.00"
-                    />
-                    {isInvalid && (
-                      <FieldError errors={field.state.meta.errors} />
-                    )}
-                  </Field>
-                );
-              }}
-            </form.Field>
-          </div>
+          <form.Field name="variantType">
+            {(variantTypeField) => {
+              const isTrade = variantTypeField.state.value === "trade";
+              return (
+                <>
+                  {isTrade && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      <span>
+                        <strong>Trade (B2B) variant</strong> — Price is set by shop owners via their inventory. Admin cannot set the selling price for store products.
+                      </span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <form.Field name="pricingType">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel>Pricing Type</FieldLabel>
+                          <Select
+                            value={field.state.value}
+                            onValueChange={field.handleChange}
+                            disabled={isTrade}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="per_unit">Per Unit</SelectItem>
+                              <SelectItem value="bulk_rate">Bulk Rate</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="price">
+                      {(field) => {
+                        const isInvalid =
+                          !isTrade && field.state.meta.isTouched && !field.state.meta.isValid;
+                        return (
+                          <Field data-invalid={isInvalid}>
+                            <FieldLabel htmlFor={field.name}>
+                              Price (৳) {!isTrade && "*"}
+                            </FieldLabel>
+                            <Input
+                              id={field.name}
+                              value={isTrade ? "" : field.state.value}
+                              onBlur={field.handleBlur}
+                              onChange={(e) => field.handleChange(e.target.value)}
+                              placeholder={isTrade ? "Set by shop owner" : "0.00"}
+                              disabled={isTrade}
+                              className={isTrade ? "bg-muted cursor-not-allowed" : ""}
+                            />
+                            {isInvalid && (
+                              <FieldError errors={field.state.meta.errors} />
+                            )}
+                            {isTrade && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Shop owners set their own retail price
+                              </p>
+                            )}
+                          </Field>
+                        );
+                      }}
+                    </form.Field>
+                  </div>
+                </>
+              );
+            }}
+          </form.Field>
 
           <Separator />
 
@@ -629,97 +634,7 @@ export function VariantFormDialog({
 
           <Separator />
 
-          {/* ─── Inventory ─── */}
-          <SectionHeading>Inventory</SectionHeading>
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field name="stockQuantity">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Stock Quantity</FieldLabel>
-                  <Input
-                    id={field.name}
-                    type="number"
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) =>
-                      field.handleChange(parseInt(e.target.value, 10) || 0)
-                    }
-                  />
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="reorderLevel">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Reorder Level</FieldLabel>
-                  <Input
-                    id={field.name}
-                    type="number"
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) =>
-                      field.handleChange(parseInt(e.target.value, 10) || 0)
-                    }
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
-
-          <Separator />
-
-          {/* ─── Visibility & Access ─── */}
-          <SectionHeading>Visibility & Access</SectionHeading>
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field name="orderType">
-              {(field) => (
-                <Field>
-                  <FieldLabel>Order Type</FieldLabel>
-                  <Select
-                    value={field.state.value ?? "none"}
-                    onValueChange={(v) =>
-                      field.handleChange(
-                        v === "none" ? undefined : (v as "b2b" | "b2c"),
-                      )
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Not set</SelectItem>
-                      <SelectItem value="b2b">B2B (Wholesale)</SelectItem>
-                      <SelectItem value="b2c">B2C (Consumer)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="visibilityRole">
-              {(field) => (
-                <Field>
-                  <FieldLabel>Visible To</FieldLabel>
-                  <Select
-                    value={field.state.value ?? "all"}
-                    onValueChange={(v) =>
-                      field.handleChange(v as "shop_owner" | "consumer" | "all")
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="shop_owner">
-                        Shop Owners Only
-                      </SelectItem>
-                      <SelectItem value="consumer">Consumers Only</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
-          </div>
+          {/* ─── Status ─── */}
           <form.Field name="isActive">
             {(field) => (
               <div className="flex items-center justify-between rounded-lg border p-3">
@@ -743,6 +658,7 @@ export function VariantFormDialog({
             )}
           </form.Field>
 
+          {/* ─── Trade-Only Sections ─── */}
           <form.Field name="variantType">
             {(varTypeField) =>
               varTypeField.state.value === "trade" ? (
@@ -901,6 +817,8 @@ export function VariantFormDialog({
             }
           </form.Field>
 
+          <Separator />
+
           {/* ─── Additional Details ─── */}
           <SectionHeading>Additional Details</SectionHeading>
           <div className="grid grid-cols-3 gap-4">
@@ -945,36 +863,6 @@ export function VariantFormDialog({
                       field.handleChange(parseInt(e.target.value, 10) || 0)
                     }
                     placeholder="0"
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field name="care">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Care</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="Store in cool place"
-                  />
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="packagingNote">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Packaging Note</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="Sealed packaging"
                   />
                 </Field>
               )}

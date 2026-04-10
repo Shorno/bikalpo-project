@@ -26,6 +26,7 @@ export const deliveryInvoiceStatusEnum = pgEnum("delivery_invoice_status", [
     "pending",
     "delivered",
     "failed",
+    "returned",
 ]);
 
 // Supervisor approval status

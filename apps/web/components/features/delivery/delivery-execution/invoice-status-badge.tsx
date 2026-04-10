@@ -11,6 +11,7 @@ const statusConfig: Record<
   pending: { label: "Pending", variant: "outline" },
   delivered: { label: "Delivered", variant: "default" },
   failed: { label: "Failed", variant: "destructive" },
+  returned: { label: "Returned", variant: "secondary" },
 };
 
 interface InvoiceStatusBadgeProps {

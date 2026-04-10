@@ -8,6 +8,7 @@ import { DELIVERY_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
 import { DeliveredModal } from "./delivered-modal";
 import { FailedModal } from "./failed-modal";
+import { ReturnedModal } from "./returned-modal";
 import { InvoicesList } from "./invoices-list";
 import { StartDeliveryCard } from "./start-delivery-card";
 import type { ActionType, DeliveryExecutionProps } from "./types";
@@ -23,8 +24,12 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
   const [failedInvoiceId, setFailedInvoiceId] = React.useState<number | null>(
     null,
   );
+  const [returnedInvoiceId, setReturnedInvoiceId] = React.useState<number | null>(
+    null,
+  );
   const [otp, setOtp] = React.useState("");
   const [failReason, setFailReason] = React.useState("");
+  const [returnReason, setReturnReason] = React.useState("");
 
   // Invalidate queries and refresh
   const refreshData = React.useCallback(() => {
@@ -41,6 +46,11 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
   const closeFailedModal = React.useCallback(() => {
     setFailedInvoiceId(null);
     setFailReason("");
+  }, []);
+
+  const closeReturnedModal = React.useCallback(() => {
+    setReturnedInvoiceId(null);
+    setReturnReason("");
   }, []);
 
   // Mark delivered mutation
@@ -69,6 +79,19 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
     },
   });
 
+  // Mark returned mutation
+  const returnedMutation = useMutation({
+    ...orpc.deliveryman.markReturned.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Invoice marked as returned");
+      closeReturnedModal();
+      refreshData();
+    },
+    onError: (err) => {
+      toast.error(err?.message || "Failed to mark returned");
+    },
+  });
+
   // Handle action button click
   const handleAction = React.useCallback(
     (invoiceId: number, type: ActionType) => {
@@ -77,11 +100,10 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
       } else if (type === "failed") {
         setFailedInvoiceId(invoiceId);
       } else if (type === "return") {
-        // Navigate to return processing page with the invoice ID
-        router.push(`${DELIVERY_BASE}/returns/process/${invoiceId}`);
+        setReturnedInvoiceId(invoiceId);
       }
     },
-    [router],
+    [],
   );
 
   // Handle delivered confirm
@@ -105,6 +127,19 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
       failedReason: failReason,
     });
   }, [failedInvoiceId, failReason, failedMutation]);
+
+  // Handle returned confirm
+  const handleReturnedConfirm = React.useCallback(() => {
+    if (!returnedInvoiceId) return;
+    if (!returnReason.trim()) {
+      toast.error("Please provide a reason for return");
+      return;
+    }
+    returnedMutation.mutate({
+      deliveryInvoiceId: returnedInvoiceId,
+      returnReason: returnReason,
+    });
+  }, [returnedInvoiceId, returnReason, returnedMutation]);
 
   // Determine if actions can be taken (only when delivery has started)
   const canTakeAction = group.status === "out_for_delivery";
@@ -133,6 +168,15 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
         onReasonChange={setFailReason}
         onClose={closeFailedModal}
         onConfirm={handleFailedConfirm}
+      />
+
+      <ReturnedModal
+        open={!!returnedInvoiceId}
+        isLoading={returnedMutation.isPending}
+        reason={returnReason}
+        onReasonChange={setReturnReason}
+        onClose={closeReturnedModal}
+        onConfirm={handleReturnedConfirm}
       />
 
       {/* Always show invoices list - view-only when not started */}

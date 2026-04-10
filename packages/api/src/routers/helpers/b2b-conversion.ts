@@ -82,12 +82,17 @@ export async function convertB2bOrderToRetailInventory(
                 conversionRatio: true,
                 conversionLossPercent: true,
                 brandId: true,
+                packCountInside: true,
+                innerPackSizeKg: true,
+                weightKg: true,
+                packType: true,
             },
         });
 
         if (!tradeVariant) continue;
 
         const orderedQty = Number(item.quantity);
+        const purchaseUnitPrice = item.unitPrice ? String(item.unitPrice) : null;
 
         // Look up conversion rule from variantConversionMap (set by admin UI)
         const conversionMap = await tx.query.variantConversionMap.findFirst({
@@ -128,16 +133,40 @@ export async function convertB2bOrderToRetailInventory(
             }
         }
 
-        const conversionRatio = Number(
-            conversionMap?.conversionRatio ??
-            tradeVariant.conversionRatio ??
-            1
-        );
+        // ─── Determine conversion ratio ───
+        // Priority: conversionMap > variant.conversionRatio > packCountInside > 1
+        // IMPORTANT: Loose products (packType='loose') skip packCountInside conversion.
+        // They are sold as-is (by weight), only cartons/sacks should be broken down.
+        const isLoose = tradeVariant.packType === "loose";
+        const packCount = Number(tradeVariant.packCountInside || 0);
+        let conversionRatio: number;
+        let isPackBreakdown = false;
+
+        if (conversionMap?.conversionRatio) {
+            conversionRatio = Number(conversionMap.conversionRatio);
+        } else if (tradeVariant.conversionRatio) {
+            conversionRatio = Number(tradeVariant.conversionRatio);
+        } else if (!isLoose && packCount > 1) {
+            // Auto-convert using pack breakdown: 1 Carton = packCountInside inner packs
+            // Skipped for loose products — they pass through at 1:1
+            conversionRatio = packCount;
+            isPackBreakdown = true;
+        } else {
+            conversionRatio = 1;
+        }
+
         const lossPercent = Number(tradeVariant.conversionLossPercent || 0);
         const retailQty =
             orderedQty * conversionRatio * (1 - lossPercent / 100);
 
-        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: map=${conversionMap ? 'YES' : 'NO'}, target=${targetRetailVariantId}, ratio=${conversionRatio}, brand=${tradeVariant.brandId ?? 'none'}, orderedQty=${orderedQty}, retailQty=${retailQty}`);
+        // Calculate per-pack price when doing pack breakdown
+        let effectiveRetailPrice = purchaseUnitPrice;
+        if (isPackBreakdown && purchaseUnitPrice && packCount > 1) {
+            const perPackPrice = (Number(purchaseUnitPrice) / packCount).toFixed(2);
+            effectiveRetailPrice = perPackPrice;
+        }
+
+        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: map=${conversionMap ? 'YES' : 'NO'}, target=${targetRetailVariantId}, ratio=${conversionRatio}, packBreakdown=${isPackBreakdown}, brand=${tradeVariant.brandId ?? 'none'}, orderedQty=${orderedQty}, retailQty=${retailQty}, perPackPrice=${effectiveRetailPrice ?? 'N/A'}`);
 
         // ─── A. Deduct source inventory (warehouse or super_seller) ───
 
@@ -225,12 +254,17 @@ export async function convertB2bOrderToRetailInventory(
         } else {
             newShopBalance = retailQty.toFixed(2);
 
+            // Use per-pack price (after breakdown), or fall back to warehouse's retail_price
+            const initialRetailPrice = effectiveRetailPrice
+                ?? (sourceInv?.retailPrice ? String(sourceInv.retailPrice) : null);
+
             await tx.insert(inventory).values({
                 ownerType: "shop" as const,
                 ownerId: orderData.userId,
                 variantId: targetRetailVariantId,
                 availableQty: newShopBalance,
                 reservedQty: "0",
+                ...(initialRetailPrice ? { retailPrice: initialRetailPrice } : {}),
             });
         }
 

@@ -117,11 +117,6 @@ function MobileProductCard({ product }: { product: ProductWithRelations }) {
 
             {/* Details Row */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {product.brand && (
-                <Badge variant="outline" className="text-xs">
-                  {product.brand.name}
-                </Badge>
-              )}
               {product.size && (
                 <span className="text-xs text-muted-foreground">
                   {product.size}

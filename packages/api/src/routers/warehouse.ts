@@ -477,7 +477,7 @@ const orderQueries = {
         })
         .input(
             z.object({
-                status: z.enum(["all", "pending", "confirmed", "processing", "delivered", "cancelled"]).default("all"),
+                status: z.enum(["all", "pending", "confirmed", "processing", "delivered", "returned", "cancelled"]).default("all"),
                 page: z.number().default(1),
                 limit: z.number().default(20),
             }),

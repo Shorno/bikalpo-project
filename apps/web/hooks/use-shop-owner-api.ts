@@ -84,7 +84,7 @@ export function useMyInventory() {
 
 /** Shop owner's B2B purchase orders */
 export function useMyOrders(params?: {
-  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+  status?: "pending" | "confirmed" | "processing" | "delivered" | "returned" | "cancelled";
   page?: number;
   limit?: number;
 }) {

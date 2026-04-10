@@ -1,8 +1,9 @@
 import { db } from "@bikalpo-project/db";
 import { product, productVariant, variantConversionMap } from "@bikalpo-project/db/schema";
+import { ORPCError } from "@orpc/server";
 import { adminProcedure } from "../index";
 import { generateSku } from "./helpers/generate-sku";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
 /**
@@ -78,6 +79,9 @@ const variantInput = z.object({
     note: z.string().optional(),
     sortOrder: z.number().int().optional(),
 
+    // === Variant-Level Identity ===
+    brandId: z.number().int().optional(),
+
     // === B2B + B2C Fields ===
     variantType: z.enum(["trade", "retail"]).optional(),
     packType: z.enum(["sack", "carton", "packet", "loose", "bottle", "can", "jar", "pouch", "box"]).optional(),
@@ -123,6 +127,7 @@ export const adminProductVariantRouter = {
             return db.query.productVariant.findMany({
                 where: eq(productVariant.productId, input.productId),
                 orderBy: (v, { asc }) => [asc(v.sortOrder), asc(v.id)],
+                with: { brand: { columns: { id: true, name: true, logo: true } } },
             });
         }),
 
@@ -136,6 +141,24 @@ export const adminProductVariantRouter = {
         })
         .input(variantInput)
         .handler(async ({ context, input }) => {
+            // Enforce: a product can't mix trade (B2B) and retail (B2C) variants
+            if (input.variantType) {
+                const existing = await db.query.productVariant.findFirst({
+                    where: eq(productVariant.productId, input.productId),
+                    columns: { variantType: true },
+                });
+                if (existing?.variantType && existing.variantType !== input.variantType) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `This product already has ${existing.variantType === "trade" ? "Trade (B2B)" : "Retail (B2C)"} variants. A product cannot mix B2B and B2C variants.`,
+                    });
+                }
+            }
+
+            // Trade (warehouse/B2B) variants: admin cannot set price — force to "0"
+            if (input.variantType === "trade") {
+                input.price = "0";
+            }
+
             // Auto-generate SKU if not provided
             let sku = input.sku?.trim() || null;
             if (!sku) {
@@ -190,6 +213,8 @@ export const adminProductVariantRouter = {
                     care: input.care ?? null,
                     note: input.note ?? null,
                     sortOrder: input.sortOrder ?? 0,
+                    // Variant-level identity
+                    brandId: input.brandId ?? null,
                     // B2B + B2C fields
                     variantType: input.variantType ?? null,
                     packType: input.packType ?? null,
@@ -231,6 +256,33 @@ export const adminProductVariantRouter = {
         })
         .input(variantInput.omit({ productId: true }).extend({ id: z.number().int() }))
         .handler(async ({ input }) => {
+            // Enforce: a product can't mix trade (B2B) and retail (B2C) variants
+            if (input.variantType) {
+                const thisVariant = await db.query.productVariant.findFirst({
+                    where: eq(productVariant.id, input.id),
+                    columns: { productId: true },
+                });
+                if (thisVariant) {
+                    const sibling = await db.query.productVariant.findFirst({
+                        where: and(
+                            eq(productVariant.productId, thisVariant.productId),
+                            ne(productVariant.id, input.id),
+                        ),
+                        columns: { variantType: true },
+                    });
+                    if (sibling?.variantType && sibling.variantType !== input.variantType) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `This product already has ${sibling.variantType === "trade" ? "Trade (B2B)" : "Retail (B2C)"} variants. A product cannot mix B2B and B2C variants.`,
+                        });
+                    }
+                }
+            }
+
+            // Trade (warehouse/B2B) variants: admin cannot set price — force to "0"
+            if (input.variantType === "trade") {
+                input.price = "0";
+            }
+
             const { id, ...rest } = input;
             await db
                 .update(productVariant)
@@ -246,6 +298,8 @@ export const adminProductVariantRouter = {
                     packagingNote: rest.packagingNote ?? null,
                     care: rest.care ?? null,
                     note: rest.note ?? null,
+                    // Variant-level identity
+                    brandId: rest.brandId ?? null,
                     // B2B + B2C fields
                     variantType: rest.variantType ?? null,
                     packType: rest.packType ?? null,

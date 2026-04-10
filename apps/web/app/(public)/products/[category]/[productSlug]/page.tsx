@@ -111,7 +111,7 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                 }}
                 variants={normalizedVariants}
                 categoryName={product.category.name}
-                brandName={product.brand?.name}
+                brandName={undefined}
                 subCategoryName={product.subCategory?.name}
                 productSize={product.size}
                 features={product.features}

@@ -6,6 +6,7 @@ import {
   Clock,
   KeyRound,
   Package,
+  RotateCcw,
   ShoppingBag,
   Truck,
   XCircle,
@@ -57,6 +58,11 @@ const statusConfig: Record<
     icon: <CheckCircle2 className="w-3 h-3" />,
     className: "text-emerald-700 bg-emerald-50 border-emerald-200",
   },
+  returned: {
+    label: "Returned",
+    icon: <RotateCcw className="w-3 h-3" />,
+    className: "text-orange-700 bg-orange-50 border-orange-200",
+  },
   cancelled: {
     label: "Cancelled",
     icon: <XCircle className="w-3 h-3" />,
@@ -69,6 +75,7 @@ type OrderStatus =
   | "confirmed"
   | "processing"
   | "delivered"
+  | "returned"
   | "cancelled";
 
 function DeliveryOtpBadge({ orderId, status }: { orderId: number; status: string }) {
@@ -135,6 +142,7 @@ export default function OrdersPage() {
             <SelectItem value="confirmed">Confirmed</SelectItem>
             <SelectItem value="processing">Processing</SelectItem>
             <SelectItem value="delivered">Delivered</SelectItem>
+            <SelectItem value="returned">Returned</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
         </Select>

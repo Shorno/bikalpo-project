@@ -31,6 +31,7 @@ export const invoiceDeliveryStatusEnum = pgEnum("invoice_delivery_status", [
     "out_for_delivery",
     "delivered",
     "failed",
+    "returned",
 ]);
 
 // Vehicle type for delivery assignment (optional)
