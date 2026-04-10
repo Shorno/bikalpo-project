@@ -2,12 +2,10 @@
 
 import {
   ActivityIcon,
-  BarChart3,
   Boxes,
   ClipboardListIcon,
   ContactIcon,
   DollarSignIcon,
-  FileTextIcon,
   GiftIcon,
   HeadphonesIcon,
   LayoutDashboardIcon,
@@ -18,7 +16,6 @@ import {
   ReceiptIcon,
   ShoppingCartIcon,
   StoreIcon,
-  TagIcon,
   TruckIcon,
   Undo2Icon,
   Users2Icon,
@@ -55,34 +52,24 @@ const adminNavGroups: NavGroup[] = [
     label: "Catalog",
     items: [
       {
-        title: "Types",
-        url: `${ADMIN_BASE}/types`,
-        icon: Boxes,
-      },
-      {
         title: "Products",
         url: `${ADMIN_BASE}/products`,
         icon: PackageIcon,
+        items: [
+          { title: "All Products", url: `${ADMIN_BASE}/products` },
+          { title: "Stock / Inventory", url: `${ADMIN_BASE}/stock` },
+          { title: "Stock Ledger", url: `${ADMIN_BASE}/stock/ledger` },
+        ],
       },
       {
-        title: "Stock / Inventory",
-        url: `${ADMIN_BASE}/stock`,
+        title: "Product Management",
+        url: `${ADMIN_BASE}/types`,
         icon: Boxes,
-      },
-      {
-        title: "Stock Ledger",
-        url: `${ADMIN_BASE}/stock/ledger`,
-        icon: ClipboardListIcon,
-      },
-      {
-        title: "Categories",
-        url: `${ADMIN_BASE}/categories`,
-        icon: ListIcon,
-      },
-      {
-        title: "Brands",
-        url: `${ADMIN_BASE}/brands`,
-        icon: TagIcon,
+        items: [
+          { title: "Types", url: `${ADMIN_BASE}/types` },
+          { title: "Categories", url: `${ADMIN_BASE}/categories` },
+          { title: "Brands", url: `${ADMIN_BASE}/brands` },
+        ],
       },
       {
         title: "Customer Home Tabs",
@@ -103,11 +90,10 @@ const adminNavGroups: NavGroup[] = [
         title: "Invoices",
         url: `${ADMIN_BASE}/invoices`,
         icon: ReceiptIcon,
-      },
-      {
-        title: "Estimates",
-        url: `${ADMIN_BASE}/estimates`,
-        icon: FileTextIcon,
+        items: [
+          { title: "All Invoices", url: `${ADMIN_BASE}/invoices` },
+          { title: "Estimates", url: `${ADMIN_BASE}/estimates` },
+        ],
       },
       {
         title: "Customers",
@@ -123,21 +109,19 @@ const adminNavGroups: NavGroup[] = [
         title: "Areas",
         url: `${ADMIN_BASE}/areas`,
         icon: MapPinIcon,
-      },
-      {
-        title: "Area Analytics",
-        url: `${ADMIN_BASE}/area-analytics`,
-        icon: BarChart3,
+        items: [
+          { title: "All Areas", url: `${ADMIN_BASE}/areas` },
+          { title: "Area Analytics", url: `${ADMIN_BASE}/area-analytics` },
+        ],
       },
       {
         title: "Delivery",
         url: `${ADMIN_BASE}/delivery`,
         icon: TruckIcon,
-      },
-      {
-        title: "Delivery rules",
-        url: `${ADMIN_BASE}/delivery-rules`,
-        icon: TruckIcon,
+        items: [
+          { title: "Deliveries", url: `${ADMIN_BASE}/delivery` },
+          { title: "Delivery Rules", url: `${ADMIN_BASE}/delivery-rules` },
+        ],
       },
       {
         title: "Returns",
@@ -163,11 +147,10 @@ const adminNavGroups: NavGroup[] = [
         title: "Announcements",
         url: `${ADMIN_BASE}/announcements`,
         icon: MegaphoneIcon,
-      },
-      {
-        title: "Brand Updates",
-        url: `${ADMIN_BASE}/brand-updates`,
-        icon: TagIcon,
+        items: [
+          { title: "Announcements", url: `${ADMIN_BASE}/announcements` },
+          { title: "Brand Updates", url: `${ADMIN_BASE}/brand-updates` },
+        ],
       },
       {
         title: "To-Let Listings",
@@ -185,24 +168,22 @@ const adminNavGroups: NavGroup[] = [
     label: "People Management",
     items: [
       {
-        title: "Seller Applications",
+        title: "Applications",
         url: `${ADMIN_BASE}/seller-applications`,
         icon: StoreIcon,
+        items: [
+          { title: "Seller Applications", url: `${ADMIN_BASE}/seller-applications` },
+          { title: "Warehouse Applications", url: `${ADMIN_BASE}/warehouse-applications` },
+        ],
       },
       {
-        title: "Warehouse Applications",
-        url: `${ADMIN_BASE}/warehouse-applications`,
-        icon: WarehouseIcon,
-      },
-      {
-        title: "Warehouse Assignments",
+        title: "Assignments",
         url: `${ADMIN_BASE}/warehouse-assignments`,
         icon: WarehouseIcon,
-      },
-      {
-        title: "Shop Category Assignments",
-        url: `${ADMIN_BASE}/shop-category-assignments`,
-        icon: StoreIcon,
+        items: [
+          { title: "Warehouse Assignments", url: `${ADMIN_BASE}/warehouse-assignments` },
+          { title: "Shop Category Assignments", url: `${ADMIN_BASE}/shop-category-assignments` },
+        ],
       },
       {
         title: "Salesmen",
