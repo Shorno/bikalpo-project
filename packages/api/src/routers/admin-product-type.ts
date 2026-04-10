@@ -1,7 +1,7 @@
 import { db } from "@bikalpo-project/db";
-import { category, product, productType } from "@bikalpo-project/db/schema";
+import { category, product, productType, shopCategoryAssignment } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, eq, ilike, inArray, type SQL } from "drizzle-orm";
+import { and, asc, count, countDistinct, eq, ilike, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
@@ -78,7 +78,17 @@ export const adminProductTypeRouter = {
                     .orderBy(asc(product.name));
             }
 
-            return { type, products };
+            // Count distinct sellers (shops) assigned to categories under this type
+            let sellerCount = 0;
+            if (categoryIds.length > 0) {
+                const result = await db
+                    .select({ count: countDistinct(shopCategoryAssignment.shopId) })
+                    .from(shopCategoryAssignment)
+                    .where(inArray(shopCategoryAssignment.categoryId, categoryIds));
+                sellerCount = result[0]?.count ?? 0;
+            }
+
+            return { type, products, sellerCount };
         }),
 
     // Create a new product type

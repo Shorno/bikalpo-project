@@ -9,6 +9,7 @@ import {
   Package,
   Pencil,
   Power,
+  Store,
   Trash2,
 } from "lucide-react";
 import Image from "next/image";
@@ -115,6 +116,7 @@ export default function TypeDetailPage() {
   const b = behaviourLabels[t.inventoryBehaviour] || behaviourLabels.fixed_pack!;
   const categories = t.categories || [];
   const products = data.products || [];
+  const sellerCount = data.sellerCount ?? 0;
 
   const attrs = [];
   if (t.enableBrand) attrs.push("Brand");
@@ -293,6 +295,43 @@ export default function TypeDetailPage() {
               </div>
             )}
           </CardContent>
+        </Card>
+      </div>
+
+      {/* Stats Row */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <FolderOpen className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{categories.length}</p>
+              <p className="text-xs text-muted-foreground">Categories</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+              <Package className="h-5 w-5 text-blue-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{products.length}</p>
+              <p className="text-xs text-muted-foreground">Products</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
+              <Store className="h-5 w-5 text-orange-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{sellerCount}</p>
+              <p className="text-xs text-muted-foreground">Sellers</p>
+            </div>
+          </div>
         </Card>
       </div>
 
