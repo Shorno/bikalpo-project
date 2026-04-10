@@ -4,6 +4,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import type * as React from "react";
 import { LoginRequiredProvider } from "@/components/features/auth/login-required-modal";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { OrpcCartProvider } from "@/hooks/use-orpc-cart";
 import { queryClient } from "@/utils/orpc";
 
@@ -13,8 +14,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <NuqsAdapter>
         <LoginRequiredProvider>
           <OrpcCartProvider>
-            <Toaster richColors position={"top-right"} />
-            {children}
+            <TooltipProvider>
+              <Toaster richColors position={"top-right"} />
+              {children}
+            </TooltipProvider>
           </OrpcCartProvider>
         </LoginRequiredProvider>
       </NuqsAdapter>
