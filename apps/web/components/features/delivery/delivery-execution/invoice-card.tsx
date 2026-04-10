@@ -28,7 +28,7 @@ export function InvoiceCard({
           <InvoiceActionButtons
             onDelivered={() => onAction(item.id, "delivered")}
             onFailed={() => onAction(item.id, "failed")}
-            onReturn={() => onAction(item.invoice.order?.id ?? 0, "return")}
+            onReturn={() => onAction(item.id, "return")}
           />
         )}
       </CardContent>

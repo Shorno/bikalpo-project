@@ -53,8 +53,8 @@ function DraftVariantItem({
             )}
           </div>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span className="text-sm font-semibold text-primary">
-              ৳{variant.price}
+            <span className={`text-sm font-semibold ${variant.variantType === "trade" ? "text-amber-600" : "text-primary"}`}>
+              {variant.variantType === "trade" ? "Price set by shop owner" : `৳${variant.price}`}
             </span>
             <span className="text-muted-foreground">·</span>
             <span className="text-xs text-muted-foreground capitalize">
@@ -230,6 +230,11 @@ export function ProductDraftVariantsCard({
         productId={null}
         variant={null}
         draftInitial={editingDraft}
+        lockedVariantType={
+          draftVariants.length > 0
+            ? (draftVariants.find((v) => v.variantType)?.variantType as "trade" | "retail" | undefined) ?? null
+            : null
+        }
         open={dialogOpen}
         onOpenChange={handleDialogOpenChange}
         onSubmitDraft={handleSubmitDraft}

@@ -92,7 +92,7 @@ export function ProductCard({ product }: ProductCardProps) {
                 onOpenChange={setRequestModalOpen}
                 initialValues={{
                   itemName: product.name,
-                  brand: product.brand?.name ?? "",
+                  brand: "",
                   category: product.category?.name ?? "",
                   quantity: 1,
                   image: product.image,

@@ -12,15 +12,6 @@ export const PACK_TYPES = [
   { value: "box", label: "Box" },
 ] as const;
 
-export const PACKAGING_TYPES = [
-  { value: "loose", label: "Loose" },
-  { value: "carton", label: "Carton" },
-  { value: "sack", label: "Sack" },
-  { value: "packet", label: "Packet" },
-  { value: "bottle", label: "Bottle" },
-  { value: "box", label: "Box" },
-] as const;
-
 export const ORDER_UNITS = [
   { value: "piece", label: "Piece" },
   { value: "kg", label: "KG" },
@@ -49,10 +40,10 @@ const requiredNumericString = (label: string) =>
 export const variantFormSchema = z.object({
   // Identity
   sku: z.string().optional(),
-  unitLabel: z.string().min(1, "Unit label is required"),
-  quantitySelectorLabel: z.string().optional(),
+  unitLabel: z.string().optional().default(""),
+  brandId: z.number().int().optional(),
 
-  // Type & Packaging
+  // Type & Pack
   variantType: z.enum(["trade", "retail"]).optional(),
   packType: z
     .enum([
@@ -67,20 +58,12 @@ export const variantFormSchema = z.object({
       "box",
     ])
     .optional(),
-  packagingType: z.string().min(1, "Packaging type is required"),
   weightKg: requiredNumericString("Weight"),
-  pieceWeightKg: numericString("Piece weight"),
-  piecesPerUnit: z.number().int().optional(),
-
-  // Pack Structure
-  sellUnit: z.string().optional(),
-  packWeightKg: numericString("Pack weight"),
   innerPackSizeKg: numericString("Inner pack size"),
-  packCountInside: z.number().int().optional(),
 
   // Pricing
   pricingType: z.string().default("per_unit"),
-  price: requiredNumericString("Price"),
+  price: numericString("Price").default(""),
 
   // Order Rules
   orderMin: numericString("Order min").default("1"),
@@ -88,34 +71,43 @@ export const variantFormSchema = z.object({
   orderIncrement: numericString("Order increment").default("1"),
   orderUnit: z.string().default("piece"),
 
-  // Inventory
-  stockQuantity: z.number().int().default(0),
-  reorderLevel: z.number().int().default(0),
-
-  // Visibility & Access
-  orderType: z.enum(["b2b", "b2c"]).optional(),
-  visibilityRole: z.enum(["shop_owner", "consumer", "all"]).optional(),
+  // Status
   isActive: z.boolean().default(true),
 
-  // Open Order & Negotiation
+  // Open Order & Negotiation (trade only)
   isOpenOrderAllowed: z.boolean().default(false),
   negotiationTimeoutSec: z.number().int().default(100),
 
-  // Margin Rules
+  // Margin Rules (trade only)
   minMarginPercent: numericString("Min margin %"),
   minMarginAmount: numericString("Min margin amount"),
 
-  // Pack Return & Deposit
+  // Pack Return & Deposit (trade only)
   isPackReturnRequired: z.boolean().default(false),
   packDepositAmount: numericString("Pack deposit"),
 
   // Additional Details
   origin: z.string().optional(),
   shelfLife: z.string().optional(),
-  packagingNote: z.string().optional(),
-  care: z.string().optional(),
   note: z.string().optional(),
   sortOrder: z.number().int().default(0),
+}).superRefine((data, ctx) => {
+  // Price is required only for non-trade variants
+  if (data.variantType !== "trade") {
+    if (!data.price || data.price.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Price is required for consumer/retail variants",
+        path: ["price"],
+      });
+    } else if (Number.isNaN(Number(data.price))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Price must be a number",
+        path: ["price"],
+      });
+    }
+  }
 });
 
 export type VariantFormValues = z.infer<typeof variantFormSchema>;

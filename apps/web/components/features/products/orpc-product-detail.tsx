@@ -155,12 +155,6 @@ export function OrpcProductDetail({
                 {product.name}
               </h1>
 
-              {/* Brand */}
-              {product.brand && (
-                <p className="text-sm text-gray-500 mb-4">
-                  by {product.brand.name}
-                </p>
-              )}
 
               {/* Reviews summary */}
               {reviewStats.totalReviews > 0 && (

@@ -544,6 +544,88 @@ export const deliverymanRouter = {
         }),
 
     /**
+     * Mark invoice as returned (goods brought back)
+     */
+    markReturned: deliverymanProcedure
+        .route({
+            method: "POST",
+            path: "/deliveries/mark-returned",
+            tags: ["Deliveryman"],
+            summary: "Mark invoice as returned — goods brought back to warehouse",
+        })
+        .input(z.object({
+            deliveryInvoiceId: z.number(),
+            returnReason: z.string().min(1),
+            returnPhoto: z.string().url().optional().nullable(),
+            lat: z.number().optional(),
+            lng: z.number().optional(),
+        }))
+        .handler(async ({ input, context }) => {
+            const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
+                where: eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
+                with: { group: true, invoice: true },
+            });
+
+            if (!deliveryInv) throw new ORPCError("NOT_FOUND");
+            if (deliveryInv.group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
+            if (deliveryInv.group.status !== "out_for_delivery") throw new ORPCError("BAD_REQUEST", { message: "Trip not started" });
+            if (deliveryInv.status !== "pending") throw new ORPCError("BAD_REQUEST", { message: "Already processed" });
+
+            await db.transaction(async (tx) => {
+                // Mark delivery invoice as returned
+                await tx.update(deliveryGroupInvoice).set({
+                    status: "returned",
+                    failedReason: `RETURNED: ${input.returnReason}`,
+                    failedPhoto: input.returnPhoto ?? null,
+                    deliveryLat: input.lat?.toString() ?? null,
+                    deliveryLng: input.lng?.toString() ?? null,
+                }).where(eq(deliveryGroupInvoice.id, input.deliveryInvoiceId));
+
+                // Update invoice delivery status
+                await tx.update(invoice).set({
+                    deliveryStatus: "returned",
+                }).where(eq(invoice.id, deliveryInv.invoiceId));
+
+                // Update order status to returned
+                if (deliveryInv.invoice?.orderId) {
+                    await tx.update(order).set({
+                        status: "returned",
+                    }).where(eq(order.id, deliveryInv.invoice.orderId));
+                }
+
+                // Update group completed count
+                await tx.update(deliveryGroup).set({
+                    completedInvoices: sql`${deliveryGroup.completedInvoices} + 1`,
+                }).where(eq(deliveryGroup.id, deliveryInv.groupId));
+
+                // Record GPS ping
+                if (input.lat && input.lng) {
+                    await tx.insert(deliveryLocationPing).values({
+                        groupId: deliveryInv.groupId,
+                        deliverymanId: context.session.user.id,
+                        lat: input.lat.toString(),
+                        lng: input.lng.toString(),
+                    });
+                }
+
+                // Check if all invoices processed → auto-close group
+                const [remaining] = await tx.select({ count: count() }).from(deliveryGroupInvoice).where(and(
+                    eq(deliveryGroupInvoice.groupId, deliveryInv.groupId),
+                    eq(deliveryGroupInvoice.status, "pending")
+                ));
+
+                if (remaining?.count === 0) {
+                    await tx.update(deliveryGroup).set({
+                        status: "partial",
+                        completedAt: new Date(),
+                    }).where(eq(deliveryGroup.id, deliveryInv.groupId));
+                }
+            });
+
+            return { success: true };
+        }),
+
+    /**
      * Get delivery man stats
      */
     getStats: deliverymanProcedure
@@ -584,14 +666,17 @@ export const deliverymanRouter = {
                     ),
                 );
 
-            let todayDelivered = 0, todayFailed = 0, pending = 0, delivered = 0, failed = 0;
+            let todayDelivered = 0, todayFailed = 0, pending = 0, delivered = 0, failed = 0, returned = 0;
             groups.forEach(g => g.invoices.forEach(inv => {
                 if (inv.status === "delivered") {
                     delivered++;
                     if (inv.deliveredAt && inv.deliveredAt >= today) todayDelivered++;
                 } else if (inv.status === "failed") {
                     failed++;
-                    todayFailed++; // Assuming failed today for simplicity or check failedAt if exists
+                    todayFailed++;
+                } else if (inv.status === "returned") {
+                    returned++;
+                    failed++; // count returned as failed for success rate
                 } else if (inv.status === "pending") pending++;
             }));
 

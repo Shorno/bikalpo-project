@@ -46,7 +46,7 @@ export const createProductSchema = z.object({
   subCategoryId: z
     .union([z.number().int().positive(), z.undefined()])
     .optional(),
-  brandId: z.union([z.number().int().positive(), z.undefined()]).optional(),
+
   // These fields are auto-managed (synced from variants)
   size: z.string().max(50).default("—").optional(),
   price: z.string().default("0").optional(),

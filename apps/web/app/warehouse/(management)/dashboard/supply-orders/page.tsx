@@ -13,6 +13,7 @@ import {
   Package,
   Phone,
   Plus,
+  RotateCcw,
   Save,
   Trash2,
   Truck,
@@ -28,6 +29,7 @@ const TABS = [
   { key: "pending", label: "Pending", color: "text-amber-600" },
   { key: "confirmed", label: "Confirmed", color: "text-blue-600" },
   { key: "delivered", label: "Delivered", color: "text-emerald-600" },
+  { key: "returned", label: "Returned", color: "text-orange-600" },
   { key: "cancelled", label: "Cancelled", color: "text-red-600" },
 ] as const;
 
@@ -38,6 +40,7 @@ function StatusBadge({ status }: { status: string }) {
     confirmed: { bg: "bg-blue-50 border-blue-200", text: "text-blue-700", label: "Confirmed" },
     processing: { bg: "bg-purple-50 border-purple-200", text: "text-purple-700", label: "Processing" },
     delivered: { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700", label: "Delivered" },
+    returned: { bg: "bg-orange-50 border-orange-200", text: "text-orange-700", label: "Returned" },
     cancelled: { bg: "bg-red-50 border-red-200", text: "text-red-700", label: "Cancelled" },
   };
   const s = map[status] || map.pending;
@@ -46,6 +49,7 @@ function StatusBadge({ status }: { status: string }) {
       {status === "pending" && <Clock size={12} />}
       {status === "confirmed" && <CheckCircle size={12} />}
       {status === "delivered" && <Truck size={12} />}
+      {status === "returned" && <RotateCcw size={12} />}
       {status === "cancelled" && <XCircle size={12} />}
       {s.label}
     </span>
@@ -64,7 +68,7 @@ function OrderActions({
   onAction: (orderId: number, newStatus: string) => void;
   loading: boolean;
 }) {
-  if (status === "delivered" || status === "cancelled") return null;
+  if (status === "delivered" || status === "cancelled" || status === "returned") return null;
 
   return (
     <div className="flex items-center gap-2 mt-3 sm:mt-0">

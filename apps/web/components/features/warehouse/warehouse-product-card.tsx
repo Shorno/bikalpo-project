@@ -24,6 +24,7 @@ export interface WarehouseProduct {
 interface WarehouseProductCardProps {
   product: WarehouseProduct;
   onViewDetails?: (product: WarehouseProduct) => void;
+  onBuyNow?: (product: WarehouseProduct) => void;
 }
 
 function getStockColor(status: "high" | "medium" | "low") {
@@ -48,7 +49,7 @@ function getStockDot(status: "high" | "medium" | "low") {
   }
 }
 
-export function WarehouseProductCard({ product, onViewDetails }: WarehouseProductCardProps) {
+export function WarehouseProductCard({ product, onViewDetails, onBuyNow }: WarehouseProductCardProps) {
   const [imageError, setImageError] = useState(false);
 
   return (
@@ -123,6 +124,7 @@ export function WarehouseProductCard({ product, onViewDetails }: WarehouseProduc
           <Button
             size="sm"
             className="flex-1 h-8 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white gap-1"
+            onClick={() => onBuyNow?.(product)}
           >
             <ShoppingCart className="w-3.5 h-3.5" />
             Buy Now

@@ -139,12 +139,26 @@ const b2bQueries = {
                 }
             }
 
-            // Brand filter
+            // Brand filter — variant-level brand
             if (brandSlug) {
                 const b = await db.query.brand.findFirst({
                     where: eq(brand.slug, brandSlug),
                 });
-                if (b) conditions.push(eq(product.brandId, b.id));
+                if (b) {
+                    const matchingProducts = await db
+                        .selectDistinct({ productId: productVariant.productId })
+                        .from(productVariant)
+                        .where(eq(productVariant.brandId, b.id));
+                    const productIds = matchingProducts.map((r) => r.productId);
+                    if (productIds.length > 0) {
+                        conditions.push(inArray(product.id, productIds));
+                    } else {
+                        return {
+                            products: [],
+                            pagination: { page, limit, totalCount: 0, totalPages: 0 },
+                        };
+                    }
+                }
             }
 
             // Price filter (on product base price)
@@ -183,7 +197,6 @@ const b2bQueries = {
                     with: {
                         category: { columns: { slug: true, name: true } },
                         subCategory: { columns: { name: true } },
-                        brand: true,
                         images: true,
                     },
                     orderBy: getOrderBy(),
@@ -222,7 +235,6 @@ const b2bQueries = {
                 with: {
                     category: { columns: { name: true, slug: true } },
                     subCategory: { columns: { name: true } },
-                    brand: { columns: { id: true, name: true, slug: true, logo: true } },
                     images: true,
                 },
             });
@@ -312,7 +324,6 @@ const managementQueries = {
                             product: {
                                 with: {
                                     category: { columns: { name: true, slug: true } },
-                                    brand: { columns: { name: true } },
                                     images: { limit: 1 },
                                 },
                             },
@@ -373,6 +384,7 @@ const managementQueries = {
                                     images: { limit: 1 },
                                 },
                             },
+                            brand: { columns: { id: true, name: true } },
                         },
                     },
                 },
@@ -571,6 +583,7 @@ const orderQueries = {
                         "confirmed",
                         "processing",
                         "delivered",
+                        "returned",
                         "cancelled",
                     ])
                     .optional(),
@@ -1757,10 +1770,14 @@ const warehouseConnectionEndpoints = {
                     productSize: product.size,
                     productCategoryId: product.categoryId,
                     productSubCategoryId: product.subCategoryId,
+                    categoryName: category.name,
                     variantUnitLabel: productVariant.unitLabel,
                     variantWeightKg: productVariant.weightKg,
                     variantSku: productVariant.sku,
                     variantPrice: productVariant.price,
+                    variantPackType: productVariant.packType,
+                    variantInnerPackSizeKg: productVariant.innerPackSizeKg,
+                    variantPackCountInside: productVariant.packCountInside,
                 })
                 .from(inventory)
                 .innerJoin(
@@ -1771,8 +1788,12 @@ const warehouseConnectionEndpoints = {
                     product,
                     eq(productVariant.productId, product.id),
                 )
+                .leftJoin(
+                    category,
+                    eq(product.categoryId, category.id),
+                )
                 .where(and(...conditions))
-                .orderBy(asc(product.name))
+                .orderBy(asc(category.name), asc(product.name))
                 .limit(limit)
                 .offset(offset);
 
@@ -1802,12 +1823,16 @@ const warehouseConnectionEndpoints = {
                         name: item.productName,
                         image: item.productImage,
                         size: item.productSize,
+                        categoryName: item.categoryName || "Uncategorized",
                     },
                     variant: {
                         unitLabel: item.variantUnitLabel,
                         weightKg: item.variantWeightKg,
                         sku: item.variantSku,
                         price: item.variantPrice,
+                        packType: item.variantPackType,
+                        innerPackSizeKg: item.variantInnerPackSizeKg,
+                        packCountInside: item.variantPackCountInside,
                     },
                 };
             });

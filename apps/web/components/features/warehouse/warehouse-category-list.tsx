@@ -1,42 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 interface WarehouseCategory {
   id: number;
   name: string;
   slug: string;
-  icon?: string;
+  productCount?: number;
 }
-
-const defaultCategories: WarehouseCategory[] = [
-  { id: 0, name: "All", slug: "all" },
-  { id: 1, name: "Rice", slug: "rice" },
-  { id: 2, name: "Flour", slug: "flour" },
-  { id: 3, name: "Oil", slug: "oil" },
-  { id: 4, name: "Sugar", slug: "sugar" },
-  { id: 5, name: "Spices", slug: "spices" },
-  { id: 6, name: "Beverages", slug: "beverages" },
-  { id: 7, name: "Dairy", slug: "dairy" },
-  { id: 8, name: "Snacks", slug: "snacks" },
-  { id: 9, name: "Cleaning", slug: "cleaning" },
-];
 
 interface WarehouseCategoryListProps {
   categories?: WarehouseCategory[];
-  onCategorySelect?: (slug: string) => void;
+  selectedCategory?: string;
+  warehouseSlug: string;
 }
 
 export function WarehouseCategoryList({
-  categories = defaultCategories,
-  onCategorySelect,
+  categories = [],
+  selectedCategory,
+  warehouseSlug,
 }: WarehouseCategoryListProps) {
-  const [activeSlug, setActiveSlug] = useState("all");
+  const router = useRouter();
 
-  const handleSelect = (slug: string) => {
-    setActiveSlug(slug);
-    onCategorySelect?.(slug);
+  const handleSelect = (slug: string | undefined) => {
+    if (slug) {
+      router.push(`/warehouse/${warehouseSlug}?category=${slug}`);
+    } else {
+      router.push(`/warehouse/${warehouseSlug}`);
+    }
   };
 
   return (
@@ -48,6 +40,19 @@ export function WarehouseCategoryList({
       </div>
       <div className="relative">
         <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar scrollbar-hide">
+          {/* All button */}
+          <button
+            type="button"
+            onClick={() => handleSelect(undefined)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 border",
+              !selectedCategory
+                ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20"
+                : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+            )}
+          >
+            All
+          </button>
           {categories.map((cat) => (
             <button
               type="button"
@@ -55,12 +60,22 @@ export function WarehouseCategoryList({
               onClick={() => handleSelect(cat.slug)}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 border",
-                activeSlug === cat.slug
+                selectedCategory === cat.slug
                   ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20"
                   : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
               )}
             >
               {cat.name}
+              {cat.productCount != null && (
+                <span className={cn(
+                  "text-xs px-1.5 py-0.5 rounded-full",
+                  selectedCategory === cat.slug
+                    ? "bg-white/20 text-white"
+                    : "bg-gray-100 text-gray-500"
+                )}>
+                  {cat.productCount}
+                </span>
+              )}
             </button>
           ))}
         </div>

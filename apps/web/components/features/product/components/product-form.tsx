@@ -36,7 +36,6 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { useBrands } from "@/hooks/use-brands";
 import { useCategories, useSubCategories } from "@/hooks/use-categories";
 import {
   createProductSchema,
@@ -64,7 +63,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   const [draftVariants, setDraftVariants] = useState<DraftVariant[]>([]);
 
   const { data: categories = [] } = useCategories();
-  const { data: brands = [] } = useBrands();
   const subCategories = useSubCategories(selectedCategory);
 
   const isEdit = mode === "edit";
@@ -120,7 +118,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
       categoryId: product?.categoryId ?? 0,
       subCategoryId:
         product?.subCategoryId ?? (undefined as number | undefined),
-      brandId: product?.brandId ?? (undefined as number | undefined),
+
       // These fields are auto-managed (synced from variants)
       size: product?.size ?? "—",
       price: product?.price ?? "0",
@@ -535,45 +533,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                     }}
                   </form.Field>
 
-                  <form.Field name="brandId">
-                    {(field) => {
-                      const isInvalid =
-                        field.state.meta.isTouched && !field.state.meta.isValid;
-                      return (
-                        <Field data-invalid={isInvalid}>
-                          <FieldLabel htmlFor={field.name}>Brand</FieldLabel>
-                          <Select
-                            value={field.state.value?.toString() || "none"}
-                            onValueChange={(value) => {
-                              field.handleChange(
-                                value === "none"
-                                  ? undefined
-                                  : parseInt(value, 10),
-                              );
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No brand</SelectItem>
-                              {brands.map((brand) => (
-                                <SelectItem
-                                  key={brand.id}
-                                  value={brand.id.toString()}
-                                >
-                                  {brand.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {isInvalid && (
-                            <FieldError errors={field.state.meta.errors} />
-                          )}
-                        </Field>
-                      );
-                    }}
-                  </form.Field>
 
                   <form.Field name="supplier">
                     {(field) => (

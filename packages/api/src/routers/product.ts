@@ -33,7 +33,7 @@ const createProductSchema = z.object({
     image: z.string(), // required
     categoryId: z.number(),
     subCategoryId: z.number().optional().nullable(),
-    brandId: z.number().optional().nullable(),
+
     inStock: z.boolean().default(true),
     isFeatured: z.boolean().default(false),
     stockQuantity: z.number().default(0),
@@ -130,7 +130,7 @@ export const productRouter = {
                 .values({
                     ...productData,
                     subCategoryId: productData.subCategoryId || null,
-                    brandId: productData.brandId || null,
+
                     sku,
                     supplier: (productData.supplier ?? "").toString().trim() || null,
                     reorderLevel: productData.reorderLevel ?? 0,
@@ -170,7 +170,7 @@ export const productRouter = {
                 .set({
                     ...updateData,
                     subCategoryId: updateData.subCategoryId || null,
-                    brandId: updateData.brandId || null,
+
                     sku: (updateData.sku ?? "").toString().trim() || null,
                     supplier: (updateData.supplier ?? "").toString().trim() || null,
                     reorderLevel: updateData.reorderLevel ?? 0,
@@ -243,7 +243,6 @@ export const productRouter = {
                 with: {
                     category: true,
                     subCategory: true,
-                    brand: true,
                     images: true,
                 },
             });
@@ -431,7 +430,10 @@ export const productRouter = {
                     category: true,
                     subCategory: true,
                     images: true,
-                    brand: true,
+                    variants: {
+                        with: { brand: true },
+                        columns: { id: true, variantType: true, brandId: true, unitLabel: true },
+                    },
                 },
             });
 
@@ -457,7 +459,6 @@ export const productRouter = {
                 with: {
                     category: { columns: { name: true, slug: true } },
                     subCategory: { columns: { name: true } },
-                    brand: { columns: { name: true } },
                     images: true,
                 },
             });

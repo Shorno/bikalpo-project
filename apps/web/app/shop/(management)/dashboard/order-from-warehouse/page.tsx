@@ -18,11 +18,13 @@ import {
   ShoppingCart,
   Trash2,
   Warehouse,
+  X,
 } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { orpc } from "@/utils/orpc";
 
+/* ─── Types ─── */
 type CartItem = {
   variantId: number;
   quantity: number;
@@ -31,120 +33,508 @@ type CartItem = {
   weightKg: string;
   retailPrice: string;
   productImage: string;
+  innerPackSizeKg?: string | null;
+  packCountInside?: number | null;
 };
 
+type VariantItem = {
+  inventoryId: number;
+  variantId: number;
+  availableQty: string;
+  price: string;
+  canOrder: boolean;
+  variant: {
+    unitLabel: string;
+    weightKg: string;
+    sku: string;
+    price: string;
+    packType: string | null;
+    innerPackSizeKg: string | null;
+    packCountInside: number | null;
+  };
+};
+
+type GroupedProduct = {
+  productId: number;
+  name: string;
+  image: string | null;
+  categoryName: string;
+  variants: VariantItem[];
+};
+
+/* ─── Group flat API data → category → product → variants ─── */
+function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
+  const productMap = new Map<number, GroupedProduct>();
+  for (const item of products) {
+    const pid = item.product?.id;
+    if (!pid) continue;
+    if (!productMap.has(pid)) {
+      productMap.set(pid, {
+        productId: pid,
+        name: item.product.name,
+        image: item.product.image,
+        categoryName: item.product.categoryName || "Uncategorized",
+        variants: [],
+      });
+    }
+    productMap.get(pid)!.variants.push({
+      inventoryId: item.inventoryId,
+      variantId: item.variantId,
+      availableQty: item.availableQty,
+      price: item.price,
+      canOrder: item.canOrder,
+      variant: item.variant,
+    });
+  }
+  const catMap = new Map<string, GroupedProduct[]>();
+  for (const prod of productMap.values()) {
+    const cat = prod.categoryName;
+    if (!catMap.has(cat)) catMap.set(cat, []);
+    catMap.get(cat)!.push(prod);
+  }
+  return catMap;
+}
+
+/* ─── Product Card (grid card) ─── */
+function ProductCard({
+  product,
+  cartQty,
+  onClick,
+}: {
+  product: GroupedProduct;
+  cartQty: number;
+  onClick: () => void;
+}) {
+  const totalStock = product.variants.reduce((s, v) => s + (Number(v.availableQty) || 0), 0);
+  const lowestPrice = Math.min(...product.variants.map((v) => Number(v.price) || 0));
+  const variantCount = product.variants.length;
+
+  return (
+    <button
+      onClick={onClick}
+      className="group bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-gray-200 transition-all duration-300 text-left w-full"
+    >
+      {/* Image */}
+      <div className="relative aspect-[4/3] bg-gray-50 overflow-hidden">
+        {product.image ? (
+          <Image
+            src={product.image}
+            alt={product.name}
+            fill
+            className="object-cover group-hover:scale-105 transition-transform duration-500"
+            unoptimized
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+            <Package className="w-14 h-14 text-gray-300" />
+          </div>
+        )}
+        {/* Stock badge */}
+        <div className="absolute top-2 right-2">
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+              totalStock > 50
+                ? "text-emerald-600 bg-emerald-50 border-emerald-200"
+                : totalStock > 10
+                  ? "text-amber-600 bg-amber-50 border-amber-200"
+                  : "text-red-600 bg-red-50 border-red-200"
+            }`}
+          >
+            {totalStock > 50 ? "In Stock" : totalStock > 10 ? "Limited" : totalStock > 0 ? "Low Stock" : "Out"}
+          </span>
+        </div>
+        {/* Cart badge */}
+        {cartQty > 0 && (
+          <div className="absolute top-2 left-2">
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-lg">
+              {cartQty}
+            </span>
+          </div>
+        )}
+      </div>
+      {/* Info */}
+      <div className="p-3">
+        <h3 className="text-sm font-semibold text-gray-900 line-clamp-1">{product.name}</h3>
+        <p className="text-[10px] text-gray-400 mt-0.5">
+          {variantCount} variant{variantCount > 1 ? "s" : ""} • {totalStock} in stock
+        </p>
+        <div className="flex items-baseline gap-1 mt-1.5">
+          <span className="text-base font-bold text-gray-900">৳{lowestPrice.toLocaleString()}</span>
+          {variantCount > 1 && <span className="text-[10px] text-gray-400">onwards</span>}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/* ─── Variant Selection Modal with Pack Conversion ─── */
+function VariantModal({
+  product,
+  cart,
+  addToCart,
+  updateQty,
+  onClose,
+}: {
+  product: GroupedProduct;
+  cart: CartItem[];
+  addToCart: (item: CartItem) => void;
+  updateQty: (variantId: number, delta: number) => void;
+  onClose: () => void;
+}) {
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [qty, setQty] = useState(1);
+
+  const selected = product.variants[selectedIdx]!;
+  const inCart = cart.find((c) => c.variantId === selected.variantId);
+  const stockQty = Number(selected.availableQty) || 0;
+  const canOrder = selected.canOrder !== false && stockQty > 0;
+  const packLabel = selected.variant.packType
+    ? selected.variant.packType.charAt(0).toUpperCase() + selected.variant.packType.slice(1)
+    : "Unit";
+  const weightKg = Number(selected.variant.weightKg) || 0;
+
+  // Skip inner pack for "loose" — loose items are sold individually
+  const isLoose = (selected.variant.packType || "").toLowerCase() === "loose";
+
+  // Try structured fields first, then parse from unitLabel/sku as fallback
+  let innerKg = 0;
+  let innerCount = 0;
+  let innerLabel = "";
+
+  if (!isLoose) {
+    innerKg = Number(selected.variant.innerPackSizeKg) || 0;
+    innerCount = selected.variant.packCountInside || 0;
+
+    if (innerKg > 0 && !innerCount) {
+      innerCount = Math.floor(weightKg / innerKg);
+    }
+
+    // Fallback: parse from unitLabel like "5kg × 10 Pack Carton" or "1Lx12"
+    if (!innerKg && !innerCount) {
+      const ul = selected.variant.unitLabel || "";
+      const sku = selected.variant.sku || "";
+
+      const patterns = [
+        /(\d+(?:\.\d+)?)\s*(?:kg|KG)\s*[×x]\s*(\d+)/i,
+        /(\d+)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(?:kg|KG)/i,
+        /(\d+(?:\.\d+)?)\s*(?:L|l|ltr)\s*[×x]\s*(\d+)/i,
+        /(\d+)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(?:L|l|ltr)/i,
+      ];
+
+      for (const pat of patterns) {
+        const match = ul.match(pat) || sku.match(pat);
+        if (match) {
+          const n1 = parseFloat(match[1]!);
+          const n2 = parseFloat(match[2]!);
+          if (n1 < n2) {
+            innerLabel = match[0]!.includes("L") || match[0]!.includes("l") ? `${n1}L` : `${n1}kg`;
+            innerCount = n2;
+          } else {
+            innerLabel = match[0]!.includes("L") || match[0]!.includes("l") ? `${n1}L` : `${n1}kg`;
+            innerCount = n2;
+          }
+          innerKg = n1;
+          break;
+        }
+      }
+    }
+
+    if (!innerLabel && innerKg > 0) {
+      innerLabel = `${innerKg}kg`;
+    }
+  }
+
+  // Pack conversion calculations
+  const totalWeight = qty * weightKg;
+  const totalInnerPacks = qty * innerCount;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close */}
+        <button onClick={onClose} className="absolute top-3 right-3 z-10 p-1.5 rounded-full bg-white/90 hover:bg-gray-100 border border-gray-200 transition-colors">
+          <X className="w-4 h-4 text-gray-600" />
+        </button>
+
+        {/* Product Image */}
+        <div className="relative h-48 bg-gray-50 rounded-t-2xl overflow-hidden">
+          {product.image ? (
+            <Image src={product.image} alt={product.name} fill className="object-cover" unoptimized />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Package className="w-16 h-16 text-gray-300" />
+            </div>
+          )}
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Product Name & Category */}
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{product.categoryName}</p>
+          </div>
+
+          {/* Pack Info for selected variant */}
+          <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+            <div className="text-sm font-semibold text-gray-800">
+              Pack: {weightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}
+            </div>
+            {selected.variant.sku && (
+              <div className="text-[10px] text-gray-400 mt-1">SKU: {selected.variant.sku}</div>
+            )}
+          </div>
+
+          {/* Price & Stock */}
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xl font-bold text-gray-900">৳{Number(selected.price).toLocaleString()}</div>
+              <div className="text-[10px] text-gray-400">per {packLabel}</div>
+            </div>
+            <div className="text-right">
+              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                stockQty > 50 ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
+                stockQty > 10 ? "text-amber-600 bg-amber-50 border-amber-200" :
+                "text-red-600 bg-red-50 border-red-200"
+              }`}>
+                {stockQty > 0 ? `${stockQty} ${packLabel} available` : "Out of stock"}
+              </span>
+            </div>
+          </div>
+
+          {/* ─── Select Variant / Pack Type ─── */}
+          {product.variants.length > 1 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Select Pack Type
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {product.variants.map((v, idx) => {
+                  const vPack = v.variant.packType
+                    ? v.variant.packType.charAt(0).toUpperCase() + v.variant.packType.slice(1)
+                    : "Unit";
+                  const vWeight = Number(v.variant.weightKg) || 0;
+                  const isSelected = idx === selectedIdx;
+                  const vInCart = cart.find((c) => c.variantId === v.variantId);
+
+                  return (
+                    <button
+                      key={v.variantId}
+                      onClick={() => { setSelectedIdx(idx); setQty(1); }}
+                      className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+                        isSelected
+                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+                      }`}
+                    >
+                      <div>{vPack} ({vWeight}kg)</div>
+                      {vInCart && (
+                        <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                          {vInCart.quantity} in cart
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ─── Pack Conversion Info ─── */}
+          {innerCount > 0 && (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+              <h4 className="text-[10px] font-semibold text-blue-700 uppercase tracking-wider mb-1.5">
+                📦 Pack Breakdown
+              </h4>
+              <div className="text-sm text-blue-800 font-medium">
+                1 {packLabel} = {innerLabel} × {innerCount} pcs = {weightKg}kg total
+              </div>
+              {qty > 1 && (
+                <div className="text-xs text-blue-600 mt-1 pt-1 border-t border-blue-100">
+                  {qty} {packLabel}(s) = {totalInnerPacks} pcs ({totalWeight}kg total)
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── Quantity ─── */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Quantity</h3>
+            {!canOrder ? (
+              selected.canOrder === false ? (
+                <button
+                  onClick={() => toast.info("Access request sent.")}
+                  className="w-full flex items-center justify-center gap-1.5 py-2.5 text-sm bg-amber-50 text-amber-600 border border-amber-200 rounded-lg font-medium"
+                >
+                  <Lock size={14} /> Request Access
+                </button>
+              ) : (
+                <div className="text-center text-sm text-red-400 py-3 bg-red-50 rounded-lg border border-red-100">Out of stock</div>
+              )
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setQty(Math.max(1, qty - 1))}
+                    className="w-10 h-10 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <div className="flex-1 text-center">
+                    <span className="text-2xl font-bold text-gray-900">{qty}</span>
+                    <span className="text-sm text-gray-500 ml-1.5">{packLabel}</span>
+                  </div>
+                  <button
+                    onClick={() => setQty(Math.min(stockQty, qty + 1))}
+                    className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+
+                {/* Total calculation */}
+                <div className="flex items-center justify-between mt-2 px-2 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-500">
+                  <span>Total: {qty} × ৳{Number(selected.price).toLocaleString()}</span>
+                  <span className="font-bold text-gray-900">= ৳{(qty * Number(selected.price)).toLocaleString()}</span>
+                </div>
+
+                {innerCount > 0 && (
+                  <div className="text-center text-[10px] text-blue-500 mt-1">
+                    = {totalWeight}kg ({totalInnerPacks} × {innerLabel} packs)
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ─── Action Buttons ─── */}
+          {canOrder && (
+            <div className="flex gap-2 pt-1">
+              {inCart ? (
+                <>
+                  <button
+                    onClick={() => { updateQty(selected.variantId, qty - inCart.quantity); onClose(); }}
+                    className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <ShoppingCart size={14} /> Update Cart ({qty})
+                  </button>
+                  <button onClick={onClose} className="px-4 py-2.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
+                    Close
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      addToCart({
+                        variantId: selected.variantId,
+                        quantity: qty,
+                        productName: product.name,
+                        unitLabel: selected.variant.unitLabel || packLabel,
+                        weightKg: selected.variant.weightKg,
+                        retailPrice: selected.price,
+                        productImage: product.image || "",
+                        innerPackSizeKg: selected.variant.innerPackSizeKg,
+                        packCountInside: selected.variant.packCountInside,
+                      });
+                      onClose();
+                    }}
+                    className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <ShoppingCart size={14} /> Add to Cart — ৳{(qty * Number(selected.price)).toLocaleString()}
+                  </button>
+                  <button onClick={onClose} className="px-4 py-2.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
+                    Close
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN PAGE
+   ═══════════════════════════════════════════════════════════ */
 export default function OrderFromWarehousePage() {
   const queryClient = useQueryClient();
-
-  // Step tracking
-  const [step, setStep] = useState<
-    "connect" | "browse" | "checkout" | "success"
-  >("connect");
-
-  // Connect step
+  const [step, setStep] = useState<"connect" | "browse" | "checkout" | "success">("connect");
   const [warehouseInput, setWarehouseInput] = useState("");
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
-
-  // Browse step
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
-
-  // Checkout step
+  const [selectedProduct, setSelectedProduct] = useState<GroupedProduct | null>(null);
   const [shippingName, setShippingName] = useState("");
   const [shippingPhone, setShippingPhone] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
   const [shippingCity, setShippingCity] = useState("");
   const [customerNote, setCustomerNote] = useState("");
-
-  // Success
   const [orderResult, setOrderResult] = useState<any>(null);
 
-  // ─── STEP 7: Smart Memory — Recent Warehouses ───
   const { data: connectedData, isLoading: loadingConnected } = useQuery({
     queryKey: ["shopOwner", "getConnectedWarehouses"],
     queryFn: () => orpc.shopOwner.getConnectedWarehouses.call(),
   });
   const recentWarehouses = connectedData?.warehouses ?? [];
 
-  // ─── STEP 2-3: Connect to Warehouse (Category Matching) ───
   const connectMutation = useMutation({
-    mutationFn: (slug: string) =>
-      orpc.shopOwner.connectToWarehouse.call({ warehouseSlug: slug }),
+    mutationFn: (slug: string) => orpc.shopOwner.connectToWarehouse.call({ warehouseSlug: slug }),
     onSuccess: (data) => {
       if (data.status === "connected" || data.status === "already_connected") {
         setSelectedSlug(data.warehouse.warehouseSlug);
         setStep("browse");
       }
-      queryClient.invalidateQueries({
-        queryKey: ["shopOwner", "getConnectedWarehouses"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["shopOwner", "getConnectedWarehouses"] });
     },
   });
 
-  // ─── STEP 4: Filtered Products ───
   const { data: productsData, isLoading: loadingProducts } = useQuery({
-    queryKey: [
-      "shopOwner",
-      "getWarehouseProductsFiltered",
-      selectedSlug,
-      search,
-    ],
+    queryKey: ["shopOwner", "getWarehouseProductsFiltered", selectedSlug, search],
     queryFn: () =>
       orpc.shopOwner.getWarehouseProductsFiltered.call({
         warehouseSlug: selectedSlug!,
         search: search || undefined,
         page: "1",
-        limit: "50",
+        limit: "100",
       }),
     enabled: !!selectedSlug && step === "browse",
   });
 
-  // Place order mutation
   const orderMutation = useMutation({
     mutationFn: (data: any) => orpc.shopOwner.placeWarehouseOrder.call(data),
     onSuccess: (result) => {
       setOrderResult(result);
       setStep("success");
       setCart([]);
-      queryClient.invalidateQueries({
-        queryKey: ["shopOwner", "getConnectedWarehouses"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["shopOwner", "getConnectedWarehouses"] });
     },
   });
 
-  // Parse slug from URL or direct input
   function parseSlug(input: string): string | null {
-    const trimmed = input.trim();
-    if (!trimmed) return null;
-    if (!trimmed.includes("/")) return trimmed;
-    const match = trimmed.match(/\/(?:warehouse|w)\/([^/?#]+)/);
-    return match ? match[1] : null;
+    const t = input.trim();
+    if (!t) return null;
+    if (!t.includes("/")) return t;
+    const m = t.match(/\/(?:warehouse|w)\/([^/?#]+)/);
+    return m ? m[1] : null;
   }
 
-  // Cart helpers
   function addToCart(item: CartItem) {
     setCart((prev) => {
-      const existing = prev.find((c) => c.variantId === item.variantId);
-      if (existing) {
-        return prev.map((c) =>
-          c.variantId === item.variantId
-            ? { ...c, quantity: c.quantity + 1 }
-            : c,
-        );
-      }
+      const ex = prev.find((c) => c.variantId === item.variantId);
+      if (ex) return prev.map((c) => (c.variantId === item.variantId ? { ...c, quantity: c.quantity + 1 } : c));
       return [...prev, item];
     });
   }
 
   function updateQty(variantId: number, delta: number) {
     setCart((prev) =>
-      prev
-        .map((c) =>
-          c.variantId === variantId
-            ? { ...c, quantity: Math.max(0, c.quantity + delta) }
-            : c,
-        )
-        .filter((c) => c.quantity > 0),
+      prev.map((c) => (c.variantId === variantId ? { ...c, quantity: Math.max(0, c.quantity + delta) } : c)).filter((c) => c.quantity > 0),
     );
   }
 
@@ -152,39 +542,32 @@ export default function OrderFromWarehousePage() {
     setCart((prev) => prev.filter((c) => c.variantId !== variantId));
   }
 
-  const cartTotal = cart.reduce(
-    (sum, c) => sum + Number(c.retailPrice) * c.quantity,
-    0,
-  );
-  const products = productsData?.products ?? [];
+  const cartTotal = cart.reduce((s, c) => s + Number(c.retailPrice) * c.quantity, 0);
+  const cartItemCount = cart.reduce((s, c) => s + c.quantity, 0);
+  const rawProducts = productsData?.products ?? [];
+  const categoryGroups = groupByCategory(rawProducts);
+
+  function getProductCartQty(prod: GroupedProduct) {
+    return cart
+      .filter((c) => prod.variants.some((v) => v.variantId === c.variantId))
+      .reduce((s, c) => s + c.quantity, 0);
+  }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-5xl">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <Warehouse className="text-blue-600" size={24} />
-          Order from Warehouse
+          <Warehouse className="text-blue-600" size={24} /> Order from Warehouse
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Connect to a warehouse, browse products, and place your order
-        </p>
+        <p className="text-sm text-gray-500 mt-1">Connect to a warehouse, browse products, and place your order</p>
       </div>
 
-      {/* Step Indicator */}
+      {/* Steps */}
       <div className="flex items-center gap-2 text-xs">
-        {["connect", "browse", "checkout", "success"].map((s, i) => (
+        {(["connect", "browse", "checkout", "success"] as const).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
-            <span
-              className={`px-2.5 py-1 rounded-full font-medium ${
-                step === s
-                  ? "bg-blue-100 text-blue-700"
-                  : ["connect", "browse", "checkout", "success"].indexOf(step) >
-                      i
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-gray-100 text-gray-400"
-              }`}
-            >
+            <span className={`px-2.5 py-1 rounded-full font-medium ${step === s ? "bg-blue-100 text-blue-700" : ["connect", "browse", "checkout", "success"].indexOf(step) > i ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>
               {i + 1}. {s.charAt(0).toUpperCase() + s.slice(1)}
             </span>
             {i < 3 && <ArrowRight size={12} className="text-gray-300" />}
@@ -192,130 +575,57 @@ export default function OrderFromWarehousePage() {
         ))}
       </div>
 
-      {/* ─── STEP 1: CONNECT ─── */}
+      {/* ═══ STEP 1: CONNECT ═══ */}
       {step === "connect" && (
         <div className="space-y-4">
-          {/* Recent Warehouses (Smart Memory) */}
           {recentWarehouses.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-xl p-5">
               <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-3">
-                <Clock size={14} className="text-blue-500" />
-                Recent Warehouses
+                <Clock size={14} className="text-blue-500" /> Recent Warehouses
               </h2>
               <div className="space-y-2">
                 {recentWarehouses.map((wh: any) => (
-                  <button
-                    key={wh.connectionId}
-                    onClick={() => {
-                      if (wh.warehouseSlug) {
-                        connectMutation.mutate(wh.warehouseSlug);
-                      }
-                    }}
-                    disabled={connectMutation.isPending}
-                    className="w-full flex items-center gap-3 p-3 border border-gray-100 rounded-lg hover:border-blue-200 hover:bg-blue-50/50 transition-colors text-left"
-                  >
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
-                      <Warehouse className="w-5 h-5 text-blue-600" />
-                    </div>
+                  <button key={wh.connectionId} onClick={() => wh.warehouseSlug && connectMutation.mutate(wh.warehouseSlug)} disabled={connectMutation.isPending}
+                    className="w-full flex items-center gap-3 p-3 border border-gray-100 rounded-lg hover:border-blue-200 hover:bg-blue-50/50 transition-colors text-left">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0"><Warehouse className="w-5 h-5 text-blue-600" /></div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {wh.warehouseName || wh.name}
-                      </p>
-                      {wh.warehouseAddress && (
-                        <p className="text-xs text-gray-400 truncate flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          {wh.warehouseAddress}
-                        </p>
-                      )}
+                      <p className="text-sm font-medium text-gray-900 truncate">{wh.warehouseName || wh.name}</p>
+                      {wh.warehouseAddress && <p className="text-xs text-gray-400 truncate flex items-center gap-1"><MapPin className="w-3 h-3" /> {wh.warehouseAddress}</p>}
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-xs text-emerald-600 font-medium">
-                        {wh.productCount} products
-                      </span>
-                      {wh.lastOrderedAt && (
-                        <p className="text-[10px] text-gray-400 mt-0.5">
-                          Last order:{" "}
-                          {new Date(wh.lastOrderedAt).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
+                    <span className="text-xs text-emerald-600 font-medium shrink-0">{wh.productCount} products</span>
                     <ArrowRight size={14} className="text-gray-300 shrink-0" />
                   </button>
                 ))}
               </div>
             </div>
           )}
-
-          {loadingConnected && recentWarehouses.length === 0 && (
-            <div className="text-center py-4">
-              <Loader2 className="w-5 h-5 animate-spin text-blue-500 mx-auto" />
-            </div>
-          )}
-
-          {/* Manual Entry */}
+          {loadingConnected && recentWarehouses.length === 0 && <div className="text-center py-4"><Loader2 className="w-5 h-5 animate-spin text-blue-500 mx-auto" /></div>}
           <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
             <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-              <Link2 size={14} className="text-gray-500" />
-              {recentWarehouses.length > 0
-                ? "Or Enter Warehouse ID / URL"
-                : "Enter Warehouse ID / URL"}
+              <Link2 size={14} className="text-gray-500" /> {recentWarehouses.length > 0 ? "Or Enter Warehouse ID / URL" : "Enter Warehouse ID / URL"}
             </h2>
             <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="e.g. zenstore or /warehouse/zenstore"
-                value={warehouseInput}
-                onChange={(e) => setWarehouseInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const slug = parseSlug(warehouseInput);
-                    if (slug) connectMutation.mutate(slug);
-                  }
-                }}
-                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-              />
-              <button
-                onClick={() => {
-                  const slug = parseSlug(warehouseInput);
-                  if (slug) connectMutation.mutate(slug);
-                }}
-                disabled={!warehouseInput.trim() || connectMutation.isPending}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-              >
-                {connectMutation.isPending ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  "Connect"
-                )}
+              <input type="text" placeholder="e.g. algoverse" value={warehouseInput} onChange={(e) => setWarehouseInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { const slug = parseSlug(warehouseInput); if (slug) connectMutation.mutate(slug); } }}
+                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" />
+              <button onClick={() => { const slug = parseSlug(warehouseInput); if (slug) connectMutation.mutate(slug); }} disabled={!warehouseInput.trim() || connectMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                {connectMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : "Connect"}
               </button>
             </div>
-
-            {/* Connection result */}
             {connectMutation.isError && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
                 <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-1" />
-                <p className="text-sm text-red-600 font-medium">
-                  {(connectMutation.error as any)?.message ||
-                    "Warehouse not found"}
-                </p>
+                <p className="text-sm text-red-600 font-medium">{(connectMutation.error as any)?.message || "Warehouse not found"}</p>
               </div>
             )}
-
             {connectMutation.data?.status === "pending" && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                 <div className="flex items-start gap-3">
                   <Clock className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-amber-800">
-                      Connection Pending
-                    </p>
-                    <p className="text-xs text-amber-700 mt-0.5">
-                      {connectMutation.data.message}
-                    </p>
-                    <p className="text-xs text-amber-600 mt-1">
-                      Your shop&apos;s allowed categories don&apos;t match this
-                      warehouse. An admin needs to approve the connection.
-                    </p>
+                    <p className="text-sm font-medium text-amber-800">Connection Pending</p>
+                    <p className="text-xs text-amber-700 mt-0.5">{connectMutation.data.message}</p>
                   </div>
                 </div>
               </div>
@@ -324,399 +634,185 @@ export default function OrderFromWarehousePage() {
         </div>
       )}
 
-      {/* ─── STEP 2: BROWSE & ADD TO CART ─── */}
+      {/* ═══ STEP 2: BROWSE (Store Grid View) ═══ */}
       {step === "browse" && (
         <div className="space-y-4">
-          {/* Warehouse banner */}
+          {/* Banner */}
           <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
             <span className="text-sm text-blue-700 font-medium flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              🏭 Connected to: {selectedSlug}
+              <CheckCircle2 className="w-4 h-4 text-emerald-500" /> 🏭 Connected to: {selectedSlug}
             </span>
-            <button
-              onClick={() => {
-                setStep("connect");
-                setSelectedSlug(null);
-                setCart([]);
-                setSearch("");
-              }}
-              className="text-xs text-blue-500 hover:underline"
-            >
-              Change warehouse
-            </button>
+            <button onClick={() => { setStep("connect"); setSelectedSlug(null); setCart([]); setSearch(""); }} className="text-xs text-blue-500 hover:underline">Change warehouse</button>
           </div>
 
-          {/* Search */}
-          <div className="relative max-w-sm">
-            <Search
-              size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-            />
+          {/* Search + Cart count */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input type="text" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" />
+            </div>
+            {cart.length > 0 && (
+              <button onClick={() => setStep("checkout")}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+                <ShoppingCart size={16} /> <span>{cartItemCount} items</span>
+                <span className="bg-white/20 px-2 py-0.5 rounded text-xs">৳{cartTotal.toLocaleString()}</span>
+              </button>
+            )}
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            {/* Product list */}
-            <div className="md:col-span-2 space-y-2 max-h-[500px] overflow-y-auto">
+          <div className="grid gap-4 lg:grid-cols-4">
+            {/* Product Grid */}
+            <div className="lg:col-span-3 space-y-6">
               {loadingProducts ? (
-                <div className="text-center py-8 text-gray-400 text-sm">
-                  Loading products...
-                </div>
-              ) : products.length === 0 ? (
-                <div className="text-center py-8 bg-gray-50 rounded-lg">
-                  <Package className="mx-auto text-gray-300 mb-2" size={32} />
-                  <p className="text-sm text-gray-500">
-                    No products available
-                  </p>
-                </div>
-              ) : (
-                products.map((item: any) => {
-                  const inCart = cart.find(
-                    (c) => c.variantId === item.variantId,
-                  );
-                  const canOrder = item.canOrder !== false;
-
-                  return (
-                    <div
-                      key={item.inventoryId}
-                      className={`flex items-center gap-3 p-3 border rounded-lg transition-colors ${
-                        !canOrder
-                          ? "border-gray-100 bg-gray-50/50 opacity-75"
-                          : inCart
-                            ? "border-blue-200 bg-blue-50/50"
-                            : "border-gray-100 hover:border-gray-200"
-                      }`}
-                    >
-                      {item.product?.image && (
-                        <Image
-                          src={item.product.image}
-                          alt=""
-                          width={40}
-                          height={40}
-                          className="w-10 h-10 rounded-lg object-cover"
-                        />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-gray-900 truncate">
-                          {item.product?.name || "Unknown"}
-                        </div>
-                        <div className="text-[10px] text-gray-400">
-                          {item.variant?.unitLabel} — {item.variant?.weightKg}kg
-                          {item.variant?.sku && ` • ${item.variant.sku}`}
-                          <span className="ml-2 text-emerald-500">
-                            Stock: {item.availableQty}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-sm font-semibold text-emerald-700 shrink-0">
-                        ৳{Number(item.price).toLocaleString()}
-                      </div>
-                      <div className="shrink-0">
-                        {!canOrder ? (
-                          <button
-                            onClick={() => {
-                              toast.info(`Access request sent for "${item.product?.name}". An admin will review your request.`);
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] bg-amber-50 text-amber-600 border border-amber-200 rounded font-medium hover:bg-amber-100 cursor-pointer"
-                          >
-                            <Lock size={10} />
-                            Request Access
-                          </button>
-                        ) : inCart ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => updateQty(item.variantId, -1)}
-                              className="w-6 h-6 flex items-center justify-center text-gray-500 hover:bg-gray-200 rounded"
-                            >
-                              <Minus size={12} />
-                            </button>
-                            <span className="w-6 text-center text-xs font-semibold">
-                              {inCart.quantity}
-                            </span>
-                            <button
-                              onClick={() => updateQty(item.variantId, 1)}
-                              className="w-6 h-6 flex items-center justify-center text-blue-600 hover:bg-blue-100 rounded"
-                            >
-                              <Plus size={12} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() =>
-                              addToCart({
-                                variantId: item.variantId,
-                                quantity: 1,
-                                productName: item.product?.name || "Unknown",
-                                unitLabel: item.variant?.unitLabel || "",
-                                weightKg: item.variant?.weightKg || "",
-                                retailPrice: item.price,
-                                productImage: item.product?.image || "",
-                              })
-                            }
-                            className="px-2 py-1 text-[10px] bg-blue-50 text-blue-600 border border-blue-200 rounded font-medium hover:bg-blue-100"
-                          >
-                            + Add
-                          </button>
-                        )}
-                      </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} className="bg-white rounded-xl border border-gray-100 overflow-hidden animate-pulse">
+                      <div className="aspect-[4/3] bg-gray-100" />
+                      <div className="p-3 space-y-2"><div className="h-4 bg-gray-100 rounded w-3/4" /><div className="h-3 bg-gray-100 rounded w-1/2" /></div>
                     </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Cart sidebar */}
-            <div className="bg-white border border-gray-200 rounded-xl p-4 h-fit sticky top-4">
-              <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-3">
-                <ShoppingCart size={14} />
-                Cart ({cart.length} items)
-              </h3>
-              {cart.length === 0 ? (
-                <p className="text-xs text-gray-400 py-4 text-center">
-                  Add products to your cart
-                </p>
-              ) : (
-                <>
-                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                    {cart.map((item) => (
-                      <div
-                        key={item.variantId}
-                        className="flex items-center justify-between text-xs border-b pb-2"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-800 truncate">
-                            {item.productName}
-                          </div>
-                          <div className="text-gray-400">
-                            {item.unitLabel} × {item.quantity}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-semibold">
-                            ৳
-                            {(
-                              Number(item.retailPrice) * item.quantity
-                            ).toLocaleString()}
-                          </span>
-                          <button
-                            onClick={() => removeFromCart(item.variantId)}
-                            className="text-red-400 hover:text-red-600"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t font-semibold text-sm">
-                    <span>Total</span>
-                    <span className="text-emerald-700">
-                      ৳{cartTotal.toLocaleString()}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setStep("checkout")}
-                    className="w-full mt-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-                  >
-                    Proceed to Checkout
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── STEP 3: CHECKOUT ─── */}
-      {step === "checkout" && (
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
-          <h2 className="text-sm font-semibold text-gray-800">
-            Shipping Details
-          </h2>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <span className="text-xs text-gray-500 font-medium block mb-1">
-                Full Name *
-              </span>
-              <input
-                value={shippingName}
-                onChange={(e) => setShippingName(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-                placeholder="Shop Owner Name"
-              />
-            </div>
-            <div>
-              <span className="text-xs text-gray-500 font-medium block mb-1">
-                Phone *
-              </span>
-              <input
-                value={shippingPhone}
-                onChange={(e) => setShippingPhone(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-                placeholder="01XXXXXXXXX"
-              />
-            </div>
-          </div>
-
-          <div>
-            <span className="text-xs text-gray-500 font-medium block mb-1">
-              Address *
-            </span>
-            <input
-              value={shippingAddress}
-              onChange={(e) => setShippingAddress(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-              placeholder="Full delivery address"
-            />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <span className="text-xs text-gray-500 font-medium block mb-1">
-                City *
-              </span>
-              <input
-                value={shippingCity}
-                onChange={(e) => setShippingCity(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-                placeholder="Dhaka"
-              />
-            </div>
-            <div>
-              <span className="text-xs text-gray-500 font-medium block mb-1">
-                Note (optional)
-              </span>
-              <input
-                value={customerNote}
-                onChange={(e) => setCustomerNote(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
-                placeholder="Delivery instructions..."
-              />
-            </div>
-          </div>
-
-          {/* Order Summary */}
-          <div className="border-t pt-4 mt-4">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">
-              Order Summary
-            </h3>
-            <div className="space-y-1">
-              {cart.map((item) => (
-                <div
-                  key={item.variantId}
-                  className="flex justify-between text-sm"
-                >
-                  <span className="text-gray-600">
-                    {item.productName} × {item.quantity}
-                  </span>
-                  <span className="font-medium">
-                    ৳
-                    {(
-                      Number(item.retailPrice) * item.quantity
-                    ).toLocaleString()}
-                  </span>
+                  ))}
                 </div>
-              ))}
-              <div className="flex justify-between font-semibold text-sm pt-2 border-t mt-2">
-                <span>Total</span>
-                <span className="text-emerald-700">
-                  ৳{cartTotal.toLocaleString()}
-                </span>
+              ) : rawProducts.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-xl">
+                  <Package className="mx-auto text-gray-300 mb-3" size={40} />
+                  <p className="text-sm text-gray-500 font-medium">No products available</p>
+                </div>
+              ) : (
+                Array.from(categoryGroups.entries()).map(([catName, prods]) => (
+                  <div key={catName}>
+                    {/* Category Header */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="h-px flex-1 bg-gradient-to-r from-transparent to-gray-200" />
+                      <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-50 px-3 py-1 rounded-full border border-gray-200">
+                        {catName} ({prods.length})
+                      </h2>
+                      <div className="h-px flex-1 bg-gradient-to-l from-transparent to-gray-200" />
+                    </div>
+
+                    {/* Product Cards Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {prods.map((prod) => (
+                        <ProductCard
+                          key={prod.productId}
+                          product={prod}
+                          cartQty={getProductCartQty(prod)}
+                          onClick={() => setSelectedProduct(prod)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Cart Sidebar */}
+            <div className="lg:col-span-1">
+              <div className="bg-white border border-gray-200 rounded-xl p-4 sticky top-4">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-3">
+                  <ShoppingCart size={14} /> Cart ({cartItemCount} items)
+                </h3>
+                {cart.length === 0 ? (
+                  <div className="text-center py-6">
+                    <ShoppingCart className="mx-auto text-gray-200 mb-2" size={32} />
+                    <p className="text-xs text-gray-400">Add products to your cart</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                      {cart.map((item) => (
+                        <div key={item.variantId} className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
+                          {item.productImage && <Image src={item.productImage} alt="" width={28} height={28} className="w-7 h-7 rounded object-cover shrink-0" unoptimized />}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[11px] font-medium text-gray-800 truncate">{item.productName}</div>
+                            <div className="text-[10px] text-gray-400">{item.unitLabel} × {item.quantity}</div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className="text-[11px] font-semibold">৳{(Number(item.retailPrice) * item.quantity).toLocaleString()}</span>
+                            <button onClick={() => removeFromCart(item.variantId)} className="text-red-400 hover:text-red-600"><Trash2 size={10} /></button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between mt-3 pt-2 border-t font-semibold text-sm">
+                      <span>Total</span>
+                      <span className="text-emerald-700">৳{cartTotal.toLocaleString()}</span>
+                    </div>
+                    <button onClick={() => setStep("checkout")}
+                      className="w-full mt-3 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
+                      <ShoppingCart size={14} /> Checkout
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {orderMutation.isError && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
-              {(orderMutation.error as any)?.message ||
-                "Failed to place order"}
+      {/* ═══ STEP 3: CHECKOUT ═══ */}
+      {step === "checkout" && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
+          <h2 className="text-sm font-semibold text-gray-800">Shipping Details</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div><span className="text-xs text-gray-500 font-medium block mb-1">Full Name *</span><input value={shippingName} onChange={(e) => setShippingName(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Shop Owner Name" /></div>
+            <div><span className="text-xs text-gray-500 font-medium block mb-1">Phone *</span><input value={shippingPhone} onChange={(e) => setShippingPhone(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" placeholder="01XXXXXXXXX" /></div>
+          </div>
+          <div><span className="text-xs text-gray-500 font-medium block mb-1">Address *</span><input value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Full delivery address" /></div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div><span className="text-xs text-gray-500 font-medium block mb-1">City *</span><input value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Dhaka" /></div>
+            <div><span className="text-xs text-gray-500 font-medium block mb-1">Note (optional)</span><input value={customerNote} onChange={(e) => setCustomerNote(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Delivery instructions..." /></div>
+          </div>
+          <div className="border-t pt-4 mt-4">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Order Summary</h3>
+            <div className="space-y-2">
+              {cart.map((item) => (
+                <div key={item.variantId} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+                  {item.productImage && <Image src={item.productImage} alt="" width={36} height={36} className="w-9 h-9 rounded object-cover" unoptimized />}
+                  <div className="flex-1 min-w-0"><span className="text-sm text-gray-800 font-medium truncate block">{item.productName}</span><span className="text-[10px] text-gray-400">{item.unitLabel} × {item.quantity}</span></div>
+                  <span className="text-sm font-semibold shrink-0">৳{(Number(item.retailPrice) * item.quantity).toLocaleString()}</span>
+                </div>
+              ))}
+              <div className="flex justify-between font-semibold text-sm pt-2 border-t mt-2"><span>Total</span><span className="text-emerald-700">৳{cartTotal.toLocaleString()}</span></div>
             </div>
-          )}
-
+          </div>
+          {orderMutation.isError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{(orderMutation.error as any)?.message || "Failed to place order"}</div>}
           <div className="flex gap-3">
-            <button
-              onClick={() => setStep("browse")}
-              className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
-            >
-              Back
-            </button>
-            <button
-              onClick={() => {
-                if (
-                  !shippingName ||
-                  !shippingPhone ||
-                  !shippingAddress ||
-                  !shippingCity
-                ) {
-                  alert("Please fill in all required shipping fields");
-                  return;
-                }
-                orderMutation.mutate({
-                  warehouseSlug: selectedSlug!,
-                  items: cart.map((c) => ({
-                    variantId: c.variantId,
-                    quantity: c.quantity,
-                  })),
-                  shippingName,
-                  shippingPhone,
-                  shippingAddress,
-                  shippingCity,
-                  customerNote: customerNote || undefined,
-                });
-              }}
-              disabled={orderMutation.isPending}
-              className="flex-1 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {orderMutation.isPending ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" /> Placing
-                  Order...
-                </>
-              ) : (
-                <>Place Order — ৳{cartTotal.toLocaleString()}</>
-              )}
+            <button onClick={() => setStep("browse")} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Back</button>
+            <button onClick={() => {
+              if (!shippingName || !shippingPhone || !shippingAddress || !shippingCity) { alert("Please fill in all required shipping fields"); return; }
+              orderMutation.mutate({ warehouseSlug: selectedSlug!, items: cart.map((c) => ({ variantId: c.variantId, quantity: c.quantity })), shippingName, shippingPhone, shippingAddress, shippingCity, customerNote: customerNote || undefined });
+            }} disabled={orderMutation.isPending}
+              className="flex-1 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
+              {orderMutation.isPending ? (<><Loader2 size={14} className="animate-spin" /> Placing Order...</>) : (<>Place Order — ৳{cartTotal.toLocaleString()}</>)}
             </button>
           </div>
         </div>
       )}
 
-      {/* ─── STEP 4: SUCCESS ─── */}
+      {/* ═══ STEP 4: SUCCESS ═══ */}
       {step === "success" && orderResult && (
         <div className="bg-white border border-emerald-200 rounded-xl p-8 text-center">
           <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">
-            Order Placed Successfully!
-          </h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Order Placed Successfully!</h2>
           <p className="text-sm text-gray-500 mb-1">{orderResult.message}</p>
-          <p className="text-xs text-gray-400 font-mono mb-6">
-            Order #{orderResult.order?.orderNumber}
-          </p>
+          <p className="text-xs text-gray-400 font-mono mb-6">Order #{orderResult.order?.orderNumber}</p>
           <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => {
-                setStep("connect");
-                setSelectedSlug(null);
-                setOrderResult(null);
-              }}
-              className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
-            >
-              New Order
-            </button>
-            <a
-              href="/dashboard/orders"
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-            >
-              View My Orders
-            </a>
+            <button onClick={() => { setStep("connect"); setSelectedSlug(null); setOrderResult(null); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">New Order</button>
+            <a href="/dashboard/orders" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">View My Orders</a>
           </div>
         </div>
+      )}
+
+      {/* ═══ Variant Selection Modal ═══ */}
+      {selectedProduct && (
+        <VariantModal
+          product={selectedProduct}
+          cart={cart}
+          addToCart={addToCart}
+          updateQty={updateQty}
+          onClose={() => setSelectedProduct(null)}
+        />
       )}
     </div>
   );

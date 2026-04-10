@@ -4,6 +4,7 @@
  * Provides hierarchical stock view for warehouse/shop owners:
  *   Level 1: Aggregated by product identity (e.g. "Soybean Oil — 5000L")
  *   Level 2: Breakdown by variant × brand (e.g. "Ifad 1L — 300 pcs")
+ *   Level 3: Inner pack details (e.g. "5kg × 10 pcs inside")
  */
 
 import { db } from "@bikalpo-project/db";
@@ -146,6 +147,8 @@ export const stockOverviewRouter = {
                     unitLabel: productVariant.unitLabel,
                     weightKg: productVariant.weightKg,
                     packWeightKg: productVariant.packWeightKg,
+                    innerPackSizeKg: productVariant.innerPackSizeKg,
+                    packCountInside: productVariant.packCountInside,
                     sku: productVariant.sku,
                     color: productVariant.color,
                     size: productVariant.size,
@@ -155,7 +158,6 @@ export const stockOverviewRouter = {
                     brandId: brand.id,
                     brandName: brand.name,
                     brandLogo: brand.logo,
-                    productBrandId: product.brandId,
                 })
                 .from(inventory)
                 .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
@@ -170,35 +172,21 @@ export const stockOverviewRouter = {
                 )
                 .orderBy(productVariant.sortOrder, productVariant.weightKg);
 
-            // If variant has no brandId, fall back to product-level brand
-            const enrichedRows = [];
-            for (const row of rows) {
-                let brandInfo = row.brandName
+            // Build enriched rows with brand info from variant
+            const enrichedRows = rows.map((row) => ({
+                ...row,
+                brand: row.brandName
                     ? { id: row.brandId, name: row.brandName, logo: row.brandLogo }
-                    : null;
-
-                // Fallback to product-level brand
-                if (!brandInfo && row.productBrandId) {
-                    const productBrand = await db.query.brand.findFirst({
-                        where: eq(brand.id, row.productBrandId),
-                        columns: { id: true, name: true, logo: true },
-                    });
-                    if (productBrand) {
-                        brandInfo = productBrand;
-                    }
-                }
-
-                enrichedRows.push({
-                    ...row,
-                    brand: brandInfo,
-                });
-            }
+                    : null,
+            }));
 
             // Group by packaging type (packType or packagingType for legacy)
             const variantGroupMap = new Map<string, {
                 packType: string;
                 unitLabel: string;
                 weightKg: string;
+                innerPackSizeKg: string | null;
+                packCountInside: number | null;
                 items: Array<{
                     variantId: number;
                     brand: { id: number | null; name: string; logo: string | null } | null;
@@ -241,6 +229,8 @@ export const stockOverviewRouter = {
                         packType: packKey,
                         unitLabel: genericLabel,
                         weightKg: row.weightKg,
+                        innerPackSizeKg: row.innerPackSizeKg,
+                        packCountInside: row.packCountInside,
                         items: [],
                     });
                 }
