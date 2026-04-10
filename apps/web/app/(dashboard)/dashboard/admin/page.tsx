@@ -4,32 +4,44 @@ import { AdminDashboardClient } from "./admin-dashboard-client";
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-6">
-      {/* Header Skeleton */}
+    <div className="space-y-8">
+      {/* Header */}
       <div className="space-y-2">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-64" />
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="h-4 w-48" />
       </div>
 
-      {/* Stats Cards Skeleton */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-28" />
+      {/* Primary KPIs */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-36 rounded-xl" />
         ))}
       </div>
 
-      {/* Quick Actions Skeleton */}
-      <Skeleton className="h-48" />
+      {/* Operations */}
+      <Skeleton className="h-24 rounded-xl" />
 
-      {/* Recent Orders Skeleton */}
-      <Skeleton className="h-64" />
+      {/* Two-column */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Skeleton className="h-44 rounded-xl" />
+        <Skeleton className="h-44 rounded-xl" />
+      </div>
+
+      {/* Subscription */}
+      <Skeleton className="h-24 rounded-xl" />
+
+      {/* Performance */}
+      <Skeleton className="h-24 rounded-xl" />
+
+      {/* Quick Actions */}
+      <Skeleton className="h-32 rounded-xl" />
     </div>
   );
 }
 
 export default function AdminDashboardPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <Suspense fallback={<LoadingSkeleton />}>
         <AdminDashboardClient />
       </Suspense>
