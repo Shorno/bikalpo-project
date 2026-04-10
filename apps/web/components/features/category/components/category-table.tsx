@@ -3,10 +3,8 @@
 import {
   type ColumnDef,
   type ColumnFiltersState,
-  type ExpandedState,
   flexRender,
   getCoreRowModel,
-  getExpandedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -14,30 +12,30 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import {
-  ChevronDown,
-  ChevronRight,
-  FolderTree,
-  MoreHorizontal,
-} from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import Image from "next/image";
 import * as React from "react";
 import DeleteCategoryDialog from "@/components/features/category/components/delete-category-dialog";
 import EditCategoryDialog from "@/components/features/category/components/edit-category-dialog";
 import NewCategoryDialog from "@/components/features/category/components/new-category-dialog";
-import DeleteSubcategoryDialog from "@/components/features/subcategory/components/delete-subcategory-dialog";
-import EditSubcategoryDialog from "@/components/features/subcategory/components/edit-subcategory-dialog";
-import NewSubcategoryDialog from "@/components/features/subcategory/components/new-subcategory-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -47,59 +45,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import {
-  AddSubcategoryRow,
-  type CategoryWithSubcategories,
-  EmptySubcategoryRow,
-  SubcategoryRow,
-} from "./category-columns";
+import { type CategoryWithSubcategories } from "./category-columns";
 
 interface DataTableProps {
   columns: ColumnDef<CategoryWithSubcategories, unknown>[];
   data: CategoryWithSubcategories[];
+  types?: { id: number; name: string }[];
 }
 
 // Mobile Category Card Component
 function MobileCategoryCard({
   category,
-  isExpanded,
-  onToggleExpand,
 }: {
   category: CategoryWithSubcategories;
-  isExpanded: boolean;
-  onToggleExpand: () => void;
 }) {
-  const hasSubcategories = category.subCategory.length > 0;
-
   return (
-    <Card
-      className={cn(
-        "overflow-hidden p-0",
-        isExpanded && "ring-2 ring-primary/20",
-      )}
-    >
+    <Card className="overflow-hidden p-0">
       <CardContent className="p-0">
-        {/* Main Category Row */}
         <div className="flex items-center gap-3 p-4">
-          {/* Expand Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "h-8 w-8 p-0 shrink-0",
-              hasSubcategories
-                ? "hover:bg-primary/10"
-                : "text-muted-foreground/50",
-            )}
-            onClick={onToggleExpand}
-          >
-            {isExpanded ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
-          </Button>
-
           {/* Image */}
           <div className="w-12 h-12 relative rounded-lg overflow-hidden border shadow-sm shrink-0">
             <Image
@@ -135,12 +98,6 @@ function MobileCategoryCard({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <NewSubcategoryDialog
-                  categoryId={category.id}
-                  categoryName={category.name}
-                  variant="menu"
-                />
-                <DropdownMenuSeparator />
                 <EditCategoryDialog category={category} />
                 <DropdownMenuSeparator />
                 <DeleteCategoryDialog category={category} />
@@ -149,121 +106,19 @@ function MobileCategoryCard({
           </div>
         </div>
 
-        {/* Subcategory Count Bar */}
-        <div
-          className={cn(
-            "flex items-center justify-between px-4 py-2 bg-muted/30 border-t cursor-pointer",
-            "hover:bg-muted/50 transition-colors",
-          )}
-          onClick={onToggleExpand}
-        >
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <FolderTree className="h-4 w-4" />
-            <span>
-              {hasSubcategories
-                ? `${category.subCategory.length} subcategories`
-                : "No subcategories"}
-            </span>
-          </div>
+        {/* Info Bar */}
+        <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-t text-sm text-muted-foreground">
+          <span>{category.subCategory.length} subcategories</span>
           <Badge variant="outline" className="font-mono text-xs">
             Order: {category.displayOrder}
           </Badge>
         </div>
-
-        {/* Expanded Subcategories */}
-        {isExpanded && (
-          <div className="border-t bg-muted/10">
-            {hasSubcategories ? (
-              <>
-                {category.subCategory.map((sub) => (
-                  <MobileSubcategoryRow key={sub.id} subcategory={sub} />
-                ))}
-                <div className="p-3 border-t border-dashed">
-                  <NewSubcategoryDialog
-                    categoryId={category.id}
-                    categoryName={category.name}
-                    variant="expanded"
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="p-6 text-center">
-                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
-                  <FolderTree className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <p className="text-sm text-muted-foreground mb-3">
-                  No subcategories yet
-                </p>
-                <NewSubcategoryDialog
-                  categoryId={category.id}
-                  categoryName={category.name}
-                  variant="default"
-                />
-              </div>
-            )}
-          </div>
-        )}
       </CardContent>
     </Card>
   );
 }
 
-// Mobile Subcategory Row
-function MobileSubcategoryRow({
-  subcategory,
-}: {
-  subcategory: CategoryWithSubcategories["subCategory"][0];
-}) {
-  return (
-    <div className="flex items-center gap-3 p-3 border-t hover:bg-muted/20 transition-colors">
-      {/* Tree connector */}
-      <div className="text-muted-foreground/40 text-xs pl-2">└</div>
-
-      {/* Image */}
-      <div className="w-10 h-10 relative rounded-md overflow-hidden border shrink-0">
-        <Image
-          src={subcategory.image}
-          alt={subcategory.name}
-          fill
-          className="object-cover"
-        />
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-sm truncate">{subcategory.name}</p>
-        <p className="text-xs text-muted-foreground font-mono truncate">
-          {subcategory.slug}
-        </p>
-      </div>
-
-      {/* Status & Actions */}
-      <div className="flex items-center gap-2 shrink-0">
-        <Badge
-          variant={subcategory.isActive ? "default" : "secondary"}
-          className={cn("text-xs", subcategory.isActive && "bg-green-600")}
-        >
-          {subcategory.isActive ? "Active" : "Inactive"}
-        </Badge>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7">
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <EditSubcategoryDialog subcategory={subcategory} />
-            <DropdownMenuSeparator />
-            <DeleteSubcategoryDialog subcategory={subcategory} />
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  );
-}
-
-export default function CategoryTable({ columns, data }: DataTableProps) {
+export default function CategoryTable({ columns, data, types = [] }: DataTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
@@ -271,14 +126,26 @@ export default function CategoryTable({ columns, data }: DataTableProps) {
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
-  const [expanded, setExpanded] = React.useState<ExpandedState>({});
-  const [mobileExpanded, setMobileExpanded] = React.useState<Set<number>>(
-    new Set(),
-  );
   const [filterValue, setFilterValue] = React.useState("");
+  const [typeFilter, setTypeFilter] = React.useState<string>("all");
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+
+  // Client-side filtered data
+  const filteredTableData = React.useMemo(() => {
+    let result = data;
+    if (typeFilter !== "all") {
+      result = result.filter((cat) => cat.typeId === Number(typeFilter));
+    }
+    if (statusFilter !== "all") {
+      result = result.filter((cat) =>
+        statusFilter === "active" ? cat.isActive : !cat.isActive,
+      );
+    }
+    return result;
+  }, [data, typeFilter, statusFilter]);
 
   const table = useReactTable({
-    data,
+    data: filteredTableData,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -286,53 +153,67 @@ export default function CategoryTable({ columns, data }: DataTableProps) {
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    getExpandedRowModel: getExpandedRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    onExpandedChange: setExpanded,
-    getRowCanExpand: () => true,
     state: {
       sorting,
       columnFilters,
       columnVisibility,
       rowSelection,
-      expanded,
     },
   });
 
   // Filter categories for mobile view
   const filteredData = React.useMemo(() => {
-    if (!filterValue) return data;
-    return data.filter((cat) =>
-      cat.name.toLowerCase().includes(filterValue.toLowerCase()),
-    );
-  }, [data, filterValue]);
-
-  const toggleMobileExpand = (categoryId: number) => {
-    setMobileExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(categoryId)) {
-        next.delete(categoryId);
-      } else {
-        next.add(categoryId);
-      }
-      return next;
-    });
-  };
+    let result = filteredTableData;
+    if (filterValue) {
+      result = result.filter((cat) =>
+        cat.name.toLowerCase().includes(filterValue.toLowerCase()),
+      );
+    }
+    return result;
+  }, [filteredTableData, filterValue]);
 
   return (
     <div className="w-full">
       {/* Header with filter and add button */}
-      <div className="flex items-center justify-between py-4 gap-2">
-        <Input
-          placeholder="Filter by name..."
-          value={filterValue}
-          onChange={(event) => {
-            setFilterValue(event.target.value);
-            table.getColumn("name")?.setFilterValue(event.target.value);
-          }}
-          className="max-w-sm"
-        />
+      <div className="flex flex-wrap items-center justify-between py-4 gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Input
+            placeholder="Filter by name..."
+            value={filterValue}
+            onChange={(event) => {
+              setFilterValue(event.target.value);
+              table.getColumn("name")?.setFilterValue(event.target.value);
+            }}
+            className="w-[200px]"
+          />
+          {types.length > 0 && (
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                {types.map((t) => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <NewCategoryDialog />
       </div>
 
@@ -360,58 +241,20 @@ export default function CategoryTable({ columns, data }: DataTableProps) {
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <React.Fragment key={row.id}>
-                  <TableRow
-                    data-state={row.getIsSelected() && "selected"}
-                    className={
-                      row.getIsExpanded()
-                        ? "border-b-0 bg-primary/5 hover:bg-primary/10"
-                        : "hover:bg-muted/50 transition-colors"
-                    }
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="py-3">
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-
-                  {row.getIsExpanded() && (
-                    // biome-ignore lint/complexity/noUselessFragments: no issue
-                    <>
-                      {row.original.subCategory.length > 0 ? (
-                        <>
-                          {row.original.subCategory.map(
-                            (subcategory, index) => (
-                              <SubcategoryRow
-                                key={subcategory.id}
-                                subcategory={subcategory}
-                                colSpan={columns.length}
-                                isLast={
-                                  index === row.original.subCategory.length - 1
-                                }
-                              />
-                            ),
-                          )}
-                          <AddSubcategoryRow
-                            categoryId={row.original.id}
-                            categoryName={row.original.name}
-                            colSpan={columns.length}
-                          />
-                        </>
-                      ) : (
-                        <EmptySubcategoryRow
-                          categoryId={row.original.id}
-                          categoryName={row.original.name}
-                          colSpan={columns.length}
-                        />
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && "selected"}
+                  className="hover:bg-muted/50 transition-colors"
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} className="py-3">
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
                       )}
-                    </>
-                  )}
-                </React.Fragment>
+                    </TableCell>
+                  ))}
+                </TableRow>
               ))
             ) : (
               <TableRow>
@@ -431,12 +274,7 @@ export default function CategoryTable({ columns, data }: DataTableProps) {
       <div className="md:hidden space-y-3">
         {filteredData.length > 0 ? (
           filteredData.map((category) => (
-            <MobileCategoryCard
-              key={category.id}
-              category={category}
-              isExpanded={mobileExpanded.has(category.id)}
-              onToggleExpand={() => toggleMobileExpand(category.id)}
-            />
+            <MobileCategoryCard key={category.id} category={category} />
           ))
         ) : (
           <Card>
@@ -447,7 +285,7 @@ export default function CategoryTable({ columns, data }: DataTableProps) {
         )}
       </div>
 
-      {/* Pagination (Desktop only for now) */}
+      {/* Pagination */}
       <div className="hidden md:flex items-center justify-end space-x-2 py-4">
         <div className="space-x-2">
           <Button

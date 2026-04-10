@@ -1,10 +1,9 @@
 "use client";
 
-import type { SubCategory } from "@bikalpo-project/db/schema";
+import type { ProductTypeRow } from "./product-type-columns";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Trash2 } from "lucide-react";
 import * as React from "react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -17,43 +16,43 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { client } from "@/utils/orpc";
+import { Button } from "@/components/ui/button";
+import { orpc } from "@/utils/orpc";
 
-interface DeleteSubcategoryDialogProps {
-  subcategory: SubCategory;
+interface DeleteTypeDialogProps {
+  type: ProductTypeRow;
 }
 
-export default function DeleteSubcategoryDialog({
-  subcategory,
-}: DeleteSubcategoryDialogProps) {
+export default function DeleteTypeDialog({ type }: DeleteTypeDialogProps) {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (id: number) =>
-      client.adminSubcategory.delete({ subcategoryId: id }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["admin-subcategories", subcategory.categoryId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
-      toast.success("Subcategory deleted successfully");
+    mutationFn: (id: number) => orpc.adminProductType.delete.call({ id }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
+      toast.success(result.message);
       setOpen(false);
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to delete subcategory.");
+      toast.error(
+        error.message || "An error occurred while deleting the type.",
+      );
     },
   });
 
   const handleDelete = () => {
-    mutation.mutate(subcategory.id);
+    mutation.mutate(type.id);
   };
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start text-destructive hover:text-destructive">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start text-destructive hover:text-destructive"
+        >
           <Trash2 className="h-4 w-4 mr-2" />
           Delete
         </Button>
@@ -62,11 +61,21 @@ export default function DeleteSubcategoryDialog({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Trash2 className="h-5 w-5 text-destructive" />
-            Delete {subcategory.name}?
+            Delete {type.name}?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the
-            subcategory and all associated products.
+            {type.categoryCount > 0 ? (
+              <>
+                This type has <strong>{type.categoryCount} categories</strong>{" "}
+                linked to it. You must remove or reassign them before deleting
+                this type.
+              </>
+            ) : (
+              <>
+                This action cannot be undone. This will permanently delete the
+                product type.
+              </>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -79,13 +88,13 @@ export default function DeleteSubcategoryDialog({
               e.preventDefault();
               handleDelete();
             }}
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || type.categoryCount > 0}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             {mutation.isPending && (
-              <Loader className="h-4 w-4 mr-2 animate-spin" />
+              <Loader className="mr-2 h-4 w-4 animate-spin" />
             )}
-            Delete Subcategory
+            Delete Type
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

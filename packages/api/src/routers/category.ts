@@ -1,7 +1,8 @@
 import { db } from "@bikalpo-project/db";
-import { category } from "@bikalpo-project/db/schema";
+import { category, subCategory } from "@bikalpo-project/db/schema";
+import { product } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
@@ -22,7 +23,7 @@ const updateCategorySchema = createCategorySchema.extend({
 
 export const categoryRouter = {
     /**
-     * Get all categories with subcategories
+     * Get all categories with subcategories and type info
      * REST: GET /api/categories
      */
     getAll: publicProcedure
@@ -31,11 +32,14 @@ export const categoryRouter = {
             path: "/categories",
             tags: ["Categories"],
             summary: "Get all categories",
-            description: "Get all categories with their subcategories",
+            description: "Get all categories with their subcategories and type info",
         })
         .handler(async () => {
             return await db.query.category.findMany({
-                with: { subCategory: true },
+                with: {
+                    subCategory: true,
+                    type: { columns: { id: true, name: true } },
+                },
                 orderBy: [asc(category.displayOrder)],
             });
         }),
@@ -61,7 +65,7 @@ export const categoryRouter = {
         }),
 
     /**
-     * Get category by ID
+     * Get category by ID with subcategories, type info, and products
      * REST: GET /api/categories/{id}
      */
     getById: publicProcedure
@@ -70,20 +74,40 @@ export const categoryRouter = {
             path: "/categories/{id}",
             tags: ["Categories"],
             summary: "Get category by ID",
-            description: "Get a single category with subcategories by its ID",
+            description: "Get a single category with subcategories, type, and products by its ID",
         })
         .input(z.object({ id: z.number().int() }))
         .handler(async ({ input }) => {
             const result = await db.query.category.findFirst({
                 where: (c, { eq }) => eq(c.id, input.id),
-                with: { subCategory: true },
+                with: {
+                    subCategory: true,
+                    type: { columns: { id: true, name: true } },
+                },
             });
 
             if (!result) {
                 throw new ORPCError("NOT_FOUND", { message: "Category not found" });
             }
 
-            return result;
+            // Fetch products under this category
+            const products = await db.query.product.findMany({
+                where: (p, { eq }) => eq(p.categoryId, input.id),
+                columns: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    size: true,
+                    status: true,
+                },
+                with: {
+                    subCategory: { columns: { id: true, name: true } },
+                    images: { columns: { imageUrl: true }, limit: 1 },
+                },
+                orderBy: (p, { asc }) => [asc(p.name)],
+            });
+
+            return { ...result, products };
         }),
 
     /**
@@ -140,7 +164,7 @@ export const categoryRouter = {
         }),
 
     /**
-     * Delete a category
+     * Delete a category (blocked if subcategories exist)
      * REST: DELETE /api/categories/{id}
      */
     delete: adminProcedure
@@ -149,16 +173,23 @@ export const categoryRouter = {
             path: "/categories/{id}",
             tags: ["Admin Categories"],
             summary: "Delete category",
-            description: "Delete a category (admin only)",
+            description: "Delete a category (admin only). Blocked if subcategories exist.",
         })
         .input(z.object({ id: z.number().int() }))
         .handler(async ({ input }) => {
             const existing = await db.query.category.findFirst({
                 where: (c, { eq }) => eq(c.id, input.id),
+                with: { subCategory: true },
             });
 
             if (!existing) {
                 throw new ORPCError("NOT_FOUND", { message: "Category not found" });
+            }
+
+            if (existing.subCategory.length > 0) {
+                throw new ORPCError("CONFLICT", {
+                    message: `Cannot delete "${existing.name}" because it has ${existing.subCategory.length} subcategories. Remove all subcategories first.`,
+                });
             }
 
             await db.delete(category).where(eq(category.id, input.id));

@@ -3,12 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import {
-  AlertTriangle,
-  ArrowDown,
   ArrowUp,
-  Ban,
   Bike,
-  Box,
   ClipboardList,
   CreditCard,
   Crown,
@@ -17,7 +13,6 @@ import {
   Layers,
   MapPin,
   Package,
-  PackageX,
   RotateCcw,
   ShoppingBag,
   ShoppingCart,
@@ -134,191 +129,122 @@ export function AdminDashboardClient() {
   const b2bPercent = totalChannelOrders > 0 ? Math.round(((s?.b2bOrders || 0) / totalChannelOrders) * 100) : 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* ═══════════════════════════════════════════════════════════
           HEADER
       ═══════════════════════════════════════════════════════════ */}
       <Stagger index={0}>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            <h1 className="text-xl font-semibold tracking-tight">
               {getGreeting()},{" "}
               <span className="text-primary">{userName}</span>
             </h1>
-            <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-              <span>{formattedDate}</span>
-              <span className="flex items-center gap-1.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                </span>
-                Live
-              </span>
-            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">{formattedDate}</p>
           </div>
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+            Live
+          </span>
         </div>
       </Stagger>
 
       {/* ═══════════════════════════════════════════════════════════
-          PRIMARY KPIs — Hero Treatment
+          PRIMARY KPIs — Compact
       ═══════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {/* Users */}
-        <Stagger index={1}>
-          <div className="group relative rounded-xl border bg-card p-5 transition-all hover:shadow-md border-l-4 border-l-indigo-500">
-            <div className="flex items-center justify-between">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950/40">
-                <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          {
+            label: "Users",
+            value: s?.totalUsers || 0,
+            icon: Users,
+            delta: s?.newUsersToday || 0,
+            deltaLabel: "today",
+          },
+          {
+            label: "Orders",
+            value: s?.totalOrders || 0,
+            icon: ShoppingCart,
+            delta: s?.ordersToday || 0,
+            deltaLabel: "today",
+          },
+          {
+            label: "Total Sales",
+            value: s?.totalGMV || 0,
+            icon: DollarSign,
+            isCurrency: true,
+            delta: s?.revenueToday || 0,
+            deltaLabel: "today",
+          },
+          {
+            label: "Subscriptions",
+            value: s?.subscriptions?.totalActive || 0,
+            icon: CreditCard,
+          },
+        ].map((kpi, i) => (
+          <Stagger key={kpi.label} index={i + 1}>
+            <div className="rounded-lg border bg-card px-4 py-3 transition-colors hover:bg-muted/30">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <kpi.icon className="h-3.5 w-3.5" />
+                <span className="text-xs">{kpi.label}</span>
               </div>
-              <ArrowUp className="h-3.5 w-3.5 text-emerald-500 opacity-0 transition-opacity group-hover:opacity-100" />
-            </div>
-            <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight">
-              {isLoading ? <Pulse className="h-9 w-20" /> : formatNumber(s?.totalUsers || 0)}
-            </p>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">Total Users</p>
-            {!isLoading && (s?.newUsersToday || 0) > 0 && (
-              <p className="mt-2 flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <ArrowUp className="h-3 w-3" />
-                +{s?.newUsersToday} today
+              <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight">
+                {isLoading ? (
+                  <Pulse className="h-7 w-16" />
+                ) : kpi.isCurrency ? (
+                  formatCurrency(kpi.value)
+                ) : (
+                  formatNumber(kpi.value)
+                )}
               </p>
-            )}
-          </div>
-        </Stagger>
-
-        {/* Orders */}
-        <Stagger index={2}>
-          <div className="group relative rounded-xl border bg-card p-5 transition-all hover:shadow-md border-l-4 border-l-blue-500">
-            <div className="flex items-center justify-between">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950/40">
-                <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <ArrowUp className="h-3.5 w-3.5 text-emerald-500 opacity-0 transition-opacity group-hover:opacity-100" />
+              {!isLoading && (kpi.delta || 0) > 0 && (
+                <p className="mt-0.5 flex items-center gap-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <ArrowUp className="h-2.5 w-2.5" />
+                  +{kpi.isCurrency ? formatCurrency(kpi.delta!) : kpi.delta} {kpi.deltaLabel}
+                </p>
+              )}
             </div>
-            <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight">
-              {isLoading ? <Pulse className="h-9 w-20" /> : formatNumber(s?.totalOrders || 0)}
-            </p>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">Total Orders</p>
-            {!isLoading && (s?.ordersToday || 0) > 0 && (
-              <p className="mt-2 flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <ArrowUp className="h-3 w-3" />
-                +{s?.ordersToday} today
-              </p>
-            )}
-          </div>
-        </Stagger>
-
-        {/* Total Sales */}
-        <Stagger index={3}>
-          <div className="group relative rounded-xl border bg-card p-5 transition-all hover:shadow-md border-l-4 border-l-emerald-500">
-            <div className="flex items-center justify-between">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950/40">
-                <DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <ArrowUp className="h-3.5 w-3.5 text-emerald-500 opacity-0 transition-opacity group-hover:opacity-100" />
-            </div>
-            <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight">
-              {isLoading ? <Pulse className="h-9 w-20" /> : formatCurrency(s?.totalGMV || 0)}
-            </p>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">Total Sales</p>
-            {!isLoading && (s?.revenueToday || 0) > 0 && (
-              <p className="mt-2 flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <ArrowUp className="h-3 w-3" />
-                +{formatCurrency(s?.revenueToday || 0)} today
-              </p>
-            )}
-          </div>
-        </Stagger>
-
-        {/* Subscriptions */}
-        <Stagger index={4}>
-          <div className="group relative rounded-xl border bg-card p-5 transition-all hover:shadow-md border-l-4 border-l-amber-500">
-            <div className="flex items-center justify-between">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-950/40">
-                <CreditCard className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-              </div>
-            </div>
-            <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight">
-              {isLoading ? <Pulse className="h-9 w-20" /> : formatNumber(s?.subscriptions?.totalActive || 0)}
-            </p>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">Subscriptions</p>
-          </div>
-        </Stagger>
+          </Stagger>
+        ))}
       </div>
 
       {/* ═══════════════════════════════════════════════════════════
           OPERATIONS OVERVIEW
       ═══════════════════════════════════════════════════════════ */}
       <Stagger index={5}>
-        <div className="rounded-xl border bg-card">
-          <div className="border-b px-5 py-3">
-            <h2 className="text-sm font-semibold">Operations Overview</h2>
+        <div className="rounded-lg border bg-card">
+          <div className="border-b px-4 py-2.5">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Operations</h2>
           </div>
           <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-4 sm:divide-y-0">
-            {/* Pending */}
-            <Link
-              href={`${ADMIN_BASE}/orders?status=pending`}
-              className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/40"
-            >
-              <ClipboardList className="h-5 w-5 shrink-0 text-amber-500" />
-              <div>
-                <p className="text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
-                  {isLoading ? "–" : s?.pendingOrders || 0}
-                </p>
-                <p className="text-xs text-muted-foreground">Pending Orders</p>
-              </div>
-            </Link>
-
-            {/* Cancelled */}
-            <Link
-              href={`${ADMIN_BASE}/orders?status=cancelled`}
-              className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/40"
-            >
-              <XCircle className="h-5 w-5 shrink-0 text-red-500" />
-              <div>
-                <p className="text-xl font-bold tabular-nums text-red-600 dark:text-red-400">
-                  {isLoading ? "–" : s?.cancelledTotal || 0}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Cancelled
-                  {!isLoading && (s?.cancelledToday || 0) > 0 && (
-                    <span className="ml-1 text-red-500">({s?.cancelledToday} today)</span>
-                  )}
-                </p>
-              </div>
-            </Link>
-
-            {/* Unassigned */}
-            <Link
-              href={`${ADMIN_BASE}/invoices`}
-              className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/40"
-            >
-              <FileText className="h-5 w-5 shrink-0 text-purple-500" />
-              <div>
-                <p className="text-xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
-                  {isLoading ? "–" : s?.pendingInvoices || 0}
-                </p>
-                <p className="text-xs text-muted-foreground">Unassigned</p>
-              </div>
-            </Link>
-
-            {/* Active Deliveries */}
-            <Link
-              href={`${ADMIN_BASE}/delivery`}
-              className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/40"
-            >
-              <Truck className="h-5 w-5 shrink-0 text-cyan-500" />
-              <div>
-                <p className="text-xl font-bold tabular-nums text-cyan-600 dark:text-cyan-400">
-                  {isLoading ? "–" : s?.activeDeliveries || 0}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  In Delivery
-                  {!isLoading && (s?.deliveriesToday || 0) > 0 && (
-                    <span className="ml-1 text-emerald-500">({s?.deliveriesToday} done)</span>
-                  )}
-                </p>
-              </div>
-            </Link>
+            {[
+              { href: `${ADMIN_BASE}/orders?status=pending`, icon: ClipboardList, value: s?.pendingOrders || 0, label: "Pending", color: "text-amber-500", extra: null },
+              { href: `${ADMIN_BASE}/orders?status=cancelled`, icon: XCircle, value: s?.cancelledTotal || 0, label: "Cancelled", color: "text-red-500", extra: (s?.cancelledToday || 0) > 0 ? `${s?.cancelledToday} today` : null },
+              { href: `${ADMIN_BASE}/invoices`, icon: FileText, value: s?.pendingInvoices || 0, label: "Unassigned", color: "text-purple-500", extra: null },
+              { href: `${ADMIN_BASE}/delivery`, icon: Truck, value: s?.activeDeliveries || 0, label: "In Delivery", color: "text-cyan-500", extra: (s?.deliveriesToday || 0) > 0 ? `${s?.deliveriesToday} done` : null },
+            ].map((op) => (
+              <Link
+                key={op.label}
+                href={op.href}
+                className="flex items-center gap-2.5 px-4 py-3 transition-colors hover:bg-muted/40"
+              >
+                <op.icon className={`h-4 w-4 shrink-0 ${op.color}`} />
+                <div>
+                  <p className={`text-lg font-bold tabular-nums ${op.color}`}>
+                    {isLoading ? "–" : op.value}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {op.label}
+                    {!isLoading && op.extra && (
+                      <span className="ml-1 opacity-70">({op.extra})</span>
+                    )}
+                  </p>
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       </Stagger>
@@ -326,14 +252,13 @@ export function AdminDashboardClient() {
       {/* ═══════════════════════════════════════════════════════════
           B2B vs B2C  |  USER DISTRIBUTION
       ═══════════════════════════════════════════════════════════ */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {/* Order Channels */}
         <Stagger index={6}>
-          <div className="rounded-xl border bg-card p-5">
-            <h2 className="text-sm font-semibold">Order Channels</h2>
-            <div className="mt-4 space-y-3">
-              {/* Progress bar */}
-              <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted/50">
+          <div className="rounded-lg border bg-card px-4 py-3">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Order Channels</h2>
+            <div className="mt-3 space-y-2">
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted/50">
                 <div
                   className="rounded-l-full bg-violet-500 transition-all duration-700"
                   style={{ width: `${b2bPercent}%` }}
@@ -343,21 +268,20 @@ export function AdminDashboardClient() {
                   style={{ width: `${100 - b2bPercent}%` }}
                 />
               </div>
-              {/* Labels */}
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-violet-500" />
                   <span className="text-muted-foreground">B2B</span>
                   <span className="font-bold tabular-nums">
                     {isLoading ? "–" : formatNumber(s?.b2bOrders || 0)}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <span className="font-bold tabular-nums">
                     {isLoading ? "–" : formatNumber(s?.b2cOrders || 0)}
                   </span>
                   <span className="text-muted-foreground">B2C</span>
-                  <span className="h-2.5 w-2.5 rounded-full bg-sky-400" />
+                  <span className="h-2 w-2 rounded-full bg-sky-400" />
                 </div>
               </div>
             </div>
@@ -366,9 +290,9 @@ export function AdminDashboardClient() {
 
         {/* User Distribution */}
         <Stagger index={7}>
-          <div className="rounded-xl border bg-card p-5">
-            <h2 className="text-sm font-semibold">User Distribution</h2>
-            <div className="mt-4 space-y-2.5">
+          <div className="rounded-lg border bg-card px-4 py-3">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">User Distribution</h2>
+            <div className="mt-3 space-y-1.5">
               {[
                 { label: "Consumers", value: s?.totalConsumers || 0, icon: Users, color: "text-blue-500" },
                 { label: "Retailers", value: s?.totalRetailers || 0, icon: Store, color: "text-green-500" },
@@ -377,12 +301,12 @@ export function AdminDashboardClient() {
                 { label: "Riders", value: s?.totalDeliverymen || 0, icon: Bike, color: "text-orange-500" },
                 { label: "Admins", value: s?.totalAdmins || 0, icon: Crown, color: "text-amber-500" },
               ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <item.icon className={`h-4 w-4 ${item.color}`} />
-                    <span className="text-sm text-muted-foreground">{item.label}</span>
+                <div key={item.label} className="flex items-center justify-between py-0.5">
+                  <div className="flex items-center gap-2">
+                    <item.icon className={`h-3.5 w-3.5 ${item.color}`} />
+                    <span className="text-xs text-muted-foreground">{item.label}</span>
                   </div>
-                  <span className="text-sm font-bold tabular-nums">
+                  <span className="text-xs font-bold tabular-nums">
                     {isLoading ? "–" : formatNumber(item.value)}
                   </span>
                 </div>
@@ -396,9 +320,9 @@ export function AdminDashboardClient() {
           SUBSCRIPTION STATUS
       ═══════════════════════════════════════════════════════════ */}
       <Stagger index={8}>
-        <div className="rounded-xl border bg-card">
-          <div className="border-b px-5 py-3">
-            <h2 className="text-sm font-semibold">Subscription Status</h2>
+        <div className="rounded-lg border bg-card">
+          <div className="border-b px-4 py-2.5">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subscriptions</h2>
           </div>
           <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-4 sm:divide-y-0">
             {[
@@ -407,13 +331,13 @@ export function AdminDashboardClient() {
               { label: "Expiring Soon", value: s?.subscriptions?.expiringSoon || 0, dotColor: "bg-amber-500" },
               { label: "Expired", value: s?.subscriptions?.expired || 0, dotColor: "bg-red-500" },
             ].map((item) => (
-              <div key={item.label} className="flex items-center gap-3 px-5 py-4">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${item.dotColor}`} />
+              <div key={item.label} className="flex items-center gap-2.5 px-4 py-3">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${item.dotColor}`} />
                 <div>
-                  <p className="text-xl font-bold tabular-nums">
+                  <p className="text-lg font-bold tabular-nums">
                     {isLoading ? "–" : item.value}
                   </p>
-                  <p className="text-xs text-muted-foreground">{item.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{item.label}</p>
                 </div>
               </div>
             ))}
@@ -426,16 +350,16 @@ export function AdminDashboardClient() {
       ═══════════════════════════════════════════════════════════ */}
       {attentionItems.length > 0 && (
         <Stagger index={9}>
-          <div className="rounded-xl border bg-card p-5">
-            <h2 className="text-sm font-semibold mb-3">Needs Attention</h2>
-            <div className="flex flex-wrap gap-2">
+          <div className="rounded-lg border bg-card px-4 py-3">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Needs Attention</h2>
+            <div className="flex flex-wrap gap-1.5">
               {attentionItems.map((item) => (
                 <Link
                   key={item.label}
                   href={item.href}
-                  className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+                  className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors hover:bg-muted/50"
                 >
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold ${item.bg} ${item.color}`}>
+                  <span className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold ${item.bg} ${item.color}`}>
                     {isLoading ? "–" : item.count}
                   </span>
                   <span className="text-muted-foreground">{item.label}</span>
@@ -449,16 +373,16 @@ export function AdminDashboardClient() {
       {/* ═══════════════════════════════════════════════════════════
           PERFORMANCE + LIVE ACTIVITY (side by side on lg)
       ═══════════════════════════════════════════════════════════ */}
-      <div className="grid gap-4 lg:grid-cols-5">
+      <div className="grid gap-3 lg:grid-cols-5">
         {/* Performance Highlights — 2 cols */}
         <Stagger index={10} className="lg:col-span-2">
-          <div className="rounded-xl border bg-card h-full">
-            <div className="border-b px-5 py-3">
-              <h2 className="text-sm font-semibold">Performance Highlights</h2>
+          <div className="rounded-lg border bg-card h-full">
+            <div className="border-b px-4 py-2.5">
+              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Performance</h2>
             </div>
             <div className="divide-y">
               {/* Top Product */}
-              <div className="px-5 py-4">
+              <div className="px-4 py-3">
                 <div className="flex items-center gap-2 mb-1.5">
                   <Trophy className="h-4 w-4 text-amber-500" />
                   <span className="text-xs font-medium text-muted-foreground">Top Product</span>
@@ -476,7 +400,7 @@ export function AdminDashboardClient() {
               </div>
 
               {/* Top Supplier */}
-              <div className="px-5 py-4">
+              <div className="px-4 py-3">
                 <div className="flex items-center gap-2 mb-1.5">
                   <Layers className="h-4 w-4 text-blue-500" />
                   <span className="text-xs font-medium text-muted-foreground">Top Supplier</span>
@@ -491,7 +415,7 @@ export function AdminDashboardClient() {
               </div>
 
               {/* Top Area */}
-              <div className="px-5 py-4">
+              <div className="px-4 py-3">
                 <div className="flex items-center gap-2 mb-1.5">
                   <MapPin className="h-4 w-4 text-green-500" />
                   <span className="text-xs font-medium text-muted-foreground">Top Area</span>
@@ -513,11 +437,11 @@ export function AdminDashboardClient() {
 
         {/* Live Activity Feed — 3 cols */}
         <Stagger index={11} className="lg:col-span-3">
-          <div className="rounded-xl border bg-card h-full">
-            <div className="flex items-center justify-between border-b px-5 py-3">
+          <div className="rounded-lg border bg-card h-full">
+            <div className="flex items-center justify-between border-b px-4 py-2.5">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold">Activity Feed</h2>
-                <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Activity</h2>
+                <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-medium text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
                   <span className="relative flex h-1.5 w-1.5">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -525,15 +449,15 @@ export function AdminDashboardClient() {
                   LIVE
                 </span>
               </div>
-              <span className="text-[11px] text-muted-foreground">Updates every 60s</span>
+              <span className="text-[10px] text-muted-foreground">60s refresh</span>
             </div>
 
-            <div className="max-h-[280px] overflow-y-auto">
+            <div className="max-h-[240px] overflow-y-auto">
               {isLoading ? (
                 <div className="space-y-0 divide-y">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-3 px-5 py-3">
-                      <Pulse className="h-2.5 w-2.5 shrink-0 rounded-full" />
+                    <div key={i} className="flex items-center gap-3 px-4 py-2.5">
+                      <Pulse className="h-2 w-2 shrink-0 rounded-full" />
                       <div className="flex-1 space-y-1">
                         <Pulse className="h-3.5 w-24" />
                         <Pulse className="h-3 w-36" />
@@ -558,11 +482,11 @@ export function AdminDashboardClient() {
                     return (
                       <div
                         key={`${item.type}-${i}`}
-                        className="flex items-start gap-3 px-5 py-3 animate-in fade-in slide-in-from-left-2 duration-300"
+                        className="flex items-start gap-2.5 px-4 py-2.5 animate-in fade-in slide-in-from-left-2 duration-300"
                         style={{ animationDelay: `${i * 50}ms` }}
                       >
-                        <div className="relative mt-1.5 flex shrink-0">
-                          <span className={`h-2.5 w-2.5 rounded-full ${dotColor} shadow-sm`} />
+                        <div className="relative mt-1 flex shrink-0">
+                          <span className={`h-2 w-2 rounded-full ${dotColor}`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-semibold leading-tight">
@@ -589,17 +513,17 @@ export function AdminDashboardClient() {
           QUICK ACTIONS — Professional grid
       ═══════════════════════════════════════════════════════════ */}
       <Stagger index={12}>
-        <div className="rounded-xl border bg-card p-5">
-          <h2 className="text-sm font-semibold mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+        <div className="rounded-lg border bg-card px-4 py-3">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Quick Actions</h2>
+          <div className="grid grid-cols-3 gap-1 sm:grid-cols-4 md:grid-cols-6">
             {quickActions.map((action) => (
               <Link
                 key={action.href}
                 href={action.href}
-                className="group flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-muted/60"
+                className="group flex items-center gap-2 rounded-md px-2.5 py-2 text-xs transition-colors hover:bg-muted/60"
               >
-                <action.icon className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-                <span className="truncate text-[13px] font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                <action.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                <span className="truncate font-medium text-muted-foreground transition-colors group-hover:text-foreground">
                   {action.title}
                 </span>
               </Link>

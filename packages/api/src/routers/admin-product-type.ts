@@ -1,17 +1,18 @@
 import { db } from "@bikalpo-project/db";
-import { productType } from "@bikalpo-project/db/schema";
+import { category, product, productType, shopCategoryAssignment } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, eq, ilike, type SQL } from "drizzle-orm";
+import { and, asc, count, countDistinct, eq, ilike, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
 
 export const adminProductTypeRouter = {
-    // List all product types
+    // List all product types with optional status filter
     getAll: adminProcedure
         .input(
             z.object({
                 search: z.string().optional(),
+                status: z.enum(["all", "active", "inactive"]).optional().default("all"),
             }),
         )
         .handler(async ({ input }) => {
@@ -19,29 +20,75 @@ export const adminProductTypeRouter = {
             if (input.search) {
                 conditions.push(ilike(productType.name, `%${input.search}%`));
             }
+            if (input.status === "active") {
+                conditions.push(eq(productType.isActive, true));
+            } else if (input.status === "inactive") {
+                conditions.push(eq(productType.isActive, false));
+            }
 
             const types = await db.query.productType.findMany({
                 where: conditions.length > 0 ? and(...conditions) : undefined,
                 orderBy: [asc(productType.displayOrder), asc(productType.name)],
+                with: { categories: { columns: { id: true } } },
             });
 
-            return { types };
+            return {
+                types: types.map(({ categories: cats, ...rest }) => ({
+                    ...rest,
+                    categoryCount: cats.length,
+                })),
+            };
         }),
 
-    // Get single product type by ID
+    // Get single product type by ID with related data
     getById: adminProcedure
         .input(z.object({ id: z.number() }))
         .handler(async ({ input }) => {
             const type = await db.query.productType.findFirst({
                 where: eq(productType.id, input.id),
-                with: { categories: true },
+                with: {
+                    categories: {
+                        columns: { id: true, name: true, slug: true, isActive: true, image: true },
+                        orderBy: [asc(category.displayOrder), asc(category.name)],
+                    },
+                },
             });
 
             if (!type) {
                 throw new ORPCError("NOT_FOUND", { message: "Product type not found" });
             }
 
-            return { type };
+            // Get products under this type via categories
+            const categoryIds = type.categories.map((c) => c.id);
+            let products: { id: number; name: string; slug: string; image: string; size: string; price: string; status: string; categoryId: number }[] = [];
+            if (categoryIds.length > 0) {
+                products = await db
+                    .select({
+                        id: product.id,
+                        name: product.name,
+                        slug: product.slug,
+                        image: product.image,
+                        size: product.size,
+                        price: product.price,
+                        status: product.status,
+                        categoryId: product.categoryId,
+                    })
+                    .from(product)
+                    .where(inArray(product.categoryId, categoryIds))
+                    .orderBy(asc(product.name));
+            }
+
+            // Count distinct sellers (shops) assigned to categories under this type
+            let sellerCount = 0;
+            if (categoryIds.length > 0) {
+                const result = await db
+                    .select({ count: countDistinct(shopCategoryAssignment.shopId) })
+                    .from(shopCategoryAssignment)
+                    .where(inArray(shopCategoryAssignment.categoryId, categoryIds));
+                sellerCount = result[0]?.count ?? 0;
+            }
+
+            return { type, products, sellerCount };
         }),
 
     // Create a new product type
@@ -58,6 +105,7 @@ export const adminProductTypeRouter = {
                 enableDesign: z.boolean().default(false),
                 enableVariant: z.boolean().default(true),
                 inventoryBehaviour: z.enum(["auto_break", "loose_convert", "fixed_pack"]).default("fixed_pack"),
+                isActive: z.boolean().default(true),
                 displayOrder: z.number().default(0),
             }),
         )
@@ -83,11 +131,12 @@ export const adminProductTypeRouter = {
                     enableDesign: input.enableDesign,
                     enableVariant: input.enableVariant,
                     inventoryBehaviour: input.inventoryBehaviour,
+                    isActive: input.isActive,
                     displayOrder: input.displayOrder,
                 })
                 .returning();
 
-            return { type: created };
+            return { type: created, message: `Product type "${created!.name}" created successfully` };
         }),
 
     // Update a product type
@@ -135,13 +184,48 @@ export const adminProductTypeRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Product type not found" });
             }
 
-            return { type: updated };
+            return { type: updated, message: `Product type "${updated.name}" updated successfully` };
         }),
 
-    // Delete a product type
+    // Toggle active status
+    toggleActive: adminProcedure
+        .input(z.object({ id: z.number() }))
+        .handler(async ({ input }) => {
+            const existing = await db.query.productType.findFirst({
+                where: eq(productType.id, input.id),
+            });
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Product type not found" });
+            }
+
+            const [updated] = await db
+                .update(productType)
+                .set({ isActive: !existing.isActive })
+                .where(eq(productType.id, input.id))
+                .returning();
+
+            return {
+                type: updated,
+                message: `Product type "${updated!.name}" ${updated!.isActive ? "activated" : "deactivated"} successfully`,
+            };
+        }),
+
+    // Delete a product type (with protection)
     delete: adminProcedure
         .input(z.object({ id: z.number() }))
         .handler(async ({ input }) => {
+            // Check if categories exist under this type
+            const categoryCount = await db
+                .select({ count: count() })
+                .from(category)
+                .where(eq(category.typeId, input.id));
+
+            if ((categoryCount[0]?.count ?? 0) > 0) {
+                throw new ORPCError("CONFLICT", {
+                    message: `Cannot delete this type — it has ${categoryCount[0]!.count} categories. Remove or reassign them first.`,
+                });
+            }
+
             const [deleted] = await db
                 .delete(productType)
                 .where(eq(productType.id, input.id))
@@ -151,7 +235,7 @@ export const adminProductTypeRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Product type not found" });
             }
 
-            return { success: true };
+            return { success: true, message: `Product type "${deleted.name}" deleted successfully` };
         }),
 
     // Public: get active types (for dropdowns)

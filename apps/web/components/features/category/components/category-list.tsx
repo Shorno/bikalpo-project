@@ -13,9 +13,15 @@ export default function CategoryList() {
     orpc.category.getAll.queryOptions(),
   );
 
+  const { data: typesData } = useQuery(
+    orpc.adminProductType.getAll.queryOptions({ input: {} }),
+  );
+
   if (isLoading) {
     return <TableSkeleton />;
   }
 
-  return <CategoryTable columns={columns} data={categories} />;
+  const typeOptions = (typesData?.types ?? []).map((t: any) => ({ id: t.id, name: t.name }));
+
+  return <CategoryTable columns={columns} data={categories} types={typeOptions} />;
 }
