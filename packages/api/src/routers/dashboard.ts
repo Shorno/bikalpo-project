@@ -245,6 +245,63 @@ export const dashboardRouter = {
                 }));
             }, []);
 
+            // ─── ACTIVITY FEED (aggregate from existing tables) ─────────
+
+            const activityFeed = await safe(async () => {
+                type FeedItem = { type: string; icon: string; title: string; description: string; timestamp: Date };
+                const feed: FeedItem[] = [];
+
+                // Recent orders
+                const recentOrdersFeed = await db.query.order.findMany({
+                    orderBy: [desc(order.createdAt)],
+                    limit: 5,
+                    with: { user: { columns: { name: true, shopName: true } } },
+                });
+                for (const o of recentOrdersFeed) {
+                    const name = o.user?.shopName || o.user?.name || "Unknown";
+                    if (o.status === "cancelled") {
+                        feed.push({ type: "cancelled", icon: "red", title: "Order Cancelled", description: `#${o.orderNumber.slice(-4)} by ${name}`, timestamp: o.cancelledAt || o.updatedAt });
+                    } else if (o.status === "delivered") {
+                        feed.push({ type: "delivered", icon: "green", title: "Order Delivered", description: `#${o.orderNumber.slice(-4)} — ৳${Number(o.total).toLocaleString()}`, timestamp: o.deliveredAt || o.updatedAt });
+                    } else {
+                        feed.push({ type: "order", icon: "blue", title: "New Order", description: `#${o.orderNumber.slice(-4)} by ${name} — ৳${Number(o.total).toLocaleString()}`, timestamp: o.createdAt });
+                    }
+                }
+
+                // Recent user signups
+                const recentUsers = await db.query.user.findMany({
+                    orderBy: [desc(user.createdAt)],
+                    limit: 3,
+                    columns: { name: true, role: true, shopName: true, warehouseName: true, createdAt: true },
+                });
+                for (const u of recentUsers) {
+                    const label = u.shopName || u.warehouseName || u.name;
+                    const roleLabel = u.warehouseName ? "Warehouse" : u.shopName ? "Retailer" : "User";
+                    feed.push({ type: "user", icon: "green", title: `${roleLabel} Registered`, description: label, timestamp: u.createdAt });
+                }
+
+                // Recent seller applications
+                const recentApps = await db.query.sellerApplication.findMany({
+                    orderBy: [desc(sellerApplication.createdAt)],
+                    limit: 2,
+                    columns: { status: true, createdAt: true },
+                    with: { user: { columns: { name: true } } },
+                });
+                for (const app of recentApps) {
+                    feed.push({
+                        type: "application",
+                        icon: app.status === "approved" ? "green" : app.status === "rejected" ? "red" : "yellow",
+                        title: "Seller Application",
+                        description: `${(app as any).user?.name || "Unknown"} — ${app.status}`,
+                        timestamp: app.createdAt,
+                    });
+                }
+
+                // Sort by timestamp desc, take top 10
+                feed.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                return feed.slice(0, 10);
+            }, []);
+
             // ─── SUBSCRIPTION STATUS ────────────────────────────────────
 
             const subscriptions = await safe(async () => {
@@ -390,6 +447,7 @@ export const dashboardRouter = {
                     recentOrders,
                     subscriptions,
                     performance,
+                    activityFeed,
                 },
             };
         }),

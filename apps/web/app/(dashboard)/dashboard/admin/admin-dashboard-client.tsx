@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { formatDistanceToNow } from "date-fns";
 import {
   AlertTriangle,
   ArrowDown,
@@ -446,76 +447,148 @@ export function AdminDashboardClient() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════
-          PERFORMANCE HIGHLIGHT
+          PERFORMANCE + LIVE ACTIVITY (side by side on lg)
       ═══════════════════════════════════════════════════════════ */}
-      <Stagger index={10}>
-        <div className="rounded-xl border bg-card">
-          <div className="border-b px-5 py-3">
-            <h2 className="text-sm font-semibold">Performance Highlights</h2>
-          </div>
-          <div className="grid grid-cols-3 divide-x">
-            {/* Top Product */}
-            <div className="px-5 py-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Trophy className="h-4 w-4 text-amber-500" />
-                <span className="text-xs font-medium text-muted-foreground">Top Product</span>
+      <div className="grid gap-4 lg:grid-cols-5">
+        {/* Performance Highlights — 2 cols */}
+        <Stagger index={10} className="lg:col-span-2">
+          <div className="rounded-xl border bg-card h-full">
+            <div className="border-b px-5 py-3">
+              <h2 className="text-sm font-semibold">Performance Highlights</h2>
+            </div>
+            <div className="divide-y">
+              {/* Top Product */}
+              <div className="px-5 py-4">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Trophy className="h-4 w-4 text-amber-500" />
+                  <span className="text-xs font-medium text-muted-foreground">Top Product</span>
+                </div>
+                {isLoading ? (
+                  <Pulse className="h-5 w-24" />
+                ) : s?.performance?.topProduct ? (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold truncate">{s.performance.topProduct.name}</p>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{s.performance.topProduct.value} sold</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No data</p>
+                )}
               </div>
-              {isLoading ? (
-                <Pulse className="h-5 w-24" />
-              ) : s?.performance?.topProduct ? (
-                <>
-                  <p className="text-sm font-bold truncate">{s.performance.topProduct.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {s.performance.topProduct.value} units sold
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground">No data</p>
-              )}
+
+              {/* Top Supplier */}
+              <div className="px-5 py-4">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Layers className="h-4 w-4 text-blue-500" />
+                  <span className="text-xs font-medium text-muted-foreground">Top Supplier</span>
+                </div>
+                {isLoading ? (
+                  <Pulse className="h-5 w-24" />
+                ) : s?.performance?.topSupplier ? (
+                  <p className="text-sm font-bold truncate">{s.performance.topSupplier.name}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No data</p>
+                )}
+              </div>
+
+              {/* Top Area */}
+              <div className="px-5 py-4">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <MapPin className="h-4 w-4 text-green-500" />
+                  <span className="text-xs font-medium text-muted-foreground">Top Area</span>
+                </div>
+                {isLoading ? (
+                  <Pulse className="h-5 w-24" />
+                ) : s?.performance?.topArea ? (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold truncate">{s.performance.topArea.name}</p>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{s.performance.topArea.orders} orders</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No data</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </Stagger>
+
+        {/* Live Activity Feed — 3 cols */}
+        <Stagger index={11} className="lg:col-span-3">
+          <div className="rounded-xl border bg-card h-full">
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold">Activity Feed</h2>
+                <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  </span>
+                  LIVE
+                </span>
+              </div>
+              <span className="text-[11px] text-muted-foreground">Updates every 60s</span>
             </div>
 
-            {/* Top Supplier */}
-            <div className="px-5 py-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Layers className="h-4 w-4 text-blue-500" />
-                <span className="text-xs font-medium text-muted-foreground">Top Supplier</span>
-              </div>
+            <div className="max-h-[280px] overflow-y-auto">
               {isLoading ? (
-                <Pulse className="h-5 w-24" />
-              ) : s?.performance?.topSupplier ? (
-                <p className="text-sm font-bold truncate">{s.performance.topSupplier.name}</p>
+                <div className="space-y-0 divide-y">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3 px-5 py-3">
+                      <Pulse className="h-2.5 w-2.5 shrink-0 rounded-full" />
+                      <div className="flex-1 space-y-1">
+                        <Pulse className="h-3.5 w-24" />
+                        <Pulse className="h-3 w-36" />
+                      </div>
+                      <Pulse className="h-3 w-16" />
+                    </div>
+                  ))}
+                </div>
+              ) : !s?.activityFeed?.length ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  No recent activity
+                </div>
               ) : (
-                <p className="text-xs text-muted-foreground">No data</p>
-              )}
-            </div>
+                <div className="divide-y">
+                  {s.activityFeed.map((item: any, i: number) => {
+                    const dotColor =
+                      item.icon === "green" ? "bg-emerald-500"
+                      : item.icon === "red" ? "bg-red-500"
+                      : item.icon === "yellow" ? "bg-amber-500"
+                      : "bg-blue-500";
 
-            {/* Top Area */}
-            <div className="px-5 py-4">
-              <div className="flex items-center gap-2 mb-2">
-                <MapPin className="h-4 w-4 text-green-500" />
-                <span className="text-xs font-medium text-muted-foreground">Top Area</span>
-              </div>
-              {isLoading ? (
-                <Pulse className="h-5 w-24" />
-              ) : s?.performance?.topArea ? (
-                <>
-                  <p className="text-sm font-bold truncate">{s.performance.topArea.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {s.performance.topArea.orders} orders
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground">No data</p>
+                    return (
+                      <div
+                        key={`${item.type}-${i}`}
+                        className="flex items-start gap-3 px-5 py-3 animate-in fade-in slide-in-from-left-2 duration-300"
+                        style={{ animationDelay: `${i * 50}ms` }}
+                      >
+                        <div className="relative mt-1.5 flex shrink-0">
+                          <span className={`h-2.5 w-2.5 rounded-full ${dotColor} shadow-sm`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-semibold leading-tight">
+                            {item.title}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {item.description}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-[11px] text-muted-foreground/60">
+                          {formatDistanceToNow(new Date(item.timestamp), { addSuffix: true })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
-        </div>
-      </Stagger>
+        </Stagger>
+      </div>
 
       {/* ═══════════════════════════════════════════════════════════
           QUICK ACTIONS — Professional grid
       ═══════════════════════════════════════════════════════════ */}
-      <Stagger index={11}>
+      <Stagger index={12}>
         <div className="rounded-xl border bg-card p-5">
           <h2 className="text-sm font-semibold mb-4">Quick Actions</h2>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
