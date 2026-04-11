@@ -13,6 +13,8 @@ import {
 import { timestamps } from "./columns.helpers";
 import { brand } from "./brand";
 import { product } from "./product";
+import { productVariantPrice } from "./product";
+import { variantOption } from "./variant-option";
 
 /** Quantity selector option: e.g. { value: 1, unit: "kg", label: "Per Unit - 1 kg" } */
 export type QuantitySelectorOption = {
@@ -194,6 +196,16 @@ export const productVariant = pgTable("product_variant", {
 
     /** Variant active/inactive */
     isActive: boolean("is_active").default(true).notNull(),
+
+    // === Bridge: back-references to new global variant system ===
+
+    /** FK → product_variant_price that generated this row (null for legacy manual variants) */
+    sourceVariantPriceId: integer("source_variant_price_id")
+        .references(() => productVariantPrice.id, { onDelete: "set null" }),
+
+    /** FK → global variant_option this row was generated from */
+    sourceVariantOptionId: integer("source_variant_option_id")
+        .references(() => variantOption.id, { onDelete: "set null" }),
 
     ...timestamps,
 });

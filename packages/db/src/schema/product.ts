@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   decimal,
   integer,
   jsonb,
@@ -13,6 +14,8 @@ import {
 import { timestamps } from "./columns.helpers";
 import { brand } from "./brand";
 import { category, subCategory } from "./category";
+import { coreProductIdentity } from "./core-product";
+import { variantOption } from "./variant-option";
 
 // Type for product features
 export type ProductFeatureItem = {
@@ -32,6 +35,19 @@ export const productStatusEnum = pgEnum("product_status", [
   "draft",
 ]);
 
+// Tracking type enum
+export const trackingTypeEnum = pgEnum("tracking_type", [
+  "none",
+  "batch",
+  "serial",
+]);
+
+// Visibility enum
+export const visibilityEnum = pgEnum("product_visibility", [
+  "public",
+  "private",
+]);
+
 export const product = pgTable("product", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 150 }).notNull(),
@@ -47,6 +63,12 @@ export const product = pgTable("product", {
     onDelete: "set null",
   }),
 
+  /** Link to Core Product Identity (nullable for backward compat with existing products) */
+  coreProductId: integer("core_product_id").references(
+    () => coreProductIdentity.id,
+    { onDelete: "restrict" },
+  ),
+
   size: varchar("size", { length: 50 }).notNull(),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
 
@@ -57,6 +79,12 @@ export const product = pgTable("product", {
   lastRestockedAt: timestamp("last_restocked_at"),
 
   image: varchar("image", { length: 255 }).notNull(),
+
+  /** Short description (plain text) */
+  shortDescription: text("short_description"),
+
+  /** Optional video URL */
+  videoUrl: varchar("video_url", { length: 500 }),
 
   // Product features stored as JSONB
   features: jsonb("features").$type<ProductFeatureGroup[]>().default([]),
@@ -73,13 +101,36 @@ export const product = pgTable("product", {
   allowedPackBrands: jsonb("allowed_pack_brands").$type<string[]>().default([]),
   allowedPackSizes: jsonb("allowed_pack_sizes").$type<string[]>().default([]),
 
+  // === Behavior Settings (from docs) ===
+
+  /** Tracking type: none, batch, serial */
+  trackingType: trackingTypeEnum("tracking_type").default("none").notNull(),
+
+  /** Whether expiry tracking is enabled */
+  expiryEnabled: boolean("expiry_enabled").default(false).notNull(),
+
+  /** Whether damage control is enabled */
+  damageControlEnabled: boolean("damage_control_enabled")
+    .default(false)
+    .notNull(),
+
+  /** Default delivery cost per carton (nullable — falls back to system default) */
+  deliveryCostPerCarton: decimal("delivery_cost_per_carton", {
+    precision: 10,
+    scale: 2,
+  }),
+
+  /** Product visibility: public or private */
+  visibility: visibilityEnum("visibility").default("public").notNull(),
+
+  /** Scheduled publish date (null = publish immediately) */
+  scheduledAt: timestamp("scheduled_at"),
+
   // Product status
   status: productStatusEnum("status").default("active").notNull(),
 
   ...timestamps,
 });
-
-import { boolean } from "drizzle-orm/pg-core";
 
 export const productImage = pgTable("product_image", {
   id: serial("id").primaryKey(),
@@ -89,6 +140,106 @@ export const productImage = pgTable("product_image", {
   imageUrl: varchar("image_url", { length: 255 }).notNull(),
   ...timestamps,
 });
+
+// === Product ↔ Brand (M2M) ===
+
+/**
+ * Junction table for multi-brand product support.
+ * A product like "Miniket Rice 1KG" can stock brands: Ifad, ACI, Pran.
+ */
+export const productBrand = pgTable("product_brand", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id")
+    .notNull()
+    .references(() => product.id, { onDelete: "cascade" }),
+  brandId: integer("brand_id")
+    .notNull()
+    .references(() => brand.id, { onDelete: "cascade" }),
+  ...timestamps,
+});
+
+// === Product ↔ Variant Option Price (M2M with pricing) ===
+
+/**
+ * Links a product to variant options from Core Identity and stores the
+ * consumer reference price for each variant.
+ *
+ * E.g. "Miniket Rice (PRAN)" → 1KG Pack → ৳60, 5KG Pack → ৳280
+ */
+export const productVariantPrice = pgTable("product_variant_price", {
+  id: serial("id").primaryKey(),
+
+  /** Parent product */
+  productId: integer("product_id")
+    .notNull()
+    .references(() => product.id, { onDelete: "cascade" }),
+
+  /** Linked global variant option (e.g. "1KG Pack", "5KG Sack") */
+  variantOptionId: integer("variant_option_id")
+    .notNull()
+    .references(() => variantOption.id, { onDelete: "cascade" }),
+
+  /** Trade (B2B for warehouses/shops) or Retail (B2C for consumers) */
+  variantType: varchar("variant_type", { length: 10 }),
+
+  /** Consumer reference price for this variant (seller can override) */
+  consumerPrice: decimal("consumer_price", {
+    precision: 10,
+    scale: 2,
+  })
+    .default("0")
+    .notNull(),
+
+  /** Pricing model: per_unit or bulk_rate */
+  pricingType: varchar("pricing_type", { length: 20 }).default("per_unit").notNull(),
+
+  // === Order Rules ===
+  /** Minimum order quantity */
+  orderMin: varchar("order_min", { length: 20 }).default("1"),
+  /** Maximum order quantity (null = no limit) */
+  orderMax: varchar("order_max", { length: 20 }),
+  /** Order increment step */
+  orderIncrement: varchar("order_increment", { length: 20 }).default("1"),
+  /** Order unit (piece, kg, carton, etc.) */
+  orderUnit: varchar("order_unit", { length: 30 }).default("piece"),
+
+  // === Margin Rules (Trade only) ===
+  /** Minimum margin percentage for shop owners */
+  minMarginPercent: varchar("min_margin_percent", { length: 10 }),
+  /** Minimum margin amount (৳) */
+  minMarginAmount: varchar("min_margin_amount", { length: 20 }),
+
+  // === Pack Return (Trade only) ===
+  /** Whether empty pack return is required */
+  isPackReturnRequired: boolean("is_pack_return_required").default(false).notNull(),
+  /** Deposit amount for pack return */
+  packDepositAmount: decimal("pack_deposit_amount", { precision: 10, scale: 2 }),
+
+  // === Conversion (Trade → Retail) ===
+  /** Target retail variant option for auto-conversion (e.g. 50KG Sack → 5KG Pack) */
+  linkedRetailVariantOptionId: integer("linked_retail_variant_option_id")
+    .references(() => variantOption.id, { onDelete: "set null" }),
+
+  /** How many retail units per 1 trade unit (e.g. 10 packs per carton) */
+  conversionRatio: decimal("conversion_ratio", { precision: 10, scale: 2 }),
+
+  /** Percentage loss during conversion (e.g. 2% spillage) */
+  conversionLossPercent: decimal("conversion_loss_percent", { precision: 5, scale: 2 }).default("0"),
+
+  /** Whether conversion runs automatically on B2B delivery */
+  autoConvert: boolean("auto_convert").default(true).notNull(),
+
+  /** Sort order within this product */
+  sortOrder: integer("sort_order").default(0).notNull(),
+
+  /** Whether this variant-price is active */
+  isActive: boolean("is_active").default(true).notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// === Relations ===
 
 import { productVariant } from "./product-variant";
 
@@ -105,8 +256,14 @@ export const productRelations = relations(product, ({ one, many }) => ({
     fields: [product.brandId],
     references: [brand.id],
   }),
+  coreProduct: one(coreProductIdentity, {
+    fields: [product.coreProductId],
+    references: [coreProductIdentity.id],
+  }),
   images: many(productImage),
+  productBrands: many(productBrand),
   variants: many(productVariant),
+  variantPrices: many(productVariantPrice),
 }));
 
 export const productImageRelations = relations(productImage, ({ one }) => ({
@@ -116,10 +273,39 @@ export const productImageRelations = relations(productImage, ({ one }) => ({
   }),
 }));
 
+export const productBrandRelations = relations(productBrand, ({ one }) => ({
+  product: one(product, {
+    fields: [productBrand.productId],
+    references: [product.id],
+  }),
+  brand: one(brand, {
+    fields: [productBrand.brandId],
+    references: [brand.id],
+  }),
+}));
+
+export const productVariantPriceRelations = relations(
+  productVariantPrice,
+  ({ one }) => ({
+    product: one(product, {
+      fields: [productVariantPrice.productId],
+      references: [product.id],
+    }),
+    variantOption: one(variantOption, {
+      fields: [productVariantPrice.variantOptionId],
+      references: [variantOption.id],
+    }),
+  }),
+);
+
+// === Types ===
+
 export type Product = typeof product.$inferSelect;
 export type ProductImage = typeof productImage.$inferSelect;
 export type NewProduct = typeof product.$inferInsert;
 export type NewProductImage = typeof productImage.$inferInsert;
+export type ProductVariantPrice = typeof productVariantPrice.$inferSelect;
+export type NewProductVariantPrice = typeof productVariantPrice.$inferInsert;
 
 export type ProductWithRelations = Omit<Product, "price"> & {
   price: string | number;

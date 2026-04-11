@@ -1,7 +1,16 @@
 import { db } from "@bikalpo-project/db";
-import { category as categoryTable, product, productImage, stockChangeLog } from "@bikalpo-project/db/schema";
+import {
+    category as categoryTable,
+    product,
+    productImage,
+    productBrand,
+    productVariantPrice,
+    productVariant,
+    variantOption,
+    stockChangeLog,
+} from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, desc, eq, gt, gte, ilike, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { z } from "zod";
 
@@ -33,6 +42,7 @@ const createProductSchema = z.object({
     image: z.string(), // required
     categoryId: z.number(),
     subCategoryId: z.number().optional().nullable(),
+    brandIds: z.array(z.number().int()).optional(),
 
     inStock: z.boolean().default(true),
     isFeatured: z.boolean().default(false),
@@ -48,6 +58,43 @@ const createProductSchema = z.object({
     allowedPackBrands: z.array(z.string()).optional(),
     allowedPackSizes: z.array(z.string()).optional(),
     status: z.enum(["active", "inactive", "draft"]).default("active"),
+
+    // === New fields for Core Identity-driven flow ===
+    coreProductId: z.number().int().optional().nullable(),
+    shortDescription: z.string().optional().nullable(),
+    videoUrl: z.string().optional().nullable(),
+    // Behavior settings
+    trackingType: z.enum(["none", "batch", "serial"]).default("none"),
+    expiryEnabled: z.boolean().default(false),
+    damageControlEnabled: z.boolean().default(false),
+    // Delivery
+    deliveryCostPerCarton: z.string().optional().nullable(),
+    // Visibility / publish
+    visibility: z.enum(["public", "private"]).default("public"),
+    scheduledAt: z.string().optional().nullable(), // ISO date string
+    // Variant prices (per-variant settings: pricing, type, order rules)
+    variantPrices: z.array(z.object({
+        variantOptionId: z.number().int(),
+        variantType: z.enum(["trade", "retail"]).optional().nullable(),
+        consumerPrice: z.string().default("0"),
+        pricingType: z.enum(["per_unit", "bulk_rate"]).default("per_unit"),
+        // Order rules
+        orderMin: z.string().optional().nullable(),
+        orderMax: z.string().optional().nullable(),
+        orderIncrement: z.string().optional().nullable(),
+        orderUnit: z.string().optional().nullable(),
+        // Margin rules (trade only)
+        minMarginPercent: z.string().optional().nullable(),
+        minMarginAmount: z.string().optional().nullable(),
+        // Pack return (trade only)
+        isPackReturnRequired: z.boolean().default(false),
+        packDepositAmount: z.string().optional().nullable(),
+        // Conversion (trade only)
+        linkedRetailVariantOptionId: z.number().int().optional().nullable(),
+        conversionRatio: z.string().optional().nullable(),
+        conversionLossPercent: z.string().optional().nullable(),
+        autoConvert: z.boolean().default(true),
+    })).optional(),
 });
 
 const updateProductSchema = createProductSchema.extend({
@@ -92,7 +139,7 @@ export const productRouter = {
         })
         .input(createProductSchema)
         .handler(async ({ context, input }) => {
-            const { additionalImages, ...productData } = input;
+            const { additionalImages, variantPrices, brandIds, ...productData } = input;
 
             // Auto-generate SKU if not provided
             let sku = (productData.sku ?? "").toString().trim() || null;
@@ -130,13 +177,18 @@ export const productRouter = {
                 .values({
                     ...productData,
                     subCategoryId: productData.subCategoryId || null,
-
+                    coreProductId: productData.coreProductId || null,
+                    shortDescription: productData.shortDescription || null,
+                    videoUrl: productData.videoUrl || null,
+                    deliveryCostPerCarton: productData.deliveryCostPerCarton || null,
+                    scheduledAt: productData.scheduledAt ? new Date(productData.scheduledAt) : null,
                     sku,
                     supplier: (productData.supplier ?? "").toString().trim() || null,
                     reorderLevel: productData.reorderLevel ?? 0,
                 })
                 .returning();
 
+            // Insert additional images
             if (additionalImages && additionalImages.length > 0) {
                 await db.insert(productImage).values(
                     additionalImages.map((imageUrl) => ({
@@ -144,6 +196,127 @@ export const productRouter = {
                         imageUrl,
                     })),
                 );
+            }
+
+            // Insert product brands (M2M)
+            if (brandIds && brandIds.length > 0) {
+                await db.insert(productBrand).values(
+                    brandIds.map((bId) => ({
+                        productId: newProduct!.id,
+                        brandId: bId,
+                    })),
+                );
+            }
+
+            // Insert variant prices + auto-generate product_variant rows (Core Identity flow)
+            if (variantPrices && variantPrices.length > 0) {
+                // 1. Insert product_variant_price rows
+                const insertedPrices = await db.insert(productVariantPrice).values(
+                    variantPrices.map((vp, idx) => ({
+                        productId: newProduct!.id,
+                        variantOptionId: vp.variantOptionId,
+                        variantType: vp.variantType || null,
+                        consumerPrice: vp.consumerPrice || "0",
+                        pricingType: vp.pricingType || "per_unit",
+                        orderMin: vp.orderMin || "1",
+                        orderMax: vp.orderMax || null,
+                        orderIncrement: vp.orderIncrement || "1",
+                        orderUnit: vp.orderUnit || "piece",
+                        minMarginPercent: vp.minMarginPercent || null,
+                        minMarginAmount: vp.minMarginAmount || null,
+                        isPackReturnRequired: vp.isPackReturnRequired ?? false,
+                        packDepositAmount: vp.packDepositAmount || null,
+                        // Conversion fields
+                        linkedRetailVariantOptionId: vp.linkedRetailVariantOptionId || null,
+                        conversionRatio: vp.conversionRatio || null,
+                        conversionLossPercent: vp.conversionLossPercent || "0",
+                        autoConvert: vp.autoConvert ?? true,
+                        sortOrder: idx,
+                    })),
+                ).returning();
+
+                // 2. Fetch variant_option metadata for each linked option
+                const voIds = variantPrices.map((vp) => vp.variantOptionId);
+                const variantOptions = await db
+                    .select()
+                    .from(variantOption)
+                    .where(inArray(variantOption.id, voIds));
+                const voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
+
+                // 3. Auto-generate product_variant rows (bridge to old system)
+                // This connects the new global variant system to inventory/order_item/stock_ledger
+                const autoVariantRows = insertedPrices.map((pvp, idx) => {
+                    const vo = voMap[pvp.variantOptionId];
+                    const vp = variantPrices[idx]!;
+                    const isLoose = vo?.variantType === "loose";
+                    const packType = isLoose ? "loose" : "packet";
+                    const weightKg = vo?.size || "0";
+
+                    return {
+                        productId: newProduct!.id,
+                        sku: `CP-${newProduct!.id}-VO-${pvp.variantOptionId}`,
+                        unitLabel: vo?.name || "Unit",
+                        quantitySelectorLabel: vo?.name || "Unit",
+                        packagingType: packType,
+                        weightKg,
+                        // Pricing from variant price config
+                        pricingType: pvp.pricingType || "per_unit",
+                        price: pvp.consumerPrice || "0",
+                        // Order rules
+                        orderMin: pvp.orderMin || "1",
+                        orderMax: pvp.orderMax || null,
+                        orderIncrement: pvp.orderIncrement || "1",
+                        orderUnit: pvp.orderUnit || vo?.unit || "piece",
+                        // B2B/B2C type
+                        variantType: (pvp.variantType as "trade" | "retail" | null) || null,
+                        packType: (packType as any) || null,
+                        packWeightKg: weightKg || null,
+                        sellUnit: vo?.name || null,
+                        orderType: pvp.variantType === "trade" ? "b2b" as const : pvp.variantType === "retail" ? "b2c" as const : null,
+                        visibilityRole: pvp.variantType === "trade" ? "shop_owner" as const : pvp.variantType === "retail" ? "consumer" as const : "all" as const,
+                        // Margin
+                        minMarginPercent: pvp.minMarginPercent || null,
+                        minMarginAmount: pvp.minMarginAmount || null,
+                        // Pack return
+                        isPackReturnRequired: pvp.isPackReturnRequired ?? false,
+                        packDepositAmount: pvp.packDepositAmount || "0",
+                        // Conversion
+                        conversionRatio: pvp.conversionRatio || null,
+                        conversionLossPercent: pvp.conversionLossPercent || "0",
+                        // Bridge back-references
+                        sourceVariantPriceId: pvp.id,
+                        sourceVariantOptionId: pvp.variantOptionId,
+                        // Stock defaults
+                        stockQuantity: 0,
+                        reorderLevel: 0,
+                        sortOrder: idx,
+                        isActive: pvp.isActive ?? true,
+                    };
+                });
+
+                if (autoVariantRows.length > 0) {
+                    const generatedVariants = await db.insert(productVariant).values(autoVariantRows).returning();
+
+                    // 4. Link Trade → Retail via linkedRetailVariantId
+                    // For each Trade variant that has linkedRetailVariantOptionId,
+                    // find the generated Retail variant with matching sourceVariantOptionId and link them
+                    for (const gv of generatedVariants) {
+                        if (!gv.sourceVariantPriceId) continue;
+                        const pvp = insertedPrices.find((p) => p.id === gv.sourceVariantPriceId);
+                        if (!pvp?.linkedRetailVariantOptionId) continue;
+
+                        const linkedRetail = generatedVariants.find(
+                            (rv) => rv.sourceVariantOptionId === pvp.linkedRetailVariantOptionId
+                                && rv.variantType === "retail",
+                        );
+                        if (linkedRetail) {
+                            await db
+                                .update(productVariant)
+                                .set({ linkedRetailVariantId: linkedRetail.id })
+                                .where(eq(productVariant.id, gv.id));
+                        }
+                    }
+                }
             }
 
             return { product: newProduct };
@@ -163,14 +336,18 @@ export const productRouter = {
         })
         .input(updateProductSchema)
         .handler(async ({ input }) => {
-            const { id, additionalImages, ...updateData } = input;
+            const { id, additionalImages, variantPrices, brandIds, ...updateData } = input;
 
             const [updatedProduct] = await db
                 .update(product)
                 .set({
                     ...updateData,
                     subCategoryId: updateData.subCategoryId || null,
-
+                    coreProductId: updateData.coreProductId || null,
+                    shortDescription: updateData.shortDescription || null,
+                    videoUrl: updateData.videoUrl || null,
+                    deliveryCostPerCarton: updateData.deliveryCostPerCarton || null,
+                    scheduledAt: updateData.scheduledAt ? new Date(updateData.scheduledAt) : null,
                     sku: (updateData.sku ?? "").toString().trim() || null,
                     supplier: (updateData.supplier ?? "").toString().trim() || null,
                     reorderLevel: updateData.reorderLevel ?? 0,
@@ -192,6 +369,129 @@ export const productRouter = {
                             imageUrl,
                         })),
                     );
+                }
+            }
+
+            // Sync product brands (M2M)
+            if (brandIds !== undefined) {
+                await db.delete(productBrand).where(eq(productBrand.productId, id));
+                if (brandIds.length > 0) {
+                    await db.insert(productBrand).values(
+                        brandIds.map((bId) => ({
+                            productId: id,
+                            brandId: bId,
+                        })),
+                    );
+                }
+            }
+
+            // Replace variant prices + re-sync product_variant rows
+            if (variantPrices && variantPrices.length > 0) {
+                // Delete old variant prices
+                await db.delete(productVariantPrice).where(eq(productVariantPrice.productId, id));
+
+                // Delete old auto-generated product_variant rows (those with sourceVariantPriceId)
+                // Keep manually-created legacy variants untouched
+                await db.delete(productVariant).where(
+                    and(
+                        eq(productVariant.productId, id),
+                        sql`${productVariant.sourceVariantPriceId} IS NOT NULL`,
+                    ),
+                );
+
+                // 1. Insert new product_variant_price rows
+                const insertedPrices = await db.insert(productVariantPrice).values(
+                    variantPrices.map((vp, idx) => ({
+                        productId: id,
+                        variantOptionId: vp.variantOptionId,
+                        variantType: vp.variantType || null,
+                        consumerPrice: vp.consumerPrice || "0",
+                        pricingType: vp.pricingType || "per_unit",
+                        orderMin: vp.orderMin || "1",
+                        orderMax: vp.orderMax || null,
+                        orderIncrement: vp.orderIncrement || "1",
+                        orderUnit: vp.orderUnit || "piece",
+                        minMarginPercent: vp.minMarginPercent || null,
+                        minMarginAmount: vp.minMarginAmount || null,
+                        isPackReturnRequired: vp.isPackReturnRequired ?? false,
+                        packDepositAmount: vp.packDepositAmount || null,
+                        linkedRetailVariantOptionId: vp.linkedRetailVariantOptionId || null,
+                        conversionRatio: vp.conversionRatio || null,
+                        conversionLossPercent: vp.conversionLossPercent || "0",
+                        autoConvert: vp.autoConvert ?? true,
+                        sortOrder: idx,
+                    })),
+                ).returning();
+
+                // 2. Fetch variant_option metadata
+                const voIds = variantPrices.map((vp) => vp.variantOptionId);
+                const variantOptions = await db
+                    .select()
+                    .from(variantOption)
+                    .where(inArray(variantOption.id, voIds));
+                const voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
+
+                // 3. Auto-generate new product_variant rows
+                const autoVariantRows = insertedPrices.map((pvp, idx) => {
+                    const vo = voMap[pvp.variantOptionId];
+                    const isLoose = vo?.variantType === "loose";
+                    const packType = isLoose ? "loose" : "packet";
+                    const weightKg = vo?.size || "0";
+
+                    return {
+                        productId: id,
+                        sku: `CP-${id}-VO-${pvp.variantOptionId}`,
+                        unitLabel: vo?.name || "Unit",
+                        quantitySelectorLabel: vo?.name || "Unit",
+                        packagingType: packType,
+                        weightKg,
+                        pricingType: pvp.pricingType || "per_unit",
+                        price: pvp.consumerPrice || "0",
+                        orderMin: pvp.orderMin || "1",
+                        orderMax: pvp.orderMax || null,
+                        orderIncrement: pvp.orderIncrement || "1",
+                        orderUnit: pvp.orderUnit || vo?.unit || "piece",
+                        variantType: (pvp.variantType as "trade" | "retail" | null) || null,
+                        packType: (packType as any) || null,
+                        packWeightKg: weightKg || null,
+                        sellUnit: vo?.name || null,
+                        orderType: pvp.variantType === "trade" ? "b2b" as const : pvp.variantType === "retail" ? "b2c" as const : null,
+                        visibilityRole: pvp.variantType === "trade" ? "shop_owner" as const : pvp.variantType === "retail" ? "consumer" as const : "all" as const,
+                        minMarginPercent: pvp.minMarginPercent || null,
+                        minMarginAmount: pvp.minMarginAmount || null,
+                        isPackReturnRequired: pvp.isPackReturnRequired ?? false,
+                        packDepositAmount: pvp.packDepositAmount || "0",
+                        conversionRatio: pvp.conversionRatio || null,
+                        conversionLossPercent: pvp.conversionLossPercent || "0",
+                        sourceVariantPriceId: pvp.id,
+                        sourceVariantOptionId: pvp.variantOptionId,
+                        stockQuantity: 0,
+                        reorderLevel: 0,
+                        sortOrder: idx,
+                        isActive: pvp.isActive ?? true,
+                    };
+                });
+
+                if (autoVariantRows.length > 0) {
+                    const generatedVariants = await db.insert(productVariant).values(autoVariantRows).returning();
+
+                    // Link Trade → Retail
+                    for (const gv of generatedVariants) {
+                        if (!gv.sourceVariantPriceId) continue;
+                        const pvp = insertedPrices.find((p) => p.id === gv.sourceVariantPriceId);
+                        if (!pvp?.linkedRetailVariantOptionId) continue;
+
+                        const linkedRetail = generatedVariants.find(
+                            (rv) => rv.sourceVariantOptionId === pvp.linkedRetailVariantOptionId
+                                && rv.variantType === "retail",
+                        );
+                        if (linkedRetail) {
+                            await db
+                                .update(productVariant)
+                                .set({ linkedRetailVariantId: linkedRetail.id })
+                                .where(eq(productVariant.id, gv.id));
+                        }
+                    }
                 }
             }
 
@@ -243,7 +543,16 @@ export const productRouter = {
                 with: {
                     category: true,
                     subCategory: true,
+                    brand: true,
                     images: true,
+                    productBrands: {
+                        with: { brand: true },
+                    },
+                    variantPrices: {
+                        with: {
+                            variantOption: true,
+                        },
+                    },
                 },
             });
 
@@ -429,10 +738,17 @@ export const productRouter = {
                 with: {
                     category: true,
                     subCategory: true,
+                    brand: true,
                     images: true,
+                    productBrands: {
+                        with: { brand: true },
+                    },
                     variants: {
                         with: { brand: true },
                         columns: { id: true, variantType: true, brandId: true, unitLabel: true },
+                    },
+                    variantPrices: {
+                        with: { variantOption: true },
                     },
                 },
             });

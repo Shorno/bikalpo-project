@@ -1,10 +1,8 @@
 "use client";
 
-import type { SubCategory } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Trash2 } from "lucide-react";
 import * as React from "react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -15,42 +13,40 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { client } from "@/utils/orpc";
+import { client, orpc } from "@/utils/orpc";
+import { type VariantOptionRow } from "./variant-option-columns";
 
-interface DeleteSubcategoryDialogProps {
-  subcategory: SubCategory;
+interface DeleteVariantOptionDialogProps {
+  variantOption: VariantOptionRow;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export default function DeleteSubcategoryDialog({
-  subcategory,
+export default function DeleteVariantOptionDialog({
+  variantOption: vo,
   open,
   onOpenChange,
-}: DeleteSubcategoryDialogProps) {
+}: DeleteVariantOptionDialogProps) {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: (id: number) =>
-      client.adminSubcategory.delete({ subcategoryId: id }),
+      client.adminVariantOption.delete({ id }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["admin-subcategories", subcategory.categoryId],
+        queryKey: orpc.adminVariantOption.getAll.key(),
       });
-      queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
-      toast.success("Subcategory deleted successfully");
+      toast.success("Variant option deleted successfully");
       onOpenChange(false);
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to delete subcategory.");
+      toast.error(error.message || "Failed to delete variant option.");
     },
   });
 
   const handleDelete = () => {
-    mutation.mutate(subcategory.id);
+    mutation.mutate(vo.id);
   };
 
   return (
@@ -59,11 +55,17 @@ export default function DeleteSubcategoryDialog({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Trash2 className="h-5 w-5 text-destructive" />
-            Delete {subcategory.name}?
+            Delete &quot;{vo.name}&quot;?
           </AlertDialogTitle>
           <AlertDialogDescription>
             This action cannot be undone. This will permanently delete the
-            subcategory and all associated products.
+            variant option.
+            {vo.usedInProducts > 0 && (
+              <span className="block mt-2 text-destructive font-medium">
+                ⚠ This variant is currently used by {vo.usedInProducts} core
+                product(s). You must remove those links first.
+              </span>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -82,7 +84,7 @@ export default function DeleteSubcategoryDialog({
             {mutation.isPending && (
               <Loader className="h-4 w-4 mr-2 animate-spin" />
             )}
-            Delete Subcategory
+            Delete Variant
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

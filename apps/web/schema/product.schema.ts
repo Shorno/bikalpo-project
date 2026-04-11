@@ -46,6 +46,7 @@ export const createProductSchema = z.object({
   subCategoryId: z
     .union([z.number().int().positive(), z.undefined()])
     .optional(),
+  brandIds: z.array(z.number().int()).optional(),
 
   // These fields are auto-managed (synced from variants)
   size: z.string().max(50).default("—").optional(),
@@ -64,6 +65,42 @@ export const createProductSchema = z.object({
   features: z.array(featureGroupSchema).default([]),
   inStock: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
+
+  // === New fields for Core Identity-driven flow ===
+  coreProductId: z.number().int().optional().nullable(),
+  shortDescription: z.string().optional().nullable(),
+  videoUrl: z.string().optional().nullable(),
+  // Behavior settings
+  trackingType: z.enum(["none", "batch", "serial"]).default("none"),
+  expiryEnabled: z.boolean().default(false),
+  damageControlEnabled: z.boolean().default(false),
+  isReturnablePack: z.boolean().default(false),
+  // Delivery
+  deliveryCostPerCarton: z.string().optional().nullable(),
+  // Visibility / publish
+  visibility: z.enum(["public", "private"]).default("public"),
+  status: z.enum(["active", "inactive", "draft"]).default("active"),
+  scheduledAt: z.string().optional().nullable(),
+  // Variant prices (per-variant settings)
+  variantPrices: z.array(z.object({
+    variantOptionId: z.number().int(),
+    variantType: z.enum(["trade", "retail"]).optional().nullable(),
+    consumerPrice: z.string().default("0"),
+    pricingType: z.enum(["per_unit", "bulk_rate"]).default("per_unit"),
+    orderMin: z.string().optional().nullable(),
+    orderMax: z.string().optional().nullable(),
+    orderIncrement: z.string().optional().nullable(),
+    orderUnit: z.string().optional().nullable(),
+    minMarginPercent: z.string().optional().nullable(),
+    minMarginAmount: z.string().optional().nullable(),
+    isPackReturnRequired: z.boolean().default(false),
+    packDepositAmount: z.string().optional().nullable(),
+    // Conversion (trade only)
+    linkedRetailVariantOptionId: z.number().int().optional().nullable(),
+    conversionRatio: z.string().optional().nullable(),
+    conversionLossPercent: z.string().optional().nullable(),
+    autoConvert: z.boolean().default(true),
+  })).optional(),
 });
 
 export const updateProductSchema = createProductSchema.extend({

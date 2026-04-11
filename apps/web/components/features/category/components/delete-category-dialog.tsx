@@ -21,12 +21,15 @@ import { orpc } from "@/utils/orpc";
 
 interface DeleteCategoryDialogProps {
   category: Category & { subCategory?: SubCategory[] };
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export default function DeleteCategoryDialog({
   category,
+  open,
+  onOpenChange,
 }: DeleteCategoryDialogProps) {
-  const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
   const hasSubcategories =
     category.subCategory && category.subCategory.length > 0;
@@ -37,7 +40,7 @@ export default function DeleteCategoryDialog({
       onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
         toast.success(result.message);
-        setOpen(false);
+        onOpenChange(false);
       },
       onError: (error) => {
         toast.error(
@@ -53,13 +56,7 @@ export default function DeleteCategoryDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start text-destructive hover:text-destructive">
-          <Trash2 className="h-4 w-4 mr-2" />
-          Delete
-        </Button>
-      </AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">

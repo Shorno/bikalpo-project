@@ -36,6 +36,13 @@
       "when": 1774022644022,
       "tag": "0004_chief_ultimo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775897427152,
+      "tag": "0005_overconfident_juggernaut",
+      "breakpoints": true
     }
   ]
 }

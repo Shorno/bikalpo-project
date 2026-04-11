@@ -2,25 +2,18 @@
  * B2B → Retail Inventory Conversion Helper
  *
  * When a B2B order is delivered, this:
- *   1. Deducts source inventory (warehouse or super_seller) for the TRADE variant
+ *   1. Deducts warehouse inventory for the TRADE variant
  *   2. Converts to RETAIL variant quantity using conversionRatio & lossPercent
  *   3. Adds to shop owner's retail inventory
- *   4. Writes immutable stock ledger entries for full audit trail
  *
- * Supports both flows:
- *   - Warehouse → Shop (order.warehouseId is set)
- *   - Super Seller → Shop (fallback when no warehouseId)
+ * Flow: Warehouse → Shop (warehouse is the sole stock source)
+ *
+ * Note: Stock ledger writes have been removed — audit trail is handled
+ * at the application level if needed in the future.
  */
 
-import { and, eq } from "drizzle-orm";
-import {
-    order,
-    orderItem,
-    productVariant,
-    inventory,
-    stockLedger,
-    variantConversionMap,
-} from "@bikalpo-project/db/schema";
+import {and, eq} from "drizzle-orm";
+import {inventory, order, orderItem, productVariant, variantConversionMap,} from "@bikalpo-project/db/schema";
 
 /**
  * Convert B2B order items to retail inventory upon delivery.
@@ -32,7 +25,7 @@ export async function convertB2bOrderToRetailInventory(
 ) {
     console.log(`[B2B-CONVERT] Starting conversion for order #${orderId}`);
 
-    // 1. Load the order to check if it's B2B and determine source
+    // 1. Load the order to check if it's B2B and determine source warehouse
     const orderData = await tx.query.order.findFirst({
         where: eq(order.id, orderId),
         columns: { id: true, userId: true, orderType: true, warehouseId: true },
@@ -43,21 +36,20 @@ export async function convertB2bOrderToRetailInventory(
         return; // Skip non-B2B orders
     }
 
-    // Determine source inventory owner type and ID
-    const sourceOwnerType: "warehouse" | "super_seller" = orderData.warehouseId
-        ? "warehouse"
-        : "super_seller";
-    const sourceOwnerId: string | null = orderData.warehouseId ?? null;
-    const sourceLabel = sourceOwnerType === "warehouse" ? "warehouse" : "super-seller";
+    if (!orderData.warehouseId) {
+        console.warn(`[B2B-CONVERT] No warehouseId on B2B order #${orderId}, skipping`);
+        return;
+    }
 
-    console.log(`[B2B-CONVERT] Order is B2B, buyer=${orderData.userId}, source=${sourceLabel} (${sourceOwnerId ?? "any"})`);
+    const sourceOwnerId = orderData.warehouseId;
+    console.log(`[B2B-CONVERT] Order is B2B, buyer=${orderData.userId}, warehouse=${sourceOwnerId}`);
 
     // 2. Load order items
     const items = await tx.query.orderItem.findMany({
         where: eq(orderItem.orderId, orderId),
     });
 
-    // 3. For each item, find the TRADE variant → convert → update inventory + ledger
+    // 3. For each item, find the TRADE variant → convert → update inventory
     for (const item of items) {
         // Resolve variant: use order item's variant, or fall back to product's first variant
         let resolvedVariantId = item.variantId;
@@ -162,26 +154,19 @@ export async function convertB2bOrderToRetailInventory(
         // Calculate per-pack price when doing pack breakdown
         let effectiveRetailPrice = purchaseUnitPrice;
         if (isPackBreakdown && purchaseUnitPrice && packCount > 1) {
-            const perPackPrice = (Number(purchaseUnitPrice) / packCount).toFixed(2);
-            effectiveRetailPrice = perPackPrice;
+            effectiveRetailPrice = (Number(purchaseUnitPrice) / packCount).toFixed(2);
         }
 
         console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: map=${conversionMap ? 'YES' : 'NO'}, target=${targetRetailVariantId}, ratio=${conversionRatio}, packBreakdown=${isPackBreakdown}, brand=${tradeVariant.brandId ?? 'none'}, orderedQty=${orderedQty}, retailQty=${retailQty}, perPackPrice=${effectiveRetailPrice ?? 'N/A'}`);
 
-        // ─── A. Deduct source inventory (warehouse or super_seller) ───
-
-        // Build query conditions for source inventory lookup
-        const sourceConditions = [
-            eq(inventory.ownerType, sourceOwnerType),
-            eq(inventory.variantId, tradeVariant.id),
-        ];
-        // If we know the specific owner (warehouse), filter by ownerId too
-        if (sourceOwnerId) {
-            sourceConditions.push(eq(inventory.ownerId, sourceOwnerId));
-        }
+        // ─── A. Deduct warehouse inventory ───
 
         const sourceInv = await tx.query.inventory.findFirst({
-            where: and(...sourceConditions),
+            where: and(
+                eq(inventory.ownerType, "warehouse"),
+                eq(inventory.ownerId, sourceOwnerId),
+                eq(inventory.variantId, tradeVariant.id),
+            ),
         });
 
         if (sourceInv) {
@@ -197,34 +182,8 @@ export async function convertB2bOrderToRetailInventory(
                     updatedAt: new Date(),
                 })
                 .where(eq(inventory.id, sourceInv.id));
-
-            // Ledger: OUT — stock dispatched from source
-            await tx.insert(stockLedger).values({
-                variantId: tradeVariant.id,
-                ownerType: sourceOwnerType,
-                ownerId: sourceInv.ownerId,
-                changeType: "out" as const,
-                qty: orderedQty.toFixed(2),
-                reason: `B2B order #${orderId} delivered to shop (from ${sourceLabel})`,
-                referenceType: "order" as const,
-                referenceId: String(orderId),
-                balanceAfter: newSourceQty.toFixed(2),
-            });
-
-            // Ledger: CONVERT_OUT — TRADE stock consumed for conversion
-            await tx.insert(stockLedger).values({
-                variantId: tradeVariant.id,
-                ownerType: sourceOwnerType,
-                ownerId: sourceInv.ownerId,
-                changeType: "convert_out" as const,
-                qty: orderedQty.toFixed(2),
-                reason: `Converted to retail for order #${orderId} (from ${sourceLabel})`,
-                referenceType: "conversion" as const,
-                referenceId: String(orderId),
-                balanceAfter: newSourceQty.toFixed(2),
-            });
         } else {
-            console.warn(`[B2B-CONVERT] No ${sourceLabel} inventory found for variant ${tradeVariant.id}${sourceOwnerId ? ` owner ${sourceOwnerId}` : ""}`);
+            console.warn(`[B2B-CONVERT] No warehouse inventory found for variant ${tradeVariant.id} owner ${sourceOwnerId}`);
         }
 
         // ─── B. Upsert shop owner's RETAIL inventory ───
@@ -237,23 +196,18 @@ export async function convertB2bOrderToRetailInventory(
             ),
         });
 
-        let newShopBalance: string;
-
         if (shopInv) {
             const updatedQty =
                 Number(shopInv.availableQty) + retailQty;
-            newShopBalance = updatedQty.toFixed(2);
 
             await tx
                 .update(inventory)
                 .set({
-                    availableQty: newShopBalance,
+                    availableQty: updatedQty.toFixed(2),
                     updatedAt: new Date(),
                 })
                 .where(eq(inventory.id, shopInv.id));
         } else {
-            newShopBalance = retailQty.toFixed(2);
-
             // Use per-pack price (after breakdown), or fall back to warehouse's retail_price
             const initialRetailPrice = effectiveRetailPrice
                 ?? (sourceInv?.retailPrice ? String(sourceInv.retailPrice) : null);
@@ -262,23 +216,10 @@ export async function convertB2bOrderToRetailInventory(
                 ownerType: "shop" as const,
                 ownerId: orderData.userId,
                 variantId: targetRetailVariantId,
-                availableQty: newShopBalance,
+                availableQty: retailQty.toFixed(2),
                 reservedQty: "0",
                 ...(initialRetailPrice ? { retailPrice: initialRetailPrice } : {}),
             });
         }
-
-        // Ledger: CONVERT_IN — RETAIL stock gained by shop owner
-        await tx.insert(stockLedger).values({
-            variantId: targetRetailVariantId,
-            ownerType: "shop",
-            ownerId: orderData.userId,
-            changeType: "convert_in" as const,
-            qty: retailQty.toFixed(2),
-            reason: `B2B order #${orderId} converted TRADE→RETAIL (ratio: ${conversionRatio}, loss: ${lossPercent}%, from ${sourceLabel})`,
-            referenceType: "conversion" as const,
-            referenceId: String(orderId),
-            balanceAfter: newShopBalance,
-        });
     }
 }

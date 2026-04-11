@@ -1,0 +1,223 @@
+"use client";
+
+import type { ColumnDef } from "@tanstack/react-table";
+import { ArrowUpDown, Pencil, Trash2 } from "lucide-react";
+import * as React from "react";
+import DeleteVariantOptionDialog from "@/components/features/variant-option/components/delete-variant-option-dialog";
+import EditVariantOptionDialog from "@/components/features/variant-option/components/edit-variant-option-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+export interface VariantOptionRow {
+  id: number;
+  name: string;
+  unit: string;
+  size: string | null;
+  variantType: "pack" | "loose";
+  typeId: number | null;
+  categoryId: number | null;
+  isActive: boolean;
+  sortOrder: number;
+  type: { id: number; name: string } | null;
+  category: { id: number; name: string } | null;
+  usedInProducts: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function useVariantOptionColumns() {
+  return React.useMemo<ColumnDef<VariantOptionRow>[]>(
+    () => [
+      {
+        id: "index",
+        header: () => <div className="text-center">#</div>,
+        cell: ({ row }) => (
+          <div className="text-center text-muted-foreground font-mono text-sm">
+            {row.index + 1}
+          </div>
+        ),
+        size: 50,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "name",
+        header: ({ column }) => (
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+            >
+              Variant Name
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div className="text-center font-medium">{row.getValue("name")}</div>
+        ),
+      },
+      {
+        accessorKey: "unit",
+        header: () => <div className="text-center">Unit</div>,
+        cell: ({ row }) => (
+          <div className="text-center">
+            <Badge variant="outline" className="font-mono text-xs">
+              {row.getValue("unit")}
+            </Badge>
+          </div>
+        ),
+        size: 90,
+      },
+      {
+        accessorKey: "size",
+        header: () => <div className="text-center">Size</div>,
+        cell: ({ row }) => (
+          <div className="text-center text-sm">
+            {row.getValue("size") || (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
+        ),
+        size: 80,
+      },
+      {
+        id: "productType",
+        header: () => <div className="text-center">Type</div>,
+        cell: ({ row }) => (
+          <div className="text-center">
+            {row.original.type ? (
+              <Badge variant="secondary" className="text-xs">
+                {row.original.type.name}
+              </Badge>
+            ) : (
+              <Badge className="text-xs bg-purple-600 hover:bg-purple-700">
+                Global
+              </Badge>
+            )}
+          </div>
+        ),
+        size: 120,
+      },
+      {
+        id: "category",
+        header: () => <div className="text-center">Category</div>,
+        cell: ({ row }) => (
+          <div className="text-center text-sm">
+            {row.original.category ? (
+              <Badge variant="outline" className="text-xs">
+                {row.original.category.name}
+              </Badge>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
+        ),
+        size: 130,
+      },
+      {
+        accessorKey: "variantType",
+        header: () => <div className="text-center">Variant Type</div>,
+        cell: ({ row }) => {
+          const vType = row.getValue("variantType") as string;
+          return (
+            <div className="flex justify-center">
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "text-xs",
+                  vType === "pack" && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+                  vType === "loose" && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                )}
+              >
+                {vType === "pack" ? "Pack" : "Loose"}
+              </Badge>
+            </div>
+          );
+        },
+        size: 110,
+      },
+      {
+        accessorKey: "isActive",
+        header: () => <div className="text-center">Status</div>,
+        cell: ({ row }) => {
+          const isActive = row.getValue("isActive") as boolean;
+          return (
+            <div className="flex justify-center">
+              <Badge
+                variant={isActive ? "default" : "secondary"}
+                className={cn(
+                  "transition-colors text-xs",
+                  isActive && "bg-green-600 hover:bg-green-700",
+                )}
+              >
+                {isActive ? "Active" : "Disabled"}
+              </Badge>
+            </div>
+          );
+        },
+        size: 100,
+      },
+      {
+        id: "usedIn",
+        header: () => <div className="text-center">Used In</div>,
+        cell: ({ row }) => (
+          <div className="text-center text-sm text-muted-foreground">
+            {row.original.usedInProducts}{" "}
+            {row.original.usedInProducts === 1 ? "Product" : "Products"}
+          </div>
+        ),
+        size: 110,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-center">Actions</div>,
+        enableHiding: false,
+        cell: ({ row }) => <VariantOptionActions option={row.original} />,
+      },
+    ],
+    [],
+  );
+}
+
+function VariantOptionActions({ option }: { option: VariantOptionRow }) {
+  const [showEdit, setShowEdit] = React.useState(false);
+  const [showDelete, setShowDelete] = React.useState(false);
+
+  return (
+    <div className="flex items-center justify-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8"
+        onClick={() => setShowEdit(true)}
+      >
+        <Pencil className="h-4 w-4" />
+        <span className="sr-only">Edit</span>
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 text-destructive hover:text-destructive"
+        onClick={() => setShowDelete(true)}
+      >
+        <Trash2 className="h-4 w-4" />
+        <span className="sr-only">Delete</span>
+      </Button>
+
+      <EditVariantOptionDialog
+        variantOption={option}
+        open={showEdit}
+        onOpenChange={setShowEdit}
+      />
+      <DeleteVariantOptionDialog
+        variantOption={option}
+        open={showDelete}
+        onOpenChange={setShowDelete}
+      />
+    </div>
+  );
+}

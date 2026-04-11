@@ -25,6 +25,7 @@ export interface ProductWithRelations extends Product {
   images: ProductImage[];
   category: Category;
   subCategory: SubCategory | null;
+  brand?: { id: number; name: string } | null;
   variants?: (ProductVariant & { brand?: { id: number; name: string } | null })[];
 }
 
@@ -85,65 +86,113 @@ export function useProductColumns() {
       },
     },
     {
-      accessorKey: "brand",
-      header: () => <div className="text-center">Brand</div>,
+      id: "variants",
+      header: () => <div>Variants</div>,
       cell: ({ row }) => {
         const product = row.original;
-        // Derive brands from variants (variant-level brand only)
-        const variantBrands = (product.variants ?? [])
-          .map((v) => v.brand?.name)
-          .filter(Boolean);
-        const uniqueBrands = [...new Set(variantBrands)];
+        // Prefer new variantPrices (Core Identity), fall back to old variants
+        const rawVps = (product as any).variantPrices ?? [];
+        // Deduplicate by variantOptionId (keep latest)
+        const seen = new Set<number>();
+        const vps = rawVps.filter((vp: any) => {
+          if (seen.has(vp.variantOptionId)) return false;
+          seen.add(vp.variantOptionId);
+          return true;
+        });
+        if (vps.length > 0) {
+          const trade = vps.filter((vp: any) => vp.variantType === "trade");
+          const retail = vps.filter((vp: any) => vp.variantType === "retail");
+          const unset = vps.filter((vp: any) => !vp.variantType);
+          return (
+            <div className="space-y-1">
+              {trade.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {trade.map((vp: any) => (
+                    <Badge key={vp.id} variant="outline" className="text-[10px] border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                      B2B · {vp.variantOption?.name || "Trade"}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {retail.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {retail.map((vp: any) => (
+                    <Badge key={vp.id} variant="outline" className="text-[10px] border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
+                      B2C · {vp.variantOption?.name || "Retail"}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {unset.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {unset.map((vp: any) => (
+                    <Badge key={vp.id} variant="outline" className="text-[10px]">
+                      {vp.variantOption?.name || "Variant"}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+        // Fallback: old product_variant system
+        const variants = product.variants ?? [];
+        if (variants.length === 0) {
+          return <span className="text-muted-foreground text-xs">—</span>;
+        }
+        const trade = variants.filter((v) => v.variantType === "trade");
+        const retail = variants.filter((v) => v.variantType === "retail");
         return (
-          <div className="text-center">
-            {uniqueBrands.length > 0 ? (
-              <span className="font-medium">{uniqueBrands.join(", ")}</span>
-            ) : (
-              <span className="text-muted-foreground">—</span>
+          <div className="space-y-1">
+            {trade.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {trade.map((v) => (
+                  <Badge key={v.id} variant="outline" className="text-[10px] border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                    B2B · {v.unitLabel || "Trade"}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {retail.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {retail.map((v) => (
+                  <Badge key={v.id} variant="outline" className="text-[10px] border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
+                    B2C · {v.unitLabel || "Retail"}
+                  </Badge>
+                ))}
+              </div>
             )}
           </div>
         );
       },
     },
     {
-      accessorKey: "size",
-      header: () => <div className="text-center">Size</div>,
-      cell: ({ row }) => (
-        <div className="text-center">{row.getValue("size")}</div>
-      ),
-    },
-    {
-      accessorKey: "price",
-      header: ({ column }) => {
-        return (
-          <div className="flex justify-center">
-            <Button
-              variant="ghost"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === "asc")
-              }
-            >
-              Price
-              <ArrowUpDown className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        );
-      },
+      id: "brands",
+      header: () => <div>Brands</div>,
       cell: ({ row }) => {
-        const price = parseFloat(row.getValue("price"));
-        if (!price || price === 0) {
+        const product = row.original;
+        // New M2M brands
+        const pbs = (product as any).productBrands ?? [];
+        if (pbs.length > 0) {
           return (
-            <div className="text-center text-sm text-amber-600 font-medium">
-              Set by shop owners
+            <div className="flex flex-wrap gap-1">
+              {pbs.map((pb: any) => (
+                <Badge key={pb.id} variant="outline" className="text-[10px] border-green-300 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300">
+                  {pb.brand?.name || "Brand"}
+                </Badge>
+              ))}
             </div>
           );
         }
-        const formatted = new Intl.NumberFormat("en-BD", {
-          style: "currency",
-          currency: "BDT",
-          minimumFractionDigits: 2,
-        }).format(price);
-        return <div className="text-center font-medium">{formatted}</div>;
+        // Fallback: old single brand
+        if (product.brand?.name) {
+          return (
+            <Badge variant="outline" className="text-[10px] border-green-300 bg-green-50 text-green-700">
+              {product.brand.name}
+            </Badge>
+          );
+        }
+        return <span className="text-muted-foreground text-xs">—</span>;
       },
     },
     {

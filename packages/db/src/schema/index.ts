@@ -47,3 +47,5 @@ export * from "./payee";
 export * from "./expense-category";
 export * from "./expense";
 export * from "./financial-ledger";
+export * from "./core-product";
+export * from "./variant-option";

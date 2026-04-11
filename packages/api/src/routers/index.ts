@@ -1,6 +1,7 @@
 import type { RouterClient } from "@orpc/server";
 
 import { protectedProcedure, publicProcedure } from "../index";
+import { adminCoreProductRouter } from "./admin-core-product";
 import { adminOfferRouter } from "./admin-offer";
 import { adminProductTypeRouter } from "./admin-product-type";
 import { adminEmployeeReportRouter } from "./admin-employee-report";
@@ -50,6 +51,7 @@ import { supplierPaymentRouter } from "./supplier-payment";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
 import { stockOverviewRouter } from "./stock-overview";
+import { adminVariantOptionRouter } from "./admin-variant-option";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -62,8 +64,10 @@ export const appRouter = {
     };
   }),
   audit: auditRouter,
+  adminCoreProduct: adminCoreProductRouter,
   adminOffer: adminOfferRouter,
   adminProductType: adminProductTypeRouter,
+  adminVariantOption: adminVariantOptionRouter,
   adminEmployeeReport: adminEmployeeReportRouter,
   adminBrandUpdate: adminBrandUpdateRouter,
   adminAnnouncement: adminAnnouncementRouter,

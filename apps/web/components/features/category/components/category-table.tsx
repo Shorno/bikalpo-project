@@ -12,7 +12,7 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { MoreHorizontal } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import Image from "next/image";
 import * as React from "react";
 import DeleteCategoryDialog from "@/components/features/category/components/delete-category-dialog";
@@ -21,13 +21,6 @@ import NewCategoryDialog from "@/components/features/category/components/new-cat
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -59,6 +52,9 @@ function MobileCategoryCard({
 }: {
   category: CategoryWithSubcategories;
 }) {
+  const [showEdit, setShowEdit] = React.useState(false);
+  const [showDelete, setShowDelete] = React.useState(false);
+
   return (
     <Card className="overflow-hidden p-0">
       <CardContent className="p-0">
@@ -90,19 +86,25 @@ function MobileCategoryCard({
               {category.isActive ? "Active" : "Inactive"}
             </Badge>
 
-            {/* Actions Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <EditCategoryDialog category={category} />
-                <DropdownMenuSeparator />
-                <DeleteCategoryDialog category={category} />
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Action Buttons */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setShowEdit(true)}
+            >
+              <Pencil className="h-4 w-4" />
+              <span className="sr-only">Edit</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive"
+              onClick={() => setShowDelete(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="sr-only">Delete</span>
+            </Button>
           </div>
         </div>
 
@@ -114,6 +116,17 @@ function MobileCategoryCard({
           </Badge>
         </div>
       </CardContent>
+
+      <EditCategoryDialog
+        category={category}
+        open={showEdit}
+        onOpenChange={setShowEdit}
+      />
+      <DeleteCategoryDialog
+        category={category}
+        open={showDelete}
+        onOpenChange={setShowDelete}
+      />
     </Card>
   );
 }
