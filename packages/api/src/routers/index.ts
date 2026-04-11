@@ -1,6 +1,7 @@
 import type { RouterClient } from "@orpc/server";
 
 import { protectedProcedure, publicProcedure } from "../index";
+import { adminCoreProductRouter } from "./admin-core-product";
 import { adminOfferRouter } from "./admin-offer";
 import { adminProductTypeRouter } from "./admin-product-type";
 import { adminEmployeeReportRouter } from "./admin-employee-report";
@@ -62,6 +63,7 @@ export const appRouter = {
     };
   }),
   audit: auditRouter,
+  adminCoreProduct: adminCoreProductRouter,
   adminOffer: adminOfferRouter,
   adminProductType: adminProductTypeRouter,
   adminEmployeeReport: adminEmployeeReportRouter,
