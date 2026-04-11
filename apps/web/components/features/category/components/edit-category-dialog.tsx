@@ -39,12 +39,15 @@ import { orpc } from "@/utils/orpc";
 
 interface EditCategoryDialogProps {
   category: Category;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export default function EditCategoryDialog({
   category,
+  open,
+  onOpenChange,
 }: EditCategoryDialogProps) {
-  const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
   // Fetch product types for dropdown — only when dialog is open
@@ -59,7 +62,7 @@ export default function EditCategoryDialog({
       onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
         toast.success(result.message);
-        setOpen(false);
+        onOpenChange(false);
       },
       onError: (error) => {
         toast.error(
@@ -95,13 +98,7 @@ export default function EditCategoryDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start">
-          <Pencil className="h-4 w-4 mr-2" />
-          Edit
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Category</DialogTitle>
@@ -268,7 +265,7 @@ export default function EditCategoryDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
             Cancel

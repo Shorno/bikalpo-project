@@ -21,12 +21,15 @@ import { client } from "@/utils/orpc";
 
 interface DeleteSubcategoryDialogProps {
   subcategory: SubCategory;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export default function DeleteSubcategoryDialog({
   subcategory,
+  open,
+  onOpenChange,
 }: DeleteSubcategoryDialogProps) {
-  const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
@@ -39,7 +42,7 @@ export default function DeleteSubcategoryDialog({
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
       toast.success("Subcategory deleted successfully");
-      setOpen(false);
+      onOpenChange(false);
     },
     onError: (error) => {
       toast.error(error.message || "Failed to delete subcategory.");
@@ -51,13 +54,7 @@ export default function DeleteSubcategoryDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start text-destructive hover:text-destructive">
-          <Trash2 className="h-4 w-4 mr-2" />
-          Delete
-        </Button>
-      </AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">

@@ -39,12 +39,15 @@ import { client, orpc } from "@/utils/orpc";
 
 interface EditSubcategoryDialogProps {
   subcategory: SubCategory;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export default function EditSubcategoryDialog({
   subcategory,
+  open,
+  onOpenChange,
 }: EditSubcategoryDialogProps) {
-  const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
   // Fetch types & categories for cascade dropdown
@@ -95,7 +98,7 @@ export default function EditSubcategoryDialog({
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
       toast.success("Subcategory updated successfully");
-      setOpen(false);
+      onOpenChange(false);
     },
     onError: (error) => {
       toast.error(error.message || "Failed to update subcategory.");
@@ -127,13 +130,7 @@ export default function EditSubcategoryDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start">
-          <Pencil className="h-4 w-4 mr-2" />
-          Edit
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Subcategory</DialogTitle>
