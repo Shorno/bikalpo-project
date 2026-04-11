@@ -2,23 +2,17 @@ import { db } from "@bikalpo-project/db";
 import {
     coreProductIdentity,
     coreProductBrand,
-    coreProductPackVariant,
+    variantOption,
+    coreProductVariantOption,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { adminProcedure } from "../index";
-import { and, desc, eq, ilike, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 // === Input Schemas ===
 
-const packVariantInput = z.object({
-    label: z.string().min(1),
-    weightKg: z.string(),
-    packType: z.string(),
-    sellUnit: z.string().optional(),
-    sortOrder: z.number().int().default(0),
-    isActive: z.boolean().default(true),
-});
+
 
 const createCoreProductSchema = z.object({
     sku: z.string().min(1),
@@ -29,16 +23,11 @@ const createCoreProductSchema = z.object({
     categoryId: z.number().int(),
     subCategoryId: z.number().int().optional().nullable(),
     brandSupport: z.enum(["multi_brand", "single_brand"]).default("multi_brand"),
-    variantSupportPack: z.boolean().default(true),
-    variantSupportLoose: z.boolean().default(false),
-    defaultLooseUnit: z.string().optional(),
     status: z.enum(["active", "draft", "inactive"]).default("active"),
     displayOrder: z.number().int().default(0),
     // Linked brands
     brandIds: z.array(z.number().int()).default([]),
     defaultBrandId: z.number().int().optional(),
-    // Pack variant templates
-    packVariants: z.array(packVariantInput).default([]),
 });
 
 const updateCoreProductSchema = createCoreProductSchema.extend({
@@ -101,9 +90,6 @@ export const adminCoreProductRouter = {
                             },
                         },
                     },
-                    packVariants: {
-                        orderBy: (pv, { asc }) => [asc(pv.sortOrder)],
-                    },
                 },
             });
 
@@ -139,8 +125,16 @@ export const adminCoreProductRouter = {
                             },
                         },
                     },
-                    packVariants: {
-                        orderBy: (pv, { asc }) => [asc(pv.sortOrder)],
+                    variantLinks: {
+                        with: {
+                            variantOption: {
+                                with: {
+                                    type: { columns: { id: true, name: true } },
+                                    category: { columns: { id: true, name: true } },
+                                },
+                            },
+                        },
+                        orderBy: (vl, { asc }) => [asc(vl.sortOrder)],
                     },
                 },
             });
@@ -167,7 +161,7 @@ export const adminCoreProductRouter = {
         })
         .input(createCoreProductSchema)
         .handler(async ({ input }) => {
-            const { brandIds, defaultBrandId, packVariants, ...identityData } = input;
+            const { brandIds, defaultBrandId, ...identityData } = input;
 
             // Check uniqueness
             const existingName = await db.query.coreProductIdentity.findFirst({
@@ -196,7 +190,6 @@ export const adminCoreProductRouter = {
                 .values({
                     ...identityData,
                     subCategoryId: identityData.subCategoryId || null,
-                    defaultLooseUnit: identityData.defaultLooseUnit || null,
                 })
                 .returning();
 
@@ -217,20 +210,7 @@ export const adminCoreProductRouter = {
                 );
             }
 
-            // Create pack variant templates
-            if (packVariants.length > 0) {
-                await db.insert(coreProductPackVariant).values(
-                    packVariants.map((pv, idx) => ({
-                        coreProductId: created.id,
-                        label: pv.label,
-                        weightKg: pv.weightKg,
-                        packType: pv.packType,
-                        sellUnit: pv.sellUnit || null,
-                        sortOrder: pv.sortOrder ?? idx,
-                        isActive: pv.isActive ?? true,
-                    })),
-                );
-            }
+
 
             return { message: "Core product created successfully", id: created.id };
         }),
@@ -248,7 +228,7 @@ export const adminCoreProductRouter = {
         })
         .input(updateCoreProductSchema)
         .handler(async ({ input }) => {
-            const { id, brandIds, defaultBrandId, packVariants, ...updateData } = input;
+            const { id, brandIds, defaultBrandId, ...updateData } = input;
 
             // Check existence
             const existing = await db.query.coreProductIdentity.findFirst({
@@ -281,7 +261,6 @@ export const adminCoreProductRouter = {
                 .set({
                     ...updateData,
                     subCategoryId: updateData.subCategoryId || null,
-                    defaultLooseUnit: updateData.defaultLooseUnit || null,
                 })
                 .where(eq(coreProductIdentity.id, id));
 
@@ -297,23 +276,7 @@ export const adminCoreProductRouter = {
                 );
             }
 
-            // Replace pack variants (delete all, re-insert)
-            await db
-                .delete(coreProductPackVariant)
-                .where(eq(coreProductPackVariant.coreProductId, id));
-            if (packVariants.length > 0) {
-                await db.insert(coreProductPackVariant).values(
-                    packVariants.map((pv, idx) => ({
-                        coreProductId: id,
-                        label: pv.label,
-                        weightKg: pv.weightKg,
-                        packType: pv.packType,
-                        sellUnit: pv.sellUnit || null,
-                        sortOrder: pv.sortOrder ?? idx,
-                        isActive: pv.isActive ?? true,
-                    })),
-                );
-            }
+
 
             return { message: "Core product updated successfully" };
         }),
@@ -347,5 +310,128 @@ export const adminCoreProductRouter = {
                 .where(eq(coreProductIdentity.id, input.id));
 
             return { message: "Core product deleted successfully" };
+        }),
+
+    /**
+     * Get eligible variant options for a core product (scoped by type + category).
+     * Returns variants that are: Global, matching type, or matching type+category.
+     * Excludes variants already linked to this core product.
+     */
+    getEligibleVariants: adminProcedure
+        .input(z.object({
+            coreProductId: z.number().int(),
+        }))
+        .handler(async ({ input }) => {
+            // Get the core product to know its category (and derive typeId)
+            const cp = await db.query.coreProductIdentity.findFirst({
+                where: eq(coreProductIdentity.id, input.coreProductId),
+                columns: { id: true, categoryId: true },
+                with: {
+                    category: { columns: { id: true, typeId: true } },
+                },
+            });
+
+            if (!cp) throw new Error("Core product not found");
+
+            const typeId = cp.category.typeId;
+            const categoryId = cp.categoryId;
+
+            // Build scope filter: Global OR Type-scoped OR Category-scoped
+            const scopeConditions: SQL[] = [
+                // Global: typeId=null AND categoryId=null
+                and(isNull(variantOption.typeId), isNull(variantOption.categoryId))!,
+            ];
+
+            if (typeId) {
+                // Type-scoped: typeId=X AND categoryId=null
+                scopeConditions.push(
+                    and(eq(variantOption.typeId, typeId), isNull(variantOption.categoryId))!,
+                );
+                // Category-scoped: typeId=X AND categoryId=Y
+                scopeConditions.push(
+                    and(eq(variantOption.typeId, typeId), eq(variantOption.categoryId, categoryId))!,
+                );
+            }
+
+            // Get already linked variant IDs
+            const linkedRows = await db
+                .select({ variantOptionId: coreProductVariantOption.variantOptionId })
+                .from(coreProductVariantOption)
+                .where(eq(coreProductVariantOption.coreProductId, input.coreProductId));
+
+            const linkedIds = new Set(linkedRows.map((r) => r.variantOptionId));
+
+            // Fetch eligible variants
+            const eligible = await db.query.variantOption.findMany({
+                where: and(
+                    or(...scopeConditions),
+                    eq(variantOption.isActive, true),
+                ),
+                with: {
+                    type: { columns: { id: true, name: true } },
+                    category: { columns: { id: true, name: true } },
+                },
+                orderBy: [asc(variantOption.sortOrder), asc(variantOption.name)],
+            });
+
+            // Filter out already linked
+            return eligible.filter((v) => !linkedIds.has(v.id));
+        }),
+
+    /**
+     * Link a variant option to a core product.
+     */
+    linkVariant: adminProcedure
+        .input(z.object({
+            coreProductId: z.number().int(),
+            variantOptionId: z.number().int(),
+        }))
+        .handler(async ({ input }) => {
+            // Check if already linked
+            const existing = await db.query.coreProductVariantOption.findFirst({
+                where: and(
+                    eq(coreProductVariantOption.coreProductId, input.coreProductId),
+                    eq(coreProductVariantOption.variantOptionId, input.variantOptionId),
+                ),
+            });
+
+            if (existing) {
+                throw new Error("This variant is already linked to this core product");
+            }
+
+            // Get next sort order
+            const lastLink = await db.query.coreProductVariantOption.findFirst({
+                where: eq(coreProductVariantOption.coreProductId, input.coreProductId),
+                orderBy: (vl, { desc }) => [desc(vl.sortOrder)],
+            });
+
+            await db.insert(coreProductVariantOption).values({
+                coreProductId: input.coreProductId,
+                variantOptionId: input.variantOptionId,
+                sortOrder: (lastLink?.sortOrder ?? -1) + 1,
+            });
+
+            return { message: "Variant linked successfully" };
+        }),
+
+    /**
+     * Unlink a variant option from a core product.
+     */
+    unlinkVariant: adminProcedure
+        .input(z.object({
+            coreProductId: z.number().int(),
+            variantOptionId: z.number().int(),
+        }))
+        .handler(async ({ input }) => {
+            await db
+                .delete(coreProductVariantOption)
+                .where(
+                    and(
+                        eq(coreProductVariantOption.coreProductId, input.coreProductId),
+                        eq(coreProductVariantOption.variantOptionId, input.variantOptionId),
+                    ),
+                );
+
+            return { message: "Variant unlinked successfully" };
         }),
 };

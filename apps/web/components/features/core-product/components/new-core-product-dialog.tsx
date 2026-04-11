@@ -2,7 +2,7 @@
 
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader, Plus, Trash2 } from "lucide-react";
+import { Loader } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
@@ -31,33 +31,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 
-const PACK_TYPES = [
-  "sack",
-  "carton",
-  "packet",
-  "loose",
-  "bottle",
-  "can",
-  "jar",
-  "pouch",
-  "box",
-];
 
-interface PackVariantRow {
-  label: string;
-  weightKg: string;
-  packType: string;
-  sellUnit: string;
-  sortOrder: number;
-  isActive: boolean;
-}
 
 export default function NewCoreProductDialog() {
   const [open, setOpen] = React.useState(false);
@@ -67,7 +48,6 @@ export default function NewCoreProductDialog() {
   >(undefined);
   const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<number>(0);
-  const [packVariants, setPackVariants] = React.useState<PackVariantRow[]>([]);
   const queryClient = useQueryClient();
 
   // Fetch types, categories, subcategories, brands
@@ -99,7 +79,6 @@ export default function NewCoreProductDialog() {
         form.reset();
         setSelectedBrandIds([]);
         setDefaultBrandId(undefined);
-        setPackVariants([]);
         setOpen(false);
       },
       onError: (error: any) => {
@@ -118,9 +97,6 @@ export default function NewCoreProductDialog() {
       categoryId: 0,
       subCategoryId: null as number | null,
       brandSupport: "multi_brand" as "multi_brand" | "single_brand",
-      variantSupportPack: true,
-      variantSupportLoose: false,
-      defaultLooseUnit: "",
       status: "active" as "active" | "draft" | "inactive",
       displayOrder: 0,
       typeId: null as number | null,
@@ -135,17 +111,10 @@ export default function NewCoreProductDialog() {
         categoryId: value.categoryId,
         subCategoryId: value.subCategoryId,
         brandSupport: value.brandSupport,
-        variantSupportPack: value.variantSupportPack,
-        variantSupportLoose: value.variantSupportLoose,
-        defaultLooseUnit: value.defaultLooseUnit || undefined,
         status: value.status,
         displayOrder: value.displayOrder,
         brandIds: selectedBrandIds,
         defaultBrandId,
-        packVariants: packVariants.map((pv, idx) => ({
-          ...pv,
-          sortOrder: idx,
-        })),
       });
     },
   });
@@ -164,36 +133,7 @@ export default function NewCoreProductDialog() {
     ? allSubcategories.filter((sc: any) => sc.categoryId === selectedCategoryId)
     : [];
 
-  // Add a new pack variant row
-  const addPackVariant = () => {
-    setPackVariants([
-      ...packVariants,
-      {
-        label: "",
-        weightKg: "",
-        packType: "packet",
-        sellUnit: "Pack",
-        sortOrder: packVariants.length,
-        isActive: true,
-      },
-    ]);
-  };
 
-  const removePackVariant = (index: number) => {
-    setPackVariants(packVariants.filter((_, i) => i !== index));
-  };
-
-  const updatePackVariant = (
-    index: number,
-    field: keyof PackVariantRow,
-    value: string | number | boolean,
-  ) => {
-    setPackVariants(
-      packVariants.map((pv, i) =>
-        i === index ? { ...pv, [field]: value } : pv,
-      ),
-    );
-  };
 
   const toggleBrand = (brandId: number) => {
     setSelectedBrandIds((prev) =>
@@ -475,56 +415,7 @@ export default function NewCoreProductDialog() {
               </form.Field>
             </div>
 
-            <div className="flex flex-wrap gap-6">
-              <form.Field name="variantSupportPack">
-                {(field) => (
-                  <Field orientation="horizontal">
-                    <FieldContent>
-                      <FieldLabel htmlFor="variantSupportPack">
-                        Pack Based
-                      </FieldLabel>
-                    </FieldContent>
-                    <Switch
-                      id="variantSupportPack"
-                      checked={field.state.value}
-                      onCheckedChange={field.handleChange}
-                    />
-                  </Field>
-                )}
-              </form.Field>
 
-              <form.Field name="variantSupportLoose">
-                {(field) => (
-                  <Field orientation="horizontal">
-                    <FieldContent>
-                      <FieldLabel htmlFor="variantSupportLoose">
-                        Loose
-                      </FieldLabel>
-                    </FieldContent>
-                    <Switch
-                      id="variantSupportLoose"
-                      checked={field.state.value}
-                      onCheckedChange={field.handleChange}
-                    />
-                  </Field>
-                )}
-              </form.Field>
-
-              <form.Field name="defaultLooseUnit">
-                {(field) => (
-                  <Field>
-                    <FieldLabel htmlFor={field.name}>Loose Unit</FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="KG"
-                      className="w-20"
-                    />
-                  </Field>
-                )}
-              </form.Field>
-            </div>
           </div>
 
           <Separator />
@@ -581,92 +472,7 @@ export default function NewCoreProductDialog() {
             )}
           </div>
 
-          <Separator />
 
-          {/* Pack Variant Templates */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold">
-                Pack Variant Templates
-              </h4>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addPackVariant}
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Add
-              </Button>
-            </div>
-
-            {packVariants.length === 0 && (
-              <p className="text-sm text-muted-foreground py-4 text-center border border-dashed rounded-lg">
-                No pack variants defined yet. Click &quot;Add&quot; to create
-                variant templates.
-              </p>
-            )}
-
-            {packVariants.map((pv, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-[1fr_80px_1fr_80px_auto] gap-2 items-center"
-              >
-                <Input
-                  value={pv.label}
-                  onChange={(e) =>
-                    updatePackVariant(idx, "label", e.target.value)
-                  }
-                  placeholder="Label (e.g. 5KG)"
-                  className="h-9"
-                />
-                <Input
-                  value={pv.weightKg}
-                  onChange={(e) =>
-                    updatePackVariant(idx, "weightKg", e.target.value)
-                  }
-                  placeholder="KG"
-                  className="h-9"
-                  type="number"
-                  step="0.01"
-                />
-                <Select
-                  value={pv.packType}
-                  onValueChange={(v) =>
-                    updatePackVariant(idx, "packType", v)
-                  }
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PACK_TYPES.map((pt) => (
-                      <SelectItem key={pt} value={pt}>
-                        {pt.charAt(0).toUpperCase() + pt.slice(1)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  value={pv.sellUnit}
-                  onChange={(e) =>
-                    updatePackVariant(idx, "sellUnit", e.target.value)
-                  }
-                  placeholder="Unit"
-                  className="h-9"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 text-destructive hover:text-destructive"
-                  onClick={() => removePackVariant(idx)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
         </form>
 
         <DialogFooter>

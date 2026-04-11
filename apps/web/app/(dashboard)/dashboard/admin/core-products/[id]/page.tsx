@@ -3,14 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  BoxesIcon,
   Check,
   Package,
-  Pencil,
   Plus,
   Tag,
-  Trash2,
-  Weight,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -20,61 +16,14 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 
-const PACK_TYPES = [
-  "sack",
-  "carton",
-  "packet",
-  "loose",
-  "bottle",
-  "can",
-  "jar",
-  "pouch",
-  "box",
-];
-
-interface PackVariantRow {
-  label: string;
-  weightKg: string;
-  packType: string;
-  sellUnit: string;
-  sortOrder: number;
-  isActive: boolean;
-}
-
-const emptyVariant: PackVariantRow = {
-  label: "",
-  weightKg: "",
-  packType: "packet",
-  sellUnit: "Pack",
-  sortOrder: 0,
-  isActive: true,
-};
-
 export default function CoreProductDetailPage() {
   const params = useParams();
   const id = Number(params.id);
-  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery(
     orpc.adminCoreProduct.getById.queryOptions({
@@ -190,8 +139,8 @@ export default function CoreProductDetailPage() {
             </div>
           </div>
 
-          {/* Pack Variant Templates — Interactive */}
-          <PackVariantSection coreProduct={cp} />
+          {/* Variant Linking Section */}
+          <VariantLinkingSection coreProduct={cp} />
         </div>
 
         {/* Right sidebar */}
@@ -242,22 +191,18 @@ export default function CoreProductDetailPage() {
             <h3 className="font-semibold">Usage Insights</h3>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Used By Brands</span>
+                <span className="text-muted-foreground">Linked Brands</span>
                 <span className="font-medium">{cp.brands.length}</span>
               </div>
               <Separator />
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Pack Templates</span>
-                <span className="font-medium">{cp.packVariants.length}</span>
+                <span className="text-muted-foreground">Linked Variants</span>
+                <span className="font-medium">{cp.variantLinks?.length ?? 0}</span>
               </div>
               <Separator />
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Top Variant</span>
-                <span className="font-medium">
-                  {cp.packVariants.length > 0
-                    ? cp.packVariants[0].label
-                    : "—"}
-                </span>
+                <span className="text-muted-foreground">Status</span>
+                <span className="font-medium capitalize">{cp.status}</span>
               </div>
             </div>
           </div>
@@ -268,136 +213,76 @@ export default function CoreProductDetailPage() {
 }
 
 // ============================================================
-// Pack Variant Section — inline add / edit / delete
+// Variant Linking Section
 // ============================================================
 
-function PackVariantSection({ coreProduct }: { coreProduct: any }) {
+function VariantLinkingSection({ coreProduct }: { coreProduct: any }) {
   const queryClient = useQueryClient();
-  const [isAdding, setIsAdding] = React.useState(false);
-  const [newVariant, setNewVariant] = React.useState<PackVariantRow>({
-    ...emptyVariant,
-  });
-  const [editingId, setEditingId] = React.useState<number | null>(null);
-  const [editData, setEditData] = React.useState<PackVariantRow>({
-    ...emptyVariant,
-  });
+  const [showPicker, setShowPicker] = React.useState(false);
 
-  // Save mutation — replaces ALL pack variants (same pattern as create/update)
-  const saveMutation = useMutation(
-    orpc.adminCoreProduct.update.mutationOptions({
+  const linkedVariants = coreProduct.variantLinks ?? [];
+
+  // Fetch eligible variants (scoped by type/category, excludes already linked)
+  const { data: eligibleVariants, isLoading: isLoadingEligible } = useQuery(
+    orpc.adminCoreProduct.getEligibleVariants.queryOptions({
+      input: { coreProductId: coreProduct.id },
+    }),
+  );
+
+  const invalidateQueries = () => {
+    queryClient.invalidateQueries({
+      queryKey: orpc.adminCoreProduct.getById.key(),
+    });
+    queryClient.invalidateQueries({
+      queryKey: orpc.adminCoreProduct.getEligibleVariants.key(),
+    });
+  };
+
+  // Link mutation
+  const linkMutation = useMutation(
+    orpc.adminCoreProduct.linkVariant.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: orpc.adminCoreProduct.getById.key(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: orpc.adminCoreProduct.getAll.key(),
-        });
+        invalidateQueries();
+        toast.success("Variant linked");
       },
       onError: (err: any) => {
-        toast.error(err.message || "Failed to save variant");
+        toast.error(err.message || "Failed to link variant");
       },
     }),
   );
 
-  const buildUpdatePayload = (packVariants: PackVariantRow[]) => ({
-    id: coreProduct.id,
-    sku: coreProduct.sku,
-    name: coreProduct.name,
-    slug: coreProduct.slug,
-    description: coreProduct.description || undefined,
-    image: coreProduct.image,
-    categoryId: coreProduct.categoryId,
-    subCategoryId: coreProduct.subCategoryId,
-    brandSupport: coreProduct.brandSupport,
-    variantSupportPack: coreProduct.variantSupportPack,
-    variantSupportLoose: coreProduct.variantSupportLoose,
-    defaultLooseUnit: coreProduct.defaultLooseUnit || undefined,
-    status: coreProduct.status,
-    displayOrder: coreProduct.displayOrder,
-    brandIds: coreProduct.brands.map((b: any) => b.brandId),
-    defaultBrandId: coreProduct.brands.find((b: any) => b.isDefault)?.brandId,
-    packVariants: packVariants.map((pv, idx) => ({ ...pv, sortOrder: idx })),
-  });
-
-  // ADD variant
-  const handleAdd = () => {
-    if (!newVariant.label.trim() || !newVariant.weightKg.trim()) {
-      toast.error("Label and weight are required");
-      return;
-    }
-    const existing = coreProduct.packVariants.map((pv: any) => ({
-      label: pv.label,
-      weightKg: pv.weightKg,
-      packType: pv.packType,
-      sellUnit: pv.sellUnit || "",
-      sortOrder: pv.sortOrder,
-      isActive: pv.isActive,
-    }));
-    saveMutation.mutate(buildUpdatePayload([...existing, newVariant]), {
+  // Unlink mutation
+  const unlinkMutation = useMutation(
+    orpc.adminCoreProduct.unlinkVariant.mutationOptions({
       onSuccess: () => {
-        toast.success("Variant added");
-        setNewVariant({ ...emptyVariant });
-        setIsAdding(false);
+        invalidateQueries();
+        toast.success("Variant unlinked");
       },
+      onError: (err: any) => {
+        toast.error(err.message || "Failed to unlink variant");
+      },
+    }),
+  );
+
+  const handleLink = (variantOptionId: number) => {
+    linkMutation.mutate({
+      coreProductId: coreProduct.id,
+      variantOptionId,
     });
   };
 
-  // EDIT variant (start)
-  const startEdit = (pv: any) => {
-    setEditingId(pv.id);
-    setEditData({
-      label: pv.label,
-      weightKg: pv.weightKg,
-      packType: pv.packType,
-      sellUnit: pv.sellUnit || "",
-      sortOrder: pv.sortOrder,
-      isActive: pv.isActive,
+  const handleUnlink = (variantOptionId: number) => {
+    unlinkMutation.mutate({
+      coreProductId: coreProduct.id,
+      variantOptionId,
     });
   };
 
-  // EDIT variant (save)
-  const handleEditSave = () => {
-    if (!editData.label.trim() || !editData.weightKg.trim()) {
-      toast.error("Label and weight are required");
-      return;
-    }
-    const updated = coreProduct.packVariants.map((pv: any) =>
-      pv.id === editingId
-        ? editData
-        : {
-            label: pv.label,
-            weightKg: pv.weightKg,
-            packType: pv.packType,
-            sellUnit: pv.sellUnit || "",
-            sortOrder: pv.sortOrder,
-            isActive: pv.isActive,
-          },
-    );
-    saveMutation.mutate(buildUpdatePayload(updated), {
-      onSuccess: () => {
-        toast.success("Variant updated");
-        setEditingId(null);
-      },
-    });
-  };
-
-  // DELETE variant
-  const handleDelete = (pvId: number) => {
-    const remaining = coreProduct.packVariants
-      .filter((pv: any) => pv.id !== pvId)
-      .map((pv: any) => ({
-        label: pv.label,
-        weightKg: pv.weightKg,
-        packType: pv.packType,
-        sellUnit: pv.sellUnit || "",
-        sortOrder: pv.sortOrder,
-        isActive: pv.isActive,
-      }));
-    saveMutation.mutate(buildUpdatePayload(remaining), {
-      onSuccess: () => {
-        toast.success("Variant deleted");
-      },
-    });
+  const getScopeBadge = (v: any) => {
+    if (!v.type && !v.category) return { label: "Global", className: "bg-blue-600" };
+    if (v.type && !v.category) return { label: v.type.name, className: "bg-purple-600" };
+    if (v.type && v.category) return { label: v.category.name, className: "bg-orange-600" };
+    return { label: "—", className: "" };
   };
 
   return (
@@ -405,310 +290,173 @@ function PackVariantSection({ coreProduct }: { coreProduct: any }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Package className="h-5 w-5 text-muted-foreground" />
-          <h3 className="font-semibold">Variant Structure</h3>
+          <h3 className="font-semibold">Linked Variants</h3>
+          {linkedVariants.length > 0 && (
+            <Badge variant="secondary" className="text-xs">
+              {linkedVariants.length}
+            </Badge>
+          )}
         </div>
-        {!isAdding && (
+        {!showPicker && (
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setIsAdding(true)}
+            onClick={() => setShowPicker(true)}
           >
             <Plus className="h-3 w-3 mr-1" />
-            Add Variant
+            Link Variant
           </Button>
         )}
       </div>
 
-      {/* Variant support info */}
-      <div className="flex gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <BoxesIcon className="h-4 w-4 text-muted-foreground" />
-          <span>
-            Pack Based:{" "}
-            <strong>
-              {coreProduct.variantSupportPack ? "Enabled" : "Disabled"}
-            </strong>
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Weight className="h-4 w-4 text-muted-foreground" />
-          <span>
-            Loose:{" "}
-            <strong>
-              {coreProduct.variantSupportLoose
-                ? `Enabled (${coreProduct.defaultLooseUnit || "KG"})`
-                : "Disabled"}
-            </strong>
-          </span>
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Variants table */}
-      {coreProduct.packVariants.length > 0 || isAdding ? (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Label</TableHead>
-              <TableHead className="w-[90px]">Weight</TableHead>
-              <TableHead>Pack Type</TableHead>
-              <TableHead className="w-[90px]">Sell Unit</TableHead>
-              <TableHead className="w-[80px]">Status</TableHead>
-              <TableHead className="w-[100px] text-center">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {coreProduct.packVariants.map((pv: any) =>
-              editingId === pv.id ? (
-                <TableRow key={pv.id} className="bg-muted/30">
-                  <TableCell>
-                    <Input
-                      value={editData.label}
-                      onChange={(e) =>
-                        setEditData({ ...editData, label: e.target.value })
-                      }
-                      className="h-8"
-                      placeholder="Label"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      value={editData.weightKg}
-                      onChange={(e) =>
-                        setEditData({ ...editData, weightKg: e.target.value })
-                      }
-                      className="h-8"
-                      type="number"
-                      step="0.01"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Select
-                      value={editData.packType}
-                      onValueChange={(v) =>
-                        setEditData({ ...editData, packType: v })
-                      }
-                    >
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PACK_TYPES.map((pt) => (
-                          <SelectItem key={pt} value={pt}>
-                            {pt.charAt(0).toUpperCase() + pt.slice(1)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      value={editData.sellUnit}
-                      onChange={(e) =>
-                        setEditData({ ...editData, sellUnit: e.target.value })
-                      }
-                      className="h-8"
-                    />
-                  </TableCell>
-                  <TableCell>
+      {/* Currently linked variants */}
+      {linkedVariants.length > 0 ? (
+        <div className="space-y-2">
+          {linkedVariants.map((link: any) => {
+            const v = link.variantOption;
+            const scope = getScopeBadge(v);
+            return (
+              <div
+                key={link.id}
+                className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
+              >
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">{v.name}</span>
                     <Badge
-                      variant={editData.isActive ? "default" : "secondary"}
-                      className={cn(
-                        "text-xs cursor-pointer",
-                        editData.isActive && "bg-green-600",
-                      )}
-                      onClick={() =>
-                        setEditData({
-                          ...editData,
-                          isActive: !editData.isActive,
-                        })
-                      }
+                      variant="outline"
+                      className="text-[10px] font-normal"
                     >
-                      {editData.isActive ? "Active" : "Inactive"}
+                      {v.variantType === "pack" ? "Pack" : "Loose"}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-green-600 hover:text-green-700"
-                        onClick={handleEditSave}
-                        disabled={saveMutation.isPending}
-                      >
-                        <Check className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => setEditingId(null)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                <TableRow key={pv.id}>
-                  <TableCell className="font-medium">{pv.label}</TableCell>
-                  <TableCell>{pv.weightKg} kg</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs">
-                      {pv.packType}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{pv.sellUnit || "—"}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={pv.isActive ? "default" : "secondary"}
-                      className={cn(
-                        "text-xs",
-                        pv.isActive && "bg-green-600",
-                      )}
-                    >
-                      {pv.isActive ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => startEdit(pv)}
-                        disabled={saveMutation.isPending}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(pv.id)}
-                        disabled={saveMutation.isPending}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ),
-            )}
-
-            {/* Add new row */}
-            {isAdding && (
-              <TableRow className="bg-muted/30">
-                <TableCell>
-                  <Input
-                    value={newVariant.label}
-                    onChange={(e) =>
-                      setNewVariant({ ...newVariant, label: e.target.value })
-                    }
-                    className="h-8"
-                    placeholder="e.g. 5KG Pack"
-                    autoFocus
-                  />
-                </TableCell>
-                <TableCell>
-                  <Input
-                    value={newVariant.weightKg}
-                    onChange={(e) =>
-                      setNewVariant({ ...newVariant, weightKg: e.target.value })
-                    }
-                    className="h-8"
-                    placeholder="5"
-                    type="number"
-                    step="0.01"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Select
-                    value={newVariant.packType}
-                    onValueChange={(v) =>
-                      setNewVariant({ ...newVariant, packType: v })
-                    }
-                  >
-                    <SelectTrigger className="h-8">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PACK_TYPES.map((pt) => (
-                        <SelectItem key={pt} value={pt}>
-                          {pt.charAt(0).toUpperCase() + pt.slice(1)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell>
-                  <Input
-                    value={newVariant.sellUnit}
-                    onChange={(e) =>
-                      setNewVariant({ ...newVariant, sellUnit: e.target.value })
-                    }
-                    className="h-8"
-                    placeholder="Pack"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="default"
-                    className="text-xs bg-green-600 cursor-pointer"
-                    onClick={() =>
-                      setNewVariant({
-                        ...newVariant,
-                        isActive: !newVariant.isActive,
-                      })
-                    }
-                  >
-                    {newVariant.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center justify-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-green-600 hover:text-green-700"
-                      onClick={handleAdd}
-                      disabled={saveMutation.isPending}
-                    >
-                      <Check className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => {
-                        setIsAdding(false);
-                        setNewVariant({ ...emptyVariant });
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
                   </div>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      ) : (
-        <div className="text-center py-8 border border-dashed rounded-lg">
-          <Package className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-          <p className="text-sm text-muted-foreground mb-3">
-            No pack variants defined yet.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsAdding(true)}
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            Add First Variant
-          </Button>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>
+                      {v.size ? `${v.size} ${v.unit}` : v.unit}
+                    </span>
+                    <span>·</span>
+                    <Badge
+                      className={cn(
+                        "text-[9px] h-4 px-1.5 text-white",
+                        scope.className,
+                      )}
+                    >
+                      {scope.label}
+                    </Badge>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-destructive hover:text-destructive shrink-0"
+                  onClick={() => handleUnlink(v.id)}
+                  disabled={unlinkMutation.isPending}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            );
+          })}
         </div>
+      ) : (
+        !showPicker && (
+          <div className="text-center py-6 border border-dashed rounded-lg">
+            <Package className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+            <p className="text-sm text-muted-foreground mb-3">
+              No variants linked yet.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPicker(true)}
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              Link First Variant
+            </Button>
+          </div>
+        )
+      )}
+
+      {/* Eligible variants picker */}
+      {showPicker && (
+        <>
+          <Separator />
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-muted-foreground">
+                Available Variants (filtered by type & category)
+              </h4>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowPicker(false)}
+              >
+                <X className="h-3 w-3 mr-1" />
+                Close
+              </Button>
+            </div>
+
+            {isLoadingEligible ? (
+              <div className="py-6 text-center">
+                <div className="animate-pulse space-y-2">
+                  <div className="h-10 bg-muted rounded-lg" />
+                  <div className="h-10 bg-muted rounded-lg" />
+                </div>
+              </div>
+            ) : !eligibleVariants || eligibleVariants.length === 0 ? (
+              <div className="text-center py-6 border border-dashed rounded-lg">
+                <Check className="h-6 w-6 mx-auto text-green-600 mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  All eligible variants are already linked!
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
+                {eligibleVariants.map((v: any) => {
+                  const scope = getScopeBadge(v);
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-3 p-3 rounded-lg border text-left",
+                        "hover:bg-primary/5 hover:border-primary/30 transition-all",
+                        "cursor-pointer group",
+                        linkMutation.isPending && "opacity-50 pointer-events-none",
+                      )}
+                      onClick={() => handleLink(v.id)}
+                    >
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{v.name}</span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] font-normal"
+                          >
+                            {v.variantType === "pack" ? "Pack" : "Loose"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{v.size ? `${v.size} ${v.unit}` : v.unit}</span>
+                          <span>·</span>
+                          <Badge
+                            className={cn(
+                              "text-[9px] h-4 px-1.5 text-white",
+                              scope.className,
+                            )}
+                          >
+                            {scope.label}
+                          </Badge>
+                        </div>
+                      </div>
+                      <Plus className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

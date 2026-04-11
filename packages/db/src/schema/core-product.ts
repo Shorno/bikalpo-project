@@ -1,7 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
     boolean,
-    decimal,
     integer,
     pgEnum,
     pgTable,
@@ -13,6 +12,7 @@ import {
 import { timestamps } from "./columns.helpers";
 import { category, subCategory } from "./category";
 import { brand } from "./brand";
+import { coreProductVariantOption } from "./variant-option";
 
 // === Enums ===
 
@@ -72,19 +72,6 @@ export const coreProductIdentity = pgTable("core_product_identity", {
         .default("multi_brand")
         .notNull(),
 
-    /** Whether pack-based variants are supported (e.g. 1KG, 5KG) */
-    variantSupportPack: boolean("variant_support_pack")
-        .default(true)
-        .notNull(),
-
-    /** Whether loose/weight-based variants are supported */
-    variantSupportLoose: boolean("variant_support_loose")
-        .default(false)
-        .notNull(),
-
-    /** Default unit for loose variants (e.g. "KG", "LTR") */
-    defaultLooseUnit: varchar("default_loose_unit", { length: 20 }),
-
     /** Product status */
     status: coreProductStatusEnum("status").default("active").notNull(),
 
@@ -119,42 +106,7 @@ export const coreProductBrand = pgTable("core_product_brand", {
     createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// === Core Product Pack Variant (Admin-Defined Templates) ===
 
-/**
- * Defines the allowed pack sizes/templates for a Core Product Identity.
- * E.g. "Miniket Rice" → 1KG Pack, 2KG Pack, 5KG Pack
- *
- * Sellers can only create variants matching these templates.
- */
-export const coreProductPackVariant = pgTable("core_product_pack_variant", {
-    id: serial("id").primaryKey(),
-
-    /** Parent core product identity */
-    coreProductId: integer("core_product_id")
-        .notNull()
-        .references(() => coreProductIdentity.id, { onDelete: "cascade" }),
-
-    /** Display label (e.g. "1KG", "5KG Pack", "50KG Sack") */
-    label: varchar("label", { length: 100 }).notNull(),
-
-    /** Weight in KG */
-    weightKg: decimal("weight_kg", { precision: 10, scale: 2 }).notNull(),
-
-    /** Pack type */
-    packType: varchar("pack_type", { length: 20 }).notNull(),
-
-    /** Sell unit label (e.g. "Pack", "Sack", "KG") */
-    sellUnit: varchar("sell_unit", { length: 50 }),
-
-    /** Sort order */
-    sortOrder: integer("sort_order").default(0).notNull(),
-
-    /** Whether this template is active */
-    isActive: boolean("is_active").default(true).notNull(),
-
-    ...timestamps,
-});
 
 // === Relations ===
 
@@ -170,7 +122,7 @@ export const coreProductIdentityRelations = relations(
             references: [subCategory.id],
         }),
         brands: many(coreProductBrand),
-        packVariants: many(coreProductPackVariant),
+        variantLinks: many(coreProductVariantOption),
     }),
 );
 
@@ -188,21 +140,9 @@ export const coreProductBrandRelations = relations(
     }),
 );
 
-export const coreProductPackVariantRelations = relations(
-    coreProductPackVariant,
-    ({ one }) => ({
-        coreProduct: one(coreProductIdentity, {
-            fields: [coreProductPackVariant.coreProductId],
-            references: [coreProductIdentity.id],
-        }),
-    }),
-);
-
 // === Types ===
 
 export type CoreProductIdentity = typeof coreProductIdentity.$inferSelect;
 export type NewCoreProductIdentity = typeof coreProductIdentity.$inferInsert;
 export type CoreProductBrand = typeof coreProductBrand.$inferSelect;
 export type NewCoreProductBrand = typeof coreProductBrand.$inferInsert;
-export type CoreProductPackVariant = typeof coreProductPackVariant.$inferSelect;
-export type NewCoreProductPackVariant = typeof coreProductPackVariant.$inferInsert;

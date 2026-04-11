@@ -21,9 +21,6 @@ export interface CoreProductWithRelations {
   categoryId: number;
   subCategoryId: number | null;
   brandSupport: "multi_brand" | "single_brand";
-  variantSupportPack: boolean;
-  variantSupportLoose: boolean;
-  defaultLooseUnit: string | null;
   status: "active" | "draft" | "inactive";
   displayOrder: number;
   createdAt: Date;
@@ -48,16 +45,6 @@ export interface CoreProductWithRelations {
       name: string;
       logo: string;
     };
-  }[];
-  packVariants: {
-    id: number;
-    coreProductId: number;
-    label: string;
-    weightKg: string;
-    packType: string;
-    sellUnit: string | null;
-    sortOrder: number;
-    isActive: boolean;
   }[];
 }
 
