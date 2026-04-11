@@ -51,6 +51,7 @@ import { supplierPaymentRouter } from "./supplier-payment";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
 import { stockOverviewRouter } from "./stock-overview";
+import { adminVariantOptionRouter } from "./admin-variant-option";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -66,6 +67,7 @@ export const appRouter = {
   adminCoreProduct: adminCoreProductRouter,
   adminOffer: adminOfferRouter,
   adminProductType: adminProductTypeRouter,
+  adminVariantOption: adminVariantOptionRouter,
   adminEmployeeReport: adminEmployeeReportRouter,
   adminBrandUpdate: adminBrandUpdateRouter,
   adminAnnouncement: adminAnnouncementRouter,
