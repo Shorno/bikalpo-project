@@ -52,13 +52,13 @@ const adminNavGroups: NavGroup[] = [
     label: "Catalog",
     items: [
       {
-        title: "Products",
+        title: "Product Catalog",
         url: `${ADMIN_BASE}/products`,
         icon: PackageIcon,
         items: [
           { title: "All Products", url: `${ADMIN_BASE}/products` },
+          { title: "Consumer Products", url: `${ADMIN_BASE}/consumer-products` },
           { title: "Stock / Inventory", url: `${ADMIN_BASE}/stock` },
-          { title: "Stock Ledger", url: `${ADMIN_BASE}/stock/ledger` },
         ],
       },
       {

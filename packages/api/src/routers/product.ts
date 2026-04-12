@@ -1,16 +1,20 @@
 import { db } from "@bikalpo-project/db";
 import {
+    brand as brandTable,
     category as categoryTable,
+    coreProductIdentity,
     product,
     productImage,
     productBrand,
+    productType,
     productVariantPrice,
     productVariant,
+    subCategory,
     variantOption,
     stockChangeLog,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, desc, eq, gt, gte, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { z } from "zod";
 
@@ -117,12 +121,176 @@ const stockExportParamsSchema = z.object({
     sort: z.enum(["newest", "oldest", "popular"]).default("newest"),
 });
 
+const consumerPriceListParamsSchema = z.object({
+    search: z.string().optional(),
+    typeId: z.number().int().optional(),
+    categoryId: z.number().int().optional(),
+    subCategoryId: z.number().int().optional(),
+    coreProductId: z.number().int().optional(),
+});
+
+const updateConsumerReferencePriceSchema = z.object({
+    variantPriceId: z.number().int(),
+    consumerPrice: z.string().min(1).regex(/^\d+(\.\d{1,2})?$/),
+});
+
 const adjustStockSchema = z.object({
     productId: z.number(),
     changeType: z.enum(["add", "reduce"]),
     quantity: z.number().min(1),
     reason: z.string().optional(),
 });
+
+type ConsumerPriceListInput = z.infer<typeof consumerPriceListParamsSchema>;
+
+async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
+    const conditions: SQL[] = [
+        eq(productVariantPrice.isActive, true),
+        or(eq(productVariantPrice.variantType, "retail"), isNull(productVariantPrice.variantType))!,
+    ];
+
+    if (input.search?.trim()) {
+        const s = `%${input.search.trim()}%`;
+        conditions.push(
+            or(
+                ilike(product.name, s),
+                ilike(product.sku, s),
+                ilike(variantOption.name, s),
+                ilike(brandTable.name, s),
+                ilike(coreProductIdentity.name, s),
+            )!,
+        );
+    }
+    if (input.typeId != null) {
+        conditions.push(eq(categoryTable.typeId, input.typeId));
+    }
+    if (input.categoryId != null) {
+        conditions.push(eq(product.categoryId, input.categoryId));
+    }
+    if (input.subCategoryId != null) {
+        conditions.push(eq(product.subCategoryId, input.subCategoryId));
+    }
+    if (input.coreProductId != null) {
+        conditions.push(eq(product.coreProductId, input.coreProductId));
+    }
+
+    const where = and(...conditions);
+
+    const rows = await db
+        .select({
+            variantPriceId: productVariantPrice.id,
+            consumerPrice: productVariantPrice.consumerPrice,
+            updatedAt: productVariantPrice.updatedAt,
+            variantType: productVariantPrice.variantType,
+            sortOrder: productVariantPrice.sortOrder,
+            productId: product.id,
+            productName: product.name,
+            productSku: product.sku,
+            variantOptionId: variantOption.id,
+            variantName: variantOption.name,
+            variantUnit: variantOption.unit,
+            categoryId: categoryTable.id,
+            categoryName: categoryTable.name,
+            typeId: productType.id,
+            typeName: productType.name,
+            subCategoryId: subCategory.id,
+            subCategoryName: subCategory.name,
+            coreProductId: coreProductIdentity.id,
+            coreProductName: coreProductIdentity.name,
+            coreProductSku: coreProductIdentity.sku,
+            primaryBrandName: brandTable.name,
+        })
+        .from(productVariantPrice)
+        .innerJoin(product, eq(productVariantPrice.productId, product.id))
+        .innerJoin(variantOption, eq(productVariantPrice.variantOptionId, variantOption.id))
+        .innerJoin(categoryTable, eq(product.categoryId, categoryTable.id))
+        .leftJoin(productType, eq(categoryTable.typeId, productType.id))
+        .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
+        .leftJoin(coreProductIdentity, eq(product.coreProductId, coreProductIdentity.id))
+        .leftJoin(brandTable, eq(product.brandId, brandTable.id))
+        .where(where)
+        .orderBy(
+            asc(productType.name),
+            asc(categoryTable.name),
+            asc(coreProductIdentity.name),
+            asc(product.name),
+            asc(productVariantPrice.sortOrder),
+            asc(variantOption.name),
+        );
+
+    const productIds = [...new Set(rows.map((r) => r.productId))];
+    const brandLinks =
+        productIds.length === 0
+            ? []
+            : await db.query.productBrand.findMany({
+                  where: inArray(productBrand.productId, productIds),
+                  with: { brand: { columns: { name: true } } },
+              });
+
+    const brandsByProduct = new Map<number, string>();
+    for (const link of brandLinks) {
+        const name = link.brand?.name;
+        if (!name) continue;
+        const prev = brandsByProduct.get(link.productId);
+        brandsByProduct.set(link.productId, prev ? `${prev}, ${name}` : name);
+    }
+
+    const items = rows.map((r) => {
+        const brandDisplay =
+            (r.primaryBrandName && r.primaryBrandName.trim()) ||
+            brandsByProduct.get(r.productId) ||
+            "—";
+        const identityLabel = r.coreProductName ?? r.productName;
+        const skuLabel = r.coreProductSku ?? r.productSku ?? "—";
+        const coreLine = `${identityLabel} (${skuLabel}) • ${r.categoryName ?? "—"} → ${r.subCategoryName ?? "—"} → ${identityLabel}`;
+
+        return {
+            variantPriceId: r.variantPriceId,
+            consumerPrice: String(r.consumerPrice),
+            updatedAt: r.updatedAt,
+            productId: r.productId,
+            productName: r.productName,
+            productSku: r.productSku,
+            variantOptionId: r.variantOptionId,
+            variantName: r.variantName,
+            variantUnit: r.variantUnit,
+            brandDisplay,
+            typeId: r.typeId,
+            typeName: r.typeName ?? "Uncategorized",
+            categoryId: r.categoryId,
+            categoryName: r.categoryName ?? "—",
+            subCategoryName: r.subCategoryName ?? "—",
+            coreProductId: r.coreProductId,
+            coreProductName: r.coreProductName,
+            coreProductSku: r.coreProductSku,
+            coreLine,
+        };
+    });
+
+    const uniqueCoreOrProduct = new Set<string>();
+    for (const i of items) {
+        uniqueCoreOrProduct.add(
+            i.coreProductId != null ? `c:${i.coreProductId}` : `p:${i.productId}`,
+        );
+    }
+    const totalCoreProducts = uniqueCoreOrProduct.size;
+    const totalVariants = items.length;
+    let lastUpdated: Date | null = null;
+    for (const i of items) {
+        if (i.updatedAt && (!lastUpdated || i.updatedAt > lastUpdated)) {
+            lastUpdated = i.updatedAt;
+        }
+    }
+
+    return {
+        items,
+        stats: {
+            totalCoreProducts,
+            totalVariants,
+            lastUpdated: lastUpdated ? lastUpdated.toISOString() : null,
+        },
+    };
+}
 
 export const productRouter = {
     /**
@@ -881,6 +1049,104 @@ export const productRouter = {
             });
 
             return { products };
+        }),
+
+    /**
+     * List consumer reference prices (B2C / retail variant_price rows) for admin pricing console
+     */
+    listConsumerReferencePrices: adminProcedure
+        .route({
+            method: "GET",
+            path: "/products/consumer-reference-prices",
+            tags: ["Product Management"],
+            summary: "List consumer reference prices",
+            description:
+                "Admin view of retail (or unset-type) variant prices with taxonomy for consumer price management.",
+        })
+        .input(consumerPriceListParamsSchema)
+        .handler(async ({ input }) => fetchConsumerReferencePriceData(input)),
+
+    /**
+     * Update a single consumer reference price (product_variant_price + linked product_variant)
+     */
+    updateConsumerReferencePrice: adminProcedure
+        .route({
+            method: "PUT",
+            path: "/products/variant-prices/consumer-price",
+            tags: ["Product Management"],
+            summary: "Update consumer reference price",
+            description: "Updates reference consumer price and syncs linked auto-generated product_variant rows.",
+        })
+        .input(updateConsumerReferencePriceSchema)
+        .handler(async ({ input }) => {
+            const [existing] = await db
+                .select({ id: productVariantPrice.id })
+                .from(productVariantPrice)
+                .where(eq(productVariantPrice.id, input.variantPriceId));
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Variant price row not found" });
+            }
+
+            await db
+                .update(productVariantPrice)
+                .set({ consumerPrice: input.consumerPrice, updatedAt: new Date() })
+                .where(eq(productVariantPrice.id, input.variantPriceId));
+
+            await db
+                .update(productVariant)
+                .set({ price: input.consumerPrice, updatedAt: new Date() })
+                .where(eq(productVariant.sourceVariantPriceId, input.variantPriceId));
+
+            return { success: true as const };
+        }),
+
+    /**
+     * Export consumer reference price list as CSV (same filters as list)
+     */
+    exportConsumerPricesCSV: adminProcedure
+        .route({
+            method: "POST",
+            path: "/products/consumer-reference-prices/export-csv",
+            tags: ["Product Management"],
+            summary: "Export consumer reference prices CSV",
+        })
+        .input(consumerPriceListParamsSchema)
+        .handler(async ({ input }) => {
+            const { items } = await fetchConsumerReferencePriceData(input);
+            const header = [
+                "Type",
+                "Category",
+                "SubCategory",
+                "CoreOrProduct",
+                "Brand",
+                "Variant",
+                "Unit",
+                "ReferencePriceBDT",
+                "UpdatedAt",
+                "VariantPriceId",
+            ];
+            const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+            const lines = [
+                header.join(","),
+                ...items.map((i) =>
+                    [
+                        i.typeName,
+                        i.categoryName,
+                        i.subCategoryName,
+                        i.coreProductName ?? i.productName,
+                        i.brandDisplay,
+                        i.variantName,
+                        i.variantUnit,
+                        i.consumerPrice,
+                        i.updatedAt ? i.updatedAt.toISOString() : "",
+                        String(i.variantPriceId),
+                    ]
+                        .map((c) => escape(String(c)))
+                        .join(","),
+                ),
+            ];
+            return { csv: lines.join("\n") };
         }),
 
     /**
