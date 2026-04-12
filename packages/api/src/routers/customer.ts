@@ -467,9 +467,16 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
 
-      // Get all variants for the product — role-based filtering is done client-side
+      // Get RETAIL variants only for consumer-facing detail page
+      // (TRADE variants are for shop owners / B2B)
       const variants = await db.query.productVariant.findMany({
-        where: eq(productVariant.productId, found.id),
+        where: and(
+          eq(productVariant.productId, found.id),
+          or(
+            eq(productVariant.variantType, "retail"),
+            isNull(productVariant.variantType),
+          ),
+        ),
         orderBy: [asc(productVariant.sortOrder)],
       });
 

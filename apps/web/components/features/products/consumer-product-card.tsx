@@ -49,15 +49,15 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
       className="group block"
       id={`consumer-product-${product.id}`}
     >
-      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-emerald-100/40 hover:border-emerald-200 hover:-translate-y-1 h-full flex flex-col">
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden h-full flex flex-col">
         {/* Product Image */}
-        <div className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+        <div className="relative aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
           {hasValidImage ? (
             <Image
               src={product.image}
               alt={product.name}
               fill
-              className="object-cover transition-transform duration-500 group-hover:scale-105"
+              className="object-cover"
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 200px"
               onError={() => setImageError(true)}
               unoptimized={product.image?.startsWith("http")}
@@ -93,19 +93,19 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
         {/* Product Info */}
         <div className="p-3 sm:p-4 space-y-2 flex-1 flex flex-col">
           {/* Product Name */}
-          <h3 className="text-xs sm:text-sm font-semibold text-gray-900 line-clamp-2 group-hover:text-emerald-600 transition-colors leading-snug">
+          <h3 className="text-xs sm:text-sm font-semibold text-gray-900 line-clamp-2 leading-snug">
             {product.name}
           </h3>
 
           {/* Starting Price */}
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-base sm:text-lg font-bold text-gray-900">
+          <div className="flex items-baseline gap-1 flex-wrap">
+            <span className="text-base sm:text-lg font-bold text-gray-900 whitespace-nowrap">
               {price > 0
                 ? `৳ ${price.toLocaleString("en-BD", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                 : "৳ —"}
             </span>
             {price > 0 && (
-              <span className="text-[10px] sm:text-[11px] text-gray-400 font-medium">
+              <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap">
                 Starting From
               </span>
             )}
@@ -147,7 +147,7 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
 
           {/* View Details Button — always at the bottom */}
           <div className="pt-1 mt-auto">
-            <span className="inline-flex items-center gap-1.5 w-full justify-center py-2 px-3 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold transition-all duration-200 group-hover:bg-emerald-600 group-hover:text-white group-hover:shadow-md">
+            <span className="inline-flex items-center gap-1.5 w-full justify-center py-2 px-3 rounded-lg bg-emerald-600 text-white text-xs font-semibold">
               <Eye className="w-3.5 h-3.5" />
               View Details
             </span>

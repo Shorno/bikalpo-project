@@ -45,7 +45,7 @@ export function WeekendDeals({
         />
 
         <div className="overflow-x-auto scrollbar-hide pb-2 -mx-4 px-4">
-          <div className="flex gap-3 min-w-max">
+          <div className="flex gap-4 min-w-max">
             {productsWithDiscount.slice(0, limit).map((product) => (
               <div key={product.id} className="w-[160px] sm:w-[180px]">
                 <ConsumerProductCard

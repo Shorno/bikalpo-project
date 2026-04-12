@@ -62,7 +62,7 @@ export function OrpcCategoryListing({
           </div>
 
           {cat.products && cat.products.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
               {cat.products.map((product) => (
                 <ConsumerProductCard
                   key={product.id}
@@ -90,7 +90,7 @@ function CategoryListingSkeleton() {
             <Skeleton className="h-6 w-40" />
             <Skeleton className="h-4 w-16" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
             {[1, 2, 3, 4, 5].map((j) => (
               <div key={j} className="border rounded-lg overflow-hidden">
                 <Skeleton className="aspect-square w-full" />
