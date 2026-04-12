@@ -133,17 +133,19 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
           </div>
 
           {/* Seller Count */}
-          {sellerCount > 0 && (
-            <div className="flex items-center gap-1.5">
-              <Store className="w-3.5 h-3.5 text-blue-500" />
+          <div className="flex items-center gap-1.5">
+            <Store className="w-3.5 h-3.5 text-blue-500" />
+            {sellerCount > 0 ? (
               <span className="text-xs text-gray-600">
                 <span className="font-semibold text-gray-800">
                   {sellerCount}
                 </span>
                 {" "}{sellerCount === 1 ? "Seller" : "Sellers"} Available
               </span>
-            </div>
-          )}
+            ) : (
+              <span className="text-xs text-gray-400">No Sellers Available</span>
+            )}
+          </div>
 
           {/* View Details Button — always at the bottom */}
           <div className="pt-1 mt-auto">
