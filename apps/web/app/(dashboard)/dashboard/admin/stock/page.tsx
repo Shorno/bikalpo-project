@@ -1,4 +1,4 @@
-import { ClipboardList, ScrollText } from "lucide-react";
+import { ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { StockFilterBar } from "@/components/features/stock/stock-filter-bar";
@@ -90,12 +90,6 @@ export default async function StockInventoryPage({
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/dashboard/admin/stock/ledger">
-              <ScrollText className="mr-2 size-4" />
-              Stock Ledger
-            </Link>
-          </Button>
           <Button variant="outline" asChild>
             <Link href="/dashboard/admin/item-requests">
               <ClipboardList className="mr-2 size-4" />

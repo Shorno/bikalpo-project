@@ -1,14 +1,17 @@
 "use client";
 
 import type { ProductWithRelations } from "@bikalpo-project/db/schema";
-import { ArrowRight, Package } from "lucide-react";
+import { Eye, Package, Star, Store } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 
 interface PublicProductCardProps {
-  product: ProductWithRelations;
+  product: ProductWithRelations & {
+    reviewStats?: { averageRating: number; totalReviews: number };
+    sellerCount?: number;
+  };
 }
 
 export function PublicProductCard({ product }: PublicProductCardProps) {
@@ -17,9 +20,15 @@ export function PublicProductCard({ product }: PublicProductCardProps) {
   const hasValidImage =
     product.image && !imageError && product.image.trim() !== "";
 
+  const rating = product.reviewStats?.averageRating ?? 0;
+  const reviewCount = product.reviewStats?.totalReviews ?? 0;
+  const sellerCount = product.sellerCount ?? 0;
+  const hasRating = rating > 0 && reviewCount > 0;
+  const price = typeof product.price === "string" ? parseFloat(product.price) : product.price;
+
   return (
-    <Link href={productHref} className="group block">
-      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-gray-100/50 hover:border-gray-200 hover:-translate-y-0.5">
+    <Link href={productHref} className="group block" id={`product-card-${product.id}`}>
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-emerald-100/40 hover:border-emerald-200 hover:-translate-y-1">
         {/* Product Image */}
         <div className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
           {hasValidImage ? (
@@ -49,19 +58,54 @@ export function PublicProductCard({ product }: PublicProductCardProps) {
         </div>
 
         {/* Product Info */}
-        <div className="p-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-1 line-clamp-2 group-hover:text-blue-600 transition-colors">
+        <div className="p-4 space-y-2.5">
+          {/* Product Name (Core Identity) */}
+          <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 group-hover:text-emerald-600 transition-colors leading-snug">
             {product.name}
           </h3>
 
-          {product.size && (
-            <p className="text-xs text-gray-500 mb-3">{product.size}</p>
+          {/* Starting Price */}
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-lg font-bold text-gray-900">
+              ৳ {price.toLocaleString("en-BD", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </span>
+            <span className="text-[11px] text-gray-400 font-medium">Starting From</span>
+          </div>
+
+          {/* Rating */}
+          <div className="flex items-center gap-1.5">
+            {hasRating ? (
+              <>
+                <div className="flex items-center gap-0.5">
+                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                  <span className="text-xs font-semibold text-gray-800">{rating.toFixed(1)}</span>
+                </div>
+                <span className="text-[11px] text-gray-400">
+                  ({reviewCount} {reviewCount === 1 ? "review" : "reviews"})
+                </span>
+              </>
+            ) : (
+              <span className="text-[11px] text-gray-400 italic">No ratings yet</span>
+            )}
+          </div>
+
+          {/* Seller Count */}
+          {sellerCount > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Store className="w-3.5 h-3.5 text-blue-500" />
+              <span className="text-xs text-gray-600">
+                <span className="font-semibold text-gray-800">{sellerCount}</span>
+                {" "}{sellerCount === 1 ? "Seller" : "Sellers"} Available
+              </span>
+            </div>
           )}
 
-          {/* View Details Link */}
-          <div className="flex items-center text-xs font-medium text-blue-600 group-hover:text-blue-700">
-            View Details
-            <ArrowRight className="w-3.5 h-3.5 ml-1 transition-transform group-hover:translate-x-1" />
+          {/* View Details Button */}
+          <div className="pt-1">
+            <span className="inline-flex items-center gap-1.5 w-full justify-center py-2 px-3 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold transition-all duration-200 group-hover:bg-emerald-600 group-hover:text-white group-hover:shadow-md">
+              <Eye className="w-3.5 h-3.5" />
+              View Details
+            </span>
           </div>
         </div>
       </div>

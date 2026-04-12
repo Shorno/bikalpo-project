@@ -41,6 +41,7 @@ import {
     ilike,
     inArray,
     lte,
+    min,
     or,
     sql,
     sum,
@@ -207,8 +208,59 @@ const b2bQueries = {
             ]);
 
             const totalCount = countResult[0]?.count || 0;
+            const productIds = products.map((item) => item.id);
+
+            let startingPriceMap: Record<number, number> = {};
+            if (productIds.length > 0) {
+                const priceRows = await db
+                    .select({
+                        productId: productVariant.productId,
+                        minPrice: min(productVariant.price),
+                    })
+                    .from(productVariant)
+                    .where(
+                        and(
+                            inArray(productVariant.productId, productIds),
+                            eq(productVariant.isActive, true),
+                            or(
+                                eq(productVariant.variantType, "trade"),
+                                and(
+                                    sql`${productVariant.variantType} IS NULL`,
+                                    or(
+                                        eq(productVariant.visibilityRole, "shop_owner"),
+                                        eq(productVariant.visibilityRole, "all"),
+                                        sql`${productVariant.visibilityRole} IS NULL`,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    )
+                    .groupBy(productVariant.productId);
+
+                for (const row of priceRows) {
+                    startingPriceMap[row.productId] = row.minPrice
+                        ? parseFloat(row.minPrice)
+                        : 0;
+                }
+            }
+
+            const serializedProducts = products.map((item) => {
+                const basePrice = Number(item.price);
+                const variantPrice = startingPriceMap[item.id] ?? 0;
+
+                return {
+                    ...item,
+                    price:
+                        variantPrice > 0
+                            ? variantPrice
+                            : Number.isFinite(basePrice)
+                              ? basePrice
+                              : 0,
+                };
+            });
+
             return {
-                products,
+                products: serializedProducts,
                 pagination: {
                     page,
                     limit,

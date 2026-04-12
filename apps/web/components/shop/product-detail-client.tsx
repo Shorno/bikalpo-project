@@ -10,7 +10,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ProductCard } from "@/components/features/products/product-card";
+import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/product-detail-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
@@ -473,7 +473,7 @@ function ShopRelatedProducts({
       </h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {relatedProducts.map((prod) => (
-          <ProductCard key={prod.id} product={prod} />
+          <ConsumerProductCard key={prod.id} product={prod} />
         ))}
       </div>
     </div>

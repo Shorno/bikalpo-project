@@ -4,11 +4,10 @@
  */
 "use client";
 
-import { ProductCard } from "@/components/shared/product-card";
+import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { SectionHeader } from "@/components/shared/section-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCart } from "@/hooks/use-orpc-cart";
 import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +28,6 @@ export function OrpcFeaturedProducts({
   href,
   className,
 }: OrpcFeaturedProductsProps) {
-  const { addItem } = useCart();
 
   const sortConfig =
     type === "new-arrivals"
@@ -52,7 +50,7 @@ export function OrpcFeaturedProducts({
             <Skeleton className="h-7 w-48" />
             <Skeleton className="h-4 w-20" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 md:gap-5">
             {Array.from({ length: limit }).map((_, i) => (
               <ProductCardSkeleton key={i} />
             ))}
@@ -76,12 +74,11 @@ export function OrpcFeaturedProducts({
           <p className="text-xs text-gray-500 -mt-2 mb-3">{subtitle}</p>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-5">
           {products.map((product) => (
-            <ProductCard
+            <ConsumerProductCard
               key={product.id}
               product={product}
-              onAddToCart={(id) => addItem(id, 1)}
             />
           ))}
         </div>

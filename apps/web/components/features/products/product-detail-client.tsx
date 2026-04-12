@@ -67,22 +67,22 @@ export function ProductDetailClient({
   const { data: session } = authClient.useSession();
   const userRole = session?.user?.role as string | undefined;
 
-  // Filter variants by user role: shop_owner → TRADE, consumer → RETAIL, guest → all
+  // Filter variants by user role: shop_owner → TRADE, everyone else → RETAIL only
   const roleFiltered = useMemo(() => {
     const active = variants.filter((v) => v.isActive !== false);
-    if (!userRole) return active; // guest: show everything
 
     if (userRole === "shop_owner") {
       const trade = active.filter((v) => v.variantType === "trade");
       return trade.length > 0 ? trade : active; // fallback to all if no TRADE variants exist
     }
 
-    if (userRole === "consumer") {
-      const retail = active.filter((v) => v.variantType === "retail");
-      return retail.length > 0 ? retail : active; // fallback to all if no RETAIL variants exist
+    if (userRole === "admin") {
+      return active; // admin sees all
     }
 
-    return active; // admin or other roles: show all
+    // Guests and consumers → RETAIL variants only
+    const retail = active.filter((v) => v.variantType === "retail" || v.variantType == null);
+    return retail.length > 0 ? retail : active; // fallback to all if no RETAIL variants exist
   }, [variants, userRole]);
 
   const sorted = useMemo(

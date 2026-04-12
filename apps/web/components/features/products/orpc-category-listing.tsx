@@ -5,8 +5,8 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
+import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCategoriesWithProducts } from "@/hooks/use-customer-api";
 
@@ -35,7 +35,6 @@ export function OrpcCategoryListing({
 
   const categories = data?.categories ?? [];
   type CategorySection = (typeof categories)[number];
-  type SectionProduct = CategorySection["products"][number];
 
   if (categories.length === 0) {
     return (
@@ -63,41 +62,12 @@ export function OrpcCategoryListing({
           </div>
 
           {cat.products && cat.products.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {cat.products.map((product: SectionProduct) => (
-                <Link
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
+              {cat.products.map((product) => (
+                <ConsumerProductCard
                   key={product.id}
-                  href={`${basePath}/${cat.slug}/${product.slug}`}
-                  className="group bg-white border rounded-lg overflow-hidden hover:shadow-md transition-shadow"
-                >
-                  <div className="aspect-square relative overflow-hidden bg-gray-100">
-                    <Image
-                      src={product.image}
-                      alt={product.name}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-300"
-                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
-                    />
-                    {!product.inStock && (
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                        <span className="text-white text-xs font-semibold px-2 py-1 bg-red-500 rounded">
-                          Out of Stock
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-2.5">
-                    <h3 className="text-sm font-medium text-gray-900 line-clamp-1 group-hover:text-emerald-600 transition-colors">
-                      {product.name}
-                    </h3>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {product.size}
-                    </p>
-                    <p className="text-sm font-bold text-gray-900 mt-1">
-                      ৳{Number(product.price).toLocaleString("en-BD")}
-                    </p>
-                  </div>
-                </Link>
+                  product={product}
+                />
               ))}
             </div>
           ) : (
@@ -120,7 +90,7 @@ function CategoryListingSkeleton() {
             <Skeleton className="h-6 w-40" />
             <Skeleton className="h-4 w-16" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
             {[1, 2, 3, 4, 5].map((j) => (
               <div key={j} className="border rounded-lg overflow-hidden">
                 <Skeleton className="aspect-square w-full" />

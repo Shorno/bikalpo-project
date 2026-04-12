@@ -55,6 +55,7 @@ import {
   inArray,
   isNull,
   lte,
+  min,
   or,
   sql,
   sum,
@@ -331,6 +332,9 @@ const queries = {
             category: { columns: { slug: true, name: true } },
             subCategory: { columns: { name: true } },
             images: true,
+            variants: {
+              columns: { id: true, price: true, isActive: true },
+            },
           },
           orderBy: getOrderBy(),
           limit,
@@ -340,11 +344,73 @@ const queries = {
       ]);
 
       const totalCount = countResult[0]?.count || 0;
-      // Serialize products with proper price conversion
-      const serializedProducts = products.map((p) => ({
-        ...p,
-        price: parseFloat(p.price),
-      }));
+
+      // Batch-fetch review stats for all returned products
+      const productIds = products.map((p) => p.id);
+      let reviewStatsMap: Record<number, { averageRating: number; totalReviews: number }> = {};
+      if (productIds.length > 0) {
+        const reviewRows = await db
+          .select({
+            productId: productReview.productId,
+            averageRating: avg(productReview.rating),
+            totalReviews: count(productReview.id),
+          })
+          .from(productReview)
+          .where(inArray(productReview.productId, productIds))
+          .groupBy(productReview.productId);
+
+        for (const row of reviewRows) {
+          reviewStatsMap[row.productId] = {
+            averageRating: row.averageRating ? parseFloat(row.averageRating) : 0,
+            totalReviews: row.totalReviews || 0,
+          };
+        }
+      }
+
+      // Batch-fetch seller counts (how many distinct product listings share the same coreProductId)
+      const coreProductIds = products
+        .map((p) => p.coreProductId)
+        .filter((id): id is number => id != null);
+      let sellerCountMap: Record<number, number> = {};
+      if (coreProductIds.length > 0) {
+        const uniqueCoreIds = [...new Set(coreProductIds)];
+        const sellerRows = await db
+          .select({
+            coreProductId: product.coreProductId,
+            sellerCount: count(product.id),
+          })
+          .from(product)
+          .where(inArray(product.coreProductId, uniqueCoreIds))
+          .groupBy(product.coreProductId);
+
+        for (const row of sellerRows) {
+          if (row.coreProductId != null) {
+            sellerCountMap[row.coreProductId] = row.sellerCount || 0;
+          }
+        }
+      }
+
+      // Serialize products with proper price conversion + enrichments
+      const serializedProducts = products.map((p) => {
+        // Compute lowest variant price from the included variants
+        const activeVariants = (p.variants || []).filter((v) => v.isActive !== false);
+        const variantPrices = activeVariants
+          .map((v) => parseFloat(v.price) || 0)
+          .filter((price) => price > 0);
+        const lowestVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : 0;
+        const basePrice = parseFloat(p.price) || 0;
+        const effectivePrice = lowestVariantPrice > 0 ? lowestVariantPrice : basePrice;
+
+        // Destructure to exclude variants from the response
+        const { variants: _variants, ...productData } = p;
+
+        return {
+          ...productData,
+          price: effectivePrice,
+          reviewStats: reviewStatsMap[p.id] || { averageRating: 0, totalReviews: 0 },
+          sellerCount: p.coreProductId ? (sellerCountMap[p.coreProductId] || 0) : 0,
+        };
+      });
 
       return {
         products: serializedProducts,
@@ -401,9 +467,16 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
 
-      // Get all variants for the product — role-based filtering is done client-side
+      // Get RETAIL variants only for consumer-facing detail page
+      // (TRADE variants are for shop owners / B2B)
       const variants = await db.query.productVariant.findMany({
-        where: eq(productVariant.productId, found.id),
+        where: and(
+          eq(productVariant.productId, found.id),
+          or(
+            eq(productVariant.variantType, "retail"),
+            isNull(productVariant.variantType),
+          ),
+        ),
         orderBy: [asc(productVariant.sortOrder)],
       });
 
@@ -536,15 +609,77 @@ const queries = {
               eq(product.categoryId, cat.id),
               eq(product.inStock, true),
             ),
-            with: { category: { columns: { name: true, slug: true } } },
+            with: {
+              category: { columns: { name: true, slug: true } },
+              variants: {
+                columns: { id: true, price: true, isActive: true },
+              },
+            },
             limit: prodLimit,
             orderBy: [desc(product.createdAt)],
           });
-          // Serialize products with proper price conversion
-          const serializedProducts = products.map((p) => ({
-            ...p,
-            price: parseFloat(p.price),
-          }));
+
+          // Batch-fetch review stats
+          const pIds = products.map((p) => p.id);
+          let reviewStatsMap: Record<number, { averageRating: number; totalReviews: number }> = {};
+          if (pIds.length > 0) {
+            const reviewRows = await db
+              .select({
+                productId: productReview.productId,
+                averageRating: avg(productReview.rating),
+                totalReviews: count(productReview.id),
+              })
+              .from(productReview)
+              .where(inArray(productReview.productId, pIds))
+              .groupBy(productReview.productId);
+            for (const row of reviewRows) {
+              reviewStatsMap[row.productId] = {
+                averageRating: row.averageRating ? parseFloat(row.averageRating) : 0,
+                totalReviews: row.totalReviews || 0,
+              };
+            }
+          }
+
+          // Batch-fetch seller counts
+          const coreIds = products
+            .map((p) => p.coreProductId)
+            .filter((id): id is number => id != null);
+          let sellerCountMap: Record<number, number> = {};
+          if (coreIds.length > 0) {
+            const uniqueCoreIds = [...new Set(coreIds)];
+            const sellerRows = await db
+              .select({
+                coreProductId: product.coreProductId,
+                sellerCount: count(product.id),
+              })
+              .from(product)
+              .where(inArray(product.coreProductId, uniqueCoreIds))
+              .groupBy(product.coreProductId);
+            for (const row of sellerRows) {
+              if (row.coreProductId != null) {
+                sellerCountMap[row.coreProductId] = row.sellerCount || 0;
+              }
+            }
+          }
+
+          // Serialize products with enrichments (compute min variant price in JS)
+          const serializedProducts = products.map((p) => {
+            const activeVariants = (p.variants || []).filter((v) => v.isActive !== false);
+            const variantPrices = activeVariants
+              .map((v) => parseFloat(v.price) || 0)
+              .filter((price) => price > 0);
+            const lowestVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : 0;
+            const basePrice = parseFloat(p.price) || 0;
+            const effectivePrice = lowestVariantPrice > 0 ? lowestVariantPrice : basePrice;
+
+            const { variants: _variants, ...productData } = p;
+            return {
+              ...productData,
+              price: effectivePrice,
+              reviewStats: reviewStatsMap[p.id] || { averageRating: 0, totalReviews: 0 },
+              sellerCount: p.coreProductId ? (sellerCountMap[p.coreProductId] || 0) : 0,
+            };
+          });
           return {
             ...cat,
             products: serializedProducts,
