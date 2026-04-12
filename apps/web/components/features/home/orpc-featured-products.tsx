@@ -4,11 +4,10 @@
  */
 "use client";
 
-import { ProductCard } from "@/components/shared/product-card";
+import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { SectionHeader } from "@/components/shared/section-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCart } from "@/hooks/use-orpc-cart";
 import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +28,6 @@ export function OrpcFeaturedProducts({
   href,
   className,
 }: OrpcFeaturedProductsProps) {
-  const { addItem } = useCart();
 
   const sortConfig =
     type === "new-arrivals"
@@ -78,10 +76,9 @@ export function OrpcFeaturedProducts({
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {products.map((product) => (
-            <ProductCard
+            <ConsumerProductCard
               key={product.id}
               product={product}
-              onAddToCart={(id) => addItem(id, 1)}
             />
           ))}
         </div>

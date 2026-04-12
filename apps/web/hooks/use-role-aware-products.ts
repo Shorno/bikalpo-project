@@ -37,7 +37,7 @@ export function useRoleAwareProducts(filters: {
   const shopOwnerQuery = useQuery(
     orpc.shopOwner.getProducts.queryOptions({
       input: filters,
-      staleTime: 1000 * 60 * 2,
+      staleTime: 1000 * 30,
       enabled: isShopOwner,
     }),
   );
@@ -46,7 +46,7 @@ export function useRoleAwareProducts(filters: {
   const customerQuery = useQuery(
     orpc.customer.getCustomerProducts.queryOptions({
       input: filters,
-      staleTime: 1000 * 60 * 2,
+      staleTime: 1000 * 30,
       enabled: !isShopOwner,
     }),
   );

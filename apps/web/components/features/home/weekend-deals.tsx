@@ -1,9 +1,8 @@
 "use client";
 
 import { CountdownTimer } from "@/components/shared/countdown-timer";
-import { ProductCard } from "@/components/shared/product-card";
+import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { SectionHeader } from "@/components/shared/section-header";
-import { useCart } from "@/hooks/use-orpc-cart";
 import { useRoleAwareProducts } from "@/hooks/use-role-aware-products";
 import { cn } from "@/lib/utils";
 
@@ -23,8 +22,6 @@ export function WeekendDeals({
     limit: limit.toString(),
     page: "1",
   });
-
-  const { addItem } = useCart();
 
   if (isLoading || !data?.products || data.products.length === 0) {
     return null;
@@ -51,10 +48,8 @@ export function WeekendDeals({
           <div className="flex gap-3 min-w-max">
             {productsWithDiscount.slice(0, limit).map((product) => (
               <div key={product.id} className="w-[160px] sm:w-[180px]">
-                <ProductCard
+                <ConsumerProductCard
                   product={product}
-                  onAddToCart={(id) => addItem(id, 1)}
-                  showDeliveryTime={false}
                 />
               </div>
             ))}

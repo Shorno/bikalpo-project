@@ -41,7 +41,7 @@ export function useCustomerProducts(filters: {
   return useQuery(
     orpc.customer.getCustomerProducts.queryOptions({
       input: filters,
-      staleTime: 1000 * 60 * 2,
+      staleTime: 1000 * 30,
     }),
   );
 }
@@ -98,7 +98,7 @@ export function useCategoriesWithProducts(limit?: number) {
   return useQuery(
     orpc.customer.getCategoriesWithProducts.queryOptions({
       input: { limit: limit ?? 8 },
-      staleTime: 1000 * 60 * 5,
+      staleTime: 1000 * 30,
     }),
   );
 }

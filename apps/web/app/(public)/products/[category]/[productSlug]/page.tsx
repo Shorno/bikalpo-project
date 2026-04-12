@@ -7,7 +7,7 @@ import { RelatedProducts } from "@/components/features/products/related-products
 import { ProductReviews } from "@/components/features/reviews/product-reviews";
 import { getProductBySlug } from "@/lib/public-data";
 
-export const revalidate = 300;
+export const revalidate = 30;
 
 interface ProductDetailsPageProps {
   params: Promise<{ category: string; productSlug: string }>;
@@ -15,7 +15,7 @@ interface ProductDetailsPageProps {
 
 export default async function ProductPage({ params }: ProductDetailsPageProps) {
   const { productSlug } = await params;
-  const productData = await getProductBySlug(productSlug, revalidate);
+  const productData = await getProductBySlug(productSlug, 30);
   const product = productData?.product;
   const variants = productData?.variants;
   const normalizedVariants = (variants ?? []).map((variant) => ({

@@ -114,7 +114,7 @@ export async function getToLetById(id: number, revalidate = 600) {
   return result ?? null;
 }
 
-export async function getProductBySlug(slug: string, revalidate = 300) {
+export async function getProductBySlug(slug: string, revalidate = 30) {
   const client = getPublicOrpcClient(revalidate);
 
   try {
@@ -126,7 +126,7 @@ export async function getProductBySlug(slug: string, revalidate = 300) {
 
 export async function getProductsWithQuery(
   filters: ProductListFilters,
-  revalidate = 600,
+  revalidate = 60,
 ) {
   const client = getPublicOrpcClient(revalidate);
   const result = await client.customer.getCustomerProducts(filters);
