@@ -172,6 +172,15 @@ const adminNavGroups: NavGroup[] = [
     label: "People Management",
     items: [
       {
+        title: "Users",
+        url: `${ADMIN_BASE}/users/wholesalers`,
+        icon: Users2Icon,
+        items: [
+          { title: "Wholesalers", url: `${ADMIN_BASE}/users/wholesalers` },
+          { title: "Retailers", url: `${ADMIN_BASE}/users/retailers` },
+        ],
+      },
+      {
         title: "Applications",
         url: `${ADMIN_BASE}/seller-applications`,
         icon: StoreIcon,

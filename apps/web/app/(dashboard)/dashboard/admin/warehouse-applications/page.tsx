@@ -2,7 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Check, Clock, FileText, Loader2, X } from "lucide-react";
+import { Check, Clock, Eye, FileText, Loader2, X } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -182,6 +183,16 @@ export default function WarehouseApplicationsPage() {
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            asChild
+          >
+            <Link href={`/dashboard/admin/warehouse-applications/${app.id}`}>
+              <Eye className="size-4 mr-1" />
+              View
+            </Link>
+          </Button>
           {showActions && (
             <>
               <Button
