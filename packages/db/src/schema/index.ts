@@ -53,3 +53,4 @@ export * from "./invite";
 export * from "./admin-invite";
 export * from "./reward";
 export * from "./wallet";
+export * from "./marketing-material";

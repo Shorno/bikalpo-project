@@ -8,6 +8,7 @@ import {
   DollarSignIcon,
   GiftIcon,
   HeadphonesIcon,
+  ImageIcon,
   LayoutDashboardIcon,
   ListIcon,
   MapPinIcon,
@@ -207,6 +208,20 @@ const adminNavGroups: NavGroup[] = [
         title: "Deliverymen",
         url: `${ADMIN_BASE}/deliverymen`,
         icon: TruckIcon,
+      },
+    ],
+  },
+  {
+    label: "Marketing",
+    items: [
+      {
+        title: "Marketing",
+        url: `${ADMIN_BASE}/marketing`,
+        icon: ImageIcon,
+        items: [
+          { title: "Material Requests", url: `${ADMIN_BASE}/marketing` },
+          { title: "Materials & Designs", url: `${ADMIN_BASE}/marketing/materials` },
+        ],
       },
     ],
   },
