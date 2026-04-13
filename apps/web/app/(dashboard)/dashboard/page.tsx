@@ -35,9 +35,13 @@ export default function DashboardPage() {
       case "deliveryman":
         router.replace(DELIVERY_BASE);
         break;
-      case "shop_owner":
-        router.replace(ADMIN_BASE);
-        break;
+      case "shop_owner": {
+        // Update role cookie so proxy allows shop subdomain access
+        document.cookie = `user-role=shop_owner;path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
+        const shopUrl = process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001";
+        window.location.href = `${shopUrl}/dashboard`;
+        return;
+      }
       case "warehouse":
         window.location.href =
           process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL ||

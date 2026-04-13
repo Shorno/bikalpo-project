@@ -405,7 +405,7 @@ export default function B2BStatusPage() {
                   href={
                     applicationType === "warehouse"
                       ? `${process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL || "http://warehouse.bikalpo.localhost:3001"}/dashboard`
-                      : `${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL}/dashboard`
+                      : `${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001"}/dashboard`
                   }
                   className="gap-2"
                 >

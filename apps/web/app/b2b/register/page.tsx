@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ProgressStepper } from "@/components/features/onboarding/progress-stepper";
@@ -112,6 +112,7 @@ export default function RegisterPage() {
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [formData, setFormData] = useState<FormData>(INITIAL_FORM_DATA);
   const [showReview, setShowReview] = useState(false);
+  const [lockedBusinessType, setLockedBusinessType] = useState<string | null>(null);
 
   const markStepCompleted = (step: number) => {
     setCompletedSteps((prev) =>
@@ -126,6 +127,25 @@ export default function RegisterPage() {
 
   const handleNext = () => {
     markStepCompleted(currentStep);
+
+    // After Step 1 (account/phone), check if there's a locked invite type
+    if (currentStep === 1 && formData.account.phone) {
+      const phone = formData.account.phone.replace(/^\+880/, "0").replace(/^880/, "0");
+      client.adminAssistedInvite.checkInviteType({ phone })
+        .then((result: any) => {
+          if (result?.locked && result?.businessType) {
+            setLockedBusinessType(result.businessType);
+            setFormData((prev) => ({
+              ...prev,
+              business: { ...prev.business, businessType: result.businessType },
+            }));
+          } else {
+            setLockedBusinessType(null);
+          }
+        })
+        .catch(() => setLockedBusinessType(null));
+    }
+
     if (currentStep < TOTAL_STEPS) {
       setCurrentStep(currentStep + 1);
     } else {
@@ -244,6 +264,7 @@ export default function RegisterPage() {
             }
             onNext={handleNext}
             onBack={handleBack}
+            lockedBusinessType={lockedBusinessType}
           />
         );
       case 3:
