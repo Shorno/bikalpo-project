@@ -1,8 +1,9 @@
-import { eq, asc, and, ilike, type SQL, inArray, countDistinct } from "drizzle-orm";
+import { eq, asc, and, ilike, type SQL, inArray, countDistinct, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import { subCategory, category, product, productType } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
+import { nextSkuCode } from "./helpers/generate-sku";
 
 const createSubcategoryInput = z.object({
     name: z.string().min(2).max(100).trim(),
@@ -129,7 +130,11 @@ export const adminSubcategoryRouter = {
         })
         .input(createSubcategoryInput)
         .handler(async ({ input }) => {
-            const [result] = await db.insert(subCategory).values(input).returning();
+            // Auto-generate next 3-digit skuCode scoped to categoryId
+            const filterCondition = sql`${subCategory.categoryId} = ${input.categoryId}`;
+            const skuCode = await nextSkuCode(subCategory, subCategory.skuCode, 3, filterCondition);
+
+            const [result] = await db.insert(subCategory).values({ ...input, skuCode }).returning();
             return result;
         }),
 

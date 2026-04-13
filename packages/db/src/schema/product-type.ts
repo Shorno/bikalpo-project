@@ -54,6 +54,9 @@ export const productType = pgTable("product_type", {
         .default("fixed_pack")
         .notNull(),
 
+    /** Auto-generated 2-digit SKU code (e.g. "01", "02"). Immutable after creation. */
+    skuCode: varchar("sku_code", { length: 2 }).unique(),
+
     isActive: boolean("is_active").default(true).notNull(),
     displayOrder: integer("display_order").default(0).notNull(),
 

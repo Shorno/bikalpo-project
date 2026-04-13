@@ -58,6 +58,9 @@ export const variantOption = pgTable("variant_option", {
         onDelete: "restrict",
     }),
 
+    /** Auto-generated 2-digit SKU code within scope (e.g. "01", "02"). Immutable after creation. */
+    skuCode: varchar("sku_code", { length: 2 }),
+
     /** Whether this variant option is active */
     isActive: boolean("is_active").default(true).notNull(),
 
