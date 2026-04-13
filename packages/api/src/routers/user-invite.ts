@@ -2,7 +2,7 @@ import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
-import { invite, reward, wallet, user } from "@bikalpo-project/db/schema";
+import { invite, user } from "@bikalpo-project/db/schema";
 import { protectedProcedure } from "../index";
 
 /**
@@ -277,7 +277,7 @@ export const userInviteRouter = {
       let totalEarnings = 0;
       let walletBal = 0;
       try {
-        const earningsResult = await db.execute<{ total: string }[]>(
+        const earningsResult = await db.execute(
           sql`SELECT coalesce(sum(amount), 0)::text as total FROM reward WHERE user_id = ${userId} AND status IN ('paid', 'approved')`
         );
         // db.execute returns rows array directly
@@ -286,7 +286,7 @@ export const userInviteRouter = {
       } catch { /* no rewards yet */ }
 
       try {
-        const walletResult = await db.execute<{ balance: string }[]>(
+        const walletResult = await db.execute(
           sql`SELECT coalesce(balance, 0)::text as balance FROM wallet WHERE user_id = ${userId}`
         );
         const rows = Array.isArray(walletResult) ? walletResult : (walletResult as any).rows ?? [];

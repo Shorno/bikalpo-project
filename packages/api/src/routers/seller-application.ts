@@ -8,7 +8,7 @@
  */
 import { ORPCError } from "@orpc/server";
 import { db } from "@bikalpo-project/db";
-import { sellerApplication, user, invite, adminInvite, wallet } from "@bikalpo-project/db/schema";
+import { sellerApplication, user, invite, adminInvite } from "@bikalpo-project/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
 
