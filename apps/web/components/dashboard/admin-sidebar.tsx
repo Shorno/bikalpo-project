@@ -19,6 +19,7 @@ import {
   TruckIcon,
   Undo2Icon,
   Users2Icon,
+  UserPlus,
   WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -232,6 +233,26 @@ const adminNavGroups: NavGroup[] = [
         title: "Packages",
         url: `${ADMIN_BASE}/packages`,
         icon: PackageIcon,
+      },
+    ],
+  },
+  {
+    label: "Referral & Rewards",
+    items: [
+      {
+        title: "Invite Tracking",
+        url: `${ADMIN_BASE}/invite-tracking`,
+        icon: Users2Icon,
+      },
+      {
+        title: "Admin Invites",
+        url: `${ADMIN_BASE}/admin-invites`,
+        icon: UserPlus,
+      },
+      {
+        title: "Rewards",
+        url: `${ADMIN_BASE}/rewards`,
+        icon: GiftIcon,
       },
     ],
   },

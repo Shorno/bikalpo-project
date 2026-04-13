@@ -52,6 +52,10 @@ import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
 import { stockOverviewRouter } from "./stock-overview";
 import { adminVariantOptionRouter } from "./admin-variant-option";
+import { adminInviteTrackingRouter } from "./admin-invite-tracking";
+import { adminAssistedInviteRouter } from "./admin-assisted-invite";
+import { adminRewardRouter } from "./admin-reward";
+import { userInviteRouter } from "./user-invite";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -116,6 +120,10 @@ export const appRouter = {
   profitLoss: profitLossRouter,
   purchase: purchaseRouter,
   stockOverview: stockOverviewRouter,
+  adminInviteTracking: adminInviteTrackingRouter,
+  adminAssistedInvite: adminAssistedInviteRouter,
+  adminReward: adminRewardRouter,
+  userInvite: userInviteRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

@@ -107,7 +107,13 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
         return;
       }
 
-      const user = result.data?.user as { name?: string } | undefined;
+      const user = result.data?.user as { name?: string; role?: string } | undefined;
+
+      // Set user-role cookie for proxy routing
+      if (user?.role) {
+        document.cookie = `user-role=${user.role};path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
+      }
+
       if (user?.name && !user.name.startsWith("+")) {
         setStep("done");
         setTimeout(onComplete, 1500);

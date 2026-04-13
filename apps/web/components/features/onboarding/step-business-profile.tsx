@@ -19,6 +19,7 @@ interface StepBusinessProfileProps {
   onUpdate: (data: StepBusinessProfileProps["data"]) => void;
   onNext: () => void;
   onBack: () => void;
+  lockedBusinessType?: string | null;
 }
 
 const BUSINESS_TYPES = [
@@ -60,7 +61,9 @@ export function StepBusinessProfile({
   onUpdate,
   onNext,
   onBack,
+  lockedBusinessType,
 }: StepBusinessProfileProps) {
+  const isLocked = !!lockedBusinessType;
   const canProceed = data.businessType && data.shopName && data.businessCategory;
 
   return (
@@ -91,10 +94,11 @@ export function StepBusinessProfile({
         {BUSINESS_TYPES.map((type) => (
           <button
             key={type.id}
-            onClick={() => onUpdate({ ...data, businessType: type.id })}
+            onClick={() => !isLocked && onUpdate({ ...data, businessType: type.id })}
+            disabled={isLocked}
             className={`
               relative p-5 rounded-xl border-2 text-left transition-all duration-200
-              hover:shadow-md group
+              ${isLocked ? "cursor-not-allowed opacity-60" : "hover:shadow-md group"}
               ${
                 data.businessType === type.id
                   ? "border-[#003178] bg-[#003178]/5 shadow-md"
@@ -144,6 +148,16 @@ export function StepBusinessProfile({
           </button>
         ))}
       </div>
+
+      {/* Locked notice */}
+      {isLocked && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 mb-4">
+          <span className="material-symbols-outlined text-amber-600 text-base">lock</span>
+          <p className="text-xs text-amber-700">
+            Your business type was pre-selected by the admin who invited you and cannot be changed.
+          </p>
+        </div>
+      )}
 
       {/* Form Fields */}
       <div className="space-y-4">
