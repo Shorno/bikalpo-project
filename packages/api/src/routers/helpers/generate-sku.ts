@@ -177,3 +177,31 @@ export function composePartialSku(
     if (codes.variantSkuCode) parts.push(codes.variantSkuCode.padStart(2, "0"));
     return parts.join("-");
 }
+
+// ============================================================
+// Legacy SKU generator (backward compatible)
+// Used by product.ts and admin-product-variant.ts
+// ============================================================
+
+interface GenerateSkuInput {
+    subCategorySlug: string;
+    categorySlug: string;
+    serialNumber: number;
+    sizeId?: number;
+    userId?: string;
+}
+
+/**
+ * Legacy SKU generator for product-level and variant-level SKUs.
+ * Produces a slug-based SKU like "SUG-WSG-0001" or "SUG-WSG-0001-50".
+ */
+export function generateSku(input: GenerateSkuInput): string {
+    const catCode = input.categorySlug.slice(0, 3).toUpperCase();
+    const subCatCode = input.subCategorySlug.slice(0, 3).toUpperCase();
+    const serial = String(input.serialNumber).padStart(4, "0");
+    const base = `${catCode}-${subCatCode}-${serial}`;
+    if (input.sizeId && input.sizeId > 0) {
+        return `${base}-${input.sizeId}`;
+    }
+    return base;
+}

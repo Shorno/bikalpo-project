@@ -27,6 +27,7 @@
   "devDependencies": {
     "@bikalpo-project/config": "workspace:*",
     "@types/bun": "catalog:",
+    "tsx": "^4.21.0",
     "turbo": "^2.6.3",
     "typescript": "catalog:"
   },
