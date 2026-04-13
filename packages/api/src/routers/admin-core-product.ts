@@ -80,10 +80,13 @@ export const adminCoreProductRouter = {
                 orderBy: [desc(coreProductIdentity.createdAt)],
                 with: {
                     category: {
-                        columns: { id: true, name: true, slug: true, typeId: true },
+                        columns: { id: true, name: true, slug: true, typeId: true, skuCode: true },
+                        with: {
+                            type: { columns: { id: true, name: true, skuCode: true } },
+                        },
                     },
                     subCategory: {
-                        columns: { id: true, name: true },
+                        columns: { id: true, name: true, skuCode: true },
                     },
                     brands: {
                         with: {
@@ -95,7 +98,17 @@ export const adminCoreProductRouter = {
                 },
             });
 
-            return { coreProducts: results };
+            // Compose full hierarchical SKU for each core product
+            const coreProducts = results.map((cp) => {
+                const typeCode = cp.category?.type?.skuCode || "??";
+                const catCode = cp.category?.skuCode || "???";
+                const subCatCode = cp.subCategory?.skuCode || "???";
+                const coreCode = cp.sku || "???";
+                const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
+                return { ...cp, composedSku };
+            });
+
+            return { coreProducts };
         }),
 
     /**

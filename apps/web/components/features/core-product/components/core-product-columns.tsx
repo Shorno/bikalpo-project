@@ -52,16 +52,16 @@ export function useCoreProductColumns() {
   return React.useMemo<ColumnDef<CoreProductWithRelations>[]>(
     () => [
       {
-        accessorKey: "sku",
+        id: "composedSku",
         header: () => <div className="text-center">SKU</div>,
         cell: ({ row }) => (
           <div className="text-center">
-            <Badge variant="outline" className="font-mono text-xs">
-              {row.getValue("sku")}
+            <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
+              {(row.original as any).composedSku || row.original.sku}
             </Badge>
           </div>
         ),
-        size: 80,
+        size: 140,
       },
       {
         accessorKey: "name",
