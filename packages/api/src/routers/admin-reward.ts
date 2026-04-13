@@ -1,20 +1,10 @@
-import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, sql } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import { reward, invite, user, wallet } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
 
-/**
- * Generate a unique reward code like RWD-5001
- */
-async function generateRewardCode(): Promise<string> {
-  const [result] = await db
-    .select({ maxId: sql<number>`coalesce(max(${reward.id}), 0)` })
-    .from(reward);
-  const nextNum = (result?.maxId ?? 0) + 1;
-  return `RWD-${String(nextNum).padStart(4, "0")}`;
-}
 
 export const adminRewardRouter = {
   /**
@@ -46,7 +36,7 @@ export const adminRewardRouter = {
         conditions.push(eq(reward.status, status));
       }
       if (userType && userType !== "all") {
-        conditions.push(eq(reward.userType, userType));
+        conditions.push(sql`${reward.source} = ${userType}`);
       }
       if (search) {
         conditions.push(
@@ -223,7 +213,6 @@ export const adminRewardRouter = {
         .set({
           status: "approved",
           approvedBy: context.session.user.id,
-          approvedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(reward.id, input.id));

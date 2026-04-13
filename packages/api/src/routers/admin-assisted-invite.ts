@@ -2,7 +2,7 @@ import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
-import { adminInvite, invite, user, reward } from "@bikalpo-project/db/schema";
+import { adminInvite, invite, user } from "@bikalpo-project/db/schema";
 import { adminProcedure, publicProcedure } from "../index";
 
 /**
