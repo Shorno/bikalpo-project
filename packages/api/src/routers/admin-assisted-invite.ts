@@ -82,7 +82,10 @@ export const adminAssistedInviteRouter = {
             invitedPhone: adminInvite.invitedPhone,
             invitedName: adminInvite.invitedName,
             invitedUserId: adminInvite.invitedUserId,
-            invitedRegisteredName: invitedUser.name,
+            invitedRegisteredName: sql<string | null>`COALESCE(
+              ${invitedUser.name},
+              (SELECT u.name FROM "user" u WHERE u.phone_number = ${adminInvite.invitedPhone} OR u.phone_number = CONCAT('+880', SUBSTRING(${adminInvite.invitedPhone} FROM 2)) OR u.phone_number = CONCAT('880', SUBSTRING(${adminInvite.invitedPhone} FROM 2)) LIMIT 1)
+            )`.as("invitedRegisteredName"),
             invitedEmail: invitedUser.email,
             userType: adminInvite.userType,
             status: adminInvite.status,
@@ -195,7 +198,10 @@ export const adminAssistedInviteRouter = {
           invitedPhone: adminInvite.invitedPhone,
           invitedName: adminInvite.invitedName,
           invitedUserId: adminInvite.invitedUserId,
-          invitedRegisteredName: invitedUser.name,
+          invitedRegisteredName: sql<string | null>`COALESCE(
+              ${invitedUser.name},
+              (SELECT u.name FROM "user" u WHERE u.phone_number = ${adminInvite.invitedPhone} OR u.phone_number = CONCAT('+880', SUBSTRING(${adminInvite.invitedPhone} FROM 2)) OR u.phone_number = CONCAT('880', SUBSTRING(${adminInvite.invitedPhone} FROM 2)) LIMIT 1)
+            )`.as("invitedRegisteredName"),
           invitedRegisteredPhone: invitedUser.phoneNumber,
           invitedEmail: invitedUser.email,
           userType: adminInvite.userType,

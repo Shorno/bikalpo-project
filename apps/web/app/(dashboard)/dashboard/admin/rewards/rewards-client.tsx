@@ -343,7 +343,6 @@ export function RewardsClient() {
             <TableRow>
               <TableHead>Reward ID</TableHead>
               <TableHead>User</TableHead>
-              <TableHead>Phone</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead>User Type</TableHead>
               <TableHead>Status</TableHead>
@@ -371,12 +370,9 @@ export function RewardsClient() {
                     <div>
                       <p className="font-medium">{item.userName || "-"}</p>
                       <p className="text-xs text-muted-foreground">
-                        {item.userEmail || ""}
+                        {item.userPhone || ""}
                       </p>
                     </div>
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {item.userPhone || "-"}
                   </TableCell>
                   <TableCell className="font-semibold">
                     ৳{item.amount}
@@ -592,12 +588,7 @@ export function RewardsClient() {
                       {rewardDetail.userPhone || "-"}
                     </p>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground">Email</p>
-                    <p className="font-medium text-xs">
-                      {rewardDetail.userEmail || "-"}
-                    </p>
-                  </div>
+
                   <div>
                     <p className="text-muted-foreground">Role</p>
                     <p className="font-medium capitalize">

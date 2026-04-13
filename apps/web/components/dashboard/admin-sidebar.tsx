@@ -240,19 +240,14 @@ const adminNavGroups: NavGroup[] = [
     label: "Referral & Rewards",
     items: [
       {
-        title: "Invite Tracking",
+        title: "Referral & Rewards",
         url: `${ADMIN_BASE}/invite-tracking`,
-        icon: Users2Icon,
-      },
-      {
-        title: "Admin Invites",
-        url: `${ADMIN_BASE}/admin-invites`,
-        icon: UserPlus,
-      },
-      {
-        title: "Rewards",
-        url: `${ADMIN_BASE}/rewards`,
         icon: GiftIcon,
+        items: [
+          { title: "Invite Tracking", url: `${ADMIN_BASE}/invite-tracking` },
+          { title: "Admin Invites", url: `${ADMIN_BASE}/admin-invites` },
+          { title: "Rewards", url: `${ADMIN_BASE}/rewards` },
+        ],
       },
     ],
   },
