@@ -109,10 +109,11 @@ const warehouseNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Promotions",
+    label: "Promotions & Marketing",
     items: [
       { title: "Promo Campaigns", url: `${WH}/promo-campaigns`, icon: MegaphoneIcon },
       { title: "Discount Offers", url: `${WH}/discount-offers`, icon: PercentIcon },
+      { title: "Marketing Materials", url: `${WH}/marketing-materials`, icon: PackageIcon },
     ],
   },
   {
