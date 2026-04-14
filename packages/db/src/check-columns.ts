@@ -1,14 +1,6 @@
 import { db } from "./index";
 import { sql } from "drizzle-orm";
 
-const r = await db.execute(
-    sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'product_type' ORDER BY ordinal_position`
-);
-console.log("product_type columns:", r.rows.map((x: any) => x.column_name));
-
-const r2 = await db.execute(
-    sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'category' ORDER BY ordinal_position`
-);
-console.log("category columns:", r2.rows.map((x: any) => x.column_name));
-
+await db.execute(sql`ALTER TABLE core_product_identity DROP CONSTRAINT IF EXISTS core_product_identity_sku_unique`);
+console.log("✅ Dropped unique constraint on core_product_identity.sku");
 process.exit(0);

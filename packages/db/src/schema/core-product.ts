@@ -41,8 +41,8 @@ export const coreProductStatusEnum = pgEnum("core_product_status", [
 export const coreProductIdentity = pgTable("core_product_identity", {
     id: serial("id").primaryKey(),
 
-    /** Admin-assigned SKU identifier (e.g. "001", "002") */
-    sku: varchar("sku", { length: 20 }).notNull().unique(),
+    /** Auto-generated SKU code (e.g. "001", "002") — unique within subcategory scope */
+    sku: varchar("sku", { length: 20 }).notNull(),
 
     /** Global product name (e.g. "Miniket Rice") — must be unique */
     name: varchar("name", { length: 150 }).notNull().unique(),

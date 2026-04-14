@@ -198,14 +198,17 @@ export const adminCoreProductRouter = {
                 sku = await nextSkuCode(coreProductIdentity, coreProductIdentity.sku, 3, filterCondition);
             }
 
-            // Check uniqueness for SKU
+            // Check uniqueness for SKU within the same scope
+            const scopeCondition = identityData.subCategoryId
+                ? and(eq(coreProductIdentity.sku, sku), eq(coreProductIdentity.subCategoryId, identityData.subCategoryId))
+                : and(eq(coreProductIdentity.sku, sku), eq(coreProductIdentity.categoryId, identityData.categoryId));
             const existingSku = await db.query.coreProductIdentity.findFirst({
-                where: eq(coreProductIdentity.sku, sku),
+                where: scopeCondition,
                 columns: { id: true },
             });
             if (existingSku) {
                 throw new ORPCError("CONFLICT", {
-                    message: `A core product with SKU "${sku}" already exists`,
+                    message: `A core product with SKU "${sku}" already exists in this category`,
                 });
             }
 
