@@ -19,11 +19,21 @@ export const ticketStatusEnum = pgEnum("ticket_status", [
     "closed",
 ]);
 
-// Support ticket priority enum
+// Support ticket priority enum (added "critical")
 export const ticketPriorityEnum = pgEnum("ticket_priority", [
     "low",
     "medium",
     "high",
+    "critical",
+]);
+
+// Support ticket category enum
+export const ticketCategoryEnum = pgEnum("ticket_category", [
+    "order",
+    "payment",
+    "delivery",
+    "account",
+    "other",
 ]);
 
 export const supportTicket = pgTable(
@@ -38,6 +48,14 @@ export const supportTicket = pgTable(
         message: text("message").notNull(),
         status: ticketStatusEnum("status").default("open").notNull(),
         priority: ticketPriorityEnum("priority").default("medium").notNull(),
+        category: ticketCategoryEnum("category").default("other").notNull(),
+        // Derived from user role for fast filtering: 'customer' | 'retailer' | 'wholesaler'
+        userType: text("user_type").default("customer").notNull(),
+        // Escalation tracking
+        escalatedAt: timestamp("escalated_at"),
+        escalatedBy: text("escalated_by").references(() => user.id, {
+            onDelete: "set null",
+        }),
         createdAt: timestamp("created_at").defaultNow().notNull(),
         updatedAt: timestamp("updated_at")
             .defaultNow()
@@ -50,6 +68,9 @@ export const supportTicket = pgTable(
         index("supportTicket_customerId_idx").on(table.customerId),
         index("supportTicket_status_idx").on(table.status),
         index("supportTicket_ticketNumber_idx").on(table.ticketNumber),
+        index("supportTicket_category_idx").on(table.category),
+        index("supportTicket_userType_idx").on(table.userType),
+        index("supportTicket_priority_idx").on(table.priority),
     ],
 );
 
@@ -73,14 +94,64 @@ export const supportTicketReply = pgTable(
     ],
 );
 
+// Internal admin notes (not visible to the ticket creator)
+export const supportTicketNote = pgTable(
+    "support_ticket_note",
+    {
+        id: serial("id").primaryKey(),
+        ticketId: integer("ticket_id")
+            .notNull()
+            .references(() => supportTicket.id, { onDelete: "cascade" }),
+        userId: text("user_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
+        note: text("note").notNull(),
+        createdAt: timestamp("created_at").defaultNow().notNull(),
+    },
+    (table) => [
+        index("supportTicketNote_ticketId_idx").on(table.ticketId),
+    ],
+);
+
+// File attachments for tickets
+export const supportTicketAttachment = pgTable(
+    "support_ticket_attachment",
+    {
+        id: serial("id").primaryKey(),
+        ticketId: integer("ticket_id")
+            .notNull()
+            .references(() => supportTicket.id, { onDelete: "cascade" }),
+        url: text("url").notNull(),
+        fileName: text("file_name").notNull(),
+        fileType: text("file_type"), // e.g. "image/png", "application/pdf"
+        uploadedBy: text("uploaded_by")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
+        createdAt: timestamp("created_at").defaultNow().notNull(),
+    },
+    (table) => [
+        index("supportTicketAttachment_ticketId_idx").on(table.ticketId),
+    ],
+);
+
+// ─── Relations ───────────────────────────────────────────────────────────────
+
 export const supportTicketRelations = relations(
     supportTicket,
     ({ one, many }) => ({
         customer: one(user, {
             fields: [supportTicket.customerId],
             references: [user.id],
+            relationName: "ticketCustomer",
+        }),
+        escalatedByUser: one(user, {
+            fields: [supportTicket.escalatedBy],
+            references: [user.id],
+            relationName: "ticketEscalatedBy",
         }),
         replies: many(supportTicketReply),
+        notes: many(supportTicketNote),
+        attachments: many(supportTicketAttachment),
     }),
 );
 
@@ -98,13 +169,48 @@ export const supportTicketReplyRelations = relations(
     }),
 );
 
+export const supportTicketNoteRelations = relations(
+    supportTicketNote,
+    ({ one }) => ({
+        ticket: one(supportTicket, {
+            fields: [supportTicketNote.ticketId],
+            references: [supportTicket.id],
+        }),
+        user: one(user, {
+            fields: [supportTicketNote.userId],
+            references: [user.id],
+        }),
+    }),
+);
+
+export const supportTicketAttachmentRelations = relations(
+    supportTicketAttachment,
+    ({ one }) => ({
+        ticket: one(supportTicket, {
+            fields: [supportTicketAttachment.ticketId],
+            references: [supportTicket.id],
+        }),
+        uploader: one(user, {
+            fields: [supportTicketAttachment.uploadedBy],
+            references: [user.id],
+        }),
+    }),
+);
+
+// ─── Type Exports ────────────────────────────────────────────────────────────
+
 export type SupportTicket = typeof supportTicket.$inferSelect;
 export type SupportTicketReply = typeof supportTicketReply.$inferSelect;
+export type SupportTicketNote = typeof supportTicketNote.$inferSelect;
+export type SupportTicketAttachment = typeof supportTicketAttachment.$inferSelect;
 export type NewSupportTicket = typeof supportTicket.$inferInsert;
 export type NewSupportTicketReply = typeof supportTicketReply.$inferInsert;
+export type NewSupportTicketNote = typeof supportTicketNote.$inferInsert;
+export type NewSupportTicketAttachment = typeof supportTicketAttachment.$inferInsert;
 
 export type TicketStatus = (typeof ticketStatusEnum.enumValues)[number];
 export type TicketPriority = (typeof ticketPriorityEnum.enumValues)[number];
+export type TicketCategory = (typeof ticketCategoryEnum.enumValues)[number];
 
 export interface SupportTicketWithReplies extends SupportTicket {
     replies: (SupportTicketReply & {

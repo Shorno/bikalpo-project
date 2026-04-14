@@ -21,6 +21,7 @@ export const category = pgTable("category", {
     }),
 
     isActive: boolean("is_active").default(true).notNull(),
+    skuCode: varchar("sku_code", { length: 20 }),
     displayOrder: integer("display_order").default(0).notNull(),
     ...timestamps,
 });
@@ -34,6 +35,7 @@ export const subCategory = pgTable("sub_category", {
         .references(() => category.id, { onDelete: "cascade" }),
     image: varchar("image", { length: 255 }).notNull(),
     isActive: boolean("is_active").default(true).notNull(),
+    skuCode: varchar("sku_code", { length: 20 }),
     displayOrder: integer("display_order").default(0).notNull(),
     ...timestamps,
 });

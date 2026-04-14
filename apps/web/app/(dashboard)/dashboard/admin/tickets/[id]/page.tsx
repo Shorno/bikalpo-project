@@ -19,7 +19,8 @@ export default async function AdminTicketDetailPage({
 
   try {
     const result = await client.adminTicket.getById({ id: ticketId });
-    return <AdminTicketDetails ticket={result.data} />;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return <AdminTicketDetails ticket={result.data as any} />;
   } catch {
     return (
       <div className="p-6">

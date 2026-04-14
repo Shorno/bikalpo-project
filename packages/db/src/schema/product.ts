@@ -70,6 +70,7 @@ export const product = pgTable("product", {
   ),
 
   size: varchar("size", { length: 50 }).notNull(),
+  unitSize: varchar("unit_size", { length: 50 }),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
 
   stockQuantity: integer("stock_quantity").default(0).notNull(),
