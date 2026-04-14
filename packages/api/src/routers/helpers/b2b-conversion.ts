@@ -126,7 +126,7 @@ export async function convertB2bOrderToRetailInventory(
         }
 
         // ─── Determine conversion ratio ───
-        // Priority: conversionMap > variant.conversionRatio > packCountInside > 1
+        // Priority: conversionMap > variant.conversionRatio > packCountInside > weight-based auto-calc > 1
         // IMPORTANT: Loose products (packType='loose') skip packCountInside conversion.
         // They are sold as-is (by weight), only cartons/sacks should be broken down.
         const isLoose = tradeVariant.packType === "loose";
@@ -143,6 +143,22 @@ export async function convertB2bOrderToRetailInventory(
             // Skipped for loose products — they pass through at 1:1
             conversionRatio = packCount;
             isPackBreakdown = true;
+        } else if (!isLoose && tradeVariant.weightKg && targetRetailVariantId !== tradeVariant.id) {
+            // Auto-calculate from weights: tradeWeight / retailWeight
+            // e.g. 50KG sack ÷ 5KG pack = 10 packs
+            const retailVariantForWeight = await tx.query.productVariant.findFirst({
+                where: eq(productVariant.id, targetRetailVariantId),
+                columns: { id: true, weightKg: true },
+            });
+            const tradeWeight = Number(tradeVariant.weightKg);
+            const retailWeight = Number(retailVariantForWeight?.weightKg || 0);
+            if (tradeWeight > 0 && retailWeight > 0 && tradeWeight > retailWeight) {
+                conversionRatio = tradeWeight / retailWeight;
+                isPackBreakdown = true;
+                console.log(`[B2B-CONVERT] Auto-calc from weights: ${tradeWeight}KG / ${retailWeight}KG = ${conversionRatio}`);
+            } else {
+                conversionRatio = 1;
+            }
         } else {
             conversionRatio = 1;
         }
