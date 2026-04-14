@@ -89,7 +89,6 @@ export default function NewCoreProductDialog() {
 
   const form = useForm({
     defaultValues: {
-      sku: "",
       name: "",
       slug: "",
       description: "",
@@ -103,7 +102,6 @@ export default function NewCoreProductDialog() {
     },
     onSubmit: async ({ value }) => {
       mutation.mutate({
-        sku: value.sku,
         name: value.name,
         slug: value.slug,
         description: value.description || undefined,
@@ -186,24 +184,16 @@ export default function NewCoreProductDialog() {
             )}
           </form.Field>
 
-          {/* SKU, Name, Slug */}
+          {/* Name, Slug */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <form.Field name="sku">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>SKU *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="001"
-                    autoComplete="off"
-                  />
-                  <FieldDescription>Unique identifier</FieldDescription>
-                </Field>
-              )}
-            </form.Field>
+            <Field>
+              <FieldLabel>SKU</FieldLabel>
+              <div className="flex items-center h-9 px-3 rounded-md border bg-muted/50">
+                <span className="text-sm text-muted-foreground italic">Auto-generated</span>
+              </div>
+              <FieldDescription>Assigned automatically on creation</FieldDescription>
+            </Field>
+
 
             <form.Field name="name">
               {(field) => (
