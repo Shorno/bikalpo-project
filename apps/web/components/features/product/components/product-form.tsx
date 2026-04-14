@@ -639,7 +639,8 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                             onChange={(e) => field.handleChange(e.target.value)}
                             placeholder="e.g. 50 for 50KG carton"
                             type="number"
-                            step="0.01"
+                            step="1"
+                            min="1"
                             className="w-full"
                           />
                           <p className="text-xs text-muted-foreground mt-1">
