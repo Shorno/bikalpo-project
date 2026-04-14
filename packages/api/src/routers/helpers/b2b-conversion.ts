@@ -13,7 +13,7 @@
  */
 
 import {and, eq} from "drizzle-orm";
-import {inventory, order, orderItem, productVariant, variantConversionMap,} from "@bikalpo-project/db/schema";
+import {inventory, order, orderItem, product, productVariant, variantConversionMap,} from "@bikalpo-project/db/schema";
 
 /**
  * Convert B2B order items to retail inventory upon delivery.
@@ -86,6 +86,13 @@ export async function convertB2bOrderToRetailInventory(
         const orderedQty = Number(item.quantity);
         const purchaseUnitPrice = item.unitPrice ? String(item.unitPrice) : null;
 
+        // Load product to get unitSize (carton/sack total size)
+        const productData = await tx.query.product.findFirst({
+            where: eq(product.id, item.productId),
+            columns: { id: true, unitSize: true },
+        });
+        const productUnitSize = Number(productData?.unitSize || 0);
+
         // Look up conversion rule from variantConversionMap (set by admin UI)
         const conversionMap = await tx.query.variantConversionMap.findFirst({
             where: eq(variantConversionMap.fromVariantId, tradeVariant.id),
@@ -126,11 +133,11 @@ export async function convertB2bOrderToRetailInventory(
         }
 
         // ─── Determine conversion ratio ───
-        // Priority: conversionMap > variant.conversionRatio > packCountInside > weight-based auto-calc > 1
-        // IMPORTANT: Loose products (packType='loose') skip packCountInside conversion.
-        // They are sold as-is (by weight), only cartons/sacks should be broken down.
+        // Priority: conversionMap > variant.conversionRatio > packCountInside > product.unitSize/variant.size > 1
+        // IMPORTANT: Loose products (packType='loose') skip pack conversion.
         const isLoose = tradeVariant.packType === "loose";
         const packCount = Number(tradeVariant.packCountInside || 0);
+        const variantSize = Number(tradeVariant.weightKg || 0);
         let conversionRatio: number;
         let isPackBreakdown = false;
 
@@ -140,25 +147,14 @@ export async function convertB2bOrderToRetailInventory(
             conversionRatio = Number(tradeVariant.conversionRatio);
         } else if (!isLoose && packCount > 1) {
             // Auto-convert using pack breakdown: 1 Carton = packCountInside inner packs
-            // Skipped for loose products — they pass through at 1:1
             conversionRatio = packCount;
             isPackBreakdown = true;
-        } else if (!isLoose && tradeVariant.weightKg && targetRetailVariantId !== tradeVariant.id) {
-            // Auto-calculate from weights: tradeWeight / retailWeight
-            // e.g. 50KG sack ÷ 5KG pack = 10 packs
-            const retailVariantForWeight = await tx.query.productVariant.findFirst({
-                where: eq(productVariant.id, targetRetailVariantId),
-                columns: { id: true, weightKg: true },
-            });
-            const tradeWeight = Number(tradeVariant.weightKg);
-            const retailWeight = Number(retailVariantForWeight?.weightKg || 0);
-            if (tradeWeight > 0 && retailWeight > 0 && tradeWeight > retailWeight) {
-                conversionRatio = tradeWeight / retailWeight;
-                isPackBreakdown = true;
-                console.log(`[B2B-CONVERT] Auto-calc from weights: ${tradeWeight}KG / ${retailWeight}KG = ${conversionRatio}`);
-            } else {
-                conversionRatio = 1;
-            }
+        } else if (!isLoose && productUnitSize > 0 && variantSize > 0 && productUnitSize > variantSize) {
+            // Auto-calculate: product.unitSize / variant.size
+            // e.g. 50KG carton / 5KG variant = 10 packs
+            conversionRatio = productUnitSize / variantSize;
+            isPackBreakdown = true;
+            console.log(`[B2B-CONVERT] Auto-calc from unitSize: ${productUnitSize}KG / ${variantSize}KG = ${conversionRatio}`);
         } else {
             conversionRatio = 1;
         }

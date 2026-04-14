@@ -73,6 +73,8 @@ const createProductSchema = z.object({
     damageControlEnabled: z.boolean().default(false),
     // Delivery
     deliveryCostPerCarton: z.string().optional().nullable(),
+    /** Total unit size in KG (e.g. 50 for 50KG carton). Used for conversion. */
+    unitSize: z.string().optional().nullable(),
     // Visibility / publish
     visibility: z.enum(["public", "private"]).default("public"),
     scheduledAt: z.string().optional().nullable(), // ISO date string
@@ -349,6 +351,7 @@ export const productRouter = {
                     shortDescription: productData.shortDescription || null,
                     videoUrl: productData.videoUrl || null,
                     deliveryCostPerCarton: productData.deliveryCostPerCarton || null,
+                    unitSize: productData.unitSize || null,
                     scheduledAt: productData.scheduledAt ? new Date(productData.scheduledAt) : null,
                     sku,
                     supplier: (productData.supplier ?? "").toString().trim() || null,
@@ -526,6 +529,7 @@ export const productRouter = {
                     shortDescription: updateData.shortDescription || null,
                     videoUrl: updateData.videoUrl || null,
                     deliveryCostPerCarton: updateData.deliveryCostPerCarton || null,
+                    unitSize: updateData.unitSize || null,
                     scheduledAt: updateData.scheduledAt ? new Date(updateData.scheduledAt) : null,
                     sku: (updateData.sku ?? "").toString().trim() || null,
                     supplier: (updateData.supplier ?? "").toString().trim() || null,

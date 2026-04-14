@@ -120,6 +120,14 @@ export const product = pgTable("product", {
     scale: 2,
   }),
 
+  /** Total unit size in KG (e.g. 50 for 50KG carton, 7 for 7KG sack).
+   *  Used for conversion: unitSize / variant.size = number of packs.
+   *  e.g. 50KG carton with 5KG variant → 50/5 = 10 packs */
+  unitSize: decimal("unit_size", {
+    precision: 10,
+    scale: 2,
+  }),
+
   /** Product visibility: public or private */
   visibility: visibilityEnum("visibility").default("public").notNull(),
 
