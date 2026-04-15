@@ -3,6 +3,7 @@
 import { format } from "date-fns";
 import {
     AlertTriangle,
+    ArrowUpRight,
     CheckCircle,
     Clock,
     Download,
@@ -118,6 +119,9 @@ interface TicketRow {
     priority: string;
     category: string;
     userType: string;
+    currentLevel?: string;
+    autoEscalated?: boolean | null;
+    escalatedAt?: string | null;
     createdAt: Date;
     customer: {
         id: string | null;
@@ -135,6 +139,7 @@ interface Stats {
     resolved: number;
     closed: number;
     critical: number;
+    escalated: number;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -154,6 +159,7 @@ export default function AdminTicketsPage() {
     const [priorityFilter, setPriorityFilter] = useState("all");
     const [userTypeFilter, setUserTypeFilter] = useState("all");
     const [categoryFilter, setCategoryFilter] = useState("all");
+    const [ticketScope, setTicketScope] = useState<"all" | "direct" | "escalated">("all");
 
     // Bulk actions
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -171,6 +177,7 @@ export default function AdminTicketsPage() {
                     priority: priorityFilter !== "all" ? priorityFilter : undefined,
                     userType: userTypeFilter !== "all" ? userTypeFilter : undefined,
                     category: categoryFilter !== "all" ? categoryFilter : undefined,
+                    ticketScope,
                 }),
                 client.adminTicket.getStats(),
             ]);
@@ -184,7 +191,7 @@ export default function AdminTicketsPage() {
         } finally {
             setLoading(false);
         }
-    }, [page, search, statusFilter, priorityFilter, userTypeFilter, categoryFilter]);
+    }, [page, search, statusFilter, priorityFilter, userTypeFilter, categoryFilter, ticketScope]);
 
     useEffect(() => {
         fetchData();
@@ -322,6 +329,14 @@ export default function AdminTicketsPage() {
             iconColor: "text-red-500",
             bgAccent: "bg-red-50",
         },
+        {
+            label: "Escalated",
+            value: stats?.escalated || 0,
+            icon: ArrowUpRight,
+            color: "text-orange-600",
+            iconColor: "text-orange-500",
+            bgAccent: "bg-orange-50",
+        },
     ];
 
     return (
@@ -341,7 +356,7 @@ export default function AdminTicketsPage() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
                 {kpiCards.map((kpi) => (
                     <Card key={kpi.label} className="border-0 shadow-sm">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
@@ -422,6 +437,16 @@ export default function AdminTicketsPage() {
                                     <SelectItem value="delivery">Delivery</SelectItem>
                                     <SelectItem value="account">Account</SelectItem>
                                     <SelectItem value="other">Other</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Select value={ticketScope} onValueChange={(v) => { setTicketScope(v as "all" | "direct" | "escalated"); setPage(1); }}>
+                                <SelectTrigger className="w-[130px] h-9 text-xs">
+                                    <SelectValue placeholder="Scope" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Tickets</SelectItem>
+                                    <SelectItem value="direct">Direct</SelectItem>
+                                    <SelectItem value="escalated">Escalated</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -535,7 +560,7 @@ export default function AdminTicketsPage() {
                                     const priorityStyle = getPriorityColor(ticket.priority);
                                     const userTypeStyle = getUserTypeBadge(ticket.userType);
                                     const categoryStyle = getCategoryBadge(ticket.category);
-                                    const isEscalated = !!(ticket as TicketRow & { escalatedAt?: Date }).escalatedAt;
+                                    const isEscalated = ticket.currentLevel === "level_2";
 
                                     return (
                                         <TableRow key={ticket.id} className="group hover:bg-gray-50/60">
@@ -552,7 +577,10 @@ export default function AdminTicketsPage() {
                                                         {ticket.ticketNumber}
                                                     </span>
                                                     {isEscalated && (
-                                                        <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                                                        <Badge className="bg-orange-100 text-orange-700 border-0 text-[9px] px-1.5 py-0">
+                                                            <ArrowUpRight className="h-2.5 w-2.5 mr-0.5" />
+                                                            {ticket.autoEscalated ? "Auto" : "Manual"}
+                                                        </Badge>
                                                     )}
                                                 </div>
                                                 <p className="text-xs text-muted-foreground truncate max-w-[180px] mt-0.5">

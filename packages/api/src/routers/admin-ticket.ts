@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, ilike, lte, or, inArray, asc } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, lte, or, inArray, asc, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import {
@@ -9,6 +9,7 @@ import {
     user,
 } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
+import { processAutoEscalations } from "../utils/escalation-cron";
 
 type NewSupportTicketReply = typeof supportTicketReply.$inferInsert;
 type NewSupportTicketNote = typeof supportTicketNote.$inferInsert;
@@ -23,6 +24,8 @@ const ticketFiltersSchema = z.object({
     search: z.string().optional(),
     dateFrom: z.string().optional(),
     dateTo: z.string().optional(),
+    // Scope: 'all' | 'direct' (warehouse→admin) | 'escalated' (auto/manual escalation)
+    ticketScope: z.enum(["all", "direct", "escalated"]).optional().default("all"),
 });
 
 export const adminTicketRouter = {
@@ -44,7 +47,28 @@ export const adminTicketRouter = {
             const offset = (page - 1) * limit;
 
             // Build where conditions
-            const conditions = [];
+            // Admin sees: warehouse→admin direct tickets + all escalated tickets
+            const conditions = [
+                or(
+                    // Direct warehouse→admin: level_1 with no assignee (admin pool)
+                    and(
+                        eq(supportTicket.currentLevel, "level_1"),
+                        isNull(supportTicket.assignedToId),
+                    ),
+                    // Escalated to admin
+                    eq(supportTicket.currentLevel, "level_2"),
+                ) as ReturnType<typeof eq>,
+            ];
+
+            // Scope filter
+            if (input.ticketScope === "direct") {
+                // Only warehouse→admin direct tickets
+                conditions.push(eq(supportTicket.currentLevel, "level_1"));
+                conditions.push(isNull(supportTicket.assignedToId) as ReturnType<typeof eq>);
+            } else if (input.ticketScope === "escalated") {
+                // Only escalated tickets
+                conditions.push(eq(supportTicket.currentLevel, "level_2"));
+            }
 
             if (
                 input.status &&
@@ -143,7 +167,11 @@ export const adminTicketRouter = {
                     priority: supportTicket.priority,
                     category: supportTicket.category,
                     userType: supportTicket.userType,
+                    currentLevel: supportTicket.currentLevel,
+                    assignedToId: supportTicket.assignedToId,
+                    escalationDeadline: supportTicket.escalationDeadline,
                     escalatedAt: supportTicket.escalatedAt,
+                    autoEscalated: supportTicket.autoEscalated,
                     createdAt: supportTicket.createdAt,
                     updatedAt: supportTicket.updatedAt,
                     customer: {
@@ -223,6 +251,11 @@ export const adminTicketRouter = {
                     ),
                 );
 
+            const [escalatedResult] = await db
+                .select({ count: count() })
+                .from(supportTicket)
+                .where(eq(supportTicket.currentLevel, "level_2"));
+
             return {
                 data: {
                     total: totalResult?.count || 0,
@@ -231,6 +264,7 @@ export const adminTicketRouter = {
                     resolved: resolvedResult?.count || 0,
                     closed: closedResult?.count || 0,
                     critical: criticalResult?.count || 0,
+                    escalated: escalatedResult?.count || 0,
                 },
             };
         }),
@@ -683,5 +717,28 @@ export const adminTicketRouter = {
                 .orderBy(desc(supportTicket.createdAt));
 
             return { data: tickets };
+        }),
+
+    /**
+     * Process auto-escalations for overdue tickets.
+     * Can be called periodically from admin dashboard or a cron job.
+     */
+    processEscalations: adminProcedure
+        .route({
+            method: "POST",
+            path: "/admin/tickets/process-escalations",
+            tags: ["Admin Tickets"],
+            summary: "Process auto-escalations",
+            description: "Escalate overdue tickets to admin level",
+        })
+        .handler(async () => {
+            const escalatedCount = await processAutoEscalations();
+            return {
+                success: true,
+                escalatedCount,
+                message: escalatedCount > 0
+                    ? `${escalatedCount} ticket(s) auto-escalated to admin`
+                    : "No tickets to escalate",
+            };
         }),
 };

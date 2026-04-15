@@ -3,17 +3,22 @@
 import { format, formatDistanceToNow } from "date-fns";
 import {
     ArrowLeft,
+    ArrowUpRight,
     Check,
     CheckCircle,
     Clock,
+    FileText,
     Headphones,
+    ImageIcon,
     Loader2,
     Lock,
     MessageSquare,
+    Paperclip,
     Plus,
     Send,
     Ticket,
     User,
+    X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -44,6 +49,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { fileToDataUrl } from "@/lib/cloudinary";
 import { client } from "@/utils/orpc";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -96,6 +102,15 @@ interface TicketItem {
     status: string;
     priority: string;
     category: string;
+    currentLevel?: string;
+    escalatedAt?: string | null;
+    autoEscalated?: boolean | null;
+    assignedTo?: {
+        id: string;
+        name: string;
+        shopName: string | null;
+        warehouseName: string | null;
+    } | null;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -103,6 +118,13 @@ interface TicketItem {
 interface TicketDetail extends TicketItem {
     resolvedAt: Date | null;
     closedAt: Date | null;
+    assignedHandler?: {
+        id: string;
+        name: string;
+        shopName: string | null;
+        warehouseName: string | null;
+        role: string | null;
+    } | null;
     replies: {
         id: number;
         message: string;
@@ -127,7 +149,12 @@ interface Stats {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export function UserSupportPanel() {
+interface UserSupportPanelProps {
+    /** Role of the logged-in user: 'consumer', 'shop_owner', 'warehouse' */
+    userRole?: string;
+}
+
+export function UserSupportPanel({ userRole = "consumer" }: UserSupportPanelProps) {
     const [view, setView] = useState<"list" | "detail">("list");
     const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
 
@@ -144,13 +171,13 @@ export function UserSupportPanel() {
     return view === "detail" && selectedTicketId ? (
         <TicketDetailView ticketId={selectedTicketId} onBack={goBack} />
     ) : (
-        <TicketListView onOpenTicket={openTicket} />
+        <TicketListView onOpenTicket={openTicket} userRole={userRole} />
     );
 }
 
 // ─── Ticket List View ────────────────────────────────────────────────────────
 
-function TicketListView({ onOpenTicket }: { onOpenTicket: (id: number) => void }) {
+function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number) => void; userRole: string }) {
     const [tickets, setTickets] = useState<TicketItem[]>([]);
     const [stats, setStats] = useState<Stats | null>(null);
     const [loading, setLoading] = useState(true);
@@ -165,6 +192,47 @@ function TicketListView({ onOpenTicket }: { onOpenTicket: (id: number) => void }
     const [newCategory, setNewCategory] = useState("other");
     const [newPriority, setNewPriority] = useState("medium");
     const [creating, setCreating] = useState(false);
+
+    // File attachments
+    const [attachments, setAttachments] = useState<{ url: string; fileName: string; fileType: string; preview?: string }[]>([]);
+    const [uploading, setUploading] = useState(false);
+
+    // Shop/warehouse selector for hierarchical routing
+    const [selectedTargetId, setSelectedTargetId] = useState("");
+    const [targetOptions, setTargetOptions] = useState<{ id: string; label: string }[]>([]);
+    const [targetLoading, setTargetLoading] = useState(false);
+
+    // Fetch target options (shops for consumer, warehouses for shop_owner)
+    useEffect(() => {
+        async function fetchTargets() {
+            if (userRole === "warehouse") return; // warehouse → admin, no selector needed
+            setTargetLoading(true);
+            try {
+                if (userRole === "consumer" || userRole === "user" || !userRole) {
+                    const shops = await client.userTicket.getMyShops();
+                    setTargetOptions(
+                        (shops || []).map((s: { id: string; shopName: string | null; name: string }) => ({
+                            id: s.id,
+                            label: s.shopName || s.name,
+                        })),
+                    );
+                } else if (userRole === "shop_owner") {
+                    const warehouses = await client.userTicket.getMyWarehouses();
+                    setTargetOptions(
+                        (warehouses || []).map((w: { id: string; warehouseName: string | null; name: string }) => ({
+                            id: w.id,
+                            label: w.warehouseName || w.name,
+                        })),
+                    );
+                }
+            } catch {
+                /* ignore */
+            } finally {
+                setTargetLoading(false);
+            }
+        }
+        fetchTargets();
+    }, [userRole]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -201,6 +269,15 @@ function TicketListView({ onOpenTicket }: { onOpenTicket: (id: number) => void }
             toast.error("Message must be at least 10 characters");
             return;
         }
+        // Validation: consumer/shop_owner must select a target
+        if (userRole !== "warehouse" && !selectedTargetId) {
+            toast.error(
+                userRole === "shop_owner"
+                    ? "Please select a warehouse"
+                    : "Please select a shop",
+            );
+            return;
+        }
 
         setCreating(true);
         try {
@@ -209,6 +286,14 @@ function TicketListView({ onOpenTicket }: { onOpenTicket: (id: number) => void }
                 message: newMessage,
                 category: newCategory as "order" | "payment" | "delivery" | "account" | "other",
                 priority: newPriority as "low" | "medium" | "high",
+                ...(userRole === "shop_owner"
+                    ? { warehouseId: selectedTargetId }
+                    : userRole !== "warehouse"
+                        ? { shopId: selectedTargetId }
+                        : {}),
+                attachments: attachments.length > 0
+                    ? attachments.map((a) => ({ url: a.url, fileName: a.fileName, fileType: a.fileType }))
+                    : undefined,
             });
             toast.success("Support ticket created");
             setDialogOpen(false);
@@ -216,6 +301,8 @@ function TicketListView({ onOpenTicket }: { onOpenTicket: (id: number) => void }
             setNewMessage("");
             setNewCategory("other");
             setNewPriority("medium");
+            setSelectedTargetId("");
+            setAttachments([]);
             fetchData();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to create ticket");
@@ -264,6 +351,43 @@ function TicketListView({ onOpenTicket }: { onOpenTicket: (id: number) => void }
                                     placeholder="Brief description of your issue..."
                                 />
                             </div>
+                            {/* Target Selector: Shop (for consumer) or Warehouse (for shop_owner) */}
+                            {userRole !== "warehouse" && (
+                                <div>
+                                    <label className="text-sm font-medium mb-1.5 block">
+                                        {userRole === "shop_owner" ? "Select Warehouse" : "Select Shop"}
+                                    </label>
+                                    {targetLoading ? (
+                                        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            Loading...
+                                        </div>
+                                    ) : targetOptions.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground py-2">
+                                            {userRole === "shop_owner"
+                                                ? "No connected warehouses found"
+                                                : "No shops found in your order history"}
+                                        </p>
+                                    ) : (
+                                        <Select value={selectedTargetId} onValueChange={setSelectedTargetId}>
+                                            <SelectTrigger className="text-sm">
+                                                <SelectValue placeholder={
+                                                    userRole === "shop_owner"
+                                                        ? "Choose a warehouse..."
+                                                        : "Choose a shop..."
+                                                } />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {targetOptions.map((opt) => (
+                                                    <SelectItem key={opt.id} value={opt.id}>
+                                                        {opt.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-sm font-medium mb-1.5 block">Category</label>
@@ -302,6 +426,103 @@ function TicketListView({ onOpenTicket }: { onOpenTicket: (id: number) => void }
                                     placeholder="Describe your issue in detail..."
                                     className="min-h-[120px]"
                                 />
+                            </div>
+                            {/* File Attachments */}
+                            <div>
+                                <label className="text-sm font-medium mb-1.5 block">Attachments</label>
+                                {attachments.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {attachments.map((file, idx) => (
+                                            <div
+                                                key={idx}
+                                                className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-xs"
+                                            >
+                                                {file.fileType.startsWith("image/") ? (
+                                                    <ImageIcon className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                                                ) : (
+                                                    <FileText className="h-3.5 w-3.5 text-orange-500 shrink-0" />
+                                                )}
+                                                <span className="max-w-[120px] truncate">{file.fileName}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                                                    className="text-gray-400 hover:text-red-500 transition-colors"
+                                                >
+                                                    <X className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {attachments.length < 5 && (
+                                    <div
+                                        className={cn(
+                                            "border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-gray-400",
+                                            uploading ? "border-blue-300 bg-blue-50/50" : "border-gray-200",
+                                        )}
+                                        onClick={() => {
+                                            const input = document.createElement("input");
+                                            input.type = "file";
+                                            input.accept = "image/*,.pdf,.doc,.docx,.txt";
+                                            input.multiple = true;
+                                            input.onchange = async (e) => {
+                                                const files = Array.from((e.target as HTMLInputElement).files || []);
+                                                if (files.length === 0) return;
+                                                const remaining = 5 - attachments.length;
+                                                const toUpload = files.slice(0, remaining);
+                                                setUploading(true);
+                                                try {
+                                                    for (const file of toUpload) {
+                                                        if (file.size > 10 * 1024 * 1024) {
+                                                            toast.error(`${file.name} is too large (max 10MB)`);
+                                                            continue;
+                                                        }
+                                                        const dataUrl = await fileToDataUrl(file);
+                                                        const result = await client.cloudinary.upload({
+                                                            file: dataUrl,
+                                                            folder: "support-attachments",
+                                                        });
+                                                        if (result.success) {
+                                                            setAttachments((prev) => [
+                                                                ...prev,
+                                                                {
+                                                                    url: result.url,
+                                                                    fileName: file.name,
+                                                                    fileType: file.type,
+                                                                    preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+                                                                },
+                                                            ]);
+                                                        } else {
+                                                            toast.error(`Failed to upload ${file.name}`);
+                                                        }
+                                                    }
+                                                } catch {
+                                                    toast.error("Upload failed");
+                                                } finally {
+                                                    setUploading(false);
+                                                }
+                                            };
+                                            input.click();
+                                        }}
+                                    >
+                                        {uploading ? (
+                                            <div className="flex items-center justify-center gap-2 text-blue-600 text-sm">
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                Uploading...
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col items-center gap-1">
+                                                <Paperclip className="h-5 w-5 text-gray-400" />
+                                                <span className="text-xs text-gray-500">
+                                                    Click to attach files (images, PDF, docs)
+                                                </span>
+                                                <span className="text-[10px] text-gray-400">
+                                                    Max 5 files, 10MB each
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <DialogFooter>
@@ -405,6 +626,12 @@ function TicketListView({ onOpenTicket }: { onOpenTicket: (id: number) => void }
                                                 <Badge className={cn(priority.bg, priority.color, "border-0 text-[10px] font-semibold capitalize px-2 py-0.5")}>
                                                     {ticket.priority}
                                                 </Badge>
+                                                {ticket.currentLevel === "level_2" && (
+                                                    <Badge className="bg-orange-100 text-orange-700 border-0 text-[10px] font-semibold px-2 py-0.5">
+                                                        <ArrowUpRight className="h-2.5 w-2.5 mr-0.5" />
+                                                        Escalated to Admin
+                                                    </Badge>
+                                                )}
                                             </div>
                                             <p className="font-medium text-sm text-gray-900">
                                                 {ticket.subject}
@@ -585,6 +812,48 @@ function TicketDetailView({ ticketId, onBack }: { ticketId: number; onBack: () =
                 </div>
             </Card>
 
+            {/* Handler & Escalation Info */}
+            <Card className="border-0 shadow-sm">
+                <CardContent className="p-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <span className="text-xs text-muted-foreground font-medium">Assigned To</span>
+                            <p className="font-medium mt-0.5">
+                                {ticket.assignedHandler
+                                    ? ticket.assignedHandler.shopName || ticket.assignedHandler.warehouseName || ticket.assignedHandler.name
+                                    : ticket.currentLevel === "level_2"
+                                        ? "Admin Team"
+                                        : "Pending"}
+                            </p>
+                        </div>
+                        <div>
+                            <span className="text-xs text-muted-foreground font-medium">Escalation Status</span>
+                            <div className="mt-0.5">
+                                {ticket.currentLevel === "level_2" ? (
+                                    <Badge className="bg-orange-100 text-orange-700 border-0 text-[10px] font-semibold">
+                                        <ArrowUpRight className="h-2.5 w-2.5 mr-0.5" />
+                                        Escalated to Admin
+                                        {ticket.autoEscalated && " (Auto)"}
+                                    </Badge>
+                                ) : (
+                                    <Badge className="bg-blue-50 text-blue-700 border-0 text-[10px] font-semibold">
+                                        Level 1 — Being Handled
+                                    </Badge>
+                                )}
+                            </div>
+                        </div>
+                        {ticket.escalatedAt && (
+                            <div>
+                                <span className="text-xs text-muted-foreground font-medium">Escalated At</span>
+                                <p className="font-medium mt-0.5">
+                                    {format(new Date(ticket.escalatedAt), "dd MMM yyyy, hh:mm a")}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
+
             {/* Original Message */}
             <Card className="border-0 shadow-sm">
                 <CardHeader className="pb-2">
@@ -604,6 +873,41 @@ function TicketDetailView({ ticketId, onBack }: { ticketId: number; onBack: () =
                     </p>
                 </CardContent>
             </Card>
+
+            {/* Attachments */}
+            {ticket.attachments && ticket.attachments.length > 0 && (
+                <Card className="border-0 shadow-sm">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                            <Paperclip className="h-4 w-4 text-gray-400" />
+                            Attachments ({ticket.attachments.length})
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            {ticket.attachments.map((att) => {
+                                const isImage = att.fileName?.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i);
+                                return (
+                                    <a
+                                        key={att.id}
+                                        href={att.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 p-2 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors text-sm"
+                                    >
+                                        {isImage ? (
+                                            <ImageIcon className="h-4 w-4 text-blue-500 shrink-0" />
+                                        ) : (
+                                            <FileText className="h-4 w-4 text-orange-500 shrink-0" />
+                                        )}
+                                        <span className="truncate text-xs">{att.fileName}</span>
+                                    </a>
+                                );
+                            })}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Replies Thread */}
             {ticket.replies.length > 0 && (

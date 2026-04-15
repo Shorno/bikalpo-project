@@ -4,6 +4,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import {
     AlertTriangle,
     ArrowLeft,
+    ArrowUpRight,
     Building2,
     Check,
     ChevronRight,
@@ -65,6 +66,8 @@ interface TicketData {
     priority: string;
     category: string;
     userType: string;
+    currentLevel?: string;
+    autoEscalated?: boolean | null;
     escalatedAt: Date | null;
     escalatedBy: string | null;
     createdAt: Date;
@@ -307,10 +310,10 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                                 <Badge className="border-0 text-[10px] font-semibold bg-white/15 text-white/90">
                                     {getCategoryLabel(ticket.category)}
                                 </Badge>
-                                {ticket.escalatedAt && (
-                                    <Badge className="border-0 text-[10px] font-semibold bg-red-500/30 text-red-200">
-                                        <AlertTriangle className="mr-1 h-3 w-3" />
-                                        Escalated
+                                {(ticket.escalatedAt || ticket.currentLevel === "level_2") && (
+                                    <Badge className="border-0 text-[10px] font-semibold bg-orange-500/30 text-orange-200">
+                                        <ArrowUpRight className="mr-1 h-3 w-3" />
+                                        Escalated {ticket.autoEscalated ? "(Auto)" : "(Manual)"}
                                     </Badge>
                                 )}
                             </div>

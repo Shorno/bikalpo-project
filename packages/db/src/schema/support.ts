@@ -8,6 +8,7 @@ import {
     serial,
     text,
     timestamp,
+    varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 
@@ -51,7 +52,25 @@ export const supportTicket = pgTable(
         category: ticketCategoryEnum("category").default("other").notNull(),
         // Derived from user role for fast filtering: 'customer' | 'retailer' | 'wholesaler'
         userType: text("user_type").default("customer").notNull(),
-        // Escalation tracking
+
+        // ─── Hierarchical Routing ────────────────────────────────────────────
+
+        /** User ID of the current handler (shop owner, warehouse owner, or null for admin pool) */
+        assignedToId: text("assigned_to_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
+
+        /** Current handler level: level_1 = first responder, level_2 = escalated to admin */
+        currentLevel: varchar("current_level", { length: 10 }).default("level_1").notNull(),
+
+        /** When this ticket should auto-escalate to the next level */
+        escalationDeadline: timestamp("escalation_deadline"),
+
+        /** Whether this ticket was auto-escalated (true) vs manually escalated */
+        autoEscalated: boolean("auto_escalated").default(false),
+
+        // ─── Escalation Tracking ─────────────────────────────────────────────
+
         escalatedAt: timestamp("escalated_at"),
         escalatedBy: text("escalated_by").references(() => user.id, {
             onDelete: "set null",
@@ -71,6 +90,8 @@ export const supportTicket = pgTable(
         index("supportTicket_category_idx").on(table.category),
         index("supportTicket_userType_idx").on(table.userType),
         index("supportTicket_priority_idx").on(table.priority),
+        index("supportTicket_assignedToId_idx").on(table.assignedToId),
+        index("supportTicket_currentLevel_idx").on(table.currentLevel),
     ],
 );
 
@@ -143,6 +164,11 @@ export const supportTicketRelations = relations(
             fields: [supportTicket.customerId],
             references: [user.id],
             relationName: "ticketCustomer",
+        }),
+        assignedTo: one(user, {
+            fields: [supportTicket.assignedToId],
+            references: [user.id],
+            relationName: "ticketAssignedTo",
         }),
         escalatedByUser: one(user, {
             fields: [supportTicket.escalatedBy],
