@@ -155,7 +155,7 @@ export function PerformanceCharts({
                     borderRadius: "8px",
                     fontSize: "12px",
                   }}
-                  formatter={(value: number | string) => [`${value}%`, "Success Rate"]}
+                  formatter={(value: unknown) => [`${value}%`, "Success Rate"]}
                 />
                 <Bar
                   dataKey="rate"

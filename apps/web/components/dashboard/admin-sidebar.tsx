@@ -2,6 +2,7 @@
 
 import {
   ActivityIcon,
+  AlertTriangle,
   Boxes,
   ClipboardListIcon,
   ContactIcon,
@@ -144,9 +145,13 @@ const adminNavGroups: NavGroup[] = [
         icon: ClipboardListIcon,
       },
       {
-        title: "Support Tickets",
+        title: "Support & Complaints",
         url: `${ADMIN_BASE}/tickets`,
         icon: HeadphonesIcon,
+        items: [
+          { title: "Support Tickets", url: `${ADMIN_BASE}/tickets` },
+          { title: "Complaints", url: `${ADMIN_BASE}/complaints` },
+        ],
       },
       {
         title: "Announcements",

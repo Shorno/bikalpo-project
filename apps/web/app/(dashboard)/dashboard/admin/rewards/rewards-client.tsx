@@ -655,23 +655,23 @@ export function RewardsClient() {
                       )}
                     </span>
                   </div>
-                  {rewardDetail.approvedAt && (
+                  {(rewardDetail as any).approvedAt && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Approved</span>
                       <span>
                         {format(
-                          new Date(rewardDetail.approvedAt),
+                          new Date((rewardDetail as any).approvedAt),
                           "MMM d, yyyy HH:mm",
                         )}
                       </span>
                     </div>
                   )}
-                  {rewardDetail.paidAt && (
+                  {(rewardDetail as any).paidAt && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Paid</span>
                       <span>
                         {format(
-                          new Date(rewardDetail.paidAt),
+                          new Date((rewardDetail as any).paidAt),
                           "MMM d, yyyy HH:mm",
                         )}
                       </span>

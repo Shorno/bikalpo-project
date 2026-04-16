@@ -4,16 +4,36 @@
 "use client";
 
 import { format } from "date-fns";
-import { ArrowLeft, MapPin, Package, Phone, User } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2, MapPin, Package, Phone, User } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { useOrderByNumber } from "@/hooks/use-customer-api";
+import { client } from "@/utils/orpc";
 
 interface OrderDetailClientProps {
   orderNumber: string;
@@ -73,6 +93,14 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
     NonNullable<typeof data>["order"]
   >["items"][number];
 
+  // Report Issue state
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportType, setReportType] = useState<"delivery" | "payment" | "product">("delivery");
+  const [reportPriority, setReportPriority] = useState<"medium" | "high" | "critical">("medium");
+  const [reportDescription, setReportDescription] = useState("");
+  const [reportComment, setReportComment] = useState("");
+
   useEffect(() => {
     if (isError) {
       notFound();
@@ -84,6 +112,36 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
 
   const { order } = data;
   const config = statusConfig[order.status] || statusConfig.pending;
+
+  // Show Report Issue for eligible statuses
+  const canReport = ["confirmed", "processing", "out_for_delivery", "delivered", "returned"].includes(order.status);
+
+  const handleSubmitComplaint = async () => {
+    if (reportDescription.length < 10) {
+      toast.error("Description must be at least 10 characters");
+      return;
+    }
+    setReportLoading(true);
+    try {
+      await client.userComplaint.create({
+        orderId: order.id,
+        type: reportType,
+        priority: reportPriority,
+        description: reportDescription,
+        userComment: reportComment || undefined,
+      });
+      toast.success("Complaint submitted successfully. Our team will investigate.");
+      setReportOpen(false);
+      setReportDescription("");
+      setReportComment("");
+      setReportType("delivery");
+      setReportPriority("medium");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to submit complaint");
+    } finally {
+      setReportLoading(false);
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -254,9 +312,108 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
                 Track Order
               </Link>
             </Button>
+
+            {/* Report Issue Button */}
+            {canReport && (
+              <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                    Report an Issue
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[480px]">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-red-500" />
+                      Report an Issue
+                    </DialogTitle>
+                    <DialogDescription>
+                      File a complaint for Order #{order.orderNumber}. Our team will investigate and get back to you.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="complaint-type" className="text-sm font-medium">Issue Type</Label>
+                        <Select value={reportType} onValueChange={(v) => setReportType(v as typeof reportType)}>
+                          <SelectTrigger id="complaint-type" className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="delivery">Delivery</SelectItem>
+                            <SelectItem value="payment">Payment</SelectItem>
+                            <SelectItem value="product">Product</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="complaint-priority" className="text-sm font-medium">Priority</Label>
+                        <Select value={reportPriority} onValueChange={(v) => setReportPriority(v as typeof reportPriority)}>
+                          <SelectTrigger id="complaint-priority" className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="critical">Critical</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="complaint-description" className="text-sm font-medium">
+                        Describe the issue <span className="text-red-500">*</span>
+                      </Label>
+                      <Textarea
+                        id="complaint-description"
+                        placeholder="Please describe the issue you're experiencing..."
+                        value={reportDescription}
+                        onChange={(e) => setReportDescription(e.target.value)}
+                        rows={4}
+                        className="resize-none"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Minimum 10 characters ({reportDescription.length}/5000)
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="complaint-comment" className="text-sm font-medium">
+                        Additional Comment <span className="text-muted-foreground">(optional)</span>
+                      </Label>
+                      <Textarea
+                        id="complaint-comment"
+                        placeholder="Any additional details..."
+                        value={reportComment}
+                        onChange={(e) => setReportComment(e.target.value)}
+                        rows={2}
+                        className="resize-none"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setReportOpen(false)} disabled={reportLoading}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSubmitComplaint}
+                      disabled={reportLoading || reportDescription.length < 10}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      {reportLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Submit Complaint
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
