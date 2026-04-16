@@ -183,7 +183,7 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
               <div key={item.id} className="flex items-center gap-4 p-4">
                 <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-100">
                   <Image
-                    src={item.productImage || "/placeholder.png"}
+                    src={item.productImage || "/placeholder-image.svg"}
                     alt={item.productName}
                     fill
                     className="object-cover"

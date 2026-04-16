@@ -221,7 +221,7 @@ export function OrderConfirmationClient({
                 <div key={item.id} className="flex items-center gap-3">
                   <div className="relative h-14 w-14 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 border border-gray-100">
                     <Image
-                      src={item.productImage || "/placeholder.png"}
+                      src={item.productImage || "/placeholder-image.svg"}
                       alt={item.productName}
                       fill
                       className="object-cover"

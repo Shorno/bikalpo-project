@@ -248,7 +248,7 @@ export default function OpenOrderTrackerPage() {
                     >
                       <div className="relative h-10 w-10 rounded-md overflow-hidden bg-gray-100 flex-shrink-0">
                         <Image
-                          src={item.productImage || "/placeholder.png"}
+                          src={item.productImage || "/placeholder-image.svg"}
                           alt={item.productName}
                           fill
                           className="object-cover"
