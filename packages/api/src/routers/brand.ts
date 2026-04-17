@@ -5,6 +5,7 @@ import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
+import { nextSkuCode } from "./helpers/generate-sku";
 
 // Validation schemas
 const createBrandSchema = z.object({
@@ -96,7 +97,10 @@ export const brandRouter = {
         })
         .input(createBrandSchema)
         .handler(async ({ input }) => {
-            const [newBrand] = await db.insert(brand).values(input).returning();
+            // Auto-generate next available 2-digit skuCode
+            const skuCode = await nextSkuCode(brand, brand.skuCode, 2);
+
+            const [newBrand] = await db.insert(brand).values({ ...input, skuCode }).returning();
             return {
                 data: newBrand,
                 message: "Brand created successfully",

@@ -22,6 +22,7 @@ export type ProductTypeRow = {
   slug: string;
   description: string | null;
   image: string | null;
+  skuCode: string | null;
   enableBrand: boolean;
   enableColor: boolean;
   enableSize: boolean;
@@ -41,6 +42,18 @@ const behaviourLabels: Record<string, string> = {
 
 export function useProductTypeColumns() {
   const columns: ColumnDef<ProductTypeRow>[] = [
+    {
+      id: "skuCode",
+      header: () => <div className="text-center">SKU</div>,
+      cell: ({ row }) => (
+        <div className="text-center">
+          <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
+            {row.original.skuCode || "—"}
+          </Badge>
+        </div>
+      ),
+      size: 70,
+    },
     {
       accessorKey: "name",
       header: ({ column }) => (

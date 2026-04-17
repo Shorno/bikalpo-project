@@ -73,6 +73,8 @@ const createProductSchema = z.object({
     damageControlEnabled: z.boolean().default(false),
     // Delivery
     deliveryCostPerCarton: z.string().optional().nullable(),
+    /** Total unit size in KG (e.g. 50 for 50KG carton). Used for conversion. */
+    unitSize: z.string().optional().nullable(),
     // Visibility / publish
     visibility: z.enum(["public", "private"]).default("public"),
     scheduledAt: z.string().optional().nullable(), // ISO date string
@@ -349,6 +351,7 @@ export const productRouter = {
                     shortDescription: productData.shortDescription || null,
                     videoUrl: productData.videoUrl || null,
                     deliveryCostPerCarton: productData.deliveryCostPerCarton || null,
+                    unitSize: productData.unitSize || null,
                     scheduledAt: productData.scheduledAt ? new Date(productData.scheduledAt) : null,
                     sku,
                     supplier: (productData.supplier ?? "").toString().trim() || null,
@@ -412,62 +415,72 @@ export const productRouter = {
                 const voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
 
                 // 3. Auto-generate product_variant rows (bridge to old system)
-                // This connects the new global variant system to inventory/order_item/stock_ledger
-                const autoVariantRows = insertedPrices.map((pvp, idx) => {
+                // Creates one product_variant per brand × variant combination
+                // so inventory can be tracked independently per brand.
+                // e.g. 3 brands × 2 variants = 6 product_variant rows
+                const effectiveBrandIds = (brandIds && brandIds.length > 0) ? brandIds : [null];
+                const autoVariantRows: any[] = [];
+                let sortIdx = 0;
+
+                for (const pvp of insertedPrices) {
+                    const idx = insertedPrices.indexOf(pvp);
                     const vo = voMap[pvp.variantOptionId];
-                    const vp = variantPrices[idx]!;
                     const isLoose = vo?.variantType === "loose";
                     const packType = isLoose ? "loose" : "packet";
                     const weightKg = vo?.size || "0";
 
-                    return {
-                        productId: newProduct!.id,
-                        sku: `CP-${newProduct!.id}-VO-${pvp.variantOptionId}`,
-                        unitLabel: vo?.name || "Unit",
-                        quantitySelectorLabel: vo?.name || "Unit",
-                        packagingType: packType,
-                        weightKg,
-                        // Pricing from variant price config
-                        pricingType: pvp.pricingType || "per_unit",
-                        price: pvp.consumerPrice || "0",
-                        // Order rules
-                        orderMin: pvp.orderMin || "1",
-                        orderMax: pvp.orderMax || null,
-                        orderIncrement: pvp.orderIncrement || "1",
-                        orderUnit: pvp.orderUnit || vo?.unit || "piece",
-                        // B2B/B2C type
-                        variantType: (pvp.variantType as "trade" | "retail" | null) || null,
-                        packType: (packType as any) || null,
-                        packWeightKg: weightKg || null,
-                        sellUnit: vo?.name || null,
-                        orderType: pvp.variantType === "trade" ? "b2b" as const : pvp.variantType === "retail" ? "b2c" as const : null,
-                        visibilityRole: pvp.variantType === "trade" ? "shop_owner" as const : pvp.variantType === "retail" ? "consumer" as const : "all" as const,
-                        // Margin
-                        minMarginPercent: pvp.minMarginPercent || null,
-                        minMarginAmount: pvp.minMarginAmount || null,
-                        // Pack return
-                        isPackReturnRequired: pvp.isPackReturnRequired ?? false,
-                        packDepositAmount: pvp.packDepositAmount || "0",
-                        // Conversion
-                        conversionRatio: pvp.conversionRatio || null,
-                        conversionLossPercent: pvp.conversionLossPercent || "0",
-                        // Bridge back-references
-                        sourceVariantPriceId: pvp.id,
-                        sourceVariantOptionId: pvp.variantOptionId,
-                        // Stock defaults
-                        stockQuantity: 0,
-                        reorderLevel: 0,
-                        sortOrder: idx,
-                        isActive: pvp.isActive ?? true,
-                    };
-                });
+                    for (const bId of effectiveBrandIds) {
+                        autoVariantRows.push({
+                            productId: newProduct!.id,
+                            brandId: bId,
+                            sku: bId
+                                ? `CP-${newProduct!.id}-VO-${pvp.variantOptionId}-B-${bId}`
+                                : `CP-${newProduct!.id}-VO-${pvp.variantOptionId}`,
+                            unitLabel: vo?.name || "Unit",
+                            quantitySelectorLabel: vo?.name || "Unit",
+                            packagingType: packType,
+                            weightKg,
+                            // Pricing from variant price config
+                            pricingType: pvp.pricingType || "per_unit",
+                            price: pvp.consumerPrice || "0",
+                            // Order rules
+                            orderMin: pvp.orderMin || "1",
+                            orderMax: pvp.orderMax || null,
+                            orderIncrement: pvp.orderIncrement || "1",
+                            orderUnit: pvp.orderUnit || vo?.unit || "piece",
+                            // B2B/B2C type
+                            variantType: (pvp.variantType as "trade" | "retail" | null) || null,
+                            packType: (packType as any) || null,
+                            packWeightKg: weightKg || null,
+                            sellUnit: vo?.name || null,
+                            orderType: pvp.variantType === "trade" ? "b2b" as const : pvp.variantType === "retail" ? "b2c" as const : null,
+                            visibilityRole: pvp.variantType === "trade" ? "shop_owner" as const : pvp.variantType === "retail" ? "consumer" as const : "all" as const,
+                            // Margin
+                            minMarginPercent: pvp.minMarginPercent || null,
+                            minMarginAmount: pvp.minMarginAmount || null,
+                            // Pack return
+                            isPackReturnRequired: pvp.isPackReturnRequired ?? false,
+                            packDepositAmount: pvp.packDepositAmount || "0",
+                            // Conversion
+                            conversionRatio: pvp.conversionRatio || null,
+                            conversionLossPercent: pvp.conversionLossPercent || "0",
+                            // Bridge back-references
+                            sourceVariantPriceId: pvp.id,
+                            sourceVariantOptionId: pvp.variantOptionId,
+                            // Stock defaults
+                            stockQuantity: 0,
+                            reorderLevel: 0,
+                            sortOrder: sortIdx++,
+                            isActive: pvp.isActive ?? true,
+                        });
+                    }
+                }
 
                 if (autoVariantRows.length > 0) {
                     const generatedVariants = await db.insert(productVariant).values(autoVariantRows).returning();
 
                     // 4. Link Trade → Retail via linkedRetailVariantId
-                    // For each Trade variant that has linkedRetailVariantOptionId,
-                    // find the generated Retail variant with matching sourceVariantOptionId and link them
+                    // For each Trade variant, find matching Retail variant with same brandId
                     for (const gv of generatedVariants) {
                         if (!gv.sourceVariantPriceId) continue;
                         const pvp = insertedPrices.find((p) => p.id === gv.sourceVariantPriceId);
@@ -475,7 +488,8 @@ export const productRouter = {
 
                         const linkedRetail = generatedVariants.find(
                             (rv) => rv.sourceVariantOptionId === pvp.linkedRetailVariantOptionId
-                                && rv.variantType === "retail",
+                                && rv.variantType === "retail"
+                                && rv.brandId === gv.brandId, // match same brand
                         );
                         if (linkedRetail) {
                             await db
@@ -515,6 +529,7 @@ export const productRouter = {
                     shortDescription: updateData.shortDescription || null,
                     videoUrl: updateData.videoUrl || null,
                     deliveryCostPerCarton: updateData.deliveryCostPerCarton || null,
+                    unitSize: updateData.unitSize || null,
                     scheduledAt: updateData.scheduledAt ? new Date(updateData.scheduledAt) : null,
                     sku: (updateData.sku ?? "").toString().trim() || null,
                     supplier: (updateData.supplier ?? "").toString().trim() || null,

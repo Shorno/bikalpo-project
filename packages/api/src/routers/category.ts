@@ -2,10 +2,11 @@ import { db } from "@bikalpo-project/db";
 import { category, subCategory } from "@bikalpo-project/db/schema";
 import { product } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
+import { nextSkuCode } from "./helpers/generate-sku";
 
 // Validation schemas
 const createCategorySchema = z.object({
@@ -124,7 +125,13 @@ export const categoryRouter = {
         })
         .input(createCategorySchema)
         .handler(async ({ input }) => {
-            const [newCategory] = await db.insert(category).values(input).returning();
+            // Auto-generate next 3-digit skuCode scoped to typeId
+            const filterCondition = input.typeId
+                ? sql`${category.typeId} = ${input.typeId}`
+                : sql`${category.typeId} IS NULL`;
+            const skuCode = await nextSkuCode(category, category.skuCode, 3, filterCondition);
+
+            const [newCategory] = await db.insert(category).values({ ...input, skuCode }).returning();
             return {
                 data: newCategory,
                 message: "Category created successfully",

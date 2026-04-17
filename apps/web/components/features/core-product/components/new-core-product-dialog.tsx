@@ -103,7 +103,7 @@ export default function NewCoreProductDialog() {
     },
     onSubmit: async ({ value }) => {
       mutation.mutate({
-        sku: value.sku,
+        sku: value.sku.trim() || undefined,
         name: value.name,
         slug: value.slug,
         description: value.description || undefined,
@@ -186,24 +186,25 @@ export default function NewCoreProductDialog() {
             )}
           </form.Field>
 
-          {/* SKU, Name, Slug */}
+          {/* Name, Slug */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <form.Field name="sku">
               {(field) => (
                 <Field>
-                  <FieldLabel htmlFor={field.name}>SKU *</FieldLabel>
+                  <FieldLabel htmlFor={field.name}>SKU</FieldLabel>
                   <Input
                     id={field.name}
                     value={field.state.value}
                     onBlur={field.handleBlur}
                     onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="001"
+                    placeholder="e.g. 003 (leave empty to auto-generate)"
                     autoComplete="off"
                   />
-                  <FieldDescription>Unique identifier</FieldDescription>
+                  <FieldDescription>Leave empty to auto-generate</FieldDescription>
                 </Field>
               )}
             </form.Field>
+
 
             <form.Field name="name">
               {(field) => (

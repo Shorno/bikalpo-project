@@ -684,7 +684,7 @@ const orderQueries = {
                             await tx
                                 .update(inventory)
                                 .set({
-                                    availableQty: sql`(CAST(${inventory.availableQty} AS numeric) + ${existingItem.quantity})::text`,
+                                    availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${existingItem.quantity}`,
                                 })
                                 .where(
                                     and(
@@ -712,7 +712,7 @@ const orderQueries = {
                             await tx
                                 .update(inventory)
                                 .set({
-                                    availableQty: sql`(CAST(${inventory.availableQty} AS numeric) - ${diff})::text`,
+                                    availableQty: sql`CAST(${inventory.availableQty} AS numeric) - ${diff}`,
                                 })
                                 .where(
                                     and(
@@ -1360,6 +1360,10 @@ const productActivation = {
                             packType: true,
                             innerPackSizeKg: true,
                             packCountInside: true,
+                            brandId: true,
+                        },
+                        with: {
+                            brand: { columns: { id: true, name: true } },
                         },
                     },
                 },
@@ -1568,6 +1572,285 @@ const productActivation = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Catalog Hierarchy Browse (Phase C+) — Type→Category→SubCat→Core
+// ────────────────────────────────────────────────────────────────
+
+import {
+    coreProductIdentity,
+    coreProductBrand,
+} from "@bikalpo-project/db/schema";
+import { productType } from "@bikalpo-project/db/schema";
+
+const catalogBrowse = {
+    /**
+     * Get hierarchical catalog: Type → Category → SubCategory → Core Products.
+     * Filters by warehouse's assigned categories.
+     */
+    getCatalogHierarchy: warehouseProcedure
+        .input(
+            z.object({
+                typeId: z.number().optional(),
+                categoryId: z.number().optional(),
+                subCategoryId: z.number().optional(),
+                search: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get assigned category IDs
+            const assignments = await db.query.warehouseCategoryAssignment.findMany({
+                where: eq(warehouseCategoryAssignment.warehouseId, userId),
+                columns: { categoryId: true },
+            });
+
+            const assignedCategoryIds = [...new Set(assignments.map((a) => a.categoryId))];
+            if (assignedCategoryIds.length === 0) {
+                return { types: [] };
+            }
+
+            // 2. Get categories with type info
+            const categories = await db.query.category.findMany({
+                where: inArray(categoryTable.id, assignedCategoryIds),
+                with: {
+                    type: true,
+                    subCategory: {
+                        where: input.subCategoryId
+                            ? eq(sql`id`, input.subCategoryId)
+                            : undefined,
+                    },
+                },
+            });
+
+            // 3. Filter by typeId if provided
+            const filteredCats = input.typeId
+                ? categories.filter((c) => c.typeId === input.typeId)
+                : categories;
+
+            // 4. Filter by categoryId if provided
+            const finalCats = input.categoryId
+                ? filteredCats.filter((c) => c.id === input.categoryId)
+                : filteredCats;
+
+            // 5. Get all subcategory IDs from filtered categories
+            const allSubCatIds = finalCats.flatMap(
+                (c) => (c.subCategory || []).map((sc: any) => sc.id),
+            );
+
+            // Also get category IDs for core products without subcategory
+            const allCatIds = finalCats.map((c) => c.id);
+
+            // 6. Get core product identities in these categories/subcats
+            const searchCondition = input.search
+                ? sql`${coreProductIdentity.name} ILIKE ${`%${input.search}%`}`
+                : undefined;
+
+            const coreProducts = await db.query.coreProductIdentity.findMany({
+                where: and(
+                    inArray(coreProductIdentity.categoryId, allCatIds),
+                    eq(coreProductIdentity.status, "active"),
+                    searchCondition,
+                ),
+                with: {
+                    brands: {
+                        with: {
+                            brand: { columns: { id: true, name: true, logo: true, slug: true } },
+                        },
+                    },
+                    variantLinks: {
+                        with: {
+                            variantOption: {
+                                columns: { id: true, name: true, unit: true, size: true },
+                            },
+                        },
+                    },
+                },
+                orderBy: [coreProductIdentity.displayOrder, coreProductIdentity.name],
+            });
+
+            // 7. Get existing products linked to these core identities
+            const coreProductIds = coreProducts.map((cp) => cp.id);
+            let linkedProducts: any[] = [];
+            if (coreProductIds.length > 0) {
+                linkedProducts = await db.query.product.findMany({
+                    where: and(
+                        inArray(productTable.coreProductId, coreProductIds),
+                        eq(productTable.status, "active"),
+                    ),
+                    columns: {
+                        id: true,
+                        name: true,
+                        coreProductId: true,
+                        unitSize: true,
+                    },
+                    with: {
+                        variants: {
+                            where: eq(productVariant.isActive, true),
+                            columns: {
+                                id: true,
+                                sku: true,
+                                unitLabel: true,
+                                weightKg: true,
+                                price: true,
+                                brandId: true,
+                            },
+                            with: {
+                                brand: { columns: { id: true, name: true } },
+                            },
+                        },
+                    },
+                });
+            }
+
+            // 8. Get warehouse's current inventory variant IDs
+            const existingInventory = await db
+                .select({ variantId: inventory.variantId })
+                .from(inventory)
+                .where(
+                    and(
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, userId),
+                    ),
+                );
+            const inventoryVariantIds = new Set(existingInventory.map((i) => i.variantId));
+
+            // 9. Build hierarchy response
+            const typeMap = new Map<number, any>();
+
+            for (const cat of finalCats) {
+                const typeData = cat.type || { id: 0, name: "Uncategorized", slug: "uncategorized" };
+                const typeId = (typeData as any).id || 0;
+
+                if (!typeMap.has(typeId)) {
+                    typeMap.set(typeId, {
+                        ...typeData,
+                        categories: [],
+                    });
+                }
+
+                const subCats = (cat.subCategory || []).map((sc: any) => {
+                    const subCatCoreProducts = coreProducts
+                        .filter((cp) => cp.subCategoryId === sc.id)
+                        .map((cp) => {
+                            const cpProducts = linkedProducts.filter(
+                                (p) => p.coreProductId === cp.id,
+                            );
+                            return {
+                                ...cp,
+                                products: cpProducts.map((p: any) => ({
+                                    ...p,
+                                    variants: p.variants.map((v: any) => ({
+                                        ...v,
+                                        inInventory: inventoryVariantIds.has(v.id),
+                                    })),
+                                })),
+                            };
+                        });
+
+                    return {
+                        ...sc,
+                        coreProducts: subCatCoreProducts,
+                    };
+                });
+
+                // Also get core products directly under category (no subcategory)
+                const directCoreProducts = coreProducts
+                    .filter((cp) => cp.categoryId === cat.id && !cp.subCategoryId)
+                    .map((cp) => {
+                        const cpProducts = linkedProducts.filter(
+                            (p) => p.coreProductId === cp.id,
+                        );
+                        return {
+                            ...cp,
+                            products: cpProducts.map((p: any) => ({
+                                ...p,
+                                variants: p.variants.map((v: any) => ({
+                                    ...v,
+                                    inInventory: inventoryVariantIds.has(v.id),
+                                })),
+                            })),
+                        };
+                    });
+
+                typeMap.get(typeId).categories.push({
+                    id: cat.id,
+                    name: cat.name,
+                    slug: cat.slug,
+                    subCategories: subCats,
+                    directCoreProducts,
+                });
+            }
+
+            return { types: Array.from(typeMap.values()) };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
+// Product Identity Requests
+// ────────────────────────────────────────────────────────────────
+
+import { productIdentityRequest } from "@bikalpo-project/db/schema";
+
+const productRequests = {
+    /** Submit a product identity request */
+    submitProductRequest: warehouseProcedure
+        .input(
+            z.object({
+                typeName: z.string().optional(),
+                categoryName: z.string().optional(),
+                subCategoryName: z.string().optional(),
+                productName: z.string().min(1),
+                description: z.string().optional(),
+                referenceImage: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const [created] = await db
+                .insert(productIdentityRequest)
+                .values({
+                    requestedBy: userId,
+                    typeName: input.typeName || null,
+                    categoryName: input.categoryName || null,
+                    subCategoryName: input.subCategoryName || null,
+                    productName: input.productName,
+                    description: input.description || null,
+                    referenceImage: input.referenceImage || null,
+                    status: "pending",
+                })
+                .returning();
+
+            return { request: created };
+        }),
+
+    /** Get my product requests */
+    getMyProductRequests: warehouseProcedure
+        .input(
+            z.object({
+                status: z.enum(["pending", "approved", "rejected"]).optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const conditions: SQL[] = [
+                eq(productIdentityRequest.requestedBy, userId),
+            ];
+            if (input.status) {
+                conditions.push(eq(productIdentityRequest.status, input.status));
+            }
+
+            const requests = await db.query.productIdentityRequest.findMany({
+                where: and(...conditions),
+                orderBy: [desc(productIdentityRequest.createdAt)],
+            });
+
+            return { requests };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -1579,4 +1862,6 @@ export const warehouseRouter = {
     ...supplierQueries,
     ...purchaseQueries,
     ...productActivation,
+    ...catalogBrowse,
+    ...productRequests,
 };

@@ -235,6 +235,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
       damageControlEnabled: (product as any)?.damageControlEnabled ?? false,
       isReturnablePack: (product as any)?.isReturnablePack ?? false,
       deliveryCostPerCarton: (product as any)?.deliveryCostPerCarton ?? "",
+      unitSize: (product as any)?.unitSize ?? "",
       visibility: (product as any)?.visibility ?? "public",
       status: (product as any)?.status ?? "active",
     },
@@ -621,29 +622,49 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-2">
                     <Truck className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle className="text-base">Delivery Cost</CardTitle>
+                    <CardTitle className="text-base">Unit Size & Delivery</CardTitle>
                   </div>
                   <CardDescription>
-                    Set default delivery cost per carton. Empty = use system
-                    default.
+                    Define the total unit size (carton/sack) and delivery cost.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form.Field name="deliveryCostPerCarton">
-                    {(field) => (
-                      <Field>
-                        <FieldLabel>Per Carton (৳)</FieldLabel>
-                        <Input
-                          value={field.state.value}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          placeholder="e.g. 50"
-                          type="number"
-                          step="0.01"
-                          className="w-48"
-                        />
-                      </Field>
-                    )}
-                  </form.Field>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <form.Field name="unitSize">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel>Total Unit Size (KG)</FieldLabel>
+                          <Input
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="e.g. 50 for 50KG carton"
+                            type="number"
+                            step="1"
+                            min="1"
+                            className="w-full"
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Conversion: unitSize ÷ variant size = packs per unit
+                          </p>
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="deliveryCostPerCarton">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel>Per Carton (৳)</FieldLabel>
+                          <Input
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="e.g. 50"
+                            type="number"
+                            step="0.01"
+                            className="w-full"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                  </div>
                 </CardContent>
               </Card>
 

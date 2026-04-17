@@ -5,6 +5,7 @@ import { and, asc, count, countDistinct, eq, ilike, inArray, type SQL } from "dr
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
+import { nextSkuCode } from "./helpers/generate-sku";
 
 export const adminProductTypeRouter = {
     // List all product types with optional status filter
@@ -118,6 +119,9 @@ export const adminProductTypeRouter = {
                 throw new ORPCError("CONFLICT", { message: "A type with this slug already exists" });
             }
 
+            // Auto-generate next available 2-digit skuCode
+            const skuCode = await nextSkuCode(productType, productType.skuCode, 2);
+
             const [created] = await db
                 .insert(productType)
                 .values({
@@ -133,6 +137,7 @@ export const adminProductTypeRouter = {
                     inventoryBehaviour: input.inventoryBehaviour,
                     isActive: input.isActive,
                     displayOrder: input.displayOrder,
+                    skuCode,
                 })
                 .returning();
 

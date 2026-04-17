@@ -1830,6 +1830,9 @@ const warehouseConnectionEndpoints = {
                     variantPackType: productVariant.packType,
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
+                    productUnitSize: product.unitSize,
+                    variantBrandId: productVariant.brandId,
+                    brandName: brand.name,
                 })
                 .from(inventory)
                 .innerJoin(
@@ -1843,6 +1846,10 @@ const warehouseConnectionEndpoints = {
                 .leftJoin(
                     category,
                     eq(product.categoryId, category.id),
+                )
+                .leftJoin(
+                    brand,
+                    eq(productVariant.brandId, brand.id),
                 )
                 .where(and(...conditions))
                 .orderBy(asc(category.name), asc(product.name))
@@ -1875,6 +1882,7 @@ const warehouseConnectionEndpoints = {
                         name: item.productName,
                         image: item.productImage,
                         size: item.productSize,
+                        unitSize: item.productUnitSize,
                         categoryName: item.categoryName || "Uncategorized",
                     },
                     variant: {
@@ -1885,6 +1893,8 @@ const warehouseConnectionEndpoints = {
                         packType: item.variantPackType,
                         innerPackSizeKg: item.variantInnerPackSizeKg,
                         packCountInside: item.variantPackCountInside,
+                        brandId: item.variantBrandId,
+                        brandName: item.brandName,
                     },
                 };
             });

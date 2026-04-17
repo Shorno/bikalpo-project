@@ -4,18 +4,20 @@ import {
     coreProductBrand,
     variantOption,
     coreProductVariantOption,
+    subCategory,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { adminProcedure } from "../index";
 import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { nextSkuCode } from "./helpers/generate-sku";
 
 // === Input Schemas ===
 
 
 
 const createCoreProductSchema = z.object({
-    sku: z.string().min(1),
+    sku: z.string().optional(), // Now auto-generated if not provided
     name: z.string().min(1),
     slug: z.string().min(1),
     description: z.string().optional(),
@@ -78,10 +80,13 @@ export const adminCoreProductRouter = {
                 orderBy: [desc(coreProductIdentity.createdAt)],
                 with: {
                     category: {
-                        columns: { id: true, name: true, slug: true, typeId: true },
+                        columns: { id: true, name: true, slug: true, typeId: true, skuCode: true },
+                        with: {
+                            type: { columns: { id: true, name: true, skuCode: true } },
+                        },
                     },
                     subCategory: {
-                        columns: { id: true, name: true },
+                        columns: { id: true, name: true, skuCode: true },
                     },
                     brands: {
                         with: {
@@ -93,7 +98,17 @@ export const adminCoreProductRouter = {
                 },
             });
 
-            return { coreProducts: results };
+            // Compose full hierarchical SKU for each core product
+            const coreProducts = results.map((cp) => {
+                const typeCode = cp.category?.type?.skuCode || "??";
+                const catCode = cp.category?.skuCode || "???";
+                const subCatCode = cp.subCategory?.skuCode || "???";
+                const coreCode = cp.sku || "???";
+                const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
+                return { ...cp, composedSku };
+            });
+
+            return { coreProducts };
         }),
 
     /**
@@ -163,7 +178,7 @@ export const adminCoreProductRouter = {
         .handler(async ({ input }) => {
             const { brandIds, defaultBrandId, ...identityData } = input;
 
-            // Check uniqueness
+            // Check uniqueness for name
             const existingName = await db.query.coreProductIdentity.findFirst({
                 where: eq(coreProductIdentity.name, identityData.name),
                 columns: { id: true },
@@ -174,13 +189,26 @@ export const adminCoreProductRouter = {
                 });
             }
 
+            // Auto-generate 3-digit SKU scoped to subCategoryId (or categoryId if no subCat)
+            let sku = identityData.sku;
+            if (!sku) {
+                const filterCondition = identityData.subCategoryId
+                    ? sql`${coreProductIdentity.subCategoryId} = ${identityData.subCategoryId}`
+                    : sql`${coreProductIdentity.categoryId} = ${identityData.categoryId} AND ${coreProductIdentity.subCategoryId} IS NULL`;
+                sku = await nextSkuCode(coreProductIdentity, coreProductIdentity.sku, 3, filterCondition);
+            }
+
+            // Check uniqueness for SKU within the same scope
+            const scopeCondition = identityData.subCategoryId
+                ? and(eq(coreProductIdentity.sku, sku), eq(coreProductIdentity.subCategoryId, identityData.subCategoryId))
+                : and(eq(coreProductIdentity.sku, sku), eq(coreProductIdentity.categoryId, identityData.categoryId));
             const existingSku = await db.query.coreProductIdentity.findFirst({
-                where: eq(coreProductIdentity.sku, identityData.sku),
+                where: scopeCondition,
                 columns: { id: true },
             });
             if (existingSku) {
                 throw new ORPCError("CONFLICT", {
-                    message: `A core product with SKU "${identityData.sku}" already exists`,
+                    message: `A core product with SKU "${sku}" already exists in this category`,
                 });
             }
 
@@ -189,6 +217,7 @@ export const adminCoreProductRouter = {
                 .insert(coreProductIdentity)
                 .values({
                     ...identityData,
+                    sku,
                     subCategoryId: identityData.subCategoryId || null,
                 })
                 .returning();

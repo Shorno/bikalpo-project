@@ -8,6 +8,7 @@ import {
     productType,
 } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
+import { nextSkuCode } from "./helpers/generate-sku";
 
 const UNITS = [
     "KG", "ML", "L", "Pc", "Size", "Box", "Carton", "Ton", "Pair", "Unit",
@@ -186,6 +187,17 @@ export const adminVariantOptionRouter = {
                 );
             }
 
+            // Auto-generate next 2-digit skuCode scoped to typeId + categoryId
+            const skuFilterCondition = input.typeId === null
+                ? (input.categoryId === null
+                    ? sql`${variantOption.typeId} IS NULL AND ${variantOption.categoryId} IS NULL`
+                    : sql`${variantOption.typeId} IS NULL AND ${variantOption.categoryId} = ${input.categoryId}`)
+                : (input.categoryId === null
+                    ? sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} IS NULL`
+                    : sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} = ${input.categoryId}`);
+
+            const skuCode = await nextSkuCode(variantOption, variantOption.skuCode, 2, skuFilterCondition);
+
             const [created] = await db
                 .insert(variantOption)
                 .values({
@@ -196,6 +208,7 @@ export const adminVariantOptionRouter = {
                     typeId: input.typeId,
                     categoryId: input.categoryId,
                     sortOrder: input.sortOrder,
+                    skuCode,
                 })
                 .returning();
 

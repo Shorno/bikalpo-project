@@ -17,6 +17,7 @@ export interface VariantOptionRow {
   variantType: "pack" | "loose";
   typeId: number | null;
   categoryId: number | null;
+  skuCode: string | null;
   isActive: boolean;
   sortOrder: number;
   type: { id: number; name: string } | null;
@@ -39,6 +40,18 @@ export function useVariantOptionColumns() {
         ),
         size: 50,
         enableSorting: false,
+      },
+      {
+        id: "skuCode",
+        header: () => <div className="text-center">SKU</div>,
+        cell: ({ row }) => (
+          <div className="text-center">
+            <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
+              {row.original.skuCode || "—"}
+            </Badge>
+          </div>
+        ),
+        size: 70,
       },
       {
         accessorKey: "name",
