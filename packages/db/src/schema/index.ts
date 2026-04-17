@@ -54,3 +54,4 @@ export * from "./admin-invite";
 export * from "./reward";
 export * from "./wallet";
 export * from "./product-identity-request";
+export * from "./marketing-material";

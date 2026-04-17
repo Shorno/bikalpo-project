@@ -369,7 +369,6 @@ export function AdminInvitesClient() {
             <TableRow>
               <TableHead>Invite ID</TableHead>
               <TableHead>Invited User</TableHead>
-              <TableHead>Phone</TableHead>
               <TableHead>Admin</TableHead>
               <TableHead>Method</TableHead>
               <TableHead>User Type</TableHead>
@@ -399,12 +398,9 @@ export function AdminInvitesClient() {
                         {item.invitedName || item.invitedRegisteredName || "-"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {item.invitedEmail || ""}
+                        {item.invitedPhone || ""}
                       </p>
                     </div>
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {item.invitedPhone}
                   </TableCell>
                   <TableCell>
                     <div>
@@ -650,12 +646,7 @@ export function AdminInvitesClient() {
                     <p className="text-muted-foreground">Phone</p>
                     <p className="font-medium">{inviteDetail.invitedPhone}</p>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground">Email</p>
-                    <p className="font-medium text-xs">
-                      {inviteDetail.invitedEmail || "-"}
-                    </p>
-                  </div>
+
                 </div>
               </div>
 

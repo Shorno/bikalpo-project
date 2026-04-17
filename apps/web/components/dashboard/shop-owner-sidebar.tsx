@@ -96,6 +96,7 @@ const shopOwnerNavGroups: NavGroup[] = [
     items: [
       { title: "SMS Marketing", url: `${D}/sms-marketing`, icon: SmartphoneIcon },
       { title: "Promotions", url: `${D}/promotions`, icon: MegaphoneIcon },
+      { title: "Marketing Materials", url: `${D}/marketing-materials`, icon: PackageIcon },
     ],
   },
   {

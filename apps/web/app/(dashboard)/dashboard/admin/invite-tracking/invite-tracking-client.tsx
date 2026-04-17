@@ -382,7 +382,6 @@ export function InviteTrackingClient() {
               </TableHead>
               <TableHead>Invite ID</TableHead>
               <TableHead>Invited User</TableHead>
-              <TableHead>Phone</TableHead>
               <TableHead>Inviter</TableHead>
               <TableHead>User Type</TableHead>
               <TableHead>Status</TableHead>
@@ -415,12 +414,9 @@ export function InviteTrackingClient() {
                     <div>
                       <p className="font-medium">{item.invitedName || "-"}</p>
                       <p className="text-xs text-muted-foreground">
-                        {item.invitedEmail || ""}
+                        {item.invitedPhone || ""}
                       </p>
                     </div>
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {item.invitedPhone}
                   </TableCell>
                   <TableCell>
                     <div>
@@ -521,7 +517,7 @@ export function InviteTrackingClient() {
         open={selectedInviteId !== null}
         onOpenChange={(open) => !open && setSelectedInviteId(null)}
       >
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto thin-scrollbar">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto thin-scrollbar">
           <DialogHeader>
             <DialogTitle>Invite Details</DialogTitle>
           </DialogHeader>
@@ -530,9 +526,9 @@ export function InviteTrackingClient() {
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : inviteDetail ? (
-            <div className="space-y-5">
-              {/* Invite Info */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="space-y-4">
+              {/* Top Info Bar */}
+              <div className="grid grid-cols-4 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground">Invite ID</p>
                   <p className="font-mono font-medium">{inviteDetail.inviteCode}</p>
@@ -557,110 +553,118 @@ export function InviteTrackingClient() {
                 </div>
               </div>
 
-              {/* Invited User */}
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3">👤 Invited User</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Name</p>
-                    <p className="font-medium">{inviteDetail.invitedName || "-"}</p>
+              {/* Invited User + Inviter Info side by side */}
+              <div className="grid grid-cols-2 gap-6 border-t pt-4">
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">👤 Invited User</h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Name</p>
+                      <p className="font-medium">{inviteDetail.invitedName || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Phone</p>
+                      <p className="font-medium">{inviteDetail.invitedPhone}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Phone Verified</p>
+                      <p className="font-medium text-green-600">✔ Yes</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground">Phone</p>
-                    <p className="font-medium">{inviteDetail.invitedPhone}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">👤 Inviter Info</h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Invited By</p>
+                      <p className="font-medium">{inviteDetail.inviterName || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Type</p>
+                      <p className="font-medium capitalize">{inviteDetail.inviterRole || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Phone</p>
+                      <p className="font-medium">{inviteDetail.inviterPhone || "-"}</p>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Inviter Info */}
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3">👤 Inviter Info</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Invited By</p>
-                    <p className="font-medium">{inviteDetail.inviterName || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Inviter Type</p>
-                    <p className="font-medium capitalize">{inviteDetail.inviterRole || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Phone</p>
-                    <p className="font-medium">{inviteDetail.inviterPhone || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Email</p>
-                    <p className="font-medium text-xs">{inviteDetail.inviterEmail || "-"}</p>
+              {/* Status Flow + Fraud Detection side by side */}
+              <div className="grid grid-cols-2 gap-6 border-t pt-4">
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">📊 Invite Status Flow</h4>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="size-2 rounded-full bg-green-500" />
+                      <span>Invite Sent</span>
+                      <span className="text-green-600 text-xs ml-auto">✔ Completed</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`size-2 rounded-full ${
+                          ["joined", "subscribed", "rewarded"].includes(inviteDetail.status)
+                            ? "bg-green-500"
+                            : "bg-gray-300"
+                        }`}
+                      />
+                      <span>User Registered</span>
+                      {["joined", "subscribed", "rewarded"].includes(inviteDetail.status) ? (
+                        <span className="text-green-600 text-xs ml-auto">✔ Completed</span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs ml-auto">Pending</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`size-2 rounded-full ${
+                          ["subscribed", "rewarded"].includes(inviteDetail.status)
+                            ? "bg-green-500"
+                            : "bg-gray-300"
+                        }`}
+                      />
+                      <span>Subscription Purchased</span>
+                      {["subscribed", "rewarded"].includes(inviteDetail.status) ? (
+                        <span className="text-green-600 text-xs ml-auto">✔ Completed</span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs ml-auto">Pending</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`size-2 rounded-full ${
+                          inviteDetail.status === "rewarded" ? "bg-green-500" : "bg-gray-300"
+                        }`}
+                      />
+                      <span>Reward Issued</span>
+                      {inviteDetail.status === "rewarded" ? (
+                        <span className="text-green-600 text-xs ml-auto">✔ Completed</span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs ml-auto">Pending</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Contact Info */}
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3">📞 Contact Info</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Phone Verified</p>
-                    <p className="font-medium text-green-600">✔ Yes</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Email</p>
-                    <p className="font-medium text-xs">{inviteDetail.invitedEmail || "-"}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Invite Status Flow */}
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3">📊 Invite Status Flow</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-green-500" />
-                    <span>Invite Sent</span>
-                    <span className="text-green-600 text-xs ml-auto">✔ Completed</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`size-2 rounded-full ${
-                        ["joined", "subscribed", "rewarded"].includes(inviteDetail.status)
-                          ? "bg-green-500"
-                          : "bg-gray-300"
-                      }`}
-                    />
-                    <span>User Registered</span>
-                    {["joined", "subscribed", "rewarded"].includes(inviteDetail.status) ? (
-                      <span className="text-green-600 text-xs ml-auto">✔ Completed</span>
-                    ) : (
-                      <span className="text-muted-foreground text-xs ml-auto">Pending</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`size-2 rounded-full ${
-                        ["subscribed", "rewarded"].includes(inviteDetail.status)
-                          ? "bg-green-500"
-                          : "bg-gray-300"
-                      }`}
-                    />
-                    <span>Subscription Purchased</span>
-                    {["subscribed", "rewarded"].includes(inviteDetail.status) ? (
-                      <span className="text-green-600 text-xs ml-auto">✔ Completed</span>
-                    ) : (
-                      <span className="text-muted-foreground text-xs ml-auto">Pending</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`size-2 rounded-full ${
-                        inviteDetail.status === "rewarded" ? "bg-green-500" : "bg-gray-300"
-                      }`}
-                    />
-                    <span>Reward Issued</span>
-                    {inviteDetail.status === "rewarded" ? (
-                      <span className="text-green-600 text-xs ml-auto">✔ Completed</span>
-                    ) : (
-                      <span className="text-muted-foreground text-xs ml-auto">Pending</span>
-                    )}
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">🚨 Fraud Detection</h4>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span>Multiple Accounts</span>
+                      <span className={inviteDetail.status === "fraud" ? "text-red-600" : "text-green-600"}>
+                        {inviteDetail.status === "fraud" ? "⚠ Detected" : "❌ No"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Same Device</span>
+                      <span className="text-green-600">❌ No</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Suspicious Pattern</span>
+                      <span className={inviteDetail.status === "fraud" ? "text-red-600" : "text-green-600"}>
+                        {inviteDetail.status === "fraud" ? "⚠ Flagged" : "❌ No"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -668,54 +672,30 @@ export function InviteTrackingClient() {
               {/* Reward Info */}
               {inviteDetail.reward && (
                 <div className="border-t pt-4">
-                  <h4 className="text-sm font-semibold mb-3">🎁 Reward Info</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <h4 className="text-sm font-semibold mb-2">🎁 Reward Info</h4>
+                  <div className="grid grid-cols-4 gap-4 text-sm">
                     <div>
                       <p className="text-muted-foreground">Reward Type</p>
                       <p className="font-medium">Cash Bonus</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Reward Amount</p>
+                      <p className="text-muted-foreground">Amount</p>
                       <p className="font-medium">৳{inviteDetail.reward.amount}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Reward Status</p>
+                      <p className="text-muted-foreground">Status</p>
                       <p className="font-medium capitalize">{inviteDetail.reward.status}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Reward Code</p>
+                      <p className="text-muted-foreground">Code</p>
                       <p className="font-mono font-medium">{inviteDetail.reward.rewardCode}</p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Fraud Detection */}
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3">🚨 Fraud Detection</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span>Multiple Accounts</span>
-                    <span className={inviteDetail.status === "fraud" ? "text-red-600" : "text-green-600"}>
-                      {inviteDetail.status === "fraud" ? "⚠ Detected" : "❌ No"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Same Device</span>
-                    <span className="text-green-600">❌ No</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Suspicious Pattern</span>
-                    <span className={inviteDetail.status === "fraud" ? "text-red-600" : "text-green-600"}>
-                      {inviteDetail.status === "fraud" ? "⚠ Flagged" : "❌ No"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
               {/* Actions */}
               <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3">⚙ Actions</h4>
                 <div className="flex gap-2 flex-wrap">
                   {inviteDetail.status !== "fraud" && (
                     <Button

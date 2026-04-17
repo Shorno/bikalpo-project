@@ -56,6 +56,9 @@ import { adminInviteTrackingRouter } from "./admin-invite-tracking";
 import { adminAssistedInviteRouter } from "./admin-assisted-invite";
 import { adminRewardRouter } from "./admin-reward";
 import { userInviteRouter } from "./user-invite";
+import { adminUserManagementRouter } from "./admin-user-management";
+import { adminMarketingRouter } from "./admin-marketing";
+import { marketingRouter } from "./marketing";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -124,6 +127,9 @@ export const appRouter = {
   adminAssistedInvite: adminAssistedInviteRouter,
   adminReward: adminRewardRouter,
   userInvite: userInviteRouter,
+  adminUserManagement: adminUserManagementRouter,
+  adminMarketing: adminMarketingRouter,
+  marketing: marketingRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
