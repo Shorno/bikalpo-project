@@ -684,7 +684,7 @@ const orderQueries = {
                             await tx
                                 .update(inventory)
                                 .set({
-                                    availableQty: sql`(CAST(${inventory.availableQty} AS numeric) + ${existingItem.quantity})::text`,
+                                    availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${existingItem.quantity}`,
                                 })
                                 .where(
                                     and(
@@ -712,7 +712,7 @@ const orderQueries = {
                             await tx
                                 .update(inventory)
                                 .set({
-                                    availableQty: sql`(CAST(${inventory.availableQty} AS numeric) - ${diff})::text`,
+                                    availableQty: sql`CAST(${inventory.availableQty} AS numeric) - ${diff}`,
                                 })
                                 .where(
                                     and(
