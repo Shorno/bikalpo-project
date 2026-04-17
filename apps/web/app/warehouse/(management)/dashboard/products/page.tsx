@@ -216,6 +216,11 @@ export default function WarehouseProductsPage() {
                         }`}
                       >
                         <div className="flex items-center gap-2 flex-1 flex-wrap">
+                          {variant.brand && (
+                            <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                              {variant.brand.name}
+                            </span>
+                          )}
                           <span className="font-medium text-gray-700">
                             {variant.unitLabel} — {variant.weightKg}kg
                           </span>
@@ -354,8 +359,13 @@ export default function WarehouseProductsPage() {
                     />
                   )}
                   <div>
-                    <div className="text-sm font-medium text-gray-900 line-clamp-1">
+                    <div className="text-sm font-medium text-gray-900 line-clamp-1 flex items-center gap-1.5">
                       {product?.name || "Unknown"}
+                      {variant?.brand && (
+                        <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                          {variant.brand.name}
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10px] text-gray-400">
                       {variant?.unitLabel} — {variant?.weightKg}kg

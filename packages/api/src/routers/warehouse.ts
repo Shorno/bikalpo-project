@@ -1360,6 +1360,10 @@ const productActivation = {
                             packType: true,
                             innerPackSizeKg: true,
                             packCountInside: true,
+                            brandId: true,
+                        },
+                        with: {
+                            brand: { columns: { id: true, name: true } },
                         },
                     },
                 },
