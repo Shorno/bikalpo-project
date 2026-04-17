@@ -39,6 +39,7 @@ type CatalogVariant = {
 type CatalogProduct = {
   id: number;
   name: string;
+  unitSize: string | null;
   variants: CatalogVariant[];
 };
 
@@ -193,7 +194,12 @@ export default function WarehouseProductCatalogPage() {
 
   // ─── Render Helpers ──────────────────────────────────────────
 
-  const renderVariantRow = (variant: CatalogVariant) => (
+  const renderVariantRow = (variant: CatalogVariant, unitSize?: string | null) => {
+    const packsPerUnit = unitSize && Number(unitSize) > 0 && Number(variant.weightKg) > 0
+      ? Math.floor(Number(unitSize) / Number(variant.weightKg))
+      : null;
+
+    return (
     <div
       key={variant.id}
       className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs ${
@@ -211,6 +217,11 @@ export default function WarehouseProductCatalogPage() {
         <span className="font-medium text-gray-700">
           {variant.unitLabel} — {variant.weightKg}kg
         </span>
+        {packsPerUnit && packsPerUnit > 1 && (
+          <span className="text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
+            {packsPerUnit} pcs/carton
+          </span>
+        )}
         {variant.sku && (
           <span className="text-gray-400 text-[10px]">
             {variant.sku}
@@ -276,12 +287,14 @@ export default function WarehouseProductCatalogPage() {
         </button>
       )}
     </div>
-  );
+    );
+  };
 
   const renderCoreProduct = (cp: CoreProduct) => {
     const isExpanded = expandedCoreProducts.has(cp.id);
     const allVariants = cp.products.flatMap((p) => p.variants);
     const inStockCount = allVariants.filter((v) => v.inInventory).length;
+    const unitSize = cp.products[0]?.unitSize;
 
     return (
       <div key={cp.id} className="border border-gray-200 rounded-lg overflow-hidden">
@@ -300,7 +313,14 @@ export default function WarehouseProductCatalogPage() {
             />
           )}
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-gray-900">{cp.name}</div>
+            <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              {cp.name}
+              {unitSize && Number(unitSize) > 0 && (
+                <span className="text-[10px] font-medium text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200">
+                  📦 {Number(unitSize)}KG Carton/Sack
+                </span>
+              )}
+            </div>
             <div className="flex gap-1.5 mt-1 flex-wrap">
               {cp.brands.map((b) => (
                 <span key={b.brand.id} className="text-[9px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
@@ -327,12 +347,17 @@ export default function WarehouseProductCatalogPage() {
         {/* Expanded: Variants */}
         {isExpanded && (
           <div className="border-t border-gray-100 px-4 py-3 space-y-1.5 bg-gray-50/50">
+            {unitSize && Number(unitSize) > 0 && (
+              <div className="text-[10px] text-orange-600 bg-orange-50 border border-orange-100 rounded px-2.5 py-1.5 mb-2">
+                📦 Total Unit Size: <strong>{Number(unitSize)}KG</strong> per carton/sack
+              </div>
+            )}
             {allVariants.length === 0 ? (
               <div className="text-xs text-gray-400 py-2 text-center">
                 No sellable variants yet. Admin needs to create a product for this Core Identity.
               </div>
             ) : (
-              allVariants.map(renderVariantRow)
+              allVariants.map((v) => renderVariantRow(v, unitSize))
             )}
           </div>
         )}

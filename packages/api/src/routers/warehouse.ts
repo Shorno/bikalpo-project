@@ -1677,6 +1677,12 @@ const catalogBrowse = {
                         inArray(productTable.coreProductId, coreProductIds),
                         eq(productTable.status, "active"),
                     ),
+                    columns: {
+                        id: true,
+                        name: true,
+                        coreProductId: true,
+                        unitSize: true,
+                    },
                     with: {
                         variants: {
                             where: eq(productVariant.isActive, true),
