@@ -19,7 +19,7 @@ export default async function DeliveryDashboardPage() {
     activeGroups = result.groups;
   } catch (error) {
     console.error("Failed to load delivery dashboard:", error);
-    redirect("/login");
+    redirect("/");
   }
 
   return (

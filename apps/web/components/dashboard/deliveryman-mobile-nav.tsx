@@ -92,7 +92,7 @@ export function DeliverymanMobileNav() {
             </div>
             <div className="border-t mt-auto absolute bottom-0 w-full p-4">
               <button
-                onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => { window.location.href = "/login"; } } })}
+                onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => { window.location.href = "/"; } } })}
                 className="flex items-center gap-3 text-red-600 text-sm w-full px-2 py-2 hover:bg-red-50 rounded-lg transition-colors"
               >
                 <LogOutIcon className="w-5 h-5" />

@@ -9,11 +9,22 @@ import {
   User,
 } from "lucide-react";
 import Link from "next/link";
+import { authClient } from "@/lib/auth-client";
 import { useCart } from "@/hooks/use-orpc-cart";
 import { cn } from "@/lib/utils";
 
 export function SidebarMenu() {
   const { totalItems } = useCart();
+
+  const handleLogout = async () => {
+    await authClient.signOut({
+      fetchOptions: {
+        onSuccess: () => {
+          window.location.href = "/";
+        },
+      },
+    });
+  };
 
   const menuItems = [
     {
@@ -77,6 +88,7 @@ export function SidebarMenu() {
         ))}
         <button
           type="button"
+          onClick={handleLogout}
           className="w-full flex items-center gap-3 p-4 hover:bg-red-50 transition-colors text-red-600 group"
         >
           <LogOut size={18} className="text-red-400 group-hover:text-red-600" />
@@ -86,3 +98,4 @@ export function SidebarMenu() {
     </div>
   );
 }
+

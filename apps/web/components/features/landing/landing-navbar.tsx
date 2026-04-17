@@ -31,7 +31,7 @@ export function LandingNavbar() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          window.location.href = "/b2b";
+          window.location.href = "/";
         },
       },
     });

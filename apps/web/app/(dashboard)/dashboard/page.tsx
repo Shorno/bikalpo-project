@@ -19,7 +19,7 @@ export default function DashboardPage() {
     if (isPending) return;
 
     if (!session) {
-      router.replace("/login");
+      window.location.href = "/";
       return;
     }
 
