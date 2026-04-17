@@ -11,6 +11,7 @@ export * from "./combo-offer";
 export * from "./customer-assignment";
 export * from "./customer-home-tab";
 export * from "./delivery";
+export * from "./delivery-area";
 export * from "./delivery-kpi";
 export * from "./delivery-location-ping";
 export * from "./delivery-rule";

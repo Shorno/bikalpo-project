@@ -2,9 +2,11 @@
 
 import { format } from "date-fns";
 import {
-    AlertTriangle,
+    ArrowUpDown,
     ArrowUpRight,
     CheckCircle,
+    ChevronLeft,
+    ChevronRight,
     Clock,
     Download,
     Filter,
@@ -14,12 +16,10 @@ import {
     ShieldAlert,
     Ticket,
     XCircle,
-    ArrowUpDown,
-    ChevronLeft,
-    ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { client } from "@/utils/orpc";
+import { client, orpc } from "@/utils/orpc";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -109,51 +109,15 @@ function getCategoryBadge(category: string) {
     }
 }
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface TicketRow {
-    id: number;
-    ticketNumber: string;
-    subject: string;
-    status: string;
-    priority: string;
-    category: string;
-    userType: string;
-    currentLevel?: string;
-    autoEscalated?: boolean | null;
-    escalatedAt?: string | null;
-    createdAt: Date;
-    customer: {
-        id: string | null;
-        name: string | null;
-        email: string | null;
-        shopName: string | null;
-        phoneNumber: string | null;
-    } | null;
-}
-
-interface Stats {
-    total: number;
-    open: number;
-    inProgress: number;
-    resolved: number;
-    closed: number;
-    critical: number;
-    escalated: number;
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function AdminTicketsPage() {
-    const [tickets, setTickets] = useState<TicketRow[]>([]);
-    const [stats, setStats] = useState<Stats | null>(null);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
     const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [totalCount, setTotalCount] = useState(0);
     const limit = 15;
 
     // Filters
+    const [searchInput, setSearchInput] = useState("");
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
     const [priorityFilter, setPriorityFilter] = useState("all");
@@ -163,42 +127,8 @@ export default function AdminTicketsPage() {
 
     // Bulk actions
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
-    const [bulkLoading, setBulkLoading] = useState(false);
-
-    const fetchData = useCallback(async () => {
-        setLoading(true);
-        try {
-            const [ticketsResult, statsResult] = await Promise.all([
-                client.adminTicket.getAll({
-                    page,
-                    limit,
-                    search: search || undefined,
-                    status: statusFilter !== "all" ? statusFilter : undefined,
-                    priority: priorityFilter !== "all" ? priorityFilter : undefined,
-                    userType: userTypeFilter !== "all" ? userTypeFilter : undefined,
-                    category: categoryFilter !== "all" ? categoryFilter : undefined,
-                    ticketScope,
-                }),
-                client.adminTicket.getStats(),
-            ]);
-
-            setTickets((ticketsResult.data?.tickets as TicketRow[]) || []);
-            setTotalPages(ticketsResult.data?.pagination?.totalPages || 1);
-            setTotalCount(ticketsResult.data?.pagination?.totalCount || 0);
-            setStats(statsResult.data as Stats);
-        } catch {
-            toast.error("Failed to load tickets");
-        } finally {
-            setLoading(false);
-        }
-    }, [page, search, statusFilter, priorityFilter, userTypeFilter, categoryFilter, ticketScope]);
-
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
 
     // Debounced search
-    const [searchInput, setSearchInput] = useState("");
     useEffect(() => {
         const timer = setTimeout(() => {
             setSearch(searchInput);
@@ -207,39 +137,46 @@ export default function AdminTicketsPage() {
         return () => clearTimeout(timer);
     }, [searchInput]);
 
-    // Selection helpers
-    const allSelected = tickets.length > 0 && selectedIds.length === tickets.length;
-    const toggleAll = () => {
-        if (allSelected) {
-            setSelectedIds([]);
-        } else {
-            setSelectedIds(tickets.map((t) => t.id));
-        }
-    };
-    const toggleOne = (id: number) => {
-        setSelectedIds((prev) =>
-            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-        );
-    };
+    // ── TanStack Queries ──
 
-    // Bulk action handlers
-    const handleBulkResolve = async () => {
-        if (selectedIds.length === 0) return;
-        setBulkLoading(true);
-        try {
-            await client.adminTicket.bulkUpdateStatus({
-                ticketIds: selectedIds,
-                status: "resolved",
-            });
-            toast.success(`${selectedIds.length} tickets marked as resolved`);
+    const { data: ticketsResult, isLoading: loading } = useQuery(
+        orpc.adminTicket.getAll.queryOptions({
+            input: {
+                page,
+                limit,
+                search: search || undefined,
+                status: statusFilter !== "all" ? statusFilter : undefined,
+                priority: priorityFilter !== "all" ? priorityFilter : undefined,
+                userType: userTypeFilter !== "all" ? userTypeFilter : undefined,
+                category: categoryFilter !== "all" ? categoryFilter : undefined,
+                ticketScope,
+            },
+        }),
+    );
+
+    const { data: statsResult, isLoading: statsLoading } = useQuery(
+        orpc.adminTicket.getStats.queryOptions({ input: {} }),
+    );
+
+    const tickets = (ticketsResult?.data?.tickets ?? []) as any[];
+    const totalPages = ticketsResult?.data?.pagination?.totalPages ?? 1;
+    const totalCount = ticketsResult?.data?.pagination?.totalCount ?? 0;
+    const stats = statsResult?.data ?? null;
+
+    // ── Bulk Resolve Mutation ──
+
+    const bulkResolveMutation = useMutation({
+        mutationFn: (input: { ticketIds: number[]; status: "resolved" }) =>
+            client.adminTicket.bulkUpdateStatus(input),
+        onSuccess: (_, variables) => {
+            toast.success(`${variables.ticketIds.length} tickets marked as resolved`);
             setSelectedIds([]);
-            fetchData();
-        } catch {
-            toast.error("Bulk update failed");
-        } finally {
-            setBulkLoading(false);
-        }
-    };
+            queryClient.invalidateQueries({ queryKey: orpc.adminTicket.key() });
+        },
+        onError: () => toast.error("Bulk update failed"),
+    });
+
+    // ── Export Handler (not a mutation since it downloads a file) ──
 
     const handleExport = async () => {
         try {
@@ -261,7 +198,7 @@ export default function AdminTicketsPage() {
                 "Ticket #", "Subject", "Status", "Priority", "Category",
                 "User Type", "Customer", "Email", "Phone", "Created",
             ];
-            const rows = data.map((t) => [
+            const rows = data.map((t: any) => [
                 t.ticketNumber,
                 `"${(t.subject || "").replace(/"/g, '""')}"`,
                 t.status,
@@ -274,7 +211,7 @@ export default function AdminTicketsPage() {
                 t.createdAt ? format(new Date(t.createdAt), "yyyy-MM-dd") : "",
             ]);
 
-            const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+            const csv = [headers.join(","), ...rows.map((r: any) => r.join(","))].join("\n");
             const blob = new Blob([csv], { type: "text/csv" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -286,6 +223,21 @@ export default function AdminTicketsPage() {
         } catch {
             toast.error("Export failed");
         }
+    };
+
+    // Selection helpers
+    const allSelected = tickets.length > 0 && selectedIds.length === tickets.length;
+    const toggleAll = () => {
+        if (allSelected) {
+            setSelectedIds([]);
+        } else {
+            setSelectedIds(tickets.map((t: any) => t.id));
+        }
+    };
+    const toggleOne = (id: number) => {
+        setSelectedIds((prev) =>
+            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+        );
     };
 
     const kpiCards = [
@@ -369,7 +321,7 @@ export default function AdminTicketsPage() {
                         </CardHeader>
                         <CardContent className="px-4 pb-4">
                             <div className={cn("text-2xl font-bold", kpi.color)}>
-                                {loading ? "—" : kpi.value.toLocaleString()}
+                                {statsLoading ? "—" : (kpi.value as number).toLocaleString()}
                             </div>
                         </CardContent>
                     </Card>
@@ -465,10 +417,10 @@ export default function AdminTicketsPage() {
                             size="sm"
                             variant="outline"
                             className="h-7 text-xs"
-                            onClick={handleBulkResolve}
-                            disabled={bulkLoading}
+                            onClick={() => bulkResolveMutation.mutate({ ticketIds: selectedIds, status: "resolved" })}
+                            disabled={bulkResolveMutation.isPending}
                         >
-                            {bulkLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CheckCircle className="mr-1 h-3 w-3" />}
+                            {bulkResolveMutation.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CheckCircle className="mr-1 h-3 w-3" />}
                             Mark Resolved
                         </Button>
                         <Button
@@ -555,7 +507,7 @@ export default function AdminTicketsPage() {
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                tickets.map((ticket) => {
+                                tickets.map((ticket: any) => {
                                     const statusStyle = getStatusColor(ticket.status);
                                     const priorityStyle = getPriorityColor(ticket.priority);
                                     const userTypeStyle = getUserTypeBadge(ticket.userType);

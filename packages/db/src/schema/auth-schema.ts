@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
     id: text("id").primaryKey(),
@@ -48,6 +48,8 @@ export const user = pgTable("user", {
 
     // Deliveryman: comma-separated areas for area-based assignment
     serviceArea: text("service_area"),
+    // Links salesman/deliveryman to their parent warehouse
+    warehouseId: text("warehouse_id").references((): AnyPgColumn => user.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
         .defaultNow()

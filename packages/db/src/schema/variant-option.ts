@@ -64,9 +64,6 @@ export const variantOption = pgTable("variant_option", {
     /** Whether this variant option is active */
     isActive: boolean("is_active").default(true).notNull(),
 
-    /** SKU code segment for this variant option */
-    skuCode: varchar("sku_code", { length: 20 }),
-
     /** Sort order for display */
     sortOrder: integer("sort_order").default(0).notNull(),
 

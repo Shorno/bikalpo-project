@@ -21,8 +21,8 @@ import {
     XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
     AlertDialog,
@@ -51,59 +51,10 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { client } from "@/utils/orpc";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface TicketData {
-    id: number;
-    ticketNumber: string;
-    subject: string;
-    message: string;
-    status: string;
-    priority: string;
-    category: string;
-    userType: string;
-    currentLevel?: string;
-    autoEscalated?: boolean | null;
-    escalatedAt: Date | null;
-    escalatedBy: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    resolvedAt: Date | null;
-    closedAt: Date | null;
-    customer: {
-        id: string | null;
-        name: string | null;
-        email: string | null;
-        shopName: string | null;
-        phoneNumber: string | null;
-        role: string | null;
-        warehouseName: string | null;
-    } | null;
-    replies: {
-        id: number;
-        message: string;
-        isStaffReply: boolean;
-        createdAt: Date;
-        user: { id: string; name: string; image: string | null };
-    }[];
-    notes: {
-        id: number;
-        note: string;
-        createdAt: Date;
-        user: { id: string; name: string; image: string | null };
-    }[];
-    attachments: {
-        id: number;
-        url: string;
-        fileName: string;
-        fileType: string | null;
-        createdAt: Date;
-    }[];
-}
+import { client, orpc } from "@/utils/orpc";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -156,15 +107,145 @@ function getCategoryLabel(cat: string) {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketData }) {
-    const [ticket, setTicket] = useState(initialTicket);
+export function AdminTicketDetails({ ticketId }: { ticketId: number }) {
     const [replyMessage, setReplyMessage] = useState("");
     const [internalNote, setInternalNote] = useState("");
-    const [isSendingReply, setIsSendingReply] = useState(false);
-    const [isSavingNote, setIsSavingNote] = useState(false);
-    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-    const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
-    const [isEscalating, setIsEscalating] = useState(false);
+    const queryClient = useQueryClient();
+
+    // ── Fetch ticket detail via TanStack Query ──
+    const { data: result, isLoading, error } = useQuery(
+        orpc.adminTicket.getById.queryOptions({
+            input: { id: ticketId },
+        }),
+    );
+
+    const ticket = result?.data as any;
+
+    // ── Mutations ──
+
+    const replyMutation = useMutation({
+        mutationFn: (input: { ticketId: number; message: string }) =>
+            client.adminTicket.addReply(input),
+        onSuccess: () => {
+            toast.success("Reply sent");
+            setReplyMessage("");
+            queryClient.invalidateQueries({ queryKey: orpc.adminTicket.key() });
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to send reply"),
+    });
+
+    const noteMutation = useMutation({
+        mutationFn: (input: { ticketId: number; note: string }) =>
+            client.adminTicket.addInternalNote(input),
+        onSuccess: () => {
+            toast.success("Internal note saved");
+            setInternalNote("");
+            queryClient.invalidateQueries({ queryKey: orpc.adminTicket.key() });
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save note"),
+    });
+
+    const statusMutation = useMutation({
+        mutationFn: (input: { ticketId: number; status: "open" | "in_progress" | "resolved" | "closed" }) =>
+            client.adminTicket.updateStatus(input),
+        onSuccess: (_, variables) => {
+            toast.success(`Status updated to ${STATUS_LABELS[variables.status]}`);
+            queryClient.invalidateQueries({ queryKey: orpc.adminTicket.key() });
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to update status"),
+    });
+
+    const priorityMutation = useMutation({
+        mutationFn: (input: { ticketId: number; priority: "low" | "medium" | "high" | "critical" }) =>
+            client.adminTicket.updatePriority(input),
+        onSuccess: () => {
+            toast.success("Priority updated");
+            queryClient.invalidateQueries({ queryKey: orpc.adminTicket.key() });
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to update priority"),
+    });
+
+    const escalateMutation = useMutation({
+        mutationFn: (input: { ticketId: number }) =>
+            client.adminTicket.escalate(input),
+        onSuccess: () => {
+            toast.success("Ticket escalated to critical");
+            queryClient.invalidateQueries({ queryKey: orpc.adminTicket.key() });
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to escalate"),
+    });
+
+    // ── Handlers ──
+
+    function handleSendReply() {
+        if (!replyMessage.trim() || replyMessage.length < 5) {
+            toast.error("Reply must be at least 5 characters");
+            return;
+        }
+        replyMutation.mutate({ ticketId, message: replyMessage });
+    }
+
+    function handleSaveNote() {
+        if (!internalNote.trim()) {
+            toast.error("Note cannot be empty");
+            return;
+        }
+        noteMutation.mutate({ ticketId, note: internalNote });
+    }
+
+    function handleStatusChange(newStatus: string) {
+        statusMutation.mutate({ ticketId, status: newStatus as "open" | "in_progress" | "resolved" | "closed" });
+    }
+
+    function handlePriorityChange(newPriority: string) {
+        priorityMutation.mutate({ ticketId, priority: newPriority as "low" | "medium" | "high" | "critical" });
+    }
+
+    // ── Loading ──
+    if (isLoading) {
+        return (
+            <div className="flex flex-col gap-6">
+                <Button variant="ghost" size="sm" asChild className="mb-3 -ml-2 text-xs w-fit">
+                    <Link href="/dashboard/admin/tickets">
+                        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                        Back to Tickets
+                    </Link>
+                </Button>
+                <Skeleton className="h-48 w-full rounded-xl" />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 space-y-5">
+                        <Skeleton className="h-40 w-full rounded-lg" />
+                        <Skeleton className="h-32 w-full rounded-lg" />
+                    </div>
+                    <div className="space-y-5">
+                        <Skeleton className="h-48 w-full rounded-lg" />
+                        <Skeleton className="h-32 w-full rounded-lg" />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // ── Error ──
+    if (error || !ticket) {
+        return (
+            <div className="flex flex-col gap-6">
+                <Button variant="ghost" size="sm" asChild className="mb-3 -ml-2 text-xs w-fit">
+                    <Link href="/dashboard/admin/tickets">
+                        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                        Back to Tickets
+                    </Link>
+                </Button>
+                <div className="flex flex-col items-center justify-center py-16 border rounded-lg bg-muted/30">
+                    <ShieldAlert className="w-10 h-10 text-destructive/40 mb-3" />
+                    <p className="text-sm font-medium">Ticket not found</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        {(error as any)?.message || "Unable to load ticket details"}
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     const statusStyle = getStatusColor(ticket.status);
     const priorityStyle = getPriorityStyle(ticket.priority);
@@ -172,112 +253,20 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
     const currentStepIndex = STATUS_STEPS.indexOf(ticket.status as typeof STATUS_STEPS[number]);
     const canReply = ticket.status !== "closed";
 
-    // ─── Handlers ────────────────────────────────────────────────────────────
-
-    async function refreshTicket() {
-        try {
-            const result = await client.adminTicket.getById({ id: ticket.id });
-            setTicket(result.data as TicketData);
-        } catch {
-            // Silently fail refresh
-        }
-    }
-
-    async function handleSendReply() {
-        if (!replyMessage.trim() || replyMessage.length < 5) {
-            toast.error("Reply must be at least 5 characters");
-            return;
-        }
-        setIsSendingReply(true);
-        try {
-            await client.adminTicket.addReply({ ticketId: ticket.id, message: replyMessage });
-            toast.success("Reply sent");
-            setReplyMessage("");
-            await refreshTicket();
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to send reply");
-        } finally {
-            setIsSendingReply(false);
-        }
-    }
-
-    async function handleSaveNote() {
-        if (!internalNote.trim()) {
-            toast.error("Note cannot be empty");
-            return;
-        }
-        setIsSavingNote(true);
-        try {
-            await client.adminTicket.addInternalNote({ ticketId: ticket.id, note: internalNote });
-            toast.success("Internal note saved");
-            setInternalNote("");
-            await refreshTicket();
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to save note");
-        } finally {
-            setIsSavingNote(false);
-        }
-    }
-
-    async function handleStatusChange(newStatus: string) {
-        setIsUpdatingStatus(true);
-        try {
-            await client.adminTicket.updateStatus({
-                ticketId: ticket.id,
-                status: newStatus as "open" | "in_progress" | "resolved" | "closed",
-            });
-            toast.success(`Status updated to ${STATUS_LABELS[newStatus]}`);
-            await refreshTicket();
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to update status");
-        } finally {
-            setIsUpdatingStatus(false);
-        }
-    }
-
-    async function handlePriorityChange(newPriority: string) {
-        setIsUpdatingPriority(true);
-        try {
-            await client.adminTicket.updatePriority({
-                ticketId: ticket.id,
-                priority: newPriority as "low" | "medium" | "high" | "critical",
-            });
-            toast.success("Priority updated");
-            await refreshTicket();
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to update priority");
-        } finally {
-            setIsUpdatingPriority(false);
-        }
-    }
-
-    async function handleEscalate() {
-        setIsEscalating(true);
-        try {
-            await client.adminTicket.escalate({ ticketId: ticket.id });
-            toast.success("Ticket escalated to critical");
-            await refreshTicket();
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to escalate");
-        } finally {
-            setIsEscalating(false);
-        }
-    }
-
-    // ─── Build unified timeline ──────────────────────────────────────────────
+    // ── Build unified timeline ──
 
     type TimelineItem =
-        | { type: "reply"; data: TicketData["replies"][number] }
-        | { type: "note"; data: TicketData["notes"][number] };
+        | { type: "reply"; data: any }
+        | { type: "note"; data: any };
 
     const timeline: TimelineItem[] = [
-        ...ticket.replies.map((r) => ({ type: "reply" as const, data: r })),
-        ...ticket.notes.map((n) => ({ type: "note" as const, data: n })),
+        ...(ticket.replies || []).map((r: any) => ({ type: "reply" as const, data: r })),
+        ...(ticket.notes || []).map((n: any) => ({ type: "note" as const, data: n })),
     ].sort(
         (a, b) => new Date(a.data.createdAt).getTime() - new Date(b.data.createdAt).getTime(),
     );
 
-    // ─── Render ──────────────────────────────────────────────────────────────
+    // ── Render ──
 
     return (
         <div className="flex flex-col gap-6">
@@ -336,7 +325,7 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                                 <Select
                                     value={ticket.priority}
                                     onValueChange={handlePriorityChange}
-                                    disabled={isUpdatingPriority}
+                                    disabled={priorityMutation.isPending}
                                 >
                                     <SelectTrigger className="w-[120px] h-8 text-xs bg-white/10 border-white/20 text-white">
                                         <SelectValue />
@@ -354,7 +343,7 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                                 <Select
                                     value={ticket.status}
                                     onValueChange={handleStatusChange}
-                                    disabled={isUpdatingStatus}
+                                    disabled={statusMutation.isPending}
                                 >
                                     <SelectTrigger className="w-[140px] h-8 text-xs bg-white/10 border-white/20 text-white">
                                         <SelectValue />
@@ -451,13 +440,13 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                             </p>
 
                             {/* Attachments */}
-                            {ticket.attachments.length > 0 && (
+                            {ticket.attachments?.length > 0 && (
                                 <div className="mt-4 pt-4 border-t">
                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                                         Attachments
                                     </p>
                                     <div className="flex flex-wrap gap-2">
-                                        {ticket.attachments.map((att) => (
+                                        {ticket.attachments.map((att: any) => (
                                             <a
                                                 key={att.id}
                                                 href={att.url}
@@ -551,7 +540,7 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-semibold text-xs">
-                                                            {reply.isStaffReply ? "Support Team" : reply.user.name}
+                                                            {reply.isStaffReply ? "Support Team" : reply.user?.name || "Customer"}
                                                         </span>
                                                         {reply.isStaffReply && (
                                                             <Badge className="bg-emerald-100 text-emerald-700 border-0 text-[9px] px-1.5 py-0">
@@ -593,10 +582,10 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                                 <div className="flex justify-end">
                                     <Button
                                         onClick={handleSendReply}
-                                        disabled={isSendingReply || !replyMessage.trim()}
+                                        disabled={replyMutation.isPending || !replyMessage.trim()}
                                         size="sm"
                                     >
-                                        {isSendingReply ? (
+                                        {replyMutation.isPending ? (
                                             <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                                         ) : (
                                             <Send className="mr-2 h-3.5 w-3.5" />
@@ -754,7 +743,7 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                             {ticket.status !== "closed" && ticket.priority !== "critical" && (
                                 <AlertDialog>
                                     <AlertDialogTrigger asChild>
-                                        <Button variant="outline" size="sm" className="w-full justify-start text-xs h-8" disabled={isEscalating}>
+                                        <Button variant="outline" size="sm" className="w-full justify-start text-xs h-8" disabled={escalateMutation.isPending}>
                                             <ShieldAlert className="mr-2 h-3.5 w-3.5 text-red-500" />
                                             Escalate Issue
                                         </Button>
@@ -769,10 +758,10 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                                         <AlertDialogFooter>
                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                                             <AlertDialogAction
-                                                onClick={handleEscalate}
+                                                onClick={() => escalateMutation.mutate({ ticketId })}
                                                 className="bg-red-600 hover:bg-red-700"
                                             >
-                                                {isEscalating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                                {escalateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                                 Escalate
                                             </AlertDialogAction>
                                         </AlertDialogFooter>
@@ -787,7 +776,7 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                                     size="sm"
                                     className="w-full justify-start text-xs h-8"
                                     onClick={() => handleStatusChange("resolved")}
-                                    disabled={isUpdatingStatus}
+                                    disabled={statusMutation.isPending}
                                 >
                                     <Check className="mr-2 h-3.5 w-3.5 text-emerald-500" />
                                     Mark as Resolved
@@ -827,7 +816,7 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                                     size="sm"
                                     className="w-full justify-start text-xs h-8"
                                     onClick={() => handleStatusChange("open")}
-                                    disabled={isUpdatingStatus}
+                                    disabled={statusMutation.isPending}
                                 >
                                     <ChevronRight className="mr-2 h-3.5 w-3.5 text-blue-500" />
                                     Reopen Ticket
@@ -854,12 +843,12 @@ export function AdminTicketDetails({ ticket: initialTicket }: { ticket: TicketDa
                             />
                             <Button
                                 onClick={handleSaveNote}
-                                disabled={isSavingNote || !internalNote.trim()}
+                                disabled={noteMutation.isPending || !internalNote.trim()}
                                 size="sm"
                                 variant="outline"
                                 className="w-full text-xs h-8"
                             >
-                                {isSavingNote ? (
+                                {noteMutation.isPending ? (
                                     <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                                 ) : (
                                     <StickyNote className="mr-2 h-3.5 w-3.5" />
