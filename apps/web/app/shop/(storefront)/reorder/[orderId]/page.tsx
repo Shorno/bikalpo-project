@@ -390,7 +390,7 @@ export default function ReorderPage({
                       <div key={item.id} className="flex gap-3">
                         <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
                           <Image
-                            src={item.productImage || "/placeholder.png"}
+                            src={item.productImage || "/placeholder-image.svg"}
                             alt={item.productName || "Product"}
                             fill
                             className="object-cover"
@@ -436,7 +436,7 @@ export default function ReorderPage({
                     >
                       <div className="relative h-14 w-14 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
                         <Image
-                          src={item.productImage || "/placeholder.png"}
+                          src={item.productImage || "/placeholder-image.svg"}
                           alt={item.productName}
                           fill
                           className="object-cover"
@@ -764,7 +764,7 @@ export default function ReorderPage({
                       <div key={item.id} className="flex gap-3">
                         <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
                           <Image
-                            src={item.productImage || "/placeholder.png"}
+                            src={item.productImage || "/placeholder-image.svg"}
                             alt={item.productName || "Product"}
                             fill
                             className="object-cover"

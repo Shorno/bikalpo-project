@@ -31,7 +31,7 @@ export default async function ToLetDetailsPage({
 
   return (
     <div className="bg-gradient-to-b from-gray-50 to-white min-h-screen">
-      <div className="custom-container py-8 md:py-12">
+      <div className="container mx-auto px-4 py-8 md:py-12">
         <div className="mb-4 text-sm text-gray-600">
           <nav className="flex items-center gap-2">
             <Link href="/" className="hover:text-gray-900">

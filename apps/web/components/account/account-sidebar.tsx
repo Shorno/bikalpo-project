@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   Check,
   FileQuestion,
   FileText,
@@ -69,6 +70,11 @@ const sidebarItems = [
     label: "Security",
     href: "/account/security",
     icon: Lock,
+  },
+  {
+    label: "My Complaints",
+    href: "/account/complaints",
+    icon: AlertTriangle,
   },
 ];
 

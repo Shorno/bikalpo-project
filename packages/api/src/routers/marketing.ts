@@ -101,9 +101,6 @@ export const marketingRouter = {
                 userType = "retailer";
             }
 
-            // Auto-approve free requests
-            const autoApprove = input.paymentType === "free";
-
             const [created] = await db
                 .insert(marketingMaterialRequest)
                 .values({
@@ -117,8 +114,7 @@ export const marketingRouter = {
                     paymentAmount: input.paymentAmount,
                     deliveryAddress: input.deliveryAddress,
                     deliveryContact: input.deliveryContact,
-                    status: autoApprove ? "approved" : "pending",
-                    reviewedAt: autoApprove ? new Date() : null,
+                    status: "pending",
                 })
                 .returning();
 

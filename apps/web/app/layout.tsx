@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import Providers from "@/app/providers";
 
@@ -29,10 +30,12 @@ export default function RootLayout({
         className={`${poppins.variable} font-(family-name:--font-poppins) antialiased`}
         suppressHydrationWarning
       >
-        <Providers>
-          {children}
-          {auth}
-        </Providers>
+        <NuqsAdapter>
+          <Providers>
+            {children}
+            {auth}
+          </Providers>
+        </NuqsAdapter>
       </body>
     </html>
   );

@@ -3,20 +3,18 @@
 import { format } from "date-fns";
 import {
     AlertTriangle,
-    ArrowUpRight,
     CheckCircle,
     Clock,
     Download,
+    Eye,
     Filter,
     Loader2,
-    MessageSquare,
     Search,
     ShieldAlert,
-    Ticket,
     XCircle,
-    ArrowUpDown,
     ChevronLeft,
     ChevronRight,
+    FileWarning,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -55,7 +53,7 @@ function getStatusColor(status: string) {
     switch (status) {
         case "open":
             return { color: "text-amber-700", bg: "bg-amber-50", dot: "bg-amber-500" };
-        case "in_progress":
+        case "investigating":
             return { color: "text-blue-700", bg: "bg-blue-50", dot: "bg-blue-500" };
         case "resolved":
             return { color: "text-emerald-700", bg: "bg-emerald-50", dot: "bg-emerald-500" };
@@ -74,10 +72,21 @@ function getPriorityColor(priority: string) {
             return { color: "text-red-700", bg: "bg-red-50", dot: "bg-red-500" };
         case "medium":
             return { color: "text-orange-700", bg: "bg-orange-50", dot: "bg-orange-500" };
-        case "low":
-            return { color: "text-gray-600", bg: "bg-gray-50", dot: "bg-gray-400" };
         default:
             return { color: "text-gray-600", bg: "bg-gray-50", dot: "bg-gray-400" };
+    }
+}
+
+function getTypeBadge(type: string) {
+    switch (type) {
+        case "delivery":
+            return { label: "Delivery", color: "text-amber-700", bg: "bg-amber-50" };
+        case "payment":
+            return { label: "Payment", color: "text-emerald-700", bg: "bg-emerald-50" };
+        case "product":
+            return { label: "Product", color: "text-indigo-700", bg: "bg-indigo-50" };
+        default:
+            return { label: type, color: "text-gray-600", bg: "bg-gray-50" };
     }
 }
 
@@ -94,35 +103,23 @@ function getUserTypeBadge(type: string) {
     }
 }
 
-function getCategoryBadge(category: string) {
-    switch (category) {
-        case "order":
-            return { label: "Order", color: "text-indigo-700", bg: "bg-indigo-50" };
-        case "payment":
-            return { label: "Payment", color: "text-emerald-700", bg: "bg-emerald-50" };
-        case "delivery":
-            return { label: "Delivery", color: "text-amber-700", bg: "bg-amber-50" };
-        case "account":
-            return { label: "Account", color: "text-rose-700", bg: "bg-rose-50" };
-        default:
-            return { label: "Other", color: "text-gray-600", bg: "bg-gray-50" };
-    }
-}
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface TicketRow {
+interface ComplaintRow {
     id: number;
-    ticketNumber: string;
-    subject: string;
-    status: string;
-    priority: string;
-    category: string;
+    complaintNumber: string;
+    orderId: number;
+    userId: string;
     userType: string;
-    currentLevel?: string;
-    autoEscalated?: boolean | null;
-    escalatedAt?: string | null;
+    type: string;
+    priority: string;
+    status: string;
+    description: string;
+    assignedAdminId: string | null;
     createdAt: Date;
+    updatedAt: Date;
+    resolvedAt: Date | null;
+    orderNumber: string | null;
     customer: {
         id: string | null;
         name: string | null;
@@ -135,17 +132,16 @@ interface TicketRow {
 interface Stats {
     total: number;
     open: number;
-    inProgress: number;
+    investigating: number;
     resolved: number;
     closed: number;
     critical: number;
-    escalated: number;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function AdminTicketsPage() {
-    const [tickets, setTickets] = useState<TicketRow[]>([]);
+export default function AdminComplaintsPage() {
+    const [complaints, setComplaints] = useState<ComplaintRow[]>([]);
     const [stats, setStats] = useState<Stats | null>(null);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -156,10 +152,9 @@ export default function AdminTicketsPage() {
     // Filters
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
+    const [typeFilter, setTypeFilter] = useState("all");
     const [priorityFilter, setPriorityFilter] = useState("all");
     const [userTypeFilter, setUserTypeFilter] = useState("all");
-    const [categoryFilter, setCategoryFilter] = useState("all");
-    const [ticketScope, setTicketScope] = useState<"all" | "direct" | "escalated">("all");
 
     // Bulk actions
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -168,30 +163,29 @@ export default function AdminTicketsPage() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [ticketsResult, statsResult] = await Promise.all([
-                client.adminTicket.getAll({
+            const [complaintsResult, statsResult] = await Promise.all([
+                client.adminComplaint.getAll({
                     page,
                     limit,
                     search: search || undefined,
                     status: statusFilter !== "all" ? statusFilter : undefined,
+                    type: typeFilter !== "all" ? typeFilter : undefined,
                     priority: priorityFilter !== "all" ? priorityFilter : undefined,
                     userType: userTypeFilter !== "all" ? userTypeFilter : undefined,
-                    category: categoryFilter !== "all" ? categoryFilter : undefined,
-                    ticketScope,
                 }),
-                client.adminTicket.getStats(),
+                client.adminComplaint.getStats(),
             ]);
 
-            setTickets((ticketsResult.data?.tickets as TicketRow[]) || []);
-            setTotalPages(ticketsResult.data?.pagination?.totalPages || 1);
-            setTotalCount(ticketsResult.data?.pagination?.totalCount || 0);
+            setComplaints((complaintsResult.data?.complaints as ComplaintRow[]) || []);
+            setTotalPages(complaintsResult.data?.pagination?.totalPages || 1);
+            setTotalCount(complaintsResult.data?.pagination?.totalCount || 0);
             setStats(statsResult.data as Stats);
         } catch {
-            toast.error("Failed to load tickets");
+            toast.error("Failed to load complaints");
         } finally {
             setLoading(false);
         }
-    }, [page, search, statusFilter, priorityFilter, userTypeFilter, categoryFilter, ticketScope]);
+    }, [page, search, statusFilter, typeFilter, priorityFilter, userTypeFilter]);
 
     useEffect(() => {
         fetchData();
@@ -208,12 +202,12 @@ export default function AdminTicketsPage() {
     }, [searchInput]);
 
     // Selection helpers
-    const allSelected = tickets.length > 0 && selectedIds.length === tickets.length;
+    const allSelected = complaints.length > 0 && selectedIds.length === complaints.length;
     const toggleAll = () => {
         if (allSelected) {
             setSelectedIds([]);
         } else {
-            setSelectedIds(tickets.map((t) => t.id));
+            setSelectedIds(complaints.map((c) => c.id));
         }
     };
     const toggleOne = (id: number) => {
@@ -227,11 +221,11 @@ export default function AdminTicketsPage() {
         if (selectedIds.length === 0) return;
         setBulkLoading(true);
         try {
-            await client.adminTicket.bulkUpdateStatus({
-                ticketIds: selectedIds,
+            await client.adminComplaint.bulkUpdateStatus({
+                complaintIds: selectedIds,
                 status: "resolved",
             });
-            toast.success(`${selectedIds.length} tickets marked as resolved`);
+            toast.success(`${selectedIds.length} complaints marked as resolved`);
             setSelectedIds([]);
             fetchData();
         } catch {
@@ -243,35 +237,36 @@ export default function AdminTicketsPage() {
 
     const handleExport = async () => {
         try {
-            const result = await client.adminTicket.exportTickets({
+            const result = await client.adminComplaint.exportComplaints({
                 status: statusFilter !== "all" ? statusFilter : undefined,
+                type: typeFilter !== "all" ? typeFilter : undefined,
                 priority: priorityFilter !== "all" ? priorityFilter : undefined,
                 userType: userTypeFilter !== "all" ? userTypeFilter : undefined,
-                category: categoryFilter !== "all" ? categoryFilter : undefined,
             });
 
             const data = result.data;
             if (!data || data.length === 0) {
-                toast.error("No tickets to export");
+                toast.error("No complaints to export");
                 return;
             }
 
             // Convert to CSV
             const headers = [
-                "Ticket #", "Subject", "Status", "Priority", "Category",
-                "User Type", "Customer", "Email", "Phone", "Created",
+                "Complaint #", "Order #", "Type", "Priority", "Status",
+                "User Type", "Customer", "Email", "Phone", "Created", "Resolved",
             ];
-            const rows = data.map((t) => [
-                t.ticketNumber,
-                `"${(t.subject || "").replace(/"/g, '""')}"`,
-                t.status,
-                t.priority,
-                t.category,
-                t.userType,
-                t.customerName || "",
-                t.customerEmail || "",
-                t.customerPhone || "",
-                t.createdAt ? format(new Date(t.createdAt), "yyyy-MM-dd") : "",
+            const rows = data.map((c) => [
+                c.complaintNumber,
+                c.orderNumber || "",
+                c.type,
+                c.priority,
+                c.status,
+                c.userType,
+                c.customerName || "",
+                c.customerEmail || "",
+                c.customerPhone || "",
+                c.createdAt ? format(new Date(c.createdAt), "yyyy-MM-dd") : "",
+                c.resolvedAt ? format(new Date(c.resolvedAt), "yyyy-MM-dd") : "",
             ]);
 
             const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -279,10 +274,10 @@ export default function AdminTicketsPage() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `support-tickets-${format(new Date(), "yyyy-MM-dd")}.csv`;
+            a.download = `complaints-${format(new Date(), "yyyy-MM-dd")}.csv`;
             a.click();
             URL.revokeObjectURL(url);
-            toast.success("Tickets exported");
+            toast.success("Complaints exported");
         } catch {
             toast.error("Export failed");
         }
@@ -290,9 +285,9 @@ export default function AdminTicketsPage() {
 
     const kpiCards = [
         {
-            label: "Total Tickets",
+            label: "Total Complaints",
             value: stats?.total || 0,
-            icon: Ticket,
+            icon: FileWarning,
             color: "text-gray-900",
             iconColor: "text-gray-500",
             bgAccent: "bg-gray-50",
@@ -306,9 +301,9 @@ export default function AdminTicketsPage() {
             bgAccent: "bg-amber-50",
         },
         {
-            label: "In Progress",
-            value: stats?.inProgress || 0,
-            icon: Loader2,
+            label: "Investigating",
+            value: stats?.investigating || 0,
+            icon: Eye,
             color: "text-blue-600",
             iconColor: "text-blue-500",
             bgAccent: "bg-blue-50",
@@ -322,20 +317,12 @@ export default function AdminTicketsPage() {
             bgAccent: "bg-emerald-50",
         },
         {
-            label: "Critical Issues",
+            label: "Critical",
             value: stats?.critical || 0,
             icon: ShieldAlert,
             color: "text-red-600",
             iconColor: "text-red-500",
             bgAccent: "bg-red-50",
-        },
-        {
-            label: "Escalated",
-            value: stats?.escalated || 0,
-            icon: ArrowUpRight,
-            color: "text-orange-600",
-            iconColor: "text-orange-500",
-            bgAccent: "bg-orange-50",
         },
     ];
 
@@ -344,9 +331,9 @@ export default function AdminTicketsPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Support Tickets</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">Complaint Management</h1>
                     <p className="text-sm text-muted-foreground">
-                        Manage customer, retailer & wholesaler support tickets.
+                        Investigate and resolve customer, retailer &amp; wholesaler complaints.
                     </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleExport}>
@@ -356,7 +343,7 @@ export default function AdminTicketsPage() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                 {kpiCards.map((kpi) => (
                     <Card key={kpi.label} className="border-0 shadow-sm">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
@@ -383,7 +370,7 @@ export default function AdminTicketsPage() {
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
-                                placeholder="Search by Ticket ID, Name, or Phone..."
+                                placeholder="Search by Complaint ID, Order #, Name, or Phone..."
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
                                 className="pl-9 h-9"
@@ -392,15 +379,26 @@ export default function AdminTicketsPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                             <Filter className="h-4 w-4 text-muted-foreground hidden md:block" />
                             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-                                <SelectTrigger className="w-[130px] h-9 text-xs">
+                                <SelectTrigger className="w-[140px] h-9 text-xs">
                                     <SelectValue placeholder="Status" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">All Status</SelectItem>
                                     <SelectItem value="open">Open</SelectItem>
-                                    <SelectItem value="in_progress">In Progress</SelectItem>
+                                    <SelectItem value="investigating">Investigating</SelectItem>
                                     <SelectItem value="resolved">Resolved</SelectItem>
                                     <SelectItem value="closed">Closed</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1); }}>
+                                <SelectTrigger className="w-[130px] h-9 text-xs">
+                                    <SelectValue placeholder="Type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Types</SelectItem>
+                                    <SelectItem value="delivery">Delivery</SelectItem>
+                                    <SelectItem value="payment">Payment</SelectItem>
+                                    <SelectItem value="product">Product</SelectItem>
                                 </SelectContent>
                             </Select>
                             <Select value={priorityFilter} onValueChange={(v) => { setPriorityFilter(v); setPage(1); }}>
@@ -409,7 +407,6 @@ export default function AdminTicketsPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">All Priority</SelectItem>
-                                    <SelectItem value="low">Low</SelectItem>
                                     <SelectItem value="medium">Medium</SelectItem>
                                     <SelectItem value="high">High</SelectItem>
                                     <SelectItem value="critical">Critical</SelectItem>
@@ -426,29 +423,6 @@ export default function AdminTicketsPage() {
                                     <SelectItem value="wholesaler">Wholesaler</SelectItem>
                                 </SelectContent>
                             </Select>
-                            <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
-                                <SelectTrigger className="w-[130px] h-9 text-xs">
-                                    <SelectValue placeholder="Category" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Categories</SelectItem>
-                                    <SelectItem value="order">Order</SelectItem>
-                                    <SelectItem value="payment">Payment</SelectItem>
-                                    <SelectItem value="delivery">Delivery</SelectItem>
-                                    <SelectItem value="account">Account</SelectItem>
-                                    <SelectItem value="other">Other</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            <Select value={ticketScope} onValueChange={(v) => { setTicketScope(v as "all" | "direct" | "escalated"); setPage(1); }}>
-                                <SelectTrigger className="w-[130px] h-9 text-xs">
-                                    <SelectValue placeholder="Scope" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Tickets</SelectItem>
-                                    <SelectItem value="direct">Direct</SelectItem>
-                                    <SelectItem value="escalated">Escalated</SelectItem>
-                                </SelectContent>
-                            </Select>
                         </div>
                     </div>
                 </CardContent>
@@ -458,7 +432,7 @@ export default function AdminTicketsPage() {
             {selectedIds.length > 0 && (
                 <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
                     <span className="text-sm font-medium text-blue-700">
-                        {selectedIds.length} ticket{selectedIds.length > 1 ? "s" : ""} selected
+                        {selectedIds.length} complaint{selectedIds.length > 1 ? "s" : ""} selected
                     </span>
                     <div className="flex items-center gap-2 ml-auto">
                         <Button
@@ -484,7 +458,7 @@ export default function AdminTicketsPage() {
                 </div>
             )}
 
-            {/* Tickets Table */}
+            {/* Complaints Table */}
             <Card className="border-0 shadow-sm overflow-hidden">
                 <CardContent className="p-0">
                     <Table>
@@ -497,16 +471,11 @@ export default function AdminTicketsPage() {
                                         aria-label="Select all"
                                     />
                                 </TableHead>
-                                <TableHead className="text-xs font-semibold uppercase tracking-wider">Ticket</TableHead>
+                                <TableHead className="text-xs font-semibold uppercase tracking-wider">Complaint</TableHead>
+                                <TableHead className="text-xs font-semibold uppercase tracking-wider">Order</TableHead>
                                 <TableHead className="text-xs font-semibold uppercase tracking-wider">User</TableHead>
                                 <TableHead className="text-xs font-semibold uppercase tracking-wider">Type</TableHead>
-                                <TableHead className="text-xs font-semibold uppercase tracking-wider">Category</TableHead>
-                                <TableHead className="text-xs font-semibold uppercase tracking-wider">
-                                    <div className="flex items-center gap-1">
-                                        Priority
-                                        <ArrowUpDown className="h-3 w-3" />
-                                    </div>
-                                </TableHead>
+                                <TableHead className="text-xs font-semibold uppercase tracking-wider">Priority</TableHead>
                                 <TableHead className="text-xs font-semibold uppercase tracking-wider">Status</TableHead>
                                 <TableHead className="text-xs font-semibold uppercase tracking-wider">Date</TableHead>
                                 <TableHead className="text-xs font-semibold uppercase tracking-wider text-right pr-4">Action</TableHead>
@@ -518,23 +487,23 @@ export default function AdminTicketsPage() {
                                     <TableCell colSpan={9} className="h-48 text-center">
                                         <div className="flex flex-col items-center gap-2">
                                             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-                                            <span className="text-gray-500 text-sm">Loading tickets...</span>
+                                            <span className="text-gray-500 text-sm">Loading complaints...</span>
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ) : tickets.length === 0 ? (
+                            ) : complaints.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={9} className="h-48 text-center">
                                         <div className="flex flex-col items-center gap-3">
                                             <div className="p-3 rounded-full bg-gray-100">
-                                                <MessageSquare className="h-6 w-6 text-gray-400" />
+                                                <FileWarning className="h-6 w-6 text-gray-400" />
                                             </div>
                                             <div>
-                                                <p className="font-medium text-gray-700">No support tickets</p>
+                                                <p className="font-medium text-gray-700">No complaints found</p>
                                                 <p className="text-sm text-gray-500 mt-0.5">
                                                     {search || statusFilter !== "all"
                                                         ? "Try adjusting your filters"
-                                                        : "No tickets have been submitted yet"}
+                                                        : "No complaints have been submitted yet"}
                                                 </p>
                                             </div>
                                             <Button
@@ -543,9 +512,9 @@ export default function AdminTicketsPage() {
                                                 onClick={() => {
                                                     setSearchInput("");
                                                     setStatusFilter("all");
+                                                    setTypeFilter("all");
                                                     setPriorityFilter("all");
                                                     setUserTypeFilter("all");
-                                                    setCategoryFilter("all");
                                                     setPage(1);
                                                 }}
                                             >
@@ -555,70 +524,61 @@ export default function AdminTicketsPage() {
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                tickets.map((ticket) => {
-                                    const statusStyle = getStatusColor(ticket.status);
-                                    const priorityStyle = getPriorityColor(ticket.priority);
-                                    const userTypeStyle = getUserTypeBadge(ticket.userType);
-                                    const categoryStyle = getCategoryBadge(ticket.category);
-                                    const isEscalated = ticket.currentLevel === "level_2";
+                                complaints.map((c) => {
+                                    const statusStyle = getStatusColor(c.status);
+                                    const priorityStyle = getPriorityColor(c.priority);
+                                    const typeStyle = getTypeBadge(c.type);
+                                    const userTypeStyle = getUserTypeBadge(c.userType);
 
                                     return (
-                                        <TableRow key={ticket.id} className="group hover:bg-gray-50/60">
+                                        <TableRow key={c.id} className="group hover:bg-gray-50/60">
                                             <TableCell className="pl-4">
                                                 <Checkbox
-                                                    checked={selectedIds.includes(ticket.id)}
-                                                    onCheckedChange={() => toggleOne(ticket.id)}
-                                                    aria-label={`Select ${ticket.ticketNumber}`}
+                                                    checked={selectedIds.includes(c.id)}
+                                                    onCheckedChange={() => toggleOne(c.id)}
+                                                    aria-label={`Select ${c.complaintNumber}`}
                                                 />
                                             </TableCell>
                                             <TableCell>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex flex-col">
                                                     <span className="font-mono text-xs font-semibold text-gray-900">
-                                                        {ticket.ticketNumber}
+                                                        {c.complaintNumber}
                                                     </span>
-                                                    {isEscalated && (
-                                                        <Badge className="bg-orange-100 text-orange-700 border-0 text-[9px] px-1.5 py-0">
-                                                            <ArrowUpRight className="h-2.5 w-2.5 mr-0.5" />
-                                                            {ticket.autoEscalated ? "Auto" : "Manual"}
-                                                        </Badge>
-                                                    )}
+                                                    <p className="text-xs text-muted-foreground truncate max-w-[180px] mt-0.5">
+                                                        {c.description}
+                                                    </p>
                                                 </div>
-                                                <p className="text-xs text-muted-foreground truncate max-w-[180px] mt-0.5">
-                                                    {ticket.subject}
-                                                </p>
+                                            </TableCell>
+                                            <TableCell>
+                                                <span className="font-mono text-xs text-gray-700">
+                                                    {c.orderNumber || `#${c.orderId}`}
+                                                </span>
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex flex-col">
                                                     <span className="text-sm font-medium text-gray-900">
-                                                        {ticket.customer?.name || "Unknown"}
+                                                        {c.customer?.name || "Unknown"}
                                                     </span>
-                                                    {ticket.customer?.shopName && (
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {ticket.customer.shopName}
-                                                        </span>
-                                                    )}
+                                                    <Badge
+                                                        className={cn(
+                                                            userTypeStyle.bg,
+                                                            userTypeStyle.color,
+                                                            "border-0 text-[9px] font-semibold px-1.5 py-0 w-fit mt-0.5",
+                                                        )}
+                                                    >
+                                                        {userTypeStyle.label}
+                                                    </Badge>
                                                 </div>
                                             </TableCell>
                                             <TableCell>
                                                 <Badge
                                                     className={cn(
-                                                        userTypeStyle.bg,
-                                                        userTypeStyle.color,
+                                                        typeStyle.bg,
+                                                        typeStyle.color,
                                                         "border-0 text-[10px] font-semibold px-2 py-0.5",
                                                     )}
                                                 >
-                                                    {userTypeStyle.label}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge
-                                                    className={cn(
-                                                        categoryStyle.bg,
-                                                        categoryStyle.color,
-                                                        "border-0 text-[10px] font-semibold px-2 py-0.5",
-                                                    )}
-                                                >
-                                                    {categoryStyle.label}
+                                                    {typeStyle.label}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell>
@@ -631,7 +591,7 @@ export default function AdminTicketsPage() {
                                                             "border-0 text-[10px] font-semibold capitalize px-2 py-0.5",
                                                         )}
                                                     >
-                                                        {ticket.priority}
+                                                        {c.priority}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
@@ -645,13 +605,13 @@ export default function AdminTicketsPage() {
                                                             "border-0 text-[10px] font-semibold capitalize px-2 py-0.5",
                                                         )}
                                                     >
-                                                        {ticket.status.replace("_", " ")}
+                                                        {c.status}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
                                             <TableCell>
                                                 <span className="text-xs text-muted-foreground">
-                                                    {format(new Date(ticket.createdAt), "dd MMM")}
+                                                    {format(new Date(c.createdAt), "dd MMM")}
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-right pr-4">
@@ -661,7 +621,7 @@ export default function AdminTicketsPage() {
                                                     className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
                                                     asChild
                                                 >
-                                                    <Link href={`/dashboard/admin/tickets/${ticket.id}`}>
+                                                    <Link href={`/dashboard/admin/complaints/${c.id}`}>
                                                         View
                                                     </Link>
                                                 </Button>
@@ -680,7 +640,7 @@ export default function AdminTicketsPage() {
                 <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
                         Showing {(page - 1) * limit + 1}–{Math.min(page * limit, totalCount)} of{" "}
-                        {totalCount} tickets
+                        {totalCount} complaints
                     </p>
                     <div className="flex items-center gap-1">
                         <Button

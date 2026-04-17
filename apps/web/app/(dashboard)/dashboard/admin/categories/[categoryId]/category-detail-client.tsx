@@ -195,7 +195,7 @@ export default function CategoryDetailClient({
               <TableBody>
                 {category.products.map((product) => {
                   const imgUrl =
-                    product.images?.[0]?.imageUrl || "/placeholder.png";
+                    product.images?.[0]?.imageUrl || "/placeholder-image.svg";
                   return (
                     <TableRow key={product.id}>
                       <TableCell>

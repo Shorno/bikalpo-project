@@ -30,8 +30,7 @@ export default async function ProductsPage({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50/50 to-white">
-      <div className="custom-container py-6 md:py-10">
-        <div className="px-4 md:px-6">
+      <div className="container mx-auto px-4 py-6 md:py-10">
           {/* Hero Header */}
           <div className="mb-8 md:mb-10">
             <div className="max-w-2xl">
@@ -67,7 +66,6 @@ export default async function ProductsPage({
               </Suspense>
             </main>
           </div>
-        </div>
       </div>
     </div>
   );

@@ -385,7 +385,7 @@ export default function CustomerCheckoutPage() {
                       >
                         <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
                           <Image
-                            src={item.image || "/placeholder.png"}
+                            src={item.image || "/placeholder-image.svg"}
                             alt={item.name || "Product"}
                             fill
                             className="object-cover"
@@ -722,7 +722,7 @@ export default function CustomerCheckoutPage() {
                       >
                         <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
                           <Image
-                            src={item.image || "/placeholder.png"}
+                            src={item.image || "/placeholder-image.svg"}
                             alt={item.name || "Product"}
                             fill
                             className="object-cover"

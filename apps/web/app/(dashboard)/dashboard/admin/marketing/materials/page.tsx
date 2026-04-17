@@ -91,7 +91,7 @@ export default function MaterialsManagementPage() {
   const [uploading, setUploading] = useState(false);
 
   const { data, isLoading } = useQuery({
-    ...orpc.adminMarketing.listMaterials.queryOptions({ input: undefined }),
+    ...orpc.adminMarketing.listMaterials.queryOptions({ input: {} }),
   });
 
   const materials = data?.materials ?? [];

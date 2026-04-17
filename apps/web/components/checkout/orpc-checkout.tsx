@@ -725,7 +725,7 @@ function CartItemRow({
     <div className="flex gap-3 p-2 rounded-lg hover:bg-gray-50">
       <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
         <Image
-          src={item.image || "/placeholder.png"}
+          src={item.image || "/placeholder-image.svg"}
           alt={item.name || "Product"}
           fill
           className="object-cover"

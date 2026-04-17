@@ -1,16 +1,33 @@
-import { Headphones } from "lucide-react";
+"use client";
+
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { IncomingSupportPanel } from "@/components/support/incoming-support-panel";
+import { UserSupportPanel } from "@/components/support/user-support-panel";
 
 export default function ShopSupportPage() {
-  return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Support</h1>
-      <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
-        <Headphones className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-        <p className="text-gray-500 font-medium">Need help?</p>
-        <p className="text-sm text-gray-400 mt-1">
-          Contact support or view your existing tickets.
-        </p>
-      </div>
-    </div>
-  );
+    return (
+        <div className="space-y-6 p-6">
+            <div>
+                <h1 className="text-2xl font-bold tracking-tight">Support Center</h1>
+                <p className="text-sm text-muted-foreground">
+                    Handle customer tickets and manage your own support requests.
+                </p>
+            </div>
+
+            <Tabs defaultValue="incoming" className="space-y-4">
+                <TabsList>
+                    <TabsTrigger value="incoming">Customer Tickets</TabsTrigger>
+                    <TabsTrigger value="my-tickets">My Tickets</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="incoming">
+                    <IncomingSupportPanel />
+                </TabsContent>
+
+                <TabsContent value="my-tickets">
+                    <UserSupportPanel userRole="shop_owner" />
+                </TabsContent>
+            </Tabs>
+        </div>
+    );
 }

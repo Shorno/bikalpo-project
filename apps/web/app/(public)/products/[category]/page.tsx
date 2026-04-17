@@ -83,8 +83,7 @@ export default async function CategoryProductsPage({
   }
 
   return (
-    <div className="custom-container py-8 md:py-12">
-      <div className="px-4 md:px-6">
+    <div className="container mx-auto px-4 py-8 md:py-12">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl md:text-4xl font-serif font-light mb-2">
@@ -113,7 +112,6 @@ export default async function CategoryProductsPage({
             </Suspense>
           </main>
         </div>
-      </div>
     </div>
   );
 }

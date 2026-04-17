@@ -12,7 +12,7 @@ export default async function ToLetPage() {
 
   return (
     <div className="bg-gradient-to-b from-gray-50 to-white min-h-screen">
-      <div className="custom-container py-8 md:py-12">
+      <div className="container mx-auto px-4 py-8 md:py-12">
         <div className="mb-6">
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">
             To-Let Listings

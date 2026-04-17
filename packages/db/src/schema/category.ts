@@ -24,6 +24,7 @@ export const category = pgTable("category", {
     skuCode: varchar("sku_code", { length: 3 }),
 
     isActive: boolean("is_active").default(true).notNull(),
+    skuCode: varchar("sku_code", { length: 20 }),
     displayOrder: integer("display_order").default(0).notNull(),
     ...timestamps,
 });
@@ -41,6 +42,7 @@ export const subCategory = pgTable("sub_category", {
     skuCode: varchar("sku_code", { length: 3 }),
 
     isActive: boolean("is_active").default(true).notNull(),
+    skuCode: varchar("sku_code", { length: 20 }),
     displayOrder: integer("display_order").default(0).notNull(),
     ...timestamps,
 });
