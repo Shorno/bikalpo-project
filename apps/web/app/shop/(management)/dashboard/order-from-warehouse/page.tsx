@@ -298,42 +298,86 @@ function VariantModal({
           </div>
 
           {/* ─── Select Variant / Pack Type ─── */}
-          {product.variants.length > 1 && (
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Select Pack Type
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {product.variants.map((v, idx) => {
-                  const vPack = v.variant.packType
-                    ? v.variant.packType.charAt(0).toUpperCase() + v.variant.packType.slice(1)
-                    : "Unit";
-                  const vWeight = Number(v.variant.weightKg) || 0;
-                  const isSelected = idx === selectedIdx;
-                  const vInCart = cart.find((c) => c.variantId === v.variantId);
+          {product.variants.length > 1 && (() => {
+            const packVariants = product.variants
+              .map((v, idx) => ({ ...v, idx }))
+              .filter(v => (v.variant.packType || "").toLowerCase() !== "loose");
+            const looseVariants = product.variants
+              .map((v, idx) => ({ ...v, idx }))
+              .filter(v => (v.variant.packType || "").toLowerCase() === "loose");
 
-                  return (
-                    <button
-                      key={v.variantId}
-                      onClick={() => { setSelectedIdx(idx); setQty(1); }}
-                      className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
-                        isSelected
-                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                          : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+            return (
+              <div className="space-y-3">
+                {/* Pack type buttons */}
+                {packVariants.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                      Select Pack Type
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {packVariants.map((v) => {
+                        const vPack = v.variant.packType
+                          ? v.variant.packType.charAt(0).toUpperCase() + v.variant.packType.slice(1)
+                          : "Unit";
+                        const vWeight = Number(v.variant.weightKg) || 0;
+                        const isSelected = v.idx === selectedIdx;
+                        const vInCart = cart.find((c) => c.variantId === v.variantId);
+
+                        return (
+                          <button
+                            key={v.variantId}
+                            onClick={() => { setSelectedIdx(v.idx); setQty(1); }}
+                            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+                              isSelected
+                                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+                            }`}
+                          >
+                            <div>{vPack} ({vWeight}kg)</div>
+                            {vInCart && (
+                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                                {vInCart.quantity} in cart
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Loose dropdown */}
+                {looseVariants.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                      Loose / Open
+                    </h3>
+                    <select
+                      value={looseVariants.some(v => v.idx === selectedIdx) ? selectedIdx : ""}
+                      onChange={(e) => { setSelectedIdx(Number(e.target.value)); setQty(1); }}
+                      className={`w-full px-3 py-2.5 rounded-lg text-sm font-medium border transition-all appearance-none cursor-pointer ${
+                        looseVariants.some(v => v.idx === selectedIdx)
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-blue-300"
                       }`}
                     >
-                      <div>{vPack} ({vWeight}kg)</div>
-                      {vInCart && (
-                        <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
-                          {vInCart.quantity} in cart
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
+                      <option value="" disabled>Select loose weight...</option>
+                      {looseVariants.map((v) => {
+                        const vWeight = Number(v.variant.weightKg) || 0;
+                        const vInCart = cart.find((c) => c.variantId === v.variantId);
+                        return (
+                          <option key={v.variantId} value={v.idx}>
+                            Loose {vWeight}KG — ৳{Number(v.price).toLocaleString()}/KG
+                            {vInCart ? ` (${vInCart.quantity} in cart)` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ─── Pack Conversion Info ─── */}
           {innerCount > 0 && (
