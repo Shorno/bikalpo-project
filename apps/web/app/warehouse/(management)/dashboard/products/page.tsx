@@ -195,7 +195,8 @@ export default function WarehouseProductCatalogPage() {
   // ─── Render Helpers ──────────────────────────────────────────
 
   const renderVariantRow = (variant: CatalogVariant, unitSize?: string | null) => {
-    const packsPerUnit = unitSize && Number(unitSize) > 0 && Number(variant.weightKg) > 0
+    const isLoose = variant.unitLabel.toLowerCase().includes("loose");
+    const packsPerUnit = !isLoose && unitSize && Number(unitSize) > 0 && Number(variant.weightKg) > 0
       ? Math.floor(Number(unitSize) / Number(variant.weightKg))
       : null;
 
