@@ -59,6 +59,7 @@ type GroupedProduct = {
   name: string;
   image: string | null;
   categoryName: string;
+  unitSize: string | null;
   variants: VariantItem[];
 };
 
@@ -74,6 +75,7 @@ function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
         name: item.product.name,
         image: item.product.image,
         categoryName: item.product.categoryName || "Uncategorized",
+        unitSize: item.product.unitSize || null,
         variants: [],
       });
     }
@@ -191,61 +193,39 @@ function VariantModal({
   const packLabel = selected.variant.packType
     ? selected.variant.packType.charAt(0).toUpperCase() + selected.variant.packType.slice(1)
     : "Unit";
-  const weightKg = Number(selected.variant.weightKg) || 0;
+  const variantWeightKg = Number(selected.variant.weightKg) || 0;
+  const unitSizeKg = Number(product.unitSize) || 0;
+  // Use product unitSize as carton total, fallback to variant weight
+  const cartonWeightKg = unitSizeKg > 0 ? unitSizeKg : variantWeightKg;
 
   // Skip inner pack for "loose" — loose items are sold individually
   const isLoose = (selected.variant.packType || "").toLowerCase() === "loose";
 
-  // Try structured fields first, then parse from unitLabel/sku as fallback
-  let innerKg = 0;
-  let innerCount = 0;
-  let innerLabel = "";
+  // Packs per carton = unitSize / variantWeight
+  let innerKg = variantWeightKg;
+  let innerCount = unitSizeKg > 0 && variantWeightKg > 0
+    ? Math.floor(unitSizeKg / variantWeightKg)
+    : 0;
+  let innerLabel = variantWeightKg > 0 ? `${variantWeightKg}KG` : "";
 
-  if (!isLoose) {
+  if (isLoose) {
+    innerKg = 0;
+    innerCount = 0;
+    innerLabel = "";
+  }
+
+  // If no unitSize set, try structured fields as fallback
+  if (!isLoose && unitSizeKg <= 0) {
     innerKg = Number(selected.variant.innerPackSizeKg) || 0;
     innerCount = selected.variant.packCountInside || 0;
-
     if (innerKg > 0 && !innerCount) {
-      innerCount = Math.floor(weightKg / innerKg);
+      innerCount = Math.floor(variantWeightKg / innerKg);
     }
-
-    // Fallback: parse from unitLabel like "5kg × 10 Pack Carton" or "1Lx12"
-    if (!innerKg && !innerCount) {
-      const ul = selected.variant.unitLabel || "";
-      const sku = selected.variant.sku || "";
-
-      const patterns = [
-        /(\d+(?:\.\d+)?)\s*(?:kg|KG)\s*[×x]\s*(\d+)/i,
-        /(\d+)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(?:kg|KG)/i,
-        /(\d+(?:\.\d+)?)\s*(?:L|l|ltr)\s*[×x]\s*(\d+)/i,
-        /(\d+)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(?:L|l|ltr)/i,
-      ];
-
-      for (const pat of patterns) {
-        const match = ul.match(pat) || sku.match(pat);
-        if (match) {
-          const n1 = parseFloat(match[1]!);
-          const n2 = parseFloat(match[2]!);
-          if (n1 < n2) {
-            innerLabel = match[0]!.includes("L") || match[0]!.includes("l") ? `${n1}L` : `${n1}kg`;
-            innerCount = n2;
-          } else {
-            innerLabel = match[0]!.includes("L") || match[0]!.includes("l") ? `${n1}L` : `${n1}kg`;
-            innerCount = n2;
-          }
-          innerKg = n1;
-          break;
-        }
-      }
-    }
-
-    if (!innerLabel && innerKg > 0) {
-      innerLabel = `${innerKg}kg`;
-    }
+    innerLabel = innerKg > 0 ? `${innerKg}kg` : "";
   }
 
   // Pack conversion calculations
-  const totalWeight = qty * weightKg;
+  const totalWeight = qty * cartonWeightKg;
   const totalInnerPacks = qty * innerCount;
 
   return (
@@ -281,7 +261,7 @@ function VariantModal({
           {/* Pack Info for selected variant */}
           <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
             <div className="text-sm font-semibold text-gray-800">
-              Pack: {weightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}
+              Pack: {cartonWeightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}
             </div>
             {selected.variant.sku && (
               <div className="text-[10px] text-gray-400 mt-1">SKU: {selected.variant.sku}</div>
@@ -350,7 +330,7 @@ function VariantModal({
                 📦 Pack Breakdown
               </h4>
               <div className="text-sm text-blue-800 font-medium">
-                1 {packLabel} = {innerLabel} × {innerCount} pcs = {weightKg}kg total
+                1 {packLabel} = {innerLabel} × {innerCount} pcs = {cartonWeightKg}kg total
               </div>
               {qty > 1 && (
                 <div className="text-xs text-blue-600 mt-1 pt-1 border-t border-blue-100">

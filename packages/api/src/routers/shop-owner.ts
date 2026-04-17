@@ -1830,6 +1830,7 @@ const warehouseConnectionEndpoints = {
                     variantPackType: productVariant.packType,
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
+                    productUnitSize: product.unitSize,
                 })
                 .from(inventory)
                 .innerJoin(
@@ -1875,6 +1876,7 @@ const warehouseConnectionEndpoints = {
                         name: item.productName,
                         image: item.productImage,
                         size: item.productSize,
+                        unitSize: item.productUnitSize,
                         categoryName: item.categoryName || "Uncategorized",
                     },
                     variant: {
