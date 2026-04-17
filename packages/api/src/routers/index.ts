@@ -62,6 +62,7 @@ import { marketingRouter } from "./marketing";
 import { userTicketRouter } from "./user-ticket";
 import { userComplaintRouter } from "./user-complaint";
 import { adminComplaintRouter } from "./admin-complaint";
+import { warehouseEmployeeRouter } from "./warehouse-employee";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -136,6 +137,7 @@ export const appRouter = {
   userTicket: userTicketRouter,
   userComplaint: userComplaintRouter,
   adminComplaint: adminComplaintRouter,
+  warehouseEmployee: warehouseEmployeeRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
