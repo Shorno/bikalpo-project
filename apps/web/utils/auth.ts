@@ -73,9 +73,9 @@ export async function requireAuth() {
   if (!session) {
     if (typeof window === "undefined") {
       const { redirect } = await import("next/navigation");
-      redirect("/login");
+      redirect("/");
     } else {
-      window.location.href = "/login";
+      window.location.href = "/";
     }
     // redirect() throws, so this is unreachable, but satisfies TypeScript
     throw new Error("Redirecting to login");

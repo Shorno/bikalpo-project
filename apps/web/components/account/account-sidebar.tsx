@@ -106,7 +106,7 @@ export function AccountSidebar() {
               /^(https?:\/\/)(shop|b2b)\./,
               "$1",
             ) || window.location.origin;
-          window.location.href = `${mainDomain}/login`;
+          window.location.href = `${mainDomain}/`;
         },
       },
     });

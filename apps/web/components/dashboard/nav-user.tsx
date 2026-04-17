@@ -2,7 +2,6 @@
 
 import type { Session } from "@bikalpo-project/auth";
 import { IconDotsVertical, IconLogout } from "@tabler/icons-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -22,7 +21,6 @@ import {
 import { authClient } from "@/lib/auth-client";
 
 export function NavUser({ session }: { session: Session | null }) {
-  const router = useRouter();
   const { isMobile } = useSidebar();
   if (!session) {
     return null;
@@ -32,7 +30,10 @@ export function NavUser({ session }: { session: Session | null }) {
       fetchOptions: {
         onSuccess: () => {
           toast.success("Logged out successfully");
-          router.replace("/login");
+          // Use window.location.href to force full navigation to root domain.
+          // router.replace("/login") would trigger the @auth/(.)login route
+          // intercept and show the login modal on top of the dashboard.
+          window.location.href = "/";
         },
       },
     });
