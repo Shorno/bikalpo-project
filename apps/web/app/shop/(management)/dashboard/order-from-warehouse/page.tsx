@@ -51,6 +51,8 @@ type VariantItem = {
     packType: string | null;
     innerPackSizeKg: string | null;
     packCountInside: number | null;
+    brandId: number | null;
+    brandName: string | null;
   };
 };
 
@@ -252,10 +254,17 @@ function VariantModal({
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Product Name & Category */}
+          {/* Product Name & Category & Brand */}
           <div>
             <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{product.categoryName}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-gray-400">{product.categoryName}</p>
+              {selected.variant.brandName && (
+                <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                  {selected.variant.brandName}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Pack Info for selected variant */}
