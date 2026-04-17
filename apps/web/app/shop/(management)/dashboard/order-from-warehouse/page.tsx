@@ -346,33 +346,37 @@ function VariantModal({
                   </div>
                 )}
 
-                {/* Loose dropdown */}
+                {/* Loose buttons */}
                 {looseVariants.length > 0 && (
                   <div>
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                       Loose / Open
                     </h3>
-                    <select
-                      value={looseVariants.some(v => v.idx === selectedIdx) ? selectedIdx : ""}
-                      onChange={(e) => { setSelectedIdx(Number(e.target.value)); setQty(1); }}
-                      className={`w-full px-3 py-2.5 rounded-lg text-sm font-medium border transition-all appearance-none cursor-pointer ${
-                        looseVariants.some(v => v.idx === selectedIdx)
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-white text-gray-700 border-gray-200 hover:border-blue-300"
-                      }`}
-                    >
-                      <option value="" disabled>Select loose weight...</option>
+                    <div className="flex flex-wrap gap-2">
                       {looseVariants.map((v) => {
                         const vWeight = Number(v.variant.weightKg) || 0;
+                        const isSelected = v.idx === selectedIdx;
                         const vInCart = cart.find((c) => c.variantId === v.variantId);
                         return (
-                          <option key={v.variantId} value={v.idx}>
-                            Loose {vWeight}KG — ৳{Number(v.price).toLocaleString()}/KG
-                            {vInCart ? ` (${vInCart.quantity} in cart)` : ""}
-                          </option>
+                          <button
+                            key={v.variantId}
+                            onClick={() => { setSelectedIdx(v.idx); setQty(1); }}
+                            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+                              isSelected
+                                ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-teal-300 hover:bg-teal-50"
+                            }`}
+                          >
+                            <div>Loose ({vWeight}kg)</div>
+                            {vInCart && (
+                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-teal-500"}`}>
+                                {vInCart.quantity} in cart
+                              </div>
+                            )}
+                          </button>
                         );
                       })}
-                    </select>
+                    </div>
                   </div>
                 )}
               </div>
