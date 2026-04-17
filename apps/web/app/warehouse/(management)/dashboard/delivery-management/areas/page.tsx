@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -134,7 +134,7 @@ function CreateAreaDialog({
     ...orpc.warehouseDelivery.createArea.mutationOptions(),
     onSuccess: () => {
       toast.success("Delivery area created");
-      queryClient.invalidateQueries({ queryKey: ["warehouseDelivery"] });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseDelivery.key() });
       onOpenChange(false);
       resetForm();
     },
@@ -252,7 +252,7 @@ function EditAreaDialog({
     ...orpc.warehouseDelivery.updateArea.mutationOptions(),
     onSuccess: () => {
       toast.success("Area updated");
-      queryClient.invalidateQueries({ queryKey: ["warehouseDelivery"] });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseDelivery.key() });
       onOpenChange(false);
     },
     onError: (error) => toast.error(error.message || "Failed to update area"),
@@ -356,7 +356,7 @@ function ScheduleDialog({
   const existingRiderId = area?.deliveryDays?.[0]?.riderId ?? null;
 
   const [selectedDays, setSelectedDays] = useState<number[]>(existingDays);
-  const [riderId, setRiderId] = useState<string>(existingRiderId ?? "");
+  const [riderId, setRiderId] = useState<string>(existingRiderId ?? "none");
 
   const { data: ridersData } = useQuery(
     orpc.warehouseDelivery.getAvailableRiders.queryOptions({ input: {} }),
@@ -366,7 +366,7 @@ function ScheduleDialog({
     ...orpc.warehouseDelivery.upsertSchedule.mutationOptions(),
     onSuccess: () => {
       toast.success("Schedule updated");
-      queryClient.invalidateQueries({ queryKey: ["warehouseDelivery"] });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseDelivery.key() });
       onOpenChange(false);
     },
     onError: (error) => toast.error(error.message || "Failed to update schedule"),
@@ -416,7 +416,7 @@ function ScheduleDialog({
                 <SelectValue placeholder="Select a rider..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No default rider</SelectItem>
+                <SelectItem value="none">No default rider</SelectItem>
                 {ridersData?.riders?.map((r: any) => (
                   <SelectItem key={r.id} value={r.id}>
                     {r.name} {r.phoneNumber ? `(${r.phoneNumber})` : ""}
@@ -435,7 +435,7 @@ function ScheduleDialog({
             onClick={() => upsertMutation.mutate({
               areaId: area.id,
               days: selectedDays,
-              defaultRiderId: riderId || null,
+              defaultRiderId: riderId === "none" ? null : riderId,
             })}
             disabled={upsertMutation.isPending}
           >
@@ -536,7 +536,7 @@ export default function DeliveryAreasPage() {
     ...orpc.warehouseDelivery.deleteArea.mutationOptions(),
     onSuccess: () => {
       toast.success("Area deleted");
-      queryClient.invalidateQueries({ queryKey: ["warehouseDelivery"] });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseDelivery.key() });
       setDeleteArea(null);
     },
     onError: (error) => toast.error(error.message || "Failed to delete area"),
@@ -792,7 +792,7 @@ export default function DeliveryAreasPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredAreas.map((area: any) => (
-                    <>
+                    <Fragment key={area.id}>
                       <TableRow
                         key={area.id}
                         className="cursor-pointer hover:bg-muted/50"
@@ -884,7 +884,7 @@ export default function DeliveryAreasPage() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>

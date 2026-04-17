@@ -1,13 +1,26 @@
 "use client";
 
+import {
+  type ColumnDef,
+  type ExpandedState,
+  flexRender,
+  getCoreRowModel,
+  getExpandedRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import {
   CheckCircle,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Edit3,
   InboxIcon,
+  Loader2,
   MapPin,
   Minus,
   Package,
@@ -15,91 +28,90 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Search,
   Trash2,
   Truck,
   User,
   XCircle,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import TableSkeleton from "@/components/table-skeleton";
 import { orpc } from "@/utils/orpc";
 
-/* ─── Status tab definitions ─── */
-const TABS = [
-  { key: "all", label: "All Orders" },
-  { key: "pending", label: "Pending", color: "text-amber-600" },
-  { key: "confirmed", label: "Confirmed", color: "text-blue-600" },
-  { key: "delivered", label: "Delivered", color: "text-emerald-600" },
-  { key: "returned", label: "Returned", color: "text-orange-600" },
-  { key: "cancelled", label: "Cancelled", color: "text-red-600" },
-] as const;
-
-/* ─── Status badge ─── */
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { bg: string; text: string; label: string }> = {
-    pending: { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", label: "Pending" },
-    confirmed: { bg: "bg-blue-50 border-blue-200", text: "text-blue-700", label: "Confirmed" },
-    processing: { bg: "bg-purple-50 border-purple-200", text: "text-purple-700", label: "Processing" },
-    delivered: { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700", label: "Delivered" },
-    returned: { bg: "bg-orange-50 border-orange-200", text: "text-orange-700", label: "Returned" },
-    cancelled: { bg: "bg-red-50 border-red-200", text: "text-red-700", label: "Cancelled" },
-  };
-  const s = map[status] || map.pending;
-  return (
-    <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 border rounded-full font-semibold ${s.bg} ${s.text}`}>
-      {status === "pending" && <Clock size={12} />}
-      {status === "confirmed" && <CheckCircle size={12} />}
-      {status === "delivered" && <Truck size={12} />}
-      {status === "returned" && <RotateCcw size={12} />}
-      {status === "cancelled" && <XCircle size={12} />}
-      {s.label}
-    </span>
-  );
+/* ─── Types ─── */
+interface OrderItem {
+  id: number;
+  productName: string;
+  productSize: string | null;
+  productImage: string | null;
+  quantity: number;
+  unitPrice: string;
+  totalPrice: string;
 }
 
-/* ─── Action buttons ─── */
-function OrderActions({
-  orderId,
-  status,
-  onAction,
-  loading,
-}: {
-  orderId: number;
+interface Order {
+  id: number;
+  orderNumber: string;
   status: string;
-  onAction: (orderId: number, newStatus: string) => void;
-  loading: boolean;
-}) {
-  if (status === "delivered" || status === "cancelled" || status === "returned") return null;
+  total: string;
+  paymentMethod: string | null;
+  createdAt: string;
+  buyerName: string | null;
+  buyerShopName: string | null;
+  buyerWarehouseName: string | null;
+  shippingName: string | null;
+  shippingPhone: string | null;
+  shippingAddress: string | null;
+  shippingCity: string | null;
+  shippingArea: string | null;
+  items: OrderItem[];
+}
 
+/* ─── Status badge ─── */
+const STATUS_MAP: Record<string, { label: string; icon: typeof Clock; className: string }> = {
+  pending: { label: "Pending", icon: Clock, className: "text-amber-700 border-amber-200 bg-amber-50" },
+  confirmed: { label: "Confirmed", icon: CheckCircle, className: "text-blue-700 border-blue-200 bg-blue-50" },
+  processing: { label: "Processing", icon: Package, className: "text-purple-700 border-purple-200 bg-purple-50" },
+  delivered: { label: "Delivered", icon: Truck, className: "text-emerald-700 border-emerald-200 bg-emerald-50" },
+  returned: { label: "Returned", icon: RotateCcw, className: "text-orange-700 border-orange-200 bg-orange-50" },
+  cancelled: { label: "Cancelled", icon: XCircle, className: "text-red-700 border-red-200 bg-red-50" },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const s = STATUS_MAP[status] ?? STATUS_MAP.pending;
+  const Icon = s.icon;
   return (
-    <div className="flex items-center gap-2 mt-3 sm:mt-0">
-      {status === "pending" && (
-        <>
-          <button
-            onClick={() => onAction(orderId, "confirmed")}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            <CheckCircle size={14} /> Confirm
-          </button>
-          <button
-            onClick={() => onAction(orderId, "cancelled")}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
-          >
-            <XCircle size={14} /> Cancel
-          </button>
-        </>
-      )}
-      {status === "confirmed" && (
-        <button
-          onClick={() => onAction(orderId, "delivered")}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-        >
-          <Truck size={14} /> Mark Delivered
-        </button>
-      )}
-    </div>
+    <Badge variant="outline" className={`gap-1 text-[10px] font-semibold ${s.className}`}>
+      <Icon className="w-3 h-3" />
+      {s.label}
+    </Badge>
   );
 }
 
@@ -110,7 +122,7 @@ function EditableItemRow({
   editQty,
   onQtyChange,
 }: {
-  item: any;
+  item: OrderItem;
   isEditing: boolean;
   editQty: number;
   onQtyChange: (qty: number) => void;
@@ -121,106 +133,94 @@ function EditableItemRow({
   const isRemoved = isEditing && editQty === 0;
 
   return (
-    <div className={`flex items-center justify-between bg-white rounded-lg p-3 border transition-all ${
-      isRemoved ? "border-red-200 bg-red-50/50 opacity-60" : "border-gray-100"
+    <div className={`flex items-center justify-between rounded-lg px-3 py-2.5 border transition-all ${
+      isRemoved ? "border-destructive/30 bg-destructive/5 opacity-60" : "border-border bg-background"
     }`}>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         {item.productImage ? (
-          <img src={item.productImage} alt="" className="w-8 h-8 rounded object-cover" />
+          <img src={item.productImage} alt="" className="w-9 h-9 rounded-md object-cover flex-shrink-0" />
         ) : (
-          <div className="w-8 h-8 bg-gray-100 rounded flex items-center justify-center">
-            <Package size={14} className="text-gray-400" />
+          <div className="w-9 h-9 bg-muted rounded-md flex items-center justify-center flex-shrink-0">
+            <Package className="w-4 h-4 text-muted-foreground" />
           </div>
         )}
-        <div>
-          <div className={`text-sm font-medium ${isRemoved ? "line-through text-gray-400" : "text-gray-900"}`}>
+        <div className="min-w-0">
+          <p className={`text-sm font-medium truncate ${isRemoved ? "line-through text-muted-foreground" : ""}`}>
             {item.productName}
-          </div>
-          <div className="text-xs text-gray-500">{item.productSize}</div>
+          </p>
+          {item.productSize && (
+            <p className="text-xs text-muted-foreground">{item.productSize}</p>
+          )}
         </div>
       </div>
 
       {isEditing ? (
-        <div className="flex items-center gap-3">
-          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center border rounded-lg overflow-hidden">
             <button
+              type="button"
               onClick={() => onQtyChange(Math.max(0, editQty - 1))}
-              className="px-2 py-1.5 hover:bg-gray-100 transition-colors text-gray-600"
+              className="px-2 py-1.5 hover:bg-muted transition-colors"
             >
-              {editQty === 1 ? <Trash2 size={14} className="text-red-500" /> : <Minus size={14} />}
+              {editQty === 1 ? <Trash2 className="w-3.5 h-3.5 text-destructive" /> : <Minus className="w-3.5 h-3.5" />}
             </button>
             <input
               type="number"
               min={0}
               value={editQty}
               onChange={(e) => onQtyChange(Math.max(0, parseInt(e.target.value) || 0))}
-              className="w-12 text-center text-sm font-semibold border-x border-gray-200 py-1.5 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="w-12 text-center text-sm font-semibold border-x py-1.5 outline-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
             <button
+              type="button"
               onClick={() => onQtyChange(editQty + 1)}
-              className="px-2 py-1.5 hover:bg-gray-100 transition-colors text-gray-600"
+              className="px-2 py-1.5 hover:bg-muted transition-colors"
             >
-              <Plus size={14} />
+              <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="text-xs text-gray-500 min-w-[60px] text-right">
+          <span className="text-xs text-muted-foreground min-w-[55px] text-right">
             × ৳{unitPrice.toLocaleString()}
-          </div>
-          <div className={`text-sm font-bold min-w-[70px] text-right ${
-            isRemoved ? "text-red-500 line-through" : "text-gray-900"
-          }`}>
+          </span>
+          <span className={`text-sm font-bold min-w-[65px] text-right ${isRemoved ? "text-destructive line-through" : ""}`}>
             ৳{Number(displayTotal).toLocaleString()}
-          </div>
+          </span>
         </div>
       ) : (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4 flex-shrink-0">
           <div className="text-right">
-            <div className="text-sm font-semibold">{displayQty}×</div>
-            <div className="text-xs text-gray-500">৳{unitPrice.toLocaleString()} each</div>
+            <span className="text-sm font-medium">{displayQty}×</span>
+            <span className="text-xs text-muted-foreground ml-1">@ ৳{unitPrice.toLocaleString()}</span>
           </div>
-          <div className="text-sm font-bold text-gray-900 min-w-[60px] text-right">
+          <span className="text-sm font-bold min-w-[65px] text-right">
             ৳{Number(displayTotal).toLocaleString()}
-          </div>
+          </span>
         </div>
       )}
     </div>
   );
 }
 
-/* ─── Order card ─── */
-function OrderCard({
+/* ─── Expanded Order Detail Row ─── */
+function ExpandedOrderDetail({
   order: o,
-  expanded,
-  onToggle,
   onAction,
-  loading,
+  actionLoading,
   onSaveItems,
   savingItems,
 }: {
-  order: any;
-  expanded: boolean;
-  onToggle: () => void;
+  order: Order;
   onAction: (orderId: number, newStatus: string) => void;
-  loading: boolean;
+  actionLoading: boolean;
   onSaveItems: (orderId: number, items: { itemId: number; quantity: number }[]) => void;
   savingItems: boolean;
 }) {
-  const itemCount = o.items?.length ?? 0;
-  const date = new Date(o.createdAt);
-  const formattedDate = date.toLocaleDateString("en-BD", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
   const [isEditing, setIsEditing] = useState(false);
   const [editQuantities, setEditQuantities] = useState<Record<number, number>>({});
 
   const startEditing = useCallback(() => {
     const initial: Record<number, number> = {};
-    (o.items || []).forEach((item: any) => {
+    (o.items || []).forEach((item) => {
       initial[item.id] = item.quantity;
     });
     setEditQuantities(initial);
@@ -233,11 +233,11 @@ function OrderCard({
   };
 
   const hasChanges = (o.items || []).some(
-    (item: any) => editQuantities[item.id] !== undefined && editQuantities[item.id] !== item.quantity
+    (item) => editQuantities[item.id] !== undefined && editQuantities[item.id] !== item.quantity
   );
 
   const editedTotal = isEditing
-    ? (o.items || []).reduce((sum: number, item: any) => {
+    ? (o.items || []).reduce((sum, item) => {
         const qty = editQuantities[item.id] ?? item.quantity;
         return sum + Number(item.unitPrice) * qty;
       }, 0)
@@ -245,8 +245,8 @@ function OrderCard({
 
   const handleSave = () => {
     const items = (o.items || [])
-      .filter((item: any) => editQuantities[item.id] !== undefined && editQuantities[item.id] !== item.quantity)
-      .map((item: any) => ({ itemId: item.id, quantity: editQuantities[item.id]! }));
+      .filter((item) => editQuantities[item.id] !== undefined && editQuantities[item.id] !== item.quantity)
+      .map((item) => ({ itemId: item.id, quantity: editQuantities[item.id]! }));
 
     if (items.length > 0) {
       onSaveItems(o.id, items);
@@ -256,80 +256,41 @@ function OrderCard({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-      {/* Header */}
-      <div
-        className="flex items-start justify-between p-4 cursor-pointer"
-        onClick={onToggle}
-      >
-        <div className="flex items-start gap-3 flex-1 min-w-0">
-          <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Package size={18} className="text-orange-600" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-gray-900 text-sm">{o.orderNumber}</span>
-              <StatusBadge status={o.status} />
-            </div>
-            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-              <span className="flex items-center gap-1">
-                <User size={12} />
-                {o.buyerShopName || o.buyerWarehouseName || o.buyerName || "Unknown"}
-              </span>
-              <span>{formattedDate}</span>
-              <span>{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-          <div className="text-right">
-            <div className={`font-bold ${isEditing && hasChanges ? "text-blue-600" : "text-gray-900"}`}>
-              ৳{editedTotal.toLocaleString()}
-            </div>
-            <div className="text-[10px] text-gray-400 uppercase">{o.paymentMethod?.replace(/_/g, " ")}</div>
-          </div>
-          {expanded ? <ChevronDown size={18} className="text-gray-400" /> : <ChevronRight size={18} className="text-gray-400" />}
-        </div>
-      </div>
-
-      {/* Expanded details */}
-      {expanded && (
-        <div className="border-t border-gray-100">
-          {/* Items */}
-          <div className="px-4 py-3 bg-gray-50/50">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Order Items
-              </div>
+    <tr className="bg-muted/20">
+      <td colSpan={6} className="p-0">
+        <div className="border-t">
+          {/* Items Section */}
+          <div className="px-6 py-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Order Items ({o.items?.length ?? 0})
+              </p>
               {o.status === "pending" && !isEditing && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); startEditing(); }}
-                  className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors"
-                >
-                  <Edit3 size={12} /> Edit Quantities
-                </button>
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={startEditing}>
+                  <Edit3 className="w-3.5 h-3.5 mr-1" />
+                  Edit Quantities
+                </Button>
               )}
               {isEditing && (
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={cancelEditing}
-                    className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors"
-                  >
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={cancelEditing}>
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs"
                     onClick={handleSave}
                     disabled={!hasChanges || savingItems}
-                    className="flex items-center gap-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
                   >
-                    <Save size={12} /> Save Changes
-                  </button>
+                    {savingItems ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1" />}
+                    Save Changes
+                  </Button>
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              {(o.items || []).map((item: any) => (
+
+            <div className="space-y-1.5">
+              {(o.items || []).map((item) => (
                 <EditableItemRow
                   key={item.id}
                   item={item}
@@ -344,47 +305,93 @@ function OrderCard({
 
             {/* Edited total summary */}
             {isEditing && hasChanges && (
-              <div className="mt-3 flex items-center justify-between px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                <span className="text-xs font-medium text-blue-700">Updated Total</span>
+              <div className="flex items-center justify-between px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg">
+                <span className="text-xs font-medium text-primary">Updated Total</span>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-xs text-gray-400 line-through">৳{Number(o.total).toLocaleString()}</span>
-                  <span className="text-sm font-bold text-blue-700">৳{editedTotal.toLocaleString()}</span>
+                  <span className="text-xs text-muted-foreground line-through">৳{Number(o.total).toLocaleString()}</span>
+                  <span className="text-sm font-bold text-primary">৳{editedTotal.toLocaleString()}</span>
                 </div>
               </div>
             )}
           </div>
 
           {/* Shipping + Actions */}
-          <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-gray-100">
-            <div className="text-xs text-gray-500 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <User size={12} /> {o.shippingName}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Phone size={12} /> {o.shippingPhone}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <MapPin size={12} /> {o.shippingAddress}, {o.shippingCity} {o.shippingArea ? `(${o.shippingArea})` : ""}
-              </div>
+          <div className="px-6 py-4 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-muted/10">
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                Shipping Details
+              </p>
+              {o.shippingName && (
+                <div className="flex items-center gap-1.5 text-sm">
+                  <User className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>{o.shippingName}</span>
+                </div>
+              )}
+              {o.shippingPhone && (
+                <div className="flex items-center gap-1.5 text-sm">
+                  <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>{o.shippingPhone}</span>
+                </div>
+              )}
+              {o.shippingAddress && (
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{o.shippingAddress}{o.shippingCity ? `, ${o.shippingCity}` : ""}{o.shippingArea ? ` (${o.shippingArea})` : ""}</span>
+                </div>
+              )}
             </div>
 
-            <OrderActions
-              orderId={o.id}
-              status={o.status}
-              onAction={onAction}
-              loading={loading}
-            />
+            {/* Actions */}
+            {o.status !== "delivered" && o.status !== "cancelled" && o.status !== "returned" && (
+              <div className="flex items-center gap-2">
+                {o.status === "pending" && (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => onAction(o.id, "confirmed")}
+                      disabled={actionLoading}
+                    >
+                      {actionLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
+                      Confirm
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                      onClick={() => onAction(o.id, "cancelled")}
+                      disabled={actionLoading}
+                    >
+                      <XCircle className="w-4 h-4 mr-1" />
+                      Cancel
+                    </Button>
+                  </>
+                )}
+                {o.status === "confirmed" && (
+                  <Button
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                    onClick={() => onAction(o.id, "delivered")}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Truck className="w-4 h-4 mr-1" />}
+                    Mark Delivered
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
-      )}
-    </div>
+      </td>
+    </tr>
   );
 }
 
 /* ─── Main Page ─── */
 export default function SupplyOrdersPage() {
   const [activeTab, setActiveTab] = useState<string>("all");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [globalFilter, setGlobalFilter] = useState("");
+  const [expanded, setExpanded] = useState<ExpandedState>({});
+  const [confirmAction, setConfirmAction] = useState<{ orderId: number; status: string; message: string } | null>(null);
   const queryClient = useQueryClient();
 
   // Fetch orders
@@ -407,10 +414,10 @@ export default function SupplyOrdersPage() {
       }),
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["warehouse", "incoming-orders"] });
-      alert(result.message || "Order updated!");
+      toast.success(result.message || "Order status updated");
     },
     onError: (err: any) => {
-      alert(`Error: ${err.message || "Failed to update order"}`);
+      toast.error(err.message || "Failed to update order");
     },
   });
 
@@ -420,108 +427,337 @@ export default function SupplyOrdersPage() {
       orpc.warehouse.updateIncomingOrderItems.call({ orderId, items }),
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["warehouse", "incoming-orders"] });
-      alert(result.message || "Items updated!");
+      toast.success(result.message || "Order items updated");
     },
     onError: (err: any) => {
-      alert(`Error: ${err.message || "Failed to update items"}`);
+      toast.error(err.message || "Failed to update items");
     },
   });
 
   const handleAction = (orderId: number, newStatus: string) => {
-    const confirmMsg =
-      newStatus === "delivered"
-        ? "Mark as delivered? This will convert trade inventory → shop retail inventory."
-        : newStatus === "cancelled"
-          ? "Cancel this order? This cannot be undone."
-          : `Set order to ${newStatus}?`;
-
-    if (confirm(confirmMsg)) {
-      updateStatus.mutate({ orderId, status: newStatus });
-    }
+    const messages: Record<string, string> = {
+      confirmed: "Confirm this order? The shop owner will be notified.",
+      delivered: "Mark as delivered? This will convert trade inventory → shop retail inventory.",
+      cancelled: "Cancel this order? This action cannot be undone.",
+    };
+    setConfirmAction({
+      orderId,
+      status: newStatus,
+      message: messages[newStatus] || `Set order to ${newStatus}?`,
+    });
   };
 
   const handleSaveItems = (orderId: number, items: { itemId: number; quantity: number }[]) => {
     updateItems.mutate({ orderId, items });
   };
 
-  const orders = data?.orders ?? [];
-  const pagination = data?.pagination;
+  const orders: Order[] = (data?.orders as Order[]) ?? [];
+
+  // Column definitions
+  const columns: ColumnDef<Order>[] = useMemo(
+    () => [
+      {
+        id: "expander",
+        header: "",
+        size: 40,
+        cell: ({ row }) => (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              row.toggleExpanded();
+            }}
+            className="p-1"
+          >
+            <ChevronDown
+              className={`w-4 h-4 text-muted-foreground transition-transform ${
+                row.getIsExpanded() ? "" : "-rotate-90"
+              }`}
+            />
+          </button>
+        ),
+      },
+      {
+        accessorKey: "orderNumber",
+        header: "Order",
+        cell: ({ row }) => {
+          const o = row.original;
+          const createdDate = o.createdAt ? format(new Date(o.createdAt), "dd MMM yyyy, hh:mm a") : "";
+          return (
+            <div>
+              <p className="text-sm font-semibold">{o.orderNumber}</p>
+              <p className="text-xs text-muted-foreground">{createdDate}</p>
+            </div>
+          );
+        },
+      },
+      {
+        id: "customer",
+        header: "Customer",
+        cell: ({ row }) => {
+          const o = row.original;
+          const buyerName = o.buyerShopName || o.buyerWarehouseName || o.buyerName || "Unknown";
+          return (
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                <User className="w-3.5 h-3.5 text-muted-foreground" />
+              </div>
+              <span className="text-sm truncate max-w-[150px]">{buyerName}</span>
+            </div>
+          );
+        },
+      },
+      {
+        id: "items",
+        header: "Items",
+        cell: ({ row }) => {
+          const itemCount = row.original.items?.length ?? 0;
+          return (
+            <span className="text-sm text-muted-foreground">
+              {itemCount} item{itemCount !== 1 ? "s" : ""}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      },
+      {
+        accessorKey: "total",
+        header: () => <div className="text-right">Amount</div>,
+        cell: ({ row }) => {
+          const o = row.original;
+          return (
+            <div className="text-right">
+              <p className="text-sm font-bold">৳{Number(o.total || 0).toLocaleString()}</p>
+              {o.paymentMethod && (
+                <p className="text-[10px] text-muted-foreground uppercase">
+                  {o.paymentMethod.replace(/_/g, " ")}
+                </p>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [],
+  );
+
+  // Filter orders by search
+  const filteredOrders = useMemo(() => {
+    if (!globalFilter.trim()) return orders;
+    const q = globalFilter.toLowerCase();
+    return orders.filter((o) =>
+      o.orderNumber?.toLowerCase().includes(q) ||
+      o.buyerShopName?.toLowerCase().includes(q) ||
+      o.buyerWarehouseName?.toLowerCase().includes(q) ||
+      o.buyerName?.toLowerCase().includes(q) ||
+      o.shippingName?.toLowerCase().includes(q)
+    );
+  }, [orders, globalFilter]);
+
+  const table = useReactTable({
+    data: filteredOrders,
+    columns,
+    state: { expanded },
+    onExpandedChange: setExpanded,
+    getCoreRowModel: getCoreRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getRowCanExpand: () => true,
+    initialState: {
+      pagination: { pageSize: 15 },
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Supply Orders</h1>
+          <p className="text-sm text-muted-foreground">Manage incoming B2B orders from shop owners</p>
+        </div>
+        <TableSkeleton columns={6} rows={8} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Supply Orders</h1>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 border rounded-lg bg-muted/30">
+          <XCircle className="w-10 h-10 text-destructive/40 mb-3" />
+          <p className="text-sm text-destructive">Failed to load orders</p>
+          <p className="text-xs text-muted-foreground mt-1">{(error as any)?.message}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <Package className="text-orange-500" size={24} />
-          Supply Orders
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Incoming B2B orders from shop owners. Confirm and deliver to auto-convert trade stock → retail inventory.
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Supply Orders</h1>
+        <p className="text-sm text-muted-foreground">
+          Manage incoming B2B orders from shop owners
         </p>
       </div>
 
-      {/* Status tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-              activeTab === tab.key
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Status Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="all">All</TabsTrigger>
+          <TabsTrigger value="pending">Pending</TabsTrigger>
+          <TabsTrigger value="confirmed">Confirmed</TabsTrigger>
+          <TabsTrigger value="delivered">Delivered</TabsTrigger>
+          <TabsTrigger value="returned">Returned</TabsTrigger>
+          <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Search + summary */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            placeholder="Search by order #, customer, shop..."
+            className="pl-9"
+          />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {filteredOrders.length} order{filteredOrders.length !== 1 ? "s" : ""}
+          {orders.length > 0 && (
+            <span className="ml-1 font-medium">
+              · ৳{orders.reduce((s, o) => s + Number(o.total || 0), 0).toLocaleString()}
+            </span>
+          )}
+        </p>
       </div>
 
-      {/* Content */}
-      {isLoading ? (
-        <div className="bg-white rounded-xl border p-12 flex flex-col items-center">
-          <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
-          <p className="mt-3 text-sm text-gray-500">Loading orders...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 rounded-xl border border-red-200 p-6 text-center">
-          <p className="text-red-600 text-sm">Failed to load orders: {(error as any)?.message}</p>
-        </div>
-      ) : orders.length === 0 ? (
-        <div className="bg-white rounded-xl border shadow-sm p-12 flex flex-col items-center text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-            <InboxIcon className="w-8 h-8 text-gray-400" />
-          </div>
-          <h2 className="text-lg font-semibold text-gray-700 mb-1">No orders found</h2>
-          <p className="text-sm text-gray-500">
-            {activeTab === "all"
-              ? "No supply orders received yet. Orders from shop owners will appear here."
-              : `No ${activeTab} orders.`}
+      {/* Table */}
+      {filteredOrders.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 border rounded-lg bg-muted/30">
+          <InboxIcon className="w-10 h-10 text-muted-foreground/40 mb-3" />
+          <h3 className="font-semibold mb-1">No orders found</h3>
+          <p className="text-sm text-muted-foreground text-center max-w-sm">
+            {globalFilter
+              ? "No orders match your search. Try a different term."
+              : activeTab === "all"
+                ? "No supply orders received yet. Orders from shop owners will appear here."
+                : `No ${activeTab} orders at the moment.`}
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {/* Summary bar */}
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <span>{pagination?.totalCount ?? orders.length} order{orders.length !== 1 ? "s" : ""}</span>
-            <span>Total: ৳{orders.reduce((s: number, o: any) => s + Number(o.total || 0), 0).toLocaleString()}</span>
+        <>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => (
+                      <TableHead key={header.id} style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(header.column.columnDef.header, header.getContext())}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows.map((row) => (
+                  <Fragment key={row.id}>
+                    <TableRow
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => row.toggleExpanded()}
+                      data-state={row.getIsExpanded() ? "expanded" : undefined}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                    {row.getIsExpanded() && (
+                      <ExpandedOrderDetail
+                        order={row.original}
+                        onAction={handleAction}
+                        actionLoading={updateStatus.isPending}
+                        onSaveItems={handleSaveItems}
+                        savingItems={updateItems.isPending}
+                      />
+                    )}
+                  </Fragment>
+                ))}
+              </TableBody>
+            </Table>
           </div>
 
-          {/* Order cards */}
-          {orders.map((o: any) => (
-            <OrderCard
-              key={o.id}
-              order={o}
-              expanded={expandedId === o.id}
-              onToggle={() => setExpandedId(expandedId === o.id ? null : o.id)}
-              onAction={handleAction}
-              loading={updateStatus.isPending}
-              onSaveItems={handleSaveItems}
-              savingItems={updateItems.isPending}
-            />
-          ))}
-        </div>
+          {/* Pagination */}
+          {table.getPageCount() > 1 && (
+            <div className="flex items-center justify-between px-2">
+              <p className="text-xs text-muted-foreground">
+                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
+
+      {/* Confirmation Dialog */}
+      <AlertDialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Action</AlertDialogTitle>
+            <AlertDialogDescription>{confirmAction?.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmAction) {
+                  updateStatus.mutate({ orderId: confirmAction.orderId, status: confirmAction.status });
+                  setConfirmAction(null);
+                }
+              }}
+              className={confirmAction?.status === "cancelled" ? "bg-destructive hover:bg-destructive/90" : ""}
+            >
+              {updateStatus.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {confirmAction?.status === "confirmed" ? "Confirm Order" :
+               confirmAction?.status === "delivered" ? "Mark Delivered" :
+               confirmAction?.status === "cancelled" ? "Cancel Order" : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

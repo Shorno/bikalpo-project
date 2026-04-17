@@ -2,25 +2,23 @@
 
 import { format, formatDistanceToNow } from "date-fns";
 import {
-    ArrowLeft,
     ArrowUpRight,
-    Check,
     CheckCircle,
     Clock,
     FileText,
     Headphones,
     ImageIcon,
     Loader2,
-    Lock,
     MessageSquare,
     Paperclip,
     Plus,
-    Send,
     Ticket,
-    User,
     X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +48,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { fileToDataUrl } from "@/lib/cloudinary";
+import { orpc } from "@/utils/orpc";
 import { client } from "@/utils/orpc";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -92,61 +91,6 @@ function getCategoryLabel(cat: string) {
     }
 }
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface TicketItem {
-    id: number;
-    ticketNumber: string;
-    subject: string;
-    message: string;
-    status: string;
-    priority: string;
-    category: string;
-    currentLevel?: string;
-    escalatedAt?: string | null;
-    autoEscalated?: boolean | null;
-    assignedTo?: {
-        id: string;
-        name: string;
-        shopName: string | null;
-        warehouseName: string | null;
-    } | null;
-    createdAt: Date;
-    updatedAt: Date;
-}
-
-interface TicketDetail extends TicketItem {
-    resolvedAt: Date | null;
-    closedAt: Date | null;
-    assignedHandler?: {
-        id: string;
-        name: string;
-        shopName: string | null;
-        warehouseName: string | null;
-        role: string | null;
-    } | null;
-    replies: {
-        id: number;
-        message: string;
-        isStaffReply: boolean;
-        createdAt: Date;
-        user: { id: string; name: string; image: string | null };
-    }[];
-    attachments: {
-        id: number;
-        url: string;
-        fileName: string;
-    }[];
-}
-
-interface Stats {
-    total: number;
-    open: number;
-    inProgress: number;
-    resolved: number;
-    closed: number;
-}
-
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 interface UserSupportPanelProps {
@@ -155,35 +99,13 @@ interface UserSupportPanelProps {
 }
 
 export function UserSupportPanel({ userRole = "consumer" }: UserSupportPanelProps) {
-    const [view, setView] = useState<"list" | "detail">("list");
-    const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
-
-    const openTicket = (id: number) => {
-        setSelectedTicketId(id);
-        setView("detail");
-    };
-
-    const goBack = () => {
-        setView("list");
-        setSelectedTicketId(null);
-    };
-
-    return view === "detail" && selectedTicketId ? (
-        <TicketDetailView ticketId={selectedTicketId} onBack={goBack} />
-    ) : (
-        <TicketListView onOpenTicket={openTicket} userRole={userRole} />
-    );
-}
-
-// ─── Ticket List View ────────────────────────────────────────────────────────
-
-function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number) => void; userRole: string }) {
-    const [tickets, setTickets] = useState<TicketItem[]>([]);
-    const [stats, setStats] = useState<Stats | null>(null);
-    const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
     const [statusFilter, setStatusFilter] = useState("all");
+    const queryClient = useQueryClient();
+    const pathname = usePathname();
+
+    // Derive support base path from current pathname (e.g. /dashboard/support, /warehouse/dashboard/support)
+    const supportBasePath = pathname?.replace(/\/$/, "") || "/dashboard/support";
 
     // New ticket dialog
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -191,7 +113,6 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
     const [newMessage, setNewMessage] = useState("");
     const [newCategory, setNewCategory] = useState("other");
     const [newPriority, setNewPriority] = useState("medium");
-    const [creating, setCreating] = useState(false);
 
     // File attachments
     const [attachments, setAttachments] = useState<{ url: string; fileName: string; fileType: string; preview?: string }[]>([]);
@@ -199,68 +120,79 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
 
     // Shop/warehouse selector for hierarchical routing
     const [selectedTargetId, setSelectedTargetId] = useState("");
-    const [targetOptions, setTargetOptions] = useState<{ id: string; label: string }[]>([]);
-    const [targetLoading, setTargetLoading] = useState(false);
+
+    // ── TanStack Queries ──
+
+    const { data: ticketsData, isLoading: ticketsLoading } = useQuery(
+        orpc.userTicket.getMyTickets.queryOptions({
+            input: {
+                page,
+                limit: 10,
+                status: statusFilter !== "all" ? statusFilter : undefined,
+            },
+        }),
+    );
+
+    const { data: stats, isLoading: statsLoading } = useQuery(
+        orpc.userTicket.getMyStats.queryOptions({ input: {} }),
+    );
 
     // Fetch target options (shops for consumer, warehouses for shop_owner)
-    useEffect(() => {
-        async function fetchTargets() {
-            if (userRole === "warehouse") return; // warehouse → admin, no selector needed
-            setTargetLoading(true);
-            try {
-                if (userRole === "consumer" || userRole === "user" || !userRole) {
-                    const shops = await client.userTicket.getMyShops();
-                    setTargetOptions(
-                        (shops || []).map((s: { id: string; shopName: string | null; name: string }) => ({
-                            id: s.id,
-                            label: s.shopName || s.name,
-                        })),
-                    );
-                } else if (userRole === "shop_owner") {
-                    const warehouses = await client.userTicket.getMyWarehouses();
-                    setTargetOptions(
-                        (warehouses || []).map((w: { id: string; warehouseName: string | null; name: string }) => ({
-                            id: w.id,
-                            label: w.warehouseName || w.name,
-                        })),
-                    );
-                }
-            } catch {
-                /* ignore */
-            } finally {
-                setTargetLoading(false);
+    const { data: targetOptions = [], isLoading: targetLoading } = useQuery({
+        queryKey: ["support", "targets", userRole],
+        queryFn: async () => {
+            if (userRole === "warehouse") return [];
+            if (userRole === "consumer" || userRole === "user" || !userRole) {
+                const shops = await client.userTicket.getMyShops();
+                return (shops || []).map((s: { id: string; shopName: string | null; name: string }) => ({
+                    id: s.id,
+                    label: s.shopName || s.name,
+                }));
+            } else if (userRole === "shop_owner") {
+                const warehouses = await client.userTicket.getMyWarehouses();
+                return (warehouses || []).map((w: { id: string; warehouseName: string | null; name: string }) => ({
+                    id: w.id,
+                    label: w.warehouseName || w.name,
+                }));
             }
-        }
-        fetchTargets();
-    }, [userRole]);
+            return [];
+        },
+        staleTime: 5 * 60 * 1000,
+    });
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
-        try {
-            const [ticketsResult, statsResult] = await Promise.all([
-                client.userTicket.getMyTickets({
-                    page,
-                    limit: 10,
-                    status: statusFilter !== "all" ? statusFilter : undefined,
-                }),
-                client.userTicket.getMyStats(),
-            ]);
+    // ── Create Ticket Mutation ──
 
-            setTickets((ticketsResult?.tickets as TicketItem[]) || []);
-            setTotalPages(ticketsResult?.pagination?.totalPages || 1);
-            setStats(statsResult as Stats);
-        } catch {
-            toast.error("Failed to load tickets");
-        } finally {
-            setLoading(false);
-        }
-    }, [page, statusFilter]);
+    const createMutation = useMutation({
+        mutationFn: (input: {
+            subject: string;
+            message: string;
+            category: "order" | "payment" | "delivery" | "account" | "other";
+            priority: "low" | "medium" | "high";
+            shopId?: string;
+            warehouseId?: string;
+            attachments?: { url: string; fileName: string; fileType: string }[];
+        }) => client.userTicket.create(input),
+        onSuccess: () => {
+            toast.success("Support ticket created");
+            setDialogOpen(false);
+            resetForm();
+            queryClient.invalidateQueries({ queryKey: orpc.userTicket.key() });
+        },
+        onError: (err) => {
+            toast.error(err instanceof Error ? err.message : "Failed to create ticket");
+        },
+    });
 
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+    const resetForm = () => {
+        setNewSubject("");
+        setNewMessage("");
+        setNewCategory("other");
+        setNewPriority("medium");
+        setSelectedTargetId("");
+        setAttachments([]);
+    };
 
-    const handleCreate = async () => {
+    const handleCreate = () => {
         if (!newSubject.trim() || newSubject.length < 5) {
             toast.error("Subject must be at least 5 characters");
             return;
@@ -269,7 +201,6 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
             toast.error("Message must be at least 10 characters");
             return;
         }
-        // Validation: consumer/shop_owner must select a target
         if (userRole !== "warehouse" && !selectedTargetId) {
             toast.error(
                 userRole === "shop_owner"
@@ -279,37 +210,24 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
             return;
         }
 
-        setCreating(true);
-        try {
-            await client.userTicket.create({
-                subject: newSubject,
-                message: newMessage,
-                category: newCategory as "order" | "payment" | "delivery" | "account" | "other",
-                priority: newPriority as "low" | "medium" | "high",
-                ...(userRole === "shop_owner"
-                    ? { warehouseId: selectedTargetId }
-                    : userRole !== "warehouse"
-                        ? { shopId: selectedTargetId }
-                        : {}),
-                attachments: attachments.length > 0
-                    ? attachments.map((a) => ({ url: a.url, fileName: a.fileName, fileType: a.fileType }))
-                    : undefined,
-            });
-            toast.success("Support ticket created");
-            setDialogOpen(false);
-            setNewSubject("");
-            setNewMessage("");
-            setNewCategory("other");
-            setNewPriority("medium");
-            setSelectedTargetId("");
-            setAttachments([]);
-            fetchData();
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to create ticket");
-        } finally {
-            setCreating(false);
-        }
+        createMutation.mutate({
+            subject: newSubject,
+            message: newMessage,
+            category: newCategory as "order" | "payment" | "delivery" | "account" | "other",
+            priority: newPriority as "low" | "medium" | "high",
+            ...(userRole === "shop_owner"
+                ? { warehouseId: selectedTargetId }
+                : userRole !== "warehouse"
+                    ? { shopId: selectedTargetId }
+                    : {}),
+            ...(attachments.length > 0
+                ? { attachments: attachments.map((a) => ({ url: a.url, fileName: a.fileName, fileType: a.fileType })) }
+                : {}),
+        });
     };
+
+    const tickets = ticketsData?.tickets ?? [];
+    const totalPages = ticketsData?.pagination?.totalPages ?? 1;
 
     const kpiCards = [
         { label: "Total", value: stats?.total || 0, icon: Ticket, iconColor: "text-gray-500", bgAccent: "bg-gray-50" },
@@ -529,8 +447,8 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
                             <Button variant="outline" onClick={() => setDialogOpen(false)}>
                                 Cancel
                             </Button>
-                            <Button onClick={handleCreate} disabled={creating}>
-                                {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            <Button onClick={handleCreate} disabled={createMutation.isPending}>
+                                {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                 Submit Ticket
                             </Button>
                         </DialogFooter>
@@ -552,7 +470,7 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
                         </CardHeader>
                         <CardContent className="px-4 pb-4">
                             <div className="text-2xl font-bold">
-                                {loading ? "—" : kpi.value}
+                                {statsLoading ? "—" : kpi.value}
                             </div>
                         </CardContent>
                     </Card>
@@ -576,7 +494,7 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
             </div>
 
             {/* Ticket List */}
-            {loading ? (
+            {ticketsLoading ? (
                 <div className="flex items-center justify-center py-16">
                     <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
                 </div>
@@ -602,50 +520,51 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
                 </Card>
             ) : (
                 <div className="space-y-2">
-                    {tickets.map((ticket) => {
+                    {tickets.map((ticket: any) => {
                         const status = getStatusStyle(ticket.status);
                         const priority = getPriorityStyle(ticket.priority);
 
                         return (
-                            <Card
+                            <Link
                                 key={ticket.id}
-                                className="border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                                onClick={() => onOpenTicket(ticket.id)}
+                                href={`${supportBasePath}/${ticket.id}?from=my-tickets`}
                             >
-                                <CardContent className="p-4">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="space-y-1.5 flex-1">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-mono text-xs font-semibold text-gray-500">
-                                                    {ticket.ticketNumber}
-                                                </span>
-                                                <Badge className={cn(status.bg, status.color, "border-0 text-[10px] font-semibold px-2 py-0.5")}>
-                                                    <span className={cn("h-1.5 w-1.5 rounded-full mr-1", status.dot)} />
-                                                    {status.label}
-                                                </Badge>
-                                                <Badge className={cn(priority.bg, priority.color, "border-0 text-[10px] font-semibold capitalize px-2 py-0.5")}>
-                                                    {ticket.priority}
-                                                </Badge>
-                                                {ticket.currentLevel === "level_2" && (
-                                                    <Badge className="bg-orange-100 text-orange-700 border-0 text-[10px] font-semibold px-2 py-0.5">
-                                                        <ArrowUpRight className="h-2.5 w-2.5 mr-0.5" />
-                                                        Escalated to Admin
+                                <Card className="border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer py-0">
+                                    <CardContent className="p-4">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="space-y-1.5 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-mono text-xs font-semibold text-gray-500">
+                                                        {ticket.ticketNumber}
+                                                    </span>
+                                                    <Badge className={cn(status.bg, status.color, "border-0 text-[10px] font-semibold px-2 py-0.5")}>
+                                                        <span className={cn("h-1.5 w-1.5 rounded-full mr-1", status.dot)} />
+                                                        {status.label}
                                                     </Badge>
-                                                )}
+                                                    <Badge className={cn(priority.bg, priority.color, "border-0 text-[10px] font-semibold capitalize px-2 py-0.5")}>
+                                                        {ticket.priority}
+                                                    </Badge>
+                                                    {ticket.currentLevel === "level_2" && (
+                                                        <Badge className="bg-orange-100 text-orange-700 border-0 text-[10px] font-semibold px-2 py-0.5">
+                                                            <ArrowUpRight className="h-2.5 w-2.5 mr-0.5" />
+                                                            Escalated to Admin
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                <p className="font-medium text-sm text-gray-900">
+                                                    {ticket.subject}
+                                                </p>
+                                                <div className="flex items-center gap-3 text-xs text-gray-500">
+                                                    <span>{getCategoryLabel(ticket.category)}</span>
+                                                    <span>•</span>
+                                                    <span>{formatDistanceToNow(new Date(ticket.createdAt), { addSuffix: true })}</span>
+                                                </div>
                                             </div>
-                                            <p className="font-medium text-sm text-gray-900">
-                                                {ticket.subject}
-                                            </p>
-                                            <div className="flex items-center gap-3 text-xs text-gray-500">
-                                                <span>{getCategoryLabel(ticket.category)}</span>
-                                                <span>•</span>
-                                                <span>{formatDistanceToNow(new Date(ticket.createdAt), { addSuffix: true })}</span>
-                                            </div>
+                                            <MessageSquare className="h-4 w-4 text-gray-300 shrink-0 mt-1" />
                                         </div>
-                                        <MessageSquare className="h-4 w-4 text-gray-300 shrink-0 mt-1" />
-                                    </div>
-                                </CardContent>
-                            </Card>
+                                    </CardContent>
+                                </Card>
+                            </Link>
                         );
                     })}
 
@@ -674,311 +593,6 @@ function TicketListView({ onOpenTicket, userRole }: { onOpenTicket: (id: number)
                         </div>
                     )}
                 </div>
-            )}
-        </div>
-    );
-}
-
-// ─── Ticket Detail View ──────────────────────────────────────────────────────
-
-function TicketDetailView({ ticketId, onBack }: { ticketId: number; onBack: () => void }) {
-    const [ticket, setTicket] = useState<TicketDetail | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [replyMsg, setReplyMsg] = useState("");
-    const [sending, setSending] = useState(false);
-
-    const fetchTicket = useCallback(async () => {
-        setLoading(true);
-        try {
-            const result = await client.userTicket.getById({ id: ticketId });
-            setTicket(result as unknown as TicketDetail);
-        } catch {
-            toast.error("Failed to load ticket");
-            onBack();
-        } finally {
-            setLoading(false);
-        }
-    }, [ticketId, onBack]);
-
-    useEffect(() => {
-        fetchTicket();
-    }, [fetchTicket]);
-
-    const handleReply = async () => {
-        if (!replyMsg.trim() || replyMsg.length < 5) {
-            toast.error("Reply must be at least 5 characters");
-            return;
-        }
-        setSending(true);
-        try {
-            await client.userTicket.reply({ ticketId, message: replyMsg });
-            toast.success("Reply sent");
-            setReplyMsg("");
-            fetchTicket();
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to send reply");
-        } finally {
-            setSending(false);
-        }
-    };
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center py-24">
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-            </div>
-        );
-    }
-
-    if (!ticket) return null;
-
-    const status = getStatusStyle(ticket.status);
-    const priority = getPriorityStyle(ticket.priority);
-    const canReply = ticket.status !== "closed";
-
-    const STATUS_STEPS = ["open", "in_progress", "resolved", "closed"] as const;
-    const STATUS_LABELS: Record<string, string> = {
-        open: "Open", in_progress: "In Progress", resolved: "Resolved", closed: "Closed",
-    };
-    const currentStepIndex = STATUS_STEPS.indexOf(ticket.status as typeof STATUS_STEPS[number]);
-
-    return (
-        <div className="space-y-5">
-            {/* Back button */}
-            <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 text-xs">
-                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-                Back to Tickets
-            </Button>
-
-            {/* Ticket Header */}
-            <Card className="border-0 shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-slate-800 to-slate-600 p-5 text-white">
-                    <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-1.5">
-                            <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs font-bold opacity-80">
-                                    {ticket.ticketNumber}
-                                </span>
-                                <Badge className="border-0 text-[10px] font-semibold bg-white/15 text-white/90">
-                                    {getCategoryLabel(ticket.category)}
-                                </Badge>
-                            </div>
-                            <h2 className="text-lg font-bold">{ticket.subject}</h2>
-                            <p className="text-xs text-white/60">
-                                Created {format(new Date(ticket.createdAt), "dd MMM yyyy, hh:mm a")}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Badge className={cn(priority.bg, priority.color, "border-0 text-[10px] font-semibold capitalize")}>
-                                {ticket.priority}
-                            </Badge>
-                            <Badge className={cn(status.bg, status.color, "border-0 text-[10px] font-semibold")}>
-                                {status.label}
-                            </Badge>
-                        </div>
-                    </div>
-
-                    {/* Stepper */}
-                    <div className="mt-5 flex items-center gap-0">
-                        {STATUS_STEPS.map((step, idx) => {
-                            const isActive = idx <= currentStepIndex;
-                            const isCurrent = idx === currentStepIndex;
-                            return (
-                                <div key={step} className="flex items-center flex-1 last:flex-none">
-                                    <div className="flex flex-col items-center">
-                                        <div
-                                            className={cn(
-                                                "h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all",
-                                                isCurrent
-                                                    ? "bg-white text-slate-900 ring-2 ring-white/30 ring-offset-1 ring-offset-slate-700"
-                                                    : isActive
-                                                        ? "bg-white/70 text-slate-900"
-                                                        : "bg-white/15 text-white/40",
-                                            )}
-                                        >
-                                            {isActive && idx < currentStepIndex ? <Check className="h-3 w-3" /> : idx + 1}
-                                        </div>
-                                        <span className={cn("text-[9px] mt-1 font-medium", isCurrent ? "text-white" : isActive ? "text-white/60" : "text-white/25")}>
-                                            {STATUS_LABELS[step]}
-                                        </span>
-                                    </div>
-                                    {idx < STATUS_STEPS.length - 1 && (
-                                        <div className={cn("flex-1 h-0.5 mx-1.5 rounded-full mt-[-12px]", idx < currentStepIndex ? "bg-white/50" : "bg-white/10")} />
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </Card>
-
-            {/* Handler & Escalation Info */}
-            <Card className="border-0 shadow-sm">
-                <CardContent className="p-4">
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                        <div>
-                            <span className="text-xs text-muted-foreground font-medium">Assigned To</span>
-                            <p className="font-medium mt-0.5">
-                                {ticket.assignedHandler
-                                    ? ticket.assignedHandler.shopName || ticket.assignedHandler.warehouseName || ticket.assignedHandler.name
-                                    : ticket.currentLevel === "level_2"
-                                        ? "Admin Team"
-                                        : "Pending"}
-                            </p>
-                        </div>
-                        <div>
-                            <span className="text-xs text-muted-foreground font-medium">Escalation Status</span>
-                            <div className="mt-0.5">
-                                {ticket.currentLevel === "level_2" ? (
-                                    <Badge className="bg-orange-100 text-orange-700 border-0 text-[10px] font-semibold">
-                                        <ArrowUpRight className="h-2.5 w-2.5 mr-0.5" />
-                                        Escalated to Admin
-                                        {ticket.autoEscalated && " (Auto)"}
-                                    </Badge>
-                                ) : (
-                                    <Badge className="bg-blue-50 text-blue-700 border-0 text-[10px] font-semibold">
-                                        Level 1 — Being Handled
-                                    </Badge>
-                                )}
-                            </div>
-                        </div>
-                        {ticket.escalatedAt && (
-                            <div>
-                                <span className="text-xs text-muted-foreground font-medium">Escalated At</span>
-                                <p className="font-medium mt-0.5">
-                                    {format(new Date(ticket.escalatedAt), "dd MMM yyyy, hh:mm a")}
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Original Message */}
-            <Card className="border-0 shadow-sm">
-                <CardHeader className="pb-2">
-                    <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-full bg-gray-100 flex items-center justify-center">
-                            <User className="h-3.5 w-3.5 text-gray-500" />
-                        </div>
-                        <span className="font-semibold text-sm">You</span>
-                        <span className="text-gray-400 text-xs">
-                            {formatDistanceToNow(new Date(ticket.createdAt), { addSuffix: true })}
-                        </span>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
-                        {ticket.message}
-                    </p>
-                </CardContent>
-            </Card>
-
-            {/* Attachments */}
-            {ticket.attachments && ticket.attachments.length > 0 && (
-                <Card className="border-0 shadow-sm">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                            <Paperclip className="h-4 w-4 text-gray-400" />
-                            Attachments ({ticket.attachments.length})
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            {ticket.attachments.map((att) => {
-                                const isImage = att.fileName?.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i);
-                                return (
-                                    <a
-                                        key={att.id}
-                                        href={att.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-2 p-2 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors text-sm"
-                                    >
-                                        {isImage ? (
-                                            <ImageIcon className="h-4 w-4 text-blue-500 shrink-0" />
-                                        ) : (
-                                            <FileText className="h-4 w-4 text-orange-500 shrink-0" />
-                                        )}
-                                        <span className="truncate text-xs">{att.fileName}</span>
-                                    </a>
-                                );
-                            })}
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* Replies Thread */}
-            {ticket.replies.length > 0 && (
-                <div className="space-y-2">
-                    <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                        <MessageSquare className="h-4 w-4 text-gray-400" />
-                        Replies ({ticket.replies.length})
-                    </h3>
-                    {ticket.replies.map((reply) => (
-                        <Card
-                            key={reply.id}
-                            className={cn(
-                                "shadow-none",
-                                reply.isStaffReply ? "border-emerald-200 bg-emerald-50/40" : "border-gray-200",
-                            )}
-                        >
-                            <CardContent className="pt-4 pb-3">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <div className={cn("h-7 w-7 rounded-full flex items-center justify-center", reply.isStaffReply ? "bg-emerald-100" : "bg-gray-100")}>
-                                        <User className={cn("h-3.5 w-3.5", reply.isStaffReply ? "text-emerald-600" : "text-gray-500")} />
-                                    </div>
-                                    <span className="font-semibold text-xs">
-                                        {reply.isStaffReply ? "Support Team" : "You"}
-                                    </span>
-                                    {reply.isStaffReply && (
-                                        <Badge className="bg-emerald-100 text-emerald-700 border-0 text-[9px] px-1.5 py-0">Staff</Badge>
-                                    )}
-                                    <span className="text-gray-400 text-[11px]">
-                                        {formatDistanceToNow(new Date(reply.createdAt), { addSuffix: true })}
-                                    </span>
-                                </div>
-                                <p className="text-sm text-gray-700 whitespace-pre-wrap ml-9">
-                                    {reply.message}
-                                </p>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            )}
-
-            {/* Reply Form */}
-            {canReply ? (
-                <Card className="border-0 shadow-sm">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                            <Send className="h-4 w-4 text-gray-400" />
-                            Write a Reply
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        <Textarea
-                            value={replyMsg}
-                            onChange={(e) => setReplyMsg(e.target.value)}
-                            placeholder="Type your reply..."
-                            className="min-h-[100px] resize-none text-sm"
-                        />
-                        <div className="flex justify-end">
-                            <Button onClick={handleReply} disabled={sending || !replyMsg.trim()} size="sm">
-                                {sending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
-                                Send Reply
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-            ) : (
-                <Card className="bg-gray-50 border-0 shadow-none">
-                    <CardContent className="py-6 text-center text-sm text-gray-500">
-                        <Lock className="h-5 w-5 mx-auto mb-2 text-gray-400" />
-                        This ticket is closed and cannot receive new replies.
-                    </CardContent>
-                </Card>
             )}
         </div>
     );

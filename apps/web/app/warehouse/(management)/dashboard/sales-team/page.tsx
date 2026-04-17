@@ -132,7 +132,7 @@ function SalesTeamClient({
     ...orpc.warehouseEmployee.toggleBan.mutationOptions(),
     onSuccess: (result) => {
       toast.success(result.message);
-      queryClient.invalidateQueries({ queryKey: ["warehouseEmployee"] });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
     },
     onError: (error) => toast.error(error.message || "Failed to update status"),
   });
@@ -141,7 +141,7 @@ function SalesTeamClient({
     ...orpc.warehouseEmployee.delete.mutationOptions(),
     onSuccess: (result) => {
       toast.success(result.message);
-      queryClient.invalidateQueries({ queryKey: ["warehouseEmployee"] });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
     },
     onError: (error) => toast.error(error.message || "Failed to delete"),
   });

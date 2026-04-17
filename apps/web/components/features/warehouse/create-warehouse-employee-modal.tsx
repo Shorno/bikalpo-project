@@ -71,7 +71,7 @@ export function CreateWarehouseEmployeeModal({
   const mutation = useMutation({
     ...orpc.warehouseEmployee.create.mutationOptions(),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["warehouseEmployee"] });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
       toast.success(result.message || "Employee created successfully");
 
       setCreatedCredentials({
@@ -254,7 +254,7 @@ export function CreateWarehouseEmployeeModal({
           <form.Field name="name">
             {(field) => {
               const isInvalid =
-                field.state.meta.isTouched && field.state.value.length < 2;
+                field.state.meta.isTouched && field.state.meta.isBlurred && field.state.value.length < 2;
               return (
                 <Field data-invalid={isInvalid}>
                   <FieldLabel htmlFor={field.name}>Name *</FieldLabel>
@@ -279,7 +279,7 @@ export function CreateWarehouseEmployeeModal({
           <form.Field name="email">
             {(field) => {
               const isInvalid =
-                field.state.meta.isTouched && !field.state.value.includes("@");
+                field.state.meta.isTouched && field.state.meta.isBlurred && !field.state.value.includes("@");
               return (
                 <Field data-invalid={isInvalid}>
                   <FieldLabel htmlFor={field.name}>Email *</FieldLabel>
@@ -305,7 +305,7 @@ export function CreateWarehouseEmployeeModal({
           <form.Field name="password">
             {(field) => {
               const isInvalid =
-                field.state.meta.isTouched && field.state.value.length < 6;
+                field.state.meta.isTouched && field.state.meta.isBlurred && field.state.value.length < 6;
               return (
                 <Field data-invalid={isInvalid}>
                   <FieldLabel htmlFor={field.name}>Password *</FieldLabel>
