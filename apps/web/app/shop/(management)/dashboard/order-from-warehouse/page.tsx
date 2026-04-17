@@ -270,7 +270,10 @@ function VariantModal({
           {/* Pack Info for selected variant */}
           <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
             <div className="text-sm font-semibold text-gray-800">
-              Pack: {cartonWeightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}
+              {isLoose
+                ? `Loose: ${variantWeightKg} KG`
+                : <>Pack: {cartonWeightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}</>
+              }
             </div>
             {selected.variant.sku && (
               <div className="text-[10px] text-gray-400 mt-1">SKU: {selected.variant.sku}</div>
@@ -281,7 +284,7 @@ function VariantModal({
           <div className="flex items-center justify-between">
             <div>
               <div className="text-xl font-bold text-gray-900">৳{Number(selected.price).toLocaleString()}</div>
-              <div className="text-[10px] text-gray-400">per {packLabel}</div>
+              <div className="text-[10px] text-gray-400">per {isLoose ? "KG" : packLabel}</div>
             </div>
             <div className="text-right">
               <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
@@ -289,7 +292,7 @@ function VariantModal({
                 stockQty > 10 ? "text-amber-600 bg-amber-50 border-amber-200" :
                 "text-red-600 bg-red-50 border-red-200"
               }`}>
-                {stockQty > 0 ? `${stockQty} ${packLabel} available` : "Out of stock"}
+                {stockQty > 0 ? `${stockQty} ${isLoose ? "KG" : packLabel} available` : "Out of stock"}
               </span>
             </div>
           </div>
@@ -374,7 +377,7 @@ function VariantModal({
                   </button>
                   <div className="flex-1 text-center">
                     <span className="text-2xl font-bold text-gray-900">{qty}</span>
-                    <span className="text-sm text-gray-500 ml-1.5">{packLabel}</span>
+                    <span className="text-sm text-gray-500 ml-1.5">{isLoose ? "KG" : packLabel}</span>
                   </div>
                   <button
                     onClick={() => setQty(Math.min(stockQty, qty + 1))}
