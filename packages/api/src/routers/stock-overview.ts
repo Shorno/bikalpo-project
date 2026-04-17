@@ -77,6 +77,10 @@ export const stockOverviewRouter = {
                         ORDER BY ${productVariant.sortOrder} ASC
                         LIMIT 1
                     )`.as("primary_unit"),
+                    // Product-level unit size (carton/sack KG)
+                    unitSize: product.unitSize,
+                    // Total weight in KG (sum of qty × weightKg)
+                    totalWeightKg: sql<string>`COALESCE(SUM(${inventory.availableQty}::numeric * ${productVariant.weightKg}::numeric), 0)`.as("total_weight_kg"),
                 })
                 .from(inventory)
                 .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
@@ -95,6 +99,7 @@ export const stockOverviewRouter = {
                     product.name,
                     product.slug,
                     product.image,
+                    product.unitSize,
                     category.id,
                     category.name,
                     subCategory.id,
@@ -103,18 +108,30 @@ export const stockOverviewRouter = {
                 .orderBy(category.name, product.name);
 
             return {
-                products: results.map((r) => ({
-                    productId: r.productId,
-                    productName: r.productName,
-                    productSlug: r.productSlug,
-                    productImage: r.productImage,
-                    category: r.categoryName,
-                    subCategory: r.subCategoryName,
-                    totalQty: parseFloat(r.totalQty || "0"),
-                    variantCount: r.variantCount,
-                    primaryUnit: r.primaryUnit || "pcs",
-                    status: getStockStatus(parseFloat(r.totalQty || "0")),
-                })),
+                products: results.map((r) => {
+                    const totalQty = parseFloat(r.totalQty || "0");
+                    const totalWeightKg = parseFloat(r.totalWeightKg || "0");
+                    const unitSizeKg = r.unitSize ? parseFloat(r.unitSize) : 0;
+                    const cartonCount = unitSizeKg > 0 ? Math.floor(totalWeightKg / unitSizeKg) : 0;
+                    const remainderKg = unitSizeKg > 0 ? totalWeightKg % unitSizeKg : 0;
+
+                    return {
+                        productId: r.productId,
+                        productName: r.productName,
+                        productSlug: r.productSlug,
+                        productImage: r.productImage,
+                        category: r.categoryName,
+                        subCategory: r.subCategoryName,
+                        totalQty,
+                        totalWeightKg,
+                        unitSizeKg,
+                        cartonCount,
+                        remainderKg,
+                        variantCount: r.variantCount,
+                        primaryUnit: r.primaryUnit || "pcs",
+                        status: getStockStatus(totalQty),
+                    };
+                }),
             };
         }),
 

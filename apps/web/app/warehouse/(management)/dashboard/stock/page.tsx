@@ -337,14 +337,35 @@ export default function StockOverviewPage() {
 
                   {/* Stock total */}
                   <div className="text-right shrink-0">
-                    <div className={`text-lg font-bold tabular-nums ${
-                      p.status.badge === "out_of_stock" ? "text-red-500" :
-                      p.status.badge === "low" ? "text-orange-600" :
-                      "text-gray-900"
-                    }`}>
-                      {p.totalQty.toLocaleString()}
-                    </div>
-                    <div className="text-[10px] text-gray-400 uppercase">{p.primaryUnit}</div>
+                    {p.unitSizeKg > 0 ? (
+                      <>
+                        <div className={`text-lg font-bold tabular-nums ${
+                          p.status.badge === "out_of_stock" ? "text-red-500" :
+                          p.status.badge === "low" ? "text-orange-600" :
+                          "text-gray-900"
+                        }`}>
+                          {p.cartonCount.toLocaleString()}
+                        </div>
+                        <div className="text-[10px] text-gray-400 uppercase">
+                          {p.unitSizeKg}KG Carton
+                        </div>
+                        <div className="text-[9px] text-gray-300">
+                          {p.totalWeightKg.toLocaleString()}KG total
+                          {p.remainderKg > 0 && ` + ${p.remainderKg.toFixed(1)}KG`}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`text-lg font-bold tabular-nums ${
+                          p.status.badge === "out_of_stock" ? "text-red-500" :
+                          p.status.badge === "low" ? "text-orange-600" :
+                          "text-gray-900"
+                        }`}>
+                          {p.totalQty.toLocaleString()}
+                        </div>
+                        <div className="text-[10px] text-gray-400 uppercase">{p.primaryUnit}</div>
+                      </>
+                    )}
                   </div>
 
                   {/* Status badge */}
