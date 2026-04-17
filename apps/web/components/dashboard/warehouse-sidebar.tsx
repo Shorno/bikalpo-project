@@ -29,6 +29,7 @@ import {
   PackageSearchIcon,
   ClipboardIcon,
   ArrowRightLeftIcon,
+  MapPinIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
@@ -73,6 +74,7 @@ const warehouseNavGroups: NavGroup[] = [
       { title: "Supply Orders", url: `${WH}/supply-orders`, icon: InboxIcon },
       { title: "Dispatch Orders", url: `${WH}/dispatch-orders`, icon: TruckIcon },
       { title: "Delivery Tracking", url: `${WH}/delivery-tracking`, icon: PackageSearchIcon },
+      { title: "Delivery Areas", url: `${WH}/delivery-management/areas`, icon: MapPinIcon },
       { title: "Returns", url: `${WH}/returns`, icon: RotateCcwIcon },
     ],
   },

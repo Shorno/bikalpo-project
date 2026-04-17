@@ -55,6 +55,11 @@ export const deliveryGroup = pgTable(
                 onDelete: "cascade",
             }),
 
+        // Which warehouse this delivery group belongs to
+        warehouseId: text("warehouse_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
+
         // Optional: vehicle and expected delivery (for assignment flow)
         vehicleType: invoiceVehicleTypeEnum("vehicle_type"),
         expectedDeliveryAt: timestamp("expected_delivery_at"),

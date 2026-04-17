@@ -70,7 +70,9 @@ export const product = pgTable("product", {
   ),
 
   size: varchar("size", { length: 50 }).notNull(),
-  unitSize: varchar("unit_size", { length: 50 }),
+  /** Total unit size in KG (e.g. 50 for 50KG carton, 7 for 7KG sack).
+   *  Used for conversion: unitSize / variant.size = number of packs. */
+  unitSize: decimal("unit_size", { precision: 10, scale: 2 }),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
 
   stockQuantity: integer("stock_quantity").default(0).notNull(),
@@ -117,14 +119,6 @@ export const product = pgTable("product", {
 
   /** Default delivery cost per carton (nullable — falls back to system default) */
   deliveryCostPerCarton: decimal("delivery_cost_per_carton", {
-    precision: 10,
-    scale: 2,
-  }),
-
-  /** Total unit size in KG (e.g. 50 for 50KG carton, 7 for 7KG sack).
-   *  Used for conversion: unitSize / variant.size = number of packs.
-   *  e.g. 50KG carton with 5KG variant → 50/5 = 10 packs */
-  unitSize: decimal("unit_size", {
     precision: 10,
     scale: 2,
   }),

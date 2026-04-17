@@ -58,7 +58,6 @@ export const productType = pgTable("product_type", {
     skuCode: varchar("sku_code", { length: 2 }).unique(),
 
     isActive: boolean("is_active").default(true).notNull(),
-    skuCode: varchar("sku_code", { length: 20 }),
     displayOrder: integer("display_order").default(0).notNull(),
 
     ...timestamps,
