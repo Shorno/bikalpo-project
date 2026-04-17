@@ -89,6 +89,7 @@ export default function NewCoreProductDialog() {
 
   const form = useForm({
     defaultValues: {
+      sku: "",
       name: "",
       slug: "",
       description: "",
@@ -102,6 +103,7 @@ export default function NewCoreProductDialog() {
     },
     onSubmit: async ({ value }) => {
       mutation.mutate({
+        sku: value.sku.trim() || undefined,
         name: value.name,
         slug: value.slug,
         description: value.description || undefined,
@@ -186,13 +188,22 @@ export default function NewCoreProductDialog() {
 
           {/* Name, Slug */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Field>
-              <FieldLabel>SKU</FieldLabel>
-              <div className="flex items-center h-9 px-3 rounded-md border bg-muted/50">
-                <span className="text-sm text-muted-foreground italic">Auto-generated</span>
-              </div>
-              <FieldDescription>Assigned automatically on creation</FieldDescription>
-            </Field>
+            <form.Field name="sku">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>SKU</FieldLabel>
+                  <Input
+                    id={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="e.g. 003 (leave empty to auto-generate)"
+                    autoComplete="off"
+                  />
+                  <FieldDescription>Leave empty to auto-generate</FieldDescription>
+                </Field>
+              )}
+            </form.Field>
 
 
             <form.Field name="name">

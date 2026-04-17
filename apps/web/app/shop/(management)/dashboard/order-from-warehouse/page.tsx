@@ -171,7 +171,7 @@ function ProductCard({
   );
 }
 
-/* ─── Variant Selection Modal with Pack Conversion ─── */
+/* ─── Variant Selection Modal with Brand-wise Pricing ─── */
 function VariantModal({
   product,
   cart,
@@ -188,7 +188,23 @@ function VariantModal({
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [qty, setQty] = useState(1);
 
+  // ── Group variants by brand ──
+  const brandGroups = (() => {
+    const map = new Map<string, { brandName: string; brandId: number | null; variants: (VariantItem & { idx: number })[] }>();
+    product.variants.forEach((v, idx) => {
+      const key = v.variant.brandName || "Unbranded";
+      if (!map.has(key)) {
+        map.set(key, { brandName: key, brandId: v.variant.brandId, variants: [] });
+      }
+      map.get(key)!.variants.push({ ...v, idx });
+    });
+    return Array.from(map.values());
+  })();
+
+  const hasBrands = brandGroups.length > 1 || (brandGroups.length === 1 && brandGroups[0]!.brandName !== "Unbranded");
+
   const selected = product.variants[selectedIdx]!;
+  const selectedBrandKey = selected.variant.brandName || "Unbranded";
   const inCart = cart.find((c) => c.variantId === selected.variantId);
   const stockQty = Number(selected.availableQty) || 0;
   const canOrder = selected.canOrder !== false && stockQty > 0;
@@ -197,13 +213,10 @@ function VariantModal({
     : "Unit";
   const variantWeightKg = Number(selected.variant.weightKg) || 0;
   const unitSizeKg = Number(product.unitSize) || 0;
-  // Use product unitSize as carton total, fallback to variant weight
   const cartonWeightKg = unitSizeKg > 0 ? unitSizeKg : variantWeightKg;
 
-  // Skip inner pack for "loose" — loose items are sold individually
   const isLoose = (selected.variant.packType || "").toLowerCase() === "loose";
 
-  // Packs per carton = unitSize / variantWeight
   let innerKg = variantWeightKg;
   let innerCount = unitSizeKg > 0 && variantWeightKg > 0
     ? Math.floor(unitSizeKg / variantWeightKg)
@@ -216,7 +229,6 @@ function VariantModal({
     innerLabel = "";
   }
 
-  // If no unitSize set, try structured fields as fallback
   if (!isLoose && unitSizeKg <= 0) {
     innerKg = Number(selected.variant.innerPackSizeKg) || 0;
     innerCount = selected.variant.packCountInside || 0;
@@ -226,9 +238,12 @@ function VariantModal({
     innerLabel = innerKg > 0 ? `${innerKg}kg` : "";
   }
 
-  // Pack conversion calculations
   const totalWeight = qty * cartonWeightKg;
   const totalInnerPacks = qty * innerCount;
+
+  // Get variants for the currently selected brand
+  const currentBrandGroup = brandGroups.find(bg => bg.brandName === selectedBrandKey);
+  const brandVariants = currentBrandGroup?.variants ?? [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -254,26 +269,85 @@ function VariantModal({
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Product Name & Category & Brand */}
+          {/* Product Name & Category */}
           <div>
             <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
-            <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs text-gray-400">{product.categoryName}</p>
-              {selected.variant.brandName && (
-                <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                  {selected.variant.brandName}
-                </span>
-              )}
-            </div>
+            <p className="text-xs text-gray-400 mt-0.5">{product.categoryName}</p>
           </div>
+
+          {/* ─── Brand-wise Price Comparison ─── */}
+          {hasBrands && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Brand-wise Pricing
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {brandGroups.map((bg) => {
+                  const prices = bg.variants.map(v => Number(v.price) || 0);
+                  const minPrice = Math.min(...prices);
+                  const maxPrice = Math.max(...prices);
+                  const isActive = bg.brandName === selectedBrandKey;
+                  const brandCartCount = bg.variants.reduce((sum, v) => {
+                    const ci = cart.find(c => c.variantId === v.variantId);
+                    return sum + (ci?.quantity ?? 0);
+                  }, 0);
+                  const totalBrandStock = bg.variants.reduce((s, v) => s + (Number(v.availableQty) || 0), 0);
+
+                  return (
+                    <button
+                      key={bg.brandName}
+                      onClick={() => {
+                        setSelectedIdx(bg.variants[0]!.idx);
+                        setQty(1);
+                      }}
+                      className={`relative p-3 rounded-xl border-2 text-left transition-all ${
+                        isActive
+                          ? "border-blue-500 bg-blue-50/70 shadow-sm"
+                          : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50/50"
+                      }`}
+                    >
+                      {brandCartCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] font-bold shadow">
+                          {brandCartCount}
+                        </span>
+                      )}
+                      <div className={`text-xs font-semibold truncate ${isActive ? "text-blue-700" : "text-gray-800"}`}>
+                        {bg.brandName}
+                      </div>
+                      <div className={`text-sm font-bold mt-1 ${isActive ? "text-blue-900" : "text-gray-900"}`}>
+                        ৳{minPrice.toLocaleString()}
+                        {maxPrice > minPrice && (
+                          <span className="text-[10px] font-normal text-gray-400"> – ৳{maxPrice.toLocaleString()}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="text-[10px] text-gray-400">{bg.variants.length} variant{bg.variants.length > 1 ? "s" : ""}</span>
+                        <span className="text-[10px] text-gray-300">•</span>
+                        <span className={`text-[10px] ${totalBrandStock > 20 ? "text-emerald-500" : totalBrandStock > 0 ? "text-amber-500" : "text-red-400"}`}>
+                          {totalBrandStock} in stock
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Pack Info for selected variant */}
           <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-            <div className="text-sm font-semibold text-gray-800">
-              {isLoose
-                ? `Loose: ${variantWeightKg} KG`
-                : <>Pack: {cartonWeightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}</>
-              }
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">
+                {isLoose
+                  ? `Loose: ${variantWeightKg} KG`
+                  : <>Pack: {cartonWeightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}</>
+                }
+              </div>
+              {selected.variant.brandName && (
+                <span className="text-[10px] font-medium text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
+                  {selected.variant.brandName}
+                </span>
+              )}
             </div>
             {selected.variant.sku && (
               <div className="text-[10px] text-gray-400 mt-1">SKU: {selected.variant.sku}</div>
@@ -297,14 +371,10 @@ function VariantModal({
             </div>
           </div>
 
-          {/* ─── Select Variant / Pack Type ─── */}
-          {product.variants.length > 1 && (() => {
-            const packVariants = product.variants
-              .map((v, idx) => ({ ...v, idx }))
-              .filter(v => (v.variant.packType || "").toLowerCase() !== "loose");
-            const looseVariants = product.variants
-              .map((v, idx) => ({ ...v, idx }))
-              .filter(v => (v.variant.packType || "").toLowerCase() === "loose");
+          {/* ─── Select Variant / Pack Type within selected brand ─── */}
+          {brandVariants.length > 1 && (() => {
+            const packVariants = brandVariants.filter(v => (v.variant.packType || "").toLowerCase() !== "loose");
+            const looseVariants = brandVariants.filter(v => (v.variant.packType || "").toLowerCase() === "loose");
 
             return (
               <div className="space-y-3">
@@ -334,6 +404,9 @@ function VariantModal({
                             }`}
                           >
                             <div>{vPack} ({vWeight}kg)</div>
+                            <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
+                              ৳{Number(v.price).toLocaleString()}
+                            </div>
                             {vInCart && (
                               <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
                                 {vInCart.quantity} in cart
@@ -368,6 +441,9 @@ function VariantModal({
                             }`}
                           >
                             <div>Loose ({vWeight}kg)</div>
+                            <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-gray-400"}`}>
+                              ৳{Number(v.price).toLocaleString()}
+                            </div>
                             {vInCart && (
                               <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-teal-500"}`}>
                                 {vInCart.quantity} in cart
