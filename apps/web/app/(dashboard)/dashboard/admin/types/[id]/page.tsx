@@ -36,20 +36,7 @@ import {
 } from "@/components/ui/table";
 import { orpc } from "@/utils/orpc";
 
-const behaviourLabels: Record<string, { label: string; desc: string }> = {
-  auto_break: {
-    label: "Auto Break",
-    desc: "Carton breaks into packs",
-  },
-  loose_convert: {
-    label: "Loose Convert",
-    desc: "Sack converts to weight",
-  },
-  fixed_pack: {
-    label: "Fixed Pack",
-    desc: "Same pack from warehouse to shop",
-  },
-};
+
 
 export default function TypeDetailPage() {
   const params = useParams();
@@ -113,7 +100,6 @@ export default function TypeDetailPage() {
   }
 
   const t = data.type;
-  const b = behaviourLabels[t.inventoryBehaviour] || behaviourLabels.fixed_pack!;
   const categories = t.categories || [];
   const products = data.products || [];
   const sellerCount = data.sellerCount ?? 0;
@@ -224,13 +210,7 @@ export default function TypeDetailPage() {
               </div>
             </div>
 
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">
-                Inventory Behaviour
-              </p>
-              <p className="text-sm font-medium">{b.label}</p>
-              <p className="text-xs text-muted-foreground">{b.desc}</p>
-            </div>
+
 
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">

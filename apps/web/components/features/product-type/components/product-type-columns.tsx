@@ -28,17 +28,12 @@ export type ProductTypeRow = {
   enableSize: boolean;
   enableDesign: boolean;
   enableVariant: boolean;
-  inventoryBehaviour: "auto_break" | "loose_convert" | "fixed_pack";
   isActive: boolean;
   displayOrder: number;
   categoryCount: number;
 };
 
-const behaviourLabels: Record<string, string> = {
-  auto_break: "Auto Break",
-  loose_convert: "Loose Convert",
-  fixed_pack: "Fixed Pack",
-};
+
 
 export function useProductTypeColumns() {
   const columns: ColumnDef<ProductTypeRow>[] = [
@@ -110,16 +105,6 @@ export function useProductTypeColumns() {
           </div>
         );
       },
-    },
-    {
-      accessorKey: "inventoryBehaviour",
-      header: () => <div className="text-center">Inventory</div>,
-      cell: ({ row }) => (
-        <div className="text-center text-sm text-muted-foreground">
-          {behaviourLabels[row.getValue("inventoryBehaviour") as string] || "—"}
-        </div>
-      ),
-      size: 130,
     },
     {
       id: "categoryCount",

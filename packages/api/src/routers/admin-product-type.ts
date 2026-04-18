@@ -105,7 +105,7 @@ export const adminProductTypeRouter = {
                 enableSize: z.boolean().default(true),
                 enableDesign: z.boolean().default(false),
                 enableVariant: z.boolean().default(true),
-                inventoryBehaviour: z.enum(["auto_break", "loose_convert", "fixed_pack"]).default("fixed_pack"),
+
                 isActive: z.boolean().default(true),
                 displayOrder: z.number().default(0),
             }),
@@ -134,7 +134,7 @@ export const adminProductTypeRouter = {
                     enableSize: input.enableSize,
                     enableDesign: input.enableDesign,
                     enableVariant: input.enableVariant,
-                    inventoryBehaviour: input.inventoryBehaviour,
+
                     isActive: input.isActive,
                     displayOrder: input.displayOrder,
                     skuCode,
@@ -158,7 +158,7 @@ export const adminProductTypeRouter = {
                 enableSize: z.boolean(),
                 enableDesign: z.boolean(),
                 enableVariant: z.boolean(),
-                inventoryBehaviour: z.enum(["auto_break", "loose_convert", "fixed_pack"]),
+
                 isActive: z.boolean().optional(),
                 displayOrder: z.number().optional(),
             }),
@@ -178,7 +178,7 @@ export const adminProductTypeRouter = {
                     enableSize: data.enableSize,
                     enableDesign: data.enableDesign,
                     enableVariant: data.enableVariant,
-                    inventoryBehaviour: data.inventoryBehaviour,
+
                     isActive: data.isActive,
                     displayOrder: data.displayOrder,
                 })
@@ -258,7 +258,7 @@ export const adminProductTypeRouter = {
                     enableSize: true,
                     enableDesign: true,
                     enableVariant: true,
-                    inventoryBehaviour: true,
+
                 },
             });
 

@@ -18,19 +18,12 @@ import {
 import {
   Field,
   FieldContent,
-  FieldDescription,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
 import { Switch } from "@/components/ui/switch";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -49,7 +42,6 @@ export default function NewTypeDialog() {
       enableSize: boolean;
       enableDesign: boolean;
       enableVariant: boolean;
-      inventoryBehaviour: "auto_break" | "loose_convert" | "fixed_pack";
       isActive: boolean;
       displayOrder: number;
     }) => orpc.adminProductType.create.call(data),
@@ -76,10 +68,6 @@ export default function NewTypeDialog() {
       enableSize: true,
       enableDesign: false,
       enableVariant: true,
-      inventoryBehaviour: "fixed_pack" as
-        | "auto_break"
-        | "loose_convert"
-        | "fixed_pack",
       isActive: true,
       displayOrder: 0,
     },
@@ -100,8 +88,7 @@ export default function NewTypeDialog() {
         <DialogHeader>
           <DialogTitle>Create Product Type</DialogTitle>
           <DialogDescription>
-            Define a new product type with attribute rules and inventory
-            behaviour.
+            Define a new product type with attribute rules.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -242,42 +229,6 @@ export default function NewTypeDialog() {
                 ))}
               </div>
             </div>
-
-            <form.Field name="inventoryBehaviour">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>
-                    Inventory Behaviour
-                  </FieldLabel>
-                  <Select
-                    value={field.state.value}
-                    onValueChange={(v) =>
-                      field.handleChange(
-                        v as "auto_break" | "loose_convert" | "fixed_pack",
-                      )
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="fixed_pack">
-                        Fixed Pack — Same pack warehouse to shop
-                      </SelectItem>
-                      <SelectItem value="auto_break">
-                        Auto Break — Carton breaks into packs
-                      </SelectItem>
-                      <SelectItem value="loose_convert">
-                        Loose Convert — Sack converts to weight
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>
-                    How stock flows from warehouse to shop.
-                  </FieldDescription>
-                </Field>
-              )}
-            </form.Field>
           </div>
         </form>
         <DialogFooter>
