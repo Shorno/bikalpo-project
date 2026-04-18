@@ -3,11 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  Boxes,
   FolderOpen,
   Loader,
   Package,
-  Pencil,
   Power,
   Store,
   Trash2,
@@ -104,12 +102,6 @@ export default function TypeDetailPage() {
   const products = data.products || [];
   const sellerCount = data.sellerCount ?? 0;
 
-  const attrs = [];
-  if (t.enableBrand) attrs.push("Brand");
-  if (t.enableColor) attrs.push("Color");
-  if (t.enableSize) attrs.push("Size");
-  if (t.enableDesign) attrs.push("Design");
-  if (t.enableVariant) attrs.push("Variant");
 
   return (
     <div className="container mx-auto space-y-6">
@@ -171,112 +163,59 @@ export default function TypeDetailPage() {
         </div>
       </div>
 
-      {/* Details Grid */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Type Info */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Boxes className="h-4 w-4" />
-              Type Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {t.description && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1">
-                  Description
-                </p>
-                <p className="text-sm">{t.description}</p>
-              </div>
-            )}
-
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1.5">
-                Enabled Attributes
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {attrs.length > 0 ? (
-                  attrs.map((a) => (
-                    <Badge key={a} variant="outline">
-                      {a}
-                    </Badge>
-                  ))
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    No attributes enabled
-                  </span>
-                )}
-              </div>
+      {/* Categories Under This Type */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <FolderOpen className="h-4 w-4" />
+            Categories ({categories.length})
+          </CardTitle>
+          <CardDescription>
+            Categories assigned to this product type
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {categories.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              No categories under this type yet.
             </div>
-
-
-
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">
-                Display Order
-              </p>
-              <p className="text-sm font-medium tabular-nums">
-                {t.displayOrder}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Categories Under This Type */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <FolderOpen className="h-4 w-4" />
-              Categories ({categories.length})
-            </CardTitle>
-            <CardDescription>
-              Categories assigned to this product type
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {categories.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                No categories under this type yet.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {categories.map((cat: any) => (
-                  <div
-                    key={cat.id}
-                    className="flex items-center justify-between rounded-lg border px-3 py-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      {cat.image && (
-                        <div className="h-8 w-8 relative shrink-0">
-                          <Image
-                            src={cat.image}
-                            alt={cat.name}
-                            fill
-                            className="object-contain rounded"
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-sm font-medium">{cat.name}</p>
-                        <p className="text-xs text-muted-foreground font-mono">
-                          {cat.slug}
-                        </p>
+          ) : (
+            <div className="space-y-2">
+              {categories.map((cat: any) => (
+                <div
+                  key={cat.id}
+                  className="flex items-center justify-between rounded-lg border px-3 py-2"
+                >
+                  <div className="flex items-center gap-3">
+                    {cat.image && (
+                      <div className="h-8 w-8 relative shrink-0">
+                        <Image
+                          src={cat.image}
+                          alt={cat.name}
+                          fill
+                          className="object-contain rounded"
+                        />
                       </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-medium">{cat.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono">
+                        {cat.slug}
+                      </p>
                     </div>
-                    <Badge
-                      variant={cat.isActive ? "default" : "secondary"}
-                      className="text-[10px]"
-                    >
-                      {cat.isActive ? "Active" : "Inactive"}
-                    </Badge>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  <Badge
+                    variant={cat.isActive ? "default" : "secondary"}
+                    className="text-[10px]"
+                  >
+                    {cat.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Stats Row */}
       <div className="grid grid-cols-3 gap-4">
