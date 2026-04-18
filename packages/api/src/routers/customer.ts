@@ -266,7 +266,7 @@ const queries = {
         }
       }
 
-      // Brand filter — filter by variant-level brand
+      // Brand filter — filter by product-level brand
       if (brandSlug) {
         const slugs = brandSlug.split(",").filter(Boolean);
         const brands = await db.query.brand.findMany({
@@ -274,20 +274,12 @@ const queries = {
         });
         if (brands.length > 0) {
           const brandIds = brands.map((b) => b.id);
-          // Find products that have variants with these brands
-          const matchingProducts = await db
-            .selectDistinct({ productId: productVariant.productId })
-            .from(productVariant)
-            .where(inArray(productVariant.brandId, brandIds));
-          const productIds = matchingProducts.map((r) => r.productId);
-          if (productIds.length > 0) {
-            conditions.push(inArray(product.id, productIds));
-          } else {
-            return {
-              products: [],
-              pagination: { page, limit, totalCount: 0, totalPages: 0 },
-            };
-          }
+          conditions.push(inArray(product.brandId, brandIds));
+        } else {
+          return {
+            products: [],
+            pagination: { page, limit, totalCount: 0, totalPages: 0 },
+          };
         }
       }
 

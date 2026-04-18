@@ -179,7 +179,7 @@ export const stockOverviewRouter = {
                 .from(inventory)
                 .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
                 .innerJoin(product, eq(productVariant.productId, product.id))
-                .leftJoin(brand, eq(productVariant.brandId, brand.id))
+                .leftJoin(brand, eq(product.brandId, brand.id))
                 .where(
                     and(
                         eq(inventory.ownerType, input.ownerType),

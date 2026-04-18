@@ -193,9 +193,9 @@ const storefrontQueries = {
                     if (!prod.subCategory?.slug || !slugs.includes(prod.subCategory.slug)) return false;
                 }
                 if (brandSlug) {
-                    // Filter by variant-level brand
-                    const variantBrand = (inv.variant as any)?.brand;
-                    if (variantBrand?.slug !== brandSlug) return false;
+                    // Filter by product-level brand
+                    const productBrand = (inv.variant?.product as any)?.brand;
+                    if (productBrand?.slug !== brandSlug) return false;
                 }
                 if (search) {
                     if (!prod.name.toLowerCase().includes(search.toLowerCase())) return false;

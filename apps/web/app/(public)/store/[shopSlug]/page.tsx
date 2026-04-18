@@ -228,9 +228,9 @@ function ShopProductCard({ product, shopId, slug }: { product: any; shopId: stri
             {product.variants.length} variants available
           </p>
         )}
-        {product.variants?.[0]?.brandName && (
+        {product.brandName && (
           <span className="inline-block text-[10px] font-medium text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
-            {product.variants[0].brandName}
+            {product.brandName}
           </span>
         )}
 

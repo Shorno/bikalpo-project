@@ -104,33 +104,8 @@ export async function convertB2bOrderToRetailInventory(
             tradeVariant.linkedRetailVariantId ??
             tradeVariant.id;
 
-        // Brand-aware conversion: if the target retail variant doesn't match
-        // the trade variant's brand, try to find a matching retail variant
-        // with the same brand + same product
-        if (tradeVariant.brandId && targetRetailVariantId !== tradeVariant.id) {
-            const targetRetailVariant = await tx.query.productVariant.findFirst({
-                where: eq(productVariant.id, targetRetailVariantId),
-                columns: { id: true, brandId: true, productId: true, packType: true, weightKg: true },
-            });
-
-            if (targetRetailVariant && targetRetailVariant.brandId !== tradeVariant.brandId) {
-                // Try to find a retail variant with matching brand + same pack type + same weight
-                const brandMatchedRetail = await tx.query.productVariant.findFirst({
-                    where: and(
-                        eq(productVariant.productId, targetRetailVariant.productId),
-                        eq(productVariant.brandId, tradeVariant.brandId),
-                        eq(productVariant.variantType, "retail"),
-                        eq(productVariant.isActive, true),
-                    ),
-                    columns: { id: true },
-                });
-
-                if (brandMatchedRetail) {
-                    targetRetailVariantId = brandMatchedRetail.id;
-                    console.log(`[B2B-CONVERT] Brand-aware: switched to variant ${brandMatchedRetail.id} matching brand ${tradeVariant.brandId}`);
-                }
-            }
-        }
+        // Brand-aware conversion is no longer needed: brand is at product level,
+        // so all variants of a product share the same brand by definition.
 
         // ─── Determine conversion ratio ───
         // Priority: conversionMap > variant.conversionRatio > packCountInside > product.unitSize/variant.size > 1

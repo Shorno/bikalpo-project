@@ -92,13 +92,20 @@ export default function ShopProductDetailPage() {
 
             {/* Product Info */}
             <div className="p-6 md:p-8 space-y-6">
-              {/* Category */}
-              {product.categoryName && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-50 px-2.5 py-1 rounded-full border border-gray-100">
-                  <Tag className="w-3 h-3" />
-                  {product.categoryName}
-                </span>
-              )}
+              {/* Category & Brand */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {product.categoryName && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-50 px-2.5 py-1 rounded-full border border-gray-100">
+                    <Tag className="w-3 h-3" />
+                    {product.categoryName}
+                  </span>
+                )}
+                {product.brandName && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-100">
+                    {product.brandName}
+                  </span>
+                )}
+              </div>
 
               {/* Name */}
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{product.name}</h1>
@@ -133,11 +140,6 @@ export default function ShopProductDetailPage() {
                               <span className="text-sm font-medium text-gray-900">
                                 {isLoose ? `Loose ${v.weightKg}KG` : `${v.unitLabel || 'Pack'} — ${v.weightKg}KG`}
                               </span>
-                              {v.brandName && (
-                                <span className="ml-2 text-[10px] font-medium text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
-                                  {v.brandName}
-                                </span>
-                              )}
                               {v.sku && (
                                 <span className="ml-2 text-[10px] text-gray-400">{v.sku}</span>
                               )}

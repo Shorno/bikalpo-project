@@ -140,25 +140,18 @@ const b2bQueries = {
                 }
             }
 
-            // Brand filter — variant-level brand
+            // Brand filter — product-level brand
             if (brandSlug) {
                 const b = await db.query.brand.findFirst({
                     where: eq(brand.slug, brandSlug),
                 });
                 if (b) {
-                    const matchingProducts = await db
-                        .selectDistinct({ productId: productVariant.productId })
-                        .from(productVariant)
-                        .where(eq(productVariant.brandId, b.id));
-                    const productIds = matchingProducts.map((r) => r.productId);
-                    if (productIds.length > 0) {
-                        conditions.push(inArray(product.id, productIds));
-                    } else {
-                        return {
-                            products: [],
-                            pagination: { page, limit, totalCount: 0, totalPages: 0 },
-                        };
-                    }
+                    conditions.push(eq(product.brandId, b.id));
+                } else {
+                    return {
+                        products: [],
+                        pagination: { page, limit, totalCount: 0, totalPages: 0 },
+                    };
                 }
             }
 
@@ -1831,7 +1824,7 @@ const warehouseConnectionEndpoints = {
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
                     productUnitSize: product.unitSize,
-                    variantBrandId: productVariant.brandId,
+                    productBrandId: product.brandId,
                     brandName: brand.name,
                 })
                 .from(inventory)
@@ -1849,7 +1842,7 @@ const warehouseConnectionEndpoints = {
                 )
                 .leftJoin(
                     brand,
-                    eq(productVariant.brandId, brand.id),
+                    eq(product.brandId, brand.id),
                 )
                 .where(and(...conditions))
                 .orderBy(asc(category.name), asc(product.name))
@@ -1893,7 +1886,7 @@ const warehouseConnectionEndpoints = {
                         packType: item.variantPackType,
                         innerPackSizeKg: item.variantInnerPackSizeKg,
                         packCountInside: item.variantPackCountInside,
-                        brandId: item.variantBrandId,
+                        brandId: item.productBrandId,
                         brandName: item.brandName,
                     },
                 };
@@ -2093,9 +2086,9 @@ const shopStorefrontEndpoints = {
                                 with: {
                                     category: { columns: { id: true, name: true, slug: true } },
                                     images: { limit: 1 },
+                                    brand: { columns: { id: true, name: true, slug: true } },
                                 },
                             },
-                            brand: { columns: { id: true, name: true, slug: true } },
                         },
                     },
                 },
@@ -2112,7 +2105,6 @@ const shopStorefrontEndpoints = {
                     price: number;
                     retailPrice: number | null;
                     availableQty: string;
-                    brandName: string | null;
                     sku: string | null;
                 }>;
                 minPrice: number;
@@ -2142,7 +2134,6 @@ const shopStorefrontEndpoints = {
                     price: variantPrice,
                     retailPrice,
                     availableQty: inv.availableQty,
-                    brandName: (variant as any).brand?.name ?? null,
                     sku: variant.sku,
                 };
 
@@ -2160,6 +2151,7 @@ const shopStorefrontEndpoints = {
                             image: prod.image,
                             categoryName: prod.category?.name || "",
                             categorySlug: prod.category?.slug || "",
+                            brandName: (prod as any).brand?.name || null,
                         },
                         variants: [variantData],
                         minPrice: effectivePrice,
