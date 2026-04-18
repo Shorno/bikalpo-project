@@ -112,6 +112,7 @@ function ProductCard({
   const totalStock = product.variants.reduce((s, v) => s + (Number(v.availableQty) || 0), 0);
   const lowestPrice = Math.min(...product.variants.map((v) => Number(v.price) || 0));
   const variantCount = product.variants.length;
+  const brandName = product.variants[0]?.variant.brandName;
 
   return (
     <button
@@ -147,6 +148,14 @@ function ProductCard({
             {totalStock > 50 ? "In Stock" : totalStock > 10 ? "Limited" : totalStock > 0 ? "Low Stock" : "Out"}
           </span>
         </div>
+        {/* Brand badge */}
+        {brandName && (
+          <div className="absolute bottom-2 left-2">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/90 text-gray-700 border border-gray-200 shadow-sm backdrop-blur-sm">
+              {brandName}
+            </span>
+          </div>
+        )}
         {/* Cart badge */}
         {cartQty > 0 && (
           <div className="absolute top-2 left-2">
@@ -160,6 +169,8 @@ function ProductCard({
       <div className="p-3">
         <h3 className="text-sm font-semibold text-gray-900 line-clamp-1">{product.name}</h3>
         <p className="text-[10px] text-gray-400 mt-0.5">
+          {brandName && <span className="text-blue-500 font-medium">{brandName}</span>}
+          {brandName && " • "}
           {variantCount} variant{variantCount > 1 ? "s" : ""} • {totalStock} in stock
         </p>
         <div className="flex items-baseline gap-1 mt-1.5">
