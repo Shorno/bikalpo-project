@@ -84,6 +84,7 @@ export const createProductSchema = z.object({
   // Variant prices (per-variant settings)
   variantPrices: z.array(z.object({
     variantOptionId: z.number().int(),
+    brandId: z.number().int().optional().nullable(),
     variantType: z.enum(["trade", "retail"]).optional().nullable(),
     consumerPrice: z.string().default("0"),
     pricingType: z.enum(["per_unit", "bulk_rate"]).default("per_unit"),

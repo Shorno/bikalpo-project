@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
 import { Badge } from "@/components/ui/badge";
@@ -80,17 +81,20 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
     return [];
   });
 
-  // === Per-variant settings (variantOptionId → full settings) ===
+  // === Per-variant settings (composite key "brandId:variantOptionId" → settings) ===
+  // For single brand or no brand, key is "0:variantOptionId"
   const [variantPrices, setVariantPrices] = useState<
-    Record<number, VariantPriceSettings>
+    Record<string, VariantPriceSettings>
   >(() => {
     // Pre-populate from existing product variant prices (edit mode)
     const existing = (product as any)?.variantPrices;
     if (!existing || !Array.isArray(existing) || existing.length === 0) return {};
-    const map: Record<number, VariantPriceSettings> = {};
+    const map: Record<string, VariantPriceSettings> = {};
     for (const vp of existing) {
-      map[vp.variantOptionId] = {
+      const key = `${vp.brandId ?? 0}:${vp.variantOptionId}`;
+      map[key] = {
         variantOptionId: vp.variantOptionId,
+        brandId: vp.brandId ?? null,
         variantType: vp.variantType || null,
         consumerPrice: vp.consumerPrice || "",
         pricingType: vp.pricingType || "per_unit",
@@ -180,7 +184,12 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
         }
       }
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-      toast.success("Product created successfully");
+      const count = (result as any).count ?? 1;
+      if (count > 1) {
+        toast.success(`${count} products created (one per brand)`);
+      } else {
+        toast.success("Product created successfully");
+      }
       router.push("/dashboard/admin/products");
     },
     onError: handleError,
@@ -249,6 +258,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
         .filter((vp) => vp && vp.variantOptionId)
         .map((vp) => ({
           variantOptionId: vp.variantOptionId,
+          brandId: vp.brandId || null,
           variantType: (vp.variantType || null) as "trade" | "retail" | null,
           consumerPrice: vp.consumerPrice || "0",
           pricingType: (vp.pricingType || "per_unit") as "per_unit" | "bulk_rate",
@@ -588,6 +598,11 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                     {selectedBrandIds.length > 0 && (
                       <p className="text-xs text-muted-foreground mt-2">
                         {selectedBrandIds.length} brand{selectedBrandIds.length > 1 ? "s" : ""} selected
+                        {selectedBrandIds.length > 1 && (
+                          <span className="text-blue-600 dark:text-blue-400 ml-1">
+                            — one product will be created per brand
+                          </span>
+                        )}
                       </p>
                     )}
                   </CardContent>
@@ -600,6 +615,8 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                   coreProductId={selectedCoreProduct.id}
                   variantPrices={variantPrices}
                   setVariantPrices={setVariantPrices}
+                  selectedBrandIds={selectedBrandIds}
+                  brands={selectedCoreProduct.brands ?? []}
                 />
               )}
 
@@ -1058,6 +1075,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
 
 export type VariantPriceSettings = {
   variantOptionId: number;
+  brandId?: number | null;
   variantType?: "trade" | "retail" | null;
   consumerPrice: string;
   pricingType: string;
@@ -1084,10 +1102,14 @@ function VariantPricingCard({
   coreProductId,
   variantPrices,
   setVariantPrices,
+  selectedBrandIds,
+  brands,
 }: {
   coreProductId: number;
-  variantPrices: Record<number, VariantPriceSettings>;
-  setVariantPrices: (prices: Record<number, VariantPriceSettings>) => void;
+  variantPrices: Record<string, VariantPriceSettings>;
+  setVariantPrices: (prices: Record<string, VariantPriceSettings>) => void;
+  selectedBrandIds: number[];
+  brands: any[];
 }) {
   // Fetch the core product's linked variant options
   const { data: cpData } = useQuery(
@@ -1097,10 +1119,23 @@ function VariantPricingCard({
   );
 
   const linkedVariants = cpData?.coreProduct?.variantLinks ?? [];
+  const isMultiBrand = selectedBrandIds.length > 1;
 
-  const getSettings = (variantOptionId: number): VariantPriceSettings => {
-    return variantPrices[variantOptionId] ?? {
+  // Build brand lookup: id → name
+  const brandMap = new Map<number, string>();
+  for (const b of brands) {
+    brandMap.set(b.brandId, b.brand?.name ?? `Brand #${b.brandId}`);
+  }
+
+  // Composite key helper
+  const makeKey = (brandId: number | null, variantOptionId: number) =>
+    `${brandId ?? 0}:${variantOptionId}`;
+
+  const getSettings = (brandId: number | null, variantOptionId: number): VariantPriceSettings => {
+    const key = makeKey(brandId, variantOptionId);
+    return variantPrices[key] ?? {
       variantOptionId,
+      brandId: brandId,
       variantType: null,
       consumerPrice: "",
       pricingType: "per_unit",
@@ -1119,13 +1154,316 @@ function VariantPricingCard({
     };
   };
 
-  const updateField = (variantOptionId: number, field: keyof VariantPriceSettings, value: any) => {
-    const current = getSettings(variantOptionId);
+  const updateField = (brandId: number | null, variantOptionId: number, field: keyof VariantPriceSettings, value: any) => {
+    const key = makeKey(brandId, variantOptionId);
+    const current = getSettings(brandId, variantOptionId);
     setVariantPrices({
       ...variantPrices,
-      [variantOptionId]: { ...current, variantOptionId, [field]: value },
+      [key]: { ...current, variantOptionId, brandId, [field]: value },
     });
   };
+
+  // Render the variant list for a specific brand (or null for single-brand)
+  const renderVariantList = (brandId: number | null) => (
+    <div className="space-y-3">
+      {linkedVariants.map((link: any) => {
+        const v = link.variantOption;
+        const settings = getSettings(brandId, v.id);
+        const isTrade = settings.variantType === "trade";
+
+        return (
+          <div
+            key={link.id}
+            className="border rounded-lg p-4 space-y-3 hover:border-primary/30 transition-colors"
+          >
+            {/* Row 1: Variant identity (read-only) + Type selector + Price */}
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_130px_130px_120px] gap-3 items-end">
+              {/* Variant info (pre-populated, read-only) */}
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">{v.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {v.size ? `${v.size} ${v.unit}` : v.unit}
+                  {v.variantType && (
+                    <Badge variant="outline" className="ml-2 text-[10px]">
+                      {v.variantType === "pack" ? "Pack" : "Loose"}
+                    </Badge>
+                  )}
+                </p>
+              </div>
+
+              {/* Channel: Trade / Retail */}
+              <Field>
+                <FieldLabel className="text-xs">Channel</FieldLabel>
+                <Select
+                  value={settings.variantType ?? "none"}
+                  onValueChange={(val) =>
+                    updateField(brandId, v.id, "variantType", val === "none" ? null : val)
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    <SelectItem value="trade">Trade (B2B)</SelectItem>
+                    <SelectItem value="retail">Retail (B2C)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              {/* Pricing Type (auto-determined from variant type) */}
+              <Field>
+                <FieldLabel className="text-xs">Pricing</FieldLabel>
+                <div className="h-8 flex items-center px-3 border rounded-md bg-muted/50 text-xs text-muted-foreground">
+                  {v.variantType === "loose" ? "Per KG" : "Per Unit"}
+                </div>
+              </Field>
+
+              {/* Price */}
+              <Field>
+                <FieldLabel className="text-xs">
+                  Price (৳) {!isTrade && "*"}
+                </FieldLabel>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder={isTrade ? "Set by shop" : "0"}
+                  className="h-8 text-xs"
+                  value={isTrade ? "" : settings.consumerPrice}
+                  onChange={(e) =>
+                    updateField(brandId, v.id, "consumerPrice", e.target.value)
+                  }
+                  disabled={isTrade}
+                />
+              </Field>
+            </div>
+
+            {/* Trade B2B notice */}
+            {isTrade && (
+              <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-300 rounded px-2 py-1">
+                ⚠ Trade variant — price set by shop owners. Warehouse buys this unit.
+              </p>
+            )}
+
+            {/* Row 2: Order Rules (collapsible) */}
+            <details className="group">
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none">
+                ▸ Order rules &amp; advanced settings
+              </summary>
+              <div className="mt-3 pt-3 border-t space-y-3">
+                {/* Order rules */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Field>
+                    <FieldLabel className="text-xs">Min Qty</FieldLabel>
+                    <Input
+                      className="h-8 text-xs"
+                      value={settings.orderMin}
+                      onChange={(e) =>
+                        updateField(brandId, v.id, "orderMin", e.target.value)
+                      }
+                      placeholder="1"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel className="text-xs">Max Qty</FieldLabel>
+                    <Input
+                      className="h-8 text-xs"
+                      value={settings.orderMax}
+                      onChange={(e) =>
+                        updateField(brandId, v.id, "orderMax", e.target.value)
+                      }
+                      placeholder="No limit"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel className="text-xs">Step</FieldLabel>
+                    <Input
+                      className="h-8 text-xs"
+                      value={settings.orderIncrement}
+                      onChange={(e) =>
+                        updateField(brandId, v.id, "orderIncrement", e.target.value)
+                      }
+                      placeholder="1"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel className="text-xs">Order Unit</FieldLabel>
+                    <Select
+                      value={settings.orderUnit}
+                      onValueChange={(val) =>
+                        updateField(brandId, v.id, "orderUnit", val)
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="piece">Piece</SelectItem>
+                        <SelectItem value="kg">KG</SelectItem>
+                        <SelectItem value="carton">Carton</SelectItem>
+                        <SelectItem value="sack">Sack</SelectItem>
+                        <SelectItem value="box">Box</SelectItem>
+                        <SelectItem value="liter">Liter</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+
+                {/* Trade-only: Margin rules + Pack return */}
+                {isTrade && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field>
+                        <FieldLabel className="text-xs">
+                          Min Margin (%)
+                        </FieldLabel>
+                        <Input
+                          className="h-8 text-xs"
+                          value={settings.minMarginPercent}
+                          onChange={(e) =>
+                            updateField(brandId, v.id, "minMarginPercent", e.target.value)
+                          }
+                          placeholder="e.g. 5"
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel className="text-xs">
+                          Min Margin (৳)
+                        </FieldLabel>
+                        <Input
+                          className="h-8 text-xs"
+                          value={settings.minMarginAmount}
+                          onChange={(e) =>
+                            updateField(brandId, v.id, "minMarginAmount", e.target.value)
+                          }
+                          placeholder="e.g. 50"
+                        />
+                      </Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 items-center">
+                      <div className="flex items-center justify-between border rounded-lg p-2">
+                        <span className="text-xs">Pack Return Required</span>
+                        <Switch
+                          checked={settings.isPackReturnRequired}
+                          onCheckedChange={(val) =>
+                            updateField(brandId, v.id, "isPackReturnRequired", val)
+                          }
+                        />
+                      </div>
+                      {settings.isPackReturnRequired && (
+                        <Field>
+                          <FieldLabel className="text-xs">
+                            Deposit (৳)
+                          </FieldLabel>
+                          <Input
+                            className="h-8 text-xs"
+                            value={settings.packDepositAmount}
+                            onChange={(e) =>
+                              updateField(brandId, v.id, "packDepositAmount", e.target.value)
+                            }
+                            placeholder="e.g. 200"
+                          />
+                        </Field>
+                      )}
+                    </div>
+
+                    {/* Conversion: Trade → Retail */}
+                    <div className="space-y-2 pt-2 border-t">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Conversion Rules
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field>
+                          <FieldLabel className="text-xs">
+                            Target Retail Variant
+                          </FieldLabel>
+                          <Select
+                            value={settings.linkedRetailVariantOptionId?.toString() ?? "none"}
+                            onValueChange={(val) =>
+                              updateField(brandId, v.id, "linkedRetailVariantOptionId",
+                                val === "none" ? null : Number(val))
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Select retail variant" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {linkedVariants
+                                .filter((lv: any) => {
+                                  const otherId = lv.variantOption.id;
+                                  const otherSettings = getSettings(brandId, otherId);
+                                  return otherSettings.variantType === "retail" && otherId !== v.id;
+                                })
+                                .map((lv: any) => (
+                                  <SelectItem key={lv.variantOption.id} value={lv.variantOption.id.toString()}>
+                                    {lv.variantOption.name}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field>
+                          <FieldLabel className="text-xs">
+                            Conversion Ratio (1:{settings.conversionRatio || "?"})
+                          </FieldLabel>
+                          <Input
+                            className="h-8 text-xs"
+                            type="number"
+                            value={settings.conversionRatio}
+                            onChange={(e) =>
+                              updateField(brandId, v.id, "conversionRatio", e.target.value)
+                            }
+                            placeholder="e.g. 10"
+                          />
+                        </Field>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 items-center">
+                        <Field>
+                          <FieldLabel className="text-xs">
+                            Loss %
+                          </FieldLabel>
+                          <Input
+                            className="h-8 text-xs"
+                            type="number"
+                            step="0.1"
+                            value={settings.conversionLossPercent}
+                            onChange={(e) =>
+                              updateField(brandId, v.id, "conversionLossPercent", e.target.value)
+                            }
+                            placeholder="0"
+                          />
+                        </Field>
+                        <div className="flex items-center justify-between border rounded-lg p-2">
+                          <span className="text-xs">Auto Convert on Delivery</span>
+                          <Switch
+                            checked={settings.autoConvert}
+                            onCheckedChange={(val) =>
+                              updateField(brandId, v.id, "autoConvert", val)
+                            }
+                          />
+                        </div>
+                      </div>
+                      {settings.linkedRetailVariantOptionId && settings.conversionRatio && (
+                        <p className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 rounded px-2 py-1">
+                          📦 1 × {v.name} → {settings.conversionRatio} ×{" "}
+                          {linkedVariants.find((lv: any) =>
+                            lv.variantOption.id === settings.linkedRetailVariantOptionId
+                          )?.variantOption?.name || "Retail"}
+                          {Number(settings.conversionLossPercent) > 0 &&
+                            ` (${settings.conversionLossPercent}% loss)`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </details>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <Card>
@@ -1135,8 +1473,9 @@ function VariantPricingCard({
           <CardTitle className="text-base">Variant Configuration</CardTitle>
         </div>
         <CardDescription>
-          Variants are auto-populated from the Core Identity. Configure type,
-          pricing, and order rules for each.
+          {isMultiBrand
+            ? "Configure variants independently for each brand. Each brand will become a separate product."
+            : "Variants are auto-populated from the Core Identity. Configure type, pricing, and order rules for each."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -1150,305 +1489,28 @@ function VariantPricingCard({
               Link variants from the Core Product detail page first.
             </p>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {linkedVariants.map((link: any) => {
-              const v = link.variantOption;
-              const settings = getSettings(v.id);
-              const isTrade = settings.variantType === "trade";
-
-              return (
-                <div
-                  key={link.id}
-                  className="border rounded-lg p-4 space-y-3 hover:border-primary/30 transition-colors"
-                >
-                  {/* Row 1: Variant identity (read-only) + Type selector + Price */}
-                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_130px_130px_120px] gap-3 items-end">
-                    {/* Variant info (pre-populated, read-only) */}
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-medium">{v.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {v.size ? `${v.size} ${v.unit}` : v.unit}
-                        {v.variantType && (
-                          <Badge variant="outline" className="ml-2 text-[10px]">
-                            {v.variantType === "pack" ? "Pack" : "Loose"}
-                          </Badge>
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Channel: Trade / Retail */}
-                    <Field>
-                      <FieldLabel className="text-xs">Channel</FieldLabel>
-                      <Select
-                        value={settings.variantType ?? "none"}
-                        onValueChange={(val) =>
-                          updateField(v.id, "variantType", val === "none" ? null : val)
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="Select" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Not set</SelectItem>
-                          <SelectItem value="trade">Trade (B2B)</SelectItem>
-                          <SelectItem value="retail">Retail (B2C)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-
-                    {/* Pricing Type (auto-determined from variant type) */}
-                    <Field>
-                      <FieldLabel className="text-xs">Pricing</FieldLabel>
-                      <div className="h-8 flex items-center px-3 border rounded-md bg-muted/50 text-xs text-muted-foreground">
-                        {v.variantType === "loose" ? "Per KG" : "Per Unit"}
-                      </div>
-                    </Field>
-
-                    {/* Price */}
-                    <Field>
-                      <FieldLabel className="text-xs">
-                        Price (৳) {!isTrade && "*"}
-                      </FieldLabel>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder={isTrade ? "Set by shop" : "0"}
-                        className="h-8 text-xs"
-                        value={isTrade ? "" : settings.consumerPrice}
-                        onChange={(e) =>
-                          updateField(v.id, "consumerPrice", e.target.value)
-                        }
-                        disabled={isTrade}
-                      />
-                    </Field>
-                  </div>
-
-                  {/* Trade B2B notice */}
-                  {isTrade && (
-                    <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-300 rounded px-2 py-1">
-                      ⚠ Trade variant — price set by shop owners. Warehouse buys this unit.
-                    </p>
-                  )}
-
-                  {/* Row 2: Order Rules (collapsible) */}
-                  <details className="group">
-                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none">
-                      ▸ Order rules &amp; advanced settings
-                    </summary>
-                    <div className="mt-3 pt-3 border-t space-y-3">
-                      {/* Order rules */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <Field>
-                          <FieldLabel className="text-xs">Min Qty</FieldLabel>
-                          <Input
-                            className="h-8 text-xs"
-                            value={settings.orderMin}
-                            onChange={(e) =>
-                              updateField(v.id, "orderMin", e.target.value)
-                            }
-                            placeholder="1"
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel className="text-xs">Max Qty</FieldLabel>
-                          <Input
-                            className="h-8 text-xs"
-                            value={settings.orderMax}
-                            onChange={(e) =>
-                              updateField(v.id, "orderMax", e.target.value)
-                            }
-                            placeholder="No limit"
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel className="text-xs">Step</FieldLabel>
-                          <Input
-                            className="h-8 text-xs"
-                            value={settings.orderIncrement}
-                            onChange={(e) =>
-                              updateField(v.id, "orderIncrement", e.target.value)
-                            }
-                            placeholder="1"
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel className="text-xs">Order Unit</FieldLabel>
-                          <Select
-                            value={settings.orderUnit}
-                            onValueChange={(val) =>
-                              updateField(v.id, "orderUnit", val)
-                            }
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="piece">Piece</SelectItem>
-                              <SelectItem value="kg">KG</SelectItem>
-                              <SelectItem value="carton">Carton</SelectItem>
-                              <SelectItem value="sack">Sack</SelectItem>
-                              <SelectItem value="box">Box</SelectItem>
-                              <SelectItem value="liter">Liter</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                      </div>
-
-                      {/* Trade-only: Margin rules + Pack return */}
-                      {isTrade && (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <Field>
-                              <FieldLabel className="text-xs">
-                                Min Margin (%)
-                              </FieldLabel>
-                              <Input
-                                className="h-8 text-xs"
-                                value={settings.minMarginPercent}
-                                onChange={(e) =>
-                                  updateField(v.id, "minMarginPercent", e.target.value)
-                                }
-                                placeholder="e.g. 5"
-                              />
-                            </Field>
-                            <Field>
-                              <FieldLabel className="text-xs">
-                                Min Margin (৳)
-                              </FieldLabel>
-                              <Input
-                                className="h-8 text-xs"
-                                value={settings.minMarginAmount}
-                                onChange={(e) =>
-                                  updateField(v.id, "minMarginAmount", e.target.value)
-                                }
-                                placeholder="e.g. 50"
-                              />
-                            </Field>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3 items-center">
-                            <div className="flex items-center justify-between border rounded-lg p-2">
-                              <span className="text-xs">Pack Return Required</span>
-                              <Switch
-                                checked={settings.isPackReturnRequired}
-                                onCheckedChange={(val) =>
-                                  updateField(v.id, "isPackReturnRequired", val)
-                                }
-                              />
-                            </div>
-                            {settings.isPackReturnRequired && (
-                              <Field>
-                                <FieldLabel className="text-xs">
-                                  Deposit (৳)
-                                </FieldLabel>
-                                <Input
-                                  className="h-8 text-xs"
-                                  value={settings.packDepositAmount}
-                                  onChange={(e) =>
-                                    updateField(v.id, "packDepositAmount", e.target.value)
-                                  }
-                                  placeholder="e.g. 200"
-                                />
-                              </Field>
-                            )}
-                          </div>
-
-                          {/* Conversion: Trade → Retail */}
-                          <div className="space-y-2 pt-2 border-t">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                              Conversion Rules
-                            </p>
-                            <div className="grid grid-cols-2 gap-3">
-                              <Field>
-                                <FieldLabel className="text-xs">
-                                  Target Retail Variant
-                                </FieldLabel>
-                                <Select
-                                  value={settings.linkedRetailVariantOptionId?.toString() ?? "none"}
-                                  onValueChange={(val) =>
-                                    updateField(v.id, "linkedRetailVariantOptionId",
-                                      val === "none" ? null : Number(val))
-                                  }
-                                >
-                                  <SelectTrigger className="h-8 text-xs">
-                                    <SelectValue placeholder="Select retail variant" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">None</SelectItem>
-                                    {linkedVariants
-                                      .filter((lv: any) => {
-                                        const otherId = lv.variantOption.id;
-                                        const otherSettings = getSettings(otherId);
-                                        return otherSettings.variantType === "retail" && otherId !== v.id;
-                                      })
-                                      .map((lv: any) => (
-                                        <SelectItem key={lv.variantOption.id} value={lv.variantOption.id.toString()}>
-                                          {lv.variantOption.name}
-                                        </SelectItem>
-                                      ))}
-                                  </SelectContent>
-                                </Select>
-                              </Field>
-                              <Field>
-                                <FieldLabel className="text-xs">
-                                  Conversion Ratio (1:{settings.conversionRatio || "?"})
-                                </FieldLabel>
-                                <Input
-                                  className="h-8 text-xs"
-                                  type="number"
-                                  value={settings.conversionRatio}
-                                  onChange={(e) =>
-                                    updateField(v.id, "conversionRatio", e.target.value)
-                                  }
-                                  placeholder="e.g. 10"
-                                />
-                              </Field>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 items-center">
-                              <Field>
-                                <FieldLabel className="text-xs">
-                                  Loss %
-                                </FieldLabel>
-                                <Input
-                                  className="h-8 text-xs"
-                                  type="number"
-                                  step="0.1"
-                                  value={settings.conversionLossPercent}
-                                  onChange={(e) =>
-                                    updateField(v.id, "conversionLossPercent", e.target.value)
-                                  }
-                                  placeholder="0"
-                                />
-                              </Field>
-                              <div className="flex items-center justify-between border rounded-lg p-2">
-                                <span className="text-xs">Auto Convert on Delivery</span>
-                                <Switch
-                                  checked={settings.autoConvert}
-                                  onCheckedChange={(val) =>
-                                    updateField(v.id, "autoConvert", val)
-                                  }
-                                />
-                              </div>
-                            </div>
-                            {settings.linkedRetailVariantOptionId && settings.conversionRatio && (
-                              <p className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 rounded px-2 py-1">
-                                📦 1 × {v.name} → {settings.conversionRatio} ×{" "}
-                                {linkedVariants.find((lv: any) =>
-                                  lv.variantOption.id === settings.linkedRetailVariantOptionId
-                                )?.variantOption?.name || "Retail"}
-                                {Number(settings.conversionLossPercent) > 0 &&
-                                  ` (${settings.conversionLossPercent}% loss)`}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </details>
+        ) : isMultiBrand ? (
+          /* ── Multi-Brand: Tabs per brand ── */
+          <Tabs defaultValue={String(selectedBrandIds[0])}>
+            <TabsList className="w-full">
+              {selectedBrandIds.map((bId) => (
+                <TabsTrigger key={bId} value={String(bId)} className="text-xs">
+                  {brandMap.get(bId) ?? `Brand #${bId}`}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            {selectedBrandIds.map((bId) => (
+              <TabsContent key={bId} value={String(bId)} className="mt-3">
+                <div className="text-xs text-muted-foreground mb-3 bg-muted/50 rounded px-3 py-2">
+                  🏷️ Configuring variants for <span className="font-semibold text-foreground">{brandMap.get(bId)}</span> — this will create a separate product for this brand.
                 </div>
-              );
-            })}
-          </div>
+                {renderVariantList(bId)}
+              </TabsContent>
+            ))}
+          </Tabs>
+        ) : (
+          /* ── Single Brand or No Brand: flat list ── */
+          renderVariantList(selectedBrandIds.length === 1 ? selectedBrandIds[0] : null)
         )}
       </CardContent>
     </Card>
