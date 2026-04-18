@@ -371,6 +371,7 @@ export const productRouter = {
                         variantPrices.map((vp, idx) => ({
                             productId: newProduct!.id,
                             variantOptionId: vp.variantOptionId,
+                            brandId: vp.brandId || null,
                             consumerPrice: vp.consumerPrice || "0",
                             sortOrder: idx,
                         })),
@@ -515,6 +516,7 @@ export const productRouter = {
                     variantPrices.map((vp, idx) => ({
                         productId: id,
                         variantOptionId: vp.variantOptionId,
+                        brandId: vp.brandId || null,
                         consumerPrice: vp.consumerPrice || "0",
                         sortOrder: idx,
                     })),

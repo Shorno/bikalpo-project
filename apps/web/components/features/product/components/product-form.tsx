@@ -92,7 +92,9 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   const queryClient = useQueryClient();
 
   // === State for cascading selection ===
-  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
+  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(
+    (product?.category as any)?.typeId ?? null,
+  );
   const [selectedCategory, setSelectedCategory] = useState<number | null>(
     product?.categoryId ?? null,
   );
@@ -265,7 +267,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
         title: string;
         items: { key: string; value: string }[];
       }[],
-      inStock: product?.inStock ?? true,
       isFeatured: product?.isFeatured ?? false,
       brandId: product?.brandId ?? (undefined as number | undefined),
 
@@ -277,8 +278,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
       expiryEnabled: (product as any)?.expiryEnabled ?? false,
       damageControlEnabled: (product as any)?.damageControlEnabled ?? false,
       isReturnablePack: (product as any)?.isReturnablePack ?? false,
-      deliveryCostPerCarton: (product as any)?.deliveryCostPerCarton ?? "",
-      unitSize: (product as any)?.unitSize ?? "",
       visibility: (product as any)?.visibility ?? "public",
       status: (product as any)?.status ?? "active",
     },
@@ -628,7 +627,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
               )}
 
               {/* ── 1b. Product Name (editable, separate from core identity) ── */}
-              {selectedCoreProduct && (
+              {(selectedCoreProductId || isEdit) && (
                 <Card>
                   <CardHeader className="pb-4">
                     <div className="flex items-center gap-2">
@@ -679,7 +678,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
               )}
 
               {/* ── 2. Brand Selection + Variant Configuration ── */}
-              {selectedCoreProduct && (
+              {(selectedCoreProductId || isEdit) && (
                 <Card>
                   <CardHeader className="pb-4">
                     <div className="flex items-center gap-2">
@@ -1037,26 +1036,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <form.Field name="inStock">
-                    {(field) => (
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <FieldLabel className="text-sm font-medium">
-                            In Stock
-                          </FieldLabel>
-                          <p className="text-xs text-muted-foreground">
-                            Available for purchase
-                          </p>
-                        </div>
-                        <Switch
-                          checked={field.state.value}
-                          onCheckedChange={field.handleChange}
-                        />
-                      </div>
-                    )}
-                  </form.Field>
 
-                  <Separator />
 
                   <form.Field name="isFeatured">
                     {(field) => (
