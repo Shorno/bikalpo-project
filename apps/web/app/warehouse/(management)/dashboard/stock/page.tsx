@@ -156,10 +156,182 @@ function StockBreakdown({ productId, ownerType }: { productId: number; ownerType
   );
 }
 
+/* ─── Types for grouped products ─── */
+type ProductOverview = {
+  productId: number;
+  productName: string;
+  productSlug: string;
+  productImage: string | null;
+  category: string | null;
+  subCategory: string | null;
+  brandId: number | null;
+  brandName: string | null;
+  totalQty: number;
+  totalWeightKg: number;
+  unitSizeKg: number;
+  cartonCount: number;
+  remainderKg: number;
+  variantCount: number;
+  primaryUnit: string;
+  status: { label: string; badge: string };
+};
+
+type CoreProductGroup = {
+  name: string;
+  category: string | null;
+  image: string | null;
+  unitSizeKg: number;
+  products: ProductOverview[];
+  // Aggregated totals across all brands
+  totalQty: number;
+  totalWeightKg: number;
+  totalVariants: number;
+  cartonCount: number;
+  remainderKg: number;
+  primaryUnit: string;
+  worstBadge: string;
+};
+
+/** Group products by name+category → core product groups */
+function groupByCoreProduct(products: ProductOverview[]): CoreProductGroup[] {
+  const map = new Map<string, CoreProductGroup>();
+
+  for (const p of products) {
+    const key = `${p.productName}__${p.category || ""}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        name: p.productName,
+        category: p.category,
+        image: p.productImage,
+        unitSizeKg: p.unitSizeKg,
+        products: [],
+        totalQty: 0,
+        totalWeightKg: 0,
+        totalVariants: 0,
+        cartonCount: 0,
+        remainderKg: 0,
+        primaryUnit: p.primaryUnit,
+        worstBadge: "in_stock",
+      });
+    }
+    const group = map.get(key)!;
+    group.products.push(p);
+    group.totalQty += p.totalQty;
+    group.totalWeightKg += p.totalWeightKg;
+    group.totalVariants += p.variantCount;
+    // Use image from first product that has one
+    if (!group.image && p.productImage) group.image = p.productImage;
+    // Recalculate carton from aggregated weight
+    if (group.unitSizeKg > 0) {
+      group.cartonCount = Math.floor(group.totalWeightKg / group.unitSizeKg);
+      group.remainderKg = group.totalWeightKg % group.unitSizeKg;
+    }
+    // Worst status wins
+    const badgePriority: Record<string, number> = { out_of_stock: 3, low: 2, limited: 1, in_stock: 0 };
+    if ((badgePriority[p.status.badge] ?? 0) > (badgePriority[group.worstBadge] ?? 0)) {
+      group.worstBadge = p.status.badge;
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+/* ─── Brand sub-entry inside a core product group ─── */
+function BrandProductEntry({
+  product,
+  isExpanded,
+  onToggle,
+  ownerType,
+}: {
+  product: ProductOverview;
+  isExpanded: boolean;
+  onToggle: () => void;
+  ownerType: "warehouse" | "shop" | "super_seller";
+}) {
+  return (
+    <div className="border border-gray-100 rounded-lg overflow-hidden bg-white">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50/50 transition-colors"
+      >
+        {/* Brand tag */}
+        <div className="shrink-0">
+          <Tag size={12} className="text-gray-400" />
+        </div>
+
+        {/* Brand product info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-gray-800 truncate">
+              {product.brandName || product.productName}
+            </span>
+            {product.subCategory && (
+              <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                {product.subCategory}
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] text-gray-400 mt-0.5">
+            {product.variantCount} variant{product.variantCount !== 1 ? "s" : ""}
+          </div>
+        </div>
+
+        {/* Stock */}
+        <div className="text-right shrink-0">
+          {product.unitSizeKg > 0 ? (
+            <>
+              <div className={`text-sm font-bold tabular-nums ${
+                product.status.badge === "out_of_stock" ? "text-red-500" :
+                product.status.badge === "low" ? "text-orange-600" :
+                "text-gray-900"
+              }`}>
+                {product.cartonCount.toLocaleString()}
+              </div>
+              <div className="text-[9px] text-gray-400 uppercase">
+                {product.unitSizeKg}KG Carton
+              </div>
+              <div className="text-[8px] text-gray-300">
+                {product.totalWeightKg.toLocaleString()}KG total
+                {product.remainderKg > 0 && ` + ${product.remainderKg.toFixed(1)}KG`}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={`text-sm font-bold tabular-nums ${
+                product.status.badge === "out_of_stock" ? "text-red-500" :
+                product.status.badge === "low" ? "text-orange-600" :
+                "text-gray-900"
+              }`}>
+                {product.totalQty.toLocaleString()}
+              </div>
+              <div className="text-[9px] text-gray-400 uppercase">{product.primaryUnit}</div>
+            </>
+          )}
+        </div>
+
+        <div className="shrink-0">
+          <StatusBadge badge={product.status.badge} />
+        </div>
+
+        <div className="shrink-0 text-gray-400">
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </div>
+      </button>
+
+      {isExpanded && (
+        <div className="px-3 pb-3 pt-1 border-t border-gray-100 bg-gray-50/30">
+          <StockBreakdown productId={product.productId} ownerType={ownerType} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main page ─── */
 export default function StockOverviewPage() {
   const ownerType = "warehouse" as const;
   const [expandedProduct, setExpandedProduct] = useState<number | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<number | undefined>(undefined);
   const [search, setSearch] = useState("");
 
@@ -180,20 +352,24 @@ export default function StockOverviewPage() {
   });
 
   const categories = catData?.categories ?? [];
-  const allProducts = overviewData?.products ?? [];
+  const allProducts = (overviewData?.products ?? []) as ProductOverview[];
 
   // Client-side search filter
-  const products = search.trim()
+  const filteredProducts = search.trim()
     ? allProducts.filter((p) =>
         p.productName.toLowerCase().includes(search.toLowerCase())
       )
     : allProducts;
 
-  // Aggregate stats
-  const totalProducts = products.length;
-  const totalStock = products.reduce((s, p) => s + p.totalQty, 0);
-  const outOfStockCount = products.filter((p) => p.status.badge === "out_of_stock").length;
-  const lowStockCount = products.filter(
+  // Group by core product name
+  const coreGroups = groupByCoreProduct(filteredProducts);
+
+  // Aggregate stats across all products (not groups)
+  const totalUniqueProducts = coreGroups.length;
+  const totalBrandProducts = filteredProducts.length;
+  const totalStock = filteredProducts.reduce((s, p) => s + p.totalQty, 0);
+  const outOfStockCount = filteredProducts.filter((p) => p.status.badge === "out_of_stock").length;
+  const lowStockCount = filteredProducts.filter(
     (p) => p.status.badge === "low" || p.status.badge === "limited"
   ).length;
 
@@ -214,7 +390,10 @@ export default function StockOverviewPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
           <div className="text-xs text-gray-400 uppercase font-semibold">Products</div>
-          <div className="text-2xl font-bold text-gray-900 mt-1">{totalProducts}</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">{totalUniqueProducts}</div>
+          {totalBrandProducts > totalUniqueProducts && (
+            <div className="text-[10px] text-gray-400">{totalBrandProducts} brand entries</div>
+          )}
         </div>
         <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
           <div className="text-xs text-gray-400 uppercase font-semibold">Total Stock</div>
@@ -274,12 +453,12 @@ export default function StockOverviewPage() {
         </div>
       </div>
 
-      {/* Product cards (Level 1) */}
+      {/* Core product cards */}
       {isLoading ? (
         <div className="text-center py-12 text-gray-400 text-sm animate-pulse">
           Loading stock overview…
         </div>
-      ) : products.length === 0 ? (
+      ) : coreGroups.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center border rounded-lg bg-gray-50/50">
           <BoxesIcon className="text-gray-300 mb-3" size={48} />
           <p className="text-gray-500 text-lg font-medium">No stock found</p>
@@ -289,26 +468,120 @@ export default function StockOverviewPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {products.map((p) => {
-            const isExpanded = expandedProduct === p.productId;
+          {coreGroups.map((group) => {
+            const groupKey = `${group.name}__${group.category || ""}`;
+            const isMultiBrand = group.products.length > 1;
+            const isGroupExpanded = expandedGroup === groupKey;
+
+            // Single-brand product — render exactly as before (flat, no nesting)
+            if (!isMultiBrand) {
+              const p = group.products[0]!;
+              const isExpanded = expandedProduct === p.productId;
+              return (
+                <div
+                  key={p.productId}
+                  className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-shadow hover:shadow-sm"
+                >
+                  <button
+                    onClick={() =>
+                      setExpandedProduct(isExpanded ? null : p.productId)
+                    }
+                    className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-gray-50/50 transition-colors"
+                  >
+                    <div className="shrink-0 w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
+                      {p.productImage ? (
+                        <Image
+                          src={p.productImage}
+                          alt={p.productName}
+                          width={40}
+                          height={40}
+                          className="w-10 h-10 object-cover"
+                        />
+                      ) : (
+                        <Package size={20} className="text-gray-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900 truncate">
+                          {p.productName}
+                        </span>
+                        {p.subCategory && (
+                          <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                            {p.subCategory}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">
+                        {p.category} • {p.variantCount} variant{p.variantCount !== 1 ? "s" : ""}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      {p.unitSizeKg > 0 ? (
+                        <>
+                          <div className={`text-lg font-bold tabular-nums ${
+                            p.status.badge === "out_of_stock" ? "text-red-500" :
+                            p.status.badge === "low" ? "text-orange-600" :
+                            "text-gray-900"
+                          }`}>
+                            {p.cartonCount.toLocaleString()}
+                          </div>
+                          <div className="text-[10px] text-gray-400 uppercase">
+                            {p.unitSizeKg}KG Carton
+                          </div>
+                          <div className="text-[9px] text-gray-300">
+                            {p.totalWeightKg.toLocaleString()}KG total
+                            {p.remainderKg > 0 && ` + ${p.remainderKg.toFixed(1)}KG`}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className={`text-lg font-bold tabular-nums ${
+                            p.status.badge === "out_of_stock" ? "text-red-500" :
+                            p.status.badge === "low" ? "text-orange-600" :
+                            "text-gray-900"
+                          }`}>
+                            {p.totalQty.toLocaleString()}
+                          </div>
+                          <div className="text-[10px] text-gray-400 uppercase">{p.primaryUnit}</div>
+                        </>
+                      )}
+                    </div>
+                    <div className="shrink-0">
+                      <StatusBadge badge={p.status.badge} />
+                    </div>
+                    <div className="shrink-0 text-gray-400">
+                      {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    </div>
+                  </button>
+                  {isExpanded && (
+                    <div className="px-4 pb-4 pt-1 border-t border-gray-100 bg-gray-50/30">
+                      <StockBreakdown productId={p.productId} ownerType={ownerType} />
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // Multi-brand product — grouped parent card
             return (
               <div
-                key={p.productId}
+                key={groupKey}
                 className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-shadow hover:shadow-sm"
               >
-                {/* Card header — clickable */}
+                {/* Parent card header */}
                 <button
                   onClick={() =>
-                    setExpandedProduct(isExpanded ? null : p.productId)
+                    setExpandedGroup(isGroupExpanded ? null : groupKey)
                   }
                   className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-gray-50/50 transition-colors"
                 >
                   {/* Product image */}
                   <div className="shrink-0 w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
-                    {p.productImage ? (
+                    {group.image ? (
                       <Image
-                        src={p.productImage}
-                        alt={p.productName}
+                        src={group.image}
+                        alt={group.name}
                         width={40}
                         height={40}
                         className="w-10 h-10 object-cover"
@@ -322,67 +595,75 @@ export default function StockOverviewPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-gray-900 truncate">
-                        {p.productName}
+                        {group.name}
                       </span>
-                      {p.subCategory && (
-                        <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
-                          {p.subCategory}
-                        </span>
-                      )}
+                      <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-medium border border-indigo-100">
+                        {group.products.length} brands
+                      </span>
                     </div>
                     <div className="text-[11px] text-gray-400 mt-0.5">
-                      {p.category} • {p.variantCount} variant{p.variantCount !== 1 ? "s" : ""}
+                      {group.category} • {group.totalVariants} variant{group.totalVariants !== 1 ? "s" : ""} total
                     </div>
                   </div>
 
-                  {/* Stock total */}
+                  {/* Stock total (aggregated) */}
                   <div className="text-right shrink-0">
-                    {p.unitSizeKg > 0 ? (
+                    {group.unitSizeKg > 0 ? (
                       <>
                         <div className={`text-lg font-bold tabular-nums ${
-                          p.status.badge === "out_of_stock" ? "text-red-500" :
-                          p.status.badge === "low" ? "text-orange-600" :
+                          group.worstBadge === "out_of_stock" ? "text-red-500" :
+                          group.worstBadge === "low" ? "text-orange-600" :
                           "text-gray-900"
                         }`}>
-                          {p.cartonCount.toLocaleString()}
+                          {group.cartonCount.toLocaleString()}
                         </div>
                         <div className="text-[10px] text-gray-400 uppercase">
-                          {p.unitSizeKg}KG Carton
+                          {group.unitSizeKg}KG Carton
                         </div>
                         <div className="text-[9px] text-gray-300">
-                          {p.totalWeightKg.toLocaleString()}KG total
-                          {p.remainderKg > 0 && ` + ${p.remainderKg.toFixed(1)}KG`}
+                          {group.totalWeightKg.toLocaleString()}KG total
+                          {group.remainderKg > 0 && ` + ${group.remainderKg.toFixed(1)}KG`}
                         </div>
                       </>
                     ) : (
                       <>
                         <div className={`text-lg font-bold tabular-nums ${
-                          p.status.badge === "out_of_stock" ? "text-red-500" :
-                          p.status.badge === "low" ? "text-orange-600" :
+                          group.worstBadge === "out_of_stock" ? "text-red-500" :
+                          group.worstBadge === "low" ? "text-orange-600" :
                           "text-gray-900"
                         }`}>
-                          {p.totalQty.toLocaleString()}
+                          {group.totalQty.toLocaleString()}
                         </div>
-                        <div className="text-[10px] text-gray-400 uppercase">{p.primaryUnit}</div>
+                        <div className="text-[10px] text-gray-400 uppercase">{group.primaryUnit}</div>
                       </>
                     )}
                   </div>
 
-                  {/* Status badge */}
+                  {/* Worst status badge */}
                   <div className="shrink-0">
-                    <StatusBadge badge={p.status.badge} />
+                    <StatusBadge badge={group.worstBadge} />
                   </div>
 
                   {/* Expand chevron */}
                   <div className="shrink-0 text-gray-400">
-                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    {isGroupExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </div>
                 </button>
 
-                {/* Expanded: Level 2 breakdown */}
-                {isExpanded && (
-                  <div className="px-4 pb-4 pt-1 border-t border-gray-100 bg-gray-50/30">
-                    <StockBreakdown productId={p.productId} ownerType={ownerType} />
+                {/* Expanded: brand sub-entries */}
+                {isGroupExpanded && (
+                  <div className="px-4 pb-4 pt-2 border-t border-gray-100 bg-gray-50/30 space-y-2">
+                    {group.products.map((p) => (
+                      <BrandProductEntry
+                        key={p.productId}
+                        product={p}
+                        isExpanded={expandedProduct === p.productId}
+                        onToggle={() =>
+                          setExpandedProduct(expandedProduct === p.productId ? null : p.productId)
+                        }
+                        ownerType={ownerType}
+                      />
+                    ))}
                   </div>
                 )}
               </div>

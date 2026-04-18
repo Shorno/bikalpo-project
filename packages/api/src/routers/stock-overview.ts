@@ -81,12 +81,16 @@ export const stockOverviewRouter = {
                     unitSize: product.unitSize,
                     // Total weight in KG (sum of qty × weightKg)
                     totalWeightKg: sql<string>`COALESCE(SUM(${inventory.availableQty}::numeric * ${productVariant.weightKg}::numeric), 0)`.as("total_weight_kg"),
+                    // Brand info (product-level brand)
+                    brandId: product.brandId,
+                    brandName: brand.name,
                 })
                 .from(inventory)
                 .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
                 .innerJoin(product, eq(productVariant.productId, product.id))
                 .leftJoin(category, eq(product.categoryId, category.id))
                 .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
+                .leftJoin(brand, eq(product.brandId, brand.id))
                 .where(
                     and(
                         eq(inventory.ownerType, input.ownerType),
@@ -100,6 +104,8 @@ export const stockOverviewRouter = {
                     product.slug,
                     product.image,
                     product.unitSize,
+                    product.brandId,
+                    brand.name,
                     category.id,
                     category.name,
                     subCategory.id,
@@ -122,6 +128,8 @@ export const stockOverviewRouter = {
                         productImage: r.productImage,
                         category: r.categoryName,
                         subCategory: r.subCategoryName,
+                        brandId: r.brandId,
+                        brandName: r.brandName,
                         totalQty,
                         totalWeightKg,
                         unitSizeKg,
