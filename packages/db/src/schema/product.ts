@@ -16,6 +16,7 @@ import { brand } from "./brand";
 import { category, subCategory } from "./category";
 import { coreProductIdentity } from "./core-product";
 import { variantOption } from "./variant-option";
+import { user } from "./auth-schema";
 
 // Type for product features
 export type ProductFeatureItem = {
@@ -128,6 +129,12 @@ export const product = pgTable("product", {
 
   /** Scheduled publish date (null = publish immediately) */
   scheduledAt: timestamp("scheduled_at"),
+
+  /** Warehouse that created this product (null = admin-created) */
+  createdByWarehouseId: text("created_by_warehouse_id").references(
+    () => user.id,
+    { onDelete: "set null" },
+  ),
 
   // Product status
   status: productStatusEnum("status").default("active").notNull(),

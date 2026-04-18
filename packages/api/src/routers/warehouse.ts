@@ -1851,6 +1851,432 @@ const productRequests = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Warehouse Product Creation & Management
+// ────────────────────────────────────────────────────────────────
+
+import {
+    product as productTable2,
+    productImage,
+    productBrand,
+    productVariantPrice,
+    variantOption,
+    variantCartonConfig,
+    category as catTable2,
+    subCategory as subCatTable2,
+    brand as brandTable2,
+} from "@bikalpo-project/db/schema";
+import { ilike } from "drizzle-orm";
+import { generateSku } from "./helpers/generate-sku";
+
+const warehouseProductCreateSchema = z.object({
+    // Classification
+    categoryId: z.number().int(),
+    subCategoryId: z.number().int().optional().nullable(),
+    coreProductId: z.number().int().optional().nullable(),
+
+    // Product info
+    name: z.string().min(1),
+    slug: z.string().min(1),
+    description: z.string().optional().nullable(),
+    shortDescription: z.string().optional().nullable(),
+    image: z.string().min(1),
+    additionalImages: z.array(z.string()).optional(),
+    videoUrl: z.string().optional().nullable(),
+    price: z.string().default("0"),
+    size: z.string().default("—"),
+
+    // Unit size / delivery
+    unitSize: z.string().optional().nullable(),
+    deliveryCostPerCarton: z.string().optional().nullable(),
+
+    // Supply rules
+    trackingType: z.enum(["none", "batch", "serial"]).default("none"),
+    expiryEnabled: z.boolean().default(false),
+    damageControlEnabled: z.boolean().default(false),
+    isReturnablePack: z.boolean().default(false),
+
+    // Visibility
+    visibility: z.enum(["public", "private"]).default("public"),
+    status: z.enum(["active", "inactive", "draft"]).default("active"),
+    inStock: z.boolean().default(true),
+    isFeatured: z.boolean().default(false),
+
+    // Brand × Variant pricing matrix
+    // Each entry = one productVariant row (brand-specific price)
+    variantMatrix: z.array(z.object({
+        brandId: z.number().int().nullable(),
+        variantOptionId: z.number().int(),
+        packPrice: z.string().min(1),           // per-pack price (e.g. ৳58)
+        variantType: z.enum(["trade", "retail"]).optional().nullable(),
+        // Order rules
+        orderMin: z.string().optional().nullable(),
+        orderMax: z.string().optional().nullable(),
+        orderIncrement: z.string().optional().nullable(),
+        orderUnit: z.string().optional().nullable(),
+        // Margin rules (trade only)
+        minMarginPercent: z.string().optional().nullable(),
+        minMarginAmount: z.string().optional().nullable(),
+        // Pack return
+        isPackReturnRequired: z.boolean().default(false),
+        packDepositAmount: z.string().optional().nullable(),
+        // Carton configs
+        cartonConfigs: z.array(z.object({
+            packCount: z.number().int().min(1),
+            totalWeightKg: z.string().min(1),
+            cartonPrice: z.string().min(1),
+        })).optional(),
+    })).optional(),
+
+    // Product-level brand IDs (M2M link)
+    brandIds: z.array(z.number().int()).optional(),
+});
+
+const warehouseProductManagement = {
+    /** Get active product types (for classification dropdown) */
+    getProductTypes: warehouseProcedure
+        .input(z.object({}))
+        .handler(async () => {
+            const types = await db.query.productType.findMany({
+                where: eq(productType.isActive, true),
+                orderBy: [productType.displayOrder, productType.name],
+            });
+            return { types };
+        }),
+
+    /** Get categories filtered by typeId (for classification dropdown) */
+    getFilteredCategories: warehouseProcedure
+        .input(z.object({ typeId: z.number().int().optional() }))
+        .handler(async ({ input }) => {
+            const conditions: SQL[] = [eq(catTable2.isActive, true)];
+            if (input.typeId) {
+                conditions.push(eq(catTable2.typeId, input.typeId));
+            }
+            const categories = await db.query.category.findMany({
+                where: and(...conditions),
+                orderBy: [catTable2.displayOrder, catTable2.name],
+            });
+            return { categories };
+        }),
+
+    /** Get sub-categories filtered by categoryId */
+    getFilteredSubCategories: warehouseProcedure
+        .input(z.object({ categoryId: z.number().int() }))
+        .handler(async ({ input }) => {
+            const subCategories = await db.query.subCategory.findMany({
+                where: and(
+                    eq(subCatTable2.categoryId, input.categoryId),
+                    eq(subCatTable2.isActive, true),
+                ),
+                orderBy: [subCatTable2.displayOrder, subCatTable2.name],
+            });
+            return { subCategories };
+        }),
+
+    /** Get core products with their brands + variant options */
+    getCoreProductsForCreate: warehouseProcedure
+        .input(z.object({
+            categoryId: z.number().int().optional(),
+            subCategoryId: z.number().int().optional(),
+            search: z.string().optional(),
+        }))
+        .handler(async ({ input }) => {
+            const conditions: SQL[] = [
+                eq(coreProductIdentity.status, "active"),
+            ];
+            if (input.categoryId) {
+                conditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
+            }
+            if (input.subCategoryId) {
+                conditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
+            }
+            if (input.search?.trim()) {
+                conditions.push(ilike(coreProductIdentity.name, `%${input.search.trim()}%`));
+            }
+
+            const coreProducts = await db.query.coreProductIdentity.findMany({
+                where: and(...conditions),
+                with: {
+                    category: { columns: { id: true, name: true } },
+                    subCategory: { columns: { id: true, name: true } },
+                    brands: {
+                        with: {
+                            brand: { columns: { id: true, name: true, logo: true, slug: true } },
+                        },
+                    },
+                    variantLinks: {
+                        with: {
+                            variantOption: {
+                                columns: { id: true, name: true, unit: true, size: true, variantType: true },
+                            },
+                        },
+                        orderBy: (link: any, { asc }: any) => [asc(link.sortOrder)],
+                    },
+                },
+                orderBy: [coreProductIdentity.displayOrder, coreProductIdentity.name],
+            });
+
+            return { coreProducts };
+        }),
+
+    /** Create a product with brand×variant pricing matrix */
+    warehouseCreateProduct: warehouseProcedure
+        .input(warehouseProductCreateSchema)
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const {
+                additionalImages,
+                variantMatrix,
+                brandIds,
+                ...productData
+            } = input;
+
+            // Auto-generate SKU
+            const cat = await db.query.category.findFirst({
+                where: eq(catTable2.id, productData.categoryId),
+                columns: { slug: true },
+            });
+            let subCatSlug = "xx";
+            if (productData.subCategoryId) {
+                const sub = await db.query.subCategory.findFirst({
+                    where: eq(subCatTable2.id, productData.subCategoryId),
+                    columns: { slug: true },
+                });
+                subCatSlug = sub?.slug || "xx";
+            }
+            const [countResult] = await db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(productTable2)
+                .where(eq(productTable2.categoryId, productData.categoryId));
+            const serial = (countResult?.count ?? 0) + 1;
+            const sku = generateSku({
+                subCategorySlug: subCatSlug,
+                categorySlug: cat?.slug || "xx",
+                serialNumber: serial,
+                userId,
+            });
+
+            // 1. Insert product
+            const [newProduct] = await db
+                .insert(productTable2)
+                .values({
+                    ...productData,
+                    sku,
+                    subCategoryId: productData.subCategoryId || null,
+                    coreProductId: productData.coreProductId || null,
+                    shortDescription: productData.shortDescription || null,
+                    videoUrl: productData.videoUrl || null,
+                    deliveryCostPerCarton: productData.deliveryCostPerCarton || null,
+                    unitSize: productData.unitSize || null,
+                    createdByWarehouseId: userId,
+                    supplier: null,
+                    reorderLevel: 0,
+                    stockQuantity: 0,
+                })
+                .returning();
+
+            if (!newProduct) {
+                throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Failed to create product" });
+            }
+
+            // 2. Insert additional images
+            if (additionalImages && additionalImages.length > 0) {
+                await db.insert(productImage).values(
+                    additionalImages.map((imageUrl) => ({
+                        productId: newProduct.id,
+                        imageUrl,
+                    })),
+                );
+            }
+
+            // 3. Insert product brands (M2M)
+            if (brandIds && brandIds.length > 0) {
+                await db.insert(productBrand).values(
+                    brandIds.map((bId) => ({
+                        productId: newProduct.id,
+                        brandId: bId,
+                    })),
+                );
+            }
+
+            // 4. Process variant matrix → productVariant + variantCartonConfig
+            if (variantMatrix && variantMatrix.length > 0) {
+                // Fetch variant option metadata
+                const voIds = [...new Set(variantMatrix.map((v) => v.variantOptionId))];
+                const variantOptions = await db
+                    .select()
+                    .from(variantOption)
+                    .where(inArray(variantOption.id, voIds));
+                const voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
+
+                // Also create productVariantPrice rows (one per unique variantOptionId, for admin compat)
+                const uniqueVoIds = [...new Set(variantMatrix.map((v) => v.variantOptionId))];
+                const vpRows = uniqueVoIds.map((voId, idx) => {
+                    // Use the first variant matrix entry for this voId as the reference price
+                    const firstEntry = variantMatrix.find((v) => v.variantOptionId === voId)!;
+                    return {
+                        productId: newProduct.id,
+                        variantOptionId: voId,
+                        variantType: firstEntry.variantType || null,
+                        consumerPrice: firstEntry.packPrice || "0",
+                        pricingType: "per_unit" as const,
+                        orderMin: firstEntry.orderMin || "1",
+                        orderMax: firstEntry.orderMax || null,
+                        orderIncrement: firstEntry.orderIncrement || "1",
+                        orderUnit: firstEntry.orderUnit || "piece",
+                        minMarginPercent: firstEntry.minMarginPercent || null,
+                        minMarginAmount: firstEntry.minMarginAmount || null,
+                        isPackReturnRequired: firstEntry.isPackReturnRequired ?? false,
+                        packDepositAmount: firstEntry.packDepositAmount || null,
+                        sortOrder: idx,
+                    };
+                });
+
+                if (vpRows.length > 0) {
+                    await db.insert(productVariantPrice).values(vpRows);
+                }
+
+                // Create product_variant rows (one per brand × variantOption)
+                const variantRows: any[] = [];
+                let sortIdx = 0;
+
+                for (const entry of variantMatrix) {
+                    const vo = voMap[entry.variantOptionId];
+                    const isLoose = vo?.variantType === "loose";
+                    const packType = isLoose ? "loose" : "packet";
+                    const weightKg = vo?.size || "0";
+
+                    variantRows.push({
+                        productId: newProduct.id,
+                        brandId: entry.brandId,
+                        sku: entry.brandId
+                            ? `WH-${newProduct.id}-VO-${entry.variantOptionId}-B-${entry.brandId}`
+                            : `WH-${newProduct.id}-VO-${entry.variantOptionId}`,
+                        unitLabel: vo?.name || "Unit",
+                        quantitySelectorLabel: vo?.name || "Unit",
+                        packagingType: packType,
+                        weightKg,
+                        pricingType: "per_unit",
+                        price: entry.packPrice,
+                        orderMin: entry.orderMin || "1",
+                        orderMax: entry.orderMax || null,
+                        orderIncrement: entry.orderIncrement || "1",
+                        orderUnit: entry.orderUnit || vo?.unit || "piece",
+                        variantType: entry.variantType || null,
+                        packType: (packType as any) || null,
+                        packWeightKg: weightKg || null,
+                        sellUnit: vo?.name || null,
+                        orderType: entry.variantType === "trade" ? "b2b" as const
+                            : entry.variantType === "retail" ? "b2c" as const : null,
+                        visibilityRole: entry.variantType === "trade" ? "shop_owner" as const
+                            : entry.variantType === "retail" ? "consumer" as const : "all" as const,
+                        minMarginPercent: entry.minMarginPercent || null,
+                        minMarginAmount: entry.minMarginAmount || null,
+                        isPackReturnRequired: entry.isPackReturnRequired ?? false,
+                        packDepositAmount: entry.packDepositAmount || "0",
+                        sourceVariantOptionId: entry.variantOptionId,
+                        stockQuantity: 0,
+                        reorderLevel: 0,
+                        sortOrder: sortIdx++,
+                        isActive: true,
+                    });
+                }
+
+                if (variantRows.length > 0) {
+                    const generatedVariants = await db
+                        .insert(productVariant)
+                        .values(variantRows)
+                        .returning();
+
+                    // 5. Insert carton configs for each generated variant
+                    const cartonRows: any[] = [];
+
+                    for (const entry of variantMatrix) {
+                        if (!entry.cartonConfigs || entry.cartonConfigs.length === 0) continue;
+
+                        // Find the generated variant that matches this brand × variantOption
+                        const matchingVariant = generatedVariants.find(
+                            (gv) =>
+                                gv.sourceVariantOptionId === entry.variantOptionId &&
+                                gv.brandId === entry.brandId,
+                        );
+
+                        if (!matchingVariant) continue;
+
+                        for (const [idx, cc] of entry.cartonConfigs.entries()) {
+                            cartonRows.push({
+                                productVariantId: matchingVariant.id,
+                                packCount: cc.packCount,
+                                totalWeightKg: cc.totalWeightKg,
+                                cartonPrice: cc.cartonPrice,
+                                sortOrder: idx,
+                                isActive: true,
+                            });
+                        }
+                    }
+
+                    if (cartonRows.length > 0) {
+                        await db.insert(variantCartonConfig).values(cartonRows);
+                    }
+                }
+            }
+
+            return { product: newProduct };
+        }),
+
+    /** Get products created by this warehouse */
+    getMyCreatedProducts: warehouseProcedure
+        .input(z.object({
+            search: z.string().optional(),
+            page: z.number().min(1).default(1),
+            limit: z.number().min(1).max(100).default(20),
+        }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const conditions: SQL[] = [
+                eq(productTable2.createdByWarehouseId, userId),
+            ];
+
+            if (input.search?.trim()) {
+                conditions.push(ilike(productTable2.name, `%${input.search.trim()}%`));
+            }
+
+            const offset = (input.page - 1) * input.limit;
+
+            const [products, countResult] = await Promise.all([
+                db.query.product.findMany({
+                    where: and(...conditions),
+                    with: {
+                        category: { columns: { id: true, name: true } },
+                        brand: { columns: { id: true, name: true } },
+                        variants: {
+                            where: eq(productVariant.isActive, true),
+                            with: {
+                                brand: { columns: { id: true, name: true } },
+                                cartonConfigs: {
+                                    where: eq(variantCartonConfig.isActive, true),
+                                },
+                            },
+                        },
+                    },
+                    orderBy: [desc(productTable2.createdAt)],
+                    limit: input.limit,
+                    offset,
+                }),
+                db.select({ count: count() })
+                    .from(productTable2)
+                    .where(and(...conditions)),
+            ]);
+
+            return {
+                products,
+                total: countResult[0]?.count ?? 0,
+                page: input.page,
+                limit: input.limit,
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -1864,4 +2290,5 @@ export const warehouseRouter = {
     ...productActivation,
     ...catalogBrowse,
     ...productRequests,
+    ...warehouseProductManagement,
 };

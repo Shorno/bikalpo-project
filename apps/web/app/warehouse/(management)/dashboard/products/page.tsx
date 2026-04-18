@@ -20,6 +20,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { orpc } from "@/utils/orpc";
 
@@ -396,6 +397,13 @@ export default function WarehouseProductCatalogPage() {
             <Plus size={14} />
             Request Product
           </button>
+          <Link
+            href="/warehouse/dashboard/products/new"
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+          >
+            <Plus size={14} />
+            Create Product
+          </Link>
         </div>
       </div>
 

@@ -210,7 +210,9 @@ export const productVariant = pgTable("product_variant", {
     ...timestamps,
 });
 
-export const productVariantRelations = relations(productVariant, ({ one }) => ({
+import { variantCartonConfig } from "./variant-carton-config";
+
+export const productVariantRelations = relations(productVariant, ({ one, many }) => ({
     product: one(product, {
         fields: [productVariant.productId],
         references: [product.id],
@@ -225,7 +227,10 @@ export const productVariantRelations = relations(productVariant, ({ one }) => ({
         references: [productVariant.id],
         relationName: "tradeToRetail",
     }),
+    /** Carton packaging configurations for this variant */
+    cartonConfigs: many(variantCartonConfig),
 }));
+
 
 export type ProductVariant = typeof productVariant.$inferSelect;
 export type NewProductVariant = typeof productVariant.$inferInsert;
