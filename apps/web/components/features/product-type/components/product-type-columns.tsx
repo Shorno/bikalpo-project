@@ -23,14 +23,8 @@ export type ProductTypeRow = {
   description: string | null;
   image: string | null;
   skuCode: string | null;
-  enableBrand: boolean;
-  enableColor: boolean;
-  enableSize: boolean;
-  enableDesign: boolean;
-  enableVariant: boolean;
   isActive: boolean;
   displayOrder: number;
-  categoryCount: number;
 };
 
 
@@ -69,71 +63,7 @@ export function useProductTypeColumns() {
         </div>
       ),
     },
-    {
-      accessorKey: "isActive",
-      header: () => <div className="text-center">Status</div>,
-      cell: ({ row }) => {
-        const isActive = row.getValue("isActive") as boolean;
-        return (
-          <div className="flex justify-center">
-            <Badge variant={isActive ? "default" : "secondary"}>
-              {isActive ? "Active" : "Draft"}
-            </Badge>
-          </div>
-        );
-      },
-      size: 100,
-    },
-    {
-      id: "attributes",
-      header: () => <div className="text-center">Attributes</div>,
-      cell: ({ row }) => {
-        const t = row.original;
-        const attrs = [];
-        if (t.enableBrand) attrs.push("Brand");
-        if (t.enableColor) attrs.push("Color");
-        if (t.enableSize) attrs.push("Size");
-        if (t.enableDesign) attrs.push("Design");
-        if (t.enableVariant) attrs.push("Variant");
-        return (
-          <div className="flex justify-center gap-1 flex-wrap">
-            {attrs.map((a) => (
-              <Badge key={a} variant="outline" className="text-[10px] px-1.5 py-0">
-                {a}
-              </Badge>
-            ))}
-          </div>
-        );
-      },
-    },
-    {
-      id: "categoryCount",
-      header: () => <div className="text-center">Categories</div>,
-      cell: ({ row }) => (
-        <div className="text-center font-medium tabular-nums">
-          {row.original.categoryCount}
-        </div>
-      ),
-      size: 100,
-    },
-    {
-      accessorKey: "displayOrder",
-      header: ({ column }) => (
-        <div className="flex justify-center">
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          >
-            Order
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-      ),
-      cell: ({ row }) => (
-        <div className="text-center tabular-nums">{row.getValue("displayOrder")}</div>
-      ),
-      size: 80,
-    },
+
     {
       id: "actions",
       header: () => <div className="text-center">Actions</div>,

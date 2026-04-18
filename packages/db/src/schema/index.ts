@@ -34,7 +34,6 @@ export * from "./seller-application";
 export * from "./supplier";
 export * from "./purchase";
 export * from "./stock-change-log";
-export * from "./stock-ledger";
 export * from "./support";
 export * from "./complaint";
 export * from "./user-profile";

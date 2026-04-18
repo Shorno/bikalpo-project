@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import ImageUploader from "@/components/ImageUploader";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -66,9 +66,6 @@ export default function NewCategoryDialog() {
     defaultValues: {
       name: "",
       slug: "",
-      image: "",
-      isActive: true,
-      displayOrder: 0,
       typeId: null as number | null,
     },
 
@@ -106,25 +103,7 @@ export default function NewCategoryDialog() {
           }}
           className="space-y-4"
         >
-          {/* Image Uploader */}
-          <form.Field name="image">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Category Image</FieldLabel>
-                  <ImageUploader
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                    folder="categories"
-                    maxSizeMB={5}
-                  />
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
+
 
           {/* Name & Slug — side by side */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -179,8 +158,8 @@ export default function NewCategoryDialog() {
             </form.Field>
           </div>
 
-          {/* Type & Display Order — side by side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Type */}
+          <div className="grid grid-cols-1 gap-4">
             <form.Field name="typeId">
               {(field) => (
                 <Field>
@@ -206,51 +185,7 @@ export default function NewCategoryDialog() {
                 </Field>
               )}
             </form.Field>
-
-            <form.Field name="displayOrder">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Display Order</FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      type="number"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(Number(e.target.value))}
-                      aria-invalid={isInvalid}
-                      placeholder="0"
-                      min={0}
-                      autoComplete="off"
-                    />
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
-            </form.Field>
           </div>
-
-          {/* Active Status */}
-          <form.Field name="isActive">
-            {(field) => (
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldLabel htmlFor={field.name}>Active Status</FieldLabel>
-                  <FieldDescription>
-                    Inactive categories won&#39;t be visible
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="isActive"
-                  checked={field.state.value}
-                  onCheckedChange={field.handleChange}
-                />
-              </Field>
-            )}
-          </form.Field>
         </form>
         <DialogFooter>
           <Button

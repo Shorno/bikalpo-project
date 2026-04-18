@@ -4,23 +4,29 @@ import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
   ImageIcon,
   Loader,
   Package,
+  Plus,
   Save,
   Settings,
   Tag,
+  Trash2,
   Truck,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -40,7 +46,6 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { useSubCategories } from "@/hooks/use-categories";
 import {
   createProductSchema,
   updateProductSchema,
@@ -52,6 +57,30 @@ import { ProductDraftVariantsCard } from "./product-draft-variants-card";
 import ProductFeaturesInput from "./product-features-input";
 import { ProductVariantsCard } from "./product-variants-card";
 import type { DraftVariant } from "./variant-form-dialog";
+
+// ============================================================
+// Types
+// ============================================================
+
+export type VariantPriceSettings = {
+  variantOptionId: number;
+  brandId?: number | null;
+  consumerPrice: string;
+};
+
+/** A saved brand configuration with its selected variant options and settings */
+type BrandConfig = {
+  brandId: number;
+  brandName: string;
+  /** Which variant option IDs are included for this brand */
+  selectedVariantIds: number[];
+  /** Per-variant settings keyed by variantOptionId */
+  variantSettings: Record<number, VariantPriceSettings>;
+};
+
+// ============================================================
+// Main Component
+// ============================================================
 
 interface ProductFormProps {
   mode: "create" | "edit";
@@ -74,46 +103,45 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
     number | null
   >((product as any)?.coreProductId ?? null);
   const [draftVariants, setDraftVariants] = useState<DraftVariant[]>([]);
-  const [selectedBrandIds, setSelectedBrandIds] = useState<number[]>(() => {
-    // Pre-populate from existing product brands (edit mode)
+
+  // === Brand configuration state ===
+  const [brandConfigs, setBrandConfigs] = useState<BrandConfig[]>(() => {
+    // Pre-populate from existing product (edit mode)
     const pbs = (product as any)?.productBrands;
-    if (pbs && Array.isArray(pbs)) return pbs.map((pb: any) => pb.brandId);
-    return [];
+    const existingVPs = (product as any)?.variantPrices;
+    if (!pbs || !Array.isArray(pbs) || pbs.length === 0) return [];
+
+    const configs: BrandConfig[] = [];
+    for (const pb of pbs) {
+      // Find variant prices for this brand
+      const brandVPs = (existingVPs || []).filter(
+        (vp: any) => (vp.brandId ?? null) === pb.brandId || (!vp.brandId && pbs.length === 1),
+      );
+
+      const variantSettings: Record<number, VariantPriceSettings> = {};
+      const selectedVariantIds: number[] = [];
+      for (const vp of brandVPs) {
+        selectedVariantIds.push(vp.variantOptionId);
+        variantSettings[vp.variantOptionId] = {
+          variantOptionId: vp.variantOptionId,
+          brandId: pb.brandId,
+          consumerPrice: vp.consumerPrice || "",
+        };
+      }
+
+      configs.push({
+        brandId: pb.brandId,
+        brandName: pb.brand?.name ?? `Brand #${pb.brandId}`,
+        selectedVariantIds,
+        variantSettings,
+      });
+    }
+    return configs;
   });
 
-  // === Per-variant settings (composite key "brandId:variantOptionId" → settings) ===
-  // For single brand or no brand, key is "0:variantOptionId"
-  const [variantPrices, setVariantPrices] = useState<
-    Record<string, VariantPriceSettings>
-  >(() => {
-    // Pre-populate from existing product variant prices (edit mode)
-    const existing = (product as any)?.variantPrices;
-    if (!existing || !Array.isArray(existing) || existing.length === 0) return {};
-    const map: Record<string, VariantPriceSettings> = {};
-    for (const vp of existing) {
-      const key = `${vp.brandId ?? 0}:${vp.variantOptionId}`;
-      map[key] = {
-        variantOptionId: vp.variantOptionId,
-        brandId: vp.brandId ?? null,
-        variantType: vp.variantType || null,
-        consumerPrice: vp.consumerPrice || "",
-        pricingType: vp.pricingType || "per_unit",
-        orderMin: vp.orderMin || "1",
-        orderMax: vp.orderMax || "",
-        orderIncrement: vp.orderIncrement || "1",
-        orderUnit: vp.orderUnit || "piece",
-        minMarginPercent: vp.minMarginPercent || "",
-        minMarginAmount: vp.minMarginAmount || "",
-        isPackReturnRequired: vp.isPackReturnRequired ?? false,
-        packDepositAmount: vp.packDepositAmount || "",
-        linkedRetailVariantOptionId: vp.linkedRetailVariantOptionId || null,
-        conversionRatio: vp.conversionRatio || "",
-        conversionLossPercent: vp.conversionLossPercent || "0",
-        autoConvert: vp.autoConvert ?? true,
-      };
-    }
-    return map;
-  });
+  // Currently-editing brand (for the inline config panel)
+  const [activeBrandId, setActiveBrandId] = useState<number | null>(null);
+  const [expandedBrandId, setExpandedBrandId] = useState<number | null>(null);
 
   // === Reference data queries ===
   const { data: typesData } = useQuery(
@@ -144,6 +172,11 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   );
   const coreProducts = coreProductsData?.coreProducts ?? [];
 
+  // ALL brands (global, unrestricted)
+  const { data: allBrandsData } = useQuery(
+    orpc.brand.getAll.queryOptions(),
+  );
+  const allBrands = Array.isArray(allBrandsData) ? allBrandsData : [];
 
   const isEdit = mode === "edit";
 
@@ -160,6 +193,12 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   const filteredSubcategories = selectedCategory
     ? allSubcategories.filter((sc: any) => sc.categoryId === selectedCategory)
     : [];
+
+  // Brands already configured (exclude from add-brand dropdown)
+  const configuredBrandIds = new Set(brandConfigs.map((bc) => bc.brandId));
+  const availableBrands = allBrands.filter(
+    (b: any) => !configuredBrandIds.has(b.id),
+  );
 
   const handleError = () => {
     toast.error(
@@ -184,12 +223,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
         }
       }
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-      const count = (result as any).count ?? 1;
-      if (count > 1) {
-        toast.success(`${count} products created (one per brand)`);
-      } else {
-        toast.success("Product created successfully");
-      }
+      toast.success("Product created successfully");
       router.push("/dashboard/admin/products");
     },
     onError: handleError,
@@ -253,34 +287,26 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
       onSubmit: isEdit ? updateProductSchema : createProductSchema,
     },
     onSubmit: async ({ value }) => {
-      // Build variant prices array from state (full settings per variant)
-      const vpArray = Object.values(variantPrices)
-        .filter((vp) => vp && vp.variantOptionId)
-        .map((vp) => ({
-          variantOptionId: vp.variantOptionId,
-          brandId: vp.brandId || null,
-          variantType: (vp.variantType || null) as "trade" | "retail" | null,
-          consumerPrice: vp.consumerPrice || "0",
-          pricingType: (vp.pricingType || "per_unit") as "per_unit" | "bulk_rate",
-          orderMin: vp.orderMin || "1",
-          orderMax: vp.orderMax || null,
-          orderIncrement: vp.orderIncrement || "1",
-          orderUnit: vp.orderUnit || "piece",
-          minMarginPercent: vp.minMarginPercent || null,
-          minMarginAmount: vp.minMarginAmount || null,
-          isPackReturnRequired: vp.isPackReturnRequired ?? false,
-          packDepositAmount: vp.packDepositAmount || null,
-          // Conversion
-          linkedRetailVariantOptionId: vp.linkedRetailVariantOptionId || null,
-          conversionRatio: vp.conversionRatio || null,
-          conversionLossPercent: vp.conversionLossPercent || "0",
-          autoConvert: vp.autoConvert ?? true,
-        }));
+      // Build variant prices array from brand configs
+      const vpArray: any[] = [];
+      for (const bc of brandConfigs) {
+        for (const voId of bc.selectedVariantIds) {
+          const settings = bc.variantSettings[voId];
+          if (!settings) continue;
+          vpArray.push({
+            variantOptionId: settings.variantOptionId,
+            brandId: bc.brandId,
+            consumerPrice: settings.consumerPrice || "0",
+          });
+        }
+      }
+
+      const brandIds = brandConfigs.map((bc) => bc.brandId);
 
       const payload = {
         ...value,
         coreProductId: selectedCoreProductId,
-        brandIds: selectedBrandIds.length > 0 ? selectedBrandIds : undefined,
+        brandIds: brandIds.length > 0 ? brandIds : undefined,
         variantPrices: vpArray.length > 0 ? vpArray : undefined,
       };
 
@@ -311,6 +337,76 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
         form.setFieldValue("coreProductId", cp.id);
       }
     }
+  };
+
+  // Add a brand configuration
+  const handleAddBrand = (brandId: number) => {
+    const brand = allBrands.find((b: any) => b.id === brandId);
+    if (!brand) return;
+
+    const newConfig: BrandConfig = {
+      brandId: brand.id,
+      brandName: brand.name,
+      selectedVariantIds: [],
+      variantSettings: {},
+    };
+
+    setBrandConfigs((prev) => [...prev, newConfig]);
+    setActiveBrandId(brandId);
+    setExpandedBrandId(brandId);
+  };
+
+  // Remove a brand configuration
+  const handleRemoveBrand = (brandId: number) => {
+    setBrandConfigs((prev) => prev.filter((bc) => bc.brandId !== brandId));
+    if (activeBrandId === brandId) setActiveBrandId(null);
+    if (expandedBrandId === brandId) setExpandedBrandId(null);
+  };
+
+  // Toggle variant inclusion for a brand
+  const handleToggleVariant = (brandId: number, variantOptionId: number, variantOption: any) => {
+    setBrandConfigs((prev) =>
+      prev.map((bc) => {
+        if (bc.brandId !== brandId) return bc;
+        const isIncluded = bc.selectedVariantIds.includes(variantOptionId);
+        if (isIncluded) {
+          const newIds = bc.selectedVariantIds.filter((id) => id !== variantOptionId);
+          const { [variantOptionId]: _, ...rest } = bc.variantSettings;
+          return { ...bc, selectedVariantIds: newIds, variantSettings: rest };
+        } else {
+          return {
+            ...bc,
+            selectedVariantIds: [...bc.selectedVariantIds, variantOptionId],
+            variantSettings: {
+              ...bc.variantSettings,
+              [variantOptionId]: makeDefaultSettings(variantOptionId, brandId),
+            },
+          };
+        }
+      }),
+    );
+  };
+
+  // Update a variant setting for a brand
+  const updateBrandVariantField = (
+    brandId: number,
+    variantOptionId: number,
+    field: keyof VariantPriceSettings,
+    value: any,
+  ) => {
+    setBrandConfigs((prev) =>
+      prev.map((bc) => {
+        if (bc.brandId !== brandId) return bc;
+        const current = bc.variantSettings[variantOptionId] ?? makeDefaultSettings(variantOptionId, brandId);
+        return {
+          ...bc,
+          variantSettings: {
+            ...bc.variantSettings,
+            [variantOptionId]: { ...current, [field]: value },
+          },
+        };
+      }),
+    );
   };
 
   return (
@@ -526,98 +622,143 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       </Field>
                     </div>
 
-                    {selectedCoreProduct && (
-                      <div className="bg-muted/50 rounded-lg p-4 text-sm space-y-2">
-                        <p className="font-medium text-green-600">
-                          ✓ Core Identity Selected
-                        </p>
-                        <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-                          <span>Name: <span className="text-foreground font-medium">{selectedCoreProduct.name}</span></span>
-                          <span>Category: <span className="text-foreground font-medium">{selectedCoreProduct.category?.name}</span></span>
-                          <span>Brands: <span className="text-foreground font-medium">{selectedCoreProduct.brands?.length ?? 0} linked</span></span>
-                          <span>SKU: <span className="text-foreground font-mono">{selectedCoreProduct.sku}</span></span>
-                        </div>
-                      </div>
-                    )}
+
                   </CardContent>
                 </Card>
               )}
 
-              {/* ── 2. Brand Selection (Multi) ── */}
-              {selectedCoreProduct && selectedCoreProduct.brands?.length > 0 && (
+              {/* ── 1b. Product Name (editable, separate from core identity) ── */}
+              {selectedCoreProduct && (
+                <Card>
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center gap-2">
+                      <Tag className="h-4 w-4 text-muted-foreground" />
+                      <CardTitle className="text-base">Product Name</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Set the display name for this product. Pre-filled from Core Identity but can be customized.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <form.Field name="name">
+                        {(field) => (
+                          <Field>
+                            <FieldLabel>Product Name *</FieldLabel>
+                            <Input
+                              value={field.state.value}
+                              onChange={(e) => {
+                                field.handleChange(e.target.value);
+                                autoGenerateSlugFromName(e.target.value);
+                              }}
+                              placeholder="Enter product display name"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              This name will be used as the product label
+                            </p>
+                          </Field>
+                        )}
+                      </form.Field>
+                      <form.Field name="slug">
+                        {(field) => (
+                          <Field>
+                            <FieldLabel>Slug</FieldLabel>
+                            <Input
+                              value={field.state.value}
+                              onChange={(e) =>
+                                field.handleChange(e.target.value)
+                              }
+                              placeholder="product-slug"
+                            />
+                          </Field>
+                        )}
+                      </form.Field>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ── 2. Brand Selection + Variant Configuration ── */}
+              {selectedCoreProduct && (
                 <Card>
                   <CardHeader className="pb-4">
                     <div className="flex items-center gap-2">
                       <Tag className="h-4 w-4 text-muted-foreground" />
                       <CardTitle className="text-base">
-                        Brand Selection
+                        Brand & Variant Configuration
                       </CardTitle>
                     </div>
                     <CardDescription>
-                      Select which brands this product stocks (from Core
-                      Identity's linked brands)
+                      Select brands and configure variants for each. You must complete variant setup before adding another brand.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {selectedCoreProduct.brands.map((b: any) => {
-                        const isChecked = selectedBrandIds.includes(b.brandId);
-                        return (
-                          <label
-                            key={b.brandId}
-                            className={`flex items-center gap-2 border rounded-md px-3 py-2 cursor-pointer transition-colors ${
-                              isChecked
-                                ? "border-primary bg-primary/5"
-                                : "border-border hover:border-primary/30"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="accent-primary h-4 w-4"
-                              checked={isChecked}
-                              onChange={() => {
-                                setSelectedBrandIds((prev) =>
-                                  isChecked
-                                    ? prev.filter((id) => id !== b.brandId)
-                                    : [...prev, b.brandId],
-                                );
-                              }}
-                            />
-                            <span className="text-sm font-medium">
-                              {b.brand.name}
-                            </span>
-                            {b.isDefault && (
-                              <Badge variant="secondary" className="text-[10px] ml-auto">
-                                Default
-                              </Badge>
+                  <CardContent className="space-y-4">
+                    {/* Saved brand configs */}
+                    {brandConfigs.map((bc) => (
+                      <BrandConfigCard
+                        key={bc.brandId}
+                        config={bc}
+                        coreProductId={selectedCoreProductId!}
+                        isExpanded={expandedBrandId === bc.brandId}
+                        onToggleExpand={() =>
+                          setExpandedBrandId(
+                            expandedBrandId === bc.brandId ? null : bc.brandId,
+                          )
+                        }
+                        onRemove={() => handleRemoveBrand(bc.brandId)}
+                        onToggleVariant={(voId, vo) =>
+                          handleToggleVariant(bc.brandId, voId, vo)
+                        }
+                        onUpdateField={(voId, field, value) =>
+                          updateBrandVariantField(bc.brandId, voId, field, value)
+                        }
+                      />
+                    ))}
+
+                    {/* Add Brand Selector */}
+                    <div className="border border-dashed rounded-lg p-4">
+                      <div className="flex items-center gap-3">
+                        <Plus className="h-4 w-4 text-muted-foreground" />
+                        <Select
+                          value=""
+                          onValueChange={(v) => {
+                            const val = Number(v);
+                            if (val) handleAddBrand(val);
+                          }}
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Add a brand..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableBrands.length === 0 ? (
+                              <SelectItem value="none" disabled>
+                                No more brands available
+                              </SelectItem>
+                            ) : (
+                              availableBrands.map((b: any) => (
+                                <SelectItem key={b.id} value={String(b.id)}>
+                                  {b.name}
+                                </SelectItem>
+                              ))
                             )}
-                          </label>
-                        );
-                      })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {brandConfigs.length === 0 && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Select a brand to begin configuring variants for this product.
+                        </p>
+                      )}
                     </div>
-                    {selectedBrandIds.length > 0 && (
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {selectedBrandIds.length} brand{selectedBrandIds.length > 1 ? "s" : ""} selected
-                        {selectedBrandIds.length > 1 && (
-                          <span className="text-blue-600 dark:text-blue-400 ml-1">
-                            — one product will be created per brand
-                          </span>
-                        )}
+
+                    {brandConfigs.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {brandConfigs.length} brand{brandConfigs.length > 1 ? "s" : ""} configured
+                        {" "} — one product will be created with all brands attached
                       </p>
                     )}
                   </CardContent>
                 </Card>
-              )}
-
-              {/* ── 3. Variant Structure (read-only) + Pricing ── */}
-              {selectedCoreProduct && (
-                <VariantPricingCard
-                  coreProductId={selectedCoreProduct.id}
-                  variantPrices={variantPrices}
-                  setVariantPrices={setVariantPrices}
-                  selectedBrandIds={selectedBrandIds}
-                  brands={selectedCoreProduct.brands ?? []}
-                />
               )}
 
               {/* ── Legacy Variants (edit mode only, for backward compat) ── */}
@@ -634,56 +775,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 />
               )}
 
-              {/* ── 4. Delivery Cost ── */}
-              <Card>
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-2">
-                    <Truck className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle className="text-base">Unit Size & Delivery</CardTitle>
-                  </div>
-                  <CardDescription>
-                    Define the total unit size (carton/sack) and delivery cost.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <form.Field name="unitSize">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel>Total Unit Size (KG)</FieldLabel>
-                          <Input
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="e.g. 50 for 50KG carton"
-                            type="number"
-                            step="1"
-                            min="1"
-                            className="w-full"
-                          />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Conversion: unitSize ÷ variant size = packs per unit
-                          </p>
-                        </Field>
-                      )}
-                    </form.Field>
-                    <form.Field name="deliveryCostPerCarton">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel>Per Carton (৳)</FieldLabel>
-                          <Input
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="e.g. 50"
-                            type="number"
-                            step="0.01"
-                            className="w-full"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
-                  </div>
-                </CardContent>
-              </Card>
+
 
               {/* ── 5. Product Details ── */}
               <Card>
@@ -1069,49 +1161,49 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   );
 }
 
-// ============================================================
-// Per-variant settings type
-// ============================================================
-
-export type VariantPriceSettings = {
-  variantOptionId: number;
-  brandId?: number | null;
-  variantType?: "trade" | "retail" | null;
-  consumerPrice: string;
-  pricingType: string;
-  orderMin: string;
-  orderMax: string;
-  orderIncrement: string;
-  orderUnit: string;
-  minMarginPercent: string;
-  minMarginAmount: string;
-  isPackReturnRequired: boolean;
-  packDepositAmount: string;
-  // Conversion (trade only)
-  linkedRetailVariantOptionId?: number | null;
-  conversionRatio: string;
-  conversionLossPercent: string;
-  autoConvert: boolean;
-};
 
 // ============================================================
-// Variant Pricing Card — shows read-only variants with per-variant config
+// Helper: default variant settings
 // ============================================================
 
-function VariantPricingCard({
+function makeDefaultSettings(
+  variantOptionId: number,
+  brandId: number | null,
+): VariantPriceSettings {
+  return {
+    variantOptionId,
+    brandId,
+    consumerPrice: "",
+  };
+}
+
+
+// ============================================================
+// Brand Config Card — collapsible per-brand variant config
+// ============================================================
+
+function BrandConfigCard({
+  config,
   coreProductId,
-  variantPrices,
-  setVariantPrices,
-  selectedBrandIds,
-  brands,
+  isExpanded,
+  onToggleExpand,
+  onRemove,
+  onToggleVariant,
+  onUpdateField,
 }: {
+  config: BrandConfig;
   coreProductId: number;
-  variantPrices: Record<string, VariantPriceSettings>;
-  setVariantPrices: (prices: Record<string, VariantPriceSettings>) => void;
-  selectedBrandIds: number[];
-  brands: any[];
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onRemove: () => void;
+  onToggleVariant: (variantOptionId: number, variantOption: any) => void;
+  onUpdateField: (
+    variantOptionId: number,
+    field: keyof VariantPriceSettings,
+    value: any,
+  ) => void;
 }) {
-  // Fetch the core product's linked variant options
+  // Fetch core product's linked variant options
   const { data: cpData } = useQuery(
     orpc.adminCoreProduct.getById.queryOptions({
       input: { id: coreProductId },
@@ -1119,392 +1211,95 @@ function VariantPricingCard({
   );
 
   const linkedVariants = cpData?.coreProduct?.variantLinks ?? [];
-  const isMultiBrand = selectedBrandIds.length > 1;
-
-  // Build brand lookup: id → name
-  const brandMap = new Map<number, string>();
-  for (const b of brands) {
-    brandMap.set(b.brandId, b.brand?.name ?? `Brand #${b.brandId}`);
-  }
-
-  // Composite key helper
-  const makeKey = (brandId: number | null, variantOptionId: number) =>
-    `${brandId ?? 0}:${variantOptionId}`;
-
-  const getSettings = (brandId: number | null, variantOptionId: number): VariantPriceSettings => {
-    const key = makeKey(brandId, variantOptionId);
-    return variantPrices[key] ?? {
-      variantOptionId,
-      brandId: brandId,
-      variantType: null,
-      consumerPrice: "",
-      pricingType: "per_unit",
-      orderMin: "1",
-      orderMax: "",
-      orderIncrement: "1",
-      orderUnit: "piece",
-      minMarginPercent: "",
-      minMarginAmount: "",
-      isPackReturnRequired: false,
-      packDepositAmount: "",
-      linkedRetailVariantOptionId: null,
-      conversionRatio: "",
-      conversionLossPercent: "0",
-      autoConvert: true,
-    };
-  };
-
-  const updateField = (brandId: number | null, variantOptionId: number, field: keyof VariantPriceSettings, value: any) => {
-    const key = makeKey(brandId, variantOptionId);
-    const current = getSettings(brandId, variantOptionId);
-    setVariantPrices({
-      ...variantPrices,
-      [key]: { ...current, variantOptionId, brandId, [field]: value },
-    });
-  };
-
-  // Render the variant list for a specific brand (or null for single-brand)
-  const renderVariantList = (brandId: number | null) => (
-    <div className="space-y-3">
-      {linkedVariants.map((link: any) => {
-        const v = link.variantOption;
-        const settings = getSettings(brandId, v.id);
-        const isTrade = settings.variantType === "trade";
-
-        return (
-          <div
-            key={link.id}
-            className="border rounded-lg p-4 space-y-3 hover:border-primary/30 transition-colors"
-          >
-            {/* Row 1: Variant identity (read-only) + Type selector + Price */}
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_130px_130px_120px] gap-3 items-end">
-              {/* Variant info (pre-populated, read-only) */}
-              <div className="space-y-0.5">
-                <p className="text-sm font-medium">{v.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {v.size ? `${v.size} ${v.unit}` : v.unit}
-                  {v.variantType && (
-                    <Badge variant="outline" className="ml-2 text-[10px]">
-                      {v.variantType === "pack" ? "Pack" : "Loose"}
-                    </Badge>
-                  )}
-                </p>
-              </div>
-
-              {/* Channel: Trade / Retail */}
-              <Field>
-                <FieldLabel className="text-xs">Channel</FieldLabel>
-                <Select
-                  value={settings.variantType ?? "none"}
-                  onValueChange={(val) =>
-                    updateField(brandId, v.id, "variantType", val === "none" ? null : val)
-                  }
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Not set</SelectItem>
-                    <SelectItem value="trade">Trade (B2B)</SelectItem>
-                    <SelectItem value="retail">Retail (B2C)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-
-              {/* Pricing Type (auto-determined from variant type) */}
-              <Field>
-                <FieldLabel className="text-xs">Pricing</FieldLabel>
-                <div className="h-8 flex items-center px-3 border rounded-md bg-muted/50 text-xs text-muted-foreground">
-                  {v.variantType === "loose" ? "Per KG" : "Per Unit"}
-                </div>
-              </Field>
-
-              {/* Price — set by wholesaler, not admin */}
-              <Field>
-                <FieldLabel className="text-xs">
-                  Price (৳)
-                </FieldLabel>
-                <div className="h-8 flex items-center px-3 border rounded-md bg-muted/50 text-xs text-muted-foreground italic">
-                  Set by wholesaler
-                </div>
-              </Field>
-            </div>
-
-            {/* Wholesaler pricing notice */}
-            <p className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 rounded px-2 py-1">
-              💰 Price will be set by the wholesaler/warehouse owner, not by admin.
-            </p>
-
-            {/* Row 2: Order Rules (collapsible) */}
-            <details className="group">
-              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none">
-                ▸ Order rules &amp; advanced settings
-              </summary>
-              <div className="mt-3 pt-3 border-t space-y-3">
-                {/* Order rules */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Field>
-                    <FieldLabel className="text-xs">Min Qty</FieldLabel>
-                    <Input
-                      className="h-8 text-xs"
-                      value={settings.orderMin}
-                      onChange={(e) =>
-                        updateField(brandId, v.id, "orderMin", e.target.value)
-                      }
-                      placeholder="1"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel className="text-xs">Max Qty</FieldLabel>
-                    <Input
-                      className="h-8 text-xs"
-                      value={settings.orderMax}
-                      onChange={(e) =>
-                        updateField(brandId, v.id, "orderMax", e.target.value)
-                      }
-                      placeholder="No limit"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel className="text-xs">Step</FieldLabel>
-                    <Input
-                      className="h-8 text-xs"
-                      value={settings.orderIncrement}
-                      onChange={(e) =>
-                        updateField(brandId, v.id, "orderIncrement", e.target.value)
-                      }
-                      placeholder="1"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel className="text-xs">Order Unit</FieldLabel>
-                    <Select
-                      value={settings.orderUnit}
-                      onValueChange={(val) =>
-                        updateField(brandId, v.id, "orderUnit", val)
-                      }
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="piece">Piece</SelectItem>
-                        <SelectItem value="kg">KG</SelectItem>
-                        <SelectItem value="carton">Carton</SelectItem>
-                        <SelectItem value="sack">Sack</SelectItem>
-                        <SelectItem value="box">Box</SelectItem>
-                        <SelectItem value="liter">Liter</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-
-                {/* Trade-only: Margin rules + Pack return */}
-                {isTrade && (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field>
-                        <FieldLabel className="text-xs">
-                          Min Margin (%)
-                        </FieldLabel>
-                        <Input
-                          className="h-8 text-xs"
-                          value={settings.minMarginPercent}
-                          onChange={(e) =>
-                            updateField(brandId, v.id, "minMarginPercent", e.target.value)
-                          }
-                          placeholder="e.g. 5"
-                        />
-                      </Field>
-                      <Field>
-                        <FieldLabel className="text-xs">
-                          Min Margin (৳)
-                        </FieldLabel>
-                        <Input
-                          className="h-8 text-xs"
-                          value={settings.minMarginAmount}
-                          onChange={(e) =>
-                            updateField(brandId, v.id, "minMarginAmount", e.target.value)
-                          }
-                          placeholder="e.g. 50"
-                        />
-                      </Field>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 items-center">
-                      <div className="flex items-center justify-between border rounded-lg p-2">
-                        <span className="text-xs">Pack Return Required</span>
-                        <Switch
-                          checked={settings.isPackReturnRequired}
-                          onCheckedChange={(val) =>
-                            updateField(brandId, v.id, "isPackReturnRequired", val)
-                          }
-                        />
-                      </div>
-                      {settings.isPackReturnRequired && (
-                        <Field>
-                          <FieldLabel className="text-xs">
-                            Deposit (৳)
-                          </FieldLabel>
-                          <Input
-                            className="h-8 text-xs"
-                            value={settings.packDepositAmount}
-                            onChange={(e) =>
-                              updateField(brandId, v.id, "packDepositAmount", e.target.value)
-                            }
-                            placeholder="e.g. 200"
-                          />
-                        </Field>
-                      )}
-                    </div>
-
-                    {/* Conversion: Trade → Retail */}
-                    <div className="space-y-2 pt-2 border-t">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Conversion Rules
-                      </p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field>
-                          <FieldLabel className="text-xs">
-                            Target Retail Variant
-                          </FieldLabel>
-                          <Select
-                            value={settings.linkedRetailVariantOptionId?.toString() ?? "none"}
-                            onValueChange={(val) =>
-                              updateField(brandId, v.id, "linkedRetailVariantOptionId",
-                                val === "none" ? null : Number(val))
-                            }
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="Select retail variant" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {linkedVariants
-                                .filter((lv: any) => {
-                                  const otherId = lv.variantOption.id;
-                                  const otherSettings = getSettings(brandId, otherId);
-                                  return otherSettings.variantType === "retail" && otherId !== v.id;
-                                })
-                                .map((lv: any) => (
-                                  <SelectItem key={lv.variantOption.id} value={lv.variantOption.id.toString()}>
-                                    {lv.variantOption.name}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field>
-                          <FieldLabel className="text-xs">
-                            Conversion Ratio (1:{settings.conversionRatio || "?"})
-                          </FieldLabel>
-                          <Input
-                            className="h-8 text-xs"
-                            type="number"
-                            value={settings.conversionRatio}
-                            onChange={(e) =>
-                              updateField(brandId, v.id, "conversionRatio", e.target.value)
-                            }
-                            placeholder="e.g. 10"
-                          />
-                        </Field>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 items-center">
-                        <Field>
-                          <FieldLabel className="text-xs">
-                            Loss %
-                          </FieldLabel>
-                          <Input
-                            className="h-8 text-xs"
-                            type="number"
-                            step="0.1"
-                            value={settings.conversionLossPercent}
-                            onChange={(e) =>
-                              updateField(brandId, v.id, "conversionLossPercent", e.target.value)
-                            }
-                            placeholder="0"
-                          />
-                        </Field>
-                        <div className="flex items-center justify-between border rounded-lg p-2">
-                          <span className="text-xs">Auto Convert on Delivery</span>
-                          <Switch
-                            checked={settings.autoConvert}
-                            onCheckedChange={(val) =>
-                              updateField(brandId, v.id, "autoConvert", val)
-                            }
-                          />
-                        </div>
-                      </div>
-                      {settings.linkedRetailVariantOptionId && settings.conversionRatio && (
-                        <p className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 rounded px-2 py-1">
-                          📦 1 × {v.name} → {settings.conversionRatio} ×{" "}
-                          {linkedVariants.find((lv: any) =>
-                            lv.variantOption.id === settings.linkedRetailVariantOptionId
-                          )?.variantOption?.name || "Retail"}
-                          {Number(settings.conversionLossPercent) > 0 &&
-                            ` (${settings.conversionLossPercent}% loss)`}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </details>
-          </div>
-        );
-      })}
-    </div>
-  );
 
   return (
-    <Card>
-      <CardHeader className="pb-4">
-        <div className="flex items-center gap-2">
-          <Package className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-base">Variant Configuration</CardTitle>
-        </div>
-        <CardDescription>
-          {isMultiBrand
-            ? "Configure variants independently for each brand. Each brand will become a separate product."
-            : "Variants are auto-populated from the Core Identity. Configure type, pricing, and order rules for each."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {linkedVariants.length === 0 ? (
-          <div className="text-center py-6 border border-dashed rounded-lg">
-            <Package className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground">
-              No variants linked to this Core Identity.
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Link variants from the Core Product detail page first.
-            </p>
-          </div>
-        ) : isMultiBrand ? (
-          /* ── Multi-Brand: Tabs per brand ── */
-          <Tabs defaultValue={String(selectedBrandIds[0])}>
-            <TabsList className="w-full">
-              {selectedBrandIds.map((bId) => (
-                <TabsTrigger key={bId} value={String(bId)} className="text-xs">
-                  {brandMap.get(bId) ?? `Brand #${bId}`}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {selectedBrandIds.map((bId) => (
-              <TabsContent key={bId} value={String(bId)} className="mt-3">
-                <div className="text-xs text-muted-foreground mb-3 bg-muted/50 rounded px-3 py-2">
-                  🏷️ Configuring variants for <span className="font-semibold text-foreground">{brandMap.get(bId)}</span> — this will create a separate product for this brand.
-                </div>
-                {renderVariantList(bId)}
-              </TabsContent>
-            ))}
-          </Tabs>
+    <div className="space-y-3">
+      {/* Brand header — flat row */}
+      <div
+        className="flex items-center gap-3 cursor-pointer group"
+        onClick={onToggleExpand}
+      >
+        {isExpanded ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
         ) : (
-          /* ── Single Brand or No Brand: flat list ── */
-          renderVariantList(selectedBrandIds.length === 1 ? selectedBrandIds[0] : null)
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
         )}
-      </CardContent>
-    </Card>
+        <span className="font-semibold text-sm">{config.brandName}</span>
+        <Badge variant="outline" className="text-[10px] font-normal">
+          {config.selectedVariantIds.length} variant{config.selectedVariantIds.length !== 1 ? "s" : ""}
+        </Badge>
+        <div className="flex-1" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-destructive/60 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="pl-7 space-y-3">
+          {/* Variant selection + pricing — unified list */}
+          <div className="space-y-1.5">
+            {linkedVariants.map((link: any) => {
+              const v = link.variantOption;
+              const isIncluded = config.selectedVariantIds.includes(v.id);
+              const settings = isIncluded
+                ? (config.variantSettings[v.id] ?? makeDefaultSettings(v.id, config.brandId))
+                : null;
+
+              return (
+                <div
+                  key={v.id}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
+                    isIncluded
+                      ? "bg-muted/50"
+                      : "hover:bg-muted/30"
+                  }`}
+                >
+                  <Checkbox
+                    checked={isIncluded}
+                    onCheckedChange={() => onToggleVariant(v.id, v)}
+                  />
+                  <span className={`text-sm flex-1 min-w-0 ${isIncluded ? "text-foreground" : "text-muted-foreground"}`}>
+                    {v.name}
+                    {v.size && (
+                      <span className="text-muted-foreground ml-1">· {v.size} {v.unit}</span>
+                    )}
+                  </span>
+                  {isIncluded && settings && (
+                    <div className="relative w-24 shrink-0">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">৳</span>
+                      <Input
+                        className="h-7 text-sm pl-6 pr-2 text-right"
+                        type="number"
+                        step="0.01"
+                        value={settings.consumerPrice}
+                        onChange={(e) =>
+                          onUpdateField(v.id, "consumerPrice", e.target.value)
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <Separator />
+    </div>
   );
 }
+
 
 

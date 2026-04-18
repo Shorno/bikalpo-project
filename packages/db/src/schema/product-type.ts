@@ -29,10 +29,6 @@ export const inventoryBehaviourEnum = pgEnum("inventory_behaviour", [
  *
  * Hierarchy: Type → Category → SubCategory
  *
- * Each type defines which product attributes are relevant:
- *   - Grocery: Brand ✓, Color ✗, Size ✓, Design ✗, Variant ✓
- *   - Fashion: Brand ✓, Color ✓, Size ✓, Design ✓, Variant ✓
- *
  * The `inventoryBehaviour` field controls the stock conversion logic.
  */
 export const productType = pgTable("product_type", {
@@ -41,13 +37,6 @@ export const productType = pgTable("product_type", {
     slug: varchar("slug", { length: 100 }).notNull().unique(),
     description: text("description"),
     image: varchar("image", { length: 255 }),
-
-    // Dynamic attribute toggles — enable/disable per product type
-    enableBrand: boolean("enable_brand").default(true).notNull(),
-    enableColor: boolean("enable_color").default(false).notNull(),
-    enableSize: boolean("enable_size").default(true).notNull(),
-    enableDesign: boolean("enable_design").default(false).notNull(),
-    enableVariant: boolean("enable_variant").default(true).notNull(),
 
     // Inventory behaviour for this product type
     inventoryBehaviour: inventoryBehaviourEnum("inventory_behaviour")

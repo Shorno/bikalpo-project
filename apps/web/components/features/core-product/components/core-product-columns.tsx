@@ -9,7 +9,6 @@ import EditCoreProductDialog from "./edit-core-product-dialog";
 import DeleteCoreProductDialog from "./delete-core-product-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 export interface CoreProductWithRelations {
   id: number;
@@ -20,9 +19,6 @@ export interface CoreProductWithRelations {
   image: string;
   categoryId: number;
   subCategoryId: number | null;
-  brandSupport: "multi_brand" | "single_brand";
-  status: "active" | "draft" | "inactive";
-  displayOrder: number;
   createdAt: Date;
   updatedAt: Date;
   category: {
@@ -108,32 +104,7 @@ export function useCoreProductColumns() {
         ),
         size: 140,
       },
-      {
-        accessorKey: "status",
-        header: () => <div className="text-center">Status</div>,
-        cell: ({ row }) => {
-          const status = row.getValue("status") as string;
-          return (
-            <div className="flex justify-center">
-              <Badge
-                variant={status === "active" ? "default" : "secondary"}
-                className={cn(
-                  "transition-colors",
-                  status === "active" && "bg-green-600 hover:bg-green-700",
-                  status === "draft" && "bg-yellow-600 hover:bg-yellow-700",
-                )}
-              >
-                {status === "active"
-                  ? "Active"
-                  : status === "draft"
-                    ? "Draft"
-                    : "Inactive"}
-              </Badge>
-            </div>
-          );
-        },
-        size: 100,
-      },
+
       {
         id: "actions",
         header: () => <div className="text-center">Actions</div>,

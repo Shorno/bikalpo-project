@@ -37,7 +37,7 @@ const PLANS = [
       "Up to 200 products",
       "Advanced analytics",
       "B2B + B2C ordering",
-      "Stock ledger",
+      "Inventory tracking",
       "3 delivery men",
       "SMS notifications",
     ],

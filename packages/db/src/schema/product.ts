@@ -70,9 +70,6 @@ export const product = pgTable("product", {
   ),
 
   size: varchar("size", { length: 50 }).notNull(),
-  /** Total unit size in KG (e.g. 50 for 50KG carton, 7 for 7KG sack).
-   *  Used for conversion: unitSize / variant.size = number of packs. */
-  unitSize: decimal("unit_size", { precision: 10, scale: 2 }),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
 
   stockQuantity: integer("stock_quantity").default(0).notNull(),
@@ -117,11 +114,6 @@ export const product = pgTable("product", {
     .default(false)
     .notNull(),
 
-  /** Default delivery cost per carton (nullable — falls back to system default) */
-  deliveryCostPerCarton: decimal("delivery_cost_per_carton", {
-    precision: 10,
-    scale: 2,
-  }),
 
   /** Product visibility: public or private */
   visibility: visibilityEnum("visibility").default("public").notNull(),
@@ -182,9 +174,6 @@ export const productVariantPrice = pgTable("product_variant_price", {
     .notNull()
     .references(() => variantOption.id, { onDelete: "cascade" }),
 
-  /** Trade (B2B for warehouses/shops) or Retail (B2C for consumers) */
-  variantType: varchar("variant_type", { length: 10 }),
-
   /** Consumer reference price for this variant (seller can override) */
   consumerPrice: decimal("consumer_price", {
     precision: 10,
@@ -192,45 +181,6 @@ export const productVariantPrice = pgTable("product_variant_price", {
   })
     .default("0")
     .notNull(),
-
-  /** Pricing model: per_unit or bulk_rate */
-  pricingType: varchar("pricing_type", { length: 20 }).default("per_unit").notNull(),
-
-  // === Order Rules ===
-  /** Minimum order quantity */
-  orderMin: varchar("order_min", { length: 20 }).default("1"),
-  /** Maximum order quantity (null = no limit) */
-  orderMax: varchar("order_max", { length: 20 }),
-  /** Order increment step */
-  orderIncrement: varchar("order_increment", { length: 20 }).default("1"),
-  /** Order unit (piece, kg, carton, etc.) */
-  orderUnit: varchar("order_unit", { length: 30 }).default("piece"),
-
-  // === Margin Rules (Trade only) ===
-  /** Minimum margin percentage for shop owners */
-  minMarginPercent: varchar("min_margin_percent", { length: 10 }),
-  /** Minimum margin amount (৳) */
-  minMarginAmount: varchar("min_margin_amount", { length: 20 }),
-
-  // === Pack Return (Trade only) ===
-  /** Whether empty pack return is required */
-  isPackReturnRequired: boolean("is_pack_return_required").default(false).notNull(),
-  /** Deposit amount for pack return */
-  packDepositAmount: decimal("pack_deposit_amount", { precision: 10, scale: 2 }),
-
-  // === Conversion (Trade → Retail) ===
-  /** Target retail variant option for auto-conversion (e.g. 50KG Sack → 5KG Pack) */
-  linkedRetailVariantOptionId: integer("linked_retail_variant_option_id")
-    .references(() => variantOption.id, { onDelete: "set null" }),
-
-  /** How many retail units per 1 trade unit (e.g. 10 packs per carton) */
-  conversionRatio: decimal("conversion_ratio", { precision: 10, scale: 2 }),
-
-  /** Percentage loss during conversion (e.g. 2% spillage) */
-  conversionLossPercent: decimal("conversion_loss_percent", { precision: 5, scale: 2 }).default("0"),
-
-  /** Whether conversion runs automatically on B2B delivery */
-  autoConvert: boolean("auto_convert").default(true).notNull(),
 
   /** Sort order within this product */
   sortOrder: integer("sort_order").default(0).notNull(),

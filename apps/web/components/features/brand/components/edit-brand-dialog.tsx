@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import ImageUploader from "@/components/ImageUploader";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,7 +25,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
+
 import { updateBrandSchema } from "@/schema/brand.schema";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -59,9 +59,6 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
       id: brand.id,
       name: brand.name,
       slug: brand.slug,
-      logo: brand.logo,
-      isActive: brand.isActive,
-      displayOrder: brand.displayOrder,
     },
 
     validators: {
@@ -101,26 +98,7 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
           }}
           className="space-y-4"
         >
-          {/* Logo Uploader */}
-          <form.Field name="logo">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Brand Logo</FieldLabel>
-                  <ImageUploader
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                    folder="brands"
-                    maxSizeMB={5}
-                  />
-                  <FieldDescription>Upload a logo (max 5MB)</FieldDescription>
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
+
 
           {/* Brand Name */}
           <form.Field name="name">
@@ -176,53 +154,7 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
             }}
           </form.Field>
 
-          {/* Display Order */}
-          <form.Field name="displayOrder">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Display Order</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    type="number"
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(Number(e.target.value))}
-                    aria-invalid={isInvalid}
-                    placeholder="0"
-                    min={0}
-                    autoComplete="off"
-                  />
-                  <FieldDescription>
-                    Lower numbers appear first
-                  </FieldDescription>
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
 
-          {/* Active Status */}
-          <form.Field name="isActive">
-            {(field) => (
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldLabel htmlFor={field.name}>Active Status</FieldLabel>
-                  <FieldDescription>
-                    Inactive brands won&#39;t be visible
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id="isActive"
-                  checked={field.state.value}
-                  onCheckedChange={field.handleChange}
-                />
-              </Field>
-            )}
-          </form.Field>
         </form>
         <DialogFooter>
           <Button

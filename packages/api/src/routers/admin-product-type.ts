@@ -100,13 +100,6 @@ export const adminProductTypeRouter = {
                 slug: z.string().min(1),
                 description: z.string().optional(),
                 image: z.string().optional(),
-                enableBrand: z.boolean().default(true),
-                enableColor: z.boolean().default(false),
-                enableSize: z.boolean().default(true),
-                enableDesign: z.boolean().default(false),
-                enableVariant: z.boolean().default(true),
-
-                isActive: z.boolean().default(true),
                 displayOrder: z.number().default(0),
             }),
         )
@@ -129,13 +122,6 @@ export const adminProductTypeRouter = {
                     slug: input.slug,
                     description: input.description || null,
                     image: input.image || null,
-                    enableBrand: input.enableBrand,
-                    enableColor: input.enableColor,
-                    enableSize: input.enableSize,
-                    enableDesign: input.enableDesign,
-                    enableVariant: input.enableVariant,
-
-                    isActive: input.isActive,
                     displayOrder: input.displayOrder,
                     skuCode,
                 })
@@ -153,13 +139,6 @@ export const adminProductTypeRouter = {
                 slug: z.string().min(1),
                 description: z.string().optional(),
                 image: z.string().optional(),
-                enableBrand: z.boolean(),
-                enableColor: z.boolean(),
-                enableSize: z.boolean(),
-                enableDesign: z.boolean(),
-                enableVariant: z.boolean(),
-
-                isActive: z.boolean().optional(),
                 displayOrder: z.number().optional(),
             }),
         )
@@ -173,13 +152,6 @@ export const adminProductTypeRouter = {
                     slug: data.slug,
                     description: data.description || null,
                     image: data.image || null,
-                    enableBrand: data.enableBrand,
-                    enableColor: data.enableColor,
-                    enableSize: data.enableSize,
-                    enableDesign: data.enableDesign,
-                    enableVariant: data.enableVariant,
-
-                    isActive: data.isActive,
                     displayOrder: data.displayOrder,
                 })
                 .where(eq(productType.id, id))
@@ -253,12 +225,6 @@ export const adminProductTypeRouter = {
                     id: true,
                     name: true,
                     slug: true,
-                    enableBrand: true,
-                    enableColor: true,
-                    enableSize: true,
-                    enableDesign: true,
-                    enableVariant: true,
-
                 },
             });
 

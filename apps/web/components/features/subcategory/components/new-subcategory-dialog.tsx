@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderPlus, Loader, Plus } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import ImageUploader from "@/components/ImageUploader";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Field,
-  FieldContent,
+
   FieldDescription,
   FieldError,
   FieldLabel,
@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+
 import { createSubcategorySchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
 import { client } from "@/utils/orpc";
@@ -77,10 +77,9 @@ export default function NewSubcategoryDialog({
       client.adminSubcategory.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["admin-subcategories"],
+        queryKey: orpc.adminSubcategory.getAllGlobal.key(),
       });
-      queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
+      queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
       toast.success("Subcategory created successfully");
       form.reset();
       setSelectedTypeId("");
@@ -95,9 +94,6 @@ export default function NewSubcategoryDialog({
     defaultValues: {
       name: "",
       slug: "",
-      image: "",
-      isActive: true,
-      displayOrder: 0,
       categoryId: categoryId ?? 0,
     },
 
@@ -227,29 +223,7 @@ export default function NewSubcategoryDialog({
             </div>
           )}
 
-          {/* Image Uploader */}
-          <form.Field name="image">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>
-                    Subcategory Image
-                  </FieldLabel>
-                  <ImageUploader
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                    folder="subcategories"
-                    maxSizeMB={5}
-                  />
-                  {isInvalid && (
-                    <FieldError errors={field.state.meta.errors} />
-                  )}
-                </Field>
-              );
-            }}
-          </form.Field>
+
 
           {/* Name & Slug — side by side */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -312,58 +286,7 @@ export default function NewSubcategoryDialog({
             </form.Field>
           </div>
 
-          {/* Display Order & Active Status — side by side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <form.Field name="displayOrder">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Display Order</FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      type="number"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) =>
-                        field.handleChange(Number(e.target.value))
-                      }
-                      aria-invalid={isInvalid}
-                      placeholder="0"
-                      min={0}
-                      autoComplete="off"
-                    />
-                    <FieldDescription>
-                      Lower numbers appear first
-                    </FieldDescription>
-                    {isInvalid && (
-                      <FieldError errors={field.state.meta.errors} />
-                    )}
-                  </Field>
-                );
-              }}
-            </form.Field>
 
-            <form.Field name="isActive">
-              {(field) => (
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldLabel htmlFor={field.name}>Active Status</FieldLabel>
-                    <FieldDescription>
-                      Inactive subcategories won&apos;t be visible
-                    </FieldDescription>
-                  </FieldContent>
-                  <Switch
-                    id="isActive"
-                    checked={field.state.value}
-                    onCheckedChange={field.handleChange}
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
         </form>
         <DialogFooter>
           <Button

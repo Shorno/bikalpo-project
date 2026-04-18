@@ -31,9 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Separator } from "@/components/ui/separator";
+
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 import type { CoreProductWithRelations } from "./core-product-columns";
@@ -53,12 +51,7 @@ export default function EditCoreProductDialog({
   open,
   onOpenChange,
 }: EditCoreProductDialogProps) {
-  const [selectedBrandIds, setSelectedBrandIds] = React.useState<number[]>(
-    coreProduct.brands.map((b) => b.brandId),
-  );
-  const [defaultBrandId, setDefaultBrandId] = React.useState<number | undefined>(
-    coreProduct.brands.find((b) => b.isDefault)?.brandId,
-  );
+
   const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<number>(coreProduct.categoryId);
 
@@ -66,8 +59,6 @@ export default function EditCoreProductDialog({
 
   // Reset state when coreProduct changes
   React.useEffect(() => {
-    setSelectedBrandIds(coreProduct.brands.map((b) => b.brandId));
-    setDefaultBrandId(coreProduct.brands.find((b) => b.isDefault)?.brandId);
     setSelectedCategoryId(coreProduct.categoryId);
   }, [coreProduct]);
 
@@ -80,8 +71,7 @@ export default function EditCoreProductDialog({
   const { data: categoriesData } = useQuery(orpc.category.getAll.queryOptions());
   const allCategories = Array.isArray(categoriesData) ? categoriesData : [];
 
-  const { data: brandsData } = useQuery(orpc.brand.getAll.queryOptions());
-  const allBrands = Array.isArray(brandsData) ? brandsData : [];
+
 
   const { data: subcategoriesData } = useQuery(
     orpc.adminSubcategory.getAllGlobal.queryOptions({ input: {} }),
@@ -120,9 +110,7 @@ export default function EditCoreProductDialog({
       image: coreProduct.image,
       categoryId: coreProduct.categoryId,
       subCategoryId: coreProduct.subCategoryId,
-      brandSupport: coreProduct.brandSupport,
-      status: coreProduct.status,
-      displayOrder: coreProduct.displayOrder,
+
       typeId: initialTypeId,
     },
     onSubmit: async ({ value }) => {
@@ -135,11 +123,6 @@ export default function EditCoreProductDialog({
         image: value.image,
         categoryId: value.categoryId,
         subCategoryId: value.subCategoryId,
-        brandSupport: value.brandSupport,
-        status: value.status,
-        displayOrder: value.displayOrder,
-        brandIds: selectedBrandIds,
-        defaultBrandId,
       });
     },
   });
@@ -159,11 +142,7 @@ export default function EditCoreProductDialog({
 
 
 
-  const toggleBrand = (brandId: number) => {
-    setSelectedBrandIds((prev) =>
-      prev.includes(brandId) ? prev.filter((id) => id !== brandId) : [...prev, brandId],
-    );
-  };
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -340,77 +319,7 @@ export default function EditCoreProductDialog({
             )}
           </form.Field>
 
-          <Separator />
 
-          {/* Configuration */}
-          <div className="space-y-4">
-            <h4 className="text-sm font-semibold">Configuration</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <form.Field name="brandSupport">
-                {(field) => (
-                  <Field>
-                    <FieldLabel>Brand Support</FieldLabel>
-                    <Select value={field.state.value} onValueChange={(v) => field.handleChange(v as any)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="multi_brand">Multi Brand</SelectItem>
-                        <SelectItem value="single_brand">Single Brand</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                )}
-              </form.Field>
-
-              <form.Field name="status">
-                {(field) => (
-                  <Field>
-                    <FieldLabel>Status</FieldLabel>
-                    <Select value={field.state.value} onValueChange={(v) => field.handleChange(v as any)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                )}
-              </form.Field>
-            </div>
-
-
-          </div>
-
-          <Separator />
-
-          {/* Linked Brands */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">Linked Brands</h4>
-            <div className="flex flex-wrap gap-2">
-              {allBrands.map((brand: any) => (
-                <label key={brand.id} className="flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors">
-                  <Checkbox checked={selectedBrandIds.includes(brand.id)} onCheckedChange={() => toggleBrand(brand.id)} />
-                  <span className="text-sm">{brand.name}</span>
-                  {defaultBrandId === brand.id && <Badge variant="secondary" className="text-[10px]">Default</Badge>}
-                </label>
-              ))}
-            </div>
-            {selectedBrandIds.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Default brand:</span>
-                <Select value={defaultBrandId ? String(defaultBrandId) : "none"} onValueChange={(v) => setDefaultBrandId(v === "none" ? undefined : Number(v))}>
-                  <SelectTrigger className="w-[180px] h-8"><SelectValue placeholder="Select default" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {selectedBrandIds.map((id) => {
-                      const b = allBrands.find((br: any) => br.id === id);
-                      return b ? <SelectItem key={id} value={String(id)}>{b.name}</SelectItem> : null;
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
 
 
         </form>

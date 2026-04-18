@@ -17,14 +17,10 @@ import {
 } from "@/components/ui/dialog";
 import {
   Field,
-  FieldContent,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-import { Switch } from "@/components/ui/switch";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 
@@ -37,12 +33,6 @@ export default function NewTypeDialog() {
       name: string;
       slug: string;
       description?: string;
-      enableBrand: boolean;
-      enableColor: boolean;
-      enableSize: boolean;
-      enableDesign: boolean;
-      enableVariant: boolean;
-      isActive: boolean;
       displayOrder: number;
     }) => orpc.adminProductType.create.call(data),
     onSuccess: (result) => {
@@ -63,12 +53,6 @@ export default function NewTypeDialog() {
       name: "",
       slug: "",
       description: "",
-      enableBrand: true,
-      enableColor: false,
-      enableSize: true,
-      enableDesign: false,
-      enableVariant: true,
-      isActive: true,
       displayOrder: 0,
     },
     onSubmit: async ({ value }) => {
@@ -151,85 +135,6 @@ export default function NewTypeDialog() {
               </Field>
             )}
           </form.Field>
-
-          {/* Row 3: Status + Display Order */}
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field name="isActive">
-              {(field) => (
-                <Field>
-                  <FieldLabel>Status</FieldLabel>
-                  <RadioGroup
-                    value={field.state.value ? "active" : "draft"}
-                    onValueChange={(v) => field.handleChange(v === "active")}
-                    className="flex gap-4"
-                  >
-                    <div className="flex items-center gap-2">
-                      <RadioGroupItem value="active" id="status-active" />
-                      <Label htmlFor="status-active">Active</Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <RadioGroupItem value="draft" id="status-draft" />
-                      <Label htmlFor="status-draft">Draft</Label>
-                    </div>
-                  </RadioGroup>
-                </Field>
-              )}
-            </form.Field>
-
-            <form.Field name="displayOrder">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Display Order</FieldLabel>
-                  <Input
-                    id={field.name}
-                    type="number"
-                    value={field.state.value}
-                    onChange={(e) =>
-                      field.handleChange(Number(e.target.value))
-                    }
-                    placeholder="0"
-                    min={0}
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
-
-          {/* Row 4: Attributes + Inventory side by side */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <FieldLabel>Attribute Toggles</FieldLabel>
-              <div className="space-y-1">
-                {(
-                  [
-                    { key: "enableBrand", label: "Brand" },
-                    { key: "enableColor", label: "Color" },
-                    { key: "enableSize", label: "Size" },
-                    { key: "enableDesign", label: "Design" },
-                    { key: "enableVariant", label: "Variant" },
-                  ] as const
-                ).map((attr) => (
-                  <form.Field key={attr.key} name={attr.key}>
-                    {(field) => (
-                      <Field orientation="horizontal">
-                        <FieldContent>
-                          <FieldLabel htmlFor={attr.key}>
-                            {attr.label}
-                          </FieldLabel>
-                        </FieldContent>
-                        <Switch
-                          id={attr.key}
-                          checked={field.state.value}
-                          onCheckedChange={field.handleChange}
-                        />
-                      </Field>
-                    )}
-                  </form.Field>
-                ))}
-              </div>
-            </div>
-          </div>
         </form>
         <DialogFooter>
           <Button
