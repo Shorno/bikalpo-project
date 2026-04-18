@@ -17,19 +17,13 @@ import { nextSkuCode } from "./helpers/generate-sku";
 
 
 const createCoreProductSchema = z.object({
-    sku: z.string().optional(), // Now auto-generated if not provided
+    sku: z.string().optional(),
     name: z.string().min(1),
     slug: z.string().min(1),
     description: z.string().optional(),
     image: z.string().min(1),
     categoryId: z.number().int(),
     subCategoryId: z.number().int().optional().nullable(),
-    brandSupport: z.enum(["multi_brand", "single_brand"]).default("multi_brand"),
-    status: z.enum(["active", "draft", "inactive"]).default("active"),
-    displayOrder: z.number().int().default(0),
-    // Linked brands
-    brandIds: z.array(z.number().int()).default([]),
-    defaultBrandId: z.number().int().optional(),
 });
 
 const updateCoreProductSchema = createCoreProductSchema.extend({
@@ -176,7 +170,7 @@ export const adminCoreProductRouter = {
         })
         .input(createCoreProductSchema)
         .handler(async ({ input }) => {
-            const { brandIds, defaultBrandId, ...identityData } = input;
+            const identityData = input;
 
             // Check uniqueness for name
             const existingName = await db.query.coreProductIdentity.findFirst({
@@ -228,16 +222,7 @@ export const adminCoreProductRouter = {
                 });
             }
 
-            // Link brands
-            if (brandIds.length > 0) {
-                await db.insert(coreProductBrand).values(
-                    brandIds.map((brandId) => ({
-                        coreProductId: created.id,
-                        brandId,
-                        isDefault: brandId === defaultBrandId,
-                    })),
-                );
-            }
+
 
 
 
@@ -257,7 +242,7 @@ export const adminCoreProductRouter = {
         })
         .input(updateCoreProductSchema)
         .handler(async ({ input }) => {
-            const { id, brandIds, defaultBrandId, ...updateData } = input;
+            const { id, ...updateData } = input;
 
             // Check existence
             const existing = await db.query.coreProductIdentity.findFirst({
@@ -293,17 +278,7 @@ export const adminCoreProductRouter = {
                 })
                 .where(eq(coreProductIdentity.id, id));
 
-            // Replace brands (delete all, re-insert)
-            await db.delete(coreProductBrand).where(eq(coreProductBrand.coreProductId, id));
-            if (brandIds.length > 0) {
-                await db.insert(coreProductBrand).values(
-                    brandIds.map((brandId) => ({
-                        coreProductId: id,
-                        brandId,
-                        isDefault: brandId === defaultBrandId,
-                    })),
-                );
-            }
+
 
 
 

@@ -187,16 +187,6 @@ export default function TypeDetailPage() {
                   className="flex items-center justify-between rounded-lg border px-3 py-2"
                 >
                   <div className="flex items-center gap-3">
-                    {cat.image && (
-                      <div className="h-8 w-8 relative shrink-0">
-                        <Image
-                          src={cat.image}
-                          alt={cat.name}
-                          fill
-                          className="object-contain rounded"
-                        />
-                      </div>
-                    )}
                     <div>
                       <p className="text-sm font-medium">{cat.name}</p>
                       <p className="text-xs text-muted-foreground font-mono">
@@ -204,12 +194,6 @@ export default function TypeDetailPage() {
                       </p>
                     </div>
                   </div>
-                  <Badge
-                    variant={cat.isActive ? "default" : "secondary"}
-                    className="text-[10px]"
-                  >
-                    {cat.isActive ? "Active" : "Inactive"}
-                  </Badge>
                 </div>
               ))}
             </div>

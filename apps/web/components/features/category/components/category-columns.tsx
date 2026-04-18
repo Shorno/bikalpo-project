@@ -4,7 +4,7 @@ import type { Category, SubCategory } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Eye, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
+
 import * as React from "react";
 import { ADMIN_BASE } from "@/lib/routes";
 import DeleteCategoryDialog from "@/components/features/category/components/delete-category-dialog";
@@ -21,22 +21,7 @@ export interface CategoryWithSubcategories extends Category {
 export function useCategoryColumns() {
   return React.useMemo<ColumnDef<CategoryWithSubcategories>[]>(
     () => [
-      {
-        accessorKey: "image",
-        header: "Image",
-        cell: ({ row }) => (
-          <div className="w-14 h-14 relative rounded-lg overflow-hidden border shadow-sm">
-            <Image
-              src={row.getValue("image")}
-              alt={row.getValue("name")}
-              fill
-              className="object-cover"
-            />
-          </div>
-        ),
-        enableSorting: false,
-        size: 80,
-      },
+
       {
         id: "skuCode",
         header: () => <div className="text-center">SKU</div>,
@@ -93,68 +78,7 @@ export function useCategoryColumns() {
           </div>
         ),
       },
-      {
-        accessorKey: "isActive",
-        header: () => <div className="text-center">Status</div>,
-        cell: ({ row }) => {
-          const isActive = row.getValue("isActive") as boolean;
-          return (
-            <div className="flex justify-center">
-              <Badge
-                variant={isActive ? "default" : "secondary"}
-                className={cn(
-                  "transition-colors",
-                  isActive && "bg-green-600 hover:bg-green-700",
-                )}
-              >
-                {isActive ? "Active" : "Inactive"}
-              </Badge>
-            </div>
-          );
-        },
-        size: 100,
-      },
-      {
-        id: "subcategoryCount",
-        header: () => <div className="text-center">Subcategories</div>,
-        cell: ({ row }) => {
-          const count = row.original.subCategory.length;
-          return (
-            <div className="flex justify-center">
-              <Badge variant="outline" className="font-mono">
-                {count}
-              </Badge>
-            </div>
-          );
-        },
-        size: 120,
-      },
-      {
-        accessorKey: "displayOrder",
-        header: ({ column }) => {
-          return (
-            <div className="flex justify-center">
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  column.toggleSorting(column.getIsSorted() === "asc")
-                }
-              >
-                Order
-                <ArrowUpDown className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          );
-        },
-        cell: ({ row }) => (
-          <div className="text-center">
-            <Badge variant="outline" className="font-mono">
-              {row.getValue("displayOrder")}
-            </Badge>
-          </div>
-        ),
-        size: 100,
-      },
+
       {
         id: "actions",
         header: () => <div className="text-center">Actions</div>,

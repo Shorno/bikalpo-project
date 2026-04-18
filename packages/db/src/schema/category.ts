@@ -13,7 +13,7 @@ export const category = pgTable("category", {
     id: serial("id").primaryKey(),
     name: varchar("name", { length: 100 }).notNull(),
     slug: varchar("slug", { length: 100 }).notNull().unique(),
-    image: varchar("image", { length: 255 }).notNull(),
+    image: varchar("image", { length: 255 }),
 
     /** Parent product type (Type → Category → SubCategory) */
     typeId: integer("type_id").references(() => productType.id, {
@@ -35,7 +35,7 @@ export const subCategory = pgTable("sub_category", {
     categoryId: integer("category_id")
         .notNull()
         .references(() => category.id, { onDelete: "cascade" }),
-    image: varchar("image", { length: 255 }).notNull(),
+    image: varchar("image", { length: 255 }),
 
     /** Auto-generated 3-digit SKU code within its category (e.g. "001", "002"). Immutable after creation. */
     skuCode: varchar("sku_code", { length: 3 }),

@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import ImageUploader from "@/components/ImageUploader";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Field,
-  FieldContent,
+
   FieldDescription,
   FieldError,
   FieldLabel,
@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+
 import { updateSubcategorySchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
 import { client, orpc } from "@/utils/orpc";
@@ -110,9 +110,6 @@ export default function EditSubcategoryDialog({
       id: subcategory.id,
       name: subcategory.name,
       slug: subcategory.slug,
-      image: subcategory.image,
-      isActive: subcategory.isActive,
-      displayOrder: subcategory.displayOrder,
       categoryId: subcategory.categoryId,
     },
 
@@ -207,27 +204,7 @@ export default function EditSubcategoryDialog({
             </form.Field>
           </div>
 
-          {/* Image Uploader */}
-          <form.Field name="image">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>
-                    Subcategory Image
-                  </FieldLabel>
-                  <ImageUploader
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                    folder="subcategories"
-                    maxSizeMB={5}
-                  />
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
+
 
           {/* Name & Slug — side by side */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -286,54 +263,7 @@ export default function EditSubcategoryDialog({
             </form.Field>
           </div>
 
-          {/* Display Order & Active Status — side by side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <form.Field name="displayOrder">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Display Order</FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      type="number"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(Number(e.target.value))}
-                      aria-invalid={isInvalid}
-                      placeholder="0"
-                      min={0}
-                      autoComplete="off"
-                    />
-                    <FieldDescription>
-                      Lower numbers appear first
-                    </FieldDescription>
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
-            </form.Field>
 
-            <form.Field name="isActive">
-              {(field) => (
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldLabel htmlFor={field.name}>Active Status</FieldLabel>
-                    <FieldDescription>
-                      Inactive subcategories won&#39;t be visible
-                    </FieldDescription>
-                  </FieldContent>
-                  <Switch
-                    id="isActive"
-                    checked={field.state.value}
-                    onCheckedChange={field.handleChange}
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
         </form>
         <DialogFooter>
           <Button

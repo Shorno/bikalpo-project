@@ -12,7 +12,7 @@ import { nextSkuCode } from "./helpers/generate-sku";
 const createCategorySchema = z.object({
     name: z.string().min(2).max(100).trim(),
     slug: z.string().min(2).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).trim(),
-    image: z.string().url().max(255),
+    image: z.string().max(255).optional(),
     isActive: z.boolean().default(true),
     displayOrder: z.number().int().min(0).default(0),
     typeId: z.number().int().nullable().optional(),

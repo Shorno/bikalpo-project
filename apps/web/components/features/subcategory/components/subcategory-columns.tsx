@@ -2,16 +2,14 @@
 
 import type { SubCategory } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Eye, Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
 import * as React from "react";
 import { ADMIN_BASE } from "@/lib/routes";
 import DeleteSubcategoryDialog from "@/components/features/subcategory/components/delete-subcategory-dialog";
 import EditSubcategoryDialog from "@/components/features/subcategory/components/edit-subcategory-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 export interface SubcategoryWithCategory extends SubCategory {
   category: {
@@ -26,22 +24,6 @@ export function useSubcategoryColumns() {
   return React.useMemo<ColumnDef<SubcategoryWithCategory>[]>(
     () => [
       {
-        accessorKey: "image",
-        header: "Image",
-        cell: ({ row }) => (
-          <div className="w-12 h-12 relative rounded-lg overflow-hidden border shadow-sm">
-            <Image
-              src={row.getValue("image")}
-              alt={row.getValue("name")}
-              fill
-              className="object-cover"
-            />
-          </div>
-        ),
-        enableSorting: false,
-        size: 70,
-      },
-      {
         id: "skuCode",
         header: () => <div className="text-center">SKU</div>,
         cell: ({ row }) => (
@@ -55,19 +37,7 @@ export function useSubcategoryColumns() {
       },
       {
         accessorKey: "name",
-        header: ({ column }) => (
-          <div className="flex justify-center">
-            <Button
-              variant="ghost"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === "asc")
-              }
-            >
-              Name
-              <ArrowUpDown className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        ),
+        header: () => <div className="text-center">Name</div>,
         cell: ({ row }) => (
           <div className="text-center font-medium">{row.getValue("name")}</div>
         ),
@@ -106,51 +76,6 @@ export function useSubcategoryColumns() {
             {row.getValue("slug")}
           </div>
         ),
-      },
-      {
-        accessorKey: "isActive",
-        header: () => <div className="text-center">Status</div>,
-        cell: ({ row }) => {
-          const isActive = row.getValue("isActive") as boolean;
-          return (
-            <div className="flex justify-center">
-              <Badge
-                variant={isActive ? "default" : "secondary"}
-                className={cn(
-                  "transition-colors",
-                  isActive && "bg-green-600 hover:bg-green-700",
-                )}
-              >
-                {isActive ? "Active" : "Inactive"}
-              </Badge>
-            </div>
-          );
-        },
-        size: 100,
-      },
-      {
-        accessorKey: "displayOrder",
-        header: ({ column }) => (
-          <div className="flex justify-center">
-            <Button
-              variant="ghost"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === "asc")
-              }
-            >
-              Order
-              <ArrowUpDown className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        ),
-        cell: ({ row }) => (
-          <div className="text-center">
-            <Badge variant="outline" className="font-mono">
-              {row.getValue("displayOrder")}
-            </Badge>
-          </div>
-        ),
-        size: 100,
       },
       {
         id: "actions",

@@ -67,16 +67,7 @@ export const coreProductIdentity = pgTable("core_product_identity", {
         { onDelete: "set null" },
     ),
 
-    /** Whether this product supports multiple brands or just one */
-    brandSupport: brandSupportEnum("brand_support")
-        .default("multi_brand")
-        .notNull(),
 
-    /** Product status */
-    status: coreProductStatusEnum("status").default("active").notNull(),
-
-    /** Display order for sorting */
-    displayOrder: integer("display_order").default(0).notNull(),
 
     ...timestamps,
 });
