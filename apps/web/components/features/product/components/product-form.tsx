@@ -1219,31 +1219,21 @@ function VariantPricingCard({
                 </div>
               </Field>
 
-              {/* Price */}
+              {/* Price — set by wholesaler, not admin */}
               <Field>
                 <FieldLabel className="text-xs">
-                  Price (৳) {!isTrade && "*"}
+                  Price (৳)
                 </FieldLabel>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder={isTrade ? "Set by shop" : "0"}
-                  className="h-8 text-xs"
-                  value={isTrade ? "" : settings.consumerPrice}
-                  onChange={(e) =>
-                    updateField(brandId, v.id, "consumerPrice", e.target.value)
-                  }
-                  disabled={isTrade}
-                />
+                <div className="h-8 flex items-center px-3 border rounded-md bg-muted/50 text-xs text-muted-foreground italic">
+                  Set by wholesaler
+                </div>
               </Field>
             </div>
 
-            {/* Trade B2B notice */}
-            {isTrade && (
-              <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-300 rounded px-2 py-1">
-                ⚠ Trade variant — price set by shop owners. Warehouse buys this unit.
-              </p>
-            )}
+            {/* Wholesaler pricing notice */}
+            <p className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 rounded px-2 py-1">
+              💰 Price will be set by the wholesaler/warehouse owner, not by admin.
+            </p>
 
             {/* Row 2: Order Rules (collapsible) */}
             <details className="group">
