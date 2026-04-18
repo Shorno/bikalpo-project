@@ -174,6 +174,11 @@ export const productVariantPrice = pgTable("product_variant_price", {
     .notNull()
     .references(() => variantOption.id, { onDelete: "cascade" }),
 
+  /** Brand this variant-price belongs to (for multi-brand products) */
+  brandId: integer("brand_id").references(() => brand.id, {
+    onDelete: "set null",
+  }),
+
   /** Consumer reference price for this variant (seller can override) */
   consumerPrice: decimal("consumer_price", {
     precision: 10,
@@ -247,6 +252,10 @@ export const productVariantPriceRelations = relations(
     variantOption: one(variantOption, {
       fields: [productVariantPrice.variantOptionId],
       references: [variantOption.id],
+    }),
+    brand: one(brand, {
+      fields: [productVariantPrice.brandId],
+      references: [brand.id],
     }),
   }),
 );

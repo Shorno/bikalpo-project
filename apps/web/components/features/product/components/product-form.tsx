@@ -92,7 +92,9 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   const queryClient = useQueryClient();
 
   // === State for cascading selection ===
-  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
+  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(
+    (product?.category as any)?.typeId ?? null,
+  );
   const [selectedCategory, setSelectedCategory] = useState<number | null>(
     product?.categoryId ?? null,
   );
@@ -265,7 +267,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
         title: string;
         items: { key: string; value: string }[];
       }[],
-      inStock: product?.inStock ?? true,
       isFeatured: product?.isFeatured ?? false,
       brandId: product?.brandId ?? (undefined as number | undefined),
 
@@ -277,8 +278,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
       expiryEnabled: (product as any)?.expiryEnabled ?? false,
       damageControlEnabled: (product as any)?.damageControlEnabled ?? false,
       isReturnablePack: (product as any)?.isReturnablePack ?? false,
-      deliveryCostPerCarton: (product as any)?.deliveryCostPerCarton ?? "",
-      unitSize: (product as any)?.unitSize ?? "",
       visibility: (product as any)?.visibility ?? "public",
       status: (product as any)?.status ?? "active",
     },
@@ -628,7 +627,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
               )}
 
               {/* ── 1b. Product Name (editable, separate from core identity) ── */}
-              {selectedCoreProduct && (
+              {(selectedCoreProductId || isEdit) && (
                 <Card>
                   <CardHeader className="pb-4">
                     <div className="flex items-center gap-2">
@@ -679,7 +678,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
               )}
 
               {/* ── 2. Brand Selection + Variant Configuration ── */}
-              {selectedCoreProduct && (
+              {(selectedCoreProductId || isEdit) && (
                 <Card>
                   <CardHeader className="pb-4">
                     <div className="flex items-center gap-2">
@@ -761,19 +760,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 </Card>
               )}
 
-              {/* ── Legacy Variants (edit mode only, for backward compat) ── */}
-              {isEdit && product?.id && !selectedCoreProductId && (
-                <ProductVariantsCard
-                  productId={product.id}
-                  initialVariants={product?.variants ?? []}
-                />
-              )}
-              {!isEdit && !selectedCoreProductId && (
-                <ProductDraftVariantsCard
-                  draftVariants={draftVariants}
-                  setDraftVariants={setDraftVariants}
-                />
-              )}
 
 
 
@@ -1050,26 +1036,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <form.Field name="inStock">
-                    {(field) => (
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <FieldLabel className="text-sm font-medium">
-                            In Stock
-                          </FieldLabel>
-                          <p className="text-xs text-muted-foreground">
-                            Available for purchase
-                          </p>
-                        </div>
-                        <Switch
-                          checked={field.state.value}
-                          onCheckedChange={field.handleChange}
-                        />
-                      </div>
-                    )}
-                  </form.Field>
 
-                  <Separator />
 
                   <form.Field name="isFeatured">
                     {(field) => (
@@ -1092,67 +1059,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 </CardContent>
               </Card>
 
-              {/* Organization (edit mode or legacy) */}
-              {(isEdit || !selectedCoreProductId) && (
-                <Card>
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <Tag className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-base">Organization</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {!selectedCoreProductId && (
-                      <>
-                        <form.Field name="name">
-                          {(field) => (
-                            <Field>
-                              <FieldLabel>Name</FieldLabel>
-                              <Input
-                                value={field.state.value}
-                                onChange={(e) => {
-                                  field.handleChange(e.target.value);
-                                  autoGenerateSlugFromName(e.target.value);
-                                }}
-                                placeholder="Product name"
-                              />
-                            </Field>
-                          )}
-                        </form.Field>
-                        <form.Field name="slug">
-                          {(field) => (
-                            <Field>
-                              <FieldLabel>Slug</FieldLabel>
-                              <Input
-                                value={field.state.value}
-                                onChange={(e) =>
-                                  field.handleChange(e.target.value)
-                                }
-                                placeholder="product-slug"
-                              />
-                            </Field>
-                          )}
-                        </form.Field>
-                      </>
-                    )}
 
-                    <form.Field name="supplier">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel>Supplier (optional)</FieldLabel>
-                          <Input
-                            value={field.state.value ?? ""}
-                            onChange={(e) =>
-                              field.handleChange(e.target.value || "")
-                            }
-                            placeholder="e.g. ABC Suppliers"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
-                  </CardContent>
-                </Card>
-              )}
             </div>
           </div>
         </div>
