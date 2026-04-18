@@ -2,8 +2,7 @@
 
 import type { Brand } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, MoreHorizontal } from "lucide-react";
-import Image from "next/image";
+import { MoreHorizontal } from "lucide-react";
 import DeleteBrandDialog from "@/components/features/brand/components/delete-brand-dialog";
 import EditBrandDialog from "@/components/features/brand/components/edit-brand-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -17,22 +16,7 @@ import {
 
 export function useBrandColumns() {
   const columns: ColumnDef<Brand>[] = [
-    {
-      accessorKey: "logo",
-      header: "Logo",
-      cell: ({ row }) => (
-        <div className="w-16 h-16 relative">
-          <Image
-            src={row.getValue("logo")}
-            alt={row.getValue("name")}
-            fill
-            className="object-contain rounded-md"
-          />
-        </div>
-      ),
-      enableSorting: false,
-      size: 80,
-    },
+
     {
       id: "skuCode",
       header: () => <div className="text-center">SKU</div>,
@@ -47,21 +31,7 @@ export function useBrandColumns() {
     },
     {
       accessorKey: "name",
-      header: ({ column }) => {
-        return (
-          <div className="flex justify-center">
-            <Button
-              variant="ghost"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === "asc")
-              }
-            >
-              Name
-              <ArrowUpDown className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        );
-      },
+      header: () => <div className="text-center">Name</div>,
       cell: ({ row }) => (
         <div className="text-center font-medium">{row.getValue("name")}</div>
       ),
@@ -75,43 +45,7 @@ export function useBrandColumns() {
         </div>
       ),
     },
-    {
-      accessorKey: "isActive",
-      header: () => <div className="text-center">Status</div>,
-      cell: ({ row }) => {
-        const isActive = row.getValue("isActive") as boolean;
-        return (
-          <div className="flex justify-center">
-            <Badge variant={isActive ? "default" : "secondary"}>
-              {isActive ? "Active" : "Inactive"}
-            </Badge>
-          </div>
-        );
-      },
-      size: 100,
-    },
-    {
-      accessorKey: "displayOrder",
-      header: ({ column }) => {
-        return (
-          <div className="flex justify-center">
-            <Button
-              variant="ghost"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === "asc")
-              }
-            >
-              Display Order
-              <ArrowUpDown className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        );
-      },
-      cell: ({ row }) => (
-        <div className="text-center">{row.getValue("displayOrder")}</div>
-      ),
-      size: 150,
-    },
+
     {
       id: "actions",
       header: () => <div className="text-center">Actions</div>,

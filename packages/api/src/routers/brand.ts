@@ -11,8 +11,7 @@ import { nextSkuCode } from "./helpers/generate-sku";
 const createBrandSchema = z.object({
     name: z.string().min(2).max(100).trim(),
     slug: z.string().min(2).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).trim(),
-    logo: z.string().url().max(255),
-    isActive: z.boolean().default(true),
+    logo: z.string().max(255).optional(),
     displayOrder: z.number().int().min(0).default(0),
 });
 
@@ -39,24 +38,7 @@ export const brandRouter = {
             });
         }),
 
-    /**
-     * Get active brands only
-     * REST: GET /api/brands/active
-     */
-    getActive: publicProcedure
-        .route({
-            method: "GET",
-            path: "/brands/active",
-            tags: ["Brands"],
-            summary: "Get active brands",
-            description: "Get only active brands for public display",
-        })
-        .handler(async () => {
-            return await db.query.brand.findMany({
-                where: (b, { eq }) => eq(b.isActive, true),
-                orderBy: [asc(brand.displayOrder)],
-            });
-        }),
+
 
     /**
      * Get brand by ID

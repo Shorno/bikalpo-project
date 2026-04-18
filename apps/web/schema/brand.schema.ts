@@ -17,15 +17,15 @@ export const createBrandSchema = z.object({
     .trim(),
   logo: z
     .string()
-    .url("Please enter a valid logo URL.")
-    .max(255, "Logo URL must be at most 255 characters."),
-  isActive: z.boolean().default(true).nonoptional(),
+    .max(255, "Logo URL must be at most 255 characters.")
+    .optional(),
+  isActive: z.boolean().default(true).optional(),
   displayOrder: z
     .number()
     .int("Display order must be a whole number.")
     .min(0, "Display order must be 0 or greater.")
     .default(0)
-    .nonoptional(),
+    .optional(),
 });
 
 export const updateBrandSchema = createBrandSchema.extend({
