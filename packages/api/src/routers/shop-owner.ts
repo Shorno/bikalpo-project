@@ -49,7 +49,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { shopOwnerProcedure } from "../index";
+import { shopOwnerProcedure, publicProcedure } from "../index";
 import {
     isSellerAuthorizedForArea,
     calculateSellerDistance,
@@ -1904,6 +1904,305 @@ const warehouseConnectionEndpoints = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Public Shop Storefront Queries (accessible by anyone with the shopSlug)
+// ────────────────────────────────────────────────────────────────
+
+const shopStorefrontEndpoints = {
+    /**
+     * Get shop info by slug (public).
+     */
+    getShopStorefrontBySlug: publicProcedure
+        .route({
+            method: "GET",
+            path: "/shopOwner/storefront/{slug}",
+            tags: ["Shop Storefront"],
+            summary: "Get shop storefront info by slug",
+        })
+        .input(z.object({ slug: z.string() }))
+        .handler(async ({ input }) => {
+            const shopUser = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    shopName: user.shopName,
+                    shopSlug: user.shopSlug,
+                    shopAddress: user.shopAddress,
+                    image: user.image,
+                })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.shopSlug, input.slug),
+                        eq(user.isSeller, true),
+                    ),
+                )
+                .limit(1);
+
+            if (shopUser.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+            }
+
+            const shop = shopUser[0]!;
+
+            // Count products in this shop's inventory
+            const [productCount] = await db
+                .select({ count: count() })
+                .from(inventory)
+                .where(
+                    and(
+                        eq(inventory.ownerType, "shop"),
+                        eq(inventory.ownerId, shop.id),
+                        sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                    ),
+                );
+
+            return {
+                ...shop,
+                productCount: productCount?.count || 0,
+            };
+        }),
+
+    /**
+     * Get categories available in a shop storefront (public).
+     */
+    getShopStorefrontCategories: publicProcedure
+        .route({
+            method: "GET",
+            path: "/shopOwner/storefront/{slug}/categories",
+            tags: ["Shop Storefront"],
+            summary: "Get shop storefront categories",
+        })
+        .input(z.object({ slug: z.string() }))
+        .handler(async ({ input }) => {
+            const shopUser = await db
+                .select({ id: user.id })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.shopSlug, input.slug),
+                        eq(user.isSeller, true),
+                    ),
+                )
+                .limit(1);
+
+            if (shopUser.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+            }
+
+            const shopId = shopUser[0]!.id;
+
+            // Get all inventory with product/category info
+            const inventoryItems = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, shopId),
+                    sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true, slug: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            // Extract unique categories
+            const categoryMap = new Map<number, { id: number; name: string; slug: string; productCount: number }>();
+            for (const inv of inventoryItems) {
+                const cat = inv.variant?.product?.category;
+                if (!cat) continue;
+                const existing = categoryMap.get(cat.id);
+                if (existing) {
+                    existing.productCount++;
+                } else {
+                    categoryMap.set(cat.id, {
+                        id: cat.id,
+                        name: cat.name,
+                        slug: cat.slug,
+                        productCount: 1,
+                    });
+                }
+            }
+
+            return { categories: Array.from(categoryMap.values()) };
+        }),
+
+    /**
+     * Get products available in a shop storefront (public).
+     * Returns products from the shop's inventory with retail prices.
+     */
+    getShopStorefrontProducts: publicProcedure
+        .route({
+            method: "GET",
+            path: "/shopOwner/storefront/{slug}/products",
+            tags: ["Shop Storefront"],
+            summary: "Get shop storefront products",
+        })
+        .input(
+            z.object({
+                slug: z.string(),
+            }).merge(productFiltersSchema),
+        )
+        .handler(async ({ input }) => {
+            const {
+                slug,
+                category: categorySlug,
+                search,
+                sort = "newest",
+                page: pageStr = "1",
+                limit: limitStr = "12",
+            } = input;
+
+            // Find shop user
+            const shopUser = await db
+                .select({ id: user.id })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.shopSlug, slug),
+                        eq(user.isSeller, true),
+                    ),
+                )
+                .limit(1);
+
+            if (shopUser.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+            }
+
+            const shopId = shopUser[0]!.id;
+            const page = Math.max(1, parseInt(pageStr ?? "1", 10) || 1);
+            const limit = Math.min(50, Math.max(1, parseInt(limitStr ?? "12", 10) || 12));
+            const offset = (page - 1) * limit;
+
+            // Get shop inventory with variant + product info
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, shopId),
+                    sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true, slug: true } },
+                                    images: { limit: 1 },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true, slug: true } },
+                        },
+                    },
+                },
+            });
+
+            // Group inventory items by product
+            const productMap = new Map<number, {
+                product: any;
+                variants: Array<{
+                    variantId: number;
+                    unitLabel: string;
+                    weightKg: string;
+                    packType: string | null;
+                    price: number;
+                    retailPrice: number | null;
+                    availableQty: string;
+                    brandName: string | null;
+                    sku: string | null;
+                }>;
+                minPrice: number;
+            }>();
+
+            for (const inv of shopInventory) {
+                const variant = inv.variant;
+                const prod = variant?.product;
+                if (!prod || !variant) continue;
+
+                // Apply category filter
+                if (categorySlug && prod.category?.slug !== categorySlug) continue;
+
+                // Apply search filter
+                if (search && !prod.name.toLowerCase().includes(search.toLowerCase())) continue;
+
+                const variantPrice = Number(variant.price) || 0;
+                const retailPrice = inv.retailPrice ? Number(inv.retailPrice) : null;
+                const effectivePrice = retailPrice ?? variantPrice;
+
+                const existing = productMap.get(prod.id);
+                const variantData = {
+                    variantId: variant.id,
+                    unitLabel: variant.unitLabel || "",
+                    weightKg: variant.weightKg || "0",
+                    packType: variant.packType,
+                    price: variantPrice,
+                    retailPrice,
+                    availableQty: inv.availableQty,
+                    brandName: (variant as any).brand?.name ?? null,
+                    sku: variant.sku,
+                };
+
+                if (existing) {
+                    existing.variants.push(variantData);
+                    if (effectivePrice < existing.minPrice) {
+                        existing.minPrice = effectivePrice;
+                    }
+                } else {
+                    productMap.set(prod.id, {
+                        product: {
+                            id: prod.id,
+                            name: prod.name,
+                            slug: prod.slug,
+                            image: prod.image,
+                            categoryName: prod.category?.name || "",
+                            categorySlug: prod.category?.slug || "",
+                        },
+                        variants: [variantData],
+                        minPrice: effectivePrice,
+                    });
+                }
+            }
+
+            // Convert to array and sort
+            let products = Array.from(productMap.values());
+
+            products.sort((a, b) => {
+                switch (sort) {
+                    case "price_asc":
+                    case "price-asc":
+                        return a.minPrice - b.minPrice;
+                    case "price_desc":
+                    case "price-desc":
+                        return b.minPrice - a.minPrice;
+                    default:
+                        return 0; // newest: rely on insertion order
+                }
+            });
+
+            const totalCount = products.length;
+            const paginated = products.slice(offset, offset + limit);
+
+            return {
+                products: paginated.map((p) => ({
+                    ...p.product,
+                    price: p.minPrice,
+                    variants: p.variants,
+                })),
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -1916,4 +2215,5 @@ export const shopOwnerRouter = {
     ...warehouseOrderQueries,
     ...openOrderEndpoints,
     ...warehouseConnectionEndpoints,
+    ...shopStorefrontEndpoints,
 };
