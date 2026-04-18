@@ -320,6 +320,27 @@ function VariantModal({
                           <span className="text-[10px] font-normal text-gray-400"> – ৳{maxPrice.toLocaleString()}</span>
                         )}
                       </div>
+                      {/* Variant size tags */}
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {bg.variants.map((v) => {
+                          const vw = Number(v.variant.weightKg) || 0;
+                          const isLooseV = (v.variant.packType || "").toLowerCase() === "loose";
+                          const looseW = vw > 0 ? vw : (Number(v.variant.unitLabel) || 0);
+                          const label = isLooseV
+                            ? `Loose${looseW > 0 ? ` ${looseW}kg` : ""}`
+                            : `${vw > 0 ? `${vw}kg` : v.variant.unitLabel || "Pack"}`;
+                          return (
+                            <span
+                              key={v.variantId}
+                              className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                                isActive ? "bg-blue-100/80 text-blue-600" : "bg-gray-100 text-gray-500"
+                              }`}
+                            >
+                              {label}
+                            </span>
+                          );
+                        })}
+                      </div>
                       <div className="flex items-center gap-1.5 mt-1">
                         <span className="text-[10px] text-gray-400">{bg.variants.length} variant{bg.variants.length > 1 ? "s" : ""}</span>
                         <span className="text-[10px] text-gray-300">•</span>
@@ -339,7 +360,7 @@ function VariantModal({
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-800">
                 {isLoose
-                  ? `Loose: ${variantWeightKg} KG`
+                  ? `Loose: ${variantWeightKg > 0 ? variantWeightKg : (Number(selected.variant.unitLabel) || unitSizeKg)} KG`
                   : <>Pack: {cartonWeightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}</>
                 }
               </div>

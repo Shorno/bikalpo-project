@@ -314,6 +314,9 @@ export const productRouter = {
 
             // Determine which brands to create products for
             const effectiveBrandIds = (brandIds && brandIds.length > 0) ? brandIds : [null as number | null];
+            const isMultiBrand = effectiveBrandIds.length > 1;
+
+            console.log("[CREATE PRODUCT] brandIds:", brandIds, "effectiveBrandIds:", effectiveBrandIds);
 
             // Group variant prices by brandId
             // If variant prices have brandId, group them. Otherwise all go to every brand.
@@ -331,191 +334,211 @@ export const productRouter = {
             // Check if variant prices are brand-grouped or shared
             const hasBrandGroupedPrices = variantPricesByBrand.size > 0 && !variantPricesByBrand.has(null);
 
-            const createdProducts: any[] = [];
+            console.log("[CREATE PRODUCT] hasBrandGroupedPrices:", hasBrandGroupedPrices,
+                "variantPricesByBrand keys:", [...variantPricesByBrand.keys()]);
 
-            for (const currentBrandId of effectiveBrandIds) {
-                // Auto-generate SKU
-                let sku = (productData.sku ?? "").toString().trim() || null;
-                if (!sku) {
-                    const cat = await db.query.category.findFirst({
-                        where: eq(categoryTable.id, productData.categoryId),
-                        columns: { slug: true },
-                    });
-                    let subCatSlug = "xx";
-                    if (productData.subCategoryId) {
-                        const sub = await db.query.subCategory.findFirst({
-                            where: (s, { eq: eq2 }) => eq2(s.id, productData.subCategoryId!),
+            // Use a transaction to ensure all-or-nothing for multi-brand creation
+            const createdProducts = await db.transaction(async (tx) => {
+                const results: any[] = [];
+
+                for (let brandIdx = 0; brandIdx < effectiveBrandIds.length; brandIdx++) {
+                    const currentBrandId = effectiveBrandIds[brandIdx];
+
+                    // Auto-generate SKU (unique per brand product)
+                    let sku = (productData.sku ?? "").toString().trim() || null;
+                    if (!sku) {
+                        const cat = await tx.query.category.findFirst({
+                            where: eq(categoryTable.id, productData.categoryId),
                             columns: { slug: true },
                         });
-                        subCatSlug = sub?.slug || "xx";
+                        let subCatSlug = "xx";
+                        if (productData.subCategoryId) {
+                            const sub = await tx.query.subCategory.findFirst({
+                                where: (s, { eq: eq2 }) => eq2(s.id, productData.subCategoryId!),
+                                columns: { slug: true },
+                            });
+                            subCatSlug = sub?.slug || "xx";
+                        }
+                        const [countResult] = await tx
+                            .select({ count: sql<number>`count(*)::int` })
+                            .from(product)
+                            .where(eq(product.categoryId, productData.categoryId));
+                        const serial = (countResult?.count ?? 0) + 1 + brandIdx;
+
+                        sku = generateSku({
+                            subCategorySlug: subCatSlug,
+                            categorySlug: cat?.slug || "xx",
+                            serialNumber: serial,
+                            userId: context.session.user.id,
+                        });
+                    } else if (isMultiBrand) {
+                        // If custom SKU provided, append brand suffix to keep unique
+                        sku = `${sku}-B${currentBrandId ?? brandIdx}`;
                     }
-                    const [countResult] = await db
-                        .select({ count: sql<number>`count(*)::int` })
-                        .from(product)
-                        .where(eq(product.categoryId, productData.categoryId));
-                    const serial = (countResult?.count ?? 0) + 1;
 
-                    sku = generateSku({
-                        subCategorySlug: subCatSlug,
-                        categorySlug: cat?.slug || "xx",
-                        serialNumber: serial,
-                        userId: context.session.user.id,
-                    });
-                }
+                    // For multi-brand: append brand suffix to slug to keep it unique
+                    const productSlug = isMultiBrand && currentBrandId
+                        ? `${productData.slug}-brand-${currentBrandId}`
+                        : productData.slug;
 
-                // For multi-brand: append brand suffix to slug to keep it unique
-                const productSlug = effectiveBrandIds.length > 1 && currentBrandId
-                    ? `${productData.slug}-brand-${currentBrandId}`
-                    : productData.slug;
+                    console.log(`[CREATE PRODUCT] Brand ${brandIdx + 1}/${effectiveBrandIds.length}: brandId=${currentBrandId}, slug=${productSlug}, sku=${sku}`);
 
-                const [newProduct] = await db
-                    .insert(product)
-                    .values({
-                        ...productData,
-                        slug: productSlug,
-                        brandId: currentBrandId,
-                        subCategoryId: productData.subCategoryId || null,
-                        coreProductId: productData.coreProductId || null,
-                        shortDescription: productData.shortDescription || null,
-                        videoUrl: productData.videoUrl || null,
-                        deliveryCostPerCarton: productData.deliveryCostPerCarton || null,
-                        unitSize: productData.unitSize || null,
-                        scheduledAt: productData.scheduledAt ? new Date(productData.scheduledAt) : null,
-                        sku,
-                        supplier: (productData.supplier ?? "").toString().trim() || null,
-                        reorderLevel: productData.reorderLevel ?? 0,
-                    })
-                    .returning();
+                    const [newProduct] = await tx
+                        .insert(product)
+                        .values({
+                            ...productData,
+                            slug: productSlug,
+                            brandId: currentBrandId,
+                            subCategoryId: productData.subCategoryId || null,
+                            coreProductId: productData.coreProductId || null,
+                            shortDescription: productData.shortDescription || null,
+                            videoUrl: productData.videoUrl || null,
+                            deliveryCostPerCarton: productData.deliveryCostPerCarton || null,
+                            unitSize: productData.unitSize || null,
+                            scheduledAt: productData.scheduledAt ? new Date(productData.scheduledAt) : null,
+                            sku,
+                            supplier: (productData.supplier ?? "").toString().trim() || null,
+                            reorderLevel: productData.reorderLevel ?? 0,
+                        })
+                        .returning();
 
-                // Insert additional images (shared across brand products)
-                if (additionalImages && additionalImages.length > 0) {
-                    await db.insert(productImage).values(
-                        additionalImages.map((imageUrl) => ({
+                    // Insert additional images (shared across brand products)
+                    if (additionalImages && additionalImages.length > 0) {
+                        await tx.insert(productImage).values(
+                            additionalImages.map((imageUrl) => ({
+                                productId: newProduct!.id,
+                                imageUrl,
+                            })),
+                        );
+                    }
+
+                    // Insert product brand link
+                    if (currentBrandId) {
+                        await tx.insert(productBrand).values({
                             productId: newProduct!.id,
-                            imageUrl,
-                        })),
-                    );
-                }
-
-                // Insert product brand link
-                if (currentBrandId) {
-                    await db.insert(productBrand).values({
-                        productId: newProduct!.id,
-                        brandId: currentBrandId,
-                    });
-                }
-
-                // Get variant prices for this brand
-                let brandVPs: typeof variantPrices = [];
-                if (hasBrandGroupedPrices) {
-                    // Each brand has its own variant prices
-                    brandVPs = variantPricesByBrand.get(currentBrandId) || [];
-                } else {
-                    // Shared variant prices (no brandId set) — use for all brands
-                    brandVPs = variantPricesByBrand.get(null) || variantPrices || [];
-                }
-
-                // Insert variant prices + auto-generate product_variant rows
-                if (brandVPs && brandVPs.length > 0) {
-                    const insertedPrices = await db.insert(productVariantPrice).values(
-                        brandVPs.map((vp, idx) => ({
-                            productId: newProduct!.id,
-                            variantOptionId: vp.variantOptionId,
-                            variantType: vp.variantType || null,
-                            consumerPrice: vp.consumerPrice || "0",
-                            pricingType: vp.pricingType || "per_unit",
-                            orderMin: vp.orderMin || "1",
-                            orderMax: vp.orderMax || null,
-                            orderIncrement: vp.orderIncrement || "1",
-                            orderUnit: vp.orderUnit || "piece",
-                            minMarginPercent: vp.minMarginPercent || null,
-                            minMarginAmount: vp.minMarginAmount || null,
-                            isPackReturnRequired: vp.isPackReturnRequired ?? false,
-                            packDepositAmount: vp.packDepositAmount || null,
-                            linkedRetailVariantOptionId: vp.linkedRetailVariantOptionId || null,
-                            conversionRatio: vp.conversionRatio || null,
-                            conversionLossPercent: vp.conversionLossPercent || "0",
-                            autoConvert: vp.autoConvert ?? true,
-                            sortOrder: idx,
-                        })),
-                    ).returning();
-
-                    // Fetch variant_option metadata
-                    const voIds = brandVPs.map((vp) => vp.variantOptionId);
-                    const variantOptions = await db
-                        .select()
-                        .from(variantOption)
-                        .where(inArray(variantOption.id, voIds));
-                    const voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
-
-                    // Auto-generate product_variant rows
-                    const autoVariantRows: any[] = [];
-                    for (const pvp of insertedPrices) {
-                        const idx = insertedPrices.indexOf(pvp);
-                        const vo = voMap[pvp.variantOptionId];
-                        const isLoose = vo?.variantType === "loose";
-                        const packType = isLoose ? "loose" : "packet";
-                        const weightKg = vo?.size || "0";
-
-                        autoVariantRows.push({
-                            productId: newProduct!.id,
-                            sku: `CP-${newProduct!.id}-VO-${pvp.variantOptionId}`,
-                            unitLabel: vo?.name || "Unit",
-                            quantitySelectorLabel: vo?.name || "Unit",
-                            packagingType: packType,
-                            weightKg,
-                            pricingType: pvp.pricingType || "per_unit",
-                            price: pvp.consumerPrice || "0",
-                            orderMin: pvp.orderMin || "1",
-                            orderMax: pvp.orderMax || null,
-                            orderIncrement: pvp.orderIncrement || "1",
-                            orderUnit: pvp.orderUnit || vo?.unit || "piece",
-                            variantType: (pvp.variantType as "trade" | "retail" | null) || null,
-                            packType: (packType as any) || null,
-                            packWeightKg: weightKg || null,
-                            sellUnit: vo?.name || null,
-                            orderType: pvp.variantType === "trade" ? "b2b" as const : pvp.variantType === "retail" ? "b2c" as const : null,
-                            visibilityRole: pvp.variantType === "trade" ? "shop_owner" as const : pvp.variantType === "retail" ? "consumer" as const : "all" as const,
-                            minMarginPercent: pvp.minMarginPercent || null,
-                            minMarginAmount: pvp.minMarginAmount || null,
-                            isPackReturnRequired: pvp.isPackReturnRequired ?? false,
-                            packDepositAmount: pvp.packDepositAmount || "0",
-                            conversionRatio: pvp.conversionRatio || null,
-                            conversionLossPercent: pvp.conversionLossPercent || "0",
-                            sourceVariantPriceId: pvp.id,
-                            sourceVariantOptionId: pvp.variantOptionId,
-                            stockQuantity: 0,
-                            reorderLevel: 0,
-                            sortOrder: idx,
-                            isActive: pvp.isActive ?? true,
+                            brandId: currentBrandId,
                         });
                     }
 
-                    if (autoVariantRows.length > 0) {
-                        const generatedVariants = await db.insert(productVariant).values(autoVariantRows).returning();
+                    // Get variant prices for this brand
+                    let brandVPs: typeof variantPrices = [];
+                    if (hasBrandGroupedPrices) {
+                        // Each brand has its own variant prices
+                        brandVPs = variantPricesByBrand.get(currentBrandId) || [];
+                    } else {
+                        // Shared variant prices (no brandId set) — use for all brands
+                        brandVPs = variantPricesByBrand.get(null) || variantPrices || [];
+                    }
 
-                        // Link Trade → Retail
-                        for (const gv of generatedVariants) {
-                            if (!gv.sourceVariantPriceId) continue;
-                            const pvp = insertedPrices.find((p) => p.id === gv.sourceVariantPriceId);
-                            if (!pvp?.linkedRetailVariantOptionId) continue;
+                    console.log(`[CREATE PRODUCT] Brand ${currentBrandId}: ${brandVPs?.length ?? 0} variant prices`);
 
-                            const linkedRetail = generatedVariants.find(
-                                (rv) => rv.sourceVariantOptionId === pvp.linkedRetailVariantOptionId
-                                    && rv.variantType === "retail",
-                            );
-                            if (linkedRetail) {
-                                await db
-                                    .update(productVariant)
-                                    .set({ linkedRetailVariantId: linkedRetail.id })
-                                    .where(eq(productVariant.id, gv.id));
+                    // Insert variant prices + auto-generate product_variant rows
+                    if (brandVPs && brandVPs.length > 0) {
+                        const insertedPrices = await tx.insert(productVariantPrice).values(
+                            brandVPs.map((vp, idx) => ({
+                                productId: newProduct!.id,
+                                variantOptionId: vp.variantOptionId,
+                                variantType: vp.variantType || null,
+                                consumerPrice: vp.consumerPrice || "0",
+                                pricingType: vp.pricingType || "per_unit",
+                                orderMin: vp.orderMin || "1",
+                                orderMax: vp.orderMax || null,
+                                orderIncrement: vp.orderIncrement || "1",
+                                orderUnit: vp.orderUnit || "piece",
+                                minMarginPercent: vp.minMarginPercent || null,
+                                minMarginAmount: vp.minMarginAmount || null,
+                                isPackReturnRequired: vp.isPackReturnRequired ?? false,
+                                packDepositAmount: vp.packDepositAmount || null,
+                                linkedRetailVariantOptionId: vp.linkedRetailVariantOptionId || null,
+                                conversionRatio: vp.conversionRatio || null,
+                                conversionLossPercent: vp.conversionLossPercent || "0",
+                                autoConvert: vp.autoConvert ?? true,
+                                sortOrder: idx,
+                            })),
+                        ).returning();
+
+                        // Fetch variant_option metadata
+                        const voIds = brandVPs.map((vp) => vp.variantOptionId);
+                        const variantOptions = await tx
+                            .select()
+                            .from(variantOption)
+                            .where(inArray(variantOption.id, voIds));
+                        const voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
+
+                        // Auto-generate product_variant rows
+                        const autoVariantRows: any[] = [];
+                        for (const pvp of insertedPrices) {
+                            const idx = insertedPrices.indexOf(pvp);
+                            const vo = voMap[pvp.variantOptionId];
+                            const isLoose = vo?.variantType === "loose";
+                            const packType = isLoose ? "loose" : "packet";
+                            const weightKg = vo?.size || "0";
+
+                            autoVariantRows.push({
+                                productId: newProduct!.id,
+                                sku: `CP-${newProduct!.id}-VO-${pvp.variantOptionId}`,
+                                unitLabel: vo?.name || "Unit",
+                                quantitySelectorLabel: vo?.name || "Unit",
+                                packagingType: packType,
+                                weightKg,
+                                pricingType: pvp.pricingType || "per_unit",
+                                price: pvp.consumerPrice || "0",
+                                orderMin: pvp.orderMin || "1",
+                                orderMax: pvp.orderMax || null,
+                                orderIncrement: pvp.orderIncrement || "1",
+                                orderUnit: pvp.orderUnit || vo?.unit || "piece",
+                                variantType: (pvp.variantType as "trade" | "retail" | null) || null,
+                                packType: (packType as any) || null,
+                                packWeightKg: weightKg || null,
+                                sellUnit: vo?.name || null,
+                                orderType: pvp.variantType === "trade" ? "b2b" as const : pvp.variantType === "retail" ? "b2c" as const : null,
+                                visibilityRole: pvp.variantType === "trade" ? "shop_owner" as const : pvp.variantType === "retail" ? "consumer" as const : "all" as const,
+                                minMarginPercent: pvp.minMarginPercent || null,
+                                minMarginAmount: pvp.minMarginAmount || null,
+                                isPackReturnRequired: pvp.isPackReturnRequired ?? false,
+                                packDepositAmount: pvp.packDepositAmount || "0",
+                                conversionRatio: pvp.conversionRatio || null,
+                                conversionLossPercent: pvp.conversionLossPercent || "0",
+                                sourceVariantPriceId: pvp.id,
+                                sourceVariantOptionId: pvp.variantOptionId,
+                                stockQuantity: 0,
+                                reorderLevel: 0,
+                                sortOrder: idx,
+                                isActive: pvp.isActive ?? true,
+                            });
+                        }
+
+                        if (autoVariantRows.length > 0) {
+                            const generatedVariants = await tx.insert(productVariant).values(autoVariantRows).returning();
+
+                            // Link Trade → Retail
+                            for (const gv of generatedVariants) {
+                                if (!gv.sourceVariantPriceId) continue;
+                                const pvp = insertedPrices.find((p) => p.id === gv.sourceVariantPriceId);
+                                if (!pvp?.linkedRetailVariantOptionId) continue;
+
+                                const linkedRetail = generatedVariants.find(
+                                    (rv) => rv.sourceVariantOptionId === pvp.linkedRetailVariantOptionId
+                                        && rv.variantType === "retail",
+                                );
+                                if (linkedRetail) {
+                                    await tx
+                                        .update(productVariant)
+                                        .set({ linkedRetailVariantId: linkedRetail.id })
+                                        .where(eq(productVariant.id, gv.id));
+                                }
                             }
                         }
                     }
+
+                    results.push(newProduct);
                 }
 
-                createdProducts.push(newProduct);
-            }
+                return results;
+            });
+
+            console.log(`[CREATE PRODUCT] Created ${createdProducts.length} product(s):`,
+                createdProducts.map((p) => `#${p.id} ${p.slug}`));
 
             return {
                 product: createdProducts[0],

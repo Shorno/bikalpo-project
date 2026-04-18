@@ -1682,8 +1682,10 @@ const catalogBrowse = {
                         name: true,
                         coreProductId: true,
                         unitSize: true,
+                        brandId: true,
                     },
                     with: {
+                        brand: { columns: { id: true, name: true } },
                         variants: {
                             where: eq(productVariant.isActive, true),
                             columns: {
@@ -1742,6 +1744,9 @@ const catalogBrowse = {
                                     variants: p.variants.map((v: any) => ({
                                         ...v,
                                         inInventory: inventoryVariantIds.has(v.id),
+                                        // Fall back to product-level brand if variant has no brand
+                                        brand: v.brand || p.brand || null,
+                                        brandId: v.brandId || p.brandId || null,
                                     })),
                                 })),
                             };
@@ -1767,6 +1772,9 @@ const catalogBrowse = {
                                 variants: p.variants.map((v: any) => ({
                                     ...v,
                                     inInventory: inventoryVariantIds.has(v.id),
+                                    // Fall back to product-level brand if variant has no brand
+                                    brand: v.brand || p.brand || null,
+                                    brandId: v.brandId || p.brandId || null,
                                 })),
                             })),
                         };
