@@ -761,19 +761,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 </Card>
               )}
 
-              {/* ── Legacy Variants (edit mode only, for backward compat) ── */}
-              {isEdit && product?.id && !selectedCoreProductId && (
-                <ProductVariantsCard
-                  productId={product.id}
-                  initialVariants={product?.variants ?? []}
-                />
-              )}
-              {!isEdit && !selectedCoreProductId && (
-                <ProductDraftVariantsCard
-                  draftVariants={draftVariants}
-                  setDraftVariants={setDraftVariants}
-                />
-              )}
 
 
 
@@ -1092,67 +1079,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 </CardContent>
               </Card>
 
-              {/* Organization (edit mode or legacy) */}
-              {(isEdit || !selectedCoreProductId) && (
-                <Card>
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <Tag className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-base">Organization</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {!selectedCoreProductId && (
-                      <>
-                        <form.Field name="name">
-                          {(field) => (
-                            <Field>
-                              <FieldLabel>Name</FieldLabel>
-                              <Input
-                                value={field.state.value}
-                                onChange={(e) => {
-                                  field.handleChange(e.target.value);
-                                  autoGenerateSlugFromName(e.target.value);
-                                }}
-                                placeholder="Product name"
-                              />
-                            </Field>
-                          )}
-                        </form.Field>
-                        <form.Field name="slug">
-                          {(field) => (
-                            <Field>
-                              <FieldLabel>Slug</FieldLabel>
-                              <Input
-                                value={field.state.value}
-                                onChange={(e) =>
-                                  field.handleChange(e.target.value)
-                                }
-                                placeholder="product-slug"
-                              />
-                            </Field>
-                          )}
-                        </form.Field>
-                      </>
-                    )}
 
-                    <form.Field name="supplier">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel>Supplier (optional)</FieldLabel>
-                          <Input
-                            value={field.state.value ?? ""}
-                            onChange={(e) =>
-                              field.handleChange(e.target.value || "")
-                            }
-                            placeholder="e.g. ABC Suppliers"
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
-                  </CardContent>
-                </Card>
-              )}
             </div>
           </div>
         </div>
