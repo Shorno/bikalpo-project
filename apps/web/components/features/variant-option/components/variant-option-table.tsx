@@ -99,8 +99,7 @@ function MobileVariantOptionCard({ option }: { option: VariantOptionRow }) {
 
         <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-t text-sm text-muted-foreground">
           <span>
-            {option.variantType === "pack" ? "Pack" : "Loose"} ·{" "}
-            {option.usedInProducts} Products
+            {option.variantType === "pack" ? "Pack" : "Loose"}
           </span>
           {option.category && (
             <Badge variant="outline" className="text-xs">

@@ -60,12 +60,6 @@ export default function DeleteVariantOptionDialog({
           <AlertDialogDescription>
             This action cannot be undone. This will permanently delete the
             variant option.
-            {vo.usedInProducts > 0 && (
-              <span className="block mt-2 text-destructive font-medium">
-                ⚠ This variant is currently used by {vo.usedInProducts} core
-                product(s). You must remove those links first.
-              </span>
-            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
 

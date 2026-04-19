@@ -1109,14 +1109,14 @@ function BrandConfigCard({
     value: any,
   ) => void;
 }) {
-  // Fetch core product's linked variant options
-  const { data: cpData } = useQuery(
-    orpc.adminCoreProduct.getById.queryOptions({
-      input: { id: coreProductId },
+  // Fetch all active variant options directly (variants are independent)
+  const { data: variantOptions } = useQuery(
+    orpc.adminVariantOption.getAll.queryOptions({
+      input: { status: "active" },
     }),
   );
 
-  const linkedVariants = cpData?.coreProduct?.variantLinks ?? [];
+  const allVariants = Array.isArray(variantOptions) ? variantOptions : [];
 
   return (
     <div className="space-y-3">
@@ -1154,8 +1154,7 @@ function BrandConfigCard({
         <div className="pl-7 space-y-3">
           {/* Variant selection + pricing — unified list */}
           <div className="space-y-1.5">
-            {linkedVariants.map((link: any) => {
-              const v = link.variantOption;
+            {allVariants.map((v: any) => {
               const isIncluded = config.selectedVariantIds.includes(v.id);
               const settings = isIncluded
                 ? (config.variantSettings[v.id] ?? makeDefaultSettings(v.id, config.brandId))

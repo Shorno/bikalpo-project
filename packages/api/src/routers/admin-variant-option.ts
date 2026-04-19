@@ -1,9 +1,8 @@
-import { and, asc, count, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import {
     variantOption,
-    coreProductVariantOption,
     category,
     productType,
 } from "@bikalpo-project/db/schema";
@@ -31,7 +30,7 @@ const updateInput = createInput.extend({
 
 export const adminVariantOptionRouter = {
     /**
-     * List all variant options with type/category info and usage count.
+     * List all variant options with type/category info.
      */
     getAll: adminProcedure
         .input(
@@ -89,23 +88,7 @@ export const adminVariantOptionRouter = {
                 orderBy: [asc(variantOption.sortOrder), asc(variantOption.name)],
             });
 
-            // Get usage counts (how many core products use each variant option)
-            const usageCounts = await db
-                .select({
-                    variantOptionId: coreProductVariantOption.variantOptionId,
-                    count: count(),
-                })
-                .from(coreProductVariantOption)
-                .groupBy(coreProductVariantOption.variantOptionId);
-
-            const usageMap = new Map(
-                usageCounts.map((u) => [u.variantOptionId, u.count]),
-            );
-
-            return options.map((opt) => ({
-                ...opt,
-                usedInProducts: usageMap.get(opt.id) ?? 0,
-            }));
+            return options;
         }),
 
     /**
@@ -122,7 +105,7 @@ export const adminVariantOptionRouter = {
     }),
 
     /**
-     * Get a single variant option by ID with usage count.
+     * Get a single variant option by ID.
      */
     getById: adminProcedure
         .input(z.object({ id: z.number().int() }))
@@ -137,15 +120,8 @@ export const adminVariantOptionRouter = {
 
             if (!option) throw new Error("Variant option not found");
 
-            // Usage count
-            const [usage] = await db
-                .select({ count: count() })
-                .from(coreProductVariantOption)
-                .where(eq(coreProductVariantOption.variantOptionId, input.id));
-
             return {
                 variantOption: option,
-                usedInProducts: usage?.count ?? 0,
             };
         }),
 
@@ -280,7 +256,6 @@ export const adminVariantOptionRouter = {
 
     /**
      * Delete a variant option.
-     * Restricted if linked to any core product.
      */
     delete: adminProcedure
         .input(z.object({ id: z.number().int() }))
@@ -290,18 +265,6 @@ export const adminVariantOptionRouter = {
             });
 
             if (!existing) throw new Error("Variant option not found");
-
-            // Check if used by any core product
-            const [usage] = await db
-                .select({ count: count() })
-                .from(coreProductVariantOption)
-                .where(eq(coreProductVariantOption.variantOptionId, input.id));
-
-            if ((usage?.count ?? 0) > 0) {
-                throw new Error(
-                    `Cannot delete: this variant is used by ${usage!.count} core product(s). Remove the links first.`,
-                );
-            }
 
             await db.delete(variantOption).where(eq(variantOption.id, input.id));
 

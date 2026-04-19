@@ -5,11 +5,9 @@ import {
     pgEnum,
     pgTable,
     serial,
-    timestamp,
     varchar,
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
-import { coreProductIdentity } from "./core-product";
 import { productType } from "./product-type";
 import { category } from "./category";
 
@@ -70,37 +68,9 @@ export const variantOption = pgTable("variant_option", {
     ...timestamps,
 });
 
-// === Core Product ↔ Variant Option (M2M) ===
-
-/**
- * Links a Core Product Identity to the global variant options it supports.
- * E.g. "Miniket Rice" → [1KG Pack, 2KG Pack, 5KG Pack, Loose]
- */
-export const coreProductVariantOption = pgTable(
-    "core_product_variant_option",
-    {
-        id: serial("id").primaryKey(),
-
-        /** Parent core product identity */
-        coreProductId: integer("core_product_id")
-            .notNull()
-            .references(() => coreProductIdentity.id, { onDelete: "cascade" }),
-
-        /** Linked global variant option */
-        variantOptionId: integer("variant_option_id")
-            .notNull()
-            .references(() => variantOption.id, { onDelete: "cascade" }),
-
-        /** Sort order within this core product */
-        sortOrder: integer("sort_order").default(0).notNull(),
-
-        createdAt: timestamp("created_at").defaultNow().notNull(),
-    },
-);
-
 // === Relations ===
 
-export const variantOptionRelations = relations(variantOption, ({ one, many }) => ({
+export const variantOptionRelations = relations(variantOption, ({ one }) => ({
     type: one(productType, {
         fields: [variantOption.typeId],
         references: [productType.id],
@@ -109,26 +79,9 @@ export const variantOptionRelations = relations(variantOption, ({ one, many }) =
         fields: [variantOption.categoryId],
         references: [category.id],
     }),
-    coreProductLinks: many(coreProductVariantOption),
 }));
-
-export const coreProductVariantOptionRelations = relations(
-    coreProductVariantOption,
-    ({ one }) => ({
-        coreProduct: one(coreProductIdentity, {
-            fields: [coreProductVariantOption.coreProductId],
-            references: [coreProductIdentity.id],
-        }),
-        variantOption: one(variantOption, {
-            fields: [coreProductVariantOption.variantOptionId],
-            references: [variantOption.id],
-        }),
-    }),
-);
 
 // === Types ===
 
 export type VariantOption = typeof variantOption.$inferSelect;
 export type NewVariantOption = typeof variantOption.$inferInsert;
-export type CoreProductVariantOption = typeof coreProductVariantOption.$inferSelect;
-export type NewCoreProductVariantOption = typeof coreProductVariantOption.$inferInsert;

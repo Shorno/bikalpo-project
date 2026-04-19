@@ -48,9 +48,6 @@ type CoreProduct = {
   name: string;
   slug: string;
   image: string;
-  brandSupport: string;
-  brands: { brand: { id: number; name: string; logo: string; slug: string } }[];
-  variantLinks: { variantOption: { id: number; name: string; unit: string; size: string | null } }[];
   products: CatalogProduct[];
 };
 
@@ -322,17 +319,6 @@ export default function WarehouseProductCatalogPage() {
                 </span>
               )}
             </div>
-            <div className="flex gap-1.5 mt-1 flex-wrap">
-              {cp.brands.map((b) => (
-                <span key={b.brand.id} className="text-[9px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
-                  {b.brand.name}
-                </span>
-              ))}
-              {cp.variantLinks.map((vl) => (
-                <span key={vl.variantOption.id} className="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
-                  {vl.variantOption.name}
-                </span>
-              ))}
             </div>
           </div>
           <div className="flex items-center gap-3">

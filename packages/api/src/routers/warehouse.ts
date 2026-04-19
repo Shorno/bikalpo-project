@@ -1521,9 +1521,7 @@ const productActivation = {
 
 import {
     coreProductIdentity,
-    coreProductBrand,
 } from "@bikalpo-project/db/schema";
-import { productType } from "@bikalpo-project/db/schema";
 
 const catalogBrowse = {
     /**
@@ -1592,24 +1590,10 @@ const catalogBrowse = {
             const coreProducts = await db.query.coreProductIdentity.findMany({
                 where: and(
                     inArray(coreProductIdentity.categoryId, allCatIds),
-                    eq(coreProductIdentity.status, "active"),
                     searchCondition,
                 ),
-                with: {
-                    brands: {
-                        with: {
-                            brand: { columns: { id: true, name: true, logo: true, slug: true } },
-                        },
-                    },
-                    variantLinks: {
-                        with: {
-                            variantOption: {
-                                columns: { id: true, name: true, unit: true, size: true },
-                            },
-                        },
-                    },
-                },
-                orderBy: [coreProductIdentity.displayOrder, coreProductIdentity.name],
+                with: {},
+                orderBy: [coreProductIdentity.name],
             });
 
             // 7. Get existing products linked to these core identities
