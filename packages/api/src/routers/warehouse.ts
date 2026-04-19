@@ -2644,6 +2644,321 @@ const storageAreaQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Pricing Management (Wholesale Price for Retailers)
+// ────────────────────────────────────────────────────────────────
+
+import {
+    brand as brandTable,
+    category as catTable,
+    subCategory as subCatTable,
+    productType as productTypeTable,
+} from "@bikalpo-project/db/schema";
+
+const pricingQueries = {
+    /**
+     * Get warehouse price list — all inventory items with full product hierarchy.
+     * Grouped by core product with brand/variant detail for the pricing page.
+     */
+    getWarehousePriceList: warehouseProcedure
+        .input(
+            z.object({
+                typeId: z.number().optional(),
+                categoryId: z.number().optional(),
+                subCategoryId: z.number().optional(),
+                coreProductId: z.number().optional(),
+                brandId: z.number().optional(),
+                search: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch all inventory items for this warehouse with deep relations
+            const items = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            brand: { columns: { id: true, name: true } },
+                            product: {
+                                with: {
+                                    category: {
+                                        columns: { id: true, name: true, slug: true, typeId: true },
+                                    },
+                                    subCategory: {
+                                        columns: { id: true, name: true, slug: true },
+                                    },
+                                    brand: { columns: { id: true, name: true } },
+                                    coreProduct: {
+                                        columns: { id: true, name: true, slug: true, image: true, categoryId: true, subCategoryId: true },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            // 2. Get product type info for categories (needed for type filter)
+            const categoryIds = [...new Set(
+                items
+                    .map((i) => i.variant?.product?.category?.id)
+                    .filter((id): id is number => id != null),
+            )];
+
+            let categoryTypeMap = new Map<number, { typeId: number; typeName: string }>();
+            if (categoryIds.length > 0) {
+                const catTypes = await db
+                    .select({
+                        catId: catTable.id,
+                        typeId: productTypeTable.id,
+                        typeName: productTypeTable.name,
+                    })
+                    .from(catTable)
+                    .leftJoin(productTypeTable, eq(catTable.typeId, productTypeTable.id))
+                    .where(inArray(catTable.id, categoryIds));
+
+                for (const ct of catTypes) {
+                    if (ct.typeId && ct.typeName) {
+                        categoryTypeMap.set(ct.catId, { typeId: ct.typeId, typeName: ct.typeName });
+                    }
+                }
+            }
+
+            // 3. Build flat items with all needed data
+            type PriceItem = {
+                inventoryId: number;
+                variantId: number;
+                productId: number;
+                productName: string;
+                coreProductId: number | null;
+                coreProductName: string;
+                coreProductImage: string;
+                categoryId: number;
+                categoryName: string;
+                subCategoryId: number | null;
+                subCategoryName: string;
+                typeId: number | null;
+                typeName: string;
+                brandId: number | null;
+                brandName: string;
+                variantLabel: string;
+                packUnit: string;
+                packPrice: string;
+                basePrice: string;
+                isActive: boolean;
+                availableQty: string;
+                updatedAt: Date;
+            };
+
+            const priceItems: PriceItem[] = [];
+
+            for (const item of items) {
+                const v = item.variant;
+                if (!v || !v.product) continue;
+                const p = v.product;
+                const cat = p.category;
+                if (!cat) continue;
+
+                const typeInfo = categoryTypeMap.get(cat.id);
+                const brandInfo = v.brand || p.brand;
+                const core = p.coreProduct;
+
+                // Build variant display label
+                const labelParts: string[] = [];
+                if ((v as any).color) labelParts.push((v as any).color);
+                if ((v as any).size) labelParts.push((v as any).size);
+                const weightKg = Number(v.weightKg || 0);
+                if (weightKg > 0) labelParts.push(`${weightKg}KG`);
+                if (v.packagingType && v.packagingType !== "loose") {
+                    labelParts.push(v.packagingType.charAt(0).toUpperCase() + v.packagingType.slice(1));
+                }
+                const variantLabel = labelParts.length > 0
+                    ? labelParts.join(" ")
+                    : v.unitLabel || v.sku || `Variant #${v.id}`;
+
+                // Pack unit display
+                const packUnit = v.unitLabel || "Unit";
+
+                priceItems.push({
+                    inventoryId: item.id,
+                    variantId: v.id,
+                    productId: p.id,
+                    productName: p.name,
+                    coreProductId: core?.id ?? null,
+                    coreProductName: core?.name ?? p.name,
+                    coreProductImage: core?.image ?? (p as any).image ?? "",
+                    categoryId: cat.id,
+                    categoryName: cat.name,
+                    subCategoryId: p.subCategory?.id ?? null,
+                    subCategoryName: p.subCategory?.name ?? "—",
+                    typeId: typeInfo?.typeId ?? null,
+                    typeName: typeInfo?.typeName ?? "Other",
+                    brandId: brandInfo?.id ?? null,
+                    brandName: brandInfo?.name ?? "—",
+                    variantLabel,
+                    packUnit,
+                    packPrice: item.retailPrice || v.price || "0",
+                    basePrice: v.price || "0",
+                    isActive: v.isActive,
+                    availableQty: item.availableQty || "0",
+                    updatedAt: item.updatedAt,
+                });
+            }
+
+            // 4. Apply filters
+            let filtered = priceItems;
+
+            if (input.typeId) {
+                filtered = filtered.filter((i) => i.typeId === input.typeId);
+            }
+            if (input.categoryId) {
+                filtered = filtered.filter((i) => i.categoryId === input.categoryId);
+            }
+            if (input.subCategoryId) {
+                filtered = filtered.filter((i) => i.subCategoryId === input.subCategoryId);
+            }
+            if (input.coreProductId) {
+                filtered = filtered.filter((i) => i.coreProductId === input.coreProductId);
+            }
+            if (input.brandId) {
+                filtered = filtered.filter((i) => i.brandId === input.brandId);
+            }
+            if (input.search?.trim()) {
+                const s = input.search.trim().toLowerCase();
+                filtered = filtered.filter(
+                    (i) =>
+                        i.productName.toLowerCase().includes(s) ||
+                        i.coreProductName.toLowerCase().includes(s) ||
+                        i.brandName.toLowerCase().includes(s) ||
+                        i.variantLabel.toLowerCase().includes(s),
+                );
+            }
+
+            // 5. Build filter options from ALL items (before filtering)
+            const typeSet = new Map<number, string>();
+            const catSet = new Map<number, string>();
+            const subCatSet = new Map<number, string>();
+            const coreSet = new Map<number, string>();
+            const brandSet = new Map<number, string>();
+
+            for (const item of priceItems) {
+                if (item.typeId) typeSet.set(item.typeId, item.typeName);
+                catSet.set(item.categoryId, item.categoryName);
+                if (item.subCategoryId) subCatSet.set(item.subCategoryId, item.subCategoryName);
+                if (item.coreProductId) coreSet.set(item.coreProductId, item.coreProductName);
+                if (item.brandId) brandSet.set(item.brandId, item.brandName);
+            }
+
+            // 6. Stats
+            const uniqueProducts = new Set(priceItems.map((i) => i.coreProductId ?? i.productId));
+            const lastUpdated = priceItems.length > 0
+                ? priceItems.reduce((latest, i) =>
+                    i.updatedAt > latest ? i.updatedAt : latest, priceItems[0]!.updatedAt)
+                : null;
+
+            return {
+                items: filtered,
+                stats: {
+                    totalProducts: uniqueProducts.size,
+                    totalVariants: priceItems.length,
+                    lastUpdated: lastUpdated?.toISOString() ?? null,
+                },
+                filterOptions: {
+                    types: Array.from(typeSet.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+                    categories: Array.from(catSet.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+                    subCategories: Array.from(subCatSet.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+                    coreProducts: Array.from(coreSet.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+                    brands: Array.from(brandSet.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+                },
+            };
+        }),
+
+    /**
+     * Update the wholesale/supply price for a specific inventory item.
+     */
+    updateWarehousePrice: warehouseProcedure
+        .input(
+            z.object({
+                inventoryId: z.number(),
+                retailPrice: z.string().min(1),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.inventory.findFirst({
+                where: and(
+                    eq(inventory.id, input.inventoryId),
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Inventory item not found" });
+            }
+
+            const [updated] = await db
+                .update(inventory)
+                .set({ retailPrice: input.retailPrice })
+                .where(eq(inventory.id, input.inventoryId))
+                .returning();
+
+            return { inventory: updated };
+        }),
+
+    /**
+     * Toggle availability of an inventory item (set qty to 0 or keep as-is).
+     */
+    toggleInventoryAvailability: warehouseProcedure
+        .input(
+            z.object({
+                inventoryId: z.number(),
+                available: z.boolean(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.inventory.findFirst({
+                where: and(
+                    eq(inventory.id, input.inventoryId),
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Inventory item not found" });
+            }
+
+            const updateData: Record<string, any> = {};
+            if (!input.available) {
+                // Set to unavailable — zero out stock
+                updateData.availableQty = "0";
+            } else {
+                // Restore to 1 as minimum (user can adjust from inventory page)
+                if (Number(existing.availableQty) <= 0) {
+                    updateData.availableQty = "1";
+                }
+            }
+
+            if (Object.keys(updateData).length > 0) {
+                await db
+                    .update(inventory)
+                    .set(updateData)
+                    .where(eq(inventory.id, input.inventoryId));
+            }
+
+            return { success: true };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -2660,4 +2975,5 @@ export const warehouseRouter = {
     ...warehouseProductCreation,
     ...stockEntryQueries,
     ...storageAreaQueries,
+    ...pricingQueries,
 };
