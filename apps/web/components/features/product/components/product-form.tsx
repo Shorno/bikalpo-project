@@ -12,6 +12,7 @@ import {
   Package,
   Plus,
   Save,
+  Search,
   Settings,
   Tag,
   Trash2,
@@ -34,6 +35,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import RichTextEditor from "@/components/ui/rich-text-editor";
@@ -105,6 +113,8 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
     number | null
   >((product as any)?.coreProductId ?? null);
   const [draftVariants, setDraftVariants] = useState<DraftVariant[]>([]);
+  const [brandModalOpen, setBrandModalOpen] = useState(false);
+  const [brandSearch, setBrandSearch] = useState("");
 
   // === Brand configuration state ===
   const [brandConfigs, setBrandConfigs] = useState<BrandConfig[]>(() => {
@@ -713,41 +723,94 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       />
                     ))}
 
-                    {/* Add Brand Selector */}
+                    {/* Add Brand Button + Modal */}
                     <div className="border border-dashed rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <Plus className="h-4 w-4 text-muted-foreground" />
-                        <Select
-                          value=""
-                          onValueChange={(v) => {
-                            const val = Number(v);
-                            if (val) handleAddBrand(val);
-                          }}
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Add a brand..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableBrands.length === 0 ? (
-                              <SelectItem value="none" disabled>
-                                No more brands available
-                              </SelectItem>
-                            ) : (
-                              availableBrands.map((b: any) => (
-                                <SelectItem key={b.id} value={String(b.id)}>
-                                  {b.name}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-start gap-2 text-muted-foreground"
+                        onClick={() => {
+                          setBrandSearch("");
+                          setBrandModalOpen(true);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add a brand...
+                      </Button>
                       {brandConfigs.length === 0 && (
                         <p className="text-xs text-muted-foreground mt-2">
                           Select a brand to begin configuring variants for this product.
                         </p>
                       )}
                     </div>
+
+                    {/* Brand Selector Modal */}
+                    <Dialog open={brandModalOpen} onOpenChange={setBrandModalOpen}>
+                      <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Select Brand</DialogTitle>
+                          <DialogDescription>
+                            Search and select a brand to add to this product.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          {/* Search Input */}
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              placeholder="Search brands..."
+                              value={brandSearch}
+                              onChange={(e) => setBrandSearch(e.target.value)}
+                              className="pl-9"
+                              autoFocus
+                            />
+                          </div>
+
+                          {/* Brand List */}
+                          <div className="max-h-[300px] overflow-y-auto space-y-1 -mx-1 px-1">
+                            {(() => {
+                              const filtered = availableBrands.filter((b: any) =>
+                                b.name.toLowerCase().includes(brandSearch.toLowerCase())
+                              );
+                              if (filtered.length === 0) {
+                                return (
+                                  <div className="text-center py-8 text-sm text-muted-foreground">
+                                    {availableBrands.length === 0
+                                      ? "All brands have been added."
+                                      : "No brands match your search."}
+                                  </div>
+                                );
+                              }
+                              return filtered.map((b: any) => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm text-left hover:bg-muted/80 transition-colors cursor-pointer"
+                                  onClick={() => {
+                                    handleAddBrand(b.id);
+                                    setBrandModalOpen(false);
+                                    setBrandSearch("");
+                                  }}
+                                >
+                                  {b.logo ? (
+                                    <img
+                                      src={b.logo}
+                                      alt={b.name}
+                                      className="h-8 w-8 rounded-md object-cover border"
+                                    />
+                                  ) : (
+                                    <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
+                                      {b.name.charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <span className="font-medium">{b.name}</span>
+                                </button>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
 
                     {brandConfigs.length > 0 && (
                       <p className="text-xs text-muted-foreground">
