@@ -1,0 +1,206 @@
+# Warehouse Product Creation — Add Product from Catalog
+
+## Background
+
+Warehouse owners currently browse the **Product Catalog** (core product list) at `/warehouse/dashboard/catalog`. The catalog shows all core product identities (Type → Category → SubCategory → Core Identity) and an `+ Add` button per row. Currently, clicking `+ Add` does nothing meaningful.
+
+The goal is to implement a **full product creation flow** where the warehouse clicks `+ Add` on a core product row and is taken to a multi-step form page to:
+1. Create a **warehouse-owned product** based on the core identity template
+2. Select **brands** and **variant options** (pack sizes) per brand
+3. Set **retailer prices** per brand+variant combo
+4. Configure supply rules (batch/expiry tracking, return policy)
+5. Set visibility/status
+
+This mirrors the admin's `ProductForm` but with key differences:
+- The warehouse **selects from existing brands and variant options** (cannot create new ones)
+- The warehouse sets **retailer prices** (the price at which they sell to shops) instead of consumer reference prices
+- The product is scoped to the warehouse (via `product.createdByWarehouseId` or by linking to inventory)
+- Carton setup is deferred for simplicity — only **pack variant + brand combo → retailer price**
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Database approach**: Two options for linking products to warehouses:
+> 1. **Option A (Recommended)**: Reuse the existing `product` table with a new `createdByWarehouseId` column. The warehouse creates a product just like admin does, but scoped to their warehouse. This reuses ALL existing product infrastructure (variants, pricing, inventory).
+> 2. **Option B**: Create a separate `warehouse_product` table. This would isolate warehouse data but requires duplicating a lot of logic.
+>
+> **I recommend Option A** — adding a `createdByWarehouseId` column to the `product` table. This keeps the architecture simple and reuses the existing `product → productVariant → inventory` pipeline.
+
+> [!WARNING]
+> **Simplified pricing**: Per your instructions, we're skipping carton setup for now. Each brand+variant combo gets a single **retailer price** (the price the warehouse charges shops). The variant's `price` field in `product_variant` will store this retailer price.
+
+---
+
+## Proposed Changes
+
+### Component 1: Database Schema
+
+#### [MODIFY] [product.ts](file:///c:/Users/Shorno/WebstormProjects/bikalpo-project/packages/db/src/schema/product.ts)
+- Add `createdByWarehouseId` column (nullable text, references user.id) to the `product` table
+- This identifies products created by a warehouse vs. admin-created products
+
+#### [NEW] Migration file
+- Add new migration to add the `createdByWarehouseId` column to the `product` table
+- Run `npx drizzle-kit generate` then `npx drizzle-kit push`
+
+---
+
+### Component 2: Backend API — Warehouse Product Router
+
+#### [MODIFY] [warehouse.ts](file:///c:/Users/Shorno/WebstormProjects/bikalpo-project/packages/api/src/routers/warehouse.ts)
+
+Add new `warehouseProcedure` endpoints to a new `warehouseProductCreation` section:
+
+**`createProduct`** — Creates a product from a core identity template:
+- Input schema:
+  ```ts
+  {
+    coreProductId: number,       // Required — the core identity to base this on
+    name: string,                // Custom display name (pre-filled from core product)
+    slug: string,                // Auto-generated
+    shortDescription?: string,
+    description?: string,
+    image: string,               // Pre-filled from core product
+    categoryId: number,          // From core product (fixed)
+    subCategoryId?: number,      // From core product (fixed)
+    // Brand + Variant config
+    brandConfigs: [{
+      brandId: number,
+      variants: [{
+        variantOptionId: number,
+        retailerPrice: string,    // Warehouse's selling price to shops
+      }]
+    }],
+    // Supply rules
+    trackingType: "none" | "batch" | "serial",
+    expiryEnabled: boolean,
+    isReturnablePack: boolean,
+    // Delivery
+    deliveryCostPerCarton?: string,
+    // Visibility
+    status: "active" | "draft",
+    visibility: "public" | "private",
+  }
+  ```
+- Handler logic:
+  1. Validate warehouse owns this session
+  2. Validate the core product exists
+  3. Auto-generate slug (with collision handling) and SKU
+  4. Create `product` row with `createdByWarehouseId = userId`, `coreProductId`, category/subcategory from core product
+  5. For each brand config:
+     - Insert `productBrand` M2M row
+     - For each variant in the brand:
+       - Insert `productVariantPrice` row (consumerPrice = retailerPrice)
+       - Auto-generate `productVariant` row (same pattern as admin's `product.create`)
+     - Auto-insert `inventory` row for each variant (ownerType=warehouse, ownerId=userId, variantId, retailPrice=retailerPrice, availableQty=0)
+  6. Return the created product
+
+**`getWarehouseProducts`** — List products created by this warehouse:
+- Fetches products where `createdByWarehouseId = userId`
+- Returns with brands, variants, inventory info
+
+**`getBrandsAndVariants`** — Helper endpoint to fetch available brands and variant options for the form:
+- Returns all active brands from the `brand` table
+- Returns all active variant options from the `variant_option` table (optionally filtered by typeId/categoryId scope)
+
+---
+
+### Component 3: Frontend — New Product Creation Page
+
+#### [NEW] [page.tsx](file:///c:/Users/Shorno/WebstormProjects/bikalpo-project/apps/web/app/warehouse/(management)/dashboard/catalog/add/[coreProductId]/page.tsx)
+
+New page at `/warehouse/dashboard/catalog/add/[coreProductId]` — the multi-step product creation form.
+
+**UI Structure** (modeled after admin's `ProductForm`):
+
+1. **Sticky Header Bar** — Back button + "Save Draft" + "Create Product" buttons
+2. **Step 1: Core Identity Info (Read-only)** — Shows the selected core product name, category hierarchy, image (all locked/non-editable since it comes from the catalog template)
+3. **Step 2: Product Name** — Editable product display name, auto-generated slug
+4. **Step 3: Brand & Variant Configuration** — Brand selector modal (same as admin), per-brand variant checkboxes with retailer price inputs
+5. **Step 4: Product Details** — Short description, full description (rich text editor)
+6. **Step 5: Media** — Main image (pre-filled from core product), additional images, video URL
+7. **Step 6: Supply Rules** — Batch tracking, expiry tracking, damage control, returnable pack toggles
+8. **Step 7: Delivery Cost** — Per-carton delivery cost input
+9. **Sidebar: Visibility & Status** — Active/Draft status, Public/Private visibility
+
+**Key differences from admin form:**
+- Core identity selection is **pre-filled and locked** (comes from URL param)
+- Brand + variant pricing shows **"Retailer Price"** instead of "Consumer Price"
+- After creation, each variant is **auto-added to warehouse inventory** with qty=0
+- Back button goes to `/warehouse/dashboard/catalog`
+- Uses `warehouseProcedure` endpoints instead of admin endpoints
+
+#### [MODIFY] [catalog page.tsx](file:///c:/Users/Shorno/WebstormProjects/bikalpo-project/apps/web/app/warehouse/(management)/dashboard/catalog/page.tsx)
+
+- Wire the `+ Add` button in the table's action column to navigate to `/warehouse/dashboard/catalog/add/[coreProductId]`
+- The `View` button can optionally show a detail modal (deferred, not critical)
+
+---
+
+### Component 4: ORPC Client Types
+
+#### [MODIFY] [orpc.ts](file:///c:/Users/Shorno/WebstormProjects/bikalpo-project/apps/web/utils/orpc.ts) (if needed)
+
+Ensure the warehouse router's new endpoints are exposed on the client. Since the warehouse router is already registered as `warehouse: warehouseRouter` in the API index, new endpoints should be automatically available via `orpc.warehouse.createProduct`.
+
+---
+
+## Data Flow Summary
+
+```mermaid
+sequenceDiagram
+    participant WH as Warehouse Owner
+    participant UI as Add Product Page
+    participant API as Warehouse API
+    participant DB as Database
+
+    WH->>UI: Clicks "+ Add" on Corn Flour row
+    UI->>API: GET getBrandsAndVariants()
+    API->>DB: Fetch brands + variant_options
+    API-->>UI: Returns brands[], variantOptions[]
+    
+    WH->>UI: Fills form (name, brands, variants, prices)
+    WH->>UI: Clicks "Create Product"
+    
+    UI->>API: POST createProduct(payload)
+    API->>DB: BEGIN TRANSACTION
+    API->>DB: INSERT product (createdByWarehouseId=userId)
+    API->>DB: INSERT productBrand (for each brand)
+    API->>DB: INSERT productVariantPrice (for each brand+variant)
+    API->>DB: INSERT productVariant (auto-generated rows)
+    API->>DB: INSERT inventory (one per variant, qty=0)
+    API->>DB: COMMIT
+    API-->>UI: { product: created }
+    
+    UI->>WH: Redirect to catalog with success toast
+```
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Delivery cost field**: The docs mention a `deliveryCostPerCarton` field. The `product` table already has this column. Should we expose it in the warehouse form, or defer it?
+
+> [!NOTE]  
+> **Warehouse product listing**: After creation, should we add a "My Products" tab/page under `/warehouse/dashboard/products` that shows only warehouse-created products? Or is the existing inventory page sufficient for now?
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1. Run `npx drizzle-kit push` to verify the schema migration succeeds
+2. Build the project (`npm run build`) to verify no TypeScript errors
+3. Start the dev server and navigate to the catalog page
+
+### Manual Verification
+1. Navigate to `/warehouse/dashboard/catalog`
+2. Click `+ Add` on any core product row
+3. Verify the form pre-fills the core identity info (name, image, category)
+4. Add 2 brands, select different variants for each, set retailer prices
+5. Click "Create Product" — verify success toast and redirect
+6. Check the database: `product`, `product_brand`, `product_variant_price`, `product_variant`, `inventory` rows should all be created
+7. Navigate to warehouse inventory page — the newly created variants should appear with qty=0
