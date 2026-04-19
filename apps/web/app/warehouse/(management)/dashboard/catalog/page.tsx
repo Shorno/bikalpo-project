@@ -30,6 +30,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { orpc } from "@/utils/orpc";
 import {
@@ -128,6 +129,7 @@ const typeVariantMap: Record<string, "default" | "secondary" | "outline" | "dest
 // ─── Main Page Component ───────────────────────────────────────
 
 export default function WarehouseCatalogPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   // Filters
@@ -342,7 +344,8 @@ export default function WarehouseCatalogPage() {
       {
         id: "actions",
         header: () => <div className="text-right">Action</div>,
-        cell: () => {
+        cell: ({ row }) => {
+          const cpId = row.original.coreProduct.id;
           return (
             <div className="flex justify-end gap-1.5">
               <Button
@@ -356,6 +359,7 @@ export default function WarehouseCatalogPage() {
               <Button
                 size="sm"
                 className="h-7 text-xs gap-1"
+                onClick={() => router.push(`/warehouse/dashboard/catalog/add/${cpId}`)}
               >
                 <Plus size={12} />
                 Add

@@ -123,6 +123,9 @@ export const product = pgTable("product", {
   // Product status
   status: productStatusEnum("status").default("active").notNull(),
 
+  /** Warehouse that created this product. NULL = admin-created (global). */
+  createdByWarehouseId: text("created_by_warehouse_id"),
+
   ...timestamps,
 });
 

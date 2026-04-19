@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+    boolean,
     integer,
     pgTable,
     serial,
@@ -48,6 +49,12 @@ export const coreProductIdentity = pgTable("core_product_identity", {
         () => subCategory.id,
         { onDelete: "set null" },
     ),
+
+    /** Whether this core product supports pack-based variants (e.g. 1KG Pack, 5KG Sack) */
+    supportsPack: boolean("supports_pack").default(true).notNull(),
+
+    /** Whether this core product supports loose variants (e.g. per KG, per Piece) */
+    supportsLoose: boolean("supports_loose").default(false).notNull(),
 
     ...timestamps,
 });
