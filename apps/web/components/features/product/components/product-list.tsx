@@ -22,7 +22,6 @@ export default function ProductList() {
         id: p.id,
         name: p.name,
         price: p.price,
-        stockQuantity: p.stockQuantity,
         size: p.size,
       })),
       null,

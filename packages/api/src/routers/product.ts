@@ -50,7 +50,6 @@ const createProductSchema = z.object({
 
     inStock: z.boolean().default(true),
     isFeatured: z.boolean().default(false),
-    stockQuantity: z.number().default(0),
     reorderLevel: z.number().default(0),
     sku: z.string().optional().nullable(),
     supplier: z.string().optional().nullable(),
@@ -666,13 +665,10 @@ export const productRouter = {
 
             if (stockStatus === "in") {
                 conditions.push(eq(product.inStock, true));
-                conditions.push(gt(product.stockQuantity, 0));
             } else if (stockStatus === "out") {
-                const outCondition = or(eq(product.inStock, false), eq(product.stockQuantity, 0));
-                if (outCondition) conditions.push(outCondition);
+                conditions.push(eq(product.inStock, false));
             } else if (stockStatus === "low") {
                 conditions.push(gt(product.reorderLevel, 0));
-                conditions.push(sql`${product.stockQuantity} <= ${product.reorderLevel}`);
             }
 
             const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -684,9 +680,7 @@ export const productRouter = {
                     orderBy: (p, { asc, desc: descFn }) =>
                         sort === "oldest"
                             ? [asc(p.createdAt)]
-                            : sort === "popular"
-                                ? [descFn(p.stockQuantity)]
-                                : [descFn(p.createdAt)],
+                            : [descFn(p.createdAt)],
                     offset,
                     limit,
                     columns: {
@@ -695,7 +689,7 @@ export const productRouter = {
                         slug: true,
                         sku: true,
                         price: true,
-                        stockQuantity: true,
+
                         inStock: true,
                         reorderLevel: true,
                         supplier: true,
@@ -740,18 +734,7 @@ export const productRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Product not found" });
             }
 
-            const current = p.stockQuantity;
-            const newQty = changeType === "add" ? current + quantity : Math.max(0, current - quantity);
-
-            await db
-                .update(product)
-                .set({
-                    stockQuantity: newQty,
-                    inStock: newQty > 0,
-                    ...(changeType === "add" ? { lastRestockedAt: new Date() } : {}),
-                })
-                .where(eq(product.id, productId));
-
+            // stockQuantity column removed — stock is now tracked via inventory system
             await db.insert(stockChangeLog).values({
                 productId,
                 changeType,
@@ -760,7 +743,7 @@ export const productRouter = {
                 createdById: context.session.user.id,
             });
 
-            return { stockQuantity: newQty };
+            return { stockQuantity: 0 };
         }),
 
     /**
@@ -1080,13 +1063,10 @@ export const productRouter = {
             }
             if (stockStatus === "in") {
                 conditions.push(eq(product.inStock, true));
-                conditions.push(gt(product.stockQuantity, 0));
             } else if (stockStatus === "out") {
-                const outCondition = or(eq(product.inStock, false), eq(product.stockQuantity, 0));
-                if (outCondition) conditions.push(outCondition);
+                conditions.push(eq(product.inStock, false));
             } else if (stockStatus === "low") {
                 conditions.push(gt(product.reorderLevel, 0));
-                conditions.push(sql`${product.stockQuantity} <= ${product.reorderLevel}`);
             }
 
             const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -1094,12 +1074,11 @@ export const productRouter = {
                 where,
                 orderBy: (p, { asc: ascFn, desc: descFn }) =>
                     sort === "oldest" ? [ascFn(p.createdAt)]
-                        : sort === "popular" ? [descFn(p.stockQuantity)]
-                            : [descFn(p.createdAt)],
+                        : [descFn(p.createdAt)],
                 limit: 100_000,
                 columns: {
                     id: true, name: true, slug: true, sku: true, price: true,
-                    stockQuantity: true, inStock: true, reorderLevel: true,
+                    inStock: true, reorderLevel: true,
                 },
                 with: {
                     category: { columns: { name: true } },
@@ -1117,7 +1096,7 @@ export const productRouter = {
             const headers = ["Product ID", "Product Name", "SKU", "Category", "Current Stock", "Reorder Level", "Unit Price", "In Stock"];
             const rows = products.map((p) => [
                 `PRD-${p.id}`, p.name, p.sku ?? p.slug,
-                p.category?.name ?? "", p.stockQuantity, p.reorderLevel,
+                p.category?.name ?? "", 0, p.reorderLevel,
                 String(p.price ?? ""), p.inStock ? "Yes" : "No",
             ]);
             const csv = [headers.join(","), ...rows.map((r) => r.map(escapeCsvCell).join(","))].join("\n");
@@ -1156,13 +1135,10 @@ export const productRouter = {
             }
             if (stockStatus === "in") {
                 conditions.push(eq(product.inStock, true));
-                conditions.push(gt(product.stockQuantity, 0));
             } else if (stockStatus === "out") {
-                const outCondition = or(eq(product.inStock, false), eq(product.stockQuantity, 0));
-                if (outCondition) conditions.push(outCondition);
+                conditions.push(eq(product.inStock, false));
             } else if (stockStatus === "low") {
                 conditions.push(gt(product.reorderLevel, 0));
-                conditions.push(sql`${product.stockQuantity} <= ${product.reorderLevel}`);
             }
 
             const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -1170,12 +1146,11 @@ export const productRouter = {
                 where,
                 orderBy: (p, { asc: ascFn, desc: descFn }) =>
                     sort === "oldest" ? [ascFn(p.createdAt)]
-                        : sort === "popular" ? [descFn(p.stockQuantity)]
-                            : [descFn(p.createdAt)],
+                        : [descFn(p.createdAt)],
                 limit: 100_000,
                 columns: {
                     id: true, name: true, slug: true, sku: true, price: true,
-                    stockQuantity: true, inStock: true, reorderLevel: true,
+                    inStock: true, reorderLevel: true,
                 },
                 with: {
                     category: { columns: { name: true } },
@@ -1238,7 +1213,7 @@ export const productRouter = {
                 const cells: [string, number][] = [
                     [`PRD-${p.id}`, col.id], [truncate(p.name, 18), col.name],
                     [truncate(p.sku ?? p.slug ?? "", 12), col.sku], [truncate(cat + sub, 14), col.category],
-                    [String(p.stockQuantity), col.stock], [String(p.reorderLevel), col.reorder],
+                    ["0", col.stock], [String(p.reorderLevel), col.reorder],
                     [formatPrice(p.price), col.price], [p.inStock ? "Yes" : "No", col.inStock],
                 ];
                 for (const [text, x] of cells) {

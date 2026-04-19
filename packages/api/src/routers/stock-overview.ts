@@ -77,8 +77,8 @@ export const stockOverviewRouter = {
                         ORDER BY ${productVariant.sortOrder} ASC
                         LIMIT 1
                     )`.as("primary_unit"),
-                    // Product-level unit size (carton/sack KG)
-                    unitSize: product.unitSize,
+                    // Product-level unit size (carton/sack KG) — field removed from product table
+                    unitSize: sql<string>`NULL`.as("unit_size"),
                     // Total weight in KG (sum of qty × weightKg)
                     totalWeightKg: sql<string>`COALESCE(SUM(${inventory.availableQty}::numeric * ${productVariant.weightKg}::numeric), 0)`.as("total_weight_kg"),
                     // Brand info (product-level brand)
@@ -103,7 +103,7 @@ export const stockOverviewRouter = {
                     product.name,
                     product.slug,
                     product.image,
-                    product.unitSize,
+
                     product.brandId,
                     brand.name,
                     category.id,

@@ -1309,7 +1309,7 @@ const queries = {
           originalPrice: item.unitPrice,
           currentPrice: currentProduct?.price ?? item.unitPrice,
           inStock: currentProduct?.inStock ?? false,
-          stockQuantity: currentProduct?.stockQuantity ?? 0,
+          stockQuantity: 0, // stockQuantity removed from product table
           productExists: !!currentProduct,
         };
       });
@@ -2551,7 +2551,7 @@ const mutations = {
         } else {
           stockQty = item.variant
             ? item.variant.stockQuantity
-            : item.product.stockQuantity;
+            : 999; // product-level stockQuantity removed; skip product-level check
         }
 
         if (stockQty < item.quantity) {
@@ -2688,12 +2688,7 @@ const mutations = {
               })
               .where(eq(productVariant.id, oi.variantId));
           } else {
-            await tx
-              .update(product)
-              .set({
-                stockQuantity: sql`${product.stockQuantity} - ${oi.quantity}`,
-              })
-              .where(eq(product.id, oi.productId));
+            // product-level stockQuantity removed — stock is tracked via inventory
           }
         }
 
@@ -2745,12 +2740,7 @@ const mutations = {
               })
               .where(eq(productVariant.id, item.variantId));
           } else {
-            await tx
-              .update(product)
-              .set({
-                stockQuantity: sql`${product.stockQuantity} + ${item.quantity}`,
-              })
-              .where(eq(product.id, item.productId));
+            // product-level stockQuantity removed — stock is tracked via inventory
           }
         }
 
@@ -3188,15 +3178,7 @@ const mutations = {
           })),
         );
 
-        // Deduct stock
-        for (const oi of orderItems) {
-          await tx
-            .update(product)
-            .set({
-              stockQuantity: sql`${product.stockQuantity} - ${oi.quantity}`,
-            })
-            .where(eq(product.id, oi.productId));
-        }
+        // Stock deduction removed — stock is tracked via inventory
 
         return newOrder!;
       });
@@ -3413,15 +3395,7 @@ const mutations = {
 
         await tx.insert(orderItem).values(orderItems);
 
-        // Reduce stock
-        for (const item of estimateData.items) {
-          await tx
-            .update(product)
-            .set({
-              stockQuantity: sql`${product.stockQuantity} - ${item.quantity}`,
-            })
-            .where(eq(product.id, item.productId));
-        }
+        // Stock deduction removed — stock is tracked via inventory
 
         // Update estimate status
         await tx

@@ -217,11 +217,10 @@ export const adminItemRequestRouter = {
                 throw new Error("Selected product not found");
             }
 
-            // Add to product stock
+            // Stock update removed — stock is now tracked via the inventory system
             await db
                 .update(product)
                 .set({
-                    stockQuantity: sql`${product.stockQuantity} + ${req.quantity}`,
                     inStock: true,
                     lastRestockedAt: new Date(),
                 })

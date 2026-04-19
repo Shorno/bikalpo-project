@@ -257,7 +257,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
       // These fields are auto-managed (synced from variants)
       size: product?.size ?? "—",
       price: product?.price ?? "0",
-      stockQuantity: product?.stockQuantity ?? 0,
       reorderLevel: product?.reorderLevel ?? 0,
       supplier: product?.supplier ?? "",
       image: product?.image ?? "",

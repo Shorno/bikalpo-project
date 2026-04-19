@@ -72,7 +72,6 @@ export const product = pgTable("product", {
   size: varchar("size", { length: 50 }).notNull(),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
 
-  stockQuantity: integer("stock_quantity").default(0).notNull(),
   reorderLevel: integer("reorder_level").default(0).notNull(),
   sku: varchar("sku", { length: 100 }),
   supplier: text("supplier"),
