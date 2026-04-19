@@ -3,674 +3,479 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  BarChart3,
+  Box,
   BoxesIcon,
-  ChevronDown,
-  ChevronRight,
-  Droplets,
+  Calendar,
+  CheckCircle2,
+  Layers,
   Package,
-  Search,
+  PackageX,
   Tag,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
-import Image from "next/image";
-import { useState } from "react";
 import { orpc } from "@/utils/orpc";
+import { Badge } from "@/components/ui/badge";
 
-/* ─── Stock status badge ─── */
-function StatusBadge({ badge }: { badge: string }) {
-  const map: Record<string, { bg: string; text: string; border: string; icon: boolean; label: string }> = {
-    in_stock: { bg: "bg-emerald-50", text: "text-emerald-600", border: "border-emerald-200", icon: false, label: "In Stock" },
-    limited: { bg: "bg-amber-50", text: "text-amber-600", border: "border-amber-200", icon: true, label: "Limited" },
-    low: { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", icon: true, label: "Low" },
-    out_of_stock: { bg: "bg-red-50", text: "text-red-600", border: "border-red-200", icon: true, label: "Out of Stock" },
+// ─── Types ─────────────────────────────────────────────────────
+
+type KPIData = {
+  mainKPI: {
+    totalProducts: number;
+    totalSKU: number;
+    totalUnits: number;
+    totalStockValue: number;
   };
-  const s = map[badge] || map.in_stock;
-  return (
-    <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 ${s.bg} ${s.text} border ${s.border} rounded-full font-semibold whitespace-nowrap`}>
-      {s.icon && <AlertTriangle size={10} />}
-      {s.label}
-    </span>
-  );
-}
-
-/* ─── Level 2: Variant × Brand breakdown ─── */
-function StockBreakdown({ productId, ownerType }: { productId: number; ownerType: "warehouse" | "shop" | "super_seller" }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["stockOverview", "breakdown", productId, ownerType],
-    queryFn: () => orpc.stockOverview.getStockBreakdown.call({ productId, ownerType }),
-  });
-
-  if (isLoading) {
-    return (
-      <div className="py-6 text-center text-sm text-gray-400 animate-pulse">
-        Loading breakdown…
-      </div>
-    );
-  }
-
-  const groups = data?.variantGroups ?? [];
-  const loosePool = data?.loosePool;
-
-  if (groups.length === 0) {
-    return (
-      <div className="py-4 text-center text-sm text-gray-400">
-        No variant details available
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {groups.map((group, gi) => {
-        const isLoose = group.packType === "loose";
-        const groupTotal = group.items.reduce((s, i) => s + i.availableQty, 0);
-        return (
-          <div key={gi} className="bg-gray-50 rounded-lg border border-gray-100 overflow-hidden">
-            {/* Group header */}
-            <div className="flex items-center justify-between px-4 py-2.5 bg-gray-100/70">
-              <div className="flex items-center gap-2">
-                {isLoose ? (
-                  <Droplets size={14} className="text-blue-500" />
-                ) : (
-                  <Package size={14} className="text-amber-600" />
-                )}
-                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                  {isLoose
-                    ? "Loose / Open"
-                    : group.unitLabel}
-                </span>
-                {!isLoose && group.innerPackSizeKg && (
-                  <span className="text-[10px] text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-200">
-                    {group.innerPackSizeKg}kg × {group.packCountInside || Math.floor(parseFloat(group.weightKg) / parseFloat(group.innerPackSizeKg))} pcs inside
-                  </span>
-                )}
-              </div>
-              <span className="text-xs font-semibold text-gray-500">
-                {groupTotal.toLocaleString()} {isLoose ? "KG" : "pcs"}
-              </span>
-            </div>
-
-            {/* Items within this variant group */}
-            <div className="divide-y divide-gray-100">
-              {group.items.map((item, ii) => (
-                <div key={ii} className="flex items-center justify-between px-4 py-2 hover:bg-white transition-colors">
-                  <div className="flex items-center gap-2">
-                    {item.brand ? (
-                      <>
-                        <Tag size={12} className="text-gray-400" />
-                        <span className="text-sm font-medium text-gray-800">{item.brand.name}</span>
-                      </>
-                    ) : item.color || item.size ? (
-                      <>
-                        {item.color && (
-                          <span
-                            className="w-3 h-3 rounded-full border border-gray-300"
-                            style={{ backgroundColor: item.color.toLowerCase() }}
-                          />
-                        )}
-                        <span className="text-sm font-medium text-gray-800">
-                          {[item.color, item.size].filter(Boolean).join(" / ")}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-sm text-gray-500">General</span>
-                    )}
-                    {item.sku && (
-                      <span className="text-[10px] text-gray-400 font-mono">{item.sku}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-sm font-bold tabular-nums ${
-                      item.availableQty <= 0 ? "text-red-500" :
-                      item.status.badge === "low" ? "text-orange-600" :
-                      item.status.badge === "limited" ? "text-amber-600" :
-                      "text-gray-900"
-                    }`}>
-                      {item.availableQty.toLocaleString()}
-                    </span>
-                    <StatusBadge badge={item.status.badge} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Loose pool summary */}
-      {loosePool && (loosePool.openStock > 0 || loosePool.fullDrum > 0) && (
-        <div className="bg-blue-50 rounded-lg border border-blue-100 px-4 py-3">
-          <div className="text-xs font-bold text-blue-700 uppercase mb-2">Loose Pool Summary</div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-[10px] text-blue-500 uppercase font-semibold">Open Stock</div>
-              <div className="text-lg font-bold text-blue-800">{loosePool.openStock.toLocaleString()} KG</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-blue-500 uppercase font-semibold">Full Drum</div>
-              <div className="text-lg font-bold text-blue-800">{loosePool.fullDrum.toLocaleString()} KG</div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Types for grouped products ─── */
-type ProductOverview = {
-  productId: number;
-  productName: string;
-  productSlug: string;
-  productImage: string | null;
-  category: string | null;
-  subCategory: string | null;
-  brandId: number | null;
-  brandName: string | null;
-  totalQty: number;
-  totalWeightKg: number;
-  unitSizeKg: number;
-  cartonCount: number;
-  remainderKg: number;
-  variantCount: number;
-  primaryUnit: string;
-  status: { label: string; badge: string };
+  stockStatus: {
+    inStock: number;
+    outOfStock: number;
+  };
+  packTypeBreakdown: Array<{
+    packagingType: string;
+    totalUnits: number;
+    itemCount: number;
+  }>;
+  alerts: {
+    expiringSoon: number;
+  };
+  quickInsights: {
+    topCategories: Array<{
+      name: string;
+      value: number;
+    }>;
+  };
 };
 
-type CoreProductGroup = {
-  name: string;
-  category: string | null;
-  image: string | null;
-  unitSizeKg: number;
-  products: ProductOverview[];
-  // Aggregated totals across all brands
-  totalQty: number;
-  totalWeightKg: number;
-  totalVariants: number;
-  cartonCount: number;
-  remainderKg: number;
-  primaryUnit: string;
-  worstBadge: string;
-};
+// ─── KPI Card ──────────────────────────────────────────────────
 
-/** Group products by name+category → core product groups */
-function groupByCoreProduct(products: ProductOverview[]): CoreProductGroup[] {
-  const map = new Map<string, CoreProductGroup>();
-
-  for (const p of products) {
-    const key = `${p.productName}__${p.category || ""}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        name: p.productName,
-        category: p.category,
-        image: p.productImage,
-        unitSizeKg: p.unitSizeKg,
-        products: [],
-        totalQty: 0,
-        totalWeightKg: 0,
-        totalVariants: 0,
-        cartonCount: 0,
-        remainderKg: 0,
-        primaryUnit: p.primaryUnit,
-        worstBadge: "in_stock",
-      });
-    }
-    const group = map.get(key)!;
-    group.products.push(p);
-    group.totalQty += p.totalQty;
-    group.totalWeightKg += p.totalWeightKg;
-    group.totalVariants += p.variantCount;
-    // Use image from first product that has one
-    if (!group.image && p.productImage) group.image = p.productImage;
-    // Recalculate carton from aggregated weight
-    if (group.unitSizeKg > 0) {
-      group.cartonCount = Math.floor(group.totalWeightKg / group.unitSizeKg);
-      group.remainderKg = group.totalWeightKg % group.unitSizeKg;
-    }
-    // Worst status wins
-    const badgePriority: Record<string, number> = { out_of_stock: 3, low: 2, limited: 1, in_stock: 0 };
-    if ((badgePriority[p.status.badge] ?? 0) > (badgePriority[group.worstBadge] ?? 0)) {
-      group.worstBadge = p.status.badge;
-    }
-  }
-
-  return Array.from(map.values());
-}
-
-/* ─── Brand sub-entry inside a core product group ─── */
-function BrandProductEntry({
-  product,
-  isExpanded,
-  onToggle,
-  ownerType,
+function KPICard({
+  label,
+  value,
+  subtitle,
+  icon: Icon,
+  color = "default",
 }: {
-  product: ProductOverview;
-  isExpanded: boolean;
-  onToggle: () => void;
-  ownerType: "warehouse" | "shop" | "super_seller";
+  label: string;
+  value: string | number;
+  subtitle?: string;
+  icon: React.ElementType;
+  color?: "default" | "amber" | "emerald" | "blue" | "red" | "purple" | "orange";
 }) {
+  const colors = {
+    default: {
+      bg: "bg-white border-gray-200",
+      icon: "bg-gray-100 text-gray-600",
+      val: "text-gray-900",
+      lbl: "text-gray-500",
+    },
+    amber: {
+      bg: "bg-amber-50/50 border-amber-200",
+      icon: "bg-amber-100 text-amber-600",
+      val: "text-amber-700",
+      lbl: "text-amber-500",
+    },
+    emerald: {
+      bg: "bg-emerald-50/50 border-emerald-200",
+      icon: "bg-emerald-100 text-emerald-600",
+      val: "text-emerald-700",
+      lbl: "text-emerald-500",
+    },
+    blue: {
+      bg: "bg-blue-50/50 border-blue-200",
+      icon: "bg-blue-100 text-blue-600",
+      val: "text-blue-700",
+      lbl: "text-blue-500",
+    },
+    red: {
+      bg: "bg-red-50/50 border-red-200",
+      icon: "bg-red-100 text-red-600",
+      val: "text-red-700",
+      lbl: "text-red-500",
+    },
+    purple: {
+      bg: "bg-purple-50/50 border-purple-200",
+      icon: "bg-purple-100 text-purple-600",
+      val: "text-purple-700",
+      lbl: "text-purple-500",
+    },
+    orange: {
+      bg: "bg-orange-50/50 border-orange-200",
+      icon: "bg-orange-100 text-orange-600",
+      val: "text-orange-700",
+      lbl: "text-orange-500",
+    },
+  };
+  const c = colors[color];
+
   return (
-    <div className="border border-gray-100 rounded-lg overflow-hidden bg-white">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50/50 transition-colors"
-      >
-        {/* Brand tag */}
-        <div className="shrink-0">
-          <Tag size={12} className="text-gray-400" />
+    <div className={`border rounded-xl p-4 transition-shadow hover:shadow-sm ${c.bg}`}>
+      <div className="flex items-center gap-3">
+        <div className={`p-2.5 rounded-lg ${c.icon}`}>
+          <Icon size={20} />
         </div>
-
-        {/* Brand product info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-800 truncate">
-              {product.brandName || product.productName}
-            </span>
-            {product.subCategory && (
-              <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
-                {product.subCategory}
-              </span>
-            )}
-          </div>
-          <div className="text-[10px] text-gray-400 mt-0.5">
-            {product.variantCount} variant{product.variantCount !== 1 ? "s" : ""}
-          </div>
-        </div>
-
-        {/* Stock */}
-        <div className="text-right shrink-0">
-          {product.unitSizeKg > 0 ? (
-            <>
-              <div className={`text-sm font-bold tabular-nums ${
-                product.status.badge === "out_of_stock" ? "text-red-500" :
-                product.status.badge === "low" ? "text-orange-600" :
-                "text-gray-900"
-              }`}>
-                {product.cartonCount.toLocaleString()}
-              </div>
-              <div className="text-[9px] text-gray-400 uppercase">
-                {product.unitSizeKg}KG Carton
-              </div>
-              <div className="text-[8px] text-gray-300">
-                {product.totalWeightKg.toLocaleString()}KG total
-                {product.remainderKg > 0 && ` + ${product.remainderKg.toFixed(1)}KG`}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className={`text-sm font-bold tabular-nums ${
-                product.status.badge === "out_of_stock" ? "text-red-500" :
-                product.status.badge === "low" ? "text-orange-600" :
-                "text-gray-900"
-              }`}>
-                {product.totalQty.toLocaleString()}
-              </div>
-              <div className="text-[9px] text-gray-400 uppercase">{product.primaryUnit}</div>
-            </>
+        <div className="min-w-0">
+          <div className={`text-2xl font-bold ${c.val} tabular-nums`}>{value}</div>
+          <div className={`text-xs font-medium ${c.lbl}`}>{label}</div>
+          {subtitle && (
+            <div className="text-[10px] text-gray-400 mt-0.5">{subtitle}</div>
           )}
         </div>
-
-        <div className="shrink-0">
-          <StatusBadge badge={product.status.badge} />
-        </div>
-
-        <div className="shrink-0 text-gray-400">
-          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </div>
-      </button>
-
-      {isExpanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-gray-100 bg-gray-50/30">
-          <StockBreakdown productId={product.productId} ownerType={ownerType} />
-        </div>
-      )}
+      </div>
     </div>
   );
 }
 
-/* ─── Main page ─── */
-export default function StockOverviewPage() {
-  const ownerType = "warehouse" as const;
-  const [expandedProduct, setExpandedProduct] = useState<number | null>(null);
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<number | undefined>(undefined);
-  const [search, setSearch] = useState("");
+// ─── Section Header ────────────────────────────────────────────
 
-  // Fetch categories
-  const { data: catData } = useQuery({
-    queryKey: ["stockOverview", "categories", ownerType],
-    queryFn: () => orpc.stockOverview.getStockCategories.call({ ownerType }),
-  });
+function SectionHeader({
+  icon: Icon,
+  title,
+  emoji,
+}: {
+  icon: React.ElementType;
+  title: string;
+  emoji: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <div className="p-1.5 bg-gray-100 rounded-lg">
+        <Icon size={14} className="text-gray-600" />
+      </div>
+      <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
+        {emoji} {title}
+      </h2>
+    </div>
+  );
+}
 
-  // Fetch stock overview
-  const { data: overviewData, isLoading } = useQuery({
-    queryKey: ["stockOverview", "overview", ownerType, selectedCategory],
+// ─── Pack Type Label ───────────────────────────────────────────
+
+function formatPackType(type: string): string {
+  const map: Record<string, string> = {
+    loose: "Loose",
+    packet: "Packet",
+    sack: "Sack",
+    carton: "Carton",
+    bottle: "Bottle",
+    can: "Can",
+    jar: "Jar",
+    pouch: "Pouch",
+    box: "Box",
+  };
+  return map[type] || type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function getPackIcon(type: string): React.ElementType {
+  switch (type) {
+    case "loose":
+      return Layers;
+    case "carton":
+    case "box":
+      return BoxesIcon;
+    default:
+      return Package;
+  }
+}
+
+// ─── Main Page ─────────────────────────────────────────────────
+
+export default function StockOverviewDashboard() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["stockOverview", "dashboardKPI", "warehouse"],
     queryFn: () =>
-      orpc.stockOverview.getStockOverview.call({
-        ownerType,
-        categoryId: selectedCategory,
+      (orpc.stockOverview as any).getStockDashboardKPI.call({
+        ownerType: "warehouse",
       }),
   });
 
-  const categories = catData?.categories ?? [];
-  const allProducts = (overviewData?.products ?? []) as ProductOverview[];
+  const kpi: KPIData | null = data ?? null;
 
-  // Client-side search filter
-  const filteredProducts = search.trim()
-    ? allProducts.filter((p) =>
-        p.productName.toLowerCase().includes(search.toLowerCase())
-      )
-    : allProducts;
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-xl">
+              <BarChart3 className="text-blue-600" size={22} />
+            </div>
+            Stock Overview
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">KPI dashboard for your warehouse stock</p>
+        </div>
+        <div className="flex flex-col items-center justify-center py-20 border rounded-lg">
+          <div className="w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
+          <p className="text-sm text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
-  // Group by core product name
-  const coreGroups = groupByCoreProduct(filteredProducts);
+  if (!kpi) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 border border-dashed rounded-lg bg-gray-50/50">
+        <BoxesIcon className="text-gray-300 mb-4" size={48} />
+        <p className="text-gray-500 text-lg font-medium">No stock data</p>
+        <p className="text-sm text-gray-400 mt-1">
+          Add products to your inventory to see the stock overview.
+        </p>
+      </div>
+    );
+  }
 
-  // Aggregate stats across all products (not groups)
-  const totalUniqueProducts = coreGroups.length;
-  const totalBrandProducts = filteredProducts.length;
-  const totalStock = filteredProducts.reduce((s, p) => s + p.totalQty, 0);
-  const outOfStockCount = filteredProducts.filter((p) => p.status.badge === "out_of_stock").length;
-  const lowStockCount = filteredProducts.filter(
-    (p) => p.status.badge === "low" || p.status.badge === "limited"
-  ).length;
+  const totalItems = kpi.stockStatus.inStock + kpi.stockStatus.outOfStock;
+  const inStockPercent =
+    totalItems > 0 ? Math.round((kpi.stockStatus.inStock / totalItems) * 100) : 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-8">
+      {/* ── Header ── */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <BoxesIcon className="text-amber-600" size={24} />
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+          <div className="p-2 bg-blue-100 rounded-xl">
+            <BarChart3 className="text-blue-600" size={22} />
+          </div>
           Stock Overview
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Hierarchical view of your warehouse stock by product and variant
+          KPI dashboard for your warehouse stock position
         </p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
-          <div className="text-xs text-gray-400 uppercase font-semibold">Products</div>
-          <div className="text-2xl font-bold text-gray-900 mt-1">{totalUniqueProducts}</div>
-          {totalBrandProducts > totalUniqueProducts && (
-            <div className="text-[10px] text-gray-400">{totalBrandProducts} brand entries</div>
-          )}
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
-          <div className="text-xs text-gray-400 uppercase font-semibold">Total Stock</div>
-          <div className="text-2xl font-bold text-gray-900 mt-1">{totalStock.toLocaleString()}</div>
-        </div>
-        <div className="bg-white border border-amber-200 rounded-lg px-4 py-3 bg-amber-50/50">
-          <div className="text-xs text-amber-600 uppercase font-semibold">Low / Limited</div>
-          <div className="text-2xl font-bold text-amber-600 mt-1">{lowStockCount}</div>
-        </div>
-        <div className="bg-white border border-red-200 rounded-lg px-4 py-3 bg-red-50/50">
-          <div className="text-xs text-red-500 uppercase font-semibold">Out of Stock</div>
-          <div className="text-2xl font-bold text-red-500 mt-1">{outOfStockCount}</div>
-        </div>
-      </div>
-
-      {/* Category filter + Search */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Category pills */}
-        <div className="flex flex-wrap gap-2 flex-1">
-          <button
-            onClick={() => setSelectedCategory(undefined)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-colors ${
-              !selectedCategory
-                ? "bg-amber-600 text-white border-amber-600"
-                : "bg-white text-gray-600 border-gray-200 hover:border-amber-300"
-            }`}
-          >
-            All Categories
-          </button>
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() =>
-                setSelectedCategory(selectedCategory === cat.id ? undefined : cat.id)
-              }
-              className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-colors ${
-                selectedCategory === cat.id
-                  ? "bg-amber-600 text-white border-amber-600"
-                  : "bg-white text-gray-600 border-gray-200 hover:border-amber-300"
-              }`}
-            >
-              {cat.name} ({cat.productCount})
-            </button>
-          ))}
-        </div>
-
-        {/* Search */}
-        <div className="relative w-full sm:w-64">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search products..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none"
+      {/* ══════════════════════════════════════════════════════════════
+          📊 MAIN KPI — STOCK POSITION
+          ══════════════════════════════════════════════════════════════ */}
+      <div>
+        <SectionHeader icon={TrendingUp} title="Stock Position" emoji="📊" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <KPICard
+            label="Total Products"
+            value={kpi.mainKPI.totalProducts.toLocaleString()}
+            icon={Package}
+            color="amber"
+          />
+          <KPICard
+            label="Total Stock Value"
+            value={`৳ ${kpi.mainKPI.totalStockValue.toLocaleString()}`}
+            icon={Wallet}
+            color="emerald"
+          />
+          <KPICard
+            label="Total Units"
+            value={kpi.mainKPI.totalUnits.toLocaleString()}
+            icon={BoxesIcon}
+            color="blue"
+          />
+          <KPICard
+            label="Total SKU"
+            value={kpi.mainKPI.totalSKU.toLocaleString()}
+            icon={Tag}
+            color="purple"
           />
         </div>
       </div>
 
-      {/* Core product cards */}
-      {isLoading ? (
-        <div className="text-center py-12 text-gray-400 text-sm animate-pulse">
-          Loading stock overview…
-        </div>
-      ) : coreGroups.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center border rounded-lg bg-gray-50/50">
-          <BoxesIcon className="text-gray-300 mb-3" size={48} />
-          <p className="text-gray-500 text-lg font-medium">No stock found</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Add products to your inventory to see the stock overview.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {coreGroups.map((group) => {
-            const groupKey = `${group.name}__${group.category || ""}`;
-            const isMultiBrand = group.products.length > 1;
-            const isGroupExpanded = expandedGroup === groupKey;
+      {/* ══════════════════════════════════════════════════════════════
+          📊 STOCK STATUS
+          ══════════════════════════════════════════════════════════════ */}
+      <div>
+        <SectionHeader icon={CheckCircle2} title="Stock Status" emoji="📊" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="border rounded-xl p-5 bg-emerald-50/50 border-emerald-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-100 rounded-lg">
+                  <CheckCircle2 size={20} className="text-emerald-600" />
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-emerald-700 tabular-nums">
+                    {kpi.stockStatus.inStock}
+                  </div>
+                  <div className="text-xs font-medium text-emerald-500">In Stock Items</div>
+                </div>
+              </div>
+              {totalItems > 0 && (
+                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">
+                  {inStockPercent}%
+                </Badge>
+              )}
+            </div>
+            {/* Simple progress bar */}
+            {totalItems > 0 && (
+              <div className="mt-3 h-2 bg-emerald-200/50 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{ width: `${inStockPercent}%` }}
+                />
+              </div>
+            )}
+          </div>
 
-            // Single-brand product — render exactly as before (flat, no nesting)
-            if (!isMultiBrand) {
-              const p = group.products[0]!;
-              const isExpanded = expandedProduct === p.productId;
+          <div className="border rounded-xl p-5 bg-red-50/50 border-red-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-red-100 rounded-lg">
+                  <PackageX size={20} className="text-red-600" />
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-red-700 tabular-nums">
+                    {kpi.stockStatus.outOfStock}
+                  </div>
+                  <div className="text-xs font-medium text-red-500">Out of Stock Items</div>
+                </div>
+              </div>
+              {totalItems > 0 && (
+                <Badge className="bg-red-100 text-red-700 border-red-200 text-xs">
+                  {100 - inStockPercent}%
+                </Badge>
+              )}
+            </div>
+            {totalItems > 0 && (
+              <div className="mt-3 h-2 bg-red-200/50 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-red-500 rounded-full transition-all"
+                  style={{ width: `${100 - inStockPercent}%` }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          📊 PACK / INVENTORY TYPE
+          ══════════════════════════════════════════════════════════════ */}
+      {kpi.packTypeBreakdown.length > 0 && (
+        <div>
+          <SectionHeader icon={Box} title="Pack / Inventory Type" emoji="📊" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {kpi.packTypeBreakdown.map((pack) => {
+              const PackIcon = getPackIcon(pack.packagingType);
               return (
                 <div
-                  key={p.productId}
-                  className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-shadow hover:shadow-sm"
+                  key={pack.packagingType}
+                  className="border rounded-xl p-4 bg-white hover:shadow-sm transition-shadow"
                 >
-                  <button
-                    onClick={() =>
-                      setExpandedProduct(isExpanded ? null : p.productId)
-                    }
-                    className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-gray-50/50 transition-colors"
-                  >
-                    <div className="shrink-0 w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
-                      {p.productImage ? (
-                        <Image
-                          src={p.productImage}
-                          alt={p.productName}
-                          width={40}
-                          height={40}
-                          className="w-10 h-10 object-cover"
-                        />
-                      ) : (
-                        <Package size={20} className="text-gray-400" />
-                      )}
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="p-1.5 bg-gray-100 rounded-lg">
+                      <PackIcon size={14} className="text-gray-600" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-900 truncate">
-                          {p.productName}
-                        </span>
-                        {p.subCategory && (
-                          <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
-                            {p.subCategory}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">
-                        {p.category} • {p.variantCount} variant{p.variantCount !== 1 ? "s" : ""}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      {p.unitSizeKg > 0 ? (
-                        <>
-                          <div className={`text-lg font-bold tabular-nums ${
-                            p.status.badge === "out_of_stock" ? "text-red-500" :
-                            p.status.badge === "low" ? "text-orange-600" :
-                            "text-gray-900"
-                          }`}>
-                            {p.cartonCount.toLocaleString()}
-                          </div>
-                          <div className="text-[10px] text-gray-400 uppercase">
-                            {p.unitSizeKg}KG Carton
-                          </div>
-                          <div className="text-[9px] text-gray-300">
-                            {p.totalWeightKg.toLocaleString()}KG total
-                            {p.remainderKg > 0 && ` + ${p.remainderKg.toFixed(1)}KG`}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className={`text-lg font-bold tabular-nums ${
-                            p.status.badge === "out_of_stock" ? "text-red-500" :
-                            p.status.badge === "low" ? "text-orange-600" :
-                            "text-gray-900"
-                          }`}>
-                            {p.totalQty.toLocaleString()}
-                          </div>
-                          <div className="text-[10px] text-gray-400 uppercase">{p.primaryUnit}</div>
-                        </>
-                      )}
-                    </div>
-                    <div className="shrink-0">
-                      <StatusBadge badge={p.status.badge} />
-                    </div>
-                    <div className="shrink-0 text-gray-400">
-                      {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    </div>
-                  </button>
-                  {isExpanded && (
-                    <div className="px-4 pb-4 pt-1 border-t border-gray-100 bg-gray-50/30">
-                      <StockBreakdown productId={p.productId} ownerType={ownerType} />
-                    </div>
-                  )}
+                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      {formatPackType(pack.packagingType)} Stock
+                    </span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900 tabular-nums">
+                    {pack.totalUnits.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">
+                    {pack.itemCount} {pack.itemCount === 1 ? "item" : "items"}
+                  </div>
                 </div>
               );
-            }
-
-            // Multi-brand product — grouped parent card
-            return (
-              <div
-                key={groupKey}
-                className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-shadow hover:shadow-sm"
-              >
-                {/* Parent card header */}
-                <button
-                  onClick={() =>
-                    setExpandedGroup(isGroupExpanded ? null : groupKey)
-                  }
-                  className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-gray-50/50 transition-colors"
-                >
-                  {/* Product image */}
-                  <div className="shrink-0 w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
-                    {group.image ? (
-                      <Image
-                        src={group.image}
-                        alt={group.name}
-                        width={40}
-                        height={40}
-                        className="w-10 h-10 object-cover"
-                      />
-                    ) : (
-                      <Package size={20} className="text-gray-400" />
-                    )}
-                  </div>
-
-                  {/* Product info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900 truncate">
-                        {group.name}
-                      </span>
-                      <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-medium border border-indigo-100">
-                        {group.products.length} brands
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-gray-400 mt-0.5">
-                      {group.category} • {group.totalVariants} variant{group.totalVariants !== 1 ? "s" : ""} total
-                    </div>
-                  </div>
-
-                  {/* Stock total (aggregated) */}
-                  <div className="text-right shrink-0">
-                    {group.unitSizeKg > 0 ? (
-                      <>
-                        <div className={`text-lg font-bold tabular-nums ${
-                          group.worstBadge === "out_of_stock" ? "text-red-500" :
-                          group.worstBadge === "low" ? "text-orange-600" :
-                          "text-gray-900"
-                        }`}>
-                          {group.cartonCount.toLocaleString()}
-                        </div>
-                        <div className="text-[10px] text-gray-400 uppercase">
-                          {group.unitSizeKg}KG Carton
-                        </div>
-                        <div className="text-[9px] text-gray-300">
-                          {group.totalWeightKg.toLocaleString()}KG total
-                          {group.remainderKg > 0 && ` + ${group.remainderKg.toFixed(1)}KG`}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className={`text-lg font-bold tabular-nums ${
-                          group.worstBadge === "out_of_stock" ? "text-red-500" :
-                          group.worstBadge === "low" ? "text-orange-600" :
-                          "text-gray-900"
-                        }`}>
-                          {group.totalQty.toLocaleString()}
-                        </div>
-                        <div className="text-[10px] text-gray-400 uppercase">{group.primaryUnit}</div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Worst status badge */}
-                  <div className="shrink-0">
-                    <StatusBadge badge={group.worstBadge} />
-                  </div>
-
-                  {/* Expand chevron */}
-                  <div className="shrink-0 text-gray-400">
-                    {isGroupExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  </div>
-                </button>
-
-                {/* Expanded: brand sub-entries */}
-                {isGroupExpanded && (
-                  <div className="px-4 pb-4 pt-2 border-t border-gray-100 bg-gray-50/30 space-y-2">
-                    {group.products.map((p) => (
-                      <BrandProductEntry
-                        key={p.productId}
-                        product={p}
-                        isExpanded={expandedProduct === p.productId}
-                        onToggle={() =>
-                          setExpandedProduct(expandedProduct === p.productId ? null : p.productId)
-                        }
-                        ownerType={ownerType}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+            })}
+          </div>
         </div>
       )}
-    </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          ⚠ ALERT SUMMARY
+          ══════════════════════════════════════════════════════════════ */}
+      {kpi.alerts.expiringSoon > 0 && (
+        <div>
+          <SectionHeader icon={AlertTriangle} title="Alert Summary" emoji="⚠" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="border rounded-xl p-4 bg-orange-50/50 border-orange-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <Calendar size={18} className="text-orange-600" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-orange-700 tabular-nums">
+                    {kpi.alerts.expiringSoon}
+                  </div>
+                  <div className="text-xs font-medium text-orange-500">
+                    Expiring within 30 days
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Placeholder for future: Low Stock, Damaged */}
+            <div className="border rounded-xl p-4 bg-gray-50/50 border-gray-200 border-dashed">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-100 rounded-lg">
+                  <AlertTriangle size={18} className="text-gray-400" />
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-gray-300">—</div>
+                  <div className="text-xs font-medium text-gray-400">Low Stock</div>
+                  <div className="text-[9px] text-gray-300">Coming soon</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border rounded-xl p-4 bg-gray-50/50 border-gray-200 border-dashed">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-100 rounded-lg">
+                  <PackageX size={18} className="text-gray-400" />
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-gray-300">—</div>
+                  <div className="text-xs font-medium text-gray-400">Damaged</div>
+                  <div className="text-[9px] text-gray-300">Coming soon</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          📌 QUICK INSIGHTS
+          ══════════════════════════════════════════════════════════════ */}
+      {kpi.quickInsights.topCategories.length > 0 && (
+        <div>
+          <SectionHeader icon={TrendingUp} title="Quick Insights" emoji="📌" />
+          <div className="bg-white border rounded-xl overflow-hidden">
+            <div className="px-5 py-3 bg-gradient-to-r from-gray-50 to-white border-b">
+              <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Highest Stock Value by Category
+              </h3>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {kpi.quickInsights.topCategories.map((cat, idx) => {
+                const maxValue = kpi.quickInsights.topCategories[0]?.value ?? 1;
+                const barPercent = maxValue > 0 ? Math.round((cat.value / maxValue) * 100) : 0;
+
+                return (
+                  <div key={cat.name} className="flex items-center gap-4 px-5 py-3">
+                    <span className="text-xs font-bold text-gray-400 w-5 tabular-nums">
+                      {idx + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold text-gray-800 truncate">
+                          {cat.name}
+                        </span>
+                        <span className="text-sm font-bold text-gray-900 tabular-nums ml-2">
+                          ৳ {cat.value.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full transition-all"
+                          style={{ width: `${barPercent}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Missing Data Notice ── */}    </div>
   );
 }

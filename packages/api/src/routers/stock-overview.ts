@@ -15,8 +15,9 @@ import {
     brand,
     category,
     subCategory,
+    stockEntry,
 } from "@bikalpo-project/db/schema";
-import { and, eq, sql, desc } from "drizzle-orm";
+import { and, eq, sql, desc, lt, gt, gte } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -35,7 +36,123 @@ function getStockStatus(qty: number, reorderLevel = 10): {
     return { label: "In Stock", badge: "in_stock" };
 }
 
+
 export const stockOverviewRouter = {
+    /**
+     * KPI Dashboard: Aggregated stats for the stock overview dashboard.
+     * All values computed from real DB data — no hardcoded thresholds.
+     */
+    getStockDashboardKPI: protectedProcedure
+        .input(
+            z.object({
+                ownerType: z.enum(["warehouse", "shop", "super_seller"]),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const ownerId = context.session.user.id;
+
+            const ownerFilter = and(
+                eq(inventory.ownerType, input.ownerType),
+                eq(inventory.ownerId, ownerId),
+            );
+
+            // ── Main KPIs ──
+            const [mainKPI] = await db
+                .select({
+                    totalProducts: sql<number>`COUNT(DISTINCT ${product.id})::int`,
+                    totalSKU: sql<number>`COUNT(DISTINCT ${inventory.variantId})::int`,
+                    totalUnits: sql<string>`COALESCE(SUM(${inventory.availableQty}::numeric), 0)`,
+                    totalStockValue: sql<string>`COALESCE(SUM(${inventory.availableQty}::numeric * COALESCE(${inventory.retailPrice}::numeric, 0)), 0)`,
+                })
+                .from(inventory)
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .where(ownerFilter);
+
+            // ── Stock Status (In Stock / Out of Stock) ──
+            const statusRows = await db
+                .select({
+                    inStock: sql<number>`COUNT(*) FILTER (WHERE ${inventory.availableQty}::numeric > 0)::int`,
+                    outOfStock: sql<number>`COUNT(*) FILTER (WHERE ${inventory.availableQty}::numeric <= 0)::int`,
+                })
+                .from(inventory)
+                .where(ownerFilter);
+
+            // ── Pack Type Breakdown ──
+            const packTypeRows = await db
+                .select({
+                    packagingType: productVariant.packagingType,
+                    totalUnits: sql<string>`COALESCE(SUM(${inventory.availableQty}::numeric), 0)`,
+                    itemCount: sql<number>`COUNT(*)::int`,
+                })
+                .from(inventory)
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .where(ownerFilter)
+                .groupBy(productVariant.packagingType)
+                .orderBy(desc(sql`SUM(${inventory.availableQty}::numeric)`));
+
+            // ── Expiring Soon (within 30 days) ──
+            const today = new Date().toISOString().split("T")[0]!;
+            const thirtyDaysLater = new Date(
+                Date.now() + 30 * 24 * 60 * 60 * 1000,
+            ).toISOString().split("T")[0]!;
+
+            const [expiringResult] = await db
+                .select({
+                    count: sql<number>`COUNT(DISTINCT ${stockEntry.id})::int`,
+                })
+                .from(stockEntry)
+                .where(
+                    and(
+                        eq(stockEntry.warehouseId, ownerId),
+                        gte(sql`${stockEntry.expiryDate}::date`, sql`${today}::date`),
+                        lt(sql`${stockEntry.expiryDate}::date`, sql`${thirtyDaysLater}::date`),
+                    ),
+                );
+
+            // ── Highest Stock Value by Category ──
+            const topCategoryRows = await db
+                .select({
+                    categoryName: category.name,
+                    stockValue: sql<string>`COALESCE(SUM(${inventory.availableQty}::numeric * COALESCE(${inventory.retailPrice}::numeric, 0)), 0)`,
+                })
+                .from(inventory)
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .innerJoin(category, eq(product.categoryId, category.id))
+                .where(ownerFilter)
+                .groupBy(category.id, category.name)
+                .orderBy(desc(sql`SUM(${inventory.availableQty}::numeric * COALESCE(${inventory.retailPrice}::numeric, 0))`))
+                .limit(5);
+
+            return {
+                mainKPI: {
+                    totalProducts: mainKPI?.totalProducts ?? 0,
+                    totalSKU: mainKPI?.totalSKU ?? 0,
+                    totalUnits: parseFloat(mainKPI?.totalUnits ?? "0"),
+                    totalStockValue: parseFloat(mainKPI?.totalStockValue ?? "0"),
+                },
+                stockStatus: {
+                    inStock: statusRows[0]?.inStock ?? 0,
+                    outOfStock: statusRows[0]?.outOfStock ?? 0,
+                },
+                packTypeBreakdown: packTypeRows.map((r) => ({
+                    packagingType: r.packagingType,
+                    totalUnits: parseFloat(r.totalUnits),
+                    itemCount: r.itemCount,
+                })),
+                alerts: {
+                    expiringSoon: expiringResult?.count ?? 0,
+                },
+                quickInsights: {
+                    topCategories: topCategoryRows.map((r) => ({
+                        name: r.categoryName,
+                        value: parseFloat(r.stockValue),
+                    })),
+                },
+            };
+        }),
+
     /**
      * Level 1: Aggregated stock overview grouped by product.
      * Returns total quantity per product across all variants, with stock status.
