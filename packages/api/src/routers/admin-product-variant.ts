@@ -7,33 +7,32 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
 /**
- * After any variant change, sync the parent product's price/stock/size
- * from its variants: price = MIN, stockQuantity = SUM, size = descriptive.
+ * After any variant change, sync the parent product's price/size
+ * from its variants: price = MIN, size = descriptive.
+ * Note: stockQuantity was removed from the product table — stock is tracked via inventory.
  */
 async function syncProductFromVariants(productId: number) {
     console.log("🔄 syncProductFromVariants called for productId:", productId);
     const variants = await db.query.productVariant.findMany({
         where: eq(productVariant.productId, productId),
-        columns: { price: true, stockQuantity: true, weightKg: true, unitLabel: true },
+        columns: { price: true, weightKg: true, unitLabel: true },
     });
     console.log("🔄 Found variants:", JSON.stringify(variants));
 
     if (variants.length === 0) {
-        await db.update(product).set({ price: "0", stockQuantity: 0, size: "\u2014" }).where(eq(product.id, productId));
+        await db.update(product).set({ price: "0", size: "\u2014" }).where(eq(product.id, productId));
         return;
     }
 
     const prices = variants.map((v) => parseFloat(v.price)).filter((p) => !isNaN(p) && p > 0);
     const minPrice = prices.length > 0 ? Math.min(...prices).toFixed(2) : "0";
-    const totalStock = variants.reduce((sum, v) => sum + (v.stockQuantity ?? 0), 0);
     const sizeStr = variants.map((v) => v.unitLabel || `${v.weightKg}kg`).join(", ");
 
-    console.log("🔄 Syncing product:", { minPrice, totalStock, sizeStr });
+    console.log("🔄 Syncing product:", { minPrice, sizeStr });
     await db
         .update(product)
         .set({
             price: minPrice,
-            stockQuantity: totalStock,
             size: sizeStr.slice(0, 50),
         })
         .where(eq(product.id, productId));
@@ -70,7 +69,7 @@ const variantInput = z.object({
     orderUnit: z.string().optional(),
     quantitySelectorOptions: z.array(quantitySelectorOptionSchema).optional(),
     priceTiers: z.array(bulkRateTierSchema).optional(),
-    stockQuantity: z.number().int().optional(),
+    // stockQuantity removed — admin creates templates, stock lives in inventory
     reorderLevel: z.number().int().optional(),
     origin: z.string().optional(),
     shelfLife: z.string().optional(),
@@ -205,7 +204,7 @@ export const adminProductVariantRouter = {
                     orderUnit: input.orderUnit ?? "piece",
                     quantitySelectorOptions: input.quantitySelectorOptions ?? [],
                     priceTiers: input.priceTiers ?? [],
-                    stockQuantity: input.stockQuantity ?? 0,
+                    // stockQuantity intentionally omitted — stock is managed via inventory
                     reorderLevel: input.reorderLevel ?? 0,
                     origin: input.origin ?? null,
                     shelfLife: input.shelfLife ?? null,

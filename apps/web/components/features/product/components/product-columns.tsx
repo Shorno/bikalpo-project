@@ -195,27 +195,7 @@ export function useProductColumns() {
         return <span className="text-muted-foreground text-xs">—</span>;
       },
     },
-    {
-      accessorKey: "stockQuantity",
-      header: ({ column }) => {
-        return (
-          <div className="flex justify-center">
-            <Button
-              variant="ghost"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === "asc")
-              }
-            >
-              Stock
-              <ArrowUpDown className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        );
-      },
-      cell: ({ row }) => (
-        <div className="text-center">{row.getValue("stockQuantity")}</div>
-      ),
-    },
+
     {
       accessorKey: "inStock",
       header: () => <div className="text-center">Status</div>,

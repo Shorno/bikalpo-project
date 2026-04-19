@@ -1159,15 +1159,8 @@ export const salesmanRouter = {
 
                 await tx.insert(orderItem).values(orderItems);
 
-                // Reduce stock
-                for (const item of estimateData.items) {
-                    await tx
-                        .update(product)
-                        .set({
-                            stockQuantity: sql`${product.stockQuantity} - ${item.quantity}`,
-                        })
-                        .where(eq(product.id, item.productId));
-                }
+
+                // Stock deduction removed — stock is now tracked via the inventory system
 
                 // Update estimate status
                 await tx

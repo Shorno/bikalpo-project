@@ -202,13 +202,13 @@ export const dashboardRouter = {
 
             const lowStockProducts = await safe(async () => {
                 const r = await db.select({ count: count() }).from(product)
-                    .where(sql`${product.stockQuantity} <= ${product.reorderLevel} AND ${product.stockQuantity} > 0 AND ${product.status}::text = 'active'`);
+                    .where(sql`${product.reorderLevel} > 0 AND ${product.inStock} = true AND ${product.status}::text = 'active'`);
                 return Number(r[0]?.count ?? 0);
             }, 0);
 
             const outOfStockProducts = await safe(async () => {
                 const r = await db.select({ count: count() }).from(product)
-                    .where(sql`${product.stockQuantity} <= 0 AND ${product.status}::text = 'active'`);
+                    .where(sql`${product.inStock} = false AND ${product.status}::text = 'active'`);
                 return Number(r[0]?.count ?? 0);
             }, 0);
 

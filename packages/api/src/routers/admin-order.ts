@@ -188,15 +188,7 @@ export const adminOrderRouter = {
                 })
                 .where(eq(order.id, input.orderId));
 
-            // Restore stock when order is rejected
-            await db.transaction(async (tx) => {
-                for (const item of existingOrder.items) {
-                    await tx
-                        .update(product)
-                        .set({ stockQuantity: sql`${product.stockQuantity} + ${item.quantity}` })
-                        .where(eq(product.id, item.productId));
-                }
-            });
+            // Stock restoration removed — stock is now tracked via the inventory system
 
             return { success: true };
         }),
@@ -237,30 +229,12 @@ export const adminOrderRouter = {
                     if (update.itemId && update.remove) {
                         const existingItem = existingOrder.items.find((i) => i.id === update.itemId);
                         if (existingItem) {
-                            await tx
-                                .update(product)
-                                .set({ stockQuantity: sql`${product.stockQuantity} + ${existingItem.quantity}` })
-                                .where(eq(product.id, existingItem.productId));
                             await tx.delete(orderItem).where(eq(orderItem.id, update.itemId));
                         }
                     } else if (update.itemId) {
                         const existingItem = existingOrder.items.find((i) => i.id === update.itemId);
                         if (existingItem) {
                             const quantityDiff = update.quantity - existingItem.quantity;
-
-                            if (quantityDiff > 0) {
-                                const productData = await tx.query.product.findFirst({
-                                    where: eq(product.id, update.productId),
-                                });
-                                if (!productData || productData.stockQuantity < quantityDiff) {
-                                    throw new Error(`Insufficient stock for product ${update.productId}`);
-                                }
-                            }
-
-                            await tx
-                                .update(product)
-                                .set({ stockQuantity: sql`${product.stockQuantity} - ${quantityDiff}` })
-                                .where(eq(product.id, existingItem.productId));
 
                             const productData = await tx.query.product.findFirst({
                                 where: eq(product.id, update.productId),
@@ -285,14 +259,6 @@ export const adminOrderRouter = {
                         });
 
                         if (!productData) throw new Error(`Product ${update.productId} not found`);
-                        if (productData.stockQuantity < update.quantity) {
-                            throw new Error(`Insufficient stock for ${productData.name}`);
-                        }
-
-                        await tx
-                            .update(product)
-                            .set({ stockQuantity: sql`${product.stockQuantity} - ${update.quantity}` })
-                            .where(eq(product.id, update.productId));
 
                         const unitPrice = Number(productData.price);
                         const totalPrice = unitPrice * update.quantity;

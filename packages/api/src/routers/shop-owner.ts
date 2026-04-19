@@ -161,7 +161,7 @@ const b2bQueries = {
 
             // In stock filter
             const inStock = inStockStr === "true";
-            if (inStock) conditions.push(sql`${product.stockQuantity} > 0`);
+            if (inStock) conditions.push(eq(product.inStock, true));
 
             // Search
             if (search) conditions.push(ilike(product.name, `%${search}%`));
@@ -178,7 +178,7 @@ const b2bQueries = {
                     case "oldest":
                         return [asc(product.createdAt)];
                     case "popular":
-                        return [desc(product.stockQuantity)];
+                        return [desc(product.createdAt)];
                     case "newest":
                     default:
                         return [desc(product.createdAt)];

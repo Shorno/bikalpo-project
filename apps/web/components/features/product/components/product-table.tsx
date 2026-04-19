@@ -132,9 +132,6 @@ function MobileProductCard({ product }: { product: ProductWithRelations }) {
             <span className="font-semibold text-sm">
               {formatPrice(product.price)}
             </span>
-            <span className="text-xs text-muted-foreground">
-              Stock: {product.stockQuantity}
-            </span>
           </div>
           <div className="flex items-center gap-1.5">
             <Badge

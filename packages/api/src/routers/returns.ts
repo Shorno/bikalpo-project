@@ -363,27 +363,11 @@ export const returnsRouter = {
                 }
                 updateData.refundType = refundType;
 
-                // Restock items if requested
+                // Restocking removed — stock is now tracked via the inventory system
                 if (restockItems) {
                     if (returnData.returnType === "full") {
-                        for (const item of returnData.order.items) {
-                            await db
-                                .update(product)
-                                .set({
-                                    stockQuantity: sql`${product.stockQuantity} + ${item.quantity}`,
-                                })
-                                .where(eq(product.id, item.productId));
-                        }
                         updateData.restocked = returnData.order.items.length;
                     } else if (returnData.items) {
-                        for (const item of returnData.items) {
-                            await db
-                                .update(product)
-                                .set({
-                                    stockQuantity: sql`${product.stockQuantity} + ${item.quantity}`,
-                                })
-                                .where(eq(product.id, item.productId));
-                        }
                         updateData.restocked = returnData.items.length;
                     }
                 }
