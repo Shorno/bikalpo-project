@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
 
   reactCompiler: true,
   output: "standalone",
+  allowedDevOrigins: [
+    "warehouse.bikalpo.localhost",
+    "bikalpo.localhost",
+  ],
   experimental: {
     authInterrupts: true,
   },

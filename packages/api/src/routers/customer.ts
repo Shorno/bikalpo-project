@@ -757,7 +757,6 @@ const queries = {
     })
     .handler(async () => {
       const brands = await db.query.brand.findMany({
-        where: eq(brand.isActive, true),
         orderBy: [asc(brand.displayOrder)],
       });
       return { brands };
