@@ -1757,9 +1757,7 @@ const catalogBrowse = {
                 : filteredCats;
 
             // 5. Get all subcategory IDs from filtered categories
-            const allSubCatIds = finalCats.flatMap(
-                (c) => (c.subCategory || []).map((sc: any) => sc.id),
-            );
+            // (allSubCatIds used implicitly via coreProducts query on categoryId)
 
             // Also get category IDs for core products without subcategory
             const allCatIds = finalCats.map((c) => c.id);
@@ -1791,7 +1789,6 @@ const catalogBrowse = {
                         id: true,
                         name: true,
                         coreProductId: true,
-                        unitSize: true,
                         brandId: true,
                     },
                     with: {
@@ -1969,6 +1966,358 @@ const productRequests = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Warehouse Product Creation (warehouse creates its own products)
+// ────────────────────────────────────────────────────────────────
+
+import {
+    brand as brandTable,
+    productBrand,
+    productVariantPrice,
+    productImage,
+    variantOption,
+} from "@bikalpo-project/db/schema";
+
+const warehouseProductCreation = {
+    /**
+     * Get all active brands and variant options for the product creation form.
+     */
+    getBrandsAndVariants: warehouseProcedure
+        .input(
+            z.object({
+                typeId: z.number().optional(),
+                categoryId: z.number().optional(),
+            }),
+        )
+        .handler(async ({ input }) => {
+            // Fetch all active brands
+            const brands = await db.query.brand.findMany({
+                orderBy: [brandTable.name],
+            });
+
+            // Fetch variant options, optionally filtered by scope
+            const voConditions: SQL[] = [eq(variantOption.isActive, true)];
+
+            const allVariantOptions = await db.query.variantOption.findMany({
+                where: and(...voConditions),
+                orderBy: [variantOption.sortOrder, variantOption.name],
+            });
+
+            // Filter by scope: show global + type-wide + category-specific
+            const filtered = allVariantOptions.filter((vo) => {
+                // Global variant (no type, no category) → always show
+                if (!vo.typeId && !vo.categoryId) return true;
+                // Type-scoped variant → show if matches requested type
+                if (vo.typeId && !vo.categoryId) {
+                    return !input.typeId || vo.typeId === input.typeId;
+                }
+                // Category-scoped variant → show if matches requested category
+                if (vo.typeId && vo.categoryId) {
+                    const typeMatch = !input.typeId || vo.typeId === input.typeId;
+                    const catMatch = !input.categoryId || vo.categoryId === input.categoryId;
+                    return typeMatch && catMatch;
+                }
+                return true;
+            });
+
+            return { brands, variantOptions: filtered };
+        }),
+
+    /**
+     * Create a product from a core identity template, owned by this warehouse.
+     * Creates product → productBrand → productVariantPrice → productVariant → inventory rows.
+     */
+    createWarehouseProduct: warehouseProcedure
+        .input(
+            z.object({
+                coreProductId: z.number().int(),
+                name: z.string().min(1),
+                slug: z.string().min(1),
+                shortDescription: z.string().optional().nullable(),
+                description: z.string().optional().nullable(),
+                image: z.string().min(1),
+                categoryId: z.number().int(),
+                subCategoryId: z.number().int().optional().nullable(),
+                // Brand + variant configs
+                brandConfigs: z.array(
+                    z.object({
+                        brandId: z.number().int(),
+                        variants: z.array(
+                            z.object({
+                                variantOptionId: z.number().int(),
+                                retailerPrice: z.string().min(1),
+                            }),
+                        ),
+                    }),
+                ),
+                // Supply rules
+                trackingType: z.enum(["none", "batch", "serial"]).default("none"),
+                expiryEnabled: z.boolean().default(false),
+                damageControlEnabled: z.boolean().default(false),
+                isReturnablePack: z.boolean().default(false),
+                // Delivery
+                deliveryCostPerCarton: z.string().optional().nullable(),
+                // Visibility
+                status: z.enum(["active", "inactive", "draft"]).default("active"),
+                visibility: z.enum(["public", "private"]).default("public"),
+                // Media
+                additionalImages: z.array(z.string()).optional(),
+                videoUrl: z.string().optional().nullable(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Verify core product exists
+            const coreProduct = await db.query.coreProductIdentity.findFirst({
+                where: eq(coreProductIdentity.id, input.coreProductId),
+            });
+
+            if (!coreProduct) {
+                throw new ORPCError("NOT_FOUND", { message: "Core product identity not found" });
+            }
+
+            // Ensure slug uniqueness (append warehouse suffix if collision)
+            let finalSlug = input.slug;
+            const existingSlug = await db.query.product.findFirst({
+                where: eq(productTable.slug, finalSlug),
+                columns: { id: true },
+            });
+            if (existingSlug) {
+                finalSlug = `${input.slug}-wh-${Date.now()}`;
+            }
+
+            const result = await db.transaction(async (tx) => {
+                // 1. Create product row
+                const [newProduct] = await tx
+                    .insert(productTable)
+                    .values({
+                        name: input.name,
+                        slug: finalSlug,
+                        description: input.description || null,
+                        shortDescription: input.shortDescription || null,
+                        videoUrl: input.videoUrl || null,
+                        categoryId: input.categoryId,
+                        subCategoryId: input.subCategoryId || null,
+                        coreProductId: input.coreProductId,
+                        brandId: input.brandConfigs.length > 0 ? input.brandConfigs[0]!.brandId : null,
+                        image: input.image,
+                        size: "—",
+                        price: "0",
+                        sku: `WH-${userId.substring(0, 6)}-${Date.now()}`,
+                        trackingType: input.trackingType,
+                        expiryEnabled: input.expiryEnabled,
+                        damageControlEnabled: input.damageControlEnabled,
+                        isReturnablePack: input.isReturnablePack,
+                        visibility: input.visibility,
+                        status: input.status,
+                        createdByWarehouseId: userId,
+                    })
+                    .returning();
+
+                const productId = newProduct!.id;
+
+                // 2. Insert additional images
+                if (input.additionalImages && input.additionalImages.length > 0) {
+                    await tx.insert(productImage).values(
+                        input.additionalImages.map((imageUrl) => ({
+                            productId,
+                            imageUrl,
+                        })),
+                    );
+                }
+
+                // 3. Insert brand links + variant prices + auto-generate variants + inventory
+                const allBrandIds = input.brandConfigs.map((bc) => bc.brandId);
+
+                if (allBrandIds.length > 0) {
+                    await tx.insert(productBrand).values(
+                        allBrandIds.map((bId) => ({
+                            productId,
+                            brandId: bId,
+                        })),
+                    );
+                }
+
+                // Fetch variant option metadata
+                const allVoIds = [
+                    ...new Set(
+                        input.brandConfigs.flatMap((bc) =>
+                            bc.variants.map((v) => v.variantOptionId),
+                        ),
+                    ),
+                ];
+
+                let voMap: Record<number, any> = {};
+                if (allVoIds.length > 0) {
+                    const variantOptions = await tx
+                        .select()
+                        .from(variantOption)
+                        .where(inArray(variantOption.id, allVoIds));
+                    voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
+                }
+
+                let sortIdx = 0;
+                for (const bc of input.brandConfigs) {
+                    for (const v of bc.variants) {
+                        const vo = voMap[v.variantOptionId];
+                        const isLoose = vo?.variantType === "loose";
+                        const packType = isLoose ? "loose" : "packet";
+                        const weightKg = vo?.size || "0";
+
+                        // Insert variant price row
+                        const [insertedPrice] = await tx
+                            .insert(productVariantPrice)
+                            .values({
+                                productId,
+                                variantOptionId: v.variantOptionId,
+                                brandId: bc.brandId,
+                                consumerPrice: v.retailerPrice,
+                                sortOrder: sortIdx,
+                            })
+                            .returning();
+
+                        // Auto-generate product_variant row
+                        const [insertedVariant] = await tx
+                            .insert(productVariant)
+                            .values({
+                                productId,
+                                brandId: bc.brandId,
+                                sku: `WH-${productId}-B${bc.brandId}-VO${v.variantOptionId}`,
+                                unitLabel: vo?.name || "Unit",
+                                quantitySelectorLabel: vo?.name || "Unit",
+                                packagingType: packType,
+                                weightKg,
+                                price: v.retailerPrice,
+                                orderUnit: vo?.unit || "piece",
+                                packType: (packType as any) || null,
+                                packWeightKg: weightKg || null,
+                                sellUnit: vo?.name || null,
+                                sourceVariantPriceId: insertedPrice!.id,
+                                sourceVariantOptionId: v.variantOptionId,
+                                stockQuantity: 0,
+                                reorderLevel: 0,
+                                sortOrder: sortIdx,
+                                isActive: true,
+                            })
+                            .returning();
+
+                        // Auto-create inventory row (qty=0, ready to stock)
+                        await tx.insert(inventory).values({
+                            ownerType: "warehouse",
+                            ownerId: userId,
+                            variantId: insertedVariant!.id,
+                            availableQty: "0",
+                            retailPrice: v.retailerPrice,
+                        });
+
+                        sortIdx++;
+                    }
+                }
+
+                return newProduct!;
+            });
+
+            return { product: result };
+        }),
+
+    /**
+     * List products created by this warehouse.
+     */
+    getWarehouseProducts: warehouseProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const offset = (input.page - 1) * input.limit;
+
+            const conditions: SQL[] = [
+                eq(productTable.createdByWarehouseId, userId),
+            ];
+
+            if (input.search?.trim()) {
+                conditions.push(
+                    sql`${productTable.name} ILIKE ${`%${input.search.trim()}%`}`,
+                );
+            }
+
+            const products = await db.query.product.findMany({
+                where: and(...conditions),
+                orderBy: [desc(productTable.createdAt)],
+                offset,
+                limit: input.limit,
+                with: {
+                    category: { columns: { name: true, slug: true } },
+                    subCategory: { columns: { name: true } },
+                    brand: { columns: { id: true, name: true } },
+                    coreProduct: { columns: { id: true, name: true, image: true } },
+                    productBrands: {
+                        with: { brand: { columns: { id: true, name: true } } },
+                    },
+                    variants: {
+                        where: eq(productVariant.isActive, true),
+                        columns: {
+                            id: true,
+                            unitLabel: true,
+                            weightKg: true,
+                            price: true,
+                            brandId: true,
+                        },
+                        with: { brand: { columns: { id: true, name: true } } },
+                    },
+                },
+            });
+
+            const [countResult] = await db
+                .select({ count: count() })
+                .from(productTable)
+                .where(and(...conditions));
+
+            return {
+                products,
+                pagination: {
+                    page: input.page,
+                    limit: input.limit,
+                    totalCount: Number(countResult?.count || 0),
+                    totalPages: Math.ceil(Number(countResult?.count || 0) / input.limit),
+                },
+            };
+        }),
+
+    /**
+     * Get a single core product identity by ID (for the add product form).
+     */
+    getCoreProductById: warehouseProcedure
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ input }) => {
+            const cp = await db.query.coreProductIdentity.findFirst({
+                where: eq(coreProductIdentity.id, input.id),
+                with: {
+                    category: {
+                        columns: { id: true, name: true, slug: true, typeId: true },
+                        with: {
+                            type: { columns: { id: true, name: true } },
+                        },
+                    },
+                    subCategory: {
+                        columns: { id: true, name: true, slug: true },
+                    },
+                },
+            });
+
+            if (!cp) {
+                throw new ORPCError("NOT_FOUND", { message: "Core product identity not found" });
+            }
+
+            return { coreProduct: cp };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -1982,4 +2331,5 @@ export const warehouseRouter = {
     ...productActivation,
     ...catalogBrowse,
     ...productRequests,
+    ...warehouseProductCreation,
 };

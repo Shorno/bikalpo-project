@@ -31,6 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 
 import { generateSlug } from "@/utils/generate-slug";
@@ -90,6 +92,8 @@ export default function NewCoreProductDialog() {
       subCategoryId: null as number | null,
 
       typeId: null as number | null,
+      supportsPack: true,
+      supportsLoose: false,
     },
     onSubmit: async ({ value }) => {
       mutation.mutate({
@@ -100,6 +104,8 @@ export default function NewCoreProductDialog() {
         image: value.image,
         categoryId: value.categoryId,
         subCategoryId: value.subCategoryId,
+        supportsPack: value.supportsPack,
+        supportsLoose: value.supportsLoose,
       });
     },
   });
@@ -335,6 +341,37 @@ export default function NewCoreProductDialog() {
             )}
           </form.Field>
 
+          {/* Variant Type Support */}
+          <div className="space-y-3">
+            <FieldLabel>Variant Type Support</FieldLabel>
+            <div className="flex items-center gap-6">
+              <form.Field name="supportsPack">
+                {(field) => (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={field.state.value}
+                      onCheckedChange={(checked) => field.handleChange(!!checked)}
+                    />
+                    <span className="text-sm">Pack Based</span>
+                  </label>
+                )}
+              </form.Field>
+              <form.Field name="supportsLoose">
+                {(field) => (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={field.state.value}
+                      onCheckedChange={(checked) => field.handleChange(!!checked)}
+                    />
+                    <span className="text-sm">Loose</span>
+                  </label>
+                )}
+              </form.Field>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Select which variant types this product supports. Pack-based (e.g. 1KG, 5KG) and/or Loose (e.g. per KG).
+            </p>
+          </div>
 
 
 

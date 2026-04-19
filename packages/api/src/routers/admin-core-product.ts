@@ -19,6 +19,8 @@ const createCoreProductSchema = z.object({
     image: z.string().min(1),
     categoryId: z.number().int(),
     subCategoryId: z.number().int().optional().nullable(),
+    supportsPack: z.boolean().default(true),
+    supportsLoose: z.boolean().default(false),
 });
 
 const updateCoreProductSchema = createCoreProductSchema.extend({
