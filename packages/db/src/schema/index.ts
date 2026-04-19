@@ -56,3 +56,5 @@ export * from "./reward";
 export * from "./wallet";
 export * from "./product-identity-request";
 export * from "./marketing-material";
+export * from "./stock-entry";
+export * from "./warehouse-storage-area";
