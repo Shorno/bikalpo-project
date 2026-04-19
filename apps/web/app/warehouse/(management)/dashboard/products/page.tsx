@@ -319,7 +319,6 @@ export default function WarehouseProductCatalogPage() {
                 </span>
               )}
             </div>
-            </div>
           </div>
           <div className="flex items-center gap-3">
             {allVariants.length > 0 && (
