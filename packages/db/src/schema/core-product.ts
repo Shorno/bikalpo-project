@@ -1,31 +1,13 @@
 import { relations } from "drizzle-orm";
 import {
-    boolean,
     integer,
-    pgEnum,
     pgTable,
     serial,
     text,
-    timestamp,
     varchar,
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
 import { category, subCategory } from "./category";
-import { brand } from "./brand";
-import { coreProductVariantOption } from "./variant-option";
-
-// === Enums ===
-
-export const brandSupportEnum = pgEnum("brand_support", [
-    "multi_brand",
-    "single_brand",
-]);
-
-export const coreProductStatusEnum = pgEnum("core_product_status", [
-    "active",
-    "draft",
-    "inactive",
-]);
 
 // === Core Product Identity ===
 
@@ -67,43 +49,14 @@ export const coreProductIdentity = pgTable("core_product_identity", {
         { onDelete: "set null" },
     ),
 
-
-
     ...timestamps,
 });
-
-// === Core Product Brand (Many-to-Many) ===
-
-/**
- * Links which brands are allowed/associated with a Core Product Identity.
- * E.g. "Miniket Rice" → ACI, PRAN, Radhuni, Local
- */
-export const coreProductBrand = pgTable("core_product_brand", {
-    id: serial("id").primaryKey(),
-
-    /** Parent core product identity */
-    coreProductId: integer("core_product_id")
-        .notNull()
-        .references(() => coreProductIdentity.id, { onDelete: "cascade" }),
-
-    /** Linked brand */
-    brandId: integer("brand_id")
-        .notNull()
-        .references(() => brand.id, { onDelete: "cascade" }),
-
-    /** Whether this is the default brand */
-    isDefault: boolean("is_default").default(false).notNull(),
-
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-
 
 // === Relations ===
 
 export const coreProductIdentityRelations = relations(
     coreProductIdentity,
-    ({ one, many }) => ({
+    ({ one }) => ({
         category: one(category, {
             fields: [coreProductIdentity.categoryId],
             references: [category.id],
@@ -112,22 +65,6 @@ export const coreProductIdentityRelations = relations(
             fields: [coreProductIdentity.subCategoryId],
             references: [subCategory.id],
         }),
-        brands: many(coreProductBrand),
-        variantLinks: many(coreProductVariantOption),
-    }),
-);
-
-export const coreProductBrandRelations = relations(
-    coreProductBrand,
-    ({ one }) => ({
-        coreProduct: one(coreProductIdentity, {
-            fields: [coreProductBrand.coreProductId],
-            references: [coreProductIdentity.id],
-        }),
-        brand: one(brand, {
-            fields: [coreProductBrand.brandId],
-            references: [brand.id],
-        }),
     }),
 );
 
@@ -135,5 +72,3 @@ export const coreProductBrandRelations = relations(
 
 export type CoreProductIdentity = typeof coreProductIdentity.$inferSelect;
 export type NewCoreProductIdentity = typeof coreProductIdentity.$inferInsert;
-export type CoreProductBrand = typeof coreProductBrand.$inferSelect;
-export type NewCoreProductBrand = typeof coreProductBrand.$inferInsert;

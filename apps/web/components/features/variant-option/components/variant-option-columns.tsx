@@ -22,7 +22,7 @@ export interface VariantOptionRow {
   sortOrder: number;
   type: { id: number; name: string } | null;
   category: { id: number; name: string } | null;
-  usedInProducts: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -173,17 +173,7 @@ export function useVariantOptionColumns() {
         },
         size: 100,
       },
-      {
-        id: "usedIn",
-        header: () => <div className="text-center">Used In</div>,
-        cell: ({ row }) => (
-          <div className="text-center text-sm text-muted-foreground">
-            {row.original.usedInProducts}{" "}
-            {row.original.usedInProducts === 1 ? "Product" : "Products"}
-          </div>
-        ),
-        size: 110,
-      },
+
       {
         id: "actions",
         header: () => <div className="text-center">Actions</div>,

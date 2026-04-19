@@ -64,7 +64,8 @@ const warehouseNavGroups: NavGroup[] = [
     items: [
       { title: "My Store", url: `${WH}/store`, icon: StoreIcon },
       { title: "Stock", url: `${WH}/stock`, icon: BoxesIcon },
-      { title: "Product Catalog", url: `${WH}/products`, icon: PackageIcon },
+      { title: "Products", url: `${WH}/products`, icon: PackageIcon },
+      { title: "Product Catalog", url: `${WH}/catalog`, icon: TagIcon },
       { title: "Stock Adjustment", url: `${WH}/stock-adjustment`, icon: ArrowRightLeftIcon },
     ],
   },
