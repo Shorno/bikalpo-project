@@ -55,6 +55,21 @@ export const inventory = pgTable(
         /** Shop owner's retail selling price (set by shop owner) */
         retailPrice: decimal("retail_price", { precision: 10, scale: 2 }),
 
+        // === Carton Tracking ===
+
+        /**
+         * How many units (packs) are currently packed inside cartons.
+         * Loose stock = availableQty - inCartonQty
+         */
+        inCartonQty: decimal("in_carton_qty", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+
+        /** Number of active (non-broken) cartons for this variant in this owner's inventory */
+        activeCartonCount: integer("active_carton_count")
+            .default(0)
+            .notNull(),
+
         updatedAt: timestamp("updated_at")
             .defaultNow()
             .$onUpdate(() => new Date())

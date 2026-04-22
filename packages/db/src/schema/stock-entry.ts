@@ -15,17 +15,20 @@ import { user } from "./auth-schema";
 import { productVariant } from "./product-variant";
 import { supplier } from "./supplier";
 import { warehouseStorageArea } from "./warehouse-storage-area";
+import { cartonConfig } from "./carton-config";
 
 /** Entry type: how stock was counted when entering */
 export const stockEntryTypeEnum = pgEnum("stock_entry_type", [
     "loose",
     "pack",
+    "carton",
 ]);
 
 /** Cost type: how the purchase price was quoted */
 export const stockEntryCostTypeEnum = pgEnum("stock_entry_cost_type", [
     "per_kg",
     "per_pack",
+    "per_carton",
 ]);
 
 /**
@@ -104,6 +107,18 @@ export const stockEntry = pgTable(
 
         /** Optional note */
         note: text("note"),
+
+        // === Carton Entry Fields ===
+
+        /** Number of cartons entered (when entryType = 'carton') */
+        cartonCount: integer("carton_count"),
+
+        /** Which carton config was used for this carton entry */
+        cartonConfigId: integer("carton_config_id")
+            .references(() => cartonConfig.id, { onDelete: "set null" }),
+
+        /** Converted quantity in cartons (always computed when carton config exists) */
+        convertedQtyCartons: decimal("converted_qty_cartons", { precision: 12, scale: 2 }),
 
         ...timestamps,
     },

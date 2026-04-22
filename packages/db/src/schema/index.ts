@@ -59,3 +59,5 @@ export * from "./marketing-material";
 export * from "./stock-entry";
 export * from "./warehouse-storage-area";
 export * from "./stock-adjustment";
+export * from "./carton-config";
+export * from "./carton";
