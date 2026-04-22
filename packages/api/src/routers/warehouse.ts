@@ -2321,7 +2321,7 @@ const warehouseProductCreation = {
 // Stock Entry (Add Stock) + Storage Areas
 // ────────────────────────────────────────────────────────────────
 
-import { stockEntry, warehouseStorageArea } from "@bikalpo-project/db/schema";
+import { stockEntry, warehouseStorageArea, cartonConfig, carton } from "@bikalpo-project/db/schema";
 
 const stockEntryQueries = {
     /**
@@ -2397,13 +2397,13 @@ const stockEntryQueries = {
         .input(
             z.object({
                 variantId: z.number().int(),
-                entryType: z.enum(["loose", "pack"]),
+                entryType: z.enum(["loose", "pack", "carton"]),
                 quantity: z.string().refine((v) => parseFloat(v) > 0, {
                     message: "Quantity must be greater than 0",
                 }),
                 quantityUnit: z.string().min(1),
                 supplierId: z.number().int(),
-                costType: z.enum(["per_kg", "per_pack"]),
+                costType: z.enum(["per_kg", "per_pack", "per_carton"]),
                 purchasePrice: z.string().refine((v) => parseFloat(v) > 0, {
                     message: "Purchase price must be greater than 0",
                 }),
@@ -2414,6 +2414,9 @@ const stockEntryQueries = {
                 storageAreaId: z.number().int().optional(),
                 shelfRack: z.string().optional(),
                 note: z.string().optional(),
+                // Carton-specific fields
+                cartonConfigId: z.number().int().optional(),
+                cartonCount: z.number().int().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -2461,6 +2464,27 @@ const stockEntryQueries = {
                 // Entered in KG → convert to packs
                 convertedQtyKg = qty;
                 convertedQtyPacks = packWeightKg > 0 ? qty / packWeightKg : 0;
+            } else if (input.entryType === "carton") {
+                // Entered as carton count → need carton config
+                if (!input.cartonConfigId) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Carton config is required for carton entry",
+                    });
+                }
+                const config = await db.query.cartonConfig.findFirst({
+                    where: and(
+                        eq(cartonConfig.id, input.cartonConfigId),
+                        eq(cartonConfig.variantId, input.variantId),
+                    ),
+                });
+                if (!config) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: "Carton config not found for this variant",
+                    });
+                }
+                const cartonCount = input.cartonCount || Math.round(qty);
+                convertedQtyPacks = cartonCount * config.packsPerCarton;
+                convertedQtyKg = convertedQtyPacks * packWeightKg;
             } else {
                 // Entered in packs → convert to KG
                 convertedQtyPacks = qty;
@@ -2471,6 +2495,9 @@ const stockEntryQueries = {
             let totalCost: number;
             if (input.costType === "per_kg") {
                 totalCost = price * convertedQtyKg;
+            } else if (input.costType === "per_carton") {
+                const cartonCount = input.cartonCount || Math.round(qty);
+                totalCost = price * cartonCount;
             } else {
                 totalCost = price * convertedQtyPacks;
             }
@@ -2499,6 +2526,12 @@ const stockEntryQueries = {
                         storageAreaId: input.storageAreaId || null,
                         shelfRack: input.shelfRack || null,
                         note: input.note || null,
+                        // Carton fields
+                        cartonCount: input.entryType === "carton" ? (input.cartonCount || Math.round(qty)) : null,
+                        cartonConfigId: input.cartonConfigId || null,
+                        convertedQtyCartons: input.cartonConfigId
+                            ? (convertedQtyPacks / ((await db.query.cartonConfig.findFirst({ where: eq(cartonConfig.id, input.cartonConfigId!) }))?.packsPerCarton || 1)).toFixed(2)
+                            : null,
                     })
                     .returning();
 
@@ -2959,8 +2992,513 @@ const pricingQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Carton Management (Config + Physical Cartons)
+// ────────────────────────────────────────────────────────────────
+
+const cartonQueries = {
+    // ── Carton Config CRUD ──
+
+    /**
+     * Get all carton configs for a specific variant.
+     */
+    getCartonConfigs: warehouseProcedure
+        .input(z.object({ variantId: z.number().int() }))
+        .handler(async ({ input }) => {
+            const configs = await db
+                .select()
+                .from(cartonConfig)
+                .where(
+                    and(
+                        eq(cartonConfig.variantId, input.variantId),
+                        eq(cartonConfig.isActive, true),
+                    ),
+                )
+                .orderBy(cartonConfig.packsPerCarton);
+
+            return { configs };
+        }),
+
+    /**
+     * Get all carton configs for multiple variants at once (batch).
+     * Useful when loading product detail page with multiple variants.
+     */
+    getCartonConfigsBatch: warehouseProcedure
+        .input(z.object({ variantIds: z.array(z.number().int()) }))
+        .handler(async ({ input }) => {
+            if (input.variantIds.length === 0) return { configs: [] };
+
+            const configs = await db
+                .select()
+                .from(cartonConfig)
+                .where(
+                    and(
+                        inArray(cartonConfig.variantId, input.variantIds),
+                        eq(cartonConfig.isActive, true),
+                    ),
+                )
+                .orderBy(cartonConfig.variantId, cartonConfig.packsPerCarton);
+
+            return { configs };
+        }),
+
+    /**
+     * Create a new carton config for a variant.
+     */
+    createCartonConfig: warehouseProcedure
+        .input(
+            z.object({
+                variantId: z.number().int(),
+                packsPerCarton: z.number().int().min(1),
+                cartonPrice: z.string().refine((v) => parseFloat(v) >= 0),
+                cartonCostPrice: z.string().optional(),
+                deliveryCostPerCarton: z.string().optional(),
+                label: z.string().optional(),
+                isDefault: z.boolean().default(false),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Validate variant belongs to this warehouse
+            const variant = await db.query.productVariant.findFirst({
+                where: eq(productVariant.id, input.variantId),
+                with: {
+                    product: { columns: { id: true, createdByWarehouseId: true } },
+                },
+            });
+
+            if (!variant || (variant.product as any)?.createdByWarehouseId !== userId) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "This variant does not belong to your warehouse",
+                });
+            }
+
+            // Auto-calculate carton weight
+            const packWeightKg = parseFloat(variant.weightKg);
+            const cartonWeightKg = input.packsPerCarton * packWeightKg;
+
+            // Auto-generate label if not provided
+            const label = input.label || `${input.packsPerCarton} Pack Carton`;
+
+            // If this is set as default, unset any existing defaults
+            if (input.isDefault) {
+                await db
+                    .update(cartonConfig)
+                    .set({ isDefault: false })
+                    .where(eq(cartonConfig.variantId, input.variantId));
+            }
+
+            const [config] = await db
+                .insert(cartonConfig)
+                .values({
+                    variantId: input.variantId,
+                    packsPerCarton: input.packsPerCarton,
+                    cartonWeightKg: cartonWeightKg.toFixed(2),
+                    cartonPrice: input.cartonPrice,
+                    cartonCostPrice: input.cartonCostPrice || null,
+                    deliveryCostPerCarton: input.deliveryCostPerCarton || null,
+                    label,
+                    isDefault: input.isDefault,
+                })
+                .returning();
+
+            return { config };
+        }),
+
+    /**
+     * Update an existing carton config.
+     */
+    updateCartonConfig: warehouseProcedure
+        .input(
+            z.object({
+                id: z.number().int(),
+                packsPerCarton: z.number().int().min(1).optional(),
+                cartonPrice: z.string().optional(),
+                cartonCostPrice: z.string().optional(),
+                deliveryCostPerCarton: z.string().optional(),
+                label: z.string().optional(),
+                isDefault: z.boolean().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Validate config exists and belongs to this warehouse
+            const existing = await db.query.cartonConfig.findFirst({
+                where: eq(cartonConfig.id, input.id),
+                with: {
+                    variant: {
+                        with: {
+                            product: { columns: { createdByWarehouseId: true } },
+                        },
+                    },
+                },
+            });
+
+            if (!existing || (existing.variant?.product as any)?.createdByWarehouseId !== userId) {
+                throw new ORPCError("FORBIDDEN", { message: "Config not found or not yours" });
+            }
+
+            const updateData: Record<string, any> = {};
+
+            if (input.packsPerCarton !== undefined) {
+                updateData.packsPerCarton = input.packsPerCarton;
+                // Recalculate weight
+                const packWeightKg = parseFloat(existing.variant?.weightKg || "0");
+                updateData.cartonWeightKg = (input.packsPerCarton * packWeightKg).toFixed(2);
+            }
+            if (input.cartonPrice !== undefined) updateData.cartonPrice = input.cartonPrice;
+            if (input.cartonCostPrice !== undefined) updateData.cartonCostPrice = input.cartonCostPrice;
+            if (input.deliveryCostPerCarton !== undefined) updateData.deliveryCostPerCarton = input.deliveryCostPerCarton;
+            if (input.label !== undefined) updateData.label = input.label;
+
+            if (input.isDefault === true) {
+                // Unset other defaults first
+                await db
+                    .update(cartonConfig)
+                    .set({ isDefault: false })
+                    .where(eq(cartonConfig.variantId, existing.variantId));
+                updateData.isDefault = true;
+            } else if (input.isDefault === false) {
+                updateData.isDefault = false;
+            }
+
+            if (Object.keys(updateData).length > 0) {
+                await db
+                    .update(cartonConfig)
+                    .set(updateData)
+                    .where(eq(cartonConfig.id, input.id));
+            }
+
+            return { success: true };
+        }),
+
+    /**
+     * Delete (soft) a carton config.
+     */
+    deleteCartonConfig: warehouseProcedure
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.cartonConfig.findFirst({
+                where: eq(cartonConfig.id, input.id),
+                with: {
+                    variant: {
+                        with: {
+                            product: { columns: { createdByWarehouseId: true } },
+                        },
+                    },
+                },
+            });
+
+            if (!existing || (existing.variant?.product as any)?.createdByWarehouseId !== userId) {
+                throw new ORPCError("FORBIDDEN", { message: "Config not found or not yours" });
+            }
+
+            await db
+                .update(cartonConfig)
+                .set({ isActive: false })
+                .where(eq(cartonConfig.id, input.id));
+
+            return { success: true };
+        }),
+
+    // ── Physical Carton Management ──
+
+    /**
+     * Create a physical carton from existing loose/pack stock.
+     * Deducts from available stock and marks as in-carton.
+     */
+    createCarton: warehouseProcedure
+        .input(
+            z.object({
+                variantId: z.number().int(),
+                cartonConfigId: z.number().int(),
+                storageAreaId: z.number().int().optional(),
+                note: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get the carton config
+            const config = await db.query.cartonConfig.findFirst({
+                where: and(
+                    eq(cartonConfig.id, input.cartonConfigId),
+                    eq(cartonConfig.variantId, input.variantId),
+                    eq(cartonConfig.isActive, true),
+                ),
+            });
+
+            if (!config) {
+                throw new ORPCError("NOT_FOUND", { message: "Carton config not found" });
+            }
+
+            // 2. Check inventory has enough loose stock
+            const inv = await db.query.inventory.findFirst({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                    eq(inventory.variantId, input.variantId),
+                ),
+            });
+
+            if (!inv) {
+                throw new ORPCError("NOT_FOUND", { message: "No inventory found for this variant" });
+            }
+
+            const available = parseFloat(inv.availableQty);
+            const inCarton = parseFloat(inv.inCartonQty);
+            const looseStock = available - inCarton;
+
+            if (looseStock < config.packsPerCarton) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Not enough loose stock. Need ${config.packsPerCarton} packs, only ${looseStock.toFixed(0)} available.`,
+                });
+            }
+
+            // 3. Generate carton ID: CTN-YYYY-NNNNNN
+            const year = new Date().getFullYear();
+            const [lastCarton] = await db
+                .select({ cartonId: carton.cartonId })
+                .from(carton)
+                .where(sql`${carton.cartonId} LIKE ${"CTN-" + year + "-%"}`)
+                .orderBy(desc(carton.id))
+                .limit(1);
+
+            let nextNum = 1;
+            if (lastCarton?.cartonId) {
+                const parts = lastCarton.cartonId.split("-");
+                const lastNum = parseInt(parts[2] || "0", 10);
+                nextNum = lastNum + 1;
+            }
+            const cartonIdStr = `CTN-${year}-${String(nextNum).padStart(6, "0")}`;
+
+            // 4. Transaction: create carton + update inventory
+            const result = await db.transaction(async (tx) => {
+                // Create carton record
+                const [newCarton] = await tx
+                    .insert(carton)
+                    .values({
+                        cartonId: cartonIdStr,
+                        warehouseId: userId,
+                        cartonConfigId: config.id,
+                        variantId: input.variantId,
+                        totalPacks: config.packsPerCarton,
+                        totalWeightKg: config.cartonWeightKg,
+                        status: "active",
+                        barcode: cartonIdStr, // Simple barcode = carton ID
+                        storageAreaId: input.storageAreaId || null,
+                        note: input.note || null,
+                    })
+                    .returning();
+
+                // Update inventory: move packs from loose → in-carton
+                const newInCartonQty = inCarton + config.packsPerCarton;
+                const newActiveCount = (inv.activeCartonCount || 0) + 1;
+
+                await tx
+                    .update(inventory)
+                    .set({
+                        inCartonQty: newInCartonQty.toFixed(2),
+                        activeCartonCount: newActiveCount,
+                    })
+                    .where(eq(inventory.id, inv.id));
+
+                return newCarton;
+            });
+
+            return { carton: result, cartonId: cartonIdStr };
+        }),
+
+    /**
+     * Break a carton — decompose back to loose/pack stock.
+     * Carton becomes immutable with status 'broken'.
+     */
+    breakCarton: warehouseProcedure
+        .input(z.object({ cartonId: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Validate carton exists and is active
+            const existingCarton = await db.query.carton.findFirst({
+                where: and(
+                    eq(carton.id, input.cartonId),
+                    eq(carton.warehouseId, userId),
+                    eq(carton.status, "active"),
+                ),
+            });
+
+            if (!existingCarton) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Active carton not found or doesn't belong to your warehouse",
+                });
+            }
+
+            // 2. Get inventory
+            const inv = await db.query.inventory.findFirst({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                    eq(inventory.variantId, existingCarton.variantId),
+                ),
+            });
+
+            if (!inv) {
+                throw new ORPCError("NOT_FOUND", { message: "Inventory not found" });
+            }
+
+            // 3. Transaction: break carton + return stock
+            await db.transaction(async (tx) => {
+                // Mark carton as broken
+                await tx
+                    .update(carton)
+                    .set({
+                        status: "broken",
+                        brokenAt: new Date(),
+                        brokenById: userId,
+                    })
+                    .where(eq(carton.id, input.cartonId));
+
+                // Move packs from in-carton → loose
+                const inCarton = parseFloat(inv.inCartonQty);
+                const newInCartonQty = Math.max(0, inCarton - existingCarton.totalPacks);
+                const newActiveCount = Math.max(0, (inv.activeCartonCount || 0) - 1);
+
+                await tx
+                    .update(inventory)
+                    .set({
+                        inCartonQty: newInCartonQty.toFixed(2),
+                        activeCartonCount: newActiveCount,
+                    })
+                    .where(eq(inventory.id, inv.id));
+            });
+
+            return { success: true, message: "Carton broken successfully" };
+        }),
+
+    /**
+     * List all cartons for this warehouse.
+     */
+    getCartons: warehouseProcedure
+        .input(
+            z.object({
+                status: z.enum(["active", "broken", "dispatched", "sold"]).optional(),
+                variantId: z.number().int().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const offset = (input.page - 1) * input.limit;
+
+            const conditions: SQL[] = [eq(carton.warehouseId, userId)];
+
+            if (input.status) {
+                conditions.push(eq(carton.status, input.status));
+            }
+            if (input.variantId) {
+                conditions.push(eq(carton.variantId, input.variantId));
+            }
+
+            const cartons = await db.query.carton.findMany({
+                where: and(...conditions),
+                orderBy: [desc(carton.createdAt)],
+                offset,
+                limit: input.limit,
+                with: {
+                    config: true,
+                    variant: {
+                        columns: {
+                            id: true,
+                            sku: true,
+                            unitLabel: true,
+                            weightKg: true,
+                        },
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, image: true },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                    storageArea: { columns: { id: true, name: true } },
+                },
+            });
+
+            const [countResult] = await db
+                .select({ count: count() })
+                .from(carton)
+                .where(and(...conditions));
+
+            // Stats
+            const [activeCount] = await db
+                .select({ count: count() })
+                .from(carton)
+                .where(and(eq(carton.warehouseId, userId), eq(carton.status, "active")));
+
+            const [totalCartons] = await db
+                .select({ count: count() })
+                .from(carton)
+                .where(eq(carton.warehouseId, userId));
+
+            return {
+                cartons,
+                stats: {
+                    active: Number(activeCount?.count || 0),
+                    total: Number(totalCartons?.count || 0),
+                },
+                pagination: {
+                    page: input.page,
+                    limit: input.limit,
+                    totalCount: Number(countResult?.count || 0),
+                    totalPages: Math.ceil(Number(countResult?.count || 0) / input.limit),
+                },
+            };
+        }),
+
+    /**
+     * Get a single carton by ID with full details.
+     */
+    getCartonById: warehouseProcedure
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const result = await db.query.carton.findFirst({
+                where: and(
+                    eq(carton.id, input.id),
+                    eq(carton.warehouseId, userId),
+                ),
+                with: {
+                    config: true,
+                    variant: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, image: true },
+                                with: { category: { columns: { name: true } } },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                    storageArea: { columns: { id: true, name: true } },
+                },
+            });
+
+            if (!result) {
+                throw new ORPCError("NOT_FOUND", { message: "Carton not found" });
+            }
+
+            return { carton: result };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
+
 
 export const warehouseRouter = {
     ...storefrontQueries,
@@ -2976,4 +3514,5 @@ export const warehouseRouter = {
     ...stockEntryQueries,
     ...storageAreaQueries,
     ...pricingQueries,
+    ...cartonQueries,
 };
