@@ -98,12 +98,15 @@ export default function AddStockPage() {
   );
 
   // Step 3 — Entry type & quantity
-  const [entryType, setEntryType] = useState<"loose" | "pack">("pack");
+  const [entryType, setEntryType] = useState<"loose" | "pack" | "carton">("pack");
   const [quantity, setQuantity] = useState("");
+  // Carton-specific
+  const [selectedCartonConfigId, setSelectedCartonConfigId] = useState<number | null>(null);
+  const [cartonCount, setCartonCount] = useState("");
 
   // Step 4 — Supplier & cost
   const [supplierId, setSupplierId] = useState<number | null>(null);
-  const [costType, setCostType] = useState<"per_kg" | "per_pack">("per_pack");
+  const [costType, setCostType] = useState<"per_kg" | "per_pack" | "per_carton">("per_pack");
   const [purchasePrice, setPurchasePrice] = useState("");
   const [reference, setReference] = useState("");
 
@@ -149,6 +152,15 @@ export default function AddStockPage() {
 
   const storageAreas: any[] = storageAreasData?.areas ?? [];
 
+  // Carton configs for selected variant
+  const { data: cartonConfigsData } = useQuery({
+    queryKey: ["warehouse", "getCartonConfigs", selectedVariantId],
+    queryFn: () => (orpc.warehouse as any).getCartonConfigs.call({ variantId: selectedVariantId! }),
+    enabled: !!selectedVariantId,
+  });
+  const cartonConfigs: any[] = cartonConfigsData?.configs ?? [];
+  const selectedCartonConfig = cartonConfigs.find((c: any) => c.id === selectedCartonConfigId) || null;
+
   // === Derived state ===
 
   const selectedVariant: SelectedVariant | null = useMemo(() => {
@@ -163,24 +175,25 @@ export default function AddStockPage() {
 
   // Auto-conversions
   const conversions = useMemo(() => {
-    if (!selectedVariant || !quantity || parseFloat(quantity) <= 0) {
-      return { kg: 0, packs: 0 };
-    }
-    const qty = parseFloat(quantity);
+    if (!selectedVariant) return { kg: 0, packs: 0, cartons: 0 };
     const packWeight = parseFloat(selectedVariant.weightKg);
 
-    if (entryType === "loose") {
-      return {
-        kg: qty,
-        packs: packWeight > 0 ? qty / packWeight : 0,
-      };
-    } else {
-      return {
-        packs: qty,
-        kg: qty * packWeight,
-      };
+    if (entryType === "carton") {
+      const cCount = parseInt(cartonCount) || 0;
+      if (cCount <= 0 || !selectedCartonConfig) return { kg: 0, packs: 0, cartons: cCount };
+      const packs = cCount * selectedCartonConfig.packsPerCarton;
+      return { kg: packs * packWeight, packs, cartons: cCount };
     }
-  }, [selectedVariant, quantity, entryType]);
+
+    if (!quantity || parseFloat(quantity) <= 0) return { kg: 0, packs: 0, cartons: 0 };
+    const qty = parseFloat(quantity);
+
+    if (entryType === "loose") {
+      return { kg: qty, packs: packWeight > 0 ? qty / packWeight : 0, cartons: 0 };
+    } else {
+      return { packs: qty, kg: qty * packWeight, cartons: 0 };
+    }
+  }, [selectedVariant, quantity, entryType, cartonCount, selectedCartonConfig]);
 
   // Cost auto-conversion
   const costConversions = useMemo(() => {
@@ -196,6 +209,13 @@ export default function AddStockPage() {
         perPack: price * packWeight,
         total: price * conversions.kg,
       };
+    } else if (costType === "per_carton") {
+      const cCount = parseInt(cartonCount) || 0;
+      return {
+        perPack: selectedCartonConfig ? price / selectedCartonConfig.packsPerCarton : 0,
+        perKg: packWeight > 0 && selectedCartonConfig ? price / (selectedCartonConfig.packsPerCarton * packWeight) : 0,
+        total: price * cCount,
+      };
     } else {
       return {
         perPack: price,
@@ -203,7 +223,7 @@ export default function AddStockPage() {
         total: price * conversions.packs,
       };
     }
-  }, [selectedVariant, purchasePrice, costType, conversions]);
+  }, [selectedVariant, purchasePrice, costType, conversions, cartonCount, selectedCartonConfig]);
 
   // === Mutation ===
 
@@ -256,7 +276,16 @@ export default function AddStockPage() {
       toast.error("Please select a variant");
       return;
     }
-    if (!quantity || parseFloat(quantity) <= 0) {
+    if (entryType === "carton") {
+      if (!cartonCount || parseInt(cartonCount) <= 0) {
+        toast.error("Please enter number of cartons");
+        return;
+      }
+      if (!selectedCartonConfigId) {
+        toast.error("Please select a carton config");
+        return;
+      }
+    } else if (!quantity || parseFloat(quantity) <= 0) {
       toast.error("Please enter a quantity");
       return;
     }
@@ -269,11 +298,15 @@ export default function AddStockPage() {
       return;
     }
 
+    const effectiveQty = entryType === "carton"
+      ? String(conversions.packs) // carton entry → quantity is in packs
+      : quantity;
+
     addStockMutation.mutate({
       variantId: selectedVariant.id,
       entryType,
-      quantity,
-      quantityUnit: entryType === "loose" ? "KG" : "Pack",
+      quantity: effectiveQty,
+      quantityUnit: entryType === "loose" ? "KG" : entryType === "carton" ? "Carton" : "Pack",
       supplierId,
       costType,
       purchasePrice,
@@ -284,6 +317,9 @@ export default function AddStockPage() {
       storageAreaId: storageAreaId || undefined,
       shelfRack: shelfRack || undefined,
       note: note || undefined,
+      // Carton fields
+      cartonConfigId: entryType === "carton" ? selectedCartonConfigId || undefined : undefined,
+      cartonCount: entryType === "carton" ? parseInt(cartonCount) || undefined : undefined,
     });
   };
 
@@ -571,33 +607,125 @@ export default function AddStockPage() {
                         </div>
                       </label>
                     )}
+                    {/* Carton entry option */}
+                    {supportsPack && (
+                      <label
+                        className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${entryType === "carton"
+                          ? "bg-primary/5 border-primary/30"
+                          : "hover:bg-muted/50"
+                          }`}
+                      >
+                        <input
+                          type="radio"
+                          name="entryType"
+                          value="carton"
+                          checked={entryType === "carton"}
+                          onChange={() => {
+                            setEntryType("carton");
+                            setCostType("per_carton");
+                            setQuantity("");
+                          }}
+                          className="accent-primary"
+                        />
+                        <div>
+                          <p className="text-sm font-medium">Carton Entry</p>
+                          <p className="text-xs text-muted-foreground">
+                            Enter number of cartons
+                          </p>
+                        </div>
+                      </label>
+                    )}
                   </div>
+
+                  {/* Carton config selector (when carton entry) */}
+                  {entryType === "carton" && (
+                    <div className="space-y-3">
+                      <Field>
+                        <FieldLabel>Carton Config *</FieldLabel>
+                        {cartonConfigs.length === 0 ? (
+                          <p className="text-sm text-muted-foreground italic p-2 border rounded-lg bg-muted/30">
+                            No carton configs for this variant. Set them up in the product pricing page first.
+                          </p>
+                        ) : (
+                          <div className="grid gap-2">
+                            {cartonConfigs.map((c: any) => (
+                              <label
+                                key={c.id}
+                                className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
+                                  selectedCartonConfigId === c.id
+                                    ? "bg-primary/5 border-primary/30"
+                                    : "hover:bg-muted/50"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="radio"
+                                    name="cartonConfig"
+                                    checked={selectedCartonConfigId === c.id}
+                                    onChange={() => setSelectedCartonConfigId(c.id)}
+                                    className="accent-primary"
+                                  />
+                                  <div>
+                                    <p className="text-sm font-medium">{c.label || `${c.packsPerCarton} Pack Carton`}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {c.packsPerCarton} packs · {c.cartonWeightKg}kg
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="text-sm font-semibold text-primary">৳{Number(c.cartonPrice).toLocaleString()}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </Field>
+                    </div>
+                  )}
 
                   {/* Quantity input */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Field>
-                      <FieldLabel>
-                        {entryType === "loose"
-                          ? "Quantity (KG)"
-                          : "Number of Packs"}
-                      </FieldLabel>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                        placeholder={
-                          entryType === "loose" ? "e.g. 100" : "e.g. 50"
-                        }
-                      />
-                    </Field>
+                    {entryType === "carton" ? (
+                      <Field>
+                        <FieldLabel>Number of Cartons *</FieldLabel>
+                        <Input
+                          type="number"
+                          step="1"
+                          min="1"
+                          value={cartonCount}
+                          onChange={(e) => setCartonCount(e.target.value)}
+                          placeholder="e.g. 5"
+                        />
+                      </Field>
+                    ) : (
+                      <Field>
+                        <FieldLabel>
+                          {entryType === "loose"
+                            ? "Quantity (KG)"
+                            : "Number of Packs"}
+                        </FieldLabel>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={quantity}
+                          onChange={(e) => setQuantity(e.target.value)}
+                          placeholder={
+                            entryType === "loose" ? "e.g. 100" : "e.g. 50"
+                          }
+                        />
+                      </Field>
+                    )}
 
                     {/* Auto conversion */}
-                    {quantity && parseFloat(quantity) > 0 && (
+                    {((entryType !== "carton" && quantity && parseFloat(quantity) > 0) ||
+                      (entryType === "carton" && parseInt(cartonCount) > 0 && selectedCartonConfig)) && (
                       <div className="flex flex-col justify-center p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                         <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium mb-1">
                           Auto Conversion
                         </p>
+                        {entryType === "carton" && (
+                          <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                            = {conversions.cartons} Carton{conversions.cartons !== 1 ? "s" : ""}
+                          </p>
+                        )}
                         <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                           = {conversions.packs.toFixed(2)} Pack
                           {conversions.packs !== 1 ? "s" : ""}
@@ -689,13 +817,31 @@ export default function AddStockPage() {
                       />
                       <span className="text-sm font-medium">Per Pack</span>
                     </label>
+                    {entryType === "carton" && (
+                      <label
+                        className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${costType === "per_carton"
+                          ? "bg-primary/5 border-primary/30"
+                          : "hover:bg-muted/50"
+                          }`}
+                      >
+                        <input
+                          type="radio"
+                          name="costType"
+                          value="per_carton"
+                          checked={costType === "per_carton"}
+                          onChange={() => setCostType("per_carton")}
+                          className="accent-primary"
+                        />
+                        <span className="text-sm font-medium">Per Carton</span>
+                      </label>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Field>
                       <FieldLabel>
                         Purchase Price (৳{" "}
-                        {costType === "per_kg" ? "/ KG" : "/ Pack"}) *
+                        {costType === "per_kg" ? "/ KG" : costType === "per_carton" ? "/ Carton" : "/ Pack"}) *
                       </FieldLabel>
                       <Input
                         type="number"
@@ -913,7 +1059,7 @@ export default function AddStockPage() {
                   <p className="text-xs text-muted-foreground mb-1">
                     Entry Type
                   </p>
-                  <p className="text-sm font-medium capitalize">{entryType}</p>
+                  <p className="text-sm font-medium capitalize">{entryType}{entryType === "carton" && selectedCartonConfig ? ` (${selectedCartonConfig.label || selectedCartonConfig.packsPerCarton + " Pack"})` : ""}</p>
                 </div>
 
                 <Separator />

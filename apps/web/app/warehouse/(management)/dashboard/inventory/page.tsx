@@ -81,6 +81,8 @@ interface GroupedProduct {
   variants: GroupedVariant[];
   packGroups: PackGroup[];
   looseQty: number;
+  inCartonQty: number;
+  activeCartonCount: number;
 }
 
 interface GroupedVariant {
@@ -98,6 +100,8 @@ interface GroupedVariant {
   brand: string;
   color: string;
   size: string;
+  inCartonQty: number;
+  activeCartonCount: number;
 }
 
 interface PackGroup {
@@ -139,6 +143,8 @@ function groupInventory(items: any[]): GroupedCategory[] {
       let totalQty = 0;
       let reservedQty = 0;
       let looseQty = 0;
+      let inCartonQty = 0;
+      let activeCartonCount = 0;
       const variants: GroupedVariant[] = [];
       const packMap = new Map<string, PackGroup>();
 
@@ -185,7 +191,13 @@ function groupInventory(items: any[]): GroupedCategory[] {
           brand: v.brand?.name || "",
           color: v.color || "",
           size: v.size || "",
+          inCartonQty: Number(item.inCartonQty || 0),
+          activeCartonCount: Number(item.activeCartonCount || 0),
         });
+
+        // Track carton stock
+        inCartonQty += Number(item.inCartonQty || 0);
+        activeCartonCount += Number(item.activeCartonCount || 0);
 
         // Pack grouping
         if (packType === "loose") {
@@ -213,6 +225,8 @@ function groupInventory(items: any[]): GroupedCategory[] {
         variants: variants.sort((a, b) => b.qty - a.qty),
         packGroups: Array.from(packMap.values()).sort((a, b) => b.totalQty - a.totalQty),
         looseQty,
+        inCartonQty,
+        activeCartonCount,
       });
     }
 
@@ -424,6 +438,32 @@ function ProductSection({
               <span className="text-amber-600 font-medium">
                 {product.looseQty.toLocaleString()} {product.muShort} ⚠ Ready to Pack
               </span>
+            </div>
+          )}
+
+          {/* Carton Breakdown */}
+          {product.inCartonQty > 0 && (
+            <div className="border-t border-gray-200/80 px-5 py-2">
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-gray-700 font-medium">📦📦 Carton Stock</span>
+                <a
+                  href="/warehouse/dashboard/stock/cartons"
+                  className="text-xs text-amber-600 hover:text-amber-700 font-medium"
+                >
+                  Manage Cartons →
+                </a>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-gray-500">
+                <span>
+                  <span className="font-semibold text-gray-700">{product.activeCartonCount}</span> active cartons
+                </span>
+                <span>
+                  <span className="font-semibold text-gray-700">{product.inCartonQty.toLocaleString()}</span> packs in cartons
+                </span>
+                <span>
+                  Loose: <span className="font-semibold text-amber-600">{(product.totalQty - product.inCartonQty).toLocaleString()}</span> packs
+                </span>
+              </div>
             </div>
           )}
         </div>
