@@ -15,7 +15,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +115,37 @@ export default function StockDetailPage() {
     enabled: !!primaryProductId,
   });
 
+  // Collect all variant IDs from breakdown for carton config fetch
+  const variantGroups = breakdownData?.variantGroups ?? [];
+  const allVariantIds = useMemo(() => {
+    const ids: number[] = [];
+    for (const g of variantGroups) {
+      for (const item of g.items) {
+        if (!ids.includes(item.variantId)) ids.push(item.variantId);
+      }
+    }
+    return ids;
+  }, [variantGroups]);
+
+  // Fetch carton configs for all variants
+  const { data: cartonConfigsData } = useQuery({
+    queryKey: ["warehouse", "getCartonConfigsBatch", allVariantIds],
+    queryFn: () => (orpc.warehouse as any).getCartonConfigsBatch.call({ variantIds: allVariantIds }),
+    enabled: allVariantIds.length > 0,
+  });
+  const allCartonConfigs: any[] = cartonConfigsData?.configs ?? [];
+
+  // Build carton config lookup: variantId → config
+  const configByVariant = useMemo(() => {
+    const map = new Map<number, any>();
+    for (const c of allCartonConfigs) {
+      if (!map.has(c.variantId) || c.isDefault) {
+        map.set(c.variantId, c);
+      }
+    }
+    return map;
+  }, [allCartonConfigs]);
+
   // Selected pack for the "SELECTED PACK" section
   const [selectedPackIndex, setSelectedPackIndex] = useState<number | null>(null);
 
@@ -156,11 +187,17 @@ export default function StockDetailPage() {
     );
   }
 
-  const variantGroups = breakdownData?.variantGroups ?? [];
   const loosePool = breakdownData?.loosePool;
   const totalQty = item.totalQty;
+
+  // Build breakdown text from item.breakdown (now carton-aware from API)
   const breakdownText = item.breakdown
-    .map((b: any) => `${Math.round(b.qty).toLocaleString()} ${b.label}`)
+    .map((b: any) => {
+      if (b.packagingType === "loose") {
+        return `${Math.round(b.qty).toLocaleString()} ${item.stdUnit} Loose`;
+      }
+      return `${Math.round(b.qty).toLocaleString()} ${b.label}`;
+    })
     .join(" + ");
 
   // Pack type groups (non-loose — for SUPPLY LEVEL section)
@@ -174,6 +211,33 @@ export default function StockDetailPage() {
 
   // Calculate loose convertible
   const looseTotal = (loosePool?.openStock ?? 0) + (loosePool?.fullDrum ?? 0);
+
+  // Compute carton counts for pack type groups
+  function getCartonInfo(group: any) {
+    const totalPacks = group.items.reduce(
+      (sum: number, i: any) => sum + i.availableQty,
+      0
+    );
+    const weightKg = parseFloat(group.weightKg || "0");
+
+    // Check if any variant in this group has a carton config
+    let packsPerCarton = 0;
+    for (const it of group.items) {
+      const cfg = configByVariant.get(it.variantId);
+      if (cfg) {
+        packsPerCarton = cfg.packsPerCarton;
+        break;
+      }
+    }
+
+    if (packsPerCarton > 0) {
+      const cartonCount = Math.floor(totalPacks / packsPerCarton);
+      const totalKg = totalPacks * weightKg;
+      return { cartonCount, totalKg, hasConfig: true };
+    }
+
+    return { cartonCount: 0, totalKg: totalPacks * weightKg, hasConfig: false };
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -316,12 +380,7 @@ export default function StockDetailPage() {
           <SectionHeader emoji="📦" title="Pack Type Stock (Supply Level)" />
           <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
             {packTypeGroups.map((group: any, gi: number) => {
-              const groupTotal = group.items.reduce(
-                (sum: number, i: any) => sum + i.availableQty,
-                0
-              );
-              const weightKg = parseFloat(group.weightKg || "0");
-              const totalKg = groupTotal * weightKg;
+              const info = getCartonInfo(group);
 
               return (
                 <div
@@ -336,20 +395,20 @@ export default function StockDetailPage() {
                   }
                 >
                   <span className="text-sm text-gray-800 font-medium">
-                    {group.unitLabel}
+                    {group.unitLabel} Carton
                   </span>
                   <div className="flex items-center gap-6">
                     <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
                       →{" "}
-                      {groupTotal.toLocaleString()}{" "}
+                      {info.cartonCount.toLocaleString()}{" "}
                       <span className="text-xs font-normal text-gray-500">
                         Carton
                       </span>
                     </span>
                     <div className="min-w-[120px]">
-                      {groupTotal > 0 ? (
+                      {info.cartonCount > 0 ? (
                         <span className="text-xs text-gray-500">
-                          ({Math.round(totalKg).toLocaleString()} KG)
+                          ({Math.round(info.totalKg).toLocaleString()} KG)
                         </span>
                       ) : (
                         <NotAvailable />
@@ -408,50 +467,45 @@ export default function StockDetailPage() {
       {/* ══════════════════════════════════════════════════════════════
           📊 SELECTED PACK (Interactive)
           ══════════════════════════════════════════════════════════════ */}
-      {selectedPack && (
-        <div>
-          <SectionHeader
-            emoji="📊"
-            title={`Selected Pack: ${selectedPack.unitLabel}`}
-          />
-          <div className="bg-blue-50/50 rounded-lg border border-blue-200 p-5">
-            <div className="space-y-2">
-              <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
-                Available:
-              </div>
-              <div className="text-sm text-gray-800">
-                →{" "}
-                <span className="font-bold tabular-nums">
-                  {selectedPack.items
-                    .reduce((sum: number, i: any) => sum + i.availableQty, 0)
-                    .toLocaleString()}
-                </span>{" "}
-                Carton
-              </div>
-              {looseTotal > 0 && (
+      {selectedPack && (() => {
+        const info = getCartonInfo(selectedPack);
+        return (
+          <div>
+            <SectionHeader
+              emoji="📊"
+              title={`Selected Pack: ${selectedPack.unitLabel} Carton`}
+            />
+            <div className="bg-blue-50/50 rounded-lg border border-blue-200 p-5">
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
+                  Available:
+                </div>
                 <div className="text-sm text-gray-800">
                   →{" "}
-                  <span className="font-bold tabular-nums text-blue-700">
-                    +{looseTotal.toLocaleString()} KG
+                  <span className="font-bold tabular-nums">
+                    {info.cartonCount.toLocaleString()}
                   </span>{" "}
-                  <span className="text-gray-500">
-                    (Convertible from Loose)
-                  </span>
+                  Carton
                 </div>
-              )}
-            </div>
-            <div className="mt-4 pt-3 border-t border-blue-200/50">
-              <span className="text-xs text-gray-500">
-                MOQ:{" "}
-                <span className="font-semibold text-gray-700">1 Carton</span>
-              </span>
+                {looseTotal > 0 && (
+                  <div className="text-sm text-gray-800">
+                    →{" "}
+                    <span className="font-bold tabular-nums text-blue-700">
+                      +{looseTotal.toLocaleString()} KG
+                    </span>{" "}
+                    <span className="text-gray-500">
+                      (Convertible from Loose)
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════════
-          ⚙ ACTION (Placeholders)
+          ⚙ ACTION
           ══════════════════════════════════════════════════════════════ */}
       <div>
         <SectionHeader emoji="⚙" title="Action" />
@@ -471,10 +525,6 @@ export default function StockDetailPage() {
           <Button variant="outline" size="sm" disabled className="gap-1.5 text-xs">
             <Pencil size={14} />
             ✏ Adjust Stock
-          </Button>
-          <Button variant="outline" size="sm" disabled className="gap-1.5 text-xs">
-            <Truck size={14} />
-            🚚 Supply / Sell
           </Button>
         </div>
       </div>

@@ -66,11 +66,18 @@ type StockListItem = {
 
 // ─── Helpers ───────────────────────────────────────────────────
 
-function formatBreakdownText(breakdown: BreakdownItem[]): string {
+function formatBreakdownText(breakdown: BreakdownItem[], totalQty: number, stdUnit: string): string {
   if (breakdown.length === 0) return "—";
-  return breakdown
-    .map((b) => `${Math.round(b.qty).toLocaleString()} ${b.label}`)
-    .join(" + ");
+
+  const parts: string[] = [];
+  for (const b of breakdown) {
+    if (b.packagingType === "loose") {
+      parts.push(`${Math.round(b.qty).toLocaleString()} ${stdUnit} Loose`);
+    } else {
+      parts.push(`${Math.round(b.qty).toLocaleString()} ${b.label}`);
+    }
+  }
+  return parts.join(" + ");
 }
 
 function StatusCell({ totalQty }: { totalQty: number }) {
@@ -79,6 +86,14 @@ function StatusCell({ totalQty }: { totalQty: number }) {
       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600">
         <span className="w-2 h-2 bg-red-500 rounded-full shrink-0" />
         Out of Stock
+      </span>
+    );
+  }
+  if (totalQty <= 50) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600">
+        <span className="w-2 h-2 bg-amber-500 rounded-full shrink-0" />
+        Low Stock
       </span>
     );
   }
@@ -221,7 +236,7 @@ export default function StockListPage() {
         header: "Stock Breakdown",
         cell: ({ row }) => (
           <span className="text-sm text-gray-700">
-            {formatBreakdownText(row.original.breakdown)}
+            {formatBreakdownText(row.original.breakdown, row.original.totalQty, row.original.stdUnit)}
           </span>
         ),
         size: 230,
@@ -349,7 +364,7 @@ export default function StockListPage() {
 
       {/* 📋 Table */}
       <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
-        📋 Stock List (Core Identity Level)
+        📋 Stock List (Core Identity Level 🔥)
       </div>
 
       {isLoading ? (

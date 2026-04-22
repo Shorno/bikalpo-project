@@ -17,8 +17,9 @@ import {
     subCategory,
     stockEntry,
     coreProductIdentity,
+    cartonConfig,
 } from "@bikalpo-project/db/schema";
-import { and, eq, sql, desc, lt, gte } from "drizzle-orm";
+import { and, eq, sql, desc, lt, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -528,10 +529,41 @@ export const stockOverviewRouter = {
                 variantIds: Set<number>;
                 productIds: Set<number>;
                 hasColorSize: boolean;
-                breakdownMap: Map<string, { qty: number; unit: string }>;
+                breakdownMap: Map<string, { qty: number; unit: string; type: string }>;
             };
 
             const groupMap = new Map<string, GroupData>();
+
+            // Fetch carton configs for all variant IDs we encountered
+            const allVariantIds = new Set<number>();
+            for (const row of rows) {
+                allVariantIds.add(row.variantId);
+            }
+            const variantIdsArr = Array.from(allVariantIds);
+
+            // Build carton config lookup: variantId → { packsPerCarton }
+            const cartonConfigMap = new Map<number, { packsPerCarton: number }>();
+            if (variantIdsArr.length > 0) {
+                const configs = await db
+                    .select({
+                        variantId: cartonConfig.variantId,
+                        packsPerCarton: cartonConfig.packsPerCarton,
+                        isDefault: cartonConfig.isDefault,
+                    })
+                    .from(cartonConfig)
+                    .where(
+                        and(
+                            inArray(cartonConfig.variantId, variantIdsArr),
+                            eq(cartonConfig.isActive, true),
+                        ),
+                    );
+                for (const c of configs) {
+                    // Prefer default config, otherwise first one
+                    if (!cartonConfigMap.has(c.variantId) || c.isDefault) {
+                        cartonConfigMap.set(c.variantId, { packsPerCarton: c.packsPerCarton });
+                    }
+                }
+            }
 
             for (const row of rows) {
                 const qty = parseFloat(row.availableQty || "0");
@@ -558,22 +590,52 @@ export const stockOverviewRouter = {
                 }
 
                 const g = groupMap.get(groupKey)!;
-                g.totalQty += qty;
                 g.variantIds.add(row.variantId);
                 g.productIds.add(row.productId);
                 if (row.color || row.size) g.hasColorSize = true;
 
-                // Aggregate by packaging type
+                // Calculate carton vs loose breakdown
                 const packType = row.packagingType || "other";
                 const isLoose = packType === "loose";
-                const label = isLoose
-                    ? "Loose"
-                    : packType.charAt(0).toUpperCase() + packType.slice(1);
+                const weightPerPack = parseFloat(row.weightKg || "0");
+                const cfg = cartonConfigMap.get(row.variantId);
 
-                if (!g.breakdownMap.has(packType)) {
-                    g.breakdownMap.set(packType, { qty: 0, unit: isLoose ? "KG" : label });
+                if (isLoose) {
+                    // Loose stock → add to total as KG directly
+                    g.totalQty += qty;
+                    if (!g.breakdownMap.has("loose")) {
+                        g.breakdownMap.set("loose", { qty: 0, unit: "KG", type: "loose" });
+                    }
+                    g.breakdownMap.get("loose")!.qty += qty;
+                } else if (cfg && cfg.packsPerCarton > 0) {
+                    // Has carton config → compute carton count + loose remainder
+                    const cartonCount = Math.floor(qty / cfg.packsPerCarton);
+                    const remainderPacks = qty % cfg.packsPerCarton;
+                    const remainderKg = remainderPacks * weightPerPack;
+
+                    g.totalQty += qty * weightPerPack; // Total in KG
+
+                    if (cartonCount > 0) {
+                        if (!g.breakdownMap.has("carton")) {
+                            g.breakdownMap.set("carton", { qty: 0, unit: "Carton", type: "carton" });
+                        }
+                        g.breakdownMap.get("carton")!.qty += cartonCount;
+                    }
+                    if (remainderKg > 0) {
+                        if (!g.breakdownMap.has("loose")) {
+                            g.breakdownMap.set("loose", { qty: 0, unit: "KG", type: "loose" });
+                        }
+                        g.breakdownMap.get("loose")!.qty += remainderKg;
+                    }
+                } else {
+                    // No carton config → count as packs, total in KG
+                    g.totalQty += qty * weightPerPack;
+                    const label = packType.charAt(0).toUpperCase() + packType.slice(1);
+                    if (!g.breakdownMap.has(packType)) {
+                        g.breakdownMap.set(packType, { qty: 0, unit: label, type: packType });
+                    }
+                    g.breakdownMap.get(packType)!.qty += qty;
                 }
-                g.breakdownMap.get(packType)!.qty += qty;
             }
 
             // Apply status filter
