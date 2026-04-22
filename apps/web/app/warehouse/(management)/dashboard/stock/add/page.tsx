@@ -160,6 +160,7 @@ export default function AddStockPage() {
   });
   const cartonConfigs: any[] = cartonConfigsData?.configs ?? [];
   const selectedCartonConfig = cartonConfigs.find((c: any) => c.id === selectedCartonConfigId) || null;
+  const defaultCartonConfig = cartonConfigs.find((c: any) => c.isDefault) || cartonConfigs[0] || null;
 
   // === Derived state ===
 
@@ -189,11 +190,16 @@ export default function AddStockPage() {
     const qty = parseFloat(quantity);
 
     if (entryType === "loose") {
-      return { kg: qty, packs: packWeight > 0 ? qty / packWeight : 0, cartons: 0 };
+      const packsPerCarton = defaultCartonConfig?.packsPerCarton || 0;
+      const packsFromLoose = packWeight > 0 ? qty / packWeight : 0;
+      const cartonsFromLoose = packsPerCarton > 0 ? Math.floor(packsFromLoose / packsPerCarton) : 0;
+      return { kg: qty, packs: packsFromLoose, cartons: cartonsFromLoose };
     } else {
-      return { packs: qty, kg: qty * packWeight, cartons: 0 };
+      const packsPerCarton = defaultCartonConfig?.packsPerCarton || 0;
+      const cartonsFromPacks = packsPerCarton > 0 ? Math.floor(qty / packsPerCarton) : 0;
+      return { packs: qty, kg: qty * packWeight, cartons: cartonsFromPacks };
     }
-  }, [selectedVariant, quantity, entryType, cartonCount, selectedCartonConfig]);
+  }, [selectedVariant, quantity, entryType, cartonCount, selectedCartonConfig, cartonConfigs]);
 
   // Cost auto-conversion
   const costConversions = useMemo(() => {
@@ -512,7 +518,7 @@ export default function AddStockPage() {
                   </Select>
 
                   {selectedVariant && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3 bg-muted/50 rounded-lg text-sm">
                       <div>
                         <span className="text-muted-foreground text-xs">
                           SKU
@@ -538,6 +544,16 @@ export default function AddStockPage() {
                           Brand
                         </span>
                         <p>{selectedVariant.brand?.name || "—"}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground text-xs">
+                          Carton Size
+                        </span>
+                        <p>
+                          {cartonConfigs.length > 0
+                            ? `${cartonConfigs[0].packsPerCarton} Pack`
+                            : "—"}
+                        </p>
                       </div>
                     </div>
                   )}
@@ -721,7 +737,7 @@ export default function AddStockPage() {
                         <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium mb-1">
                           Auto Conversion
                         </p>
-                        {entryType === "carton" && (
+                        {conversions.cartons > 0 && (
                           <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                             = {conversions.cartons} Carton{conversions.cartons !== 1 ? "s" : ""}
                           </p>
