@@ -17,8 +17,9 @@ import {
     subCategory,
     stockEntry,
     coreProductIdentity,
+    cartonConfig,
 } from "@bikalpo-project/db/schema";
-import { and, eq, sql, desc, lt, gte } from "drizzle-orm";
+import { and, eq, sql, desc, lt, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -528,10 +529,41 @@ export const stockOverviewRouter = {
                 variantIds: Set<number>;
                 productIds: Set<number>;
                 hasColorSize: boolean;
-                breakdownMap: Map<string, { qty: number; unit: string }>;
+                breakdownMap: Map<string, { qty: number; unit: string; type: string }>;
             };
 
             const groupMap = new Map<string, GroupData>();
+
+            // Fetch carton configs for all variant IDs we encountered
+            const allVariantIds = new Set<number>();
+            for (const row of rows) {
+                allVariantIds.add(row.variantId);
+            }
+            const variantIdsArr = Array.from(allVariantIds);
+
+            // Build carton config lookup: variantId → { packsPerCarton }
+            const cartonConfigMap = new Map<number, { packsPerCarton: number }>();
+            if (variantIdsArr.length > 0) {
+                const configs = await db
+                    .select({
+                        variantId: cartonConfig.variantId,
+                        packsPerCarton: cartonConfig.packsPerCarton,
+                        isDefault: cartonConfig.isDefault,
+                    })
+                    .from(cartonConfig)
+                    .where(
+                        and(
+                            inArray(cartonConfig.variantId, variantIdsArr),
+                            eq(cartonConfig.isActive, true),
+                        ),
+                    );
+                for (const c of configs) {
+                    // Prefer default config, otherwise first one
+                    if (!cartonConfigMap.has(c.variantId) || c.isDefault) {
+                        cartonConfigMap.set(c.variantId, { packsPerCarton: c.packsPerCarton });
+                    }
+                }
+            }
 
             for (const row of rows) {
                 const qty = parseFloat(row.availableQty || "0");
@@ -558,22 +590,52 @@ export const stockOverviewRouter = {
                 }
 
                 const g = groupMap.get(groupKey)!;
-                g.totalQty += qty;
                 g.variantIds.add(row.variantId);
                 g.productIds.add(row.productId);
                 if (row.color || row.size) g.hasColorSize = true;
 
-                // Aggregate by packaging type
+                // Calculate carton vs loose breakdown
                 const packType = row.packagingType || "other";
                 const isLoose = packType === "loose";
-                const label = isLoose
-                    ? "Loose"
-                    : packType.charAt(0).toUpperCase() + packType.slice(1);
+                const weightPerPack = parseFloat(row.weightKg || "0");
+                const cfg = cartonConfigMap.get(row.variantId);
 
-                if (!g.breakdownMap.has(packType)) {
-                    g.breakdownMap.set(packType, { qty: 0, unit: isLoose ? "KG" : label });
+                if (isLoose) {
+                    // Loose stock → add to total as KG directly
+                    g.totalQty += qty;
+                    if (!g.breakdownMap.has("loose")) {
+                        g.breakdownMap.set("loose", { qty: 0, unit: "KG", type: "loose" });
+                    }
+                    g.breakdownMap.get("loose")!.qty += qty;
+                } else if (cfg && cfg.packsPerCarton > 0) {
+                    // Has carton config → compute carton count + loose remainder
+                    const cartonCount = Math.floor(qty / cfg.packsPerCarton);
+                    const remainderPacks = qty % cfg.packsPerCarton;
+                    const remainderKg = remainderPacks * weightPerPack;
+
+                    g.totalQty += qty * weightPerPack; // Total in KG
+
+                    if (cartonCount > 0) {
+                        if (!g.breakdownMap.has("carton")) {
+                            g.breakdownMap.set("carton", { qty: 0, unit: "Carton", type: "carton" });
+                        }
+                        g.breakdownMap.get("carton")!.qty += cartonCount;
+                    }
+                    if (remainderKg > 0) {
+                        if (!g.breakdownMap.has("loose")) {
+                            g.breakdownMap.set("loose", { qty: 0, unit: "KG", type: "loose" });
+                        }
+                        g.breakdownMap.get("loose")!.qty += remainderKg;
+                    }
+                } else {
+                    // No carton config → count as packs, total in KG
+                    g.totalQty += qty * weightPerPack;
+                    const label = packType.charAt(0).toUpperCase() + packType.slice(1);
+                    if (!g.breakdownMap.has(packType)) {
+                        g.breakdownMap.set(packType, { qty: 0, unit: label, type: packType });
+                    }
+                    g.breakdownMap.get(packType)!.qty += qty;
                 }
-                g.breakdownMap.get(packType)!.qty += qty;
             }
 
             // Apply status filter
@@ -634,6 +696,254 @@ export const stockOverviewRouter = {
                 page: input.page,
                 pageSize: input.pageSize,
                 totalPages: Math.ceil(totalCount / input.pageSize),
+            };
+        }),
+
+    /**
+     * Brand Stock Overview: Aggregated stock data grouped by brand.
+     * Each row = one brand with total SKUs, stock, low stock count, and status.
+     */
+    getBrandStockOverview: protectedProcedure
+        .input(
+            z.object({
+                ownerType: z.enum(["warehouse", "shop", "super_seller"]),
+                search: z.string().optional(),
+                categoryId: z.number().int().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const ownerId = context.session.user.id;
+
+            const conditions = [
+                eq(inventory.ownerType, input.ownerType),
+                eq(inventory.ownerId, ownerId),
+            ];
+            if (input.categoryId) {
+                conditions.push(eq(product.categoryId, input.categoryId));
+            }
+            if (input.search) {
+                const term = `%${input.search}%`;
+                conditions.push(sql`${brand.name} ILIKE ${term}`);
+            }
+
+            // Aggregate by brand: join inventory → variant → product → brand
+            const rows = await db
+                .select({
+                    brandId: brand.id,
+                    brandName: brand.name,
+                    brandLogo: brand.logo,
+                    brandSlug: brand.slug,
+                    variantId: productVariant.id,
+                    availableQty: inventory.availableQty,
+                    weightKg: productVariant.weightKg,
+                    packType: productVariant.packType,
+                })
+                .from(inventory)
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .innerJoin(brand, eq(productVariant.brandId, brand.id))
+                .where(and(...conditions))
+                .orderBy(brand.name);
+
+            // Group by brand
+            type BrandGroup = {
+                brandId: number;
+                brandName: string;
+                brandLogo: string | null;
+                brandSlug: string;
+                totalStock: number;
+                skuSet: Set<number>;
+                lowStockCount: number;
+            };
+
+            const brandMap = new Map<number, BrandGroup>();
+            const LOW_STOCK_THRESHOLD = 10;
+
+            for (const row of rows) {
+                const qty = parseFloat(row.availableQty || "0");
+                const weightKg = parseFloat(row.weightKg || "0");
+                const isLoose = row.packType === "loose";
+                // Convert to KG: loose is already KG, packs need × weightKg
+                const qtyInKg = isLoose ? qty : qty * weightKg;
+
+                if (!brandMap.has(row.brandId)) {
+                    brandMap.set(row.brandId, {
+                        brandId: row.brandId,
+                        brandName: row.brandName,
+                        brandLogo: row.brandLogo,
+                        brandSlug: row.brandSlug,
+                        totalStock: 0,
+                        skuSet: new Set(),
+                        lowStockCount: 0,
+                    });
+                }
+
+                const g = brandMap.get(row.brandId)!;
+                g.totalStock += qtyInKg;
+                g.skuSet.add(row.variantId);
+                if (qty > 0 && qty <= LOW_STOCK_THRESHOLD) {
+                    g.lowStockCount++;
+                }
+            }
+
+            const brands = Array.from(brandMap.values())
+                .map((g) => ({
+                    brandId: g.brandId,
+                    brandName: g.brandName,
+                    brandLogo: g.brandLogo,
+                    brandSlug: g.brandSlug,
+                    totalSku: g.skuSet.size,
+                    totalStock: Math.round(g.totalStock),
+                    lowStockCount: g.lowStockCount,
+                }))
+                .sort((a, b) => b.totalStock - a.totalStock);
+
+            return { brands };
+        }),
+
+    /**
+     * Brand Stock Detail: Products + variants under a specific brand.
+     */
+    getBrandStockDetail: protectedProcedure
+        .input(
+            z.object({
+                ownerType: z.enum(["warehouse", "shop", "super_seller"]),
+                brandId: z.number().int(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const ownerId = context.session.user.id;
+
+            // Get brand info
+            const [brandRow] = await db
+                .select({
+                    id: brand.id,
+                    name: brand.name,
+                    logo: brand.logo,
+                    slug: brand.slug,
+                })
+                .from(brand)
+                .where(eq(brand.id, input.brandId))
+                .limit(1);
+
+            if (!brandRow) {
+                return { brand: null, products: [], summary: { totalSku: 0, totalStock: 0, lowStockCount: 0 } };
+            }
+
+            // Get all inventory rows for this brand
+            const rows = await db
+                .select({
+                    variantId: productVariant.id,
+                    variantSku: productVariant.sku,
+                    unitLabel: productVariant.unitLabel,
+                    weightKg: productVariant.weightKg,
+                    productId: product.id,
+                    productName: product.name,
+                    productImage: product.image,
+                    coreProductId: product.coreProductId,
+                    coreProductName: coreProductIdentity.name,
+                    availableQty: inventory.availableQty,
+                    reservedQty: inventory.reservedQty,
+                })
+                .from(inventory)
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(coreProductIdentity, eq(product.coreProductId, coreProductIdentity.id))
+                .where(
+                    and(
+                        eq(inventory.ownerType, input.ownerType),
+                        eq(inventory.ownerId, ownerId),
+                        eq(productVariant.brandId, input.brandId),
+                    ),
+                )
+                .orderBy(sql`COALESCE(${coreProductIdentity.name}, ${product.name})`);
+
+            // Group by core product, then by variant
+            type VariantRow = {
+                variantId: number;
+                sku: string | null;
+                unitLabel: string;
+                packType: string | null;
+                weightKg: number;
+                stock: number;
+                reserved: number;
+                available: number;
+                stockKg: number;
+            };
+
+            type ProductGroup = {
+                productId: number;
+                coreProductId: number | null;
+                coreProductName: string;
+                productImage: string | null;
+                totalStock: number;
+                variants: VariantRow[];
+            };
+
+            const productMap = new Map<string, ProductGroup>();
+            let totalSku = 0;
+            let totalStock = 0;
+            let lowStockCount = 0;
+            const skuSet = new Set<number>();
+
+            for (const row of rows) {
+                const available = parseFloat(row.availableQty || "0");
+                const reserved = parseFloat(row.reservedQty || "0");
+                const stock = available + reserved;
+                const weightKg = parseFloat(row.weightKg || "0");
+                const coreName = row.coreProductName || row.productName;
+                const groupKey = row.coreProductId ? `core_${row.coreProductId}` : `product_${row.productId}`;
+                const isLoose = row.packType === "loose";
+                const availableKg = isLoose ? available : available * weightKg;
+
+                if (!productMap.has(groupKey)) {
+                    productMap.set(groupKey, {
+                        productId: row.productId,
+                        coreProductId: row.coreProductId,
+                        coreProductName: coreName,
+                        productImage: row.productImage,
+                        totalStock: 0,
+                        variants: [],
+                    });
+                }
+
+                const g = productMap.get(groupKey)!;
+                g.totalStock += availableKg;
+                g.variants.push({
+                    variantId: row.variantId,
+                    sku: row.variantSku,
+                    unitLabel: row.unitLabel,
+                    packType: row.packType,
+                    weightKg,
+                    stock: Math.round(stock),
+                    reserved: Math.round(reserved),
+                    available: Math.round(available),
+                    stockKg: Math.round(isLoose ? stock : stock * weightKg),
+                });
+
+                if (!skuSet.has(row.variantId)) {
+                    skuSet.add(row.variantId);
+                    totalSku++;
+                    totalStock += availableKg;
+                    if (available > 0 && available <= 10) {
+                        lowStockCount++;
+                    }
+                }
+            }
+
+            const products = Array.from(productMap.values()).map((g) => ({
+                ...g,
+                totalStock: Math.round(g.totalStock),
+            }));
+
+            return {
+                brand: brandRow,
+                products,
+                summary: {
+                    totalSku,
+                    totalStock: Math.round(totalStock),
+                    lowStockCount,
+                },
             };
         }),
 };
