@@ -3812,6 +3812,313 @@ const expiryQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Unit/Carton Inventory
+// ────────────────────────────────────────────────────────────────
+
+import {
+    product as productTable,
+    coreProductIdentity,
+} from "@bikalpo-project/db/schema";
+
+const unitCartonQueries = {
+    /**
+     * Get unit-level inventory with carton allocation breakdown.
+     * Shows each variant's total/loose/in-carton/reserved stock,
+     * lists individual physical cartons, and aggregates loose stock by area.
+     */
+    getUnitCartonInventory: warehouseProcedure
+        .input(
+            z.object({
+                viewMode: z.enum(["all", "loose", "inCarton"]).default("all"),
+                categoryId: z.number().optional(),
+                search: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            i
+            // 1. Fetch all inventory items for this warehouse
+            const inventoryRows = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            brand: { columns: { id: true, name: true } },
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                    categoryId: true,
+                                },
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                    coreProduct: { columns: { id: true, name: true, image: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            // 2. Fetch all active cartons for this warehouse (for breakdown)
+            const activeCartons = await db.query.carton.findMany({
+                where: and(
+                    eq(carton.warehouseId, userId),
+                    eq(carton.status, "active"),
+                ),
+                with: {
+                    config: { columns: { id: true, packsPerCarton: true, label: true } },
+                    storageArea: { columns: { id: true, name: true } },
+                },
+                orderBy: [desc(carton.createdAt)],
+            });
+
+            // Group cartons by variantId for lookup
+            const cartonsByVariant = new Map<number, typeof activeCartons>();
+            for (const c of activeCartons) {
+                const list = cartonsByVariant.get(c.variantId) || [];
+                list.push(c);
+                cartonsByVariant.set(c.variantId, list);
+            }
+
+            // 3. Fetch stock entries for loose stock area breakdown
+            const stockEntries = await db.query.stockEntry.findMany({
+                where: eq(stockEntry.warehouseId, userId),
+                columns: {
+                    variantId: true,
+                    storageAreaId: true,
+                    quantity: true,
+                    quantityUnit: true,
+                    entryType: true,
+                },
+                with: {
+                    storageArea: { columns: { id: true, name: true } },
+                },
+            });
+
+            // Group stock entries by variantId → storageArea for loose breakdown
+            const entryAreaMap = new Map<number, Map<string, number>>();
+            for (const se of stockEntries) {
+                const areaName = se.storageArea?.name || "Default Location";
+                const variantMap = entryAreaMap.get(se.variantId) || new Map();
+                variantMap.set(areaName, (variantMap.get(areaName) || 0) + Number(se.quantity));
+                entryAreaMap.set(se.variantId, variantMap);
+            }
+
+            // 4. Fetch all carton configs for alert detection
+            const allConfigs = await db
+                .select({ variantId: cartonConfig.variantId })
+                .from(cartonConfig)
+                .where(eq(cartonConfig.isActive, true));
+
+            const variantsWithConfigs = new Set(allConfigs.map((c) => c.variantId));
+
+            // 5. Build result items
+            type UnitCartonItem = {
+                inventoryId: number;
+                variantId: number;
+                productName: string;
+                productImage: string;
+                coreProductName: string;
+                coreProductImage: string;
+                variantLabel: string;
+                categoryId: number;
+                categoryName: string;
+                totalUnits: number;
+                looseStock: number;
+                inCartonQty: number;
+                reservedQty: number;
+                activeCartonCount: number;
+                unitLabel: string;
+                cartons: Array<{
+                    id: number;
+                    cartonId: string;
+                    configLabel: string;
+                    packsPerCarton: number;
+                    totalPacks: number;
+                    storageAreaName: string | null;
+                }>;
+                looseByArea: Array<{
+                    areaName: string;
+                    qty: number;
+                }>;
+            };
+
+            const items: UnitCartonItem[] = [];
+            let totalUnitsAll = 0;
+            let totalLooseAll = 0;
+            let totalInCartonAll = 0;
+            let totalReservedAll = 0;
+
+            type AlertItem = {
+                type: "loose_excess" | "carton_shortage";
+                message: string;
+                variantLabel: string;
+                productName: string;
+            };
+            const alerts: AlertItem[] = [];
+
+            for (const inv of inventoryRows) {
+                const v = inv.variant;
+                if (!v || !v.product) continue;
+                const p = v.product;
+                const core = (p as any).coreProduct;
+
+                const available = Number(inv.availableQty);
+                const inCarton = Number(inv.inCartonQty);
+                const reserved = Number(inv.reservedQty);
+                const loose = Math.max(0, available - inCarton);
+
+                // Skip items based on view mode
+                if (input.viewMode === "loose" && loose <= 0) continue;
+                if (input.viewMode === "inCarton" && inCarton <= 0) continue;
+
+                // Build variant label
+                const labelParts: string[] = [];
+                if (v.brand?.name) labelParts.push(v.brand.name);
+                const weightKg = Number(v.weightKg || 0);
+                if (weightKg > 0) labelParts.push(`${weightKg}KG`);
+                if (v.packagingType && v.packagingType !== "loose") {
+                    labelParts.push(v.packagingType.charAt(0).toUpperCase() + v.packagingType.slice(1));
+                }
+                const variantLabel = labelParts.length > 0
+                    ? labelParts.join(" + ")
+                    : v.unitLabel || `Variant #${v.id}`;
+
+                const coreProductName = core?.name || p.name;
+                const coreProductImage = core?.image || p.image || "";
+                const categoryName = (p as any).category?.name || "—";
+                const categoryId = p.categoryId;
+
+                // Apply filters
+                if (input.categoryId && categoryId !== input.categoryId) continue;
+                if (input.search?.trim()) {
+                    const s = input.search.trim().toLowerCase();
+                    const match =
+                        p.name.toLowerCase().includes(s) ||
+                        coreProductName.toLowerCase().includes(s) ||
+                        variantLabel.toLowerCase().includes(s) ||
+                        (v.brand?.name || "").toLowerCase().includes(s);
+                    if (!match) continue;
+                }
+
+                // Carton breakdown — individual physical cartons
+                const variantCartons = cartonsByVariant.get(v.id) || [];
+                const cartonItems = variantCartons.map((c) => ({
+                    id: c.id,
+                    cartonId: c.cartonId,
+                    configLabel: c.config?.label || `${c.config?.packsPerCarton || c.totalPacks} Pack Carton`,
+                    packsPerCarton: c.config?.packsPerCarton || c.totalPacks,
+                    totalPacks: c.totalPacks,
+                    storageAreaName: c.storageArea?.name || null,
+                }));
+
+                // Loose stock area breakdown
+                const areaMap = entryAreaMap.get(v.id);
+                const looseByArea: Array<{ areaName: string; qty: number }> = [];
+                if (areaMap) {
+                    for (const [areaName, qty] of areaMap) {
+                        looseByArea.push({ areaName, qty });
+                    }
+                    looseByArea.sort((a, b) => b.qty - a.qty);
+                }
+
+                // Stats
+                totalUnitsAll += available;
+                totalLooseAll += loose;
+                totalInCartonAll += inCarton;
+                totalReservedAll += reserved;
+
+                // Alerts
+                if (available > 0 && variantsWithConfigs.has(v.id)) {
+                    const looseRatio = available > 0 ? (loose / available) * 100 : 0;
+                    if (looseRatio > 60) {
+                        alerts.push({
+                            type: "loose_excess",
+                            message: `${Math.round(looseRatio)}% loose stock — convert to carton`,
+                            variantLabel,
+                            productName: coreProductName,
+                        });
+                    }
+                    if (inv.activeCartonCount === 0 && inCarton === 0 && available > 0) {
+                        alerts.push({
+                            type: "carton_shortage",
+                            message: `No cartons packed — packing needed`,
+                            variantLabel,
+                            productName: coreProductName,
+                        });
+                    }
+                }
+
+                items.push({
+                    inventoryId: inv.id,
+                    variantId: v.id,
+                    productName: p.name,
+                    productImage: p.image || "",
+                    coreProductName,
+                    coreProductImage,
+                    variantLabel,
+                    categoryId,
+                    categoryName,
+                    totalUnits: available,
+                    looseStock: loose,
+                    inCartonQty: inCarton,
+                    reservedQty: reserved,
+                    activeCartonCount: inv.activeCartonCount || 0,
+                    unitLabel: v.unitLabel || "Pack",
+                    cartons: cartonItems,
+                    looseByArea,
+                });
+            }
+
+            // Sort: items with cartons first, then by total units desc
+            items.sort((a, b) => {
+                if (a.activeCartonCount > 0 && b.activeCartonCount === 0) return -1;
+                if (a.activeCartonCount === 0 && b.activeCartonCount > 0) return 1;
+                return b.totalUnits - a.totalUnits;
+            });
+
+            // Efficiency stats
+            const packingEfficiency =
+                totalUnitsAll > 0 ? Math.round((totalInCartonAll / totalUnitsAll) * 100) : 0;
+            const looseRatio =
+                totalUnitsAll > 0 ? Math.round((totalLooseAll / totalUnitsAll) * 100) : 0;
+            const reservedRatio =
+                totalUnitsAll > 0 ? Math.round((totalReservedAll / totalUnitsAll) * 100) : 0;
+
+            // Filter options
+            const catSet = new Map<number, string>();
+            for (const inv of inventoryRows) {
+                const cat = (inv.variant?.product as any)?.category;
+                if (cat) catSet.set(cat.id, cat.name);
+            }
+
+            return {
+                items,
+                stats: {
+                    totalUnits: totalUnitsAll,
+                    totalLoose: totalLooseAll,
+                    totalInCarton: totalInCartonAll,
+                    totalReserved: totalReservedAll,
+                    packingEfficiency,
+                    looseRatio,
+                    reservedRatio,
+                },
+                alerts: alerts.slice(0, 8),
+                filterOptions: {
+                    categories: Array.from(catSet.entries())
+                        .map(([id, name]) => ({ id, name }))
+                        .sort((a, b) => a.name.localeCompare(b.name)),
+                },
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -3832,4 +4139,6 @@ export const warehouseRouter = {
     ...pricingQueries,
     ...cartonQueries,
     ...expiryQueries,
+    ...unitCartonQueries,
 };
+
