@@ -14,6 +14,7 @@ import {
 import {
   AlertTriangle,
   ArrowUpDown,
+  BarChart3,
   Box,
   BoxesIcon,
   ChevronDown,
@@ -21,9 +22,8 @@ import {
   Download,
   Layers,
   Package,
-  PackagePlus,
   Search,
-  Scissors,
+  ShieldCheck,
   SlidersHorizontal,
   TrendingUp,
 } from "lucide-react";
@@ -31,6 +31,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState, Fragment } from "react";
 import { orpc } from "@/utils/orpc";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -71,6 +72,11 @@ type UnitCartonItem = {
   brandName: string;
   variantLabel: string;
   unitLabel: string;
+  sku: string;
+  color: string;
+  size: string;
+  packType: string;
+  weightKg: number;
   totalUnits: number;
   looseUnits: number;
   inCartonUnits: number;
@@ -137,10 +143,21 @@ function SummaryCard({
 function ExpandedDetail({ item }: { item: UnitCartonItem }) {
   const hasBreakdown = item.cartonBreakdown.length > 0;
 
+  // Efficiency calculations
+  const packingEff = item.totalUnits > 0
+    ? Math.round((item.inCartonUnits / item.totalUnits) * 100)
+    : 0;
+  const looseRatio = item.totalUnits > 0
+    ? Math.round((item.looseUnits / item.totalUnits) * 100)
+    : 0;
+  const reservedRatio = item.totalUnits > 0
+    ? Math.round((item.reservedUnits / item.totalUnits) * 100)
+    : 0;
+
   return (
     <div className="px-6 py-5 bg-gradient-to-b from-gray-50/80 to-white space-y-5">
       {/* Unit Summary Mini Cards */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white border rounded-lg p-3 text-center">
           <p className="text-lg font-bold text-gray-900">{Math.round(item.totalUnits).toLocaleString()}</p>
           <p className="text-[11px] text-gray-500">📦 Total Units</p>
@@ -152,6 +169,10 @@ function ExpandedDetail({ item }: { item: UnitCartonItem }) {
         <div className="bg-white border rounded-lg p-3 text-center">
           <p className="text-lg font-bold text-emerald-600">{Math.round(item.inCartonUnits).toLocaleString()}</p>
           <p className="text-[11px] text-gray-500">📦 In Carton</p>
+        </div>
+        <div className="bg-white border rounded-lg p-3 text-center">
+          <p className="text-lg font-bold text-purple-600">{Math.round(item.reservedUnits).toLocaleString()}</p>
+          <p className="text-[11px] text-gray-500">🔒 Reserved</p>
         </div>
       </div>
 
@@ -218,23 +239,126 @@ function ExpandedDetail({ item }: { item: UnitCartonItem }) {
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-2 pt-1">
-        <Link href="/warehouse/dashboard/stock/cartons">
-          <Button variant="outline" size="sm" className="text-xs gap-1.5">
-            <PackagePlus size={14} /> Create Carton
+      {/* Stock Flow Analytics */}
+      {item.totalUnits > 0 && (
+        <div>
+          <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
+            📊 Stock Flow Analytics
+          </p>
+          <div className="bg-white border rounded-lg p-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <p className="text-[11px] text-gray-400 uppercase">Total Units</p>
+                <p className="font-bold text-gray-900">{Math.round(item.totalUnits).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-gray-400 uppercase">In Carton</p>
+                <p className="font-bold text-emerald-600">{Math.round(item.inCartonUnits).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-gray-400 uppercase">Remaining Loose</p>
+                <p className="font-bold text-blue-600">{Math.round(item.looseUnits).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-gray-400 uppercase">Reserved</p>
+                <p className="font-bold text-purple-600">{Math.round(item.reservedUnits).toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Efficiency Insight */}
+      {item.totalUnits > 0 && (
+        <div>
+          <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
+            📉 Efficiency Insight
+          </p>
+          <div className="bg-white border rounded-lg p-3 space-y-3">
+            {/* Packing Efficiency */}
+            <div>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-gray-600">Packing Efficiency</span>
+                <span className="font-bold text-emerald-600">{packingEff}%</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{ width: `${packingEff}%` }}
+                />
+              </div>
+            </div>
+            {/* Loose Ratio */}
+            <div>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-gray-600">Loose Ratio</span>
+                <span className={`font-bold ${looseRatio > 60 ? "text-amber-600" : "text-blue-600"}`}>{looseRatio}%</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${looseRatio > 60 ? "bg-amber-500" : "bg-blue-500"}`}
+                  style={{ width: `${looseRatio}%` }}
+                />
+              </div>
+            </div>
+            {/* Reserved */}
+            <div>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-gray-600">Reserved</span>
+                <span className="font-bold text-purple-600">{reservedRatio}%</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-purple-500 rounded-full transition-all"
+                  style={{ width: `${reservedRatio}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Panel */}
+      <div>
+        <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
+          ⚙ Action Panel
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1.5"
+            onClick={() => toast.info("Create Carton — coming soon")}
+          >
+            📦 Create Carton
           </Button>
-        </Link>
-        <Link href="/warehouse/dashboard/stock/cartons">
-          <Button variant="outline" size="sm" className="text-xs gap-1.5 text-red-600 border-red-200 hover:bg-red-50">
-            <Scissors size={14} /> Break Carton
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1.5"
+            onClick={() => toast.info("Break Carton — coming soon")}
+          >
+            📤 Break Carton
           </Button>
-        </Link>
-        <Link href="/warehouse/dashboard/stock-adjustment">
-          <Button variant="outline" size="sm" className="text-xs gap-1.5">
-            <SlidersHorizontal size={14} /> Adjust Stock
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1.5"
+            onClick={() => toast.info("Move to Carton — coming soon")}
+          >
+            🔁 Move to Carton
           </Button>
-        </Link>
+          <Link href="/warehouse/dashboard/stock-adjustment">
+            <Button variant="outline" size="sm" className="text-xs gap-1.5">
+              <SlidersHorizontal size={14} /> Adjust Stock
+            </Button>
+          </Link>
+          <Link href={`/warehouse/dashboard/stock/${item.productId}`}>
+            <Button variant="outline" size="sm" className="text-xs gap-1.5">
+              <BarChart3 size={14} /> View Details
+            </Button>
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -537,12 +661,24 @@ export default function UnitCartonPage() {
       </div>
 
       {/* ── Alert Panel ── */}
-      {showLooseAlert && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2.5 text-sm text-amber-700">
-          <AlertTriangle size={16} className="shrink-0" />
-          <span>
-            ⚠ <span className="font-semibold">{looseRatio}%</span> of your stock is loose — consider converting to cartons for better packing efficiency.
-          </span>
+      {(showLooseAlert || (packingEfficiency < 30 && summary.totalUnits > 0)) && (
+        <div className="space-y-2">
+          {showLooseAlert && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2.5 text-sm text-amber-700">
+              <AlertTriangle size={16} className="shrink-0" />
+              <span>
+                ⚠ <span className="font-semibold">{looseRatio}%</span> of your stock is loose — consider converting to cartons for better packing efficiency.
+              </span>
+            </div>
+          )}
+          {packingEfficiency < 30 && summary.totalUnits > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2.5 text-sm text-red-700">
+              <AlertTriangle size={16} className="shrink-0" />
+              <span>
+                🔴 Carton shortage — only <span className="font-semibold">{packingEfficiency}%</span> of stock is packed. Packing action needed.
+              </span>
+            </div>
+          )}
         </div>
       )}
 

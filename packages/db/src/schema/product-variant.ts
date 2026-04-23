@@ -225,6 +225,11 @@ export const productVariantRelations = relations(productVariant, ({ one }) => ({
         references: [productVariant.id],
         relationName: "tradeToRetail",
     }),
+    // Source variant option from global catalog (e.g. "12KG Cylinder")
+    sourceVariantOption: one(variantOption, {
+        fields: [productVariant.sourceVariantOptionId],
+        references: [variantOption.id],
+    }),
 }));
 
 export type ProductVariant = typeof productVariant.$inferSelect;
