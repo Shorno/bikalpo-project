@@ -446,12 +446,9 @@ function ProductSection({
             <div className="border-t border-gray-200/80 px-5 py-2">
               <div className="flex items-center justify-between text-sm mb-1">
                 <span className="text-gray-700 font-medium">📦📦 Carton Stock</span>
-                <a
-                  href="/warehouse/dashboard/stock/cartons"
-                  className="text-xs text-amber-600 hover:text-amber-700 font-medium"
-                >
-                  Manage Cartons →
-                </a>
+                <span className="text-xs text-amber-600 font-medium">
+                  Carton Stock
+                </span>
               </div>
               <div className="flex items-center gap-4 text-xs text-gray-500">
                 <span>

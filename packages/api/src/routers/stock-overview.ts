@@ -18,6 +18,9 @@ import {
     stockEntry,
     coreProductIdentity,
     cartonConfig,
+    emptyPack,
+    deliveryGroup,
+    deliveryGroupInvoice,
 } from "@bikalpo-project/db/schema";
 import { and, eq, sql, desc, lt, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -72,12 +75,27 @@ export const stockOverviewRouter = {
                 .where(ownerFilter);
 
             // ── Stock Status (In Stock / Out of Stock) ──
-            const statusRows = await db
+            const [statusRow] = await db
                 .select({
-                    inStock: sql<number>`COUNT(*) FILTER (WHERE ${inventory.availableQty}::numeric > 0)::int`,
+                    inStock: sql<number>`COUNT(*) FILTER (
+                        WHERE ${inventory.availableQty}::numeric > CASE
+                            WHEN COALESCE(${productVariant.reorderLevel}, 0) > 0
+                                THEN ${productVariant.reorderLevel}
+                            ELSE 10
+                        END
+                    )::int`,
+                    lowStock: sql<number>`COUNT(*) FILTER (
+                        WHERE ${inventory.availableQty}::numeric > 0
+                          AND ${inventory.availableQty}::numeric <= CASE
+                              WHEN COALESCE(${productVariant.reorderLevel}, 0) > 0
+                                  THEN ${productVariant.reorderLevel}
+                              ELSE 10
+                          END
+                    )::int`,
                     outOfStock: sql<number>`COUNT(*) FILTER (WHERE ${inventory.availableQty}::numeric <= 0)::int`,
                 })
                 .from(inventory)
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
                 .where(ownerFilter);
 
             // ── Pack Type Breakdown ──
@@ -99,18 +117,141 @@ export const stockOverviewRouter = {
                 Date.now() + 30 * 24 * 60 * 60 * 1000,
             ).toISOString().split("T")[0]!;
 
-            const [expiringResult] = await db
-                .select({
-                    count: sql<number>`COUNT(DISTINCT ${stockEntry.id})::int`,
-                })
-                .from(stockEntry)
-                .where(
-                    and(
-                        eq(stockEntry.warehouseId, ownerId),
-                        gte(sql`${stockEntry.expiryDate}::date`, sql`${today}::date`),
-                        lt(sql`${stockEntry.expiryDate}::date`, sql`${thirtyDaysLater}::date`),
-                    ),
-                );
+            const [expiringResult] = input.ownerType === "warehouse"
+                ? await db
+                    .select({
+                        count: sql<number>`COUNT(DISTINCT ${stockEntry.variantId})::int`,
+                    })
+                    .from(stockEntry)
+                    .where(
+                        and(
+                            eq(stockEntry.warehouseId, ownerId),
+                            gte(sql`${stockEntry.expiryDate}::date`, sql`${today}::date`),
+                            lt(sql`${stockEntry.expiryDate}::date`, sql`${thirtyDaysLater}::date`),
+                        ),
+                    )
+                : [{ count: 0 }];
+
+            const [expiredResult] = input.ownerType === "warehouse"
+                ? await db
+                    .select({
+                        count: sql<number>`COUNT(DISTINCT ${stockEntry.variantId})::int`,
+                    })
+                    .from(stockEntry)
+                    .where(
+                        and(
+                            eq(stockEntry.warehouseId, ownerId),
+                            lt(sql`${stockEntry.expiryDate}::date`, sql`${today}::date`),
+                        ),
+                    )
+                : [{ count: 0 }];
+
+            const inventoryRows = await db.query.inventory.findMany({
+                where: ownerFilter,
+                columns: {
+                    variantId: true,
+                    availableQty: true,
+                    inCartonQty: true,
+                },
+                with: {
+                    variant: {
+                        columns: {
+                            id: true,
+                            packType: true,
+                            packagingType: true,
+                        },
+                    },
+                },
+            });
+
+            const inventoryVariantIds = inventoryRows
+                .map((row) => row.variant?.id)
+                .filter((id): id is number => id !== undefined);
+
+            const cartonConfigLookup = new Map<number, { packsPerCarton: number }>();
+            if (inventoryVariantIds.length > 0) {
+                const configs = await db
+                    .select({
+                        variantId: cartonConfig.variantId,
+                        packsPerCarton: cartonConfig.packsPerCarton,
+                        isDefault: cartonConfig.isDefault,
+                    })
+                    .from(cartonConfig)
+                    .where(
+                        and(
+                            inArray(cartonConfig.variantId, inventoryVariantIds),
+                            eq(cartonConfig.isActive, true),
+                        ),
+                    );
+
+                for (const config of configs) {
+                    if (!cartonConfigLookup.has(config.variantId) || config.isDefault) {
+                        cartonConfigLookup.set(config.variantId, {
+                            packsPerCarton: config.packsPerCarton,
+                        });
+                    }
+                }
+            }
+
+            const inventoryType = {
+                looseStock: 0,
+                packStock: 0,
+                cartonStock: 0,
+            };
+
+            for (const row of inventoryRows) {
+                const totalUnits = parseFloat(row.availableQty || "0");
+                const dbInCartonQty = parseFloat(row.inCartonQty || "0");
+                const packType = row.variant?.packType || row.variant?.packagingType || "other";
+                const isLoose = packType === "loose";
+                const isCartonVariant = packType === "carton";
+                const cfg = row.variant ? cartonConfigLookup.get(row.variant.id) : undefined;
+
+                if (totalUnits <= 0) continue;
+
+                if (isLoose) {
+                    inventoryType.looseStock += totalUnits;
+                    continue;
+                }
+
+                if (dbInCartonQty > 0) {
+                    inventoryType.cartonStock += dbInCartonQty;
+                    inventoryType.packStock += Math.max(0, totalUnits - dbInCartonQty);
+                    continue;
+                }
+
+                if (isCartonVariant) {
+                    inventoryType.cartonStock += totalUnits;
+                    continue;
+                }
+
+                if (cfg && cfg.packsPerCarton > 0) {
+                    const inCartonUnits =
+                        Math.floor(totalUnits / cfg.packsPerCarton) * cfg.packsPerCarton;
+                    inventoryType.cartonStock += inCartonUnits;
+                    inventoryType.packStock += Math.max(0, totalUnits - inCartonUnits);
+                    continue;
+                }
+
+                inventoryType.packStock += totalUnits;
+            }
+
+            const [emptyPackResult] = input.ownerType === "warehouse"
+                ? await db
+                    .select({
+                        total: sql<string>`COALESCE(SUM(${emptyPack.quantityCollected}), 0)`,
+                    })
+                    .from(emptyPack)
+                    .innerJoin(
+                        deliveryGroupInvoice,
+                        eq(emptyPack.deliveryGroupInvoiceId, deliveryGroupInvoice.id),
+                    )
+                    .innerJoin(
+                        deliveryGroup,
+                        eq(deliveryGroupInvoice.groupId, deliveryGroup.id),
+                    )
+                    .where(eq(deliveryGroup.warehouseId, ownerId))
+                : [{ total: "0" }];
 
             // ── Highest Stock Value by Category ──
             const topCategoryRows = await db
@@ -135,8 +276,16 @@ export const stockOverviewRouter = {
                     totalStockValue: parseFloat(mainKPI?.totalStockValue ?? "0"),
                 },
                 stockStatus: {
-                    inStock: statusRows[0]?.inStock ?? 0,
-                    outOfStock: statusRows[0]?.outOfStock ?? 0,
+                    inStock: statusRow?.inStock ?? 0,
+                    lowStock: statusRow?.lowStock ?? 0,
+                    outOfStock: statusRow?.outOfStock ?? 0,
+                    expired: expiredResult?.count ?? 0,
+                },
+                inventoryType: {
+                    looseStock: inventoryType.looseStock,
+                    packStock: inventoryType.packStock,
+                    cartonStock: inventoryType.cartonStock,
+                    emptyPack: parseFloat(emptyPackResult?.total ?? "0"),
                 },
                 packTypeBreakdown: packTypeRows.map((r) => ({
                     packagingType: r.packagingType,
@@ -144,6 +293,7 @@ export const stockOverviewRouter = {
                     itemCount: r.itemCount,
                 })),
                 alerts: {
+                    lowStock: statusRow?.lowStock ?? 0,
                     expiringSoon: expiringResult?.count ?? 0,
                 },
                 quickInsights: {

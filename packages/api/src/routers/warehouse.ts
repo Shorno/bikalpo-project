@@ -3493,6 +3493,314 @@ const cartonQueries = {
 
             return { carton: result };
         }),
+
+    /**
+     * Unit/Carton Inventory — product-level view showing unit stock
+     * split between loose and in-carton, with carton breakdown per config.
+     */
+    getUnitCartonInventory: warehouseProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                categoryId: z.number().int().optional(),
+                viewMode: z.enum(["all", "loose", "in_carton"]).optional().default("all"),
+                page: z.number().int().min(1).optional().default(1),
+                pageSize: z.number().int().min(1).max(100).optional().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch all inventory items with deep relations
+            const items = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            brand: { columns: { id: true, name: true } },
+                            sourceVariantOption: { columns: { id: true, name: true } },
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                    coreProduct: { columns: { id: true, name: true, image: true } },
+                                    brand: { columns: { id: true, name: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            // 2. Fetch carton configs for all variants to compute in-carton allocation
+            //    (matches the stock list page logic — don't rely solely on inCartonQty)
+            const allVariantIds = items
+                .map((i) => i.variant?.id)
+                .filter((id): id is number => id !== undefined);
+
+            const cartonConfigLookup = new Map<number, { packsPerCarton: number }>();
+            if (allVariantIds.length > 0) {
+                const configs = await db
+                    .select({
+                        variantId: cartonConfig.variantId,
+                        packsPerCarton: cartonConfig.packsPerCarton,
+                        isDefault: cartonConfig.isDefault,
+                    })
+                    .from(cartonConfig)
+                    .where(
+                        and(
+                            inArray(cartonConfig.variantId, allVariantIds),
+                            eq(cartonConfig.isActive, true),
+                        ),
+                    );
+                for (const c of configs) {
+                    // Prefer default config, otherwise first one
+                    if (!cartonConfigLookup.has(c.variantId) || c.isDefault) {
+                        cartonConfigLookup.set(c.variantId, { packsPerCarton: c.packsPerCarton });
+                    }
+                }
+            }
+
+            // 3. Build flat list with carton tracking data
+            type UnitItem = {
+                inventoryId: number;
+                variantId: number;
+                productId: number;
+                productName: string;
+                productImage: string;
+                coreProductId: number | null;
+                coreProductName: string;
+                categoryId: number | null;
+                categoryName: string;
+                brandName: string;
+                variantLabel: string;
+                unitLabel: string;
+                sku: string;
+                color: string;
+                size: string;
+                packType: string;
+                weightKg: number;
+                totalUnits: number;
+                looseUnits: number;
+                inCartonUnits: number;
+                reservedUnits: number;
+                availableUnits: number;
+                activeCartonCount: number;
+            };
+
+            const unitItems: UnitItem[] = [];
+
+            for (const item of items) {
+                const v = item.variant;
+                if (!v || !v.product) continue;
+                const p = v.product;
+                const brandInfo = v.brand || (p as any).brand;
+                const core = p.coreProduct;
+                const cat = p.category;
+
+                const totalUnits = parseFloat(item.availableQty || "0");
+                const dbInCartonQty = parseFloat(item.inCartonQty || "0");
+                const reservedUnits = parseFloat(item.reservedQty || "0");
+                const availableUnits = Math.max(0, totalUnits - reservedUnits);
+
+                // Compute in-carton vs loose (matching stock list page logic):
+                // Priority: 1) physical carton tracking (inCartonQty)
+                //           2) carton config computation
+                //           3) packType-based classification
+                const isLoose = v.packType === "loose" || v.packagingType === "loose";
+                const cfg = cartonConfigLookup.get(v.id);
+                let inCartonUnits: number;
+                let looseUnits: number;
+
+                if (dbInCartonQty > 0) {
+                    // Physical cartons tracked in DB — use actual data
+                    inCartonUnits = dbInCartonQty;
+                    looseUnits = Math.max(0, totalUnits - inCartonUnits);
+                } else if (cfg && cfg.packsPerCarton > 0 && !isLoose && totalUnits > 0) {
+                    // Has carton config — compute carton allocation
+                    const cartonCount = Math.floor(totalUnits / cfg.packsPerCarton);
+                    inCartonUnits = cartonCount * cfg.packsPerCarton;
+                    looseUnits = totalUnits - inCartonUnits;
+                } else if (isLoose) {
+                    // Loose variant — all stock is loose
+                    inCartonUnits = 0;
+                    looseUnits = totalUnits;
+                } else {
+                    // Packed variant (packet, sack, etc.) without carton config
+                    // Not loose, but not in carton either
+                    inCartonUnits = 0;
+                    looseUnits = 0;
+                }
+
+                // Build variant label: "Brand + VariantOptionName"
+                // Uses the admin-managed variant option name (e.g. "12KG Cylinder")
+                const wKg = parseFloat(v.weightKg || "0");
+                const optionName = (v as any).sourceVariantOption?.name as string | undefined;
+                const parts: string[] = [];
+                if (brandInfo?.name) parts.push(brandInfo.name);
+                if (v.color) parts.push(v.color);
+                if (v.size) parts.push(v.size);
+                if (optionName) {
+                    parts.push(optionName);
+                } else if (wKg > 0) {
+                    // Fallback for variants without a linked variant option
+                    parts.push(`${wKg}${wKg >= 1 ? "KG" : "g"}`);
+                }
+
+                const variantLabel = parts.length > 0
+                    ? parts.join(" + ")
+                    : v.quantitySelectorLabel || v.sku || `Variant #${v.id}`;
+
+                unitItems.push({
+                    inventoryId: item.id,
+                    variantId: v.id,
+                    productId: p.id,
+                    productName: core?.name ?? p.name,
+                    productImage: core?.image ?? (p as any).image ?? "",
+                    coreProductId: core?.id ?? null,
+                    coreProductName: core?.name ?? p.name,
+                    categoryId: cat?.id ?? null,
+                    categoryName: cat?.name ?? "—",
+                    brandName: brandInfo?.name ?? "—",
+                    variantLabel,
+                    unitLabel: v.unitLabel || "Pack",
+                    sku: v.sku || "",
+                    color: v.color || "",
+                    size: v.size || "",
+                    packType: v.packType || v.packagingType || "other",
+                    weightKg: wKg,
+                    totalUnits,
+                    looseUnits,
+                    inCartonUnits,
+                    reservedUnits,
+                    availableUnits,
+                    activeCartonCount: item.activeCartonCount || 0,
+                });
+            }
+
+            // 4. Apply filters
+            let filtered = unitItems;
+
+            if (input.categoryId) {
+                filtered = filtered.filter((i) => i.categoryId === input.categoryId);
+            }
+            if (input.viewMode === "loose") {
+                filtered = filtered.filter((i) => i.looseUnits > 0);
+            } else if (input.viewMode === "in_carton") {
+                filtered = filtered.filter((i) => i.inCartonUnits > 0);
+            }
+            if (input.search?.trim()) {
+                const s = input.search.trim().toLowerCase();
+                filtered = filtered.filter(
+                    (i) =>
+                        i.productName.toLowerCase().includes(s) ||
+                        i.brandName.toLowerCase().includes(s) ||
+                        i.variantLabel.toLowerCase().includes(s),
+                );
+            }
+
+            // 5. Compute summary from filtered items
+            const summary = {
+                totalUnits: filtered.reduce((s, i) => s + i.totalUnits, 0),
+                looseUnits: filtered.reduce((s, i) => s + i.looseUnits, 0),
+                inCartonUnits: filtered.reduce((s, i) => s + i.inCartonUnits, 0),
+            };
+
+            // 6. Sort and paginate
+            filtered.sort((a, b) => a.productName.localeCompare(b.productName));
+            const totalCount = filtered.length;
+            const totalPages = Math.ceil(totalCount / input.pageSize);
+            const paginated = filtered.slice(
+                (input.page - 1) * input.pageSize,
+                input.page * input.pageSize,
+            );
+
+            // 7. Get carton breakdown for paginated variant IDs
+            //    Shows BOTH physical cartons AND computed allocation from carton config
+            const paginatedVariantIds = paginated.map((i) => i.variantId);
+            const cartonBreakdownMap = new Map<number, Array<{
+                configLabel: string;
+                unitsPerCarton: number;
+                cartonCount: number;
+                totalUnits: number;
+            }>>();
+
+            if (paginatedVariantIds.length > 0) {
+                // Get active physical cartons grouped by variant + config
+                const cartonRows = await db
+                    .select({
+                        variantId: carton.variantId,
+                        configId: carton.cartonConfigId,
+                        configLabel: cartonConfig.label,
+                        packsPerCarton: cartonConfig.packsPerCarton,
+                        cartonCount: count(),
+                        totalPacks: sql<string>`SUM(${carton.totalPacks})`,
+                    })
+                    .from(carton)
+                    .leftJoin(cartonConfig, eq(carton.cartonConfigId, cartonConfig.id))
+                    .where(
+                        and(
+                            eq(carton.warehouseId, userId),
+                            eq(carton.status, "active"),
+                            inArray(carton.variantId, paginatedVariantIds),
+                        ),
+                    )
+                    .groupBy(
+                        carton.variantId,
+                        carton.cartonConfigId,
+                        cartonConfig.label,
+                        cartonConfig.packsPerCarton,
+                    );
+
+                for (const row of cartonRows) {
+                    if (!cartonBreakdownMap.has(row.variantId)) {
+                        cartonBreakdownMap.set(row.variantId, []);
+                    }
+                    cartonBreakdownMap.get(row.variantId)!.push({
+                        configLabel: row.configLabel || `${row.packsPerCarton} Pack Carton`,
+                        unitsPerCarton: row.packsPerCarton || 0,
+                        cartonCount: Number(row.cartonCount),
+                        totalUnits: parseFloat(row.totalPacks || "0"),
+                    });
+                }
+
+                // For variants with carton config but NO physical cartons,
+                // compute theoretical carton allocation so the breakdown still shows
+                for (const item of paginated) {
+                    if (cartonBreakdownMap.has(item.variantId)) continue; // already has physical cartons
+                    const cfg = cartonConfigLookup.get(item.variantId);
+                    if (!cfg || cfg.packsPerCarton <= 0 || item.totalUnits <= 0) continue;
+                    if (item.packType === "loose") continue;
+
+                    const cartonCount = Math.floor(item.totalUnits / cfg.packsPerCarton);
+                    if (cartonCount > 0) {
+                        cartonBreakdownMap.set(item.variantId, [{
+                            configLabel: `${cfg.packsPerCarton} Pack Carton`,
+                            unitsPerCarton: cfg.packsPerCarton,
+                            cartonCount,
+                            totalUnits: cartonCount * cfg.packsPerCarton,
+                        }]);
+                    }
+                }
+            }
+
+            // 8. Return items with carton breakdown
+            const responseItems = paginated.map((item) => ({
+                ...item,
+                cartonBreakdown: cartonBreakdownMap.get(item.variantId) || [],
+            }));
+
+            return {
+                items: responseItems,
+                summary,
+                totalCount,
+                page: input.page,
+                pageSize: input.pageSize,
+                totalPages,
+            };
+        }),
 };
 
 // ────────────────────────────────────────────────────────────────
