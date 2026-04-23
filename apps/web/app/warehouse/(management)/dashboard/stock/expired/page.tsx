@@ -3,14 +3,20 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowLeftRight,
   ChevronDown,
   ChevronRight,
   Clock,
+  Download,
   Filter,
   Package,
+  Percent,
   Search,
   ShieldAlert,
+  SlidersHorizontal,
+  Trash2,
   TrendingDown,
+  Undo2,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -19,6 +25,7 @@ import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -35,6 +42,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { toast } from "sonner";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -127,57 +135,113 @@ function ExpiryStatusBadge({ status, days }: { status: string; days: number }) {
 
 function BatchDetail({ item }: { item: ExpiryItem }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-6 py-4 bg-gray-50/80 border-t border-dashed text-sm">
-      <div>
-        <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Batch ID</p>
-        <p className="font-medium">{item.batchNo}</p>
-      </div>
-      <div>
-        <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Expiry Date</p>
-        <p className="font-medium">{new Date(item.expiryDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
-      </div>
-      {item.manufactureDate && (
+    <div className="bg-gray-50/80 border-t border-dashed">
+      {/* Detail Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-6 py-4 text-sm">
         <div>
-          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Manufacture Date</p>
-          <p className="font-medium">{new Date(item.manufactureDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Batch ID</p>
+          <p className="font-medium">{item.batchNo}</p>
         </div>
-      )}
-      <div>
-        <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Total Qty</p>
-        <p className="font-medium">{Number(item.quantity).toLocaleString()} {item.quantityUnit}</p>
-      </div>
-      <div>
-        <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Supplier</p>
-        <p className="font-medium">{item.supplierName}</p>
-      </div>
-      <div>
-        <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Purchase Price</p>
-        <p className="font-medium">৳{Number(item.purchasePrice).toLocaleString()}</p>
-      </div>
-      <div>
-        <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Total Cost / Loss</p>
-        <p className={`font-bold ${item.expiryStatus === "expired" ? "text-red-600" : ""}`}>
-          ৳{Number(item.totalCost).toLocaleString()}
-        </p>
-      </div>
-      {item.storageAreaName && (
         <div>
-          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Storage</p>
-          <p className="font-medium">{item.storageAreaName}{item.shelfRack ? ` · ${item.shelfRack}` : ""}</p>
+          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Expiry Date</p>
+          <p className="font-medium">{new Date(item.expiryDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
         </div>
-      )}
-      {item.reference && (
+        {item.manufactureDate && (
+          <div>
+            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Manufacture Date</p>
+            <p className="font-medium">{new Date(item.manufactureDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+          </div>
+        )}
         <div>
-          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Reference</p>
-          <p className="font-medium">{item.reference}</p>
+          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Total Qty</p>
+          <p className="font-medium">{Number(item.quantity).toLocaleString()} {item.quantityUnit}</p>
         </div>
-      )}
-      {item.note && (
-        <div className="col-span-2">
-          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Note</p>
-          <p className="text-muted-foreground">{item.note}</p>
+        <div>
+          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Supplier</p>
+          <p className="font-medium">{item.supplierName}</p>
         </div>
-      )}
+        <div>
+          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Purchase Price</p>
+          <p className="font-medium">৳{Number(item.purchasePrice).toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Total Cost / Loss</p>
+          <p className={`font-bold ${item.expiryStatus === "expired" ? "text-red-600" : ""}`}>
+            ৳{Number(item.totalCost).toLocaleString()}
+          </p>
+        </div>
+        {item.storageAreaName && (
+          <div>
+            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Storage</p>
+            <p className="font-medium">{item.storageAreaName}{item.shelfRack ? ` · ${item.shelfRack}` : ""}</p>
+          </div>
+        )}
+        {item.reference && (
+          <div>
+            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Reference</p>
+            <p className="font-medium">{item.reference}</p>
+          </div>
+        )}
+        {item.note && (
+          <div className="col-span-2">
+            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">Note</p>
+            <p className="text-muted-foreground">{item.note}</p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Action Panel (per batch) ── */}
+      <div className="px-6 py-3 border-t border-dashed border-gray-200 bg-white/60">
+        <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider mb-2">Actions</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+            onClick={(e) => {
+              e.stopPropagation();
+              toast.info(`Mark as Damaged — Batch ${item.batchNo}`, { description: "This action will be available soon" });
+            }}
+          >
+            <X size={13} /> Mark as Damaged
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+            onClick={(e) => {
+              e.stopPropagation();
+              toast.info(`Return to Supplier — ${item.supplierName}`, { description: "This action will be available soon" });
+            }}
+          >
+            <Undo2 size={13} /> Return to Supplier
+          </Button>
+          {item.expiryStatus === "nearExpiry" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5 border-amber-200 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+              onClick={(e) => {
+                e.stopPropagation();
+                toast.info(`Apply Discount — ${item.coreProductName}`, { description: "Discount workflow coming soon" });
+              }}
+            >
+              <Percent size={13} /> Apply Discount
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              toast.info(`Adjust Stock — Batch ${item.batchNo}`, { description: "Stock adjustment coming soon" });
+            }}
+          >
+            <SlidersHorizontal size={13} /> Adjust Stock
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -191,6 +255,7 @@ export default function ExpiredProductsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const handleSearch = (val: string) => {
     setSearch(val);
@@ -217,6 +282,25 @@ export default function ExpiredProductsPage() {
 
   const hasActiveFilters = !!(categoryId || supplierId || debouncedSearch || statusFilter !== "all");
   const clearFilters = () => { setCategoryId(undefined); setSupplierId(undefined); setSearch(""); setDebouncedSearch(""); setStatusFilter("all"); };
+
+  // ── Bulk selection helpers ──
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    if (selectedIds.size === items.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map((i) => i.stockEntryId)));
+    }
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const selectedCount = selectedIds.size;
+  const isAllSelected = items.length > 0 && selectedIds.size === items.length;
 
   const hasAlerts = alerts.expired.length > 0 || alerts.nearExpiry.length > 0;
 
@@ -360,6 +444,13 @@ export default function ExpiredProductsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableHead className="w-[36px] px-2">
+                    <Checkbox
+                      checked={isAllSelected}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Select all batches"
+                    />
+                  </TableHead>
                   <TableHead className="w-[30px]"></TableHead>
                   <TableHead className="text-xs">Product</TableHead>
                   <TableHead className="text-xs">Variant</TableHead>
@@ -380,6 +471,13 @@ export default function ExpiredProductsPage() {
                         className={`cursor-pointer transition-colors ${isExpanded ? "bg-gray-50" : "hover:bg-gray-50/50"} ${item.expiryStatus === "expired" ? "border-l-2 border-l-red-400" : item.expiryStatus === "nearExpiry" ? "border-l-2 border-l-amber-400" : ""}`}
                         onClick={() => setExpandedId(isExpanded ? null : item.stockEntryId)}
                       >
+                        <TableCell className="w-[36px] px-2" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.has(item.stockEntryId)}
+                            onCheckedChange={() => toggleSelect(item.stockEntryId)}
+                            aria-label={`Select batch ${item.batchNo}`}
+                          />
+                        </TableCell>
                         <TableCell className="w-[30px] px-2">
                           {isExpanded ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
                         </TableCell>
@@ -413,7 +511,7 @@ export default function ExpiredProductsPage() {
                       </TableRow>
                       {isExpanded && (
                         <TableRow key={`${item.stockEntryId}-detail`}>
-                          <TableCell colSpan={8} className="p-0">
+                          <TableCell colSpan={9} className="p-0">
                             <BatchDetail item={item} />
                           </TableCell>
                         </TableRow>
@@ -453,6 +551,76 @@ export default function ExpiredProductsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Floating Bulk Action Bar ── */}
+      {selectedCount > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in duration-200">
+          <div className="bg-gray-900 text-white rounded-xl shadow-2xl px-5 py-3 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
+                {selectedCount}
+              </div>
+              <span className="text-sm font-medium">{selectedCount === 1 ? "batch" : "batches"} selected</span>
+            </div>
+
+            <div className="w-px h-6 bg-white/20" />
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs gap-1.5 text-red-300 hover:text-red-200 hover:bg-red-500/20"
+                onClick={() => {
+                  toast.info(`Mark ${selectedCount} batch(es) as damaged`, { description: "Bulk damage workflow coming soon" });
+                }}
+              >
+                <X size={13} /> Mark Damaged
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs gap-1.5 text-blue-300 hover:text-blue-200 hover:bg-blue-500/20"
+                onClick={() => {
+                  toast.info(`Return ${selectedCount} batch(es) to supplier`, { description: "Bulk return workflow coming soon" });
+                }}
+              >
+                <Undo2 size={13} /> Bulk Return
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs gap-1.5 text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/20"
+                onClick={() => {
+                  toast.info(`Exporting ${selectedCount} batch(es)`, { description: "Export report coming soon" });
+                }}
+              >
+                <Download size={13} /> Export Report
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs gap-1.5 text-orange-300 hover:text-orange-200 hover:bg-orange-500/20"
+                onClick={() => {
+                  toast.info(`Move ${selectedCount} batch(es) to disposal`, { description: "Disposal workflow coming soon" });
+                }}
+              >
+                <Trash2 size={13} /> Move to Disposal
+              </Button>
+            </div>
+
+            <div className="w-px h-6 bg-white/20" />
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs text-white/60 hover:text-white hover:bg-white/10"
+              onClick={clearSelection}
+            >
+              <X size={13} /> Clear
+            </Button>
+          </div>
         </div>
       )}
     </div>
