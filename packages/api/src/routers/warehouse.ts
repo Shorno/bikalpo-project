@@ -2782,6 +2782,7 @@ const pricingQueries = {
                 packUnit: string;
                 packPrice: string;
                 basePrice: string;
+                deliveryCost: string | null;
                 isActive: boolean;
                 availableQty: string;
                 updatedAt: Date;
@@ -2836,6 +2837,7 @@ const pricingQueries = {
                     packUnit,
                     packPrice: item.retailPrice || v.price || "0",
                     basePrice: v.price || "0",
+                    deliveryCost: (item as any).deliveryCost || null,
                     isActive: v.isActive,
                     availableQty: item.availableQty || "0",
                     updatedAt: item.updatedAt,
@@ -2917,7 +2919,8 @@ const pricingQueries = {
         .input(
             z.object({
                 inventoryId: z.number(),
-                retailPrice: z.string().min(1),
+                retailPrice: z.string().min(1).optional(),
+                deliveryCost: z.string().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -2935,9 +2938,13 @@ const pricingQueries = {
                 throw new ORPCError("NOT_FOUND", { message: "Inventory item not found" });
             }
 
+            const updateData: Record<string, any> = {};
+            if (input.retailPrice !== undefined) updateData.retailPrice = input.retailPrice;
+            if (input.deliveryCost !== undefined) updateData.deliveryCost = input.deliveryCost || null;
+
             const [updated] = await db
                 .update(inventory)
-                .set({ retailPrice: input.retailPrice })
+                .set(updateData)
                 .where(eq(inventory.id, input.inventoryId))
                 .returning();
 
@@ -3496,6 +3503,315 @@ const cartonQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Expiry Tracking
+// ────────────────────────────────────────────────────────────────
+
+const expiryQueries = {
+    /**
+     * Get expired / near-expiry stock batches for this warehouse.
+     * Only includes products where expiryEnabled = true.
+     */
+    getExpiredProducts: warehouseProcedure
+        .input(
+            z.object({
+                status: z.enum(["all", "expired", "nearExpiry"]).default("all"),
+                categoryId: z.number().optional(),
+                supplierId: z.number().optional(),
+                search: z.string().optional(),
+                nearExpiryDays: z.number().default(30),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const today = new Date();
+            const nearExpiryThreshold = new Date();
+            nearExpiryThreshold.setDate(today.getDate() + input.nearExpiryDays);
+
+            // Fetch all stock entries that have an expiry date set, from this warehouse
+            const entries = await db.query.stockEntry.findMany({
+                where: and(
+                    eq(stockEntry.warehouseId, userId),
+                    sql`${stockEntry.expiryDate} IS NOT NULL`,
+                ),
+                orderBy: [stockEntry.expiryDate],
+                with: {
+                    variant: {
+                        with: {
+                            brand: { columns: { id: true, name: true } },
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                    expiryEnabled: true,
+                                    categoryId: true,
+                                },
+                                with: {
+                                    category: { columns: { id: true, name: true, slug: true } },
+                                    coreProduct: { columns: { id: true, name: true, image: true } },
+                                },
+                            },
+                        },
+                    },
+                    supplier: {
+                        columns: { id: true, name: true, company: true },
+                    },
+                    storageArea: {
+                        columns: { id: true, name: true },
+                    },
+                },
+            });
+
+            // Only include entries where product.expiryEnabled is true
+            const expiryEntries = entries.filter((e) => {
+                const prod = e.variant?.product;
+                return prod && prod.expiryEnabled === true;
+            });
+
+            // Build result items with computed status
+            type ExpiryStatus = "expired" | "nearExpiry" | "safe";
+
+            type ExpiryItem = {
+                stockEntryId: number;
+                batchNo: string;
+                expiryDate: string;
+                manufactureDate: string | null;
+                quantity: string;
+                quantityUnit: string;
+                convertedQtyPacks: string;
+                purchasePrice: string;
+                totalCost: string;
+                entryType: string;
+                reference: string | null;
+                note: string | null;
+                shelfRack: string | null;
+                createdAt: Date;
+                // Product info
+                productId: number;
+                productName: string;
+                productImage: string;
+                coreProductName: string;
+                coreProductImage: string;
+                categoryId: number;
+                categoryName: string;
+                // Variant info
+                variantId: number;
+                variantLabel: string;
+                brandName: string;
+                // Supplier info
+                supplierId: number;
+                supplierName: string;
+                // Storage
+                storageAreaName: string | null;
+                // Computed
+                expiryStatus: ExpiryStatus;
+                daysUntilExpiry: number;
+                lossValue: string;
+            };
+
+            const items: ExpiryItem[] = [];
+
+            for (const entry of expiryEntries) {
+                const v = entry.variant;
+                if (!v || !v.product) continue;
+                const p = v.product;
+                const expiryDate = new Date(entry.expiryDate!);
+                const diffMs = expiryDate.getTime() - today.getTime();
+                const daysUntilExpiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+                let expiryStatus: ExpiryStatus;
+                if (daysUntilExpiry < 0) {
+                    expiryStatus = "expired";
+                } else if (daysUntilExpiry <= input.nearExpiryDays) {
+                    expiryStatus = "nearExpiry";
+                } else {
+                    expiryStatus = "safe";
+                }
+
+                // Build variant label
+                const labelParts: string[] = [];
+                const brandName = v.brand?.name || "";
+                if (brandName) labelParts.push(brandName);
+                const weightKg = Number(v.weightKg || 0);
+                if (weightKg > 0) labelParts.push(`${weightKg}KG`);
+                if (v.packagingType && v.packagingType !== "loose") {
+                    labelParts.push(v.packagingType.charAt(0).toUpperCase() + v.packagingType.slice(1));
+                }
+                const variantLabel = labelParts.length > 0
+                    ? labelParts.join(" + ")
+                    : v.unitLabel || `Variant #${v.id}`;
+
+                const core = (p as any).coreProduct;
+
+                items.push({
+                    stockEntryId: entry.id,
+                    batchNo: entry.batchNo || `B-${entry.id}`,
+                    expiryDate: entry.expiryDate!,
+                    manufactureDate: entry.manufactureDate || null,
+                    quantity: entry.quantity,
+                    quantityUnit: entry.quantityUnit,
+                    convertedQtyPacks: entry.convertedQtyPacks,
+                    purchasePrice: entry.purchasePrice,
+                    totalCost: entry.totalCost,
+                    entryType: entry.entryType,
+                    reference: entry.reference || null,
+                    note: entry.note || null,
+                    shelfRack: entry.shelfRack || null,
+                    createdAt: entry.createdAt,
+                    // Product
+                    productId: p.id,
+                    productName: p.name,
+                    productImage: p.image || "",
+                    coreProductName: core?.name || p.name,
+                    coreProductImage: core?.image || p.image || "",
+                    categoryId: p.categoryId,
+                    categoryName: p.category?.name || "—",
+                    // Variant
+                    variantId: v.id,
+                    variantLabel,
+                    brandName,
+                    // Supplier
+                    supplierId: entry.supplierId,
+                    supplierName: entry.supplier?.name || entry.supplier?.company || "—",
+                    // Storage
+                    storageAreaName: entry.storageArea?.name || null,
+                    // Computed
+                    expiryStatus,
+                    daysUntilExpiry,
+                    lossValue: expiryStatus === "expired" ? entry.totalCost : "0",
+                });
+            }
+
+            // Apply filters
+            let filtered = items;
+
+            // Exclude "safe" items unless status is "all"
+            if (input.status === "expired") {
+                filtered = filtered.filter((i) => i.expiryStatus === "expired");
+            } else if (input.status === "nearExpiry") {
+                filtered = filtered.filter((i) => i.expiryStatus === "nearExpiry");
+            } else {
+                // "all" = show expired + near expiry (exclude safe)
+                filtered = filtered.filter((i) => i.expiryStatus !== "safe");
+            }
+
+            if (input.categoryId) {
+                filtered = filtered.filter((i) => i.categoryId === input.categoryId);
+            }
+            if (input.supplierId) {
+                filtered = filtered.filter((i) => i.supplierId === input.supplierId);
+            }
+            if (input.search?.trim()) {
+                const s = input.search.trim().toLowerCase();
+                filtered = filtered.filter(
+                    (i) =>
+                        i.productName.toLowerCase().includes(s) ||
+                        i.coreProductName.toLowerCase().includes(s) ||
+                        i.brandName.toLowerCase().includes(s) ||
+                        i.batchNo.toLowerCase().includes(s) ||
+                        i.variantLabel.toLowerCase().includes(s),
+                );
+            }
+
+            // Sort: expired first, then by days until expiry ascending
+            filtered.sort((a, b) => {
+                if (a.expiryStatus === "expired" && b.expiryStatus !== "expired") return -1;
+                if (a.expiryStatus !== "expired" && b.expiryStatus === "expired") return 1;
+                return a.daysUntilExpiry - b.daysUntilExpiry;
+            });
+
+            // Stats
+            const totalExpiredBatches = items.filter((i) => i.expiryStatus === "expired").length;
+            const totalNearExpiryBatches = items.filter((i) => i.expiryStatus === "nearExpiry").length;
+            const totalExpiredQty = items
+                .filter((i) => i.expiryStatus === "expired")
+                .reduce((sum, i) => sum + Number(i.quantity), 0);
+            const totalLossValue = items
+                .filter((i) => i.expiryStatus === "expired")
+                .reduce((sum, i) => sum + Number(i.totalCost), 0);
+            const totalNearExpiryQty = items
+                .filter((i) => i.expiryStatus === "nearExpiry")
+                .reduce((sum, i) => sum + Number(i.quantity), 0);
+
+            // Category-wise analytics (expired + near expiry)
+            const categoryMap = new Map<string, { name: string; expiredQty: number; nearExpiryQty: number; lossValue: number }>();
+            for (const item of items.filter((i) => i.expiryStatus !== "safe")) {
+                const existing = categoryMap.get(item.categoryName) || {
+                    name: item.categoryName,
+                    expiredQty: 0,
+                    nearExpiryQty: 0,
+                    lossValue: 0,
+                };
+                if (item.expiryStatus === "expired") {
+                    existing.expiredQty += Number(item.quantity);
+                    existing.lossValue += Number(item.totalCost);
+                } else {
+                    existing.nearExpiryQty += Number(item.quantity);
+                }
+                categoryMap.set(item.categoryName, existing);
+            }
+
+            // Filter options (from all items, not filtered)
+            const catSet = new Map<number, string>();
+            const supplierSet = new Map<number, string>();
+            for (const item of items) {
+                catSet.set(item.categoryId, item.categoryName);
+                supplierSet.set(item.supplierId, item.supplierName);
+            }
+
+            // High-risk alerts (expired batches with significant qty)
+            const alerts = items
+                .filter((i) => i.expiryStatus === "expired" && Number(i.quantity) > 0)
+                .slice(0, 5)
+                .map((i) => ({
+                    productName: i.coreProductName,
+                    variantLabel: i.variantLabel,
+                    quantity: i.quantity,
+                    quantityUnit: i.quantityUnit,
+                    daysExpired: Math.abs(i.daysUntilExpiry),
+                    lossValue: i.totalCost,
+                }));
+
+            // Near-expiry alerts (expiring within 7 days)
+            const urgentNearExpiry = items
+                .filter((i) => i.expiryStatus === "nearExpiry" && i.daysUntilExpiry <= 7)
+                .slice(0, 5)
+                .map((i) => ({
+                    productName: i.coreProductName,
+                    variantLabel: i.variantLabel,
+                    quantity: i.quantity,
+                    quantityUnit: i.quantityUnit,
+                    daysUntilExpiry: i.daysUntilExpiry,
+                }));
+
+            return {
+                items: filtered,
+                stats: {
+                    totalExpiredBatches,
+                    totalNearExpiryBatches,
+                    totalExpiredQty,
+                    totalNearExpiryQty,
+                    totalLossValue,
+                },
+                categoryAnalytics: Array.from(categoryMap.values())
+                    .sort((a, b) => (b.expiredQty + b.nearExpiryQty) - (a.expiredQty + a.nearExpiryQty)),
+                alerts: {
+                    expired: alerts,
+                    nearExpiry: urgentNearExpiry,
+                },
+                filterOptions: {
+                    categories: Array.from(catSet.entries())
+                        .map(([id, name]) => ({ id, name }))
+                        .sort((a, b) => a.name.localeCompare(b.name)),
+                    suppliers: Array.from(supplierSet.entries())
+                        .map(([id, name]) => ({ id, name }))
+                        .sort((a, b) => a.name.localeCompare(b.name)),
+                },
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -3515,4 +3831,5 @@ export const warehouseRouter = {
     ...storageAreaQueries,
     ...pricingQueries,
     ...cartonQueries,
+    ...expiryQueries,
 };

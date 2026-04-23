@@ -72,6 +72,7 @@ type PriceItem = {
   packUnit: string;
   packPrice: string;
   basePrice: string;
+  deliveryCost: string | null;
   isActive: boolean;
   availableQty: string;
   updatedAt: string;
@@ -503,6 +504,7 @@ function CoreProductSection({
   onCancelEdit,
   onEditPriceChange,
   onToggleAvailability,
+  onUpdateDeliveryCost,
   isSaving,
 }: {
   group: GroupedCoreProduct;
@@ -513,6 +515,7 @@ function CoreProductSection({
   onCancelEdit: () => void;
   onEditPriceChange: (val: string) => void;
   onToggleAvailability: (inventoryId: number, available: boolean) => void;
+  onUpdateDeliveryCost: (inventoryId: number, deliveryCost: string) => void;
   isSaving: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -547,9 +550,13 @@ function CoreProductSection({
   const [addDelivery, setAddDelivery] = useState("");
   const [addLabel, setAddLabel] = useState("");
 
-  // --- Inline delivery editing ---
+  // --- Inline delivery editing (carton config level) ---
   const [editingDeliveryConfigId, setEditingDeliveryConfigId] = useState<number | null>(null);
   const [editDeliveryValue, setEditDeliveryValue] = useState("");
+
+  // --- Inline per-pack delivery editing ---
+  const [editingPackDeliveryId, setEditingPackDeliveryId] = useState<number | null>(null);
+  const [editPackDeliveryValue, setEditPackDeliveryValue] = useState("");
 
   const resetAddForm = () => {
     setShowAddForm(false);
@@ -651,13 +658,14 @@ function CoreProductSection({
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
-                <TableHead className="text-xs w-[14%]">Brand</TableHead>
-                <TableHead className="text-xs w-[14%]">Variant</TableHead>
-                <TableHead className="text-xs w-[10%]">Pack Unit</TableHead>
-                <TableHead className="text-xs w-[18%]">Carton Unit</TableHead>
-                <TableHead className="text-xs w-[11%]">Pack Price</TableHead>
-                <TableHead className="text-xs w-[12%]">Carton Price</TableHead>
-                <TableHead className="text-xs w-[9%]">Delivery</TableHead>
+                <TableHead className="text-xs w-[12%]">Brand</TableHead>
+                <TableHead className="text-xs w-[12%]">Variant</TableHead>
+                <TableHead className="text-xs w-[9%]">Pack Unit</TableHead>
+                <TableHead className="text-xs w-[16%]">Carton Unit</TableHead>
+                <TableHead className="text-xs w-[10%]">Pack Price</TableHead>
+                <TableHead className="text-xs w-[10%]">Carton Price</TableHead>
+                <TableHead className="text-xs w-[10%]">Pack Delivery</TableHead>
+                <TableHead className="text-xs w-[9%]">Carton Delivery</TableHead>
                 <TableHead className="text-xs text-right w-[12%]">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -719,6 +727,48 @@ function CoreProductSection({
                         <span className="text-muted-foreground font-normal">—</span>
                       )}
                     </TableCell>
+                    {/* Per-pack delivery cost */}
+                    <TableCell>
+                      {editingPackDeliveryId === item.inventoryId ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-muted-foreground">৳</span>
+                          <input
+                            type="number"
+                            value={editPackDeliveryValue}
+                            onChange={(e) => setEditPackDeliveryValue(e.target.value)}
+                            className="w-20 px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500 outline-none bg-white"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                onUpdateDeliveryCost(item.inventoryId, editPackDeliveryValue);
+                                setEditingPackDeliveryId(null);
+                              }
+                              if (e.key === "Escape") setEditingPackDeliveryId(null);
+                            }}
+                            onBlur={() => {
+                              onUpdateDeliveryCost(item.inventoryId, editPackDeliveryValue);
+                              setEditingPackDeliveryId(null);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <span
+                          className="cursor-pointer hover:text-blue-600 transition-colors"
+                          onClick={() => {
+                            setEditingPackDeliveryId(item.inventoryId);
+                            setEditPackDeliveryValue(item.deliveryCost || "");
+                          }}
+                          title="Click to set per-pack delivery cost"
+                        >
+                          {item.deliveryCost ? (
+                            <span className="text-sm font-medium">৳ {Number(item.deliveryCost).toLocaleString()}</span>
+                          ) : (
+                            <span className="text-muted-foreground italic text-xs">+ add</span>
+                          )}
+                        </span>
+                      )}
+                    </TableCell>
+                    {/* Per-carton delivery cost */}
                     <TableCell>
                       {cartonCfg ? (
                         editingDeliveryConfigId === cartonCfg.id ? (
@@ -728,7 +778,7 @@ function CoreProductSection({
                               type="number"
                               value={editDeliveryValue}
                               onChange={(e) => setEditDeliveryValue(e.target.value)}
-                              className="w-24 px-2 py-1 text-sm border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 outline-none bg-white"
+                              className="w-20 px-2 py-1 text-sm border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 outline-none bg-white"
                               autoFocus
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") {
@@ -748,7 +798,7 @@ function CoreProductSection({
                               setEditingDeliveryConfigId(cartonCfg.id);
                               setEditDeliveryValue(cartonCfg.deliveryCostPerCarton || "");
                             }}
-                            title="Click to edit delivery cost"
+                            title="Click to edit carton delivery cost"
                           >
                             {cartonCfg.deliveryCostPerCarton ? (
                               <>৳ {Number(cartonCfg.deliveryCostPerCarton).toLocaleString()}</>
@@ -1002,6 +1052,18 @@ export default function WarehousePricingPage() {
     },
     onError: (err: any) => {
       toast.error(err?.message || "Failed to toggle availability");
+    },
+  });
+
+  const deliveryCostMutation = useMutation({
+    mutationFn: (d: { inventoryId: number; deliveryCost: string }) =>
+      (orpc.warehouse as any).updateWarehousePrice.call(d),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["warehouse", "getWarehousePriceList"] });
+      toast.success("Delivery cost updated");
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || "Failed to update delivery cost");
     },
   });
 
@@ -1407,6 +1469,9 @@ export default function WarehousePricingPage() {
                   onEditPriceChange={setEditPrice}
                   onToggleAvailability={(id, available) =>
                     toggleMutation.mutate({ inventoryId: id, available })
+                  }
+                  onUpdateDeliveryCost={(inventoryId, deliveryCost) =>
+                    deliveryCostMutation.mutate({ inventoryId, deliveryCost })
                   }
                   isSaving={priceMutation.isPending}
                 />

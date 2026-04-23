@@ -55,6 +55,9 @@ export const inventory = pgTable(
         /** Shop owner's retail selling price (set by shop owner) */
         retailPrice: decimal("retail_price", { precision: 10, scale: 2 }),
 
+        /** Per-unit delivery cost (independent of carton config delivery cost) */
+        deliveryCost: decimal("delivery_cost", { precision: 10, scale: 2 }),
+
         // === Carton Tracking ===
 
         /**
