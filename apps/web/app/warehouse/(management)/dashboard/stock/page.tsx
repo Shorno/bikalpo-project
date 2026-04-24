@@ -16,7 +16,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { orpc } from "@/utils/orpc";
-import { Badge } from "@/components/ui/badge";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -29,7 +28,15 @@ type KPIData = {
   };
   stockStatus: {
     inStock: number;
+    lowStock: number;
     outOfStock: number;
+    expired: number;
+  };
+  inventoryType: {
+    looseStock: number;
+    packStock: number;
+    cartonStock: number;
+    emptyPack: number;
   };
   packTypeBreakdown: Array<{
     packagingType: string;
@@ -37,6 +44,7 @@ type KPIData = {
     itemCount: number;
   }>;
   alerts: {
+    lowStock: number;
     expiringSoon: number;
   };
   quickInsights: {
@@ -223,10 +231,6 @@ export default function StockOverviewDashboard() {
     );
   }
 
-  const totalItems = kpi.stockStatus.inStock + kpi.stockStatus.outOfStock;
-  const inStockPercent =
-    totalItems > 0 ? Math.round((kpi.stockStatus.inStock / totalItems) * 100) : 0;
-
   return (
     <div className="space-y-8">
       {/* ── Header ── */}
@@ -280,136 +284,104 @@ export default function StockOverviewDashboard() {
           ══════════════════════════════════════════════════════════════ */}
       <div>
         <SectionHeader icon={CheckCircle2} title="Stock Status" emoji="📊" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="border rounded-xl p-5 bg-emerald-50/50 border-emerald-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-emerald-100 rounded-lg">
-                  <CheckCircle2 size={20} className="text-emerald-600" />
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-emerald-700 tabular-nums">
-                    {kpi.stockStatus.inStock}
-                  </div>
-                  <div className="text-xs font-medium text-emerald-500">In Stock Items</div>
-                </div>
-              </div>
-              {totalItems > 0 && (
-                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">
-                  {inStockPercent}%
-                </Badge>
-              )}
-            </div>
-            {/* Simple progress bar */}
-            {totalItems > 0 && (
-              <div className="mt-3 h-2 bg-emerald-200/50 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all"
-                  style={{ width: `${inStockPercent}%` }}
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="border rounded-xl p-5 bg-red-50/50 border-red-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-red-100 rounded-lg">
-                  <PackageX size={20} className="text-red-600" />
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-red-700 tabular-nums">
-                    {kpi.stockStatus.outOfStock}
-                  </div>
-                  <div className="text-xs font-medium text-red-500">Out of Stock Items</div>
-                </div>
-              </div>
-              {totalItems > 0 && (
-                <Badge className="bg-red-100 text-red-700 border-red-200 text-xs">
-                  {100 - inStockPercent}%
-                </Badge>
-              )}
-            </div>
-            {totalItems > 0 && (
-              <div className="mt-3 h-2 bg-red-200/50 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-red-500 rounded-full transition-all"
-                  style={{ width: `${100 - inStockPercent}%` }}
-                />
-              </div>
-            )}
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <KPICard
+            label="In Stock"
+            value={kpi.stockStatus.inStock.toLocaleString()}
+            icon={CheckCircle2}
+            color="emerald"
+          />
+          <KPICard
+            label="Low Stock"
+            value={kpi.stockStatus.lowStock.toLocaleString()}
+            icon={AlertTriangle}
+            color="orange"
+          />
+          <KPICard
+            label="Out of Stock"
+            value={kpi.stockStatus.outOfStock.toLocaleString()}
+            icon={PackageX}
+            color="red"
+          />
+          <KPICard
+            label="Expired"
+            value={kpi.stockStatus.expired.toLocaleString()}
+            icon={Calendar}
+            color="purple"
+          />
         </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════
           📊 PACK / INVENTORY TYPE
           ══════════════════════════════════════════════════════════════ */}
-      {kpi.packTypeBreakdown.length > 0 && (
-        <div>
+      <div>
           <SectionHeader icon={Box} title="Pack / Inventory Type" emoji="📊" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {kpi.packTypeBreakdown.map((pack) => {
-              const PackIcon = getPackIcon(pack.packagingType);
-              return (
-                <div
-                  key={pack.packagingType}
-                  className="border rounded-xl p-4 bg-white hover:shadow-sm transition-shadow"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="p-1.5 bg-gray-100 rounded-lg">
-                      <PackIcon size={14} className="text-gray-600" />
-                    </div>
-                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                      {formatPackType(pack.packagingType)} Stock
-                    </span>
-                  </div>
-                  <div className="text-2xl font-bold text-gray-900 tabular-nums">
-                    {pack.totalUnits.toLocaleString()}
-                  </div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">
-                    {pack.itemCount} {pack.itemCount === 1 ? "item" : "items"}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <KPICard
+              label="Loose Stock"
+              value={kpi.inventoryType.looseStock.toLocaleString()}
+              icon={Layers}
+              color="blue"
+            />
+            <KPICard
+              label="Pack Stock"
+              value={kpi.inventoryType.packStock.toLocaleString()}
+              icon={Package}
+              color="amber"
+            />
+            <KPICard
+              label="Carton Stock"
+              value={kpi.inventoryType.cartonStock.toLocaleString()}
+              icon={BoxesIcon}
+              color="emerald"
+            />
+            <KPICard
+              label="Empty Pack"
+              value={kpi.inventoryType.emptyPack.toLocaleString()}
+              icon={Box}
+              color="purple"
+            />
           </div>
-        </div>
-      )}
+      </div>
 
       {/* ══════════════════════════════════════════════════════════════
           ⚠ ALERT SUMMARY
           ══════════════════════════════════════════════════════════════ */}
-      {kpi.alerts.expiringSoon > 0 && (
+      {(kpi.alerts.lowStock > 0 || kpi.alerts.expiringSoon > 0) && (
         <div>
           <SectionHeader icon={AlertTriangle} title="Alert Summary" emoji="⚠" />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {kpi.alerts.lowStock > 0 && (
+              <div className="border rounded-xl p-4 bg-amber-50/50 border-amber-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-100 rounded-lg">
+                    <AlertTriangle size={18} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-amber-700 tabular-nums">
+                      {kpi.alerts.lowStock}
+                    </div>
+                    <div className="text-xs font-medium text-amber-500">
+                      Low stock items
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Placeholder for future: Low Stock, Damaged */}
             <div className="border rounded-xl p-4 bg-orange-50/50 border-orange-200">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-orange-100 rounded-lg">
                   <Calendar size={18} className="text-orange-600" />
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-orange-700 tabular-nums">
-                    {kpi.alerts.expiringSoon}
-                  </div>
-                  <div className="text-xs font-medium text-orange-500">
-                    Expiring within 30 days
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Placeholder for future: Low Stock, Damaged */}
-            <div className="border rounded-xl p-4 bg-gray-50/50 border-gray-200 border-dashed">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-100 rounded-lg">
-                  <AlertTriangle size={18} className="text-gray-400" />
-                </div>
-                <div>
                   <div className="text-lg font-bold text-gray-300">—</div>
-                  <div className="text-xs font-medium text-gray-400">Low Stock</div>
-                  <div className="text-[9px] text-gray-300">Coming soon</div>
+                  <div className="text-xs font-medium text-orange-500">Expiring within 30 days</div>
+                  <div className="text-[10px] text-orange-600">
+                    {kpi.alerts.expiringSoon} batch records
+                  </div>
                 </div>
               </div>
             </div>
