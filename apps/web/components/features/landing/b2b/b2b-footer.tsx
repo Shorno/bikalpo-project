@@ -25,77 +25,37 @@ const footerLinks = {
 
 export function B2bFooter() {
   return (
-    <footer
-      style={{
-        background: "linear-gradient(180deg, #0a0e27 0%, #060920 100%)",
-        paddingTop: "80px",
-        paddingBottom: "40px",
-      }}
-    >
+    <footer className="bg-gradient-to-b from-[#0a0e27] to-[#060920] pt-20 pb-10">
       <div className="max-w-7xl mx-auto px-6">
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-12 mb-16">
           {/* Brand */}
           <div className="col-span-2">
             <div className="flex items-center gap-2 mb-6">
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-extrabold text-sm"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #1565c0 0%, #42a5f5 100%)",
-                }}
-              >
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-extrabold text-sm bg-gradient-to-br from-[#1565c0] to-[#42a5f5]">
                 B
               </div>
               <span
-                className="text-xl font-extrabold tracking-tight"
-                style={{
-                  fontFamily: "'Manrope', sans-serif",
-                  color: "#ffffff",
-                }}
+                className="text-xl font-extrabold tracking-tight text-white"
+                style={{ fontFamily: "'Manrope', sans-serif" }}
               >
                 Bikalpo Trade
               </span>
             </div>
-            <p
-              className="text-sm mb-6 max-w-xs leading-relaxed"
-              style={{ color: "rgba(255,255,255,0.4)" }}
-            >
-              Bangladesh&apos;s digital wholesale trade network. Connecting
-              warehouses, shops, and restaurants in one powerful platform.
+            <p className="text-sm text-white/40 mb-6 max-w-xs leading-relaxed">
+              Bangladesh&apos;s digital wholesale trade network. Connecting warehouses, shops, and restaurants in one powerful platform.
             </p>
-            <div
-              className="text-sm space-y-1.5 mb-6"
-              style={{ color: "rgba(255,255,255,0.35)" }}
-            >
+            <div className="text-sm text-white/35 space-y-1.5 mb-6">
               <p>38, Bangla Bazar, Barisal, Bangladesh</p>
               <p>Mob: +88 01XXXXXXXXX</p>
               <p>Email: support@bikalpo.com</p>
             </div>
-            {/* Social icons */}
             <div className="flex gap-3">
               {["language", "alternate_email", "forum"].map((icon) => (
                 <div
                   key={icon}
-                  className="w-9 h-9 rounded-lg flex items-center justify-center cursor-pointer transition-all"
-                  style={{
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    color: "rgba(255,255,255,0.5)",
-                  }}
-                  onMouseEnter={(e) => {
-                    const target = e.currentTarget as HTMLElement;
-                    target.style.background = "rgba(0,49,120,0.5)";
-                    target.style.color = "#ffffff";
-                  }}
-                  onMouseLeave={(e) => {
-                    const target = e.currentTarget as HTMLElement;
-                    target.style.background = "rgba(255,255,255,0.06)";
-                    target.style.color = "rgba(255,255,255,0.5)";
-                  }}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.06] border border-white/[0.08] text-white/50 hover:bg-[#003178]/50 hover:text-white cursor-pointer transition-all"
                 >
-                  <span className="material-symbols-outlined text-sm">
-                    {icon}
-                  </span>
+                  <span className="material-symbols-outlined text-sm">{icon}</span>
                 </div>
               ))}
             </div>
@@ -104,30 +64,15 @@ export function B2bFooter() {
           {/* For Business */}
           <div>
             <h5
-              className="font-bold mb-6 text-sm"
-              style={{
-                fontFamily: "'Manrope', sans-serif",
-                color: "rgba(255,255,255,0.9)",
-              }}
+              className="font-bold mb-6 text-sm text-white/90"
+              style={{ fontFamily: "'Manrope', sans-serif" }}
             >
               For Business
             </h5>
             <ul className="space-y-3">
               {footerLinks.forBusiness.map((link) => (
                 <li key={link.label}>
-                  <Link
-                    href={link.href}
-                    className="text-sm transition-colors"
-                    style={{ color: "rgba(255,255,255,0.4)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.color =
-                        "rgba(255,255,255,0.8)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.color =
-                        "rgba(255,255,255,0.4)";
-                    }}
-                  >
+                  <Link href={link.href} className="text-sm text-white/40 hover:text-white/80 transition-colors">
                     {link.label}
                   </Link>
                 </li>
@@ -138,30 +83,15 @@ export function B2bFooter() {
           {/* Resources */}
           <div>
             <h5
-              className="font-bold mb-6 text-sm"
-              style={{
-                fontFamily: "'Manrope', sans-serif",
-                color: "rgba(255,255,255,0.9)",
-              }}
+              className="font-bold mb-6 text-sm text-white/90"
+              style={{ fontFamily: "'Manrope', sans-serif" }}
             >
               Resources
             </h5>
             <ul className="space-y-3">
               {footerLinks.resources.map((link) => (
                 <li key={link.label}>
-                  <Link
-                    href={link.href}
-                    className="text-sm transition-colors"
-                    style={{ color: "rgba(255,255,255,0.4)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.color =
-                        "rgba(255,255,255,0.8)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.color =
-                        "rgba(255,255,255,0.4)";
-                    }}
-                  >
+                  <Link href={link.href} className="text-sm text-white/40 hover:text-white/80 transition-colors">
                     {link.label}
                   </Link>
                 </li>
@@ -172,30 +102,15 @@ export function B2bFooter() {
           {/* Company */}
           <div>
             <h5
-              className="font-bold mb-6 text-sm"
-              style={{
-                fontFamily: "'Manrope', sans-serif",
-                color: "rgba(255,255,255,0.9)",
-              }}
+              className="font-bold mb-6 text-sm text-white/90"
+              style={{ fontFamily: "'Manrope', sans-serif" }}
             >
               Company
             </h5>
             <ul className="space-y-3">
               {footerLinks.company.map((link) => (
                 <li key={link.label}>
-                  <Link
-                    href={link.href}
-                    className="text-sm transition-colors"
-                    style={{ color: "rgba(255,255,255,0.4)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.color =
-                        "rgba(255,255,255,0.8)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.color =
-                        "rgba(255,255,255,0.4)";
-                    }}
-                  >
+                  <Link href={link.href} className="text-sm text-white/40 hover:text-white/80 transition-colors">
                     {link.label}
                   </Link>
                 </li>
@@ -205,37 +120,12 @@ export function B2bFooter() {
         </div>
 
         {/* Bottom */}
-        <div
-          className="pt-8 flex flex-col md:flex-row justify-between items-center gap-4"
-          style={{
-            borderTop: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
-          <p
-            className="text-xs"
-            style={{ color: "rgba(255,255,255,0.3)" }}
-          >
-            © 2026 Bikalpo. All Rights Reserved. Bangladesh.
-          </p>
+        <div className="pt-8 border-t border-white/[0.06] flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-xs text-white/30">© 2026 Bikalpo. All Rights Reserved. Bangladesh.</p>
           <div className="flex gap-6">
-            <span
-              className="text-xs cursor-pointer transition-colors"
-              style={{ color: "rgba(255,255,255,0.3)" }}
-            >
-              Terms of Service
-            </span>
-            <span
-              className="text-xs cursor-pointer transition-colors"
-              style={{ color: "rgba(255,255,255,0.3)" }}
-            >
-              Privacy Policy
-            </span>
-            <span
-              className="text-xs cursor-pointer transition-colors"
-              style={{ color: "rgba(255,255,255,0.3)" }}
-            >
-              Cookie Settings
-            </span>
+            <span className="text-xs text-white/30 cursor-pointer hover:text-white/60 transition-colors">Terms of Service</span>
+            <span className="text-xs text-white/30 cursor-pointer hover:text-white/60 transition-colors">Privacy Policy</span>
+            <span className="text-xs text-white/30 cursor-pointer hover:text-white/60 transition-colors">Cookie Settings</span>
           </div>
         </div>
       </div>
