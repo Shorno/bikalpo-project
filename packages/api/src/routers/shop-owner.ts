@@ -28,6 +28,9 @@ import {
     shopWarehouseConnection,
     shopCategoryAssignment,
     warehouseCategoryAssignment,
+    coreProductIdentity,
+    productType,
+    productIdentityRequest,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -2195,6 +2198,381 @@ const shopStorefrontEndpoints = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Public Product Catalog (Browse-Only)
+// ────────────────────────────────────────────────────────────────
+
+const publicCatalogEndpoints = {
+    /**
+     * Get the full product hierarchy: Type → Category → SubCategory → Core Identity.
+     * Public-facing, no auth required. Used for the catalog browse page.
+     */
+    getPublicCatalogHierarchy: publicProcedure
+        .input(
+            z.object({
+                typeId: z.number().optional(),
+                categoryId: z.number().optional(),
+                subCategoryId: z.number().optional(),
+                search: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(50),
+            }),
+        )
+        .handler(async ({ input }) => {
+            const { page, limit } = input;
+            const offset = (page - 1) * limit;
+
+            // 1. Build conditions for core products
+            const conditions: SQL[] = [];
+
+            if (input.search?.trim()) {
+                conditions.push(ilike(coreProductIdentity.name, `%${input.search.trim()}%`));
+            }
+
+            // 2. If filters provided, narrow by category/subcategory
+            if (input.subCategoryId) {
+                conditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
+            } else if (input.categoryId) {
+                conditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
+            } else if (input.typeId) {
+                // Get all category IDs under this type
+                const typeCats = await db
+                    .select({ id: category.id })
+                    .from(category)
+                    .where(eq(category.typeId, input.typeId));
+                const catIds = typeCats.map((c) => c.id);
+                if (catIds.length > 0) {
+                    conditions.push(inArray(coreProductIdentity.categoryId, catIds));
+                } else {
+                    return {
+                        items: [],
+                        pagination: { page, limit, totalCount: 0, totalPages: 0 },
+                    };
+                }
+            }
+
+            const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+            // 3. Fetch core products with relations
+            const [coreProducts, countResult] = await Promise.all([
+                db.query.coreProductIdentity.findMany({
+                    where,
+                    orderBy: [coreProductIdentity.name],
+                    limit,
+                    offset,
+                    with: {
+                        category: {
+                            columns: { id: true, name: true, slug: true, typeId: true, skuCode: true },
+                            with: {
+                                type: { columns: { id: true, name: true, slug: true, skuCode: true } },
+                            },
+                        },
+                        subCategory: {
+                            columns: { id: true, name: true, slug: true, skuCode: true },
+                        },
+                    },
+                }),
+                db
+                    .select({ count: count() })
+                    .from(coreProductIdentity)
+                    .where(where),
+            ]);
+
+            // 4. Compose hierarchical SKU and format
+            const items = coreProducts.map((cp) => {
+                const typeCode = cp.category?.type?.skuCode || "??";
+                const catCode = cp.category?.skuCode || "???";
+                const subCatCode = cp.subCategory?.skuCode || "???";
+                const coreCode = cp.sku || "???";
+                const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
+
+                return {
+                    id: cp.id,
+                    name: cp.name,
+                    slug: cp.slug,
+                    sku: composedSku,
+                    image: cp.image,
+                    description: cp.description,
+                    supportsPack: cp.supportsPack,
+                    supportsLoose: cp.supportsLoose,
+                    type: cp.category?.type
+                        ? { id: cp.category.type.id, name: cp.category.type.name, slug: cp.category.type.slug }
+                        : null,
+                    category: cp.category
+                        ? { id: cp.category.id, name: cp.category.name, slug: cp.category.slug }
+                        : null,
+                    subCategory: cp.subCategory
+                        ? { id: cp.subCategory.id, name: cp.subCategory.name, slug: cp.subCategory.slug }
+                        : null,
+                };
+            });
+
+            const totalCount = Number(countResult[0]?.count) || 0;
+
+            return {
+                items,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    /**
+     * Get detailed view of a core product identity.
+     * Returns the core product info + all linked products with their variants,
+     * brands, and seller count.
+     */
+    getCoreProductDetail: publicProcedure
+        .input(z.object({ coreProductId: z.number() }))
+        .handler(async ({ input }) => {
+            // 1. Get core product
+            const coreProduct = await db.query.coreProductIdentity.findFirst({
+                where: eq(coreProductIdentity.id, input.coreProductId),
+                with: {
+                    category: {
+                        columns: { id: true, name: true, slug: true, typeId: true },
+                        with: {
+                            type: { columns: { id: true, name: true, slug: true } },
+                        },
+                    },
+                    subCategory: {
+                        columns: { id: true, name: true, slug: true },
+                    },
+                },
+            });
+
+            if (!coreProduct) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Core product identity not found",
+                });
+            }
+
+            // 2. Get all linked products (active ones created by warehouses)
+            const linkedProducts = await db.query.product.findMany({
+                where: and(
+                    eq(product.coreProductId, input.coreProductId),
+                    eq(product.status, "active"),
+                ),
+                with: {
+                    brand: { columns: { id: true, name: true, slug: true } },
+                    images: { limit: 5 },
+                    variants: {
+                        where: eq(productVariant.isActive, true),
+                        columns: {
+                            id: true,
+                            sku: true,
+                            unitLabel: true,
+                            weightKg: true,
+                            price: true,
+                            packType: true,
+                            packWeightKg: true,
+                            innerPackSizeKg: true,
+                            packCountInside: true,
+                            sellUnit: true,
+                            color: true,
+                            size: true,
+                            brandId: true,
+                            variantType: true,
+                            isPackReturnRequired: true,
+                            packDepositAmount: true,
+                            sortOrder: true,
+                        },
+                        with: {
+                            brand: { columns: { id: true, name: true } },
+                        },
+                        orderBy: [productVariant.sortOrder],
+                    },
+                },
+            });
+
+            // 3. Count sellers (shops with stock > 0 for any variant of these products)
+            const allVariantIds = linkedProducts.flatMap((p) => p.variants.map((v) => v.id));
+            let sellerCount = 0;
+            if (allVariantIds.length > 0) {
+                const sellerResult = await db
+                    .select({
+                        distinctShops: sql<number>`COUNT(DISTINCT ${inventory.ownerId})`,
+                    })
+                    .from(inventory)
+                    .where(
+                        and(
+                            eq(inventory.ownerType, "shop"),
+                            inArray(inventory.variantId, allVariantIds),
+                            sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                        ),
+                    );
+                sellerCount = Number(sellerResult[0]?.distinctShops) || 0;
+            }
+
+            // 4. Get review stats for linked products
+            const productIds = linkedProducts.map((p) => p.id);
+            let reviewStats = { avgRating: 0, reviewCount: 0 };
+            if (productIds.length > 0) {
+                const [stats] = await db
+                    .select({
+                        avgRating: avg(productReview.rating),
+                        reviewCount: count(),
+                    })
+                    .from(productReview)
+                    .where(inArray(productReview.productId, productIds));
+                reviewStats = {
+                    avgRating: Number(stats?.avgRating) || 0,
+                    reviewCount: Number(stats?.reviewCount) || 0,
+                };
+            }
+
+            // 5. Extract unique brands across all linked products
+            const brandMap = new Map<number, { id: number; name: string }>(); 
+            for (const p of linkedProducts) {
+                if (p.brand) {
+                    brandMap.set(p.brand.id, { id: p.brand.id, name: p.brand.name });
+                }
+                for (const v of p.variants) {
+                    if (v.brand) {
+                        brandMap.set(v.brand.id, { id: v.brand.id, name: v.brand.name });
+                    }
+                }
+            }
+
+            // 6. Flatten all variants with brand info
+            const allVariants = linkedProducts.flatMap((p) =>
+                p.variants.map((v) => ({
+                    ...v,
+                    productId: p.id,
+                    productName: p.name,
+                    productImage: p.image,
+                    brand: v.brand || p.brand || null,
+                })),
+            );
+
+            return {
+                coreProduct: {
+                    id: coreProduct.id,
+                    name: coreProduct.name,
+                    slug: coreProduct.slug,
+                    sku: coreProduct.sku,
+                    image: coreProduct.image,
+                    description: coreProduct.description,
+                    supportsPack: coreProduct.supportsPack,
+                    supportsLoose: coreProduct.supportsLoose,
+                    type: coreProduct.category?.type || null,
+                    category: coreProduct.category
+                        ? { id: coreProduct.category.id, name: coreProduct.category.name, slug: coreProduct.category.slug }
+                        : null,
+                    subCategory: coreProduct.subCategory || null,
+                },
+                products: linkedProducts.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    slug: p.slug,
+                    image: p.image,
+                    images: p.images,
+                    brand: p.brand,
+                    variantCount: p.variants.length,
+                })),
+                variants: allVariants,
+                brands: Array.from(brandMap.values()),
+                sellerCount,
+                reviewStats,
+            };
+        }),
+
+    /**
+     * Get filter options for the catalog: active types, categories, subcategories.
+     */
+    getPublicFilterOptions: publicProcedure
+        .handler(async () => {
+            const [types, categories, subCategories] = await Promise.all([
+                db.query.productType.findMany({
+                    where: eq(productType.isActive, true),
+                    orderBy: [productType.displayOrder, productType.name],
+                    columns: { id: true, name: true, slug: true },
+                }),
+                db.query.category.findMany({
+                    where: eq(category.isActive, true),
+                    orderBy: [category.displayOrder, category.name],
+                    columns: { id: true, name: true, slug: true, typeId: true },
+                }),
+                db.query.subCategory.findMany({
+                    where: eq(subCategory.isActive, true),
+                    orderBy: [subCategory.displayOrder, subCategory.name],
+                    columns: { id: true, name: true, slug: true, categoryId: true },
+                }),
+            ]);
+
+            return { types, categories, subCategories };
+        }),
+
+    /**
+     * Submit a product identity request (shop owner only).
+     * Used when a shop owner can't find a product in the catalog.
+     */
+    submitProductIdentityRequest: shopOwnerProcedure
+        .input(
+            z.object({
+                typeName: z.string().optional(),
+                categoryName: z.string().optional(),
+                subCategoryName: z.string().optional(),
+                productName: z.string().min(1),
+                description: z.string().optional(),
+                referenceImage: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const [created] = await db
+                .insert(productIdentityRequest)
+                .values({
+                    requestedBy: userId,
+                    typeName: input.typeName || null,
+                    categoryName: input.categoryName || null,
+                    subCategoryName: input.subCategoryName || null,
+                    productName: input.productName,
+                    description: input.description || null,
+                    referenceImage: input.referenceImage || null,
+                    status: "pending",
+                })
+                .returning();
+
+            return {
+                success: true,
+                request: created,
+                message: "Product identity request submitted. Admin will review it.",
+            };
+        }),
+
+    /**
+     * Get my product identity requests (shop owner only).
+     */
+    getMyProductRequests: shopOwnerProcedure
+        .input(
+            z.object({
+                status: z.enum(["pending", "approved", "rejected"]).optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const conditions: SQL[] = [
+                eq(productIdentityRequest.requestedBy, userId),
+            ];
+            if (input.status) {
+                conditions.push(eq(productIdentityRequest.status, input.status));
+            }
+
+            const requests = await db.query.productIdentityRequest.findMany({
+                where: and(...conditions),
+                orderBy: [desc(productIdentityRequest.createdAt)],
+            });
+
+            return { requests };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -2208,4 +2586,5 @@ export const shopOwnerRouter = {
     ...openOrderEndpoints,
     ...warehouseConnectionEndpoints,
     ...shopStorefrontEndpoints,
+    ...publicCatalogEndpoints,
 };
