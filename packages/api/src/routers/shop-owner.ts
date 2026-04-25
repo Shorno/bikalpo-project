@@ -14,8 +14,11 @@ import {
     brand,
     category,
     product,
+    productBrand,
+    productImage,
     productReview,
     productVariant,
+    productVariantPrice,
     subCategory,
     inventory,
     order,
@@ -31,6 +34,7 @@ import {
     coreProductIdentity,
     productType,
     productIdentityRequest,
+    variantOption,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -2573,6 +2577,612 @@ const publicCatalogEndpoints = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Shop Product Management (Retail Control Panel)
+// ────────────────────────────────────────────────────────────────
+
+const shopProductEndpoints = {
+    /**
+     * Get shop owner's products — aggregated by product (not variant).
+     * Each row = one product with variant count, total stock, stock status.
+     */
+    getShopProducts: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                categoryId: z.number().optional(),
+                stockStatus: z.enum(["all", "in_stock", "low", "out_of_stock"]).default("all"),
+                brandId: z.number().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+            const { search, categoryId, stockStatus, brandId, page, limit } = input;
+            const offset = (page - 1) * limit;
+
+            // Get all inventory for this shop owner with product+variant info
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        columns: {
+                            id: true,
+                            productId: true,
+                            sku: true,
+                            unitLabel: true,
+                            weightKg: true,
+                            price: true,
+                            packType: true,
+                            brandId: true,
+                            color: true,
+                            size: true,
+                            isActive: true,
+                        },
+                        with: {
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    slug: true,
+                                    image: true,
+                                    categoryId: true,
+                                    coreProductId: true,
+                                    status: true,
+                                    reorderLevel: true,
+                                },
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                    coreProduct: { columns: { id: true, name: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // Group by productId
+            const productMap = new Map<number, {
+                product: typeof shopInventory[0]["variant"]["product"];
+                variants: Array<{
+                    variantId: number;
+                    sku: string | null;
+                    unitLabel: string;
+                    weightKg: string;
+                    brandName: string | null;
+                    brandId: number | null;
+                    availableQty: string;
+                    reservedQty: string;
+                    retailPrice: string | null;
+                }>;
+                totalStock: number;
+                variantCount: number;
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+                const pid = inv.variant.product.id;
+
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        product: inv.variant.product,
+                        variants: [],
+                        totalStock: 0,
+                        variantCount: 0,
+                    });
+                }
+
+                const entry = productMap.get(pid)!;
+                entry.variants.push({
+                    variantId: inv.variant.id,
+                    sku: inv.variant.sku,
+                    unitLabel: inv.variant.unitLabel,
+                    weightKg: inv.variant.weightKg,
+                    brandName: inv.variant.brand?.name ?? null,
+                    brandId: inv.variant.brandId,
+                    availableQty: inv.availableQty,
+                    reservedQty: inv.reservedQty,
+                    retailPrice: inv.retailPrice,
+                });
+                entry.totalStock += Number(inv.availableQty);
+                entry.variantCount += 1;
+            }
+
+            // Convert to array and apply filters
+            let items = Array.from(productMap.values());
+
+            // Search filter
+            if (search?.trim()) {
+                const s = search.toLowerCase();
+                items = items.filter(
+                    (item) =>
+                        item.product.name.toLowerCase().includes(s) ||
+                        item.product.slug.toLowerCase().includes(s) ||
+                        item.variants.some((v) => v.sku?.toLowerCase().includes(s)),
+                );
+            }
+
+            // Category filter
+            if (categoryId) {
+                items = items.filter((item) => item.product.categoryId === categoryId);
+            }
+
+            // Brand filter
+            if (brandId) {
+                items = items.filter((item) =>
+                    item.variants.some((v) => v.brandId === brandId),
+                );
+            }
+
+            // Stock status filter
+            const REORDER_THRESHOLD = 10;
+            if (stockStatus === "in_stock") {
+                items = items.filter((item) => item.totalStock > REORDER_THRESHOLD);
+            } else if (stockStatus === "low") {
+                items = items.filter(
+                    (item) => item.totalStock > 0 && item.totalStock <= REORDER_THRESHOLD,
+                );
+            } else if (stockStatus === "out_of_stock") {
+                items = items.filter((item) => item.totalStock <= 0);
+            }
+
+            const totalCount = items.length;
+
+            // Sort by name
+            items.sort((a, b) => a.product.name.localeCompare(b.product.name));
+
+            // Paginate
+            const paginated = items.slice(offset, offset + limit);
+
+            // Build response with stock status
+            const result = paginated.map((item) => {
+                const reorderLevel = item.product.reorderLevel || REORDER_THRESHOLD;
+                let status: "in_stock" | "low" | "out_of_stock";
+                if (item.totalStock <= 0) status = "out_of_stock";
+                else if (item.totalStock <= reorderLevel) status = "low";
+                else status = "in_stock";
+
+                return {
+                    productId: item.product.id,
+                    name: item.product.name,
+                    slug: item.product.slug,
+                    image: item.product.image,
+                    category: item.product.category,
+                    coreProduct: item.product.coreProduct,
+                    variantCount: item.variantCount,
+                    totalStock: item.totalStock,
+                    stockStatus: status,
+                    productStatus: item.product.status,
+                    unit: item.variants[0]?.unitLabel ?? "pcs",
+                };
+            });
+
+            return {
+                items: result,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    /**
+     * KPI summary: total products, in-stock, low, out-of-stock.
+     */
+    getShopProductKPIs: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                columns: { variantId: true, availableQty: true },
+                with: {
+                    variant: {
+                        columns: { id: true, productId: true },
+                        with: {
+                            product: { columns: { id: true, reorderLevel: true } },
+                        },
+                    },
+                },
+            });
+
+            // Group by product
+            const productStockMap = new Map<number, number>();
+            const productReorderMap = new Map<number, number>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+                const pid = inv.variant.product.id;
+                productStockMap.set(pid, (productStockMap.get(pid) ?? 0) + Number(inv.availableQty));
+                if (!productReorderMap.has(pid)) {
+                    productReorderMap.set(pid, inv.variant.product.reorderLevel || 10);
+                }
+            }
+
+            let totalProducts = 0;
+            let inStock = 0;
+            let lowStock = 0;
+            let outOfStock = 0;
+
+            for (const [pid, totalQty] of productStockMap) {
+                totalProducts++;
+                const reorder = productReorderMap.get(pid) ?? 10;
+                if (totalQty <= 0) outOfStock++;
+                else if (totalQty <= reorder) lowStock++;
+                else inStock++;
+            }
+
+            return { totalProducts, inStock, lowStock, outOfStock };
+        }),
+
+    /**
+     * Detailed view of a single product — all variants with per-variant stock.
+     */
+    getShopProductDetail: shopOwnerProcedure
+        .input(z.object({ productId: z.number() }))
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+
+            const prod = await db.query.product.findFirst({
+                where: eq(product.id, input.productId),
+                with: {
+                    category: { columns: { id: true, name: true, slug: true } },
+                    subCategory: { columns: { id: true, name: true } },
+                    coreProduct: { columns: { id: true, name: true, sku: true, image: true } },
+                    images: true,
+                    productBrands: {
+                        with: { brand: { columns: { id: true, name: true, logo: true } } },
+                    },
+                },
+            });
+
+            if (!prod) throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+
+            // Get inventory for this product's variants
+            const variants = await db.query.productVariant.findMany({
+                where: eq(productVariant.productId, input.productId),
+                with: {
+                    brand: { columns: { id: true, name: true } },
+                },
+            });
+
+            const variantIds = variants.map((v) => v.id);
+            const inventoryRows = variantIds.length > 0
+                ? await db.query.inventory.findMany({
+                    where: and(
+                        eq(inventory.ownerType, "shop"),
+                        eq(inventory.ownerId, userId),
+                        inArray(inventory.variantId, variantIds),
+                    ),
+                })
+                : [];
+
+            const invMap = new Map(inventoryRows.map((inv) => [inv.variantId, inv]));
+
+            const variantDetails = variants.map((v) => {
+                const inv = invMap.get(v.id);
+                const availableQty = Number(inv?.availableQty ?? 0);
+                const reorderLevel = v.reorderLevel || 10;
+                let status: "in_stock" | "low" | "out_of_stock";
+                if (availableQty <= 0) status = "out_of_stock";
+                else if (availableQty <= reorderLevel) status = "low";
+                else status = "in_stock";
+
+                return {
+                    variantId: v.id,
+                    sku: v.sku,
+                    unitLabel: v.unitLabel,
+                    weightKg: v.weightKg,
+                    price: v.price,
+                    packType: v.packType,
+                    color: v.color,
+                    size: v.size,
+                    brandId: v.brandId,
+                    brandName: v.brand?.name ?? null,
+                    availableQty,
+                    reservedQty: Number(inv?.reservedQty ?? 0),
+                    retailPrice: inv?.retailPrice ?? null,
+                    stockStatus: status,
+                    isActive: v.isActive,
+                };
+            });
+
+            const totalStock = variantDetails.reduce((sum, v) => sum + v.availableQty, 0);
+
+            return {
+                product: {
+                    id: prod.id,
+                    name: prod.name,
+                    slug: prod.slug,
+                    image: prod.image,
+                    description: prod.description,
+                    status: prod.status,
+                    visibility: prod.visibility,
+                    expiryEnabled: prod.expiryEnabled,
+                    damageControlEnabled: prod.damageControlEnabled,
+                    trackingType: prod.trackingType,
+                    isReturnablePack: prod.isReturnablePack,
+                    reorderLevel: prod.reorderLevel,
+                    category: prod.category,
+                    subCategory: prod.subCategory,
+                    coreProduct: prod.coreProduct,
+                    images: prod.images,
+                    brands: prod.productBrands.map((pb) => pb.brand),
+                },
+                variants: variantDetails,
+                totalStock,
+            };
+        }),
+
+    /**
+     * Get options for the Create Product form (cascading selects).
+     * Returns types, categories, subcategories, core products, brands, variant options.
+     */
+    getCreateProductOptions: shopOwnerProcedure
+        .input(
+            z.object({
+                typeId: z.number().optional(),
+                categoryId: z.number().optional(),
+                subCategoryId: z.number().optional(),
+            }),
+        )
+        .handler(async ({ input }) => {
+            // Types
+            const types = await db.query.productType.findMany({
+                where: eq(productType.isActive, true),
+                orderBy: [productType.displayOrder, productType.name],
+                columns: { id: true, name: true, slug: true },
+            });
+
+            // Categories filtered by type
+            const catFilter = input.typeId
+                ? and(eq(category.isActive, true), eq(category.typeId, input.typeId))
+                : eq(category.isActive, true);
+            const categories = await db.query.category.findMany({
+                where: catFilter,
+                orderBy: [category.displayOrder, category.name],
+                columns: { id: true, name: true, slug: true, typeId: true },
+            });
+
+            // SubCategories filtered by category
+            const subCatFilter = input.categoryId
+                ? and(eq(subCategory.isActive, true), eq(subCategory.categoryId, input.categoryId))
+                : eq(subCategory.isActive, true);
+            const subCategories = await db.query.subCategory.findMany({
+                where: subCatFilter,
+                orderBy: [subCategory.displayOrder, subCategory.name],
+                columns: { id: true, name: true, slug: true, categoryId: true },
+            });
+
+            // Core products filtered by category+subcategory
+            const cpConditions: SQL[] = [];
+            if (input.categoryId) cpConditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
+            if (input.subCategoryId) cpConditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
+            const coreProducts = await db.query.coreProductIdentity.findMany({
+                where: cpConditions.length > 0 ? and(...cpConditions) : undefined,
+                columns: { id: true, name: true, sku: true, image: true, supportsPack: true, supportsLoose: true },
+                orderBy: [coreProductIdentity.name],
+            });
+
+            // Brands
+            const brands = await db.query.brand.findMany({
+                orderBy: [brand.displayOrder, brand.name],
+                columns: { id: true, name: true, slug: true, logo: true },
+            });
+
+            // Variant options — filtered by type+category scope
+            const voConditions: SQL[] = [eq(variantOption.isActive, true)];
+            if (input.typeId) {
+                // Include global options (typeId=null) + type-specific + category-specific
+                voConditions.push(
+                    or(
+                        sql`${variantOption.typeId} IS NULL`,
+                        eq(variantOption.typeId, input.typeId),
+                    )!,
+                );
+            }
+            if (input.categoryId) {
+                voConditions.push(
+                    or(
+                        sql`${variantOption.categoryId} IS NULL`,
+                        eq(variantOption.categoryId, input.categoryId),
+                    )!,
+                );
+            }
+            const variantOptions = await db.query.variantOption.findMany({
+                where: and(...voConditions),
+                orderBy: [variantOption.sortOrder, variantOption.name],
+                columns: { id: true, name: true, unit: true, size: true, variantType: true },
+            });
+
+            return { types, categories, subCategories, coreProducts, brands, variantOptions };
+        }),
+
+    /**
+     * Create a new shop product — full 8-step data.
+     * Creates product, product_brand links, product_variants, and initial inventory.
+     */
+    createShopProduct: shopOwnerProcedure
+        .input(
+            z.object({
+                // Step 1-2: Classification & Core Identity
+                coreProductId: z.number(),
+                categoryId: z.number(),
+                subCategoryId: z.number().optional(),
+
+                // Step 3: Brand & Variant selection
+                brandIds: z.array(z.number()).min(1),
+                variantSelections: z.array(
+                    z.object({
+                        variantOptionId: z.number(),
+                        brandId: z.number(),
+                    }),
+                ).min(1),
+
+                // Step 4: Pricing per brand×variant
+                pricing: z.array(
+                    z.object({
+                        variantOptionId: z.number(),
+                        brandId: z.number(),
+                        retailPrice: z.string(), // decimal
+                    }),
+                ),
+
+                // Step 5: Product rules
+                isReturnablePack: z.boolean().default(false),
+                expiryEnabled: z.boolean().default(false),
+                damageControlEnabled: z.boolean().default(false),
+                trackingType: z.enum(["none", "batch", "serial"]).default("none"),
+
+                // Step 6: Opening stock per brand×variant
+                openingStock: z.array(
+                    z.object({
+                        variantOptionId: z.number(),
+                        brandId: z.number(),
+                        quantity: z.number().default(0),
+                    }),
+                ).optional(),
+
+                // Step 7: Customization
+                displayName: z.string().optional(),
+                shortNote: z.string().optional(),
+
+                // Step 8: Visibility
+                status: z.enum(["active", "inactive", "draft"]).default("active"),
+            }),
+        )
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch core product for defaults
+            const core = await db.query.coreProductIdentity.findFirst({
+                where: eq(coreProductIdentity.id, input.coreProductId),
+            });
+            if (!core) throw new ORPCError("NOT_FOUND", { message: "Core product not found" });
+
+            // 2. Create the product row
+            const productName = input.displayName || core.name;
+            const slug = productName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") + "-" + Date.now();
+
+            const [newProduct] = await db
+                .insert(product)
+                .values({
+                    name: productName,
+                    slug,
+                    categoryId: input.categoryId,
+                    subCategoryId: input.subCategoryId ?? null,
+                    coreProductId: input.coreProductId,
+                    image: core.image,
+                    size: "default",
+                    price: "0",
+                    status: input.status,
+                    shortDescription: input.shortNote ?? null,
+                    isReturnablePack: input.isReturnablePack,
+                    expiryEnabled: input.expiryEnabled,
+                    damageControlEnabled: input.damageControlEnabled,
+                    trackingType: input.trackingType,
+                })
+                .returning({ id: product.id });
+
+            if (!newProduct) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Failed to create product" });
+
+            // 3. Insert product_brand links
+            if (input.brandIds.length > 0) {
+                await db.insert(productBrand).values(
+                    input.brandIds.map((bid) => ({
+                        productId: newProduct.id,
+                        brandId: bid,
+                    })),
+                );
+            }
+
+            // 4. Create product_variant + product_variant_price for each brand×variant
+            const createdVariants: Array<{ variantId: number; variantOptionId: number; brandId: number }> = [];
+
+            for (const sel of input.variantSelections) {
+                // Fetch variant option for defaults
+                const vo = await db.query.variantOption.findFirst({
+                    where: eq(variantOption.id, sel.variantOptionId),
+                });
+                if (!vo) continue;
+
+                // Get pricing for this combo
+                const priceEntry = input.pricing.find(
+                    (p) => p.variantOptionId === sel.variantOptionId && p.brandId === sel.brandId,
+                );
+                const retailPrice = priceEntry?.retailPrice ?? "0";
+
+                // Create product variant
+                const [pv] = await db
+                    .insert(productVariant)
+                    .values({
+                        productId: newProduct.id,
+                        unitLabel: vo.name,
+                        weightKg: vo.size ?? "0",
+                        packagingType: vo.variantType === "loose" ? "loose" : "packet",
+                        price: retailPrice,
+                        brandId: sel.brandId,
+                        pricingType: "per_unit",
+                        sourceVariantOptionId: vo.id,
+                    })
+                    .returning({ id: productVariant.id });
+
+                if (!pv) continue;
+
+                // Create product_variant_price link
+                await db.insert(productVariantPrice).values({
+                    productId: newProduct.id,
+                    variantOptionId: sel.variantOptionId,
+                    brandId: sel.brandId,
+                    consumerPrice: retailPrice,
+                });
+
+                createdVariants.push({
+                    variantId: pv.id,
+                    variantOptionId: sel.variantOptionId,
+                    brandId: sel.brandId,
+                });
+            }
+
+            // 5. Create initial inventory rows
+            for (const cv of createdVariants) {
+                const stockEntry = input.openingStock?.find(
+                    (s) => s.variantOptionId === cv.variantOptionId && s.brandId === cv.brandId,
+                );
+                const qty = stockEntry?.quantity ?? 0;
+
+                // Get retail price
+                const priceEntry = input.pricing.find(
+                    (p) => p.variantOptionId === cv.variantOptionId && p.brandId === cv.brandId,
+                );
+
+                await db.insert(inventory).values({
+                    ownerType: "shop",
+                    ownerId: userId,
+                    variantId: cv.variantId,
+                    availableQty: String(qty),
+                    reservedQty: "0",
+                    retailPrice: priceEntry?.retailPrice ?? null,
+                });
+            }
+
+            return {
+                productId: newProduct.id,
+                variantsCreated: createdVariants.length,
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -2587,4 +3197,5 @@ export const shopOwnerRouter = {
     ...warehouseConnectionEndpoints,
     ...shopStorefrontEndpoints,
     ...publicCatalogEndpoints,
+    ...shopProductEndpoints,
 };
