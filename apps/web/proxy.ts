@@ -155,8 +155,13 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/", mainDomain));
     }
 
+    // Logged-in shop owners hitting root → redirect to dashboard (like warehouse)
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
     // Rewrite to shop folder for shop owners
-    const rewritePath = pathname === "/" ? "/shop" : `/shop${pathname}`;
+    const rewritePath = `/shop${pathname}`;
     const rewriteUrl = new URL(rewritePath, request.url);
     rewriteUrl.search = request.nextUrl.search; // Preserve query params
     return NextResponse.rewrite(rewriteUrl);
