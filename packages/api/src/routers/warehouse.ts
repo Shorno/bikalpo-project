@@ -2461,7 +2461,7 @@ const stockEntryQueries = {
             let convertedQtyPacks: number;
 
             if (input.entryType === "loose") {
-                // Entered in KG → convert to packs
+                // Entered in KG — stored directly in KG
                 convertedQtyKg = qty;
                 convertedQtyPacks = packWeightKg > 0 ? qty / packWeightKg : 0;
             } else if (input.entryType === "carton") {
@@ -2493,7 +2493,8 @@ const stockEntryQueries = {
 
             // 4. Compute total cost
             let totalCost: number;
-            if (input.costType === "per_kg") {
+            if (input.costType === "per_kg" || (input.entryType === "loose" && input.costType === "per_pack")) {
+                // For loose entries, always use per-KG pricing (per_pack is not applicable)
                 totalCost = price * convertedQtyKg;
             } else if (input.costType === "per_carton") {
                 const cartonCount = input.cartonCount || Math.round(qty);
@@ -2536,8 +2537,8 @@ const stockEntryQueries = {
                     .returning();
 
                 // Upsert inventory — add to available quantity
-                // Inventory quantity is tracked in packs (the variant's unit)
-                const inventoryQty = convertedQtyPacks;
+                // Loose entries are tracked in KG; pack/carton entries are tracked in packs
+                const inventoryQty = input.entryType === "loose" ? convertedQtyKg : convertedQtyPacks;
                 const existingInv = await tx.query.inventory.findFirst({
                     where: and(
                         eq(inventory.ownerType, "warehouse"),
