@@ -3181,6 +3181,274 @@ const shopProductEndpoints = {
                 variantsCreated: createdVariants.length,
             };
         }),
+
+    /**
+     * Get full store preview data for the "My Store" consumer view.
+     * Returns store identity, categories, and products with variants/brands.
+     */
+    getMyStorePreview: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get store identity from user row
+            const storeUser = await db.query.user.findFirst({
+                where: eq(user.id, userId),
+                columns: {
+                    id: true,
+                    name: true,
+                    shopName: true,
+                    shopSlug: true,
+                    shopAddress: true,
+                    shopLat: true,
+                    shopLng: true,
+                    phoneNumber: true,
+                    ownerName: true,
+                    image: true,
+                },
+            });
+
+            if (!storeUser) throw new ORPCError("NOT_FOUND", { message: "User not found" });
+
+            // 2. Get all inventory for this shop owner with full product+variant+brand info
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        columns: {
+                            id: true,
+                            productId: true,
+                            sku: true,
+                            unitLabel: true,
+                            weightKg: true,
+                            price: true,
+                            packType: true,
+                            brandId: true,
+                            color: true,
+                            size: true,
+                            isActive: true,
+                            isPackReturnRequired: true,
+                            packDepositAmount: true,
+                            sourceVariantOptionId: true,
+                        },
+                        with: {
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    slug: true,
+                                    image: true,
+                                    categoryId: true,
+                                    coreProductId: true,
+                                    status: true,
+                                    reorderLevel: true,
+                                    shortDescription: true,
+                                    isReturnablePack: true,
+                                },
+                                with: {
+                                    category: { columns: { id: true, name: true, slug: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true, logo: true } },
+                        },
+                    },
+                },
+            });
+
+            // 3. Group by product
+            type VariantInfo = {
+                variantId: number;
+                sku: string | null;
+                unitLabel: string;
+                weightKg: string;
+                packType: string | null;
+                brandId: number | null;
+                brandName: string | null;
+                brandLogo: string | null;
+                retailPrice: string | null;
+                availableQty: number;
+                isPackReturnRequired: boolean | null;
+                packDepositAmount: string | null;
+            };
+
+            const productMap = new Map<number, {
+                product: typeof shopInventory[0]["variant"]["product"];
+                variants: VariantInfo[];
+                totalStock: number;
+                brands: Map<number, { id: number; name: string; logo: string | null }>;
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+                const pid = inv.variant.product.id;
+
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        product: inv.variant.product,
+                        variants: [],
+                        totalStock: 0,
+                        brands: new Map(),
+                    });
+                }
+
+                const entry = productMap.get(pid)!;
+                const qty = Number(inv.availableQty);
+                entry.totalStock += qty;
+
+                entry.variants.push({
+                    variantId: inv.variant.id,
+                    sku: inv.variant.sku,
+                    unitLabel: inv.variant.unitLabel,
+                    weightKg: inv.variant.weightKg,
+                    packType: inv.variant.packType,
+                    brandId: inv.variant.brandId,
+                    brandName: inv.variant.brand?.name ?? null,
+                    brandLogo: inv.variant.brand?.logo ?? null,
+                    retailPrice: inv.retailPrice,
+                    availableQty: qty,
+                    isPackReturnRequired: inv.variant.isPackReturnRequired,
+                    packDepositAmount: inv.variant.packDepositAmount,
+                });
+
+                if (inv.variant.brand) {
+                    entry.brands.set(inv.variant.brand.id, {
+                        id: inv.variant.brand.id,
+                        name: inv.variant.brand.name,
+                        logo: inv.variant.brand.logo,
+                    });
+                }
+            }
+
+            // 4. Derive categories
+            const categoryMap = new Map<number, { id: number; name: string; slug: string; productCount: number }>();
+            for (const entry of productMap.values()) {
+                const cat = entry.product.category;
+                if (cat) {
+                    const existing = categoryMap.get(cat.id);
+                    if (existing) {
+                        existing.productCount++;
+                    } else {
+                        categoryMap.set(cat.id, { ...cat, productCount: 1 });
+                    }
+                }
+            }
+
+            // 5. Build product list
+            const REORDER_THRESHOLD = 10;
+            const products = Array.from(productMap.values())
+                .sort((a, b) => a.product.name.localeCompare(b.product.name))
+                .map((entry) => {
+                    const reorderLevel = entry.product.reorderLevel || REORDER_THRESHOLD;
+                    let stockStatus: "in_stock" | "low" | "out_of_stock";
+                    if (entry.totalStock <= 0) stockStatus = "out_of_stock";
+                    else if (entry.totalStock <= reorderLevel) stockStatus = "low";
+                    else stockStatus = "in_stock";
+
+                    // Lowest retail price across variants
+                    const prices = entry.variants
+                        .map((v) => Number(v.retailPrice))
+                        .filter((p) => p > 0);
+                    const lowestPrice = prices.length > 0 ? Math.min(...prices) : null;
+
+                    return {
+                        productId: entry.product.id,
+                        name: entry.product.name,
+                        slug: entry.product.slug,
+                        image: entry.product.image,
+                        shortDescription: entry.product.shortDescription,
+                        isReturnablePack: entry.product.isReturnablePack,
+                        category: entry.product.category,
+                        brands: Array.from(entry.brands.values()),
+                        variants: entry.variants,
+                        totalStock: entry.totalStock,
+                        stockStatus,
+                        lowestPrice,
+                        variantCount: entry.variants.length,
+                    };
+                });
+
+            return {
+                store: {
+                    name: storeUser.shopName || storeUser.name,
+                    slug: storeUser.shopSlug,
+                    address: storeUser.shopAddress,
+                    lat: storeUser.shopLat,
+                    lng: storeUser.shopLng,
+                    phoneNumber: storeUser.phoneNumber,
+                    ownerName: storeUser.ownerName,
+                    image: storeUser.image,
+                },
+                categories: Array.from(categoryMap.values()),
+                products,
+                totalProducts: products.length,
+            };
+        }),
+
+    /**
+     * Get store KPI stats: total orders, customers, avg rating.
+     */
+    getMyStoreStats: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // Count B2C orders for this shop
+            const [orderStats] = await db
+                .select({
+                    totalOrders: count(),
+                    totalCustomers: sql<number>`COUNT(DISTINCT ${order.userId})`,
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.shopId, userId),
+                        eq(order.orderType, "b2c"),
+                    ),
+                );
+
+            // Get average product rating from reviews on shop's products
+            const shopVariantIds = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                columns: { variantId: true },
+            });
+
+            const variantIds = shopVariantIds.map((i) => i.variantId);
+            let avgRating = 0;
+            let reviewCount = 0;
+
+            if (variantIds.length > 0) {
+                // Get product IDs from variant IDs
+                const variants = await db.query.productVariant.findMany({
+                    where: inArray(productVariant.id, variantIds),
+                    columns: { productId: true },
+                });
+                const productIds = [...new Set(variants.map((v) => v.productId))];
+
+                if (productIds.length > 0) {
+                    const [stats] = await db
+                        .select({
+                            avgRating: avg(productReview.rating),
+                            reviewCount: count(),
+                        })
+                        .from(productReview)
+                        .where(inArray(productReview.productId, productIds));
+
+                    avgRating = Number(stats?.avgRating) || 0;
+                    reviewCount = Number(stats?.reviewCount) || 0;
+                }
+            }
+
+            return {
+                totalOrders: Number(orderStats?.totalOrders) || 0,
+                totalCustomers: Number(orderStats?.totalCustomers) || 0,
+                avgRating: Math.round(avgRating * 10) / 10,
+                reviewCount,
+            };
+        }),
 };
 
 // ────────────────────────────────────────────────────────────────
