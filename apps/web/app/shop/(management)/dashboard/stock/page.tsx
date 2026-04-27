@@ -250,7 +250,7 @@ export default function StockPage() {
           <KPICard
             label="In Stock"
             value={stats.inStock.toLocaleString()}
-            subtitle={`> 5 units`}
+            subtitle="More than 5 units"
             icon={CheckCircle2}
             color="emerald"
           />
