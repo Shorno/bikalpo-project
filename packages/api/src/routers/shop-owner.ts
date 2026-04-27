@@ -2213,16 +2213,17 @@ const publicCatalogEndpoints = {
     getPublicCatalogHierarchy: publicProcedure
         .input(
             z.object({
-                typeId: z.number().optional(),
-                categoryId: z.number().optional(),
-                subCategoryId: z.number().optional(),
-                search: z.string().optional(),
-                page: z.number().default(1),
-                limit: z.number().default(50),
+                typeId: z.number().nullish(),
+                categoryId: z.number().nullish(),
+                subCategoryId: z.number().nullish(),
+                search: z.string().nullish(),
+                page: z.number().optional().default(1),
+                limit: z.number().optional().default(50),
             }),
         )
         .handler(async ({ input }) => {
-            const { page, limit } = input;
+            const page = input.page ?? 1;
+            const limit = input.limit ?? 50;
             const offset = (page - 1) * limit;
 
             // 1. Build conditions for core products
@@ -2969,7 +2970,7 @@ const shopProductEndpoints = {
             if (input.subCategoryId) cpConditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
             const coreProducts = await db.query.coreProductIdentity.findMany({
                 where: cpConditions.length > 0 ? and(...cpConditions) : undefined,
-                columns: { id: true, name: true, sku: true, image: true, supportsPack: true, supportsLoose: true },
+                columns: { id: true, name: true, sku: true, image: true, supportsPack: true, supportsLoose: true, categoryId: true, subCategoryId: true },
                 orderBy: [coreProductIdentity.name],
             });
 
@@ -3081,7 +3082,7 @@ const shopProductEndpoints = {
                     categoryId: input.categoryId,
                     subCategoryId: input.subCategoryId ?? null,
                     coreProductId: input.coreProductId,
-                    image: core.image,
+                    image: core.image ?? "",
                     size: "default",
                     price: "0",
                     status: input.status,
