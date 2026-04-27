@@ -3456,6 +3456,181 @@ const shopProductEndpoints = {
                 reviewCount,
             };
         }),
+
+    /**
+     * Search shop products for stock entry — returns products with their variants
+     * and current inventory quantities for the logged-in shop owner.
+     */
+    getShopProductsForStock: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Get all inventory for this shop, grouped by product
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, slug: true, image: true, categoryId: true },
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                    productBrands: {
+                                        with: { brand: { columns: { id: true, name: true } } },
+                                    },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // Group by product
+            const productMap = new Map<number, {
+                id: number;
+                name: string;
+                image: string | null;
+                category: { id: number; name: string } | null;
+                variants: {
+                    variantId: number;
+                    inventoryId: number;
+                    unitLabel: string;
+                    weightKg: string;
+                    brandName: string | null;
+                    currentStock: number;
+                    retailPrice: string | null;
+                }[];
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+                const prod = inv.variant.product;
+                const pid = prod.id;
+
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        id: pid,
+                        name: prod.name,
+                        image: prod.image,
+                        category: prod.category,
+                        variants: [],
+                    });
+                }
+
+                // Resolve brand
+                const brandName = inv.variant.brand?.name
+                    || (prod as any).productBrands?.[0]?.brand?.name
+                    || null;
+
+                productMap.get(pid)!.variants.push({
+                    variantId: inv.variant.id,
+                    inventoryId: inv.id,
+                    unitLabel: inv.variant.unitLabel,
+                    weightKg: inv.variant.weightKg,
+                    brandName,
+                    currentStock: Number(inv.availableQty),
+                    retailPrice: inv.retailPrice,
+                });
+            }
+
+            // Filter by search
+            let products = Array.from(productMap.values());
+            if (input.search?.trim()) {
+                const s = input.search.toLowerCase();
+                products = products.filter(
+                    (p) =>
+                        p.name.toLowerCase().includes(s) ||
+                        p.variants.some((v) => v.brandName?.toLowerCase().includes(s)),
+                );
+            }
+
+            return {
+                products: products.slice(0, input.limit),
+                total: products.length,
+            };
+        }),
+
+    /**
+     * Add stock to shop inventory — supports adding to multiple variants at once.
+     */
+    addShopStock: shopOwnerProcedure
+        .input(
+            z.object({
+                entries: z.array(
+                    z.object({
+                        inventoryId: z.number().int(),
+                        addQuantity: z.number().min(0),
+                    }),
+                ).min(1, "At least one entry is required"),
+                stockType: z.enum(["purchase", "return", "adjustment", "opening"]).default("purchase"),
+                note: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Validate all inventory rows belong to this shop
+            const inventoryIds = input.entries.map((e) => e.inventoryId);
+            const ownedInventory = await db.query.inventory.findMany({
+                where: and(
+                    inArray(inventory.id, inventoryIds),
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (ownedInventory.length !== inventoryIds.length) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "Some inventory items do not belong to your shop",
+                });
+            }
+
+            // Build a lookup
+            const invLookup = new Map(ownedInventory.map((inv) => [inv.id, inv]));
+
+            // Update quantities in a transaction
+            const results = await db.transaction(async (tx) => {
+                const updated: { inventoryId: number; oldQty: number; newQty: number }[] = [];
+
+                for (const entry of input.entries) {
+                    if (entry.addQuantity <= 0) continue;
+
+                    const existing = invLookup.get(entry.inventoryId)!;
+                    const oldQty = Number(existing.availableQty);
+                    const newQty = oldQty + entry.addQuantity;
+
+                    await tx
+                        .update(inventory)
+                        .set({ availableQty: String(newQty) })
+                        .where(eq(inventory.id, entry.inventoryId));
+
+                    updated.push({
+                        inventoryId: entry.inventoryId,
+                        oldQty,
+                        newQty,
+                    });
+                }
+
+                return updated;
+            });
+
+            return {
+                updated: results,
+                stockType: input.stockType,
+                note: input.note || null,
+                message: `Stock updated for ${results.length} variant(s)`,
+            };
+        }),
 };
 
 // ────────────────────────────────────────────────────────────────
