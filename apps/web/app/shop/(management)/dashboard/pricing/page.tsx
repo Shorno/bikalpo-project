@@ -37,10 +37,21 @@ export default function PricingPage() {
     const catSet = new Map<string, string>();
     const brandSet = new Map<string, string>();
 
+    // Resolve brand: variant.brand → product.brand → product.productBrands[0].brand
+    const resolveBrand = (item: any) => {
+      const v = item.variant;
+      if (v?.brand?.name) return v.brand;
+      const p = v?.product;
+      if (p?.brand?.name) return p.brand;
+      const pb = p?.productBrands?.[0]?.brand;
+      if (pb?.name) return pb;
+      return null;
+    };
+
     for (const item of items) {
       const cat = (item as any).variant?.product?.category;
       if (cat?.name) catSet.set(cat.slug || cat.name, cat.name);
-      const brand = (item as any).variant?.brand || (item as any).variant?.product?.brand;
+      const brand = resolveBrand(item);
       if (brand?.name) brandSet.set(String(brand.id), brand.name);
     }
 
@@ -323,7 +334,7 @@ export default function PricingPage() {
                       <TableBody>
                         {prodGroup.rows.map((item: any) => {
                           const variant = item.variant;
-                          const brand = variant?.brand || variant?.product?.brand;
+                          const brand = resolveBrand(item);
                           const retailPrice = item.retailPrice ? Number(item.retailPrice) : null;
                           const isEditing = editingId === item.id;
                           const qty = Number(item.availableQty ?? 0);
