@@ -379,6 +379,7 @@ const managementQueries = {
                                     images: { limit: 1 },
                                 },
                             },
+                            brand: { columns: { id: true, name: true } },
                         },
                     },
                 },
