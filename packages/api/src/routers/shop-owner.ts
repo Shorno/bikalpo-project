@@ -377,6 +377,7 @@ const managementQueries = {
                                 with: {
                                     category: { columns: { name: true, slug: true } },
                                     images: { limit: 1 },
+                                    brand: { columns: { id: true, name: true } },
                                 },
                             },
                             brand: { columns: { id: true, name: true } },

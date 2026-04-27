@@ -40,7 +40,7 @@ export default function PricingPage() {
     for (const item of items) {
       const cat = (item as any).variant?.product?.category;
       if (cat?.name) catSet.set(cat.slug || cat.name, cat.name);
-      const brand = (item as any).variant?.brand;
+      const brand = (item as any).variant?.brand || (item as any).variant?.product?.brand;
       if (brand?.name) brandSet.set(String(brand.id), brand.name);
     }
 
@@ -323,7 +323,7 @@ export default function PricingPage() {
                       <TableBody>
                         {prodGroup.rows.map((item: any) => {
                           const variant = item.variant;
-                          const brand = variant?.brand;
+                          const brand = variant?.brand || variant?.product?.brand;
                           const retailPrice = item.retailPrice ? Number(item.retailPrice) : null;
                           const isEditing = editingId === item.id;
                           const qty = Number(item.availableQty ?? 0);
