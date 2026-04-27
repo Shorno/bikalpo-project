@@ -242,3 +242,41 @@ export function useReleaseOpenOrder() {
     onError: (err) => toast.error(err.message),
   });
 }
+
+// ────────────────────────────────────────────────────────────────
+// STOCK MANAGEMENT HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Search shop products for stock entry (with current stock info) */
+export function useShopProductsForStock(search?: string) {
+  return useQuery(
+    orpc.shopOwner.getShopProductsForStock.queryOptions({
+      input: { search: search || undefined, limit: 30 },
+      staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** Add stock to one or more inventory variants */
+export function useAddShopStock() {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    orpc.shopOwner.addShopStock.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyRetailProducts"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyInventory"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getShopProductsForStock"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyStorePreview"]],
+        });
+      },
+    }),
+  );
+}
