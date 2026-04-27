@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangleIcon,
   ArrowRightLeftIcon,
   BarChart3Icon,
   BookOpenIcon,
@@ -65,6 +66,7 @@ const shopOwnerNavGroups: NavGroup[] = [
       { title: "Stock", url: `${D}/stock`, icon: BoxesIcon },
       { title: "Add Stock", url: `${D}/stock/add`, icon: PlusCircleIcon },
       { title: "Stock Adjustment", url: `${D}/stock-adjustment`, icon: ArrowRightLeftIcon },
+      { title: "Damage", url: `${D}/damage`, icon: AlertTriangleIcon },
       { title: "Purchases", url: `${D}/orders`, icon: ShoppingCartIcon },
       { title: "Order from Warehouse", url: `${D}/order-from-warehouse`, icon: PackageIcon },
       { title: "Suppliers", url: `${D}/suppliers`, icon: UsersIcon },
