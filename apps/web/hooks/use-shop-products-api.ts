@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
@@ -63,6 +63,8 @@ export function useCreateProductOptions(filters: {
         categoryId: filters.categoryId,
         subCategoryId: filters.subCategoryId,
       },
+      placeholderData: keepPreviousData,
+      staleTime: 1000 * 30,
     }),
   );
 }

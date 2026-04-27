@@ -1,9 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import { Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { CreateProductFormState } from "@/app/shop/(management)/dashboard/products/create/page";
 
 type Props = {
@@ -14,8 +14,8 @@ type Props = {
 };
 
 export function StepClassification({ form, update, options, loading }: Props) {
-  if (loading) return <div className="space-y-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>;
-
+  // Never unmount — just derive data from whatever options we have (previous or new).
+  // The `loading` flag is now only used for a subtle spinner, not a full skeleton swap.
   const types = options?.types ?? [];
   const categories = options?.categories ?? [];
   const subCategories = options?.subCategories ?? [];
@@ -69,8 +69,11 @@ export function StepClassification({ form, update, options, loading }: Props) {
 
       {/* Core Product */}
       <div className="space-y-2">
-        <Label>Core Product Identity <span className="text-red-500">*</span></Label>
-        {coreProducts.length === 0 && form.categoryId ? (
+        <div className="flex items-center gap-2">
+          <Label>Core Product Identity <span className="text-red-500">*</span></Label>
+          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+        </div>
+        {coreProducts.length === 0 && form.categoryId && !loading ? (
           <p className="text-sm text-muted-foreground p-3 bg-gray-50 rounded-lg border">
             No core products found for this category. Try a different category or request a new product setup.
           </p>
