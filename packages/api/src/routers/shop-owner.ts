@@ -35,6 +35,8 @@ import {
     productType,
     productIdentityRequest,
     variantOption,
+    stockAdjustment,
+    stockAdjustmentItem,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -3629,6 +3631,311 @@ const shopProductEndpoints = {
                 stockType: input.stockType,
                 note: input.note || null,
                 message: `Stock updated for ${results.length} variant(s)`,
+            };
+        }),
+
+    // ────────────────────────────────────────────────────────────────
+    // STOCK ADJUSTMENT ENDPOINTS
+    // ────────────────────────────────────────────────────────────────
+
+    /**
+     * Search shop inventory variants for the adjustment product picker.
+     * Returns variant-level results with current stock.
+     */
+    searchShopVariantsForAdjustment: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                limit: z.number().int().min(1).max(50).default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const conditions: (typeof sql)[] = [];
+            const baseConditions = and(
+                eq(inventory.ownerType, "shop"),
+                eq(inventory.ownerId, userId),
+            );
+
+            let searchCondition;
+            if (input.search?.trim()) {
+                const term = `%${input.search.trim()}%`;
+                searchCondition = or(
+                    ilike(product.name, term),
+                    ilike(productVariant.sku ?? "", term),
+                    ilike(brand.name ?? "", term),
+                );
+            }
+
+            const rows = await db
+                .select({
+                    variantId: productVariant.id,
+                    inventoryId: inventory.id,
+                    sku: productVariant.sku,
+                    unitLabel: productVariant.unitLabel,
+                    weightKg: productVariant.weightKg,
+                    productId: product.id,
+                    productName: product.name,
+                    productImage: product.image,
+                    brandName: brand.name,
+                    availableQty: inventory.availableQty,
+                })
+                .from(inventory)
+                .innerJoin(
+                    productVariant,
+                    eq(inventory.variantId, productVariant.id),
+                )
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(brand, eq(productVariant.brandId, brand.id))
+                .where(
+                    searchCondition
+                        ? and(baseConditions, searchCondition)
+                        : baseConditions,
+                )
+                .orderBy(product.name)
+                .limit(input.limit);
+
+            return {
+                variants: rows.map((r) => ({
+                    variantId: r.variantId,
+                    inventoryId: r.inventoryId,
+                    sku: r.sku,
+                    unitLabel: r.unitLabel,
+                    weightKg: r.weightKg,
+                    productId: r.productId,
+                    productName: r.productName,
+                    productImage: r.productImage,
+                    brandName: r.brandName,
+                    availableQty: parseFloat(r.availableQty || "0"),
+                })),
+            };
+        }),
+
+    /**
+     * Create a stock adjustment for the shop — auto-submitted, applies to inventory.
+     * Uses "actual stock" input: adjustQty = actualQty - currentQty.
+     */
+    createShopAdjustment: shopOwnerProcedure
+        .input(
+            z.object({
+                adjustmentType: z.enum([
+                    "increase",
+                    "decrease",
+                    "damage",
+                    "loss",
+                    "correction",
+                ]),
+                reason: z.enum([
+                    "physical_count",
+                    "damage",
+                    "expired",
+                    "theft",
+                    "system_error",
+                    "other",
+                ]),
+                referenceNote: z.string().optional(),
+                adjustmentDate: z.string(),
+                items: z
+                    .array(
+                        z.object({
+                            inventoryId: z.number().int(),
+                            actualQty: z.number().min(0),
+                            note: z.string().optional(),
+                        }),
+                    )
+                    .min(1, "At least one item is required"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Validate all inventory rows belong to this shop
+            const inventoryIds = input.items.map((i) => i.inventoryId);
+            const ownedInventory = await db.query.inventory.findMany({
+                where: and(
+                    inArray(inventory.id, inventoryIds),
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (ownedInventory.length !== inventoryIds.length) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "Some inventory items do not belong to your shop",
+                });
+            }
+
+            const invLookup = new Map(
+                ownedInventory.map((inv) => [inv.id, inv]),
+            );
+
+            // 2. Generate adjustment number (ADJ-S-xxxx for shop)
+            const [maxResult] = await db
+                .select({
+                    maxNo: sql<string>`MAX(${stockAdjustment.adjustmentNo})`,
+                })
+                .from(stockAdjustment)
+                .where(eq(stockAdjustment.warehouseId, userId));
+
+            const lastNum = maxResult?.maxNo
+                ? parseInt(maxResult.maxNo.replace(/^ADJ-S?-?/, ""), 10) || 0
+                : 0;
+            const adjustmentNo = `ADJ-S-${String(lastNum + 1).padStart(4, "0")}`;
+
+            // 3. Build line items with auto-calculated adjustQty
+            const lineItems = input.items.map((item) => {
+                const inv = invLookup.get(item.inventoryId)!;
+                const currentQty = parseFloat(inv.availableQty || "0");
+                const adjustQty = item.actualQty - currentQty;
+                return {
+                    variantId: inv.variantId,
+                    currentQty: String(currentQty),
+                    adjustQty: String(adjustQty),
+                    afterQty: String(item.actualQty),
+                    note: item.note || null,
+                    inventoryId: inv.id,
+                    actualQty: item.actualQty,
+                };
+            });
+
+            // Filter out items with zero change
+            const changedItems = lineItems.filter(
+                (li) => parseFloat(li.adjustQty) !== 0,
+            );
+
+            if (changedItems.length === 0) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "No stock changes detected — all actual quantities match current stock",
+                });
+            }
+
+            const totalQtyChange = changedItems.reduce(
+                (sum, li) => sum + parseFloat(li.adjustQty),
+                0,
+            );
+
+            // 4. Transaction: insert adjustment + items + update inventory
+            const result = await db.transaction(async (tx) => {
+                // Insert header
+                const [header] = await tx
+                    .insert(stockAdjustment)
+                    .values({
+                        adjustmentNo,
+                        warehouseId: userId,
+                        adjustmentType: input.adjustmentType,
+                        reason: input.reason,
+                        referenceNote: input.referenceNote || null,
+                        adjustmentDate: input.adjustmentDate,
+                        status: "submitted",
+                        totalItems: changedItems.length,
+                        totalQtyChange: String(totalQtyChange),
+                        createdById: userId,
+                    })
+                    .returning();
+
+                // Insert line items
+                await tx.insert(stockAdjustmentItem).values(
+                    changedItems.map((li) => ({
+                        adjustmentId: header!.id,
+                        variantId: li.variantId,
+                        currentQty: li.currentQty,
+                        adjustQty: li.adjustQty,
+                        afterQty: li.afterQty,
+                        note: li.note,
+                    })),
+                );
+
+                // Update inventory quantities
+                for (const li of changedItems) {
+                    await tx
+                        .update(inventory)
+                        .set({ availableQty: li.afterQty })
+                        .where(eq(inventory.id, li.inventoryId));
+                }
+
+                return header!;
+            });
+
+            return {
+                success: true,
+                adjustmentId: result.id,
+                adjustmentNo: result.adjustmentNo,
+                totalItems: changedItems.length,
+                totalQtyChange,
+                message: `Adjustment ${result.adjustmentNo} applied — ${changedItems.length} item(s) updated`,
+            };
+        }),
+
+    /**
+     * List shop adjustment history (paginated).
+     */
+    getShopAdjustments: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                adjustmentType: z
+                    .enum(["increase", "decrease", "damage", "loss", "correction"])
+                    .optional(),
+                page: z.number().int().min(1).default(1),
+                pageSize: z.number().int().min(1).max(100).default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const offset = (input.page - 1) * input.pageSize;
+
+            const conditions: SQL[] = [
+                eq(stockAdjustment.warehouseId, userId),
+            ];
+
+            if (input.adjustmentType) {
+                conditions.push(
+                    eq(stockAdjustment.adjustmentType, input.adjustmentType),
+                );
+            }
+            if (input.search?.trim()) {
+                const term = `%${input.search.trim()}%`;
+                conditions.push(
+                    ilike(stockAdjustment.adjustmentNo, term),
+                );
+            }
+
+            const where = and(...conditions);
+
+            const [rows, countResult] = await Promise.all([
+                db
+                    .select({
+                        id: stockAdjustment.id,
+                        adjustmentNo: stockAdjustment.adjustmentNo,
+                        adjustmentType: stockAdjustment.adjustmentType,
+                        reason: stockAdjustment.reason,
+                        status: stockAdjustment.status,
+                        adjustmentDate: stockAdjustment.adjustmentDate,
+                        totalItems: stockAdjustment.totalItems,
+                        totalQtyChange: stockAdjustment.totalQtyChange,
+                        referenceNote: stockAdjustment.referenceNote,
+                        createdAt: stockAdjustment.createdAt,
+                    })
+                    .from(stockAdjustment)
+                    .where(where)
+                    .orderBy(desc(stockAdjustment.createdAt))
+                    .limit(input.pageSize)
+                    .offset(offset),
+                db
+                    .select({ count: sql<number>`COUNT(*)::int` })
+                    .from(stockAdjustment)
+                    .where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count ?? 0;
+
+            return {
+                items: rows,
+                totalCount,
+                page: input.page,
+                pageSize: input.pageSize,
+                totalPages: Math.ceil(totalCount / input.pageSize),
             };
         }),
 };
