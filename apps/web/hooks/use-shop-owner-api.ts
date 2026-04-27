@@ -340,3 +340,73 @@ export function useShopAdjustments(params?: {
     }),
   );
 }
+
+// ────────────────────────────────────────────────────────────────
+// DAMAGE MANAGEMENT HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Create a damage entry (deducts inventory, calculates loss) */
+export function useCreateDamageEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    orpc.shopOwner.createDamageEntry.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyRetailProducts"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyInventory"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getDamageEntries"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getDamageSummary"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyStorePreview"]],
+        });
+      },
+    }),
+  );
+}
+
+/** List damage entries (paginated) */
+export function useDamageEntries(params?: {
+  search?: string;
+  damageType?: string;
+  page?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getDamageEntries.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        damageType: params?.damageType as any,
+        page: params?.page ?? 1,
+        pageSize: 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Get single damage entry detail */
+export function useDamageEntryDetail(id: number) {
+  return useQuery(
+    orpc.shopOwner.getDamageEntryDetail.queryOptions({
+      input: { id },
+      staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** KPI summary for damage management */
+export function useDamageSummary() {
+  return useQuery(
+    orpc.shopOwner.getDamageSummary.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2,
+    }),
+  );
+}

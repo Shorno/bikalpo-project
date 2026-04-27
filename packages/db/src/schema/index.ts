@@ -61,3 +61,4 @@ export * from "./warehouse-storage-area";
 export * from "./stock-adjustment";
 export * from "./carton-config";
 export * from "./carton";
+export * from "./damage-entry";

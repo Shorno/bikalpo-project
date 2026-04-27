@@ -37,6 +37,8 @@ import {
     variantOption,
     stockAdjustment,
     stockAdjustmentItem,
+    damageEntry,
+    damageEntryItem,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -3936,6 +3938,308 @@ const shopProductEndpoints = {
                 page: input.page,
                 pageSize: input.pageSize,
                 totalPages: Math.ceil(totalCount / input.pageSize),
+            };
+        }),
+
+    // ────────────────────────────────────────────────────────────────
+    // DAMAGE MANAGEMENT ENDPOINTS
+    // ────────────────────────────────────────────────────────────────
+
+    /**
+     * Create a damage entry — deducts inventory, calculates financial loss.
+     */
+    createDamageEntry: shopOwnerProcedure
+        .input(
+            z.object({
+                damageType: z.enum(["physical", "expired", "lost"]),
+                description: z.string().optional(),
+                proofImages: z.array(z.string()).default([]),
+                enteredByName: z.string().optional(),
+                entryDate: z.string(),
+                items: z
+                    .array(
+                        z.object({
+                            inventoryId: z.number().int(),
+                            qty: z.number().int().min(1),
+                            unitPrice: z.number().min(0).optional(),
+                            note: z.string().optional(),
+                        }),
+                    )
+                    .min(1, "At least one item is required"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Validate all inventory rows belong to this shop
+            const inventoryIds = input.items.map((i) => i.inventoryId);
+            const ownedInventory = await db.query.inventory.findMany({
+                where: and(
+                    inArray(inventory.id, inventoryIds),
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (ownedInventory.length !== inventoryIds.length) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "Some inventory items do not belong to your shop",
+                });
+            }
+
+            const invLookup = new Map(
+                ownedInventory.map((inv) => [inv.id, inv]),
+            );
+
+            // 2. Validate stock is sufficient
+            for (const item of input.items) {
+                const inv = invLookup.get(item.inventoryId)!;
+                const available = parseFloat(inv.availableQty || "0");
+                if (item.qty > available) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Insufficient stock for inventory ${item.inventoryId}: available=${available}, requested=${item.qty}`,
+                    });
+                }
+            }
+
+            // 3. Generate entry number (DMG-0001)
+            const [maxResult] = await db
+                .select({
+                    maxNo: sql<string>`MAX(${damageEntry.entryNo})`,
+                })
+                .from(damageEntry)
+                .where(eq(damageEntry.shopId, userId));
+
+            const lastNum = maxResult?.maxNo
+                ? parseInt(maxResult.maxNo.replace(/^DMG-/, ""), 10) || 0
+                : 0;
+            const entryNo = `DMG-${String(lastNum + 1).padStart(4, "0")}`;
+
+            // 4. Build line items
+            const lineItems = input.items.map((item) => {
+                const inv = invLookup.get(item.inventoryId)!;
+                const unitPrice =
+                    item.unitPrice ?? parseFloat(inv.retailPrice || "0");
+                return {
+                    inventoryId: inv.id,
+                    variantId: inv.variantId,
+                    qty: item.qty,
+                    unitPrice: String(unitPrice),
+                    totalValue: String(item.qty * unitPrice),
+                    note: item.note || null,
+                };
+            });
+
+            const totalQty = lineItems.reduce((s, li) => s + li.qty, 0);
+            const totalLossValue = lineItems.reduce(
+                (s, li) => s + parseFloat(li.totalValue),
+                0,
+            );
+
+            // 5. Transaction: insert entry + items + deduct inventory
+            const result = await db.transaction(async (tx) => {
+                const [header] = await tx
+                    .insert(damageEntry)
+                    .values({
+                        entryNo,
+                        shopId: userId,
+                        damageType: input.damageType,
+                        description: input.description || null,
+                        proofImages: input.proofImages,
+                        totalQty,
+                        totalLossValue: String(totalLossValue),
+                        enteredByName: input.enteredByName || null,
+                        entryDate: input.entryDate,
+                        status: "active",
+                        createdById: userId,
+                    })
+                    .returning();
+
+                await tx.insert(damageEntryItem).values(
+                    lineItems.map((li) => ({
+                        damageEntryId: header!.id,
+                        inventoryId: li.inventoryId,
+                        variantId: li.variantId,
+                        qty: li.qty,
+                        unitPrice: li.unitPrice,
+                        totalValue: li.totalValue,
+                        note: li.note,
+                    })),
+                );
+
+                // Deduct inventory
+                for (const li of lineItems) {
+                    await tx
+                        .update(inventory)
+                        .set({
+                            availableQty: sql`CAST(${inventory.availableQty} AS numeric) - ${li.qty}`,
+                        })
+                        .where(eq(inventory.id, li.inventoryId));
+                }
+
+                return header!;
+            });
+
+            return {
+                success: true,
+                entryId: result.id,
+                entryNo: result.entryNo,
+                totalQty,
+                totalLossValue,
+                message: `Damage entry ${result.entryNo} recorded — ${totalQty} item(s), ৳${totalLossValue} loss`,
+            };
+        }),
+
+    /**
+     * List damage entries (paginated, filterable).
+     */
+    getDamageEntries: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                damageType: z
+                    .enum(["physical", "expired", "lost"])
+                    .optional(),
+                page: z.number().int().min(1).default(1),
+                pageSize: z.number().int().min(1).max(100).default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const offset = (input.page - 1) * input.pageSize;
+
+            const conditions: SQL[] = [
+                eq(damageEntry.shopId, userId),
+                eq(damageEntry.status, "active"),
+            ];
+
+            if (input.damageType) {
+                conditions.push(
+                    eq(damageEntry.damageType, input.damageType),
+                );
+            }
+            if (input.search?.trim()) {
+                const term = `%${input.search.trim()}%`;
+                conditions.push(ilike(damageEntry.entryNo, term));
+            }
+
+            const where = and(...conditions);
+
+            const [rows, countResult] = await Promise.all([
+                db
+                    .select({
+                        id: damageEntry.id,
+                        entryNo: damageEntry.entryNo,
+                        damageType: damageEntry.damageType,
+                        totalQty: damageEntry.totalQty,
+                        totalLossValue: damageEntry.totalLossValue,
+                        enteredByName: damageEntry.enteredByName,
+                        entryDate: damageEntry.entryDate,
+                        createdAt: damageEntry.createdAt,
+                    })
+                    .from(damageEntry)
+                    .where(where)
+                    .orderBy(desc(damageEntry.createdAt))
+                    .limit(input.pageSize)
+                    .offset(offset),
+                db
+                    .select({ count: sql<number>`COUNT(*)::int` })
+                    .from(damageEntry)
+                    .where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count ?? 0;
+
+            return {
+                items: rows,
+                totalCount,
+                page: input.page,
+                pageSize: input.pageSize,
+                totalPages: Math.ceil(totalCount / input.pageSize),
+            };
+        }),
+
+    /**
+     * Get single damage entry detail with line items.
+     */
+    getDamageEntryDetail: shopOwnerProcedure
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const entry = await db
+                .select()
+                .from(damageEntry)
+                .where(
+                    and(
+                        eq(damageEntry.id, input.id),
+                        eq(damageEntry.shopId, userId),
+                    ),
+                )
+                .limit(1);
+
+            if (!entry[0]) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Damage entry not found",
+                });
+            }
+
+            const items = await db
+                .select({
+                    id: damageEntryItem.id,
+                    variantId: damageEntryItem.variantId,
+                    qty: damageEntryItem.qty,
+                    unitPrice: damageEntryItem.unitPrice,
+                    totalValue: damageEntryItem.totalValue,
+                    note: damageEntryItem.note,
+                    sku: productVariant.sku,
+                    unitLabel: productVariant.unitLabel,
+                    weightKg: productVariant.weightKg,
+                    productName: product.name,
+                    productImage: product.image,
+                    brandName: brand.name,
+                    categoryName: category.name,
+                })
+                .from(damageEntryItem)
+                .innerJoin(
+                    productVariant,
+                    eq(damageEntryItem.variantId, productVariant.id),
+                )
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(brand, eq(productVariant.brandId, brand.id))
+                .leftJoin(category, eq(product.categoryId, category.id))
+                .where(eq(damageEntryItem.damageEntryId, input.id))
+                .orderBy(damageEntryItem.id);
+
+            return { ...entry[0], items };
+        }),
+
+    /**
+     * KPI summary for damage management.
+     */
+    getDamageSummary: shopOwnerProcedure
+        .input(z.void())
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const [result] = await db
+                .select({
+                    totalEntries: sql<number>`COUNT(*)::int`,
+                    totalDamageQty: sql<number>`COALESCE(SUM(${damageEntry.totalQty}), 0)::int`,
+                    totalLossValue: sql<string>`COALESCE(SUM(${damageEntry.totalLossValue}::numeric), 0)::text`,
+                })
+                .from(damageEntry)
+                .where(
+                    and(
+                        eq(damageEntry.shopId, userId),
+                        eq(damageEntry.status, "active"),
+                    ),
+                );
+
+            return {
+                totalEntries: result?.totalEntries ?? 0,
+                totalDamageQty: result?.totalDamageQty ?? 0,
+                totalLossValue: parseFloat(result?.totalLossValue ?? "0"),
             };
         }),
 };
