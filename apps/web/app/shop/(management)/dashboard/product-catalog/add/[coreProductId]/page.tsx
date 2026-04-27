@@ -367,7 +367,7 @@ export default function RetailerAddProductPage({
                     </div>
                     <div className="flex items-center gap-1.5 w-36">
                       <span className="text-sm text-muted-foreground">৳</span>
-                      <Input type="number" min="0" step="0.01" placeholder="0.00" value={pr?.retailPrice ?? ""} onChange={(e) => updatePrice(sel.variantOptionId, sel.brandId, e.target.value)} className="h-8 text-sm" />
+                      <Input type="text" inputMode="decimal" placeholder="0" value={pr?.retailPrice ?? ""} onChange={(e) => updatePrice(sel.variantOptionId, sel.brandId, e.target.value)} className="h-8 text-sm" />
                     </div>
                   </div>
                 );
@@ -424,7 +424,7 @@ export default function RetailerAddProductPage({
                       <span className="text-muted-foreground"> → </span>
                       <span>{sel.variantName}</span>
                     </div>
-                    <Input type="number" min="0" placeholder="0 pcs" value={st?.quantity || ""} onChange={(e) => updateStock(sel.variantOptionId, sel.brandId, e.target.value)} className="h-8 text-sm w-36" />
+                    <Input type="text" inputMode="numeric" placeholder="0 pcs" value={st?.quantity || ""} onChange={(e) => updateStock(sel.variantOptionId, sel.brandId, e.target.value)} className="h-8 text-sm w-36" />
                   </div>
                 );
               })}
