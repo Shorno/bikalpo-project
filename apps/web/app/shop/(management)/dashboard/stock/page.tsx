@@ -129,8 +129,8 @@ function SectionHeader({
 
 export default function StockPage() {
   const [search, setSearch] = useState("");
-  const { data, isLoading } = useMyRetailProducts(search);
-  const items: any[] = data ?? [];
+  const { data, isLoading } = useMyRetailProducts({ search });
+  const items: any[] = (data as any)?.items ?? [];
 
   // Derive stats
   const stats = useMemo(() => {
