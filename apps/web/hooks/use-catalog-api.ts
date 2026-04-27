@@ -80,3 +80,42 @@ export function useMyProductRequests(status?: "pending" | "approved" | "rejected
     }),
   );
 }
+
+// ────────────────────────────────────────────────────────────────
+// PRODUCT CREATION HOOKS (Retailer Wizard)
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Cascading filter options for the 8-step retailer product creation wizard.
+ * Returns types, categories, subcategories, core products, brands, variant options.
+ */
+export function useCreateProductOptions(params?: {
+  typeId?: number;
+  categoryId?: number;
+  subCategoryId?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getCreateProductOptions.queryOptions({
+      input: {
+        typeId: params?.typeId,
+        categoryId: params?.categoryId,
+        subCategoryId: params?.subCategoryId,
+      },
+      staleTime: 1000 * 60 * 5,
+    }),
+  );
+}
+
+/** Create a new retailer shop product (full 8-step wizard submission) */
+export function useCreateShopProduct() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...orpc.shopOwner.createShopProduct.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Product created successfully!");
+      qc.invalidateQueries({ queryKey: orpc.shopOwner.getShopProducts.key() });
+      qc.invalidateQueries({ queryKey: orpc.shopOwner.getShopProductKPIs.key() });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
