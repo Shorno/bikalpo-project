@@ -33,20 +33,20 @@ export default function PricingPage() {
 
   // ─── Derive categories and brands from data ─────────────────
 
+  // Resolve brand: variant.brand → product.brand → product.productBrands[0].brand
+  const resolveBrand = (item: any) => {
+    const v = item.variant;
+    if (v?.brand?.name) return v.brand;
+    const p = v?.product;
+    if (p?.brand?.name) return p.brand;
+    const pb = p?.productBrands?.[0]?.brand;
+    if (pb?.name) return pb;
+    return null;
+  };
+
   const { categories, brands, grouped } = useMemo(() => {
     const catSet = new Map<string, string>();
     const brandSet = new Map<string, string>();
-
-    // Resolve brand: variant.brand → product.brand → product.productBrands[0].brand
-    const resolveBrand = (item: any) => {
-      const v = item.variant;
-      if (v?.brand?.name) return v.brand;
-      const p = v?.product;
-      if (p?.brand?.name) return p.brand;
-      const pb = p?.productBrands?.[0]?.brand;
-      if (pb?.name) return pb;
-      return null;
-    };
 
     for (const item of items) {
       const cat = (item as any).variant?.product?.category;
