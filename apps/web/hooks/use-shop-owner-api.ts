@@ -280,3 +280,63 @@ export function useAddShopStock() {
     }),
   );
 }
+
+// ────────────────────────────────────────────────────────────────
+// STOCK ADJUSTMENT HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Search shop variants for stock adjustment product picker */
+export function useSearchShopVariantsForAdjustment(search?: string) {
+  return useQuery(
+    orpc.shopOwner.searchShopVariantsForAdjustment.queryOptions({
+      input: { search: search || undefined, limit: 20 },
+      staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** Create a stock adjustment (auto-submitted, applies to inventory) */
+export function useCreateShopAdjustment() {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    orpc.shopOwner.createShopAdjustment.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyRetailProducts"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyInventory"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getShopProductsForStock"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getShopAdjustments"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyStorePreview"]],
+        });
+      },
+    }),
+  );
+}
+
+/** List shop adjustment history (paginated) */
+export function useShopAdjustments(params?: {
+  search?: string;
+  adjustmentType?: string;
+  page?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getShopAdjustments.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        adjustmentType: params?.adjustmentType as any,
+        page: params?.page ?? 1,
+        pageSize: 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
