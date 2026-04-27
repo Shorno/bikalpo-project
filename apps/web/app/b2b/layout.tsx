@@ -1,13 +1,12 @@
-import { LandingFooter } from "@/components/features/landing/landing-footer";
-import { LandingNavbar } from "@/components/features/landing/landing-navbar";
+import { B2bNavbar } from "@/components/features/landing/b2b/b2b-navbar";
+import { B2bFooter } from "@/components/features/landing/b2b/b2b-footer";
 
 export default function B2bLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* Google Material Symbols + Fonts */}
       {/* eslint-disable-next-line @next/next/no-page-custom-font */}
       <link
-        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=Hind+Siliguri:wght@400;500;600;700&display=swap"
         rel="stylesheet"
       />
       {/* eslint-disable-next-line @next/next/no-page-custom-font */}
@@ -16,15 +15,12 @@ export default function B2bLayout({ children }: { children: React.ReactNode }) {
         rel="stylesheet"
       />
       <div
-        style={{
-          fontFamily: "'Inter', sans-serif",
-          backgroundColor: "#f8f9fa",
-          color: "#191c1d",
-        }}
+        style={{ fontFamily: "'Inter', 'Hind Siliguri', sans-serif" }}
+        className="bg-[#f8f9fc] text-[#191c1d]"
       >
-        <LandingNavbar />
+        <B2bNavbar />
         <main>{children}</main>
-        <LandingFooter />
+        <B2bFooter />
       </div>
     </>
   );
