@@ -11,6 +11,7 @@ import {
   ChevronRight,
   BookOpen,
   Layers3,
+  Plus,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,8 +56,10 @@ export default function ProductCatalogPage() {
 
   const debouncedSearch = useDebounce(search, 300);
 
-  // Queries
+  // Fetch filter options (types, categories, subcategories)
   const { data: filterData, isLoading: filtersLoading } = useFilterOptions();
+
+  // Fetch catalog items with current filters
   const { data, isLoading, isError } = useCatalogHierarchy({
     typeId,
     categoryId,
@@ -68,9 +71,14 @@ export default function ProductCatalogPage() {
 
   const items = data?.items ?? [];
   const pagination = data?.pagination;
+
   const types = filterData?.types ?? [];
-  const categories = filterData?.categories ?? [];
-  const subCategories = filterData?.subCategories ?? [];
+  const categories = filterData?.categories?.filter(
+    (c: any) => !typeId || c.typeId === typeId
+  ) ?? [];
+  const subCategories = filterData?.subCategories?.filter(
+    (sc: any) => !categoryId || sc.categoryId === categoryId
+  ) ?? [];
 
   // Group items by type for visual separation
   const groupedByType = useMemo(() => {
@@ -117,6 +125,9 @@ export default function ProductCatalogPage() {
         />
       </div>
 
+
+
+
       {/* Product Table */}
       {isLoading || filtersLoading ? (
         <CatalogTableSkeleton />
@@ -159,7 +170,7 @@ export default function ProductCatalogPage() {
                     <TableHead>Sub Category</TableHead>
                     <TableHead>Core Identity</TableHead>
                     <TableHead className="w-[100px]">SKU</TableHead>
-                    <TableHead className="w-[80px] text-center">Action</TableHead>
+                    <TableHead className="w-[140px] text-center">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -204,16 +215,28 @@ export default function ProductCatalogPage() {
                         </code>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Link href={`/dashboard/product-catalog/${item.id}`}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                          >
-                            <Eye className="h-3.5 w-3.5 mr-1" />
-                            View
-                          </Button>
-                        </Link>
+                        <div className="flex items-center justify-center gap-1">
+                          <Link href={`/dashboard/product-catalog/${item.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                            >
+                              <Eye className="h-3.5 w-3.5 mr-1" />
+                              View
+                            </Button>
+                          </Link>
+                          <Link href={`/dashboard/product-catalog/add/${item.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            >
+                              <Plus className="h-3.5 w-3.5 mr-1" />
+                              Add
+                            </Button>
+                          </Link>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
