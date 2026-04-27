@@ -2,10 +2,11 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Check, ChevronRight, Loader2, Package, Plus,
-  Search, X,
+  ArrowLeft, Check, ChevronRight, Loader, Package, Plus,
+  Search, Tag, Box,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -50,7 +52,7 @@ export default function AddStockPage() {
 
   // Search
   const [productSearch, setProductSearch] = useState("");
-  const { data, isLoading } = useShopProductsForStock(productSearch);
+  const { data, isLoading: loadingProducts } = useShopProductsForStock(productSearch);
   const products: Product[] = (data as any)?.products ?? [];
 
   // Selection
@@ -82,6 +84,7 @@ export default function AddStockPage() {
 
   const totalAdding = previews.reduce((sum, v) => sum + v.addQty, 0);
   const hasEntries = totalAdding > 0;
+  const variantsChanged = previews.filter((v) => v.addQty > 0).length;
 
   // ─── Handlers ────────────────────────────────────────────────
 
@@ -134,7 +137,7 @@ export default function AddStockPage() {
     <div className="min-h-screen bg-muted/30">
       {/* Sticky Header */}
       <div className="sticky top-0 z-10 bg-background border-b">
-        <div className="px-4 py-3">
+        <div className="container mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Button asChild variant="ghost" size="icon">
@@ -161,16 +164,18 @@ export default function AddStockPage() {
                 onClick={handleSubmit}
                 disabled={isPending || !hasEntries}
               >
-                {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isPending && (
+                  <Loader className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 <Check className="mr-2 h-4 w-4" />
-                Save Stock
+                Confirm & Add Stock
               </Button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="px-4 py-6">
+      <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
@@ -204,9 +209,11 @@ export default function AddStockPage() {
                     onClick={handleClearProduct}
                   >
                     {selectedProduct.image && (
-                      <img
+                      <Image
                         src={selectedProduct.image}
                         alt={selectedProduct.name}
+                        width={40}
+                        height={40}
                         className="w-10 h-10 rounded-lg object-cover border"
                       />
                     )}
@@ -224,16 +231,16 @@ export default function AddStockPage() {
                     </Badge>
                   </div>
                 ) : (
-                  <div className="max-h-[280px] overflow-y-auto space-y-1">
-                    {isLoading ? (
+                  <div className="max-h-[250px] overflow-y-auto space-y-1">
+                    {loadingProducts ? (
                       <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
                       </div>
                     ) : products.length === 0 ? (
                       <div className="text-center py-8 text-sm text-muted-foreground">
                         {productSearch
                           ? "No products match your search"
-                          : "No products found. Create products first."}
+                          : "No products found. Create products from the catalog first."}
                       </div>
                     ) : (
                       products.map((p) => (
@@ -244,9 +251,11 @@ export default function AddStockPage() {
                           onClick={() => handleSelectProduct(p)}
                         >
                           {p.image ? (
-                            <img
+                            <Image
                               src={p.image}
                               alt={p.name}
+                              width={36}
+                              height={36}
                               className="w-9 h-9 rounded-md object-cover border"
                             />
                           ) : (
@@ -285,35 +294,58 @@ export default function AddStockPage() {
                     Enter the quantity to add for each variant
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  {/* Variant summary info */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg text-sm">
+                    <div>
+                      <span className="text-muted-foreground text-xs">Product</span>
+                      <p className="font-medium truncate">{selectedProduct.name}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Category</span>
+                      <p>{selectedProduct.category?.name || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Variants</span>
+                      <p>{selectedProduct.variants.length}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Total Stock</span>
+                      <p className="font-semibold">
+                        {selectedProduct.variants.reduce((s, v) => s + v.currentStock, 0)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Entry table */}
                   <div className="rounded-lg border overflow-hidden">
                     <Table>
                       <TableHeader>
-                        <TableRow className="text-xs bg-muted/30">
-                          <TableHead className="py-2">Brand</TableHead>
-                          <TableHead className="py-2">Variant</TableHead>
-                          <TableHead className="py-2">Unit</TableHead>
-                          <TableHead className="text-center py-2">Current</TableHead>
-                          <TableHead className="text-center py-2 w-[120px]">Add Qty</TableHead>
-                          <TableHead className="text-center py-2">Result</TableHead>
+                        <TableRow className="text-xs bg-gradient-to-r from-gray-50 to-white">
+                          <TableHead className="py-2.5 font-bold text-gray-700">Brand</TableHead>
+                          <TableHead className="py-2.5 font-bold text-gray-700">Variant</TableHead>
+                          <TableHead className="py-2.5 font-bold text-gray-700">Unit</TableHead>
+                          <TableHead className="text-center py-2.5 font-bold text-gray-700">Current Stock</TableHead>
+                          <TableHead className="text-center py-2.5 w-[120px] font-bold text-gray-700">Add Qty</TableHead>
+                          <TableHead className="text-center py-2.5 font-bold text-gray-700">Result Stock</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {previews.map((v) => (
-                          <TableRow key={v.inventoryId}>
-                            <TableCell className="text-sm py-2.5">
+                          <TableRow key={v.inventoryId} className="hover:bg-gray-50/50">
+                            <TableCell className="text-sm py-3">
                               {v.brandName || "—"}
                             </TableCell>
-                            <TableCell className="text-sm font-medium py-2.5">
+                            <TableCell className="text-sm font-medium py-3">
                               {v.unitLabel}
                             </TableCell>
-                            <TableCell className="text-xs text-muted-foreground py-2.5">
+                            <TableCell className="text-xs text-muted-foreground py-3">
                               {v.weightKg ? `${v.weightKg} KG` : "—"}
                             </TableCell>
-                            <TableCell className="text-center py-2.5">
+                            <TableCell className="text-center py-3">
                               <Badge
                                 variant="outline"
-                                className={`text-xs ${
+                                className={`text-xs font-bold ${
                                   v.currentStock > 10
                                     ? "border-emerald-200 text-emerald-700 bg-emerald-50"
                                     : v.currentStock > 0
@@ -324,7 +356,7 @@ export default function AddStockPage() {
                                 {v.currentStock}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-center py-2.5">
+                            <TableCell className="text-center py-3">
                               <Input
                                 type="text"
                                 inputMode="numeric"
@@ -339,14 +371,14 @@ export default function AddStockPage() {
                                 className="h-8 w-20 mx-auto text-center text-sm"
                               />
                             </TableCell>
-                            <TableCell className="text-center py-2.5">
+                            <TableCell className="text-center py-3">
                               {v.addQty > 0 ? (
-                                <div className="flex items-center justify-center gap-1">
+                                <div className="flex items-center justify-center gap-1.5">
                                   <span className="text-xs text-muted-foreground line-through">
                                     {v.currentStock}
                                   </span>
                                   <span className="text-sm font-bold text-emerald-600">
-                                    {v.newStock}
+                                    → {v.newStock}
                                   </span>
                                 </div>
                               ) : (
@@ -360,6 +392,18 @@ export default function AddStockPage() {
                       </TableBody>
                     </Table>
                   </div>
+
+                  {/* Auto conversion summary */}
+                  {hasEntries && (
+                    <div className="flex flex-col p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                      <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium mb-1">
+                        Stock Addition Summary
+                      </p>
+                      <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                        +{totalAdding} unit{totalAdding !== 1 ? "s" : ""} across {variantsChanged} variant{variantsChanged !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -376,21 +420,21 @@ export default function AddStockPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Stock type radio */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {/* Stock type radio (warehouse style) */}
+                  <div className="flex gap-3">
                     {(
                       [
-                        { value: "purchase", label: "Purchase Stock", emoji: "🛒" },
-                        { value: "return", label: "Return Stock", emoji: "↩️" },
-                        { value: "adjustment", label: "Adjustment", emoji: "⚙️" },
-                        { value: "opening", label: "Opening Stock", emoji: "📦" },
+                        { value: "purchase", label: "Purchase Stock", desc: "Bought from supplier" },
+                        { value: "return", label: "Return Stock", desc: "Returned from customer" },
+                        { value: "adjustment", label: "Adjustment", desc: "Manual correction" },
+                        { value: "opening", label: "Opening Stock", desc: "Initial inventory" },
                       ] as const
-                    ).map(({ value, label, emoji }) => (
+                    ).map(({ value, label, desc }) => (
                       <label
                         key={value}
-                        className={`flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors text-sm ${
+                        className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
                           stockType === value
-                            ? "bg-primary/5 border-primary/30 font-medium"
+                            ? "bg-primary/5 border-primary/30"
                             : "hover:bg-muted/50"
                         }`}
                       >
@@ -402,71 +446,52 @@ export default function AddStockPage() {
                           onChange={() => setStockType(value)}
                           className="accent-primary"
                         />
-                        <span>{emoji} {label}</span>
+                        <div>
+                          <p className="text-sm font-medium">{label}</p>
+                          <p className="text-xs text-muted-foreground">{desc}</p>
+                        </div>
                       </label>
                     ))}
                   </div>
 
                   {/* Note */}
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
-                      Note (Optional)
-                    </label>
+                  <Field>
+                    <FieldLabel>Note (Optional)</FieldLabel>
                     <Input
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
-                      placeholder="Any notes about this stock entry..."
+                      placeholder="Any additional notes about this stock entry..."
                     />
-                  </div>
+                  </Field>
                 </CardContent>
               </Card>
             )}
           </div>
 
-          {/* ── Sidebar: Live Preview ── */}
+          {/* ── Sidebar: Summary ── */}
           <div className="space-y-6">
             <Card className="sticky top-20">
               <CardHeader className="pb-4">
-                <CardTitle className="text-base">📊 Live Preview</CardTitle>
+                <CardTitle className="text-base">Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Product */}
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Product</p>
                   <p className="text-sm font-medium">
-                    {selectedProduct?.name || "— Select a product"}
+                    {selectedProduct?.name || "—"}
                   </p>
                 </div>
 
                 <Separator />
 
-                {/* Stock Changes */}
-                {hasEntries ? (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground mb-1">
-                      Stock Changes
-                    </p>
-                    {previews
-                      .filter((v) => v.addQty > 0)
-                      .map((v) => (
-                        <div
-                          key={v.inventoryId}
-                          className="flex items-center justify-between text-sm p-2 bg-emerald-50 rounded-md"
-                        >
-                          <span className="text-emerald-800 font-medium truncate">
-                            {v.brandName ? `${v.brandName} · ` : ""}{v.unitLabel}
-                          </span>
-                          <span className="text-emerald-700 shrink-0">
-                            {v.currentStock} → <span className="font-bold">{v.newStock}</span>
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Enter quantities above to see preview
+                {/* Category */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Category</p>
+                  <p className="text-sm font-medium">
+                    {selectedProduct?.category?.name || "—"}
                   </p>
-                )}
+                </div>
 
                 <Separator />
 
@@ -475,6 +500,52 @@ export default function AddStockPage() {
                   <p className="text-xs text-muted-foreground mb-1">Stock Type</p>
                   <p className="text-sm font-medium capitalize">{stockType}</p>
                 </div>
+
+                <Separator />
+
+                {/* Quantities */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Total Quantity</p>
+                  {hasEntries ? (
+                    <>
+                      <p className="text-sm font-semibold">
+                        +{totalAdding} unit{totalAdding !== 1 ? "s" : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {variantsChanged} variant{variantsChanged !== 1 ? "s" : ""}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">—</p>
+                  )}
+                </div>
+
+                {/* Live preview */}
+                {hasEntries && (
+                  <>
+                    <Separator />
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-2">Live Preview</p>
+                      <div className="space-y-1.5">
+                        {previews
+                          .filter((v) => v.addQty > 0)
+                          .map((v) => (
+                            <div
+                              key={v.inventoryId}
+                              className="flex items-center justify-between text-sm p-2 bg-emerald-50 rounded-md"
+                            >
+                              <span className="text-emerald-800 font-medium truncate text-xs">
+                                {v.brandName ? `${v.brandName} · ` : ""}{v.unitLabel}
+                              </span>
+                              <span className="text-emerald-700 shrink-0 text-xs">
+                                {v.currentStock} → <span className="font-bold">{v.newStock}</span>
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {note && (
                   <>
@@ -486,31 +557,17 @@ export default function AddStockPage() {
                   </>
                 )}
 
-                <Separator />
-
-                {/* Total */}
-                <div className="p-3 bg-primary/5 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Total Adding
-                  </p>
-                  <p className="text-lg font-bold text-primary">
-                    +{totalAdding} unit{totalAdding !== 1 ? "s" : ""}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    across{" "}
-                    {previews.filter((v) => v.addQty > 0).length} variant(s)
-                  </p>
-                </div>
-
                 {/* Action */}
                 <Button
                   className="w-full"
                   onClick={handleSubmit}
                   disabled={isPending || !hasEntries}
                 >
-                  {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isPending && (
+                    <Loader className="mr-2 h-4 w-4 animate-spin" />
+                  )}
                   <Check className="mr-2 h-4 w-4" />
-                  Save Stock
+                  Confirm & Add Stock
                 </Button>
               </CardContent>
             </Card>
