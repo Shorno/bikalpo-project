@@ -346,6 +346,174 @@ const b2bQueries = {
 
 const managementQueries = {
     /**
+     * Aggregated Stock Overview KPIs for the shop dashboard.
+     * Returns all metrics in a single call to avoid multiple round-trips.
+     */
+    getStockOverview: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch all inventory for this shop with variant + product + category + brand
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // 2. Aggregate metrics
+            const LOW_STOCK_THRESHOLD = 5;
+            const AT_RISK_THRESHOLD = 2;
+
+            let totalSKUs = 0;
+            let inStockCount = 0;
+            let lowStockCount = 0;
+            let outOfStockCount = 0;
+            let totalStockValue = 0;
+            let atRiskCount = 0;
+
+            const productSet = new Set<number>();
+            const categoryMap = new Map<string, { totalQty: number; hasWeight: boolean }>();
+            const productStockMap = new Map<number, {
+                name: string;
+                totalQty: number;
+                unit: string;
+                image: string | null;
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+
+                totalSKUs++;
+                const qty = parseFloat(inv.availableQty || "0");
+                const retailPrice = parseFloat(inv.retailPrice || "0");
+                const variantPrice = parseFloat(inv.variant.price || "0");
+                const effectivePrice = retailPrice > 0 ? retailPrice : variantPrice;
+
+                totalStockValue += qty * effectivePrice;
+                productSet.add(inv.variant.product.id);
+
+                // Stock status
+                if (qty <= 0) outOfStockCount++;
+                else if (qty <= LOW_STOCK_THRESHOLD) lowStockCount++;
+                else inStockCount++;
+
+                // At risk
+                if (qty > 0 && qty <= AT_RISK_THRESHOLD) atRiskCount++;
+
+                // Category snapshot
+                const catName = inv.variant.product.category?.name || "Uncategorized";
+                const hasWeight = parseFloat(inv.variant.weightKg || "0") > 0;
+                const existing = categoryMap.get(catName);
+                if (existing) {
+                    existing.totalQty += qty;
+                    if (hasWeight) existing.hasWeight = true;
+                } else {
+                    categoryMap.set(catName, { totalQty: qty, hasWeight });
+                }
+
+                // Product stock aggregation for top products
+                const pid = inv.variant.product.id;
+                const pEntry = productStockMap.get(pid);
+                const weightKg = parseFloat(inv.variant.weightKg || "0");
+                if (pEntry) {
+                    pEntry.totalQty += qty;
+                } else {
+                    productStockMap.set(pid, {
+                        name: inv.variant.product.name,
+                        totalQty: qty,
+                        unit: weightKg > 0 ? "KG" : "pcs",
+                        image: inv.variant.product.image,
+                    });
+                }
+            }
+
+            // 3. Category snapshot — top 6 categories
+            const categorySnapshot = Array.from(categoryMap.entries())
+                .map(([name, data]) => ({
+                    categoryName: name,
+                    totalQty: Math.round(data.totalQty * 100) / 100,
+                    unit: data.hasWeight ? "KG" : "pcs",
+                }))
+                .sort((a, b) => b.totalQty - a.totalQty)
+                .slice(0, 6);
+
+            // 4. Top products — top 5 by stock qty
+            const topProducts = Array.from(productStockMap.values())
+                .sort((a, b) => b.totalQty - a.totalQty)
+                .slice(0, 5)
+                .map((p) => ({
+                    productName: p.name,
+                    totalQty: Math.round(p.totalQty * 100) / 100,
+                    unit: p.unit,
+                    image: p.image,
+                    status: p.totalQty > 20
+                        ? ("high" as const)
+                        : p.totalQty > 5
+                            ? ("available" as const)
+                            : ("low" as const),
+                }));
+
+            // 5. Damage alert — count active damage entries in last 30 days
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const [damageResult] = await db
+                .select({ count: count() })
+                .from(damageEntry)
+                .where(
+                    and(
+                        eq(damageEntry.shopId, userId),
+                        eq(damageEntry.status, "active"),
+                        gte(damageEntry.createdAt, thirtyDaysAgo),
+                    ),
+                );
+
+            return {
+                // Main KPIs
+                totalProducts: productSet.size,
+                totalSKUs,
+                totalStockValue: Math.round(totalStockValue * 100) / 100,
+
+                // Stock Status
+                inStockCount,
+                lowStockCount,
+                outOfStockCount,
+
+                // Category Snapshot
+                categorySnapshot,
+
+                // Alert Summary
+                alerts: {
+                    lowStock: lowStockCount,
+                    expiringSoon: 0, // No expiry field yet
+                    damaged: damageResult?.count ?? 0,
+                },
+
+                // Top Products
+                topProducts,
+
+                // Insights
+                insights: {
+                    fastMoving: null as string | null,  // Needs sales data
+                    slowMoving: null as string | null,  // Needs sales data
+                    atRiskCount,
+                },
+            };
+        }),
+
+    /**
      * Get shop owner's retail products (what they sell to consumers).
      * Shows RETAIL variants with inventory info.
      */

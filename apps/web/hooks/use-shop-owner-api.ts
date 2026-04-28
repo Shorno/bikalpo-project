@@ -50,6 +50,16 @@ export function useShopOwnerProductDetails(slug: string) {
 // MANAGEMENT QUERY HOOKS (Shop Owner as Seller)
 // ────────────────────────────────────────────────────────────────
 
+/** Aggregated stock overview KPIs for the dashboard */
+export function useStockOverview() {
+  return useQuery(
+    orpc.shopOwner.getStockOverview.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2, // 2 min cache
+    }),
+  );
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;
