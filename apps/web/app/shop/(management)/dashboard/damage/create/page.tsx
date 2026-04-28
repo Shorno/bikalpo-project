@@ -107,7 +107,7 @@ export default function CreateDamageEntryPage() {
           brandName: variant.brandName,
           currentQty: variant.availableQty,
           qty: "",
-          unitPrice: "",
+          unitPrice: variant.retailPrice?.toString() || "0",
           note: "",
         },
       ]);
@@ -159,7 +159,7 @@ export default function CreateDamageEntryPage() {
       .map((i) => ({
         inventoryId: i.inventoryId,
         qty: i.qtyNum,
-        unitPrice: i.unitPriceNum > 0 ? i.unitPriceNum : undefined,
+        unitPrice: undefined, // Always use backend auto calculation
         note: i.note || undefined,
       }));
 
@@ -389,8 +389,8 @@ export default function CreateDamageEntryPage() {
                           Auto
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-gray-400">
-                        —
+                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-red-600">
+                        {item.totalValue > 0 ? `৳${item.totalValue.toLocaleString("en-IN")}` : "—"}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <button type="button" onClick={() => removeItem(item.inventoryId)} className="text-gray-400 hover:text-red-500 transition-colors">
@@ -457,6 +457,12 @@ export default function CreateDamageEntryPage() {
             <div>
               <span className="text-xs text-gray-400">Total Qty</span>
               <p className="font-bold text-gray-900">{totalQty} Units</p>
+            </div>
+            <div>
+              <span className="text-xs text-gray-400">Total Loss (Est.)</span>
+              <p className="font-bold text-red-600 tabular-nums">
+                ৳ {totalLoss.toLocaleString("en-IN")}
+              </p>
             </div>
           </div>
           {hasQtyExceedsStock && (

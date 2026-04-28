@@ -3682,6 +3682,7 @@ const shopProductEndpoints = {
                     productImage: product.image,
                     brandName: brand.name,
                     availableQty: inventory.availableQty,
+                    retailPrice: inventory.retailPrice,
                 })
                 .from(inventory)
                 .innerJoin(
@@ -3710,6 +3711,7 @@ const shopProductEndpoints = {
                     productImage: r.productImage,
                     brandName: r.brandName,
                     availableQty: parseFloat(r.availableQty || "0"),
+                    retailPrice: parseFloat(r.retailPrice || "0"),
                 })),
             };
         }),
