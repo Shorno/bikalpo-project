@@ -35,6 +35,8 @@ type CartItem = {
   productImage: string;
   innerPackSizeKg?: string | null;
   packCountInside?: number | null;
+  supplyMode: "loose" | "pack";
+  targetVariantId?: number;
 };
 
 type VariantItem = {
@@ -587,6 +589,8 @@ function VariantModal({
                         productImage: product.image || "",
                         innerPackSizeKg: selected.variant.innerPackSizeKg,
                         packCountInside: selected.variant.packCountInside,
+                        supplyMode: isLoose ? "loose" : "pack",
+                        targetVariantId: isLoose ? undefined : selected.variantId,
                       });
                       onClose();
                     }}
@@ -929,7 +933,7 @@ export default function OrderFromWarehousePage() {
             <button onClick={() => setStep("browse")} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Back</button>
             <button onClick={() => {
               if (!shippingName || !shippingPhone || !shippingAddress || !shippingCity) { alert("Please fill in all required shipping fields"); return; }
-              orderMutation.mutate({ warehouseSlug: selectedSlug!, items: cart.map((c) => ({ variantId: c.variantId, quantity: c.quantity })), shippingName, shippingPhone, shippingAddress, shippingCity, customerNote: customerNote || undefined });
+              orderMutation.mutate({ warehouseSlug: selectedSlug!, items: cart.map((c) => ({ variantId: c.variantId, quantity: c.quantity, supplyMode: c.supplyMode, targetVariantId: c.targetVariantId })), shippingName, shippingPhone, shippingAddress, shippingCity, customerNote: customerNote || undefined });
             }} disabled={orderMutation.isPending}
               className="flex-1 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
               {orderMutation.isPending ? (<><Loader2 size={14} className="animate-spin" /> Placing Order...</>) : (<>Place Order — ৳{cartTotal.toLocaleString()}</>)}
