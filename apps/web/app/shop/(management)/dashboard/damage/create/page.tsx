@@ -71,9 +71,11 @@ export default function CreateDamageEntryPage() {
     useSearchShopVariantsForAdjustment(debouncedSearch || undefined);
   const allVariants: any[] = (searchData as any)?.variants ?? [];
 
-  // Filter out already-selected items for the picker list
+  // Filter out already-selected items and zero-stock variants for the picker list
   const availableVariants = allVariants.filter(
-    (v: any) => !selectedItems.some((i) => i.inventoryId === v.inventoryId),
+    (v: any) =>
+      v.availableQty > 0 &&
+      !selectedItems.some((i) => i.inventoryId === v.inventoryId),
   );
 
   const createMutation = useCreateDamageEntry();
