@@ -1843,6 +1843,8 @@ const warehouseOrderQueries = {
                     z.object({
                         variantId: z.number(),
                         quantity: z.number().min(1),
+                        supplyMode: z.enum(["loose", "pack"]).default("loose"),
+                        targetVariantId: z.number().optional(),
                     }),
                 ).min(1),
                 shippingName: z.string().min(1),
@@ -1887,6 +1889,8 @@ const warehouseOrderQueries = {
                 productId: number;
                 inventoryId: number;
                 currentQty: string;
+                supplyMode: string;
+                targetVariantId: number | null;
             }[] = [];
 
             for (const item of input.items) {
@@ -1926,6 +1930,22 @@ const warehouseOrderQueries = {
                 const unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
+                // Validate targetVariantId for pack mode
+                let resolvedTargetVariantId: number | null = item.targetVariantId ?? null;
+                if (item.supplyMode === "pack" && item.targetVariantId) {
+                    const targetVar = await db.query.productVariant.findFirst({
+                        where: and(
+                            eq(productVariant.id, item.targetVariantId),
+                            eq(productVariant.productId, inv.variant?.product?.id || 0),
+                        ),
+                    });
+                    if (!targetVar) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Target variant ${item.targetVariantId} not found for product ${inv.variant?.product?.name}`,
+                        });
+                    }
+                }
+
                 validatedItems.push({
                     variantId: item.variantId,
                     quantity: item.quantity,
@@ -1937,6 +1957,8 @@ const warehouseOrderQueries = {
                     productId: inv.variant?.product?.id || 0,
                     inventoryId: inv.id,
                     currentQty: inv.availableQty,
+                    supplyMode: item.supplyMode,
+                    targetVariantId: resolvedTargetVariantId,
                 });
             }
 
@@ -1983,6 +2005,9 @@ const warehouseOrderQueries = {
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         totalPrice: item.totalPrice,
+                        supplyMode: item.supplyMode,
+                        targetVariantId: item.targetVariantId,
+                        conversionStatus: "pending",
                     });
                 }
 
