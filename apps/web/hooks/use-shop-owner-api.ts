@@ -60,6 +60,24 @@ export function useStockOverview() {
   );
 }
 
+/** Real-time stock grouped by product with pack/loose breakdown */
+export function useRealtimeStock(params?: {
+  search?: string;
+  categoryId?: number;
+  status?: "all" | "in_stock" | "low" | "out_of_stock";
+}) {
+  return useQuery(
+    orpc.shopOwner.getRealtimeStock.queryOptions({
+      input: {
+        search: params?.search,
+        categoryId: params?.categoryId,
+        status: params?.status ?? "all",
+      },
+      staleTime: 1000 * 30, // 30s for real-time feel
+    }),
+  );
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;

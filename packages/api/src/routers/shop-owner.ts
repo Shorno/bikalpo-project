@@ -514,6 +514,172 @@ const managementQueries = {
         }),
 
     /**
+     * Real-time stock view grouped by product.
+     * Shows pack (carton-packed) vs loose breakdown at product level,
+     * with variant-level detail for the expanded view.
+     */
+    getRealtimeStock: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                categoryId: z.number().int().optional(),
+                status: z.enum(["all", "in_stock", "low", "out_of_stock"]).default("all"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch all inventory for this shop
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // 2. Group by product
+            const LOW_STOCK_THRESHOLD = 5;
+
+            type VariantDetail = {
+                variantId: number;
+                inventoryId: number;
+                sku: string | null;
+                brandName: string | null;
+                weightKg: string;
+                unitLabel: string;
+                packType: string | null;
+                availableQty: number;
+                inCartonQty: number;
+                looseQty: number;
+                retailPrice: number;
+            };
+
+            type ProductGroup = {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                sku: string | null;
+                categoryId: number | null;
+                categoryName: string | null;
+                totalAvailableQty: number;
+                totalPackQty: number;
+                totalLooseQty: number;
+                looseUnit: string;
+                variants: VariantDetail[];
+            };
+
+            const productMap = new Map<number, ProductGroup>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+
+                const prod = inv.variant.product;
+                const pid = prod.id;
+                const qty = parseFloat(inv.availableQty || "0");
+                const cartonQty = parseFloat(inv.inCartonQty || "0");
+                const looseQty = qty - cartonQty;
+                const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
+
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        sku: prod.sku,
+                        categoryId: prod.category?.id ?? null,
+                        categoryName: prod.category?.name ?? null,
+                        totalAvailableQty: 0,
+                        totalPackQty: 0,
+                        totalLooseQty: 0,
+                        looseUnit: inv.variant.unitLabel || "pcs",
+                        variants: [],
+                    });
+                }
+
+                const group = productMap.get(pid)!;
+                group.totalAvailableQty += qty;
+                group.totalPackQty += cartonQty;
+                group.totalLooseQty += looseQty;
+
+                group.variants.push({
+                    variantId: inv.variant.id,
+                    inventoryId: inv.id,
+                    sku: inv.variant.sku,
+                    brandName: inv.variant.brand?.name ?? null,
+                    weightKg: inv.variant.weightKg,
+                    unitLabel: inv.variant.unitLabel,
+                    packType: inv.variant.packagingType,
+                    availableQty: qty,
+                    inCartonQty: cartonQty,
+                    looseQty: Math.max(0, looseQty),
+                    retailPrice,
+                });
+            }
+
+            // 3. Convert to array, apply filters
+            let products = Array.from(productMap.values());
+
+            // Search filter
+            if (input.search?.trim()) {
+                const s = input.search.toLowerCase();
+                products = products.filter(
+                    (p) =>
+                        p.productName.toLowerCase().includes(s) ||
+                        (p.sku && p.sku.toLowerCase().includes(s)) ||
+                        p.variants.some((v) => v.sku?.toLowerCase().includes(s)) ||
+                        p.variants.some((v) => v.brandName?.toLowerCase().includes(s)),
+                );
+            }
+
+            // Category filter
+            if (input.categoryId) {
+                products = products.filter((p) => p.categoryId === input.categoryId);
+            }
+
+            // Status filter
+            const withStatus = products.map((p) => {
+                const status: "in_stock" | "low" | "out_of_stock" =
+                    p.totalAvailableQty <= 0
+                        ? "out_of_stock"
+                        : p.totalAvailableQty <= LOW_STOCK_THRESHOLD
+                            ? "low"
+                            : "in_stock";
+                return { ...p, status };
+            });
+
+            const filtered =
+                input.status === "all"
+                    ? withStatus
+                    : withStatus.filter((p) => p.status === input.status);
+
+            // 4. Derive unique categories for filter dropdown
+            const categorySet = new Map<number, string>();
+            for (const p of Array.from(productMap.values())) {
+                if (p.categoryId && p.categoryName) {
+                    categorySet.set(p.categoryId, p.categoryName);
+                }
+            }
+
+            return {
+                products: filtered.sort((a, b) => a.productName.localeCompare(b.productName)),
+                categories: Array.from(categorySet.entries()).map(([id, name]) => ({ id, name })),
+                totalCount: filtered.length,
+            };
+        }),
+
+    /**
      * Get shop owner's retail products (what they sell to consumers).
      * Shows RETAIL variants with inventory info.
      */
@@ -3481,7 +3647,7 @@ const shopProductEndpoints = {
                     sku: inv.variant.sku,
                     unitLabel: inv.variant.unitLabel,
                     weightKg: inv.variant.weightKg,
-                    packType: inv.variant.packType,
+                    packType: inv.variant.packagingType,
                     brandId: inv.variant.brandId,
                     brandName: inv.variant.brand?.name ?? null,
                     brandLogo: inv.variant.brand?.logo ?? null,
