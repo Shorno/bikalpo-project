@@ -78,6 +78,16 @@ export function useRealtimeStock(params?: {
   );
 }
 
+/** Low stock products with variant-level detail */
+export function useLowStockProducts() {
+  return useQuery(
+    orpc.shopOwner.getLowStockProducts.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60, // 1 min cache
+    }),
+  );
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;

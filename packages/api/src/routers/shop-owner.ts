@@ -680,6 +680,192 @@ const managementQueries = {
         }),
 
     /**
+     * Low stock products — only products with variants below their reorderLevel.
+     * Classifies as "low" or "critical" (≤ 50% of threshold).
+     */
+    getLowStockProducts: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+            const DEFAULT_THRESHOLD = 5;
+
+            // Fetch inventory with variant + product + brand
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // Classify each variant
+            type VariantInfo = {
+                variantId: number;
+                brandName: string | null;
+                weightKg: string;
+                unitLabel: string;
+                availableQty: number;
+                inCartonQty: number;
+                looseQty: number;
+                reorderLevel: number;
+                status: "ok" | "low" | "critical" | "out_of_stock";
+            };
+
+            type ProductLow = {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                sku: string | null;
+                totalStock: number;
+                stockUnit: string;
+                issueLabel: string;
+                status: "low" | "critical";
+                variants: VariantInfo[];
+                minimumLevels: { label: string; minimum: number; unit: string }[];
+                alertReasons: string[];
+            };
+
+            const productMap = new Map<number, ProductLow>();
+            let criticalItems = 0;
+            let totalShortage = 0;
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+
+                const prod = inv.variant.product;
+                const pid = prod.id;
+                const qty = parseFloat(inv.availableQty || "0");
+                const cartonQty = parseFloat(inv.inCartonQty || "0");
+                const threshold = inv.variant.reorderLevel > 0
+                    ? inv.variant.reorderLevel
+                    : (prod.reorderLevel > 0 ? prod.reorderLevel : DEFAULT_THRESHOLD);
+
+                // Classify variant
+                let variantStatus: "ok" | "low" | "critical" | "out_of_stock";
+                if (qty <= 0) variantStatus = "out_of_stock";
+                else if (qty <= threshold * 0.5) variantStatus = "critical";
+                else if (qty <= threshold) variantStatus = "low";
+                else variantStatus = "ok";
+
+                // Skip healthy variants for the low stock page aggregation
+                const isLow = variantStatus !== "ok";
+
+                const variantInfo: VariantInfo = {
+                    variantId: inv.variant.id,
+                    brandName: inv.variant.brand?.name ?? null,
+                    weightKg: inv.variant.weightKg,
+                    unitLabel: inv.variant.unitLabel,
+                    availableQty: qty,
+                    inCartonQty: cartonQty,
+                    looseQty: Math.max(0, qty - cartonQty),
+                    reorderLevel: threshold,
+                    status: variantStatus,
+                };
+
+                // Track KPI metrics for low/critical variants
+                if (isLow) {
+                    if (variantStatus === "critical") criticalItems++;
+                    const shortage = Math.max(0, threshold - qty);
+                    totalShortage += shortage;
+                }
+
+                // Group by product — include all variants for expanded detail
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        sku: prod.sku,
+                        totalStock: 0,
+                        stockUnit: inv.variant.unitLabel || "pcs",
+                        issueLabel: "",
+                        status: "low",
+                        variants: [],
+                        minimumLevels: [],
+                        alertReasons: [],
+                    });
+                }
+
+                const group = productMap.get(pid)!;
+                group.totalStock += qty;
+                group.variants.push(variantInfo);
+
+                // Build minimum level config
+                const weightLabel = parseFloat(inv.variant.weightKg || "0") > 0
+                    ? `${inv.variant.weightKg}KG`
+                    : inv.variant.unitLabel;
+                group.minimumLevels.push({
+                    label: `${weightLabel} Variant`,
+                    minimum: threshold,
+                    unit: inv.variant.unitLabel || "Pack",
+                });
+
+                // Track alert reasons for low variants
+                if (isLow) {
+                    const reason = `${weightLabel} ${variantStatus === "critical" ? "Critical" : "Low"}`;
+                    group.alertReasons.push(reason);
+                }
+            }
+
+            // Filter to only products that have at least 1 low/critical variant
+            const lowProducts: ProductLow[] = [];
+
+            for (const group of productMap.values()) {
+                const hasLowVariant = group.variants.some(
+                    (v) => v.status === "low" || v.status === "critical" || v.status === "out_of_stock",
+                );
+                if (!hasLowVariant) continue;
+
+                // Determine product-level status and issue label
+                const hasCritical = group.variants.some((v) => v.status === "critical" || v.status === "out_of_stock");
+                group.status = hasCritical ? "critical" : "low";
+
+                // Build issue label from the most urgent variant
+                const worstVariant = group.variants
+                    .filter((v) => v.status !== "ok")
+                    .sort((a, b) => {
+                        const order = { out_of_stock: 0, critical: 1, low: 2, ok: 3 };
+                        return order[a.status] - order[b.status];
+                    })[0];
+
+                if (worstVariant) {
+                    const wt = parseFloat(worstVariant.weightKg || "0") > 0
+                        ? `${worstVariant.weightKg}KG`
+                        : worstVariant.unitLabel;
+                    group.issueLabel = `${wt} ${worstVariant.status === "critical" ? "Critical" : "Low"}`;
+                }
+
+                lowProducts.push(group);
+            }
+
+            // Sort: critical first, then low
+            lowProducts.sort((a, b) => {
+                if (a.status === "critical" && b.status !== "critical") return -1;
+                if (a.status !== "critical" && b.status === "critical") return 1;
+                return a.productName.localeCompare(b.productName);
+            });
+
+            return {
+                summary: {
+                    lowProducts: lowProducts.length,
+                    criticalItems,
+                    totalShortage: Math.round(totalShortage),
+                },
+                products: lowProducts,
+            };
+        }),
+
+    /**
      * Get shop owner's retail products (what they sell to consumers).
      * Shows RETAIL variants with inventory info.
      */
