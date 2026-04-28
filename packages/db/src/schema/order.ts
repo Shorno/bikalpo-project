@@ -9,6 +9,7 @@ import {
     serial,
     text,
     timestamp,
+    varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { product } from "./product";
@@ -170,6 +171,22 @@ export const orderItem = pgTable(
         quantity: integer("quantity").notNull(),
         unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
         totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+
+        // === B2B → B2C Conversion Fields ===
+
+        /** Supply mode selected by shop: "loose" or "pack" */
+        supplyMode: varchar("supply_mode", { length: 20 }),
+
+        /** Target RETAIL variant for pack conversion (the 1KG/2KG/5KG variant) */
+        targetVariantId: integer("target_variant_id")
+            .references(() => productVariant.id, { onDelete: "set null" }),
+
+        /** Conversion result: pending | converted | failed */
+        conversionStatus: varchar("conversion_status", { length: 20 })
+            .default("pending"),
+
+        /** Actual quantity received in shop inventory after conversion */
+        convertedQty: decimal("converted_qty", { precision: 12, scale: 2 }),
 
         createdAt: timestamp("created_at").defaultNow().notNull(),
     },
