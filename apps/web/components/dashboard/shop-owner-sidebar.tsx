@@ -63,7 +63,18 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Supply & Purchasing",
     items: [
-      { title: "Stock", url: `${D}/stock`, icon: BoxesIcon },
+      {
+        title: "Stock Control",
+        url: `${D}/stock`,
+        icon: BoxesIcon,
+        items: [
+          { title: "Stock Overview", url: `${D}/stock` },
+          { title: "Stock (Real-time)", url: `${D}/stock/live` },
+          { title: "Low Stock", url: `${D}/stock/low` },
+          { title: "Expired Products", url: `${D}/stock/expired` },
+          { title: "Empty Pack", url: `${D}/stock/empty-pack` },
+        ],
+      },
       { title: "Add Stock", url: `${D}/stock/add`, icon: PlusCircleIcon },
       { title: "Stock Adjustment", url: `${D}/stock-adjustment`, icon: ArrowRightLeftIcon },
       { title: "Damage", url: `${D}/damage`, icon: AlertTriangleIcon },
