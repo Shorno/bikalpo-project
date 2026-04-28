@@ -866,6 +866,186 @@ const managementQueries = {
         }),
 
     /**
+     * Expired products — damage entries with type 'expired',
+     * plus expiry-enabled products as a watchlist.
+     */
+    getExpiredProducts: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get all expired damage entries for this shop
+            const expiredEntries = await db.query.damageEntry.findMany({
+                where: and(
+                    eq(damageEntry.shopId, userId),
+                    eq(damageEntry.damageType, "expired"),
+                    eq(damageEntry.status, "active"),
+                ),
+                with: {
+                    items: {
+                        with: {
+                            variant: {
+                                with: {
+                                    product: {
+                                        columns: { id: true, name: true, image: true, sku: true },
+                                    },
+                                    brand: { columns: { id: true, name: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+                orderBy: [desc(damageEntry.entryDate)],
+            });
+
+            // 2. Group expired items by product
+            type ExpiredVariant = {
+                variantId: number;
+                brandName: string | null;
+                weightKg: string;
+                unitLabel: string;
+                qty: number;
+                unitPrice: number;
+                totalValue: number;
+                entryDate: string;
+            };
+
+            type ExpiredProduct = {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                expiredQty: number;
+                unit: string;
+                lastExpiryDate: string;
+                status: "expired";
+                lossValue: number;
+                variants: ExpiredVariant[];
+            };
+
+            const productMap = new Map<number, ExpiredProduct>();
+            let totalLoss = 0;
+
+            for (const entry of expiredEntries) {
+                for (const item of entry.items) {
+                    if (!item.variant?.product) continue;
+
+                    const prod = item.variant.product;
+                    const pid = prod.id;
+                    const qty = item.qty;
+                    const unitPrice = parseFloat(item.unitPrice || "0");
+                    const totalValue = parseFloat(item.totalValue || "0");
+
+                    totalLoss += totalValue;
+
+                    if (!productMap.has(pid)) {
+                        productMap.set(pid, {
+                            productId: pid,
+                            productName: prod.name,
+                            productImage: prod.image,
+                            expiredQty: 0,
+                            unit: item.variant.unitLabel || "pcs",
+                            lastExpiryDate: entry.entryDate,
+                            status: "expired",
+                            lossValue: 0,
+                            variants: [],
+                        });
+                    }
+
+                    const group = productMap.get(pid)!;
+                    group.expiredQty += qty;
+                    group.lossValue += totalValue;
+
+                    // Keep the most recent entry date
+                    if (entry.entryDate > group.lastExpiryDate) {
+                        group.lastExpiryDate = entry.entryDate;
+                    }
+
+                    group.variants.push({
+                        variantId: item.variant.id,
+                        brandName: item.variant.brand?.name ?? null,
+                        weightKg: item.variant.weightKg,
+                        unitLabel: item.variant.unitLabel,
+                        qty,
+                        unitPrice,
+                        totalValue,
+                        entryDate: entry.entryDate,
+                    });
+                }
+            }
+
+            const expiredProducts = Array.from(productMap.values())
+                .sort((a, b) => b.lastExpiryDate.localeCompare(a.lastExpiryDate));
+
+            // 3. Get expiry-enabled products in shop inventory (watchlist)
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                    expiryEnabled: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            const watchlistMap = new Map<number, {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                availableQty: number;
+                unit: string;
+                expiryEnabled: boolean;
+                shelfLife: string | null;
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product?.expiryEnabled) continue;
+
+                const prod = inv.variant.product;
+                const pid = prod.id;
+                const qty = parseFloat(inv.availableQty || "0");
+
+                if (qty <= 0) continue;
+
+                if (!watchlistMap.has(pid)) {
+                    watchlistMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        availableQty: 0,
+                        unit: inv.variant.unitLabel || "pcs",
+                        expiryEnabled: true,
+                        shelfLife: inv.variant.shelfLife,
+                    });
+                }
+
+                const w = watchlistMap.get(pid)!;
+                w.availableQty += qty;
+            }
+
+            const expiryEnabledProducts = Array.from(watchlistMap.values());
+
+            return {
+                summary: {
+                    expiredProducts: expiredProducts.length,
+                    expiringSoon: expiryEnabledProducts.length,
+                    lossValue: Math.round(totalLoss * 100) / 100,
+                },
+                expiredProducts,
+                expiryEnabledProducts,
+            };
+        }),
+
+    /**
      * Get shop owner's retail products (what they sell to consumers).
      * Shows RETAIL variants with inventory info.
      */

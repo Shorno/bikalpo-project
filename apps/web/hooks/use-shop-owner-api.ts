@@ -88,6 +88,16 @@ export function useLowStockProducts() {
   );
 }
 
+/** Expired products from damage entries + expiry watchlist */
+export function useExpiredProducts() {
+  return useQuery(
+    orpc.shopOwner.getExpiredProducts.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2, // 2 min cache
+    }),
+  );
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;
