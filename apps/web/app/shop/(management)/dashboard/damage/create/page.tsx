@@ -384,18 +384,13 @@ export default function CreateDamageEntryPage() {
                           className={`h-8 text-sm text-center tabular-nums font-bold w-20 mx-auto ${exceeds ? "border-red-300 text-red-600" : ""}`}
                         />
                       </td>
-                      <td className="py-2.5 px-3">
-                        <Input
-                          type="number"
-                          min={0}
-                          value={item.unitPrice}
-                          onChange={(e) => updateItem(item.inventoryId, "unitPrice", e.target.value)}
-                          placeholder="Auto"
-                          className="h-8 text-sm text-center tabular-nums w-24 mx-auto"
-                        />
+                      <td className="py-2.5 px-3 text-center">
+                        <span className="inline-flex items-center justify-center h-8 px-3 text-xs font-medium text-gray-500 bg-gray-100 rounded-md">
+                          Auto
+                        </span>
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-red-600">
-                        {item.totalValue > 0 ? `৳${item.totalValue.toLocaleString("en-IN")}` : "—"}
+                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-gray-400">
+                        —
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <button type="button" onClick={() => removeItem(item.inventoryId)} className="text-gray-400 hover:text-red-500 transition-colors">
@@ -462,12 +457,6 @@ export default function CreateDamageEntryPage() {
             <div>
               <span className="text-xs text-gray-400">Total Qty</span>
               <p className="font-bold text-gray-900">{totalQty} Units</p>
-            </div>
-            <div>
-              <span className="text-xs text-gray-400">Total Loss</span>
-              <p className="font-bold text-red-600 tabular-nums">
-                ৳ {totalLoss.toLocaleString("en-IN")}
-              </p>
             </div>
           </div>
           {hasQtyExceedsStock && (
