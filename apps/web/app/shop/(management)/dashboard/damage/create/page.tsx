@@ -65,11 +65,16 @@ export default function CreateDamageEntryPage() {
   // Product search
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [showSearchResults, setShowSearchResults] = useState(false);
 
+  // Load ALL products on mount (empty search returns all), filter via debouncedSearch
   const { data: searchData, isLoading: searchLoading } =
-    useSearchShopVariantsForAdjustment(debouncedSearch);
-  const searchResults = (searchData as any)?.variants ?? [];
+    useSearchShopVariantsForAdjustment(debouncedSearch || undefined);
+  const allVariants: any[] = (searchData as any)?.variants ?? [];
+
+  // Filter out already-selected items for the picker list
+  const availableVariants = allVariants.filter(
+    (v: any) => !selectedItems.some((i) => i.inventoryId === v.inventoryId),
+  );
 
   const createMutation = useCreateDamageEntry();
 
@@ -78,7 +83,6 @@ export default function CreateDamageEntryPage() {
     clearTimeout((window as any).__dmgProductSearch);
     (window as any).__dmgProductSearch = setTimeout(() => {
       setDebouncedSearch(value);
-      setShowSearchResults(value.length >= 1);
     }, 300);
   }, []);
 
@@ -105,9 +109,6 @@ export default function CreateDamageEntryPage() {
           note: "",
         },
       ]);
-      setSearchTerm("");
-      setDebouncedSearch("");
-      setShowSearchResults(false);
     },
     [selectedItems],
   );
@@ -268,73 +269,76 @@ export default function CreateDamageEntryPage() {
           📦 Select Damaged Products
         </h2>
 
-        {/* Search */}
+        {/* Search filter */}
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10" />
           <Input
-            placeholder="Search by product name, SKU, or brand..."
+            placeholder="Filter products by name, SKU, or brand..."
             value={searchTerm}
             onChange={(e) => handleSearchInput(e.target.value)}
-            onFocus={() => {
-              if (debouncedSearch.length >= 1) setShowSearchResults(true);
-            }}
             className="pl-9 h-10 text-sm"
           />
-
-          {showSearchResults && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-72 overflow-y-auto">
-              {searchLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2Icon size={20} className="animate-spin text-gray-400" />
-                </div>
-              ) : searchResults.length === 0 ? (
-                <div className="py-6 text-center text-sm text-gray-400">No variants found</div>
-              ) : (
-                searchResults.map((v: any) => {
-                  const alreadyAdded = selectedItems.some((i) => i.inventoryId === v.inventoryId);
-                  return (
-                    <button
-                      key={v.inventoryId}
-                      type="button"
-                      disabled={alreadyAdded}
-                      onClick={() => addItem(v)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors border-b last:border-0 ${
-                        alreadyAdded ? "bg-gray-50 opacity-50 cursor-not-allowed" : "hover:bg-red-50"
-                      }`}
-                    >
-                      <div className="shrink-0 w-8 h-8 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
-                        {v.productImage ? (
-                          <Image src={v.productImage} alt={v.productName} width={32} height={32} className="w-8 h-8 object-cover" unoptimized={v.productImage.startsWith("http")} />
-                        ) : (
-                          <Package size={14} className="text-gray-400" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{v.productName}</p>
-                        <p className="text-[11px] text-gray-500">
-                          {v.brandName ? `${v.brandName} · ` : ""}{v.unitLabel}
-                          {v.weightKg ? ` · ${v.weightKg}kg` : ""}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs font-bold text-gray-700 tabular-nums">{v.availableQty}</p>
-                        <p className="text-[10px] text-gray-400">in stock</p>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
         </div>
 
-        {showSearchResults && (
-          <div className="fixed inset-0 z-40" onClick={() => setShowSearchResults(false)} />
-        )}
+        {/* All Products List (always visible) */}
+        <div className="border rounded-lg overflow-hidden">
+          <div className="bg-gray-50 px-3 py-2 border-b flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+              Available Products
+            </span>
+            <span className="text-[11px] text-gray-400">
+              {searchLoading ? "Loading..." : `${availableVariants.length} items`}
+            </span>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {searchLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2Icon size={20} className="animate-spin text-gray-400" />
+              </div>
+            ) : availableVariants.length === 0 ? (
+              <div className="py-6 text-center text-sm text-gray-400">
+                {allVariants.length > 0 ? "All products already added" : "No products found"}
+              </div>
+            ) : (
+              availableVariants.map((v: any) => (
+                <button
+                  key={v.inventoryId}
+                  type="button"
+                  onClick={() => addItem(v)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors border-b last:border-0 hover:bg-red-50"
+                >
+                  <div className="shrink-0 w-8 h-8 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
+                    {v.productImage ? (
+                      <Image src={v.productImage} alt={v.productName} width={32} height={32} className="w-8 h-8 object-cover" unoptimized={v.productImage.startsWith("http")} />
+                    ) : (
+                      <Package size={14} className="text-gray-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{v.productName}</p>
+                    <p className="text-[11px] text-gray-500">
+                      {v.brandName ? `${v.brandName} · ` : ""}{v.unitLabel}
+                      {v.weightKg ? ` · ${v.weightKg}kg` : ""}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-bold text-gray-700 tabular-nums">{v.availableQty}</p>
+                    <p className="text-[10px] text-gray-400">in stock</p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
 
         {/* Selected Items Table */}
         {selectedItems.length > 0 && (
           <div className="border rounded-lg overflow-hidden">
+            <div className="bg-red-50 px-3 py-2 border-b">
+              <span className="text-[11px] font-semibold text-red-600 uppercase tracking-wider">
+                🔴 Selected for Damage ({selectedItems.length})
+              </span>
+            </div>
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
@@ -401,12 +405,6 @@ export default function CreateDamageEntryPage() {
                 })}
               </tbody>
             </table>
-          </div>
-        )}
-
-        {selectedItems.length === 0 && (
-          <div className="text-center py-8 text-gray-400 text-sm border border-dashed rounded-lg">
-            Search and add damaged products above
           </div>
         )}
       </div>
