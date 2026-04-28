@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  AlertTriangleIcon,
+  ArrowRightLeftIcon,
   BarChart3Icon,
   BookOpenIcon,
   BoxesIcon,
@@ -14,6 +16,7 @@ import {
   MegaphoneIcon,
   PackageIcon,
   PercentIcon,
+  PlusCircleIcon,
   ReceiptIcon,
   SettingsIcon,
   ShieldIcon,
@@ -48,10 +51,33 @@ const shopOwnerNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Inventory & Supply",
+    label: "Inventory Management",
     items: [
+      { title: "Product Catalog", url: `${D}/product-catalog`, icon: BookOpenIcon },
+      { title: "Products", url: `${D}/products`, icon: PackageIcon },
+      { title: "Create Product", url: `${D}/products/create`, icon: ClipboardListIcon },
       { title: "My Store", url: `${D}/stores`, icon: StoreIcon },
-      { title: "Stock", url: `${D}/inventory`, icon: BoxesIcon },
+      { title: "Pricing", url: `${D}/pricing`, icon: DollarSignIcon },
+    ],
+  },
+  {
+    label: "Supply & Purchasing",
+    items: [
+      {
+        title: "Stock Control",
+        url: `${D}/stock`,
+        icon: BoxesIcon,
+        items: [
+          { title: "Stock Overview", url: `${D}/stock` },
+          { title: "Stock (Real-time)", url: `${D}/stock/live` },
+          { title: "Low Stock", url: `${D}/stock/low` },
+          { title: "Expired Products", url: `${D}/stock/expired` },
+          { title: "Empty Pack", url: `${D}/stock/empty-pack` },
+        ],
+      },
+      { title: "Add Stock", url: `${D}/stock/add`, icon: PlusCircleIcon },
+      { title: "Stock Adjustment", url: `${D}/stock-adjustment`, icon: ArrowRightLeftIcon },
+      { title: "Damage", url: `${D}/damage`, icon: AlertTriangleIcon },
       { title: "Purchases", url: `${D}/orders`, icon: ShoppingCartIcon },
       { title: "Order from Warehouse", url: `${D}/order-from-warehouse`, icon: PackageIcon },
       { title: "Suppliers", url: `${D}/suppliers`, icon: UsersIcon },

@@ -14,8 +14,11 @@ import {
     brand,
     category,
     product,
+    productBrand,
+    productImage,
     productReview,
     productVariant,
+    productVariantPrice,
     subCategory,
     inventory,
     order,
@@ -28,6 +31,19 @@ import {
     shopWarehouseConnection,
     shopCategoryAssignment,
     warehouseCategoryAssignment,
+    coreProductIdentity,
+    productType,
+    productIdentityRequest,
+    variantOption,
+    stockAdjustment,
+    stockAdjustmentItem,
+    damageEntry,
+    damageEntryItem,
+    emptyPack,
+    productPackRule,
+    supplier,
+    purchaseItem,
+    purchase,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -335,6 +351,901 @@ const b2bQueries = {
 
 const managementQueries = {
     /**
+     * Aggregated Stock Overview KPIs for the shop dashboard.
+     * Returns all metrics in a single call to avoid multiple round-trips.
+     */
+    getStockOverview: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch all inventory for this shop with variant + product + category + brand
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // 2. Aggregate metrics
+            const LOW_STOCK_THRESHOLD = 5;
+            const AT_RISK_THRESHOLD = 2;
+
+            let totalSKUs = 0;
+            let inStockCount = 0;
+            let lowStockCount = 0;
+            let outOfStockCount = 0;
+            let totalStockValue = 0;
+            let atRiskCount = 0;
+
+            const productSet = new Set<number>();
+            const categoryMap = new Map<string, { totalQty: number; hasWeight: boolean }>();
+            const productStockMap = new Map<number, {
+                name: string;
+                totalQty: number;
+                unit: string;
+                image: string | null;
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+
+                totalSKUs++;
+                const qty = parseFloat(inv.availableQty || "0");
+                const retailPrice = parseFloat(inv.retailPrice || "0");
+                const variantPrice = parseFloat(inv.variant.price || "0");
+                const effectivePrice = retailPrice > 0 ? retailPrice : variantPrice;
+
+                totalStockValue += qty * effectivePrice;
+                productSet.add(inv.variant.product.id);
+
+                // Stock status
+                if (qty <= 0) outOfStockCount++;
+                else if (qty <= LOW_STOCK_THRESHOLD) lowStockCount++;
+                else inStockCount++;
+
+                // At risk
+                if (qty > 0 && qty <= AT_RISK_THRESHOLD) atRiskCount++;
+
+                // Category snapshot
+                const catName = inv.variant.product.category?.name || "Uncategorized";
+                const hasWeight = parseFloat(inv.variant.weightKg || "0") > 0;
+                const existing = categoryMap.get(catName);
+                if (existing) {
+                    existing.totalQty += qty;
+                    if (hasWeight) existing.hasWeight = true;
+                } else {
+                    categoryMap.set(catName, { totalQty: qty, hasWeight });
+                }
+
+                // Product stock aggregation for top products
+                const pid = inv.variant.product.id;
+                const pEntry = productStockMap.get(pid);
+                const weightKg = parseFloat(inv.variant.weightKg || "0");
+                if (pEntry) {
+                    pEntry.totalQty += qty;
+                } else {
+                    productStockMap.set(pid, {
+                        name: inv.variant.product.name,
+                        totalQty: qty,
+                        unit: weightKg > 0 ? "KG" : "pcs",
+                        image: inv.variant.product.image,
+                    });
+                }
+            }
+
+            // 3. Category snapshot — top 6 categories
+            const categorySnapshot = Array.from(categoryMap.entries())
+                .map(([name, data]) => ({
+                    categoryName: name,
+                    totalQty: Math.round(data.totalQty * 100) / 100,
+                    unit: data.hasWeight ? "KG" : "pcs",
+                }))
+                .sort((a, b) => b.totalQty - a.totalQty)
+                .slice(0, 6);
+
+            // 4. Top products — top 5 by stock qty
+            const topProducts = Array.from(productStockMap.values())
+                .sort((a, b) => b.totalQty - a.totalQty)
+                .slice(0, 5)
+                .map((p) => ({
+                    productName: p.name,
+                    totalQty: Math.round(p.totalQty * 100) / 100,
+                    unit: p.unit,
+                    image: p.image,
+                    status: p.totalQty > 20
+                        ? ("high" as const)
+                        : p.totalQty > 5
+                            ? ("available" as const)
+                            : ("low" as const),
+                }));
+
+            // 5. Damage alert — count active damage entries in last 30 days
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const [damageResult] = await db
+                .select({ count: count() })
+                .from(damageEntry)
+                .where(
+                    and(
+                        eq(damageEntry.shopId, userId),
+                        eq(damageEntry.status, "active"),
+                        gte(damageEntry.createdAt, thirtyDaysAgo),
+                    ),
+                );
+
+            return {
+                // Main KPIs
+                totalProducts: productSet.size,
+                totalSKUs,
+                totalStockValue: Math.round(totalStockValue * 100) / 100,
+
+                // Stock Status
+                inStockCount,
+                lowStockCount,
+                outOfStockCount,
+
+                // Category Snapshot
+                categorySnapshot,
+
+                // Alert Summary
+                alerts: {
+                    lowStock: lowStockCount,
+                    expiringSoon: 0, // No expiry field yet
+                    damaged: damageResult?.count ?? 0,
+                },
+
+                // Top Products
+                topProducts,
+
+                // Insights
+                insights: {
+                    fastMoving: null as string | null,  // Needs sales data
+                    slowMoving: null as string | null,  // Needs sales data
+                    atRiskCount,
+                },
+            };
+        }),
+
+    /**
+     * Real-time stock view grouped by product.
+     * Shows pack (carton-packed) vs loose breakdown at product level,
+     * with variant-level detail for the expanded view.
+     */
+    getRealtimeStock: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                categoryId: z.number().int().optional(),
+                status: z.enum(["all", "in_stock", "low", "out_of_stock"]).default("all"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch all inventory for this shop
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // 2. Group by product
+            const LOW_STOCK_THRESHOLD = 5;
+
+            type VariantDetail = {
+                variantId: number;
+                inventoryId: number;
+                sku: string | null;
+                brandName: string | null;
+                weightKg: string;
+                unitLabel: string;
+                packType: string | null;
+                availableQty: number;
+                inCartonQty: number;
+                looseQty: number;
+                retailPrice: number;
+            };
+
+            type ProductGroup = {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                sku: string | null;
+                categoryId: number | null;
+                categoryName: string | null;
+                totalAvailableQty: number;
+                totalPackQty: number;
+                totalLooseQty: number;
+                looseUnit: string;
+                variants: VariantDetail[];
+            };
+
+            const productMap = new Map<number, ProductGroup>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+
+                const prod = inv.variant.product;
+                const pid = prod.id;
+                const qty = parseFloat(inv.availableQty || "0");
+                const cartonQty = parseFloat(inv.inCartonQty || "0");
+                const looseQty = qty - cartonQty;
+                const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
+
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        sku: prod.sku,
+                        categoryId: prod.category?.id ?? null,
+                        categoryName: prod.category?.name ?? null,
+                        totalAvailableQty: 0,
+                        totalPackQty: 0,
+                        totalLooseQty: 0,
+                        looseUnit: inv.variant.unitLabel || "pcs",
+                        variants: [],
+                    });
+                }
+
+                const group = productMap.get(pid)!;
+                group.totalAvailableQty += qty;
+                group.totalPackQty += cartonQty;
+                group.totalLooseQty += looseQty;
+
+                group.variants.push({
+                    variantId: inv.variant.id,
+                    inventoryId: inv.id,
+                    sku: inv.variant.sku,
+                    brandName: inv.variant.brand?.name ?? null,
+                    weightKg: inv.variant.weightKg,
+                    unitLabel: inv.variant.unitLabel,
+                    packType: inv.variant.packagingType,
+                    availableQty: qty,
+                    inCartonQty: cartonQty,
+                    looseQty: Math.max(0, looseQty),
+                    retailPrice,
+                });
+            }
+
+            // 3. Convert to array, apply filters
+            let products = Array.from(productMap.values());
+
+            // Search filter
+            if (input.search?.trim()) {
+                const s = input.search.toLowerCase();
+                products = products.filter(
+                    (p) =>
+                        p.productName.toLowerCase().includes(s) ||
+                        (p.sku && p.sku.toLowerCase().includes(s)) ||
+                        p.variants.some((v) => v.sku?.toLowerCase().includes(s)) ||
+                        p.variants.some((v) => v.brandName?.toLowerCase().includes(s)),
+                );
+            }
+
+            // Category filter
+            if (input.categoryId) {
+                products = products.filter((p) => p.categoryId === input.categoryId);
+            }
+
+            // Status filter
+            const withStatus = products.map((p) => {
+                const status: "in_stock" | "low" | "out_of_stock" =
+                    p.totalAvailableQty <= 0
+                        ? "out_of_stock"
+                        : p.totalAvailableQty <= LOW_STOCK_THRESHOLD
+                            ? "low"
+                            : "in_stock";
+                return { ...p, status };
+            });
+
+            const filtered =
+                input.status === "all"
+                    ? withStatus
+                    : withStatus.filter((p) => p.status === input.status);
+
+            // 4. Derive unique categories for filter dropdown
+            const categorySet = new Map<number, string>();
+            for (const p of Array.from(productMap.values())) {
+                if (p.categoryId && p.categoryName) {
+                    categorySet.set(p.categoryId, p.categoryName);
+                }
+            }
+
+            return {
+                products: filtered.sort((a, b) => a.productName.localeCompare(b.productName)),
+                categories: Array.from(categorySet.entries()).map(([id, name]) => ({ id, name })),
+                totalCount: filtered.length,
+            };
+        }),
+
+    /**
+     * Low stock products — only products with variants below their reorderLevel.
+     * Classifies as "low" or "critical" (≤ 50% of threshold).
+     */
+    getLowStockProducts: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+            const DEFAULT_THRESHOLD = 5;
+
+            // Fetch inventory with variant + product + brand
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // Classify each variant
+            type VariantInfo = {
+                variantId: number;
+                brandName: string | null;
+                weightKg: string;
+                unitLabel: string;
+                availableQty: number;
+                inCartonQty: number;
+                looseQty: number;
+                reorderLevel: number;
+                status: "ok" | "low" | "critical" | "out_of_stock";
+            };
+
+            type ProductLow = {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                sku: string | null;
+                totalStock: number;
+                stockUnit: string;
+                issueLabel: string;
+                status: "low" | "critical";
+                variants: VariantInfo[];
+                minimumLevels: { label: string; minimum: number; unit: string }[];
+                alertReasons: string[];
+            };
+
+            const productMap = new Map<number, ProductLow>();
+            let criticalItems = 0;
+            let totalShortage = 0;
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+
+                const prod = inv.variant.product;
+                const pid = prod.id;
+                const qty = parseFloat(inv.availableQty || "0");
+                const cartonQty = parseFloat(inv.inCartonQty || "0");
+                const threshold = inv.variant.reorderLevel > 0
+                    ? inv.variant.reorderLevel
+                    : (prod.reorderLevel > 0 ? prod.reorderLevel : DEFAULT_THRESHOLD);
+
+                // Classify variant
+                let variantStatus: "ok" | "low" | "critical" | "out_of_stock";
+                if (qty <= 0) variantStatus = "out_of_stock";
+                else if (qty <= threshold * 0.5) variantStatus = "critical";
+                else if (qty <= threshold) variantStatus = "low";
+                else variantStatus = "ok";
+
+                // Skip healthy variants for the low stock page aggregation
+                const isLow = variantStatus !== "ok";
+
+                const variantInfo: VariantInfo = {
+                    variantId: inv.variant.id,
+                    brandName: inv.variant.brand?.name ?? null,
+                    weightKg: inv.variant.weightKg,
+                    unitLabel: inv.variant.unitLabel,
+                    availableQty: qty,
+                    inCartonQty: cartonQty,
+                    looseQty: Math.max(0, qty - cartonQty),
+                    reorderLevel: threshold,
+                    status: variantStatus,
+                };
+
+                // Track KPI metrics for low/critical variants
+                if (isLow) {
+                    if (variantStatus === "critical") criticalItems++;
+                    const shortage = Math.max(0, threshold - qty);
+                    totalShortage += shortage;
+                }
+
+                // Group by product — include all variants for expanded detail
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        sku: prod.sku,
+                        totalStock: 0,
+                        stockUnit: inv.variant.unitLabel || "pcs",
+                        issueLabel: "",
+                        status: "low",
+                        variants: [],
+                        minimumLevels: [],
+                        alertReasons: [],
+                    });
+                }
+
+                const group = productMap.get(pid)!;
+                group.totalStock += qty;
+                group.variants.push(variantInfo);
+
+                // Build minimum level config
+                const weightLabel = parseFloat(inv.variant.weightKg || "0") > 0
+                    ? `${inv.variant.weightKg}KG`
+                    : inv.variant.unitLabel;
+                group.minimumLevels.push({
+                    label: `${weightLabel} Variant`,
+                    minimum: threshold,
+                    unit: inv.variant.unitLabel || "Pack",
+                });
+
+                // Track alert reasons for low variants
+                if (isLow) {
+                    const reason = `${weightLabel} ${variantStatus === "critical" ? "Critical" : "Low"}`;
+                    group.alertReasons.push(reason);
+                }
+            }
+
+            // Filter to only products that have at least 1 low/critical variant
+            const lowProducts: ProductLow[] = [];
+
+            for (const group of productMap.values()) {
+                const hasLowVariant = group.variants.some(
+                    (v) => v.status === "low" || v.status === "critical" || v.status === "out_of_stock",
+                );
+                if (!hasLowVariant) continue;
+
+                // Determine product-level status and issue label
+                const hasCritical = group.variants.some((v) => v.status === "critical" || v.status === "out_of_stock");
+                group.status = hasCritical ? "critical" : "low";
+
+                // Build issue label from the most urgent variant
+                const worstVariant = group.variants
+                    .filter((v) => v.status !== "ok")
+                    .sort((a, b) => {
+                        const order = { out_of_stock: 0, critical: 1, low: 2, ok: 3 };
+                        return order[a.status] - order[b.status];
+                    })[0];
+
+                if (worstVariant) {
+                    const wt = parseFloat(worstVariant.weightKg || "0") > 0
+                        ? `${worstVariant.weightKg}KG`
+                        : worstVariant.unitLabel;
+                    group.issueLabel = `${wt} ${worstVariant.status === "critical" ? "Critical" : "Low"}`;
+                }
+
+                lowProducts.push(group);
+            }
+
+            // Sort: critical first, then low
+            lowProducts.sort((a, b) => {
+                if (a.status === "critical" && b.status !== "critical") return -1;
+                if (a.status !== "critical" && b.status === "critical") return 1;
+                return a.productName.localeCompare(b.productName);
+            });
+
+            return {
+                summary: {
+                    lowProducts: lowProducts.length,
+                    criticalItems,
+                    totalShortage: Math.round(totalShortage),
+                },
+                products: lowProducts,
+            };
+        }),
+
+    /**
+     * Expired products — damage entries with type 'expired',
+     * plus expiry-enabled products as a watchlist.
+     */
+    getExpiredProducts: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get all expired damage entries for this shop
+            const expiredEntries = await db.query.damageEntry.findMany({
+                where: and(
+                    eq(damageEntry.shopId, userId),
+                    eq(damageEntry.damageType, "expired"),
+                    eq(damageEntry.status, "active"),
+                ),
+                with: {
+                    items: {
+                        with: {
+                            variant: {
+                                with: {
+                                    product: {
+                                        columns: { id: true, name: true, image: true, sku: true },
+                                    },
+                                    brand: { columns: { id: true, name: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+                orderBy: [desc(damageEntry.entryDate)],
+            });
+
+            // 2. Group expired items by product
+            type ExpiredVariant = {
+                variantId: number;
+                brandName: string | null;
+                weightKg: string;
+                unitLabel: string;
+                qty: number;
+                unitPrice: number;
+                totalValue: number;
+                entryDate: string;
+            };
+
+            type ExpiredProduct = {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                expiredQty: number;
+                unit: string;
+                lastExpiryDate: string;
+                status: "expired";
+                lossValue: number;
+                variants: ExpiredVariant[];
+            };
+
+            const productMap = new Map<number, ExpiredProduct>();
+            let totalLoss = 0;
+
+            for (const entry of expiredEntries) {
+                for (const item of entry.items) {
+                    if (!item.variant?.product) continue;
+
+                    const prod = item.variant.product;
+                    const pid = prod.id;
+                    const qty = item.qty;
+                    const unitPrice = parseFloat(item.unitPrice || "0");
+                    const totalValue = parseFloat(item.totalValue || "0");
+
+                    totalLoss += totalValue;
+
+                    if (!productMap.has(pid)) {
+                        productMap.set(pid, {
+                            productId: pid,
+                            productName: prod.name,
+                            productImage: prod.image,
+                            expiredQty: 0,
+                            unit: item.variant.unitLabel || "pcs",
+                            lastExpiryDate: entry.entryDate,
+                            status: "expired",
+                            lossValue: 0,
+                            variants: [],
+                        });
+                    }
+
+                    const group = productMap.get(pid)!;
+                    group.expiredQty += qty;
+                    group.lossValue += totalValue;
+
+                    // Keep the most recent entry date
+                    if (entry.entryDate > group.lastExpiryDate) {
+                        group.lastExpiryDate = entry.entryDate;
+                    }
+
+                    group.variants.push({
+                        variantId: item.variant.id,
+                        brandName: item.variant.brand?.name ?? null,
+                        weightKg: item.variant.weightKg,
+                        unitLabel: item.variant.unitLabel,
+                        qty,
+                        unitPrice,
+                        totalValue,
+                        entryDate: entry.entryDate,
+                    });
+                }
+            }
+
+            const expiredProducts = Array.from(productMap.values())
+                .sort((a, b) => b.lastExpiryDate.localeCompare(a.lastExpiryDate));
+
+            // 3. Get expiry-enabled products in shop inventory (watchlist)
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                    expiryEnabled: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            const watchlistMap = new Map<number, {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                availableQty: number;
+                unit: string;
+                expiryEnabled: boolean;
+                shelfLife: string | null;
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product?.expiryEnabled) continue;
+
+                const prod = inv.variant.product;
+                const pid = prod.id;
+                const qty = parseFloat(inv.availableQty || "0");
+
+                if (qty <= 0) continue;
+
+                if (!watchlistMap.has(pid)) {
+                    watchlistMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        availableQty: 0,
+                        unit: inv.variant.unitLabel || "pcs",
+                        expiryEnabled: true,
+                        shelfLife: inv.variant.shelfLife,
+                    });
+                }
+
+                const w = watchlistMap.get(pid)!;
+                w.availableQty += qty;
+            }
+
+            const expiryEnabledProducts = Array.from(watchlistMap.values());
+
+            return {
+                summary: {
+                    expiredProducts: expiredProducts.length,
+                    expiringSoon: expiryEnabledProducts.length,
+                    lossValue: Math.round(totalLoss * 100) / 100,
+                },
+                expiredProducts,
+                expiryEnabledProducts,
+            };
+        }),
+
+    /**
+     * Empty pack management — aggregates empty pack collections,
+     * condition breakdown, and return tracking.
+     */
+    getEmptyPackSummary: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get all empty pack records linked to this shop's deliveries
+            // empty_pack is delivery-scoped, so we need to find packs
+            // from deliveries belonging to this shop owner
+            const allPacks = await db.query.emptyPack.findMany({
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, image: true },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                    brand: { columns: { id: true, name: true } },
+                },
+            });
+
+            // 2. Get pack rules for this shop
+            const packRules = await db.query.productPackRule.findMany({
+                where: and(
+                    eq(productPackRule.ownerType, "shop"),
+                    eq(productPackRule.ownerId, userId),
+                    eq(productPackRule.isActive, true),
+                ),
+            });
+            const ruleMap = new Map(packRules.map((r) => [r.productId, r]));
+
+            // 3. Get return pack quantities from purchases
+            const shopPurchases = await db.query.purchase.findMany({
+                where: eq(purchase.warehouseId, userId),
+                with: {
+                    items: {
+                        columns: { variantId: true, returnPackQty: true, productName: true },
+                    },
+                    supplier: { columns: { id: true, name: true, returnPackAgreement: true } },
+                },
+            });
+
+            // Build return tracking from purchases
+            const returnedByVariant = new Map<number, number>();
+            const supplierByProduct = new Map<number, { name: string; hasAgreement: boolean }>();
+
+            for (const p of shopPurchases) {
+                for (const item of p.items) {
+                    if (item.variantId && parseFloat(item.returnPackQty || "0") > 0) {
+                        const prev = returnedByVariant.get(item.variantId) || 0;
+                        returnedByVariant.set(item.variantId, prev + parseFloat(item.returnPackQty));
+                    }
+                }
+                if (p.supplier) {
+                    // We don't have productId directly, but we can track supplier info
+                    for (const item of p.items) {
+                        if (item.variantId) {
+                            supplierByProduct.set(item.variantId, {
+                                name: p.supplier.name,
+                                hasAgreement: p.supplier.returnPackAgreement,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 4. Group empty packs by product
+            type PackVariant = {
+                variantId: number | null;
+                brandName: string | null;
+                packDescription: string;
+                collected: number;
+                verified: number;
+                rejected: number;
+                condition: "reusable" | "damaged" | "pending";
+            };
+
+            type PackProduct = {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                emptyQty: number;
+                packType: string;
+                isReturnable: boolean;
+                status: "reusable" | "return_pending";
+                variants: PackVariant[];
+                totalCollected: number;
+                totalVerified: number;
+                totalRejected: number;
+                totalReturned: number;
+            };
+
+            const productMap = new Map<number, PackProduct>();
+            let totalPacks = 0;
+            let returnPending = 0;
+            let reusable = 0;
+
+            for (const pack of allPacks) {
+                const prod = pack.variant?.product;
+                if (!prod) continue;
+
+                const pid = prod.id;
+                const qty = pack.quantityCollected;
+                totalPacks += qty;
+
+                if (pack.status === "verified") reusable += qty;
+                else if (pack.status === "collected" || pack.status === "submitted") returnPending += qty;
+
+                if (!productMap.has(pid)) {
+                    const rule = ruleMap.get(pid);
+                    productMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        emptyQty: 0,
+                        packType: pack.packDescription || "Pack",
+                        isReturnable: rule?.isEmptyPackReturnable ?? (pack.variant?.isPackReturnRequired ?? false),
+                        status: "reusable",
+                        variants: [],
+                        totalCollected: 0,
+                        totalVerified: 0,
+                        totalRejected: 0,
+                        totalReturned: 0,
+                    });
+                }
+
+                const group = productMap.get(pid)!;
+                group.emptyQty += qty;
+                group.totalCollected += qty;
+
+                if (pack.status === "verified") group.totalVerified += qty;
+                if (pack.status === "rejected") group.totalRejected += qty;
+
+                // Add returned qty from purchases
+                if (pack.variantId) {
+                    group.totalReturned = returnedByVariant.get(pack.variantId) || 0;
+                }
+
+                const brandName = pack.brand?.name ?? pack.variant?.brand?.name ?? null;
+
+                group.variants.push({
+                    variantId: pack.variantId,
+                    brandName,
+                    packDescription: pack.packDescription || "Pack",
+                    collected: qty,
+                    verified: pack.status === "verified" ? qty : 0,
+                    rejected: pack.status === "rejected" ? qty : 0,
+                    condition: pack.status === "rejected" ? "damaged" :
+                               pack.status === "verified" ? "reusable" : "pending",
+                });
+            }
+
+            // Determine product-level status
+            for (const group of productMap.values()) {
+                const hasPending = group.variants.some((v) => v.condition === "pending");
+                group.status = hasPending ? "return_pending" : "reusable";
+            }
+
+            const products = Array.from(productMap.values())
+                .sort((a, b) => b.emptyQty - a.emptyQty);
+
+            // 5. Build return tracking list
+            const returnTracking = products
+                .filter((p) => p.isReturnable && p.status === "return_pending")
+                .map((p) => {
+                    const firstVariant = p.variants[0];
+                    const supplierInfo = firstVariant?.variantId
+                        ? supplierByProduct.get(firstVariant.variantId)
+                        : null;
+
+                    return {
+                        productId: p.productId,
+                        productName: p.productName,
+                        pendingReturn: p.totalCollected - p.totalReturned,
+                        supplierName: supplierInfo?.name ?? null,
+                        hasReturnAgreement: supplierInfo?.hasAgreement ?? false,
+                    };
+                })
+                .filter((r) => r.pendingReturn > 0);
+
+            return {
+                summary: {
+                    totalEmptyPacks: totalPacks,
+                    returnPending,
+                    reusableStock: reusable,
+                },
+                products,
+                returnTracking,
+            };
+        }),
+
+    /**
      * Get shop owner's retail products (what they sell to consumers).
      * Shows RETAIL variants with inventory info.
      */
@@ -370,8 +1281,15 @@ const managementQueries = {
                                 with: {
                                     category: { columns: { name: true, slug: true } },
                                     images: { limit: 1 },
+                                    brand: { columns: { id: true, name: true } },
+                                    productBrands: {
+                                        with: {
+                                            brand: { columns: { id: true, name: true } },
+                                        },
+                                    },
                                 },
                             },
+                            brand: { columns: { id: true, name: true } },
                         },
                     },
                 },
@@ -2195,6 +3113,2053 @@ const shopStorefrontEndpoints = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// Public Product Catalog (Browse-Only)
+// ────────────────────────────────────────────────────────────────
+
+const publicCatalogEndpoints = {
+    /**
+     * Get the full product hierarchy: Type → Category → SubCategory → Core Identity.
+     * Public-facing, no auth required. Used for the catalog browse page.
+     */
+    getPublicCatalogHierarchy: publicProcedure
+        .input(
+            z.object({
+                typeId: z.number().nullish(),
+                categoryId: z.number().nullish(),
+                subCategoryId: z.number().nullish(),
+                search: z.string().nullish(),
+                page: z.number().optional().default(1),
+                limit: z.number().optional().default(50),
+            }),
+        )
+        .handler(async ({ input }) => {
+            const page = input.page ?? 1;
+            const limit = input.limit ?? 50;
+            const offset = (page - 1) * limit;
+
+            // 1. Build conditions for core products
+            const conditions: SQL[] = [];
+
+            if (input.search?.trim()) {
+                conditions.push(ilike(coreProductIdentity.name, `%${input.search.trim()}%`));
+            }
+
+            // 2. If filters provided, narrow by category/subcategory
+            if (input.subCategoryId) {
+                conditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
+            } else if (input.categoryId) {
+                conditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
+            } else if (input.typeId) {
+                // Get all category IDs under this type
+                const typeCats = await db
+                    .select({ id: category.id })
+                    .from(category)
+                    .where(eq(category.typeId, input.typeId));
+                const catIds = typeCats.map((c) => c.id);
+                if (catIds.length > 0) {
+                    conditions.push(inArray(coreProductIdentity.categoryId, catIds));
+                } else {
+                    return {
+                        items: [],
+                        pagination: { page, limit, totalCount: 0, totalPages: 0 },
+                    };
+                }
+            }
+
+            const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+            // 3. Fetch core products with relations
+            const [coreProducts, countResult] = await Promise.all([
+                db.query.coreProductIdentity.findMany({
+                    where,
+                    orderBy: [coreProductIdentity.name],
+                    limit,
+                    offset,
+                    with: {
+                        category: {
+                            columns: { id: true, name: true, slug: true, typeId: true, skuCode: true },
+                            with: {
+                                type: { columns: { id: true, name: true, slug: true, skuCode: true } },
+                            },
+                        },
+                        subCategory: {
+                            columns: { id: true, name: true, slug: true, skuCode: true },
+                        },
+                    },
+                }),
+                db
+                    .select({ count: count() })
+                    .from(coreProductIdentity)
+                    .where(where),
+            ]);
+
+            // 4. Compose hierarchical SKU and format
+            const items = coreProducts.map((cp) => {
+                const typeCode = cp.category?.type?.skuCode || "??";
+                const catCode = cp.category?.skuCode || "???";
+                const subCatCode = cp.subCategory?.skuCode || "???";
+                const coreCode = cp.sku || "???";
+                const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
+
+                return {
+                    id: cp.id,
+                    name: cp.name,
+                    slug: cp.slug,
+                    sku: composedSku,
+                    image: cp.image,
+                    description: cp.description,
+                    supportsPack: cp.supportsPack,
+                    supportsLoose: cp.supportsLoose,
+                    type: cp.category?.type
+                        ? { id: cp.category.type.id, name: cp.category.type.name, slug: cp.category.type.slug }
+                        : null,
+                    category: cp.category
+                        ? { id: cp.category.id, name: cp.category.name, slug: cp.category.slug }
+                        : null,
+                    subCategory: cp.subCategory
+                        ? { id: cp.subCategory.id, name: cp.subCategory.name, slug: cp.subCategory.slug }
+                        : null,
+                };
+            });
+
+            const totalCount = Number(countResult[0]?.count) || 0;
+
+            return {
+                items,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    /**
+     * Get detailed view of a core product identity.
+     * Returns the core product info + all linked products with their variants,
+     * brands, and seller count.
+     */
+    getCoreProductDetail: publicProcedure
+        .input(z.object({ coreProductId: z.number() }))
+        .handler(async ({ input }) => {
+            // 1. Get core product
+            const coreProduct = await db.query.coreProductIdentity.findFirst({
+                where: eq(coreProductIdentity.id, input.coreProductId),
+                with: {
+                    category: {
+                        columns: { id: true, name: true, slug: true, typeId: true },
+                        with: {
+                            type: { columns: { id: true, name: true, slug: true } },
+                        },
+                    },
+                    subCategory: {
+                        columns: { id: true, name: true, slug: true },
+                    },
+                },
+            });
+
+            if (!coreProduct) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Core product identity not found",
+                });
+            }
+
+            // 2. Get all linked products (active ones created by warehouses)
+            const linkedProducts = await db.query.product.findMany({
+                where: and(
+                    eq(product.coreProductId, input.coreProductId),
+                    eq(product.status, "active"),
+                ),
+                with: {
+                    brand: { columns: { id: true, name: true, slug: true } },
+                    images: { limit: 5 },
+                    variants: {
+                        where: eq(productVariant.isActive, true),
+                        columns: {
+                            id: true,
+                            sku: true,
+                            unitLabel: true,
+                            weightKg: true,
+                            price: true,
+                            packType: true,
+                            packWeightKg: true,
+                            innerPackSizeKg: true,
+                            packCountInside: true,
+                            sellUnit: true,
+                            color: true,
+                            size: true,
+                            brandId: true,
+                            variantType: true,
+                            isPackReturnRequired: true,
+                            packDepositAmount: true,
+                            sortOrder: true,
+                        },
+                        with: {
+                            brand: { columns: { id: true, name: true } },
+                        },
+                        orderBy: [productVariant.sortOrder],
+                    },
+                },
+            });
+
+            // 3. Count sellers (shops with stock > 0 for any variant of these products)
+            const allVariantIds = linkedProducts.flatMap((p) => p.variants.map((v) => v.id));
+            let sellerCount = 0;
+            if (allVariantIds.length > 0) {
+                const sellerResult = await db
+                    .select({
+                        distinctShops: sql<number>`COUNT(DISTINCT ${inventory.ownerId})`,
+                    })
+                    .from(inventory)
+                    .where(
+                        and(
+                            eq(inventory.ownerType, "shop"),
+                            inArray(inventory.variantId, allVariantIds),
+                            sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                        ),
+                    );
+                sellerCount = Number(sellerResult[0]?.distinctShops) || 0;
+            }
+
+            // 4. Get review stats for linked products
+            const productIds = linkedProducts.map((p) => p.id);
+            let reviewStats = { avgRating: 0, reviewCount: 0 };
+            if (productIds.length > 0) {
+                const [stats] = await db
+                    .select({
+                        avgRating: avg(productReview.rating),
+                        reviewCount: count(),
+                    })
+                    .from(productReview)
+                    .where(inArray(productReview.productId, productIds));
+                reviewStats = {
+                    avgRating: Number(stats?.avgRating) || 0,
+                    reviewCount: Number(stats?.reviewCount) || 0,
+                };
+            }
+
+            // 5. Extract unique brands across all linked products
+            const brandMap = new Map<number, { id: number; name: string }>(); 
+            for (const p of linkedProducts) {
+                if (p.brand) {
+                    brandMap.set(p.brand.id, { id: p.brand.id, name: p.brand.name });
+                }
+                for (const v of p.variants) {
+                    if (v.brand) {
+                        brandMap.set(v.brand.id, { id: v.brand.id, name: v.brand.name });
+                    }
+                }
+            }
+
+            // 6. Flatten all variants with brand info
+            const allVariants = linkedProducts.flatMap((p) =>
+                p.variants.map((v) => ({
+                    ...v,
+                    productId: p.id,
+                    productName: p.name,
+                    productImage: p.image,
+                    brand: v.brand || p.brand || null,
+                })),
+            );
+
+            return {
+                coreProduct: {
+                    id: coreProduct.id,
+                    name: coreProduct.name,
+                    slug: coreProduct.slug,
+                    sku: coreProduct.sku,
+                    image: coreProduct.image,
+                    description: coreProduct.description,
+                    supportsPack: coreProduct.supportsPack,
+                    supportsLoose: coreProduct.supportsLoose,
+                    type: coreProduct.category?.type || null,
+                    category: coreProduct.category
+                        ? { id: coreProduct.category.id, name: coreProduct.category.name, slug: coreProduct.category.slug }
+                        : null,
+                    subCategory: coreProduct.subCategory || null,
+                },
+                products: linkedProducts.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    slug: p.slug,
+                    image: p.image,
+                    images: p.images,
+                    brand: p.brand,
+                    variantCount: p.variants.length,
+                })),
+                variants: allVariants,
+                brands: Array.from(brandMap.values()),
+                sellerCount,
+                reviewStats,
+            };
+        }),
+
+    /**
+     * Get filter options for the catalog: active types, categories, subcategories.
+     */
+    getPublicFilterOptions: publicProcedure
+        .handler(async () => {
+            const [types, categories, subCategories] = await Promise.all([
+                db.query.productType.findMany({
+                    where: eq(productType.isActive, true),
+                    orderBy: [productType.displayOrder, productType.name],
+                    columns: { id: true, name: true, slug: true },
+                }),
+                db.query.category.findMany({
+                    where: eq(category.isActive, true),
+                    orderBy: [category.displayOrder, category.name],
+                    columns: { id: true, name: true, slug: true, typeId: true },
+                }),
+                db.query.subCategory.findMany({
+                    where: eq(subCategory.isActive, true),
+                    orderBy: [subCategory.displayOrder, subCategory.name],
+                    columns: { id: true, name: true, slug: true, categoryId: true },
+                }),
+            ]);
+
+            return { types, categories, subCategories };
+        }),
+
+    /**
+     * Submit a product identity request (shop owner only).
+     * Used when a shop owner can't find a product in the catalog.
+     */
+    submitProductIdentityRequest: shopOwnerProcedure
+        .input(
+            z.object({
+                typeName: z.string().optional(),
+                categoryName: z.string().optional(),
+                subCategoryName: z.string().optional(),
+                productName: z.string().min(1),
+                description: z.string().optional(),
+                referenceImage: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const [created] = await db
+                .insert(productIdentityRequest)
+                .values({
+                    requestedBy: userId,
+                    typeName: input.typeName || null,
+                    categoryName: input.categoryName || null,
+                    subCategoryName: input.subCategoryName || null,
+                    productName: input.productName,
+                    description: input.description || null,
+                    referenceImage: input.referenceImage || null,
+                    status: "pending",
+                })
+                .returning();
+
+            return {
+                success: true,
+                request: created,
+                message: "Product identity request submitted. Admin will review it.",
+            };
+        }),
+
+    /**
+     * Get my product identity requests (shop owner only).
+     */
+    getMyProductRequests: shopOwnerProcedure
+        .input(
+            z.object({
+                status: z.enum(["pending", "approved", "rejected"]).optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const conditions: SQL[] = [
+                eq(productIdentityRequest.requestedBy, userId),
+            ];
+            if (input.status) {
+                conditions.push(eq(productIdentityRequest.status, input.status));
+            }
+
+            const requests = await db.query.productIdentityRequest.findMany({
+                where: and(...conditions),
+                orderBy: [desc(productIdentityRequest.createdAt)],
+            });
+
+            return { requests };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
+// Shop Product Management (Retail Control Panel)
+// ────────────────────────────────────────────────────────────────
+
+const shopProductEndpoints = {
+    /**
+     * Get shop owner's products — aggregated by product (not variant).
+     * Each row = one product with variant count, total stock, stock status.
+     */
+    getShopProducts: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                categoryId: z.number().optional(),
+                stockStatus: z.enum(["all", "in_stock", "low", "out_of_stock"]).default("all"),
+                brandId: z.number().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+            const { search, categoryId, stockStatus, brandId, page, limit } = input;
+            const offset = (page - 1) * limit;
+
+            // Get all inventory for this shop owner with product+variant info
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        columns: {
+                            id: true,
+                            productId: true,
+                            sku: true,
+                            unitLabel: true,
+                            weightKg: true,
+                            price: true,
+                            packType: true,
+                            brandId: true,
+                            color: true,
+                            size: true,
+                            isActive: true,
+                        },
+                        with: {
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    slug: true,
+                                    image: true,
+                                    categoryId: true,
+                                    coreProductId: true,
+                                    status: true,
+                                    reorderLevel: true,
+                                },
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                    coreProduct: { columns: { id: true, name: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // Group by productId
+            const productMap = new Map<number, {
+                product: typeof shopInventory[0]["variant"]["product"];
+                variants: Array<{
+                    variantId: number;
+                    sku: string | null;
+                    unitLabel: string;
+                    weightKg: string;
+                    brandName: string | null;
+                    brandId: number | null;
+                    availableQty: string;
+                    reservedQty: string;
+                    retailPrice: string | null;
+                }>;
+                totalStock: number;
+                variantCount: number;
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+                const pid = inv.variant.product.id;
+
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        product: inv.variant.product,
+                        variants: [],
+                        totalStock: 0,
+                        variantCount: 0,
+                    });
+                }
+
+                const entry = productMap.get(pid)!;
+                entry.variants.push({
+                    variantId: inv.variant.id,
+                    sku: inv.variant.sku,
+                    unitLabel: inv.variant.unitLabel,
+                    weightKg: inv.variant.weightKg,
+                    brandName: inv.variant.brand?.name ?? null,
+                    brandId: inv.variant.brandId,
+                    availableQty: inv.availableQty,
+                    reservedQty: inv.reservedQty,
+                    retailPrice: inv.retailPrice,
+                });
+                entry.totalStock += Number(inv.availableQty);
+                entry.variantCount += 1;
+            }
+
+            // Convert to array and apply filters
+            let items = Array.from(productMap.values());
+
+            // Search filter
+            if (search?.trim()) {
+                const s = search.toLowerCase();
+                items = items.filter(
+                    (item) =>
+                        item.product.name.toLowerCase().includes(s) ||
+                        item.product.slug.toLowerCase().includes(s) ||
+                        item.variants.some((v) => v.sku?.toLowerCase().includes(s)),
+                );
+            }
+
+            // Category filter
+            if (categoryId) {
+                items = items.filter((item) => item.product.categoryId === categoryId);
+            }
+
+            // Brand filter
+            if (brandId) {
+                items = items.filter((item) =>
+                    item.variants.some((v) => v.brandId === brandId),
+                );
+            }
+
+            // Stock status filter
+            const REORDER_THRESHOLD = 10;
+            if (stockStatus === "in_stock") {
+                items = items.filter((item) => item.totalStock > REORDER_THRESHOLD);
+            } else if (stockStatus === "low") {
+                items = items.filter(
+                    (item) => item.totalStock > 0 && item.totalStock <= REORDER_THRESHOLD,
+                );
+            } else if (stockStatus === "out_of_stock") {
+                items = items.filter((item) => item.totalStock <= 0);
+            }
+
+            const totalCount = items.length;
+
+            // Sort by name
+            items.sort((a, b) => a.product.name.localeCompare(b.product.name));
+
+            // Paginate
+            const paginated = items.slice(offset, offset + limit);
+
+            // Build response with stock status
+            const result = paginated.map((item) => {
+                const reorderLevel = item.product.reorderLevel || REORDER_THRESHOLD;
+                let status: "in_stock" | "low" | "out_of_stock";
+                if (item.totalStock <= 0) status = "out_of_stock";
+                else if (item.totalStock <= reorderLevel) status = "low";
+                else status = "in_stock";
+
+                return {
+                    productId: item.product.id,
+                    name: item.product.name,
+                    slug: item.product.slug,
+                    image: item.product.image,
+                    category: item.product.category,
+                    coreProduct: item.product.coreProduct,
+                    variantCount: item.variantCount,
+                    totalStock: item.totalStock,
+                    stockStatus: status,
+                    productStatus: item.product.status,
+                    unit: item.variants[0]?.unitLabel ?? "pcs",
+                };
+            });
+
+            return {
+                items: result,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    /**
+     * KPI summary: total products, in-stock, low, out-of-stock.
+     */
+    getShopProductKPIs: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                columns: { variantId: true, availableQty: true },
+                with: {
+                    variant: {
+                        columns: { id: true, productId: true },
+                        with: {
+                            product: { columns: { id: true, reorderLevel: true } },
+                        },
+                    },
+                },
+            });
+
+            // Group by product
+            const productStockMap = new Map<number, number>();
+            const productReorderMap = new Map<number, number>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+                const pid = inv.variant.product.id;
+                productStockMap.set(pid, (productStockMap.get(pid) ?? 0) + Number(inv.availableQty));
+                if (!productReorderMap.has(pid)) {
+                    productReorderMap.set(pid, inv.variant.product.reorderLevel || 10);
+                }
+            }
+
+            let totalProducts = 0;
+            let inStock = 0;
+            let lowStock = 0;
+            let outOfStock = 0;
+
+            for (const [pid, totalQty] of productStockMap) {
+                totalProducts++;
+                const reorder = productReorderMap.get(pid) ?? 10;
+                if (totalQty <= 0) outOfStock++;
+                else if (totalQty <= reorder) lowStock++;
+                else inStock++;
+            }
+
+            return { totalProducts, inStock, lowStock, outOfStock };
+        }),
+
+    /**
+     * Detailed view of a single product — all variants with per-variant stock.
+     */
+    getShopProductDetail: shopOwnerProcedure
+        .input(z.object({ productId: z.number() }))
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+
+            const prod = await db.query.product.findFirst({
+                where: eq(product.id, input.productId),
+                with: {
+                    category: { columns: { id: true, name: true, slug: true } },
+                    subCategory: { columns: { id: true, name: true } },
+                    coreProduct: { columns: { id: true, name: true, sku: true, image: true } },
+                    images: true,
+                    productBrands: {
+                        with: { brand: { columns: { id: true, name: true, logo: true } } },
+                    },
+                },
+            });
+
+            if (!prod) throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+
+            // Get inventory for this product's variants
+            const variants = await db.query.productVariant.findMany({
+                where: eq(productVariant.productId, input.productId),
+                with: {
+                    brand: { columns: { id: true, name: true } },
+                },
+            });
+
+            const variantIds = variants.map((v) => v.id);
+            const inventoryRows = variantIds.length > 0
+                ? await db.query.inventory.findMany({
+                    where: and(
+                        eq(inventory.ownerType, "shop"),
+                        eq(inventory.ownerId, userId),
+                        inArray(inventory.variantId, variantIds),
+                    ),
+                })
+                : [];
+
+            const invMap = new Map(inventoryRows.map((inv) => [inv.variantId, inv]));
+
+            const variantDetails = variants.map((v) => {
+                const inv = invMap.get(v.id);
+                const availableQty = Number(inv?.availableQty ?? 0);
+                const reorderLevel = v.reorderLevel || 10;
+                let status: "in_stock" | "low" | "out_of_stock";
+                if (availableQty <= 0) status = "out_of_stock";
+                else if (availableQty <= reorderLevel) status = "low";
+                else status = "in_stock";
+
+                return {
+                    variantId: v.id,
+                    sku: v.sku,
+                    unitLabel: v.unitLabel,
+                    weightKg: v.weightKg,
+                    price: v.price,
+                    packType: v.packType,
+                    color: v.color,
+                    size: v.size,
+                    brandId: v.brandId,
+                    brandName: v.brand?.name ?? null,
+                    availableQty,
+                    reservedQty: Number(inv?.reservedQty ?? 0),
+                    retailPrice: inv?.retailPrice ?? null,
+                    stockStatus: status,
+                    isActive: v.isActive,
+                };
+            });
+
+            const totalStock = variantDetails.reduce((sum, v) => sum + v.availableQty, 0);
+
+            return {
+                product: {
+                    id: prod.id,
+                    name: prod.name,
+                    slug: prod.slug,
+                    image: prod.image,
+                    description: prod.description,
+                    status: prod.status,
+                    visibility: prod.visibility,
+                    expiryEnabled: prod.expiryEnabled,
+                    damageControlEnabled: prod.damageControlEnabled,
+                    trackingType: prod.trackingType,
+                    isReturnablePack: prod.isReturnablePack,
+                    reorderLevel: prod.reorderLevel,
+                    category: prod.category,
+                    subCategory: prod.subCategory,
+                    coreProduct: prod.coreProduct,
+                    images: prod.images,
+                    brands: prod.productBrands.map((pb) => pb.brand),
+                },
+                variants: variantDetails,
+                totalStock,
+            };
+        }),
+
+    /**
+     * Get options for the Create Product form (cascading selects).
+     * Returns types, categories, subcategories, core products, brands, variant options.
+     */
+    getCreateProductOptions: shopOwnerProcedure
+        .input(
+            z.object({
+                typeId: z.number().optional(),
+                categoryId: z.number().optional(),
+                subCategoryId: z.number().optional(),
+            }),
+        )
+        .handler(async ({ input }) => {
+            // Types
+            const types = await db.query.productType.findMany({
+                where: eq(productType.isActive, true),
+                orderBy: [productType.displayOrder, productType.name],
+                columns: { id: true, name: true, slug: true },
+            });
+
+            // Categories filtered by type
+            const catFilter = input.typeId
+                ? and(eq(category.isActive, true), eq(category.typeId, input.typeId))
+                : eq(category.isActive, true);
+            const categories = await db.query.category.findMany({
+                where: catFilter,
+                orderBy: [category.displayOrder, category.name],
+                columns: { id: true, name: true, slug: true, typeId: true },
+            });
+
+            // SubCategories filtered by category
+            const subCatFilter = input.categoryId
+                ? and(eq(subCategory.isActive, true), eq(subCategory.categoryId, input.categoryId))
+                : eq(subCategory.isActive, true);
+            const subCategories = await db.query.subCategory.findMany({
+                where: subCatFilter,
+                orderBy: [subCategory.displayOrder, subCategory.name],
+                columns: { id: true, name: true, slug: true, categoryId: true },
+            });
+
+            // Core products filtered by category+subcategory
+            const cpConditions: SQL[] = [];
+            if (input.categoryId) cpConditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
+            if (input.subCategoryId) cpConditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
+            const coreProducts = await db.query.coreProductIdentity.findMany({
+                where: cpConditions.length > 0 ? and(...cpConditions) : undefined,
+                columns: { id: true, name: true, sku: true, image: true, supportsPack: true, supportsLoose: true, categoryId: true, subCategoryId: true },
+                orderBy: [coreProductIdentity.name],
+            });
+
+            // Brands
+            const brands = await db.query.brand.findMany({
+                orderBy: [brand.displayOrder, brand.name],
+                columns: { id: true, name: true, slug: true, logo: true },
+            });
+
+            // Variant options — filtered by type+category scope
+            const voConditions: SQL[] = [eq(variantOption.isActive, true)];
+            if (input.typeId) {
+                // Include global options (typeId=null) + type-specific + category-specific
+                voConditions.push(
+                    or(
+                        sql`${variantOption.typeId} IS NULL`,
+                        eq(variantOption.typeId, input.typeId),
+                    )!,
+                );
+            }
+            if (input.categoryId) {
+                voConditions.push(
+                    or(
+                        sql`${variantOption.categoryId} IS NULL`,
+                        eq(variantOption.categoryId, input.categoryId),
+                    )!,
+                );
+            }
+            const variantOptions = await db.query.variantOption.findMany({
+                where: and(...voConditions),
+                orderBy: [variantOption.sortOrder, variantOption.name],
+                columns: { id: true, name: true, unit: true, size: true, variantType: true },
+            });
+
+            return { types, categories, subCategories, coreProducts, brands, variantOptions };
+        }),
+
+    /**
+     * Create a new shop product — full 8-step data.
+     * Creates product, product_brand links, product_variants, and initial inventory.
+     */
+    createShopProduct: shopOwnerProcedure
+        .input(
+            z.object({
+                // Step 1-2: Classification & Core Identity
+                coreProductId: z.number(),
+                categoryId: z.number(),
+                subCategoryId: z.number().optional(),
+
+                // Step 3: Brand & Variant selection
+                brandIds: z.array(z.number()).min(1),
+                variantSelections: z.array(
+                    z.object({
+                        variantOptionId: z.number(),
+                        brandId: z.number(),
+                    }),
+                ).min(1),
+
+                // Step 4: Pricing per brand×variant
+                pricing: z.array(
+                    z.object({
+                        variantOptionId: z.number(),
+                        brandId: z.number(),
+                        retailPrice: z.string(), // decimal
+                    }),
+                ),
+
+                // Step 5: Product rules
+                isReturnablePack: z.boolean().default(false),
+                expiryEnabled: z.boolean().default(false),
+                damageControlEnabled: z.boolean().default(false),
+                trackingType: z.enum(["none", "batch", "serial"]).default("none"),
+
+                // Step 6: Opening stock per brand×variant
+                openingStock: z.array(
+                    z.object({
+                        variantOptionId: z.number(),
+                        brandId: z.number(),
+                        quantity: z.number().default(0),
+                    }),
+                ).optional(),
+
+                // Step 7: Customization
+                displayName: z.string().optional(),
+                shortNote: z.string().optional(),
+
+                // Step 8: Visibility
+                status: z.enum(["active", "inactive", "draft"]).default("active"),
+            }),
+        )
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch core product for defaults
+            const core = await db.query.coreProductIdentity.findFirst({
+                where: eq(coreProductIdentity.id, input.coreProductId),
+            });
+            if (!core) throw new ORPCError("NOT_FOUND", { message: "Core product not found" });
+
+            // 2. Create the product row
+            const productName = input.displayName || core.name;
+            const slug = productName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") + "-" + Date.now();
+
+            const [newProduct] = await db
+                .insert(product)
+                .values({
+                    name: productName,
+                    slug,
+                    categoryId: input.categoryId,
+                    subCategoryId: input.subCategoryId ?? null,
+                    coreProductId: input.coreProductId,
+                    image: core.image ?? "",
+                    size: "default",
+                    price: "0",
+                    status: input.status,
+                    shortDescription: input.shortNote ?? null,
+                    isReturnablePack: input.isReturnablePack,
+                    expiryEnabled: input.expiryEnabled,
+                    damageControlEnabled: input.damageControlEnabled,
+                    trackingType: input.trackingType,
+                })
+                .returning({ id: product.id });
+
+            if (!newProduct) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Failed to create product" });
+
+            // 3. Insert product_brand links
+            if (input.brandIds.length > 0) {
+                await db.insert(productBrand).values(
+                    input.brandIds.map((bid) => ({
+                        productId: newProduct.id,
+                        brandId: bid,
+                    })),
+                );
+            }
+
+            // 4. Create product_variant + product_variant_price for each brand×variant
+            const createdVariants: Array<{ variantId: number; variantOptionId: number; brandId: number }> = [];
+
+            for (const sel of input.variantSelections) {
+                // Fetch variant option for defaults
+                const vo = await db.query.variantOption.findFirst({
+                    where: eq(variantOption.id, sel.variantOptionId),
+                });
+                if (!vo) continue;
+
+                // Get pricing for this combo
+                const priceEntry = input.pricing.find(
+                    (p) => p.variantOptionId === sel.variantOptionId && p.brandId === sel.brandId,
+                );
+                const retailPrice = priceEntry?.retailPrice ?? "0";
+
+                // Create product variant
+                const [pv] = await db
+                    .insert(productVariant)
+                    .values({
+                        productId: newProduct.id,
+                        unitLabel: vo.name,
+                        weightKg: vo.size ?? "0",
+                        packagingType: vo.variantType === "loose" ? "loose" : "packet",
+                        price: retailPrice,
+                        brandId: sel.brandId,
+                        pricingType: "per_unit",
+                        sourceVariantOptionId: vo.id,
+                    })
+                    .returning({ id: productVariant.id });
+
+                if (!pv) continue;
+
+                // Create product_variant_price link
+                await db.insert(productVariantPrice).values({
+                    productId: newProduct.id,
+                    variantOptionId: sel.variantOptionId,
+                    brandId: sel.brandId,
+                    consumerPrice: retailPrice,
+                });
+
+                createdVariants.push({
+                    variantId: pv.id,
+                    variantOptionId: sel.variantOptionId,
+                    brandId: sel.brandId,
+                });
+            }
+
+            // 5. Create initial inventory rows
+            for (const cv of createdVariants) {
+                const stockEntry = input.openingStock?.find(
+                    (s) => s.variantOptionId === cv.variantOptionId && s.brandId === cv.brandId,
+                );
+                const qty = stockEntry?.quantity ?? 0;
+
+                // Get retail price
+                const priceEntry = input.pricing.find(
+                    (p) => p.variantOptionId === cv.variantOptionId && p.brandId === cv.brandId,
+                );
+
+                await db.insert(inventory).values({
+                    ownerType: "shop",
+                    ownerId: userId,
+                    variantId: cv.variantId,
+                    availableQty: String(qty),
+                    reservedQty: "0",
+                    retailPrice: priceEntry?.retailPrice ?? null,
+                });
+            }
+
+            return {
+                productId: newProduct.id,
+                variantsCreated: createdVariants.length,
+            };
+        }),
+
+    /**
+     * Get full store preview data for the "My Store" consumer view.
+     * Returns store identity, categories, and products with variants/brands.
+     */
+    getMyStorePreview: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get store identity from user row
+            const storeUser = await db.query.user.findFirst({
+                where: eq(user.id, userId),
+                columns: {
+                    id: true,
+                    name: true,
+                    shopName: true,
+                    shopSlug: true,
+                    shopAddress: true,
+                    shopLat: true,
+                    shopLng: true,
+                    phoneNumber: true,
+                    ownerName: true,
+                    image: true,
+                },
+            });
+
+            if (!storeUser) throw new ORPCError("NOT_FOUND", { message: "User not found" });
+
+            // 2. Get all inventory for this shop owner with full product+variant+brand info
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        columns: {
+                            id: true,
+                            productId: true,
+                            sku: true,
+                            unitLabel: true,
+                            weightKg: true,
+                            price: true,
+                            packType: true,
+                            brandId: true,
+                            color: true,
+                            size: true,
+                            isActive: true,
+                            isPackReturnRequired: true,
+                            packDepositAmount: true,
+                            sourceVariantOptionId: true,
+                        },
+                        with: {
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    slug: true,
+                                    image: true,
+                                    categoryId: true,
+                                    coreProductId: true,
+                                    status: true,
+                                    reorderLevel: true,
+                                    shortDescription: true,
+                                    isReturnablePack: true,
+                                },
+                                with: {
+                                    category: { columns: { id: true, name: true, slug: true } },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true, logo: true } },
+                        },
+                    },
+                },
+            });
+
+            // 3. Group by product
+            type VariantInfo = {
+                variantId: number;
+                sku: string | null;
+                unitLabel: string;
+                weightKg: string;
+                packType: string | null;
+                brandId: number | null;
+                brandName: string | null;
+                brandLogo: string | null;
+                retailPrice: string | null;
+                availableQty: number;
+                isPackReturnRequired: boolean | null;
+                packDepositAmount: string | null;
+            };
+
+            const productMap = new Map<number, {
+                product: typeof shopInventory[0]["variant"]["product"];
+                variants: VariantInfo[];
+                totalStock: number;
+                brands: Map<number, { id: number; name: string; logo: string | null }>;
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+                const pid = inv.variant.product.id;
+
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        product: inv.variant.product,
+                        variants: [],
+                        totalStock: 0,
+                        brands: new Map(),
+                    });
+                }
+
+                const entry = productMap.get(pid)!;
+                const qty = Number(inv.availableQty);
+                entry.totalStock += qty;
+
+                entry.variants.push({
+                    variantId: inv.variant.id,
+                    sku: inv.variant.sku,
+                    unitLabel: inv.variant.unitLabel,
+                    weightKg: inv.variant.weightKg,
+                    packType: inv.variant.packagingType,
+                    brandId: inv.variant.brandId,
+                    brandName: inv.variant.brand?.name ?? null,
+                    brandLogo: inv.variant.brand?.logo ?? null,
+                    retailPrice: inv.retailPrice,
+                    availableQty: qty,
+                    isPackReturnRequired: inv.variant.isPackReturnRequired,
+                    packDepositAmount: inv.variant.packDepositAmount,
+                });
+
+                if (inv.variant.brand) {
+                    entry.brands.set(inv.variant.brand.id, {
+                        id: inv.variant.brand.id,
+                        name: inv.variant.brand.name,
+                        logo: inv.variant.brand.logo,
+                    });
+                }
+            }
+
+            // 4. Derive categories
+            const categoryMap = new Map<number, { id: number; name: string; slug: string; productCount: number }>();
+            for (const entry of productMap.values()) {
+                const cat = entry.product.category;
+                if (cat) {
+                    const existing = categoryMap.get(cat.id);
+                    if (existing) {
+                        existing.productCount++;
+                    } else {
+                        categoryMap.set(cat.id, { ...cat, productCount: 1 });
+                    }
+                }
+            }
+
+            // 5. Build product list
+            const REORDER_THRESHOLD = 10;
+            const products = Array.from(productMap.values())
+                .sort((a, b) => a.product.name.localeCompare(b.product.name))
+                .map((entry) => {
+                    const reorderLevel = entry.product.reorderLevel || REORDER_THRESHOLD;
+                    let stockStatus: "in_stock" | "low" | "out_of_stock";
+                    if (entry.totalStock <= 0) stockStatus = "out_of_stock";
+                    else if (entry.totalStock <= reorderLevel) stockStatus = "low";
+                    else stockStatus = "in_stock";
+
+                    // Lowest retail price across variants
+                    const prices = entry.variants
+                        .map((v) => Number(v.retailPrice))
+                        .filter((p) => p > 0);
+                    const lowestPrice = prices.length > 0 ? Math.min(...prices) : null;
+
+                    return {
+                        productId: entry.product.id,
+                        name: entry.product.name,
+                        slug: entry.product.slug,
+                        image: entry.product.image,
+                        shortDescription: entry.product.shortDescription,
+                        isReturnablePack: entry.product.isReturnablePack,
+                        category: entry.product.category,
+                        brands: Array.from(entry.brands.values()),
+                        variants: entry.variants,
+                        totalStock: entry.totalStock,
+                        stockStatus,
+                        lowestPrice,
+                        variantCount: entry.variants.length,
+                    };
+                });
+
+            return {
+                store: {
+                    name: storeUser.shopName || storeUser.name,
+                    slug: storeUser.shopSlug,
+                    address: storeUser.shopAddress,
+                    lat: storeUser.shopLat,
+                    lng: storeUser.shopLng,
+                    phoneNumber: storeUser.phoneNumber,
+                    ownerName: storeUser.ownerName,
+                    image: storeUser.image,
+                },
+                categories: Array.from(categoryMap.values()),
+                products,
+                totalProducts: products.length,
+            };
+        }),
+
+    /**
+     * Get store KPI stats: total orders, customers, avg rating.
+     */
+    getMyStoreStats: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // Count B2C orders for this shop
+            const [orderStats] = await db
+                .select({
+                    totalOrders: count(),
+                    totalCustomers: sql<number>`COUNT(DISTINCT ${order.userId})`,
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.shopId, userId),
+                        eq(order.orderType, "b2c"),
+                    ),
+                );
+
+            // Get average product rating from reviews on shop's products
+            const shopVariantIds = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                columns: { variantId: true },
+            });
+
+            const variantIds = shopVariantIds.map((i) => i.variantId);
+            let avgRating = 0;
+            let reviewCount = 0;
+
+            if (variantIds.length > 0) {
+                // Get product IDs from variant IDs
+                const variants = await db.query.productVariant.findMany({
+                    where: inArray(productVariant.id, variantIds),
+                    columns: { productId: true },
+                });
+                const productIds = [...new Set(variants.map((v) => v.productId))];
+
+                if (productIds.length > 0) {
+                    const [stats] = await db
+                        .select({
+                            avgRating: avg(productReview.rating),
+                            reviewCount: count(),
+                        })
+                        .from(productReview)
+                        .where(inArray(productReview.productId, productIds));
+
+                    avgRating = Number(stats?.avgRating) || 0;
+                    reviewCount = Number(stats?.reviewCount) || 0;
+                }
+            }
+
+            return {
+                totalOrders: Number(orderStats?.totalOrders) || 0,
+                totalCustomers: Number(orderStats?.totalCustomers) || 0,
+                avgRating: Math.round(avgRating * 10) / 10,
+                reviewCount,
+            };
+        }),
+
+    /**
+     * Search shop products for stock entry — returns products with their variants
+     * and current inventory quantities for the logged-in shop owner.
+     */
+    getShopProductsForStock: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Get all inventory for this shop, grouped by product
+            const shopInventory = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, slug: true, image: true, categoryId: true },
+                                with: {
+                                    category: { columns: { id: true, name: true } },
+                                    productBrands: {
+                                        with: { brand: { columns: { id: true, name: true } } },
+                                    },
+                                },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                },
+            });
+
+            // Group by product
+            const productMap = new Map<number, {
+                id: number;
+                name: string;
+                image: string | null;
+                category: { id: number; name: string } | null;
+                variants: {
+                    variantId: number;
+                    inventoryId: number;
+                    unitLabel: string;
+                    weightKg: string;
+                    brandName: string | null;
+                    currentStock: number;
+                    retailPrice: string | null;
+                }[];
+            }>();
+
+            for (const inv of shopInventory) {
+                if (!inv.variant?.product) continue;
+                const prod = inv.variant.product;
+                const pid = prod.id;
+
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        id: pid,
+                        name: prod.name,
+                        image: prod.image,
+                        category: prod.category,
+                        variants: [],
+                    });
+                }
+
+                // Resolve brand
+                const brandName = inv.variant.brand?.name
+                    || (prod as any).productBrands?.[0]?.brand?.name
+                    || null;
+
+                productMap.get(pid)!.variants.push({
+                    variantId: inv.variant.id,
+                    inventoryId: inv.id,
+                    unitLabel: inv.variant.unitLabel,
+                    weightKg: inv.variant.weightKg,
+                    brandName,
+                    currentStock: Number(inv.availableQty),
+                    retailPrice: inv.retailPrice,
+                });
+            }
+
+            // Filter by search
+            let products = Array.from(productMap.values());
+            if (input.search?.trim()) {
+                const s = input.search.toLowerCase();
+                products = products.filter(
+                    (p) =>
+                        p.name.toLowerCase().includes(s) ||
+                        p.variants.some((v) => v.brandName?.toLowerCase().includes(s)),
+                );
+            }
+
+            return {
+                products: products.slice(0, input.limit),
+                total: products.length,
+            };
+        }),
+
+    /**
+     * Add stock to shop inventory — supports adding to multiple variants at once.
+     */
+    addShopStock: shopOwnerProcedure
+        .input(
+            z.object({
+                entries: z.array(
+                    z.object({
+                        inventoryId: z.number().int(),
+                        addQuantity: z.number().min(0),
+                    }),
+                ).min(1, "At least one entry is required"),
+                stockType: z.enum(["purchase", "return", "adjustment", "opening"]).default("purchase"),
+                note: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Validate all inventory rows belong to this shop
+            const inventoryIds = input.entries.map((e) => e.inventoryId);
+            const ownedInventory = await db.query.inventory.findMany({
+                where: and(
+                    inArray(inventory.id, inventoryIds),
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (ownedInventory.length !== inventoryIds.length) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "Some inventory items do not belong to your shop",
+                });
+            }
+
+            // Build a lookup
+            const invLookup = new Map(ownedInventory.map((inv) => [inv.id, inv]));
+
+            // Update quantities in a transaction
+            const results = await db.transaction(async (tx) => {
+                const updated: { inventoryId: number; oldQty: number; newQty: number }[] = [];
+
+                for (const entry of input.entries) {
+                    if (entry.addQuantity <= 0) continue;
+
+                    const existing = invLookup.get(entry.inventoryId)!;
+                    const oldQty = Number(existing.availableQty);
+                    const newQty = oldQty + entry.addQuantity;
+
+                    await tx
+                        .update(inventory)
+                        .set({ availableQty: String(newQty) })
+                        .where(eq(inventory.id, entry.inventoryId));
+
+                    updated.push({
+                        inventoryId: entry.inventoryId,
+                        oldQty,
+                        newQty,
+                    });
+                }
+
+                return updated;
+            });
+
+            return {
+                updated: results,
+                stockType: input.stockType,
+                note: input.note || null,
+                message: `Stock updated for ${results.length} variant(s)`,
+            };
+        }),
+
+    // ────────────────────────────────────────────────────────────────
+    // STOCK ADJUSTMENT ENDPOINTS
+    // ────────────────────────────────────────────────────────────────
+
+    /**
+     * Search shop inventory variants for the adjustment product picker.
+     * Returns variant-level results with current stock.
+     */
+    searchShopVariantsForAdjustment: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                limit: z.number().int().min(1).max(50).default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const conditions: (typeof sql)[] = [];
+            const baseConditions = and(
+                eq(inventory.ownerType, "shop"),
+                eq(inventory.ownerId, userId),
+            );
+
+            let searchCondition;
+            if (input.search?.trim()) {
+                const term = `%${input.search.trim()}%`;
+                searchCondition = or(
+                    ilike(product.name, term),
+                    ilike(productVariant.sku ?? "", term),
+                    ilike(brand.name ?? "", term),
+                );
+            }
+
+            const rows = await db
+                .select({
+                    variantId: productVariant.id,
+                    inventoryId: inventory.id,
+                    sku: productVariant.sku,
+                    unitLabel: productVariant.unitLabel,
+                    weightKg: productVariant.weightKg,
+                    productId: product.id,
+                    productName: product.name,
+                    productImage: product.image,
+                    brandName: brand.name,
+                    availableQty: inventory.availableQty,
+                    retailPrice: inventory.retailPrice,
+                    variantPrice: productVariant.price,
+                })
+                .from(inventory)
+                .innerJoin(
+                    productVariant,
+                    eq(inventory.variantId, productVariant.id),
+                )
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(brand, eq(productVariant.brandId, brand.id))
+                .where(
+                    searchCondition
+                        ? and(baseConditions, searchCondition)
+                        : baseConditions,
+                )
+                .orderBy(product.name)
+                .limit(input.limit);
+
+            return {
+                variants: rows.map((r) => ({
+                    variantId: r.variantId,
+                    inventoryId: r.inventoryId,
+                    sku: r.sku,
+                    unitLabel: r.unitLabel,
+                    weightKg: r.weightKg,
+                    productId: r.productId,
+                    productName: r.productName,
+                    productImage: r.productImage,
+                    brandName: r.brandName,
+                    availableQty: parseFloat(r.availableQty || "0"),
+                    retailPrice: parseFloat(r.retailPrice || "0") || parseFloat(r.variantPrice || "0"),
+                })),
+            };
+        }),
+
+    /**
+     * Create a stock adjustment for the shop — auto-submitted, applies to inventory.
+     * Uses "actual stock" input: adjustQty = actualQty - currentQty.
+     */
+    createShopAdjustment: shopOwnerProcedure
+        .input(
+            z.object({
+                adjustmentType: z.enum([
+                    "increase",
+                    "decrease",
+                    "damage",
+                    "loss",
+                    "correction",
+                ]),
+                reason: z.enum([
+                    "physical_count",
+                    "damage",
+                    "expired",
+                    "theft",
+                    "system_error",
+                    "other",
+                ]),
+                referenceNote: z.string().optional(),
+                adjustmentDate: z.string(),
+                items: z
+                    .array(
+                        z.object({
+                            inventoryId: z.number().int(),
+                            actualQty: z.number().min(0),
+                            note: z.string().optional(),
+                        }),
+                    )
+                    .min(1, "At least one item is required"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Validate all inventory rows belong to this shop
+            const inventoryIds = input.items.map((i) => i.inventoryId);
+            const ownedInventory = await db.query.inventory.findMany({
+                where: and(
+                    inArray(inventory.id, inventoryIds),
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (ownedInventory.length !== inventoryIds.length) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "Some inventory items do not belong to your shop",
+                });
+            }
+
+            const invLookup = new Map(
+                ownedInventory.map((inv) => [inv.id, inv]),
+            );
+
+            // 2. Generate adjustment number (ADJ-S-xxxx for shop)
+            const [maxResult] = await db
+                .select({
+                    maxNo: sql<string>`MAX(${stockAdjustment.adjustmentNo})`,
+                })
+                .from(stockAdjustment)
+                .where(eq(stockAdjustment.warehouseId, userId));
+
+            const lastNum = maxResult?.maxNo
+                ? parseInt(maxResult.maxNo.replace(/^ADJ-S?-?/, ""), 10) || 0
+                : 0;
+            const adjustmentNo = `ADJ-S-${String(lastNum + 1).padStart(4, "0")}`;
+
+            // 3. Build line items with auto-calculated adjustQty
+            const lineItems = input.items.map((item) => {
+                const inv = invLookup.get(item.inventoryId)!;
+                const currentQty = parseFloat(inv.availableQty || "0");
+                const adjustQty = item.actualQty - currentQty;
+                return {
+                    variantId: inv.variantId,
+                    currentQty: String(currentQty),
+                    adjustQty: String(adjustQty),
+                    afterQty: String(item.actualQty),
+                    note: item.note || null,
+                    inventoryId: inv.id,
+                    actualQty: item.actualQty,
+                };
+            });
+
+            // Filter out items with zero change
+            const changedItems = lineItems.filter(
+                (li) => parseFloat(li.adjustQty) !== 0,
+            );
+
+            if (changedItems.length === 0) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "No stock changes detected — all actual quantities match current stock",
+                });
+            }
+
+            const totalQtyChange = changedItems.reduce(
+                (sum, li) => sum + parseFloat(li.adjustQty),
+                0,
+            );
+
+            // 4. Transaction: insert adjustment + items + update inventory
+            const result = await db.transaction(async (tx) => {
+                // Insert header
+                const [header] = await tx
+                    .insert(stockAdjustment)
+                    .values({
+                        adjustmentNo,
+                        warehouseId: userId,
+                        adjustmentType: input.adjustmentType,
+                        reason: input.reason,
+                        referenceNote: input.referenceNote || null,
+                        adjustmentDate: input.adjustmentDate,
+                        status: "submitted",
+                        totalItems: changedItems.length,
+                        totalQtyChange: String(totalQtyChange),
+                        createdById: userId,
+                    })
+                    .returning();
+
+                // Insert line items
+                await tx.insert(stockAdjustmentItem).values(
+                    changedItems.map((li) => ({
+                        adjustmentId: header!.id,
+                        variantId: li.variantId,
+                        currentQty: li.currentQty,
+                        adjustQty: li.adjustQty,
+                        afterQty: li.afterQty,
+                        note: li.note,
+                    })),
+                );
+
+                // Update inventory quantities
+                for (const li of changedItems) {
+                    await tx
+                        .update(inventory)
+                        .set({ availableQty: li.afterQty })
+                        .where(eq(inventory.id, li.inventoryId));
+                }
+
+                return header!;
+            });
+
+            return {
+                success: true,
+                adjustmentId: result.id,
+                adjustmentNo: result.adjustmentNo,
+                totalItems: changedItems.length,
+                totalQtyChange,
+                message: `Adjustment ${result.adjustmentNo} applied — ${changedItems.length} item(s) updated`,
+            };
+        }),
+
+    /**
+     * List shop adjustment history (paginated).
+     */
+    getShopAdjustments: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                adjustmentType: z
+                    .enum(["increase", "decrease", "damage", "loss", "correction"])
+                    .optional(),
+                page: z.number().int().min(1).default(1),
+                pageSize: z.number().int().min(1).max(100).default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const offset = (input.page - 1) * input.pageSize;
+
+            const conditions: SQL[] = [
+                eq(stockAdjustment.warehouseId, userId),
+            ];
+
+            if (input.adjustmentType) {
+                conditions.push(
+                    eq(stockAdjustment.adjustmentType, input.adjustmentType),
+                );
+            }
+            if (input.search?.trim()) {
+                const term = `%${input.search.trim()}%`;
+                conditions.push(
+                    ilike(stockAdjustment.adjustmentNo, term),
+                );
+            }
+
+            const where = and(...conditions);
+
+            const [rows, countResult] = await Promise.all([
+                db
+                    .select({
+                        id: stockAdjustment.id,
+                        adjustmentNo: stockAdjustment.adjustmentNo,
+                        adjustmentType: stockAdjustment.adjustmentType,
+                        reason: stockAdjustment.reason,
+                        status: stockAdjustment.status,
+                        adjustmentDate: stockAdjustment.adjustmentDate,
+                        totalItems: stockAdjustment.totalItems,
+                        totalQtyChange: stockAdjustment.totalQtyChange,
+                        referenceNote: stockAdjustment.referenceNote,
+                        createdAt: stockAdjustment.createdAt,
+                    })
+                    .from(stockAdjustment)
+                    .where(where)
+                    .orderBy(desc(stockAdjustment.createdAt))
+                    .limit(input.pageSize)
+                    .offset(offset),
+                db
+                    .select({ count: sql<number>`COUNT(*)::int` })
+                    .from(stockAdjustment)
+                    .where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count ?? 0;
+
+            return {
+                items: rows,
+                totalCount,
+                page: input.page,
+                pageSize: input.pageSize,
+                totalPages: Math.ceil(totalCount / input.pageSize),
+            };
+        }),
+
+    // ────────────────────────────────────────────────────────────────
+    // DAMAGE MANAGEMENT ENDPOINTS
+    // ────────────────────────────────────────────────────────────────
+
+    /**
+     * Create a damage entry — deducts inventory, calculates financial loss.
+     */
+    createDamageEntry: shopOwnerProcedure
+        .input(
+            z.object({
+                damageType: z.enum(["physical", "expired", "lost"]),
+                description: z.string().optional(),
+                proofImages: z.array(z.string()).default([]),
+                enteredByName: z.string().optional(),
+                entryDate: z.string(),
+                items: z
+                    .array(
+                        z.object({
+                            inventoryId: z.number().int(),
+                            qty: z.number().int().min(1),
+                            unitPrice: z.number().min(0).optional(),
+                            note: z.string().optional(),
+                        }),
+                    )
+                    .min(1, "At least one item is required"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Validate all inventory rows belong to this shop
+            const inventoryIds = input.items.map((i) => i.inventoryId);
+            const ownedInventory = await db.query.inventory.findMany({
+                where: and(
+                    inArray(inventory.id, inventoryIds),
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                ),
+            });
+
+            if (ownedInventory.length !== inventoryIds.length) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "Some inventory items do not belong to your shop",
+                });
+            }
+
+            const invLookup = new Map(
+                ownedInventory.map((inv) => [inv.id, inv]),
+            );
+
+            // 2. Validate stock is sufficient
+            for (const item of input.items) {
+                const inv = invLookup.get(item.inventoryId)!;
+                const available = parseFloat(inv.availableQty || "0");
+                if (item.qty > available) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Insufficient stock for inventory ${item.inventoryId}: available=${available}, requested=${item.qty}`,
+                    });
+                }
+            }
+
+            // 2b. Fetch variant base prices as fallback
+            const variantIds = ownedInventory.map((inv) => inv.variantId);
+            const variantRows = await db
+                .select({ id: productVariant.id, price: productVariant.price })
+                .from(productVariant)
+                .where(inArray(productVariant.id, variantIds));
+            const variantPriceLookup = new Map(
+                variantRows.map((v) => [v.id, parseFloat(v.price || "0")]),
+            );
+
+            // 3. Generate entry number (DMG-0001)
+            const [maxResult] = await db
+                .select({
+                    maxNo: sql<string>`MAX(${damageEntry.entryNo})`,
+                })
+                .from(damageEntry)
+                .where(eq(damageEntry.shopId, userId));
+
+            const lastNum = maxResult?.maxNo
+                ? parseInt(maxResult.maxNo.replace(/^DMG-/, ""), 10) || 0
+                : 0;
+            const entryNo = `DMG-${String(lastNum + 1).padStart(4, "0")}`;
+
+            // 4. Build line items
+            const lineItems = input.items.map((item) => {
+                const inv = invLookup.get(item.inventoryId)!;
+                const retailPrice = parseFloat(inv.retailPrice || "0");
+                const variantBasePrice = variantPriceLookup.get(inv.variantId) ?? 0;
+                const unitPrice =
+                    item.unitPrice ?? (retailPrice > 0 ? retailPrice : variantBasePrice);
+                return {
+                    inventoryId: inv.id,
+                    variantId: inv.variantId,
+                    qty: item.qty,
+                    unitPrice: String(unitPrice),
+                    totalValue: String(item.qty * unitPrice),
+                    note: item.note || null,
+                };
+            });
+
+            const totalQty = lineItems.reduce((s, li) => s + li.qty, 0);
+            const totalLossValue = lineItems.reduce(
+                (s, li) => s + parseFloat(li.totalValue),
+                0,
+            );
+
+            // 5. Transaction: insert entry + items + deduct inventory
+            const result = await db.transaction(async (tx) => {
+                const [header] = await tx
+                    .insert(damageEntry)
+                    .values({
+                        entryNo,
+                        shopId: userId,
+                        damageType: input.damageType,
+                        description: input.description || null,
+                        proofImages: input.proofImages,
+                        totalQty,
+                        totalLossValue: String(totalLossValue),
+                        enteredByName: input.enteredByName || null,
+                        entryDate: input.entryDate,
+                        status: "active",
+                        createdById: userId,
+                    })
+                    .returning();
+
+                await tx.insert(damageEntryItem).values(
+                    lineItems.map((li) => ({
+                        damageEntryId: header!.id,
+                        inventoryId: li.inventoryId,
+                        variantId: li.variantId,
+                        qty: li.qty,
+                        unitPrice: li.unitPrice,
+                        totalValue: li.totalValue,
+                        note: li.note,
+                    })),
+                );
+
+                // Deduct inventory
+                for (const li of lineItems) {
+                    await tx
+                        .update(inventory)
+                        .set({
+                            availableQty: sql`CAST(${inventory.availableQty} AS numeric) - ${li.qty}`,
+                        })
+                        .where(eq(inventory.id, li.inventoryId));
+                }
+
+                return header!;
+            });
+
+            return {
+                success: true,
+                entryId: result.id,
+                entryNo: result.entryNo,
+                totalQty,
+                totalLossValue,
+                message: `Damage entry ${result.entryNo} recorded — ${totalQty} item(s), ৳${totalLossValue} loss`,
+            };
+        }),
+
+    /**
+     * List damage entries (paginated, filterable).
+     */
+    getDamageEntries: shopOwnerProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                damageType: z
+                    .enum(["physical", "expired", "lost"])
+                    .optional(),
+                page: z.number().int().min(1).default(1),
+                pageSize: z.number().int().min(1).max(100).default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const offset = (input.page - 1) * input.pageSize;
+
+            const conditions: SQL[] = [
+                eq(damageEntry.shopId, userId),
+                eq(damageEntry.status, "active"),
+            ];
+
+            if (input.damageType) {
+                conditions.push(
+                    eq(damageEntry.damageType, input.damageType),
+                );
+            }
+            if (input.search?.trim()) {
+                const term = `%${input.search.trim()}%`;
+                conditions.push(ilike(damageEntry.entryNo, term));
+            }
+
+            const where = and(...conditions);
+
+            const [rows, countResult] = await Promise.all([
+                db
+                    .select({
+                        id: damageEntry.id,
+                        entryNo: damageEntry.entryNo,
+                        damageType: damageEntry.damageType,
+                        totalQty: damageEntry.totalQty,
+                        totalLossValue: damageEntry.totalLossValue,
+                        enteredByName: damageEntry.enteredByName,
+                        entryDate: damageEntry.entryDate,
+                        createdAt: damageEntry.createdAt,
+                    })
+                    .from(damageEntry)
+                    .where(where)
+                    .orderBy(desc(damageEntry.createdAt))
+                    .limit(input.pageSize)
+                    .offset(offset),
+                db
+                    .select({ count: sql<number>`COUNT(*)::int` })
+                    .from(damageEntry)
+                    .where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count ?? 0;
+
+            return {
+                items: rows,
+                totalCount,
+                page: input.page,
+                pageSize: input.pageSize,
+                totalPages: Math.ceil(totalCount / input.pageSize),
+            };
+        }),
+
+    /**
+     * Get single damage entry detail with line items.
+     */
+    getDamageEntryDetail: shopOwnerProcedure
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const entry = await db
+                .select()
+                .from(damageEntry)
+                .where(
+                    and(
+                        eq(damageEntry.id, input.id),
+                        eq(damageEntry.shopId, userId),
+                    ),
+                )
+                .limit(1);
+
+            if (!entry[0]) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Damage entry not found",
+                });
+            }
+
+            const items = await db
+                .select({
+                    id: damageEntryItem.id,
+                    variantId: damageEntryItem.variantId,
+                    qty: damageEntryItem.qty,
+                    unitPrice: damageEntryItem.unitPrice,
+                    totalValue: damageEntryItem.totalValue,
+                    note: damageEntryItem.note,
+                    sku: productVariant.sku,
+                    unitLabel: productVariant.unitLabel,
+                    weightKg: productVariant.weightKg,
+                    productName: product.name,
+                    productImage: product.image,
+                    brandName: brand.name,
+                    categoryName: category.name,
+                })
+                .from(damageEntryItem)
+                .innerJoin(
+                    productVariant,
+                    eq(damageEntryItem.variantId, productVariant.id),
+                )
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(brand, eq(productVariant.brandId, brand.id))
+                .leftJoin(category, eq(product.categoryId, category.id))
+                .where(eq(damageEntryItem.damageEntryId, input.id))
+                .orderBy(damageEntryItem.id);
+
+            return { ...entry[0], items };
+        }),
+
+    /**
+     * KPI summary for damage management.
+     */
+    getDamageSummary: shopOwnerProcedure
+        .input(z.void())
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const [result] = await db
+                .select({
+                    totalEntries: sql<number>`COUNT(*)::int`,
+                    totalDamageQty: sql<number>`COALESCE(SUM(${damageEntry.totalQty}), 0)::int`,
+                    totalLossValue: sql<string>`COALESCE(SUM(${damageEntry.totalLossValue}::numeric), 0)::text`,
+                })
+                .from(damageEntry)
+                .where(
+                    and(
+                        eq(damageEntry.shopId, userId),
+                        eq(damageEntry.status, "active"),
+                    ),
+                );
+
+            return {
+                totalEntries: result?.totalEntries ?? 0,
+                totalDamageQty: result?.totalDamageQty ?? 0,
+                totalLossValue: parseFloat(result?.totalLossValue ?? "0"),
+            };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
 // Export combined router
 // ────────────────────────────────────────────────────────────────
 
@@ -2208,4 +5173,6 @@ export const shopOwnerRouter = {
     ...openOrderEndpoints,
     ...warehouseConnectionEndpoints,
     ...shopStorefrontEndpoints,
+    ...publicCatalogEndpoints,
+    ...shopProductEndpoints,
 };

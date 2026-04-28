@@ -50,6 +50,64 @@ export function useShopOwnerProductDetails(slug: string) {
 // MANAGEMENT QUERY HOOKS (Shop Owner as Seller)
 // ────────────────────────────────────────────────────────────────
 
+/** Aggregated stock overview KPIs for the dashboard */
+export function useStockOverview() {
+  return useQuery(
+    orpc.shopOwner.getStockOverview.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2, // 2 min cache
+    }),
+  );
+}
+
+/** Real-time stock grouped by product with pack/loose breakdown */
+export function useRealtimeStock(params?: {
+  search?: string;
+  categoryId?: number;
+  status?: "all" | "in_stock" | "low" | "out_of_stock";
+}) {
+  return useQuery(
+    orpc.shopOwner.getRealtimeStock.queryOptions({
+      input: {
+        search: params?.search,
+        categoryId: params?.categoryId,
+        status: params?.status ?? "all",
+      },
+      staleTime: 1000 * 30, // 30s for real-time feel
+    }),
+  );
+}
+
+/** Low stock products with variant-level detail */
+export function useLowStockProducts() {
+  return useQuery(
+    orpc.shopOwner.getLowStockProducts.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60, // 1 min cache
+    }),
+  );
+}
+
+/** Expired products from damage entries + expiry watchlist */
+export function useExpiredProducts() {
+  return useQuery(
+    orpc.shopOwner.getExpiredProducts.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2, // 2 min cache
+    }),
+  );
+}
+
+/** Empty pack collection and return tracking */
+export function useEmptyPackSummary() {
+  return useQuery(
+    orpc.shopOwner.getEmptyPackSummary.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2, // 2 min cache
+    }),
+  );
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;
@@ -241,4 +299,172 @@ export function useReleaseOpenOrder() {
     },
     onError: (err) => toast.error(err.message),
   });
+}
+
+// ────────────────────────────────────────────────────────────────
+// STOCK MANAGEMENT HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Search shop products for stock entry (with current stock info) */
+export function useShopProductsForStock(search?: string) {
+  return useQuery(
+    orpc.shopOwner.getShopProductsForStock.queryOptions({
+      input: { search: search || undefined, limit: 30 },
+      staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** Add stock to one or more inventory variants */
+export function useAddShopStock() {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    orpc.shopOwner.addShopStock.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyRetailProducts"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyInventory"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getShopProductsForStock"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyStorePreview"]],
+        });
+      },
+    }),
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// STOCK ADJUSTMENT HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Search shop variants for stock adjustment product picker */
+export function useSearchShopVariantsForAdjustment(search?: string) {
+  return useQuery(
+    orpc.shopOwner.searchShopVariantsForAdjustment.queryOptions({
+      input: { search: search || undefined, limit: 20 },
+      staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** Create a stock adjustment (auto-submitted, applies to inventory) */
+export function useCreateShopAdjustment() {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    orpc.shopOwner.createShopAdjustment.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyRetailProducts"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyInventory"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getShopProductsForStock"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getShopAdjustments"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyStorePreview"]],
+        });
+      },
+    }),
+  );
+}
+
+/** List shop adjustment history (paginated) */
+export function useShopAdjustments(params?: {
+  search?: string;
+  adjustmentType?: string;
+  page?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getShopAdjustments.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        adjustmentType: params?.adjustmentType as any,
+        page: params?.page ?? 1,
+        pageSize: 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// DAMAGE MANAGEMENT HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Create a damage entry (deducts inventory, calculates loss) */
+export function useCreateDamageEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    orpc.shopOwner.createDamageEntry.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyRetailProducts"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyInventory"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getDamageEntries"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getDamageSummary"]],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [["shopOwner", "getMyStorePreview"]],
+        });
+      },
+    }),
+  );
+}
+
+/** List damage entries (paginated) */
+export function useDamageEntries(params?: {
+  search?: string;
+  damageType?: string;
+  page?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getDamageEntries.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        damageType: params?.damageType as any,
+        page: params?.page ?? 1,
+        pageSize: 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Get single damage entry detail */
+export function useDamageEntryDetail(id: number) {
+  return useQuery(
+    orpc.shopOwner.getDamageEntryDetail.queryOptions({
+      input: { id },
+      staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** KPI summary for damage management */
+export function useDamageSummary() {
+  return useQuery(
+    orpc.shopOwner.getDamageSummary.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2,
+    }),
+  );
 }
