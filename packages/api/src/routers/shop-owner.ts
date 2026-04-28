@@ -1245,6 +1245,105 @@ const managementQueries = {
             };
         }),
 
+    /** B2B → B2C conversion history for the shop owner */
+    getConversionHistory: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // Get all B2B orders for this shop
+            const b2bOrders = await db.query.order.findMany({
+                where: and(
+                    eq(order.userId, userId),
+                    eq(order.orderType, "b2b"),
+                ),
+                columns: {
+                    id: true,
+                    orderNumber: true,
+                    status: true,
+                    createdAt: true,
+                    deliveredAt: true,
+                },
+                with: {
+                    items: {
+                        columns: {
+                            id: true,
+                            productId: true,
+                            variantId: true,
+                            productName: true,
+                            productImage: true,
+                            productSize: true,
+                            quantity: true,
+                            unitPrice: true,
+                            totalPrice: true,
+                            supplyMode: true,
+                            targetVariantId: true,
+                            conversionStatus: true,
+                            convertedQty: true,
+                        },
+                    },
+                },
+                orderBy: [desc(order.createdAt)],
+            });
+
+            // Build flat list of conversion items
+            const conversionItems: {
+                orderItemId: number;
+                orderNumber: string;
+                orderStatus: string;
+                orderedAt: Date;
+                deliveredAt: Date | null;
+                productName: string;
+                productImage: string;
+                productSize: string;
+                quantity: number;
+                unitPrice: string;
+                supplyMode: string | null;
+                targetVariantId: number | null;
+                conversionStatus: string | null;
+                convertedQty: string | null;
+            }[] = [];
+
+            let totalConverted = 0;
+            let totalPending = 0;
+            let totalFailed = 0;
+
+            for (const o of b2bOrders) {
+                for (const item of o.items) {
+                    const status = item.conversionStatus ?? (o.status === "delivered" ? "converted" : "pending");
+                    if (status === "converted") totalConverted++;
+                    else if (status === "failed") totalFailed++;
+                    else totalPending++;
+
+                    conversionItems.push({
+                        orderItemId: item.id,
+                        orderNumber: o.orderNumber,
+                        orderStatus: o.status,
+                        orderedAt: o.createdAt,
+                        deliveredAt: o.deliveredAt,
+                        productName: item.productName,
+                        productImage: item.productImage,
+                        productSize: item.productSize,
+                        quantity: item.quantity,
+                        unitPrice: item.unitPrice,
+                        supplyMode: item.supplyMode,
+                        targetVariantId: item.targetVariantId,
+                        conversionStatus: status,
+                        convertedQty: item.convertedQty,
+                    });
+                }
+            }
+
+            return {
+                summary: {
+                    totalItems: conversionItems.length,
+                    converted: totalConverted,
+                    pending: totalPending,
+                    failed: totalFailed,
+                },
+                items: conversionItems,
+            };
+        }),
+
     /**
      * Get shop owner's retail products (what they sell to consumers).
      * Shows RETAIL variants with inventory info.

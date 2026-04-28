@@ -108,6 +108,16 @@ export function useEmptyPackSummary() {
   );
 }
 
+/** B2B → B2C conversion history */
+export function useConversionHistory() {
+  return useQuery(
+    orpc.shopOwner.getConversionHistory.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2, // 2 min cache
+    }),
+  );
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;
