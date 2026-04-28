@@ -3683,6 +3683,7 @@ const shopProductEndpoints = {
                     brandName: brand.name,
                     availableQty: inventory.availableQty,
                     retailPrice: inventory.retailPrice,
+                    variantPrice: productVariant.price,
                 })
                 .from(inventory)
                 .innerJoin(
@@ -3711,7 +3712,7 @@ const shopProductEndpoints = {
                     productImage: r.productImage,
                     brandName: r.brandName,
                     availableQty: parseFloat(r.availableQty || "0"),
-                    retailPrice: parseFloat(r.retailPrice || "0"),
+                    retailPrice: parseFloat(r.retailPrice || "0") || parseFloat(r.variantPrice || "0"),
                 })),
             };
         }),
@@ -4004,6 +4005,16 @@ const shopProductEndpoints = {
                 }
             }
 
+            // 2b. Fetch variant base prices as fallback
+            const variantIds = ownedInventory.map((inv) => inv.variantId);
+            const variantRows = await db
+                .select({ id: productVariant.id, price: productVariant.price })
+                .from(productVariant)
+                .where(inArray(productVariant.id, variantIds));
+            const variantPriceLookup = new Map(
+                variantRows.map((v) => [v.id, parseFloat(v.price || "0")]),
+            );
+
             // 3. Generate entry number (DMG-0001)
             const [maxResult] = await db
                 .select({
@@ -4020,8 +4031,10 @@ const shopProductEndpoints = {
             // 4. Build line items
             const lineItems = input.items.map((item) => {
                 const inv = invLookup.get(item.inventoryId)!;
+                const retailPrice = parseFloat(inv.retailPrice || "0");
+                const variantBasePrice = variantPriceLookup.get(inv.variantId) ?? 0;
                 const unitPrice =
-                    item.unitPrice ?? parseFloat(inv.retailPrice || "0");
+                    item.unitPrice ?? (retailPrice > 0 ? retailPrice : variantBasePrice);
                 return {
                     inventoryId: inv.id,
                     variantId: inv.variantId,
