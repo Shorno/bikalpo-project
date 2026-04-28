@@ -98,6 +98,16 @@ export function useExpiredProducts() {
   );
 }
 
+/** Empty pack collection and return tracking */
+export function useEmptyPackSummary() {
+  return useQuery(
+    orpc.shopOwner.getEmptyPackSummary.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2, // 2 min cache
+    }),
+  );
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;

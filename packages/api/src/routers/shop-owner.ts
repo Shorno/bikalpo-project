@@ -39,6 +39,11 @@ import {
     stockAdjustmentItem,
     damageEntry,
     damageEntryItem,
+    emptyPack,
+    productPackRule,
+    supplier,
+    purchaseItem,
+    purchase,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -1042,6 +1047,201 @@ const managementQueries = {
                 },
                 expiredProducts,
                 expiryEnabledProducts,
+            };
+        }),
+
+    /**
+     * Empty pack management — aggregates empty pack collections,
+     * condition breakdown, and return tracking.
+     */
+    getEmptyPackSummary: shopOwnerProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // 1. Get all empty pack records linked to this shop's deliveries
+            // empty_pack is delivery-scoped, so we need to find packs
+            // from deliveries belonging to this shop owner
+            const allPacks = await db.query.emptyPack.findMany({
+                with: {
+                    variant: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, image: true },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                    brand: { columns: { id: true, name: true } },
+                },
+            });
+
+            // 2. Get pack rules for this shop
+            const packRules = await db.query.productPackRule.findMany({
+                where: and(
+                    eq(productPackRule.ownerType, "shop"),
+                    eq(productPackRule.ownerId, userId),
+                    eq(productPackRule.isActive, true),
+                ),
+            });
+            const ruleMap = new Map(packRules.map((r) => [r.productId, r]));
+
+            // 3. Get return pack quantities from purchases
+            const shopPurchases = await db.query.purchase.findMany({
+                where: eq(purchase.warehouseId, userId),
+                with: {
+                    items: {
+                        columns: { variantId: true, returnPackQty: true, productName: true },
+                    },
+                    supplier: { columns: { id: true, name: true, returnPackAgreement: true } },
+                },
+            });
+
+            // Build return tracking from purchases
+            const returnedByVariant = new Map<number, number>();
+            const supplierByProduct = new Map<number, { name: string; hasAgreement: boolean }>();
+
+            for (const p of shopPurchases) {
+                for (const item of p.items) {
+                    if (item.variantId && parseFloat(item.returnPackQty || "0") > 0) {
+                        const prev = returnedByVariant.get(item.variantId) || 0;
+                        returnedByVariant.set(item.variantId, prev + parseFloat(item.returnPackQty));
+                    }
+                }
+                if (p.supplier) {
+                    // We don't have productId directly, but we can track supplier info
+                    for (const item of p.items) {
+                        if (item.variantId) {
+                            supplierByProduct.set(item.variantId, {
+                                name: p.supplier.name,
+                                hasAgreement: p.supplier.returnPackAgreement,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 4. Group empty packs by product
+            type PackVariant = {
+                variantId: number | null;
+                brandName: string | null;
+                packDescription: string;
+                collected: number;
+                verified: number;
+                rejected: number;
+                condition: "reusable" | "damaged" | "pending";
+            };
+
+            type PackProduct = {
+                productId: number;
+                productName: string;
+                productImage: string | null;
+                emptyQty: number;
+                packType: string;
+                isReturnable: boolean;
+                status: "reusable" | "return_pending";
+                variants: PackVariant[];
+                totalCollected: number;
+                totalVerified: number;
+                totalRejected: number;
+                totalReturned: number;
+            };
+
+            const productMap = new Map<number, PackProduct>();
+            let totalPacks = 0;
+            let returnPending = 0;
+            let reusable = 0;
+
+            for (const pack of allPacks) {
+                const prod = pack.variant?.product;
+                if (!prod) continue;
+
+                const pid = prod.id;
+                const qty = pack.quantityCollected;
+                totalPacks += qty;
+
+                if (pack.status === "verified") reusable += qty;
+                else if (pack.status === "collected" || pack.status === "submitted") returnPending += qty;
+
+                if (!productMap.has(pid)) {
+                    const rule = ruleMap.get(pid);
+                    productMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        emptyQty: 0,
+                        packType: pack.packDescription || "Pack",
+                        isReturnable: rule?.isEmptyPackReturnable ?? (pack.variant?.isPackReturnRequired ?? false),
+                        status: "reusable",
+                        variants: [],
+                        totalCollected: 0,
+                        totalVerified: 0,
+                        totalRejected: 0,
+                        totalReturned: 0,
+                    });
+                }
+
+                const group = productMap.get(pid)!;
+                group.emptyQty += qty;
+                group.totalCollected += qty;
+
+                if (pack.status === "verified") group.totalVerified += qty;
+                if (pack.status === "rejected") group.totalRejected += qty;
+
+                // Add returned qty from purchases
+                if (pack.variantId) {
+                    group.totalReturned = returnedByVariant.get(pack.variantId) || 0;
+                }
+
+                const brandName = pack.brand?.name ?? pack.variant?.brand?.name ?? null;
+
+                group.variants.push({
+                    variantId: pack.variantId,
+                    brandName,
+                    packDescription: pack.packDescription || "Pack",
+                    collected: qty,
+                    verified: pack.status === "verified" ? qty : 0,
+                    rejected: pack.status === "rejected" ? qty : 0,
+                    condition: pack.status === "rejected" ? "damaged" :
+                               pack.status === "verified" ? "reusable" : "pending",
+                });
+            }
+
+            // Determine product-level status
+            for (const group of productMap.values()) {
+                const hasPending = group.variants.some((v) => v.condition === "pending");
+                group.status = hasPending ? "return_pending" : "reusable";
+            }
+
+            const products = Array.from(productMap.values())
+                .sort((a, b) => b.emptyQty - a.emptyQty);
+
+            // 5. Build return tracking list
+            const returnTracking = products
+                .filter((p) => p.isReturnable && p.status === "return_pending")
+                .map((p) => {
+                    const firstVariant = p.variants[0];
+                    const supplierInfo = firstVariant?.variantId
+                        ? supplierByProduct.get(firstVariant.variantId)
+                        : null;
+
+                    return {
+                        productId: p.productId,
+                        productName: p.productName,
+                        pendingReturn: p.totalCollected - p.totalReturned,
+                        supplierName: supplierInfo?.name ?? null,
+                        hasReturnAgreement: supplierInfo?.hasAgreement ?? false,
+                    };
+                })
+                .filter((r) => r.pendingReturn > 0);
+
+            return {
+                summary: {
+                    totalEmptyPacks: totalPacks,
+                    returnPending,
+                    reusableStock: reusable,
+                },
+                products,
+                returnTracking,
             };
         }),
 
