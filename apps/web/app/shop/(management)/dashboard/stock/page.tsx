@@ -4,16 +4,24 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   BoxesIcon,
   CheckCircle2,
-  Loader2,
+  Clock,
+  Eye,
+  Flame,
+  Layers,
   Package,
   PackageX,
   Plus,
   Search,
+  ShieldAlert,
+  ShoppingCart,
+  Snail,
   Tag,
   TrendingUp,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,9 +29,9 @@ import { Input } from "@/components/ui/input";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { useMyRetailProducts } from "@/hooks/use-shop-owner-api";
+import { useMyRetailProducts, useStockOverview } from "@/hooks/use-shop-owner-api";
 
-// ─── KPI Card (same style as warehouse) ────────────────────────
+// ─── KPI Card ──────────────────────────────────────────────────
 
 function KPICard({
   label,
@@ -102,25 +110,30 @@ function KPICard({
   );
 }
 
-// ─── Section Header (same style as warehouse) ──────────────────
+// ─── Section Header ─────────────────────────────────────────────
 
 function SectionHeader({
   icon: Icon,
   title,
   emoji,
+  action,
 }: {
   icon: React.ElementType;
   title: string;
   emoji: string;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <div className="p-1.5 bg-gray-100 rounded-lg">
-        <Icon size={14} className="text-gray-600" />
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <div className="p-1.5 bg-gray-100 rounded-lg">
+          <Icon size={14} className="text-gray-600" />
+        </div>
+        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
+          {emoji} {title}
+        </h2>
       </div>
-      <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
-        {emoji} {title}
-      </h2>
+      {action}
     </div>
   );
 }
@@ -129,28 +142,12 @@ function SectionHeader({
 
 export default function StockPage() {
   const [search, setSearch] = useState("");
-  const { data, isLoading } = useMyRetailProducts({ search });
-  const items: any[] = (data as any)?.items ?? [];
+  const [showTable, setShowTable] = useState(false);
 
-  // Derive stats
-  const stats = useMemo(() => {
-    let totalVariants = 0;
-    let inStock = 0;
-    let outOfStock = 0;
-    let lowStock = 0;
-    let totalUnits = 0;
+  const { data: overview, isLoading: overviewLoading } = useStockOverview();
+  const { data: retailData, isLoading: retailLoading } = useMyRetailProducts({ search, limit: 50 });
 
-    for (const item of items) {
-      totalVariants++;
-      const qty = Number(item.availableQty ?? 0);
-      totalUnits += qty;
-      if (qty <= 0) outOfStock++;
-      else if (qty <= 5) lowStock++;
-      else inStock++;
-    }
-
-    return { totalVariants, inStock, outOfStock, lowStock, totalUnits };
-  }, [items]);
+  const items: any[] = (retailData as any)?.items ?? [];
 
   // Resolve brand
   const resolveBrand = (item: any) => {
@@ -163,7 +160,7 @@ export default function StockPage() {
     return null;
   };
 
-  if (isLoading) {
+  if (overviewLoading) {
     return (
       <div className="space-y-6">
         <div>
@@ -171,9 +168,9 @@ export default function StockPage() {
             <div className="p-2 bg-blue-100 rounded-xl">
               <BarChart3 className="text-blue-600" size={22} />
             </div>
-            Stock Overview
+            📦 Stock Overview
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your store inventory</p>
+          <p className="text-sm text-gray-500 mt-1">Loading your stock dashboard...</p>
         </div>
         <div className="flex flex-col items-center justify-center py-20 border rounded-lg">
           <div className="w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
@@ -182,6 +179,8 @@ export default function StockPage() {
       </div>
     );
   }
+
+  const ov = overview as any;
 
   return (
     <div className="space-y-8">
@@ -192,10 +191,10 @@ export default function StockPage() {
             <div className="p-2 bg-blue-100 rounded-xl">
               <BarChart3 className="text-blue-600" size={22} />
             </div>
-            Stock Overview
+            📦 Stock Overview
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Manage your store inventory
+            Complete inventory position at a glance
           </p>
         </div>
         <Button asChild>
@@ -207,35 +206,30 @@ export default function StockPage() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════
-          📊 STOCK POSITION
+          📊 MAIN KPIs — STOCK POSITION
           ══════════════════════════════════════════════════════════════ */}
       <div>
         <SectionHeader icon={TrendingUp} title="Stock Position" emoji="📊" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <KPICard
-            label="Total Variants"
-            value={stats.totalVariants.toLocaleString()}
-            icon={Tag}
-            color="amber"
-          />
-          <KPICard
-            label="Total Units"
-            value={stats.totalUnits.toLocaleString()}
-            icon={BoxesIcon}
+            label="Total Products"
+            value={ov?.totalProducts?.toLocaleString() ?? "0"}
+            subtitle="Unique items in store"
+            icon={Package}
             color="blue"
           />
           <KPICard
-            label="In Stock"
-            value={stats.inStock.toLocaleString()}
-            icon={CheckCircle2}
+            label="Total Stock Value"
+            value={`৳${(ov?.totalStockValue ?? 0).toLocaleString("en-IN")}`}
+            subtitle="Based on retail price"
+            icon={Tag}
             color="emerald"
           />
           <KPICard
-            label="Products"
-            value={
-              new Set(items.map((i: any) => i.variant?.product?.id).filter(Boolean)).size.toLocaleString()
-            }
-            icon={Package}
+            label="Total SKUs"
+            value={ov?.totalSKUs?.toLocaleString() ?? "0"}
+            subtitle="Variant-level inventory"
+            icon={Layers}
             color="purple"
           />
         </div>
@@ -249,22 +243,22 @@ export default function StockPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <KPICard
             label="In Stock"
-            value={stats.inStock.toLocaleString()}
+            value={ov?.inStockCount?.toLocaleString() ?? "0"}
             subtitle="More than 5 units"
             icon={CheckCircle2}
             color="emerald"
           />
           <KPICard
             label="Low Stock"
-            value={stats.lowStock.toLocaleString()}
-            subtitle="≤ 5 units"
+            value={ov?.lowStockCount?.toLocaleString() ?? "0"}
+            subtitle="≤ 5 units remaining"
             icon={AlertTriangle}
             color="orange"
           />
           <KPICard
             label="Out of Stock"
-            value={stats.outOfStock.toLocaleString()}
-            subtitle="0 units"
+            value={ov?.outOfStockCount?.toLocaleString() ?? "0"}
+            subtitle="0 units available"
             icon={PackageX}
             color="red"
           />
@@ -272,113 +266,334 @@ export default function StockPage() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════
-          📦 INVENTORY TABLE
+          📊 CATEGORY SNAPSHOT
+          ══════════════════════════════════════════════════════════════ */}
+      {ov?.categorySnapshot?.length > 0 && (
+        <div>
+          <SectionHeader icon={BoxesIcon} title="Category Snapshot" emoji="📊" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {ov.categorySnapshot.map((cat: any) => (
+              <div
+                key={cat.categoryName}
+                className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-sm transition-shadow"
+              >
+                <div className="text-sm font-semibold text-gray-800 truncate">
+                  {cat.categoryName}
+                </div>
+                <div className="mt-1 flex items-baseline gap-1.5">
+                  <span className="text-xl font-bold text-gray-900 tabular-nums">
+                    {cat.totalQty.toLocaleString()}
+                  </span>
+                  <span className="text-xs text-gray-400 font-medium">{cat.unit}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          ⚠ ALERT SUMMARY
           ══════════════════════════════════════════════════════════════ */}
       <div>
-        <SectionHeader icon={BoxesIcon} title="Inventory" emoji="📦" />
-
-        {/* Search */}
-        <div className="relative max-w-md mb-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search product or brand..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+        <SectionHeader icon={AlertTriangle} title="Alert Summary" emoji="⚠" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <KPICard
+            label="Low Stock"
+            value={ov?.alerts?.lowStock ?? 0}
+            subtitle="Products running low"
+            icon={AlertTriangle}
+            color="orange"
+          />
+          <KPICard
+            label="Expiring Soon"
+            value={ov?.alerts?.expiringSoon ?? 0}
+            subtitle="Coming soon"
+            icon={Clock}
+            color="amber"
+          />
+          <KPICard
+            label="Damaged"
+            value={ov?.alerts?.damaged ?? 0}
+            subtitle="Last 30 days"
+            icon={ShieldAlert}
+            color="red"
           />
         </div>
+      </div>
 
-        {items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 border border-dashed rounded-lg bg-gray-50/50">
-            <BoxesIcon className="text-gray-300 mb-4" size={48} />
-            <p className="text-gray-500 text-lg font-medium">No inventory items</p>
-            <p className="text-sm text-gray-400 mt-1">
-              Add products to your store to start managing stock.
-            </p>
-            <Button asChild className="mt-4" variant="outline" size="sm">
-              <Link href="/dashboard/stock/add">
-                <Plus className="mr-1 h-3 w-3" /> Add Stock
-              </Link>
-            </Button>
-          </div>
-        ) : (
+      {/* ══════════════════════════════════════════════════════════════
+          📊 TOP PRODUCTS (STOCK HEAVY)
+          ══════════════════════════════════════════════════════════════ */}
+      {ov?.topProducts?.length > 0 && (
+        <div>
+          <SectionHeader icon={TrendingUp} title="Top Products (Stock Heavy)" emoji="📊" />
           <div className="bg-white border rounded-xl overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="text-xs bg-gradient-to-r from-gray-50 to-white">
-                  <TableHead className="py-3 font-bold text-gray-700">Product</TableHead>
-                  <TableHead className="py-3 font-bold text-gray-700">Brand</TableHead>
-                  <TableHead className="py-3 font-bold text-gray-700">Variant</TableHead>
-                  <TableHead className="py-3 font-bold text-gray-700">Unit</TableHead>
-                  <TableHead className="text-center py-3 font-bold text-gray-700">Stock</TableHead>
-                  <TableHead className="text-right py-3 font-bold text-gray-700">Price</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item: any) => {
-                  const variant = item.variant;
-                  const product = variant?.product;
-                  const qty = Number(item.availableQty ?? 0);
-                  const price = item.retailPrice ? Number(item.retailPrice) : null;
-
-                  return (
-                    <TableRow key={item.id} className="hover:bg-gray-50/50">
-                      <TableCell className="py-3">
-                        <div className="flex items-center gap-2.5">
-                          {product?.images?.[0]?.url ? (
-                            <img
-                              src={product.images[0].url}
-                              alt={product?.name}
-                              className="w-8 h-8 rounded-lg object-cover border"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
-                              <Package className="h-4 w-4 text-gray-300" />
-                            </div>
-                          )}
-                          <span className="text-sm font-semibold text-gray-800 truncate max-w-[160px]">
-                            {product?.name || "—"}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600 py-3">
-                        {resolveBrand(item) || "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600 py-3">
-                        {variant?.quantitySelectorLabel || variant?.unitLabel || "—"}
-                      </TableCell>
-                      <TableCell className="text-xs text-gray-400 py-3">
-                        {variant?.weightKg ? `${variant.weightKg} KG` : "—"}
-                      </TableCell>
-                      <TableCell className="text-center py-3">
-                        <Badge
-                          variant="outline"
-                          className={`text-xs font-bold ${
-                            qty > 10
-                              ? "border-emerald-200 text-emerald-700 bg-emerald-50"
-                              : qty > 0
-                                ? "border-amber-200 text-amber-700 bg-amber-50"
-                                : "border-red-200 text-red-700 bg-red-50"
-                          }`}
-                        >
-                          {qty}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right text-sm py-3">
-                        {price != null ? (
-                          <span className="font-bold text-gray-900">
-                            ৳ {price.toLocaleString("en-IN")}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300 text-xs">Not set</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <div className="divide-y divide-gray-100">
+              {ov.topProducts.map((p: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="px-4 py-3 flex items-center justify-between hover:bg-gray-50/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {p.image ? (
+                      <img
+                        src={p.image}
+                        alt={p.productName}
+                        className="w-8 h-8 rounded-lg object-cover border"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                        <Package className="h-4 w-4 text-gray-300" />
+                      </div>
+                    )}
+                    <span className="text-sm font-semibold text-gray-800 truncate">
+                      {p.productName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-sm font-bold text-gray-900 tabular-nums">
+                      {p.totalQty} {p.unit}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] font-bold ${
+                        p.status === "high"
+                          ? "border-emerald-200 text-emerald-700 bg-emerald-50"
+                          : p.status === "available"
+                            ? "border-blue-200 text-blue-700 bg-blue-50"
+                            : "border-amber-200 text-amber-700 bg-amber-50"
+                      }`}
+                    >
+                      {p.status === "high" ? "✅ High Stock" : p.status === "available" ? "✅ Available" : "⚠ Low"}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          📉 STOCK INSIGHTS
+          ══════════════════════════════════════════════════════════════ */}
+      <div>
+        <SectionHeader icon={Zap} title="Stock Insights" emoji="📉" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 bg-orange-100 rounded-lg">
+                <Flame size={14} className="text-orange-500" />
+              </div>
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                Fast Moving
+              </span>
+            </div>
+            <p className="text-sm font-semibold text-gray-800">
+              {ov?.insights?.fastMoving ?? (
+                <span className="text-gray-400 italic">Coming Soon</span>
+              )}
+            </p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 bg-blue-100 rounded-lg">
+                <Snail size={14} className="text-blue-500" />
+              </div>
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                Slow Moving
+              </span>
+            </div>
+            <p className="text-sm font-semibold text-gray-800">
+              {ov?.insights?.slowMoving ?? (
+                <span className="text-gray-400 italic">Coming Soon</span>
+              )}
+            </p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 bg-red-100 rounded-lg">
+                <AlertTriangle size={14} className="text-red-500" />
+              </div>
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                At Risk
+              </span>
+            </div>
+            <p className="text-sm font-semibold text-gray-800">
+              {(ov?.insights?.atRiskCount ?? 0) > 0 ? (
+                <span className="text-red-600">
+                  {ov.insights.atRiskCount} product{ov.insights.atRiskCount > 1 ? "s" : ""} may go out of stock soon
+                </span>
+              ) : (
+                <span className="text-emerald-600">No products at risk</span>
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          ⚙ QUICK ACTIONS
+          ══════════════════════════════════════════════════════════════ */}
+      <div>
+        <SectionHeader icon={Zap} title="Quick Actions" emoji="⚙" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Button variant="outline" className="h-12 gap-2" asChild>
+            <Link href="/dashboard/stock">
+              <Eye className="h-4 w-4" />
+              View Stock
+            </Link>
+          </Button>
+          <Button variant="outline" className="h-12 gap-2" asChild>
+            <Link href="/dashboard/stock/add">
+              <Plus className="h-4 w-4" />
+              Add Stock
+            </Link>
+          </Button>
+          <Button variant="outline" className="h-12 gap-2" asChild>
+            <Link href="/dashboard/orders">
+              <ShoppingCart className="h-4 w-4" />
+              Create Purchase
+            </Link>
+          </Button>
+          <Button variant="outline" className="h-12 gap-2" asChild>
+            <Link href="/dashboard/damage">
+              <AlertTriangle className="h-4 w-4" />
+              View Damage
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          📦 FULL INVENTORY TABLE (Togglable)
+          ══════════════════════════════════════════════════════════════ */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <SectionHeader icon={BoxesIcon} title="Inventory" emoji="📦" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs gap-1.5"
+            onClick={() => setShowTable(!showTable)}
+          >
+            {showTable ? "Hide" : "Show"} All Inventory
+            <ArrowRight className={`h-3 w-3 transition-transform ${showTable ? "rotate-90" : ""}`} />
+          </Button>
+        </div>
+
+        {showTable && (
+          <>
+            {/* Search */}
+            <div className="relative max-w-md mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search product or brand..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            {retailLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 border rounded-lg">
+                <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-3" />
+                <p className="text-sm text-muted-foreground">Loading inventory...</p>
+              </div>
+            ) : items.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 border border-dashed rounded-lg bg-gray-50/50">
+                <BoxesIcon className="text-gray-300 mb-4" size={48} />
+                <p className="text-gray-500 text-lg font-medium">No inventory items</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  Add products to your store to start managing stock.
+                </p>
+                <Button asChild className="mt-4" variant="outline" size="sm">
+                  <Link href="/dashboard/stock/add">
+                    <Plus className="mr-1 h-3 w-3" /> Add Stock
+                  </Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="bg-white border rounded-xl overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="text-xs bg-gradient-to-r from-gray-50 to-white">
+                      <TableHead className="py-3 font-bold text-gray-700">Product</TableHead>
+                      <TableHead className="py-3 font-bold text-gray-700">Brand</TableHead>
+                      <TableHead className="py-3 font-bold text-gray-700">Variant</TableHead>
+                      <TableHead className="py-3 font-bold text-gray-700">Unit</TableHead>
+                      <TableHead className="text-center py-3 font-bold text-gray-700">Stock</TableHead>
+                      <TableHead className="text-right py-3 font-bold text-gray-700">Price</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item: any) => {
+                      const variant = item.variant;
+                      const product = variant?.product;
+                      const qty = Number(item.availableQty ?? 0);
+                      const price = item.retailPrice ? Number(item.retailPrice) : null;
+
+                      return (
+                        <TableRow key={item.id} className="hover:bg-gray-50/50">
+                          <TableCell className="py-3">
+                            <div className="flex items-center gap-2.5">
+                              {product?.images?.[0]?.url ? (
+                                <img
+                                  src={product.images[0].url}
+                                  alt={product?.name}
+                                  className="w-8 h-8 rounded-lg object-cover border"
+                                />
+                              ) : (
+                                <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                                  <Package className="h-4 w-4 text-gray-300" />
+                                </div>
+                              )}
+                              <span className="text-sm font-semibold text-gray-800 truncate max-w-[160px]">
+                                {product?.name || "—"}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-600 py-3">
+                            {resolveBrand(item) || "—"}
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-600 py-3">
+                            {variant?.quantitySelectorLabel || variant?.unitLabel || "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-gray-400 py-3">
+                            {variant?.weightKg ? `${variant.weightKg} KG` : "—"}
+                          </TableCell>
+                          <TableCell className="text-center py-3">
+                            <Badge
+                              variant="outline"
+                              className={`text-xs font-bold ${
+                                qty > 10
+                                  ? "border-emerald-200 text-emerald-700 bg-emerald-50"
+                                  : qty > 0
+                                    ? "border-amber-200 text-amber-700 bg-amber-50"
+                                    : "border-red-200 text-red-700 bg-red-50"
+                              }`}
+                            >
+                              {qty}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-sm py-3">
+                            {price != null ? (
+                              <span className="font-bold text-gray-900">
+                                ৳ {price.toLocaleString("en-IN")}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-xs">Not set</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
