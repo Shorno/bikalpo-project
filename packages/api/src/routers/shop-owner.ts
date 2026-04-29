@@ -2627,6 +2627,241 @@ const orderQueries = {
             };
         }),
 
+    // ── Supplier Management ──────────────────────────────────
+
+    /**
+     * List all warehouses this shop has ordered from (= suppliers).
+     */
+    getMySuppliers: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/my-suppliers",
+            tags: ["Shop Owner"],
+            summary: "List suppliers (warehouses ordered from)",
+        })
+        .input(z.object({ search: z.string().optional() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Get distinct warehouseIds from orders
+            const warehouseOrders = await db
+                .select({
+                    warehouseId: order.warehouseId,
+                    totalOrders: count(),
+                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("ta"),
+                    lastOrderDate: sql<Date>`MAX(${order.createdAt})`.as("lo"),
+                    pendingCount: sql<number>`count(*) filter (where ${order.status} in ('pending', 'confirmed', 'processing'))`.as("pc"),
+                })
+                .from(order)
+                .where(and(eq(order.userId, userId), sql`${order.warehouseId} is not null`))
+                .groupBy(order.warehouseId);
+
+            if (warehouseOrders.length === 0) return { suppliers: [] };
+
+            const whIds = warehouseOrders.map((w) => w.warehouseId!).filter(Boolean);
+            const warehouseUsers = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    shopName: user.shopName,
+                    warehouseName: user.warehouseName,
+                    phoneNumber: user.phoneNumber,
+                    email: user.email,
+                })
+                .from(user)
+                .where(inArray(user.id, whIds));
+
+            const userMap = new Map(warehouseUsers.map((u) => [u.id, u]));
+
+            let suppliers = warehouseOrders.map((wo) => {
+                const u = userMap.get(wo.warehouseId!);
+                return {
+                    warehouseId: wo.warehouseId!,
+                    name: u?.warehouseName || u?.shopName || u?.name || "Unknown",
+                    phone: u?.phoneNumber || null,
+                    email: u?.email || null,
+                    totalOrders: Number(wo.totalOrders),
+                    totalAmount: Number(wo.totalAmount),
+                    lastOrderDate: wo.lastOrderDate,
+                    pendingCount: Number(wo.pendingCount),
+                };
+            });
+
+            if (input.search) {
+                const s = input.search.toLowerCase();
+                suppliers = suppliers.filter((sup) => sup.name.toLowerCase().includes(s));
+            }
+
+            suppliers.sort((a, b) => Number(b.totalAmount) - Number(a.totalAmount));
+
+            return { suppliers };
+        }),
+
+    /**
+     * Full supplier detail: financial summary, order stats, pending orders,
+     * recent history, top products, performance metrics.
+     */
+    getSupplierDetail: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/supplier-detail",
+            tags: ["Shop Owner"],
+            summary: "Get full supplier profile",
+        })
+        .input(z.object({ warehouseId: z.string() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const whId = input.warehouseId;
+
+            // Supplier identity
+            const [whUser] = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    shopName: user.shopName,
+                    warehouseName: user.warehouseName,
+                    phoneNumber: user.phoneNumber,
+                    email: user.email,
+                    address: user.address,
+                })
+                .from(user)
+                .where(eq(user.id, whId))
+                .limit(1);
+
+            if (!whUser) throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+
+            // Order stats
+            const [stats] = await db
+                .select({
+                    totalOrders: count(),
+                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("ta"),
+                    deliveredCount: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dc"),
+                    deliveredAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)) filter (where ${order.status} = 'delivered'), 0)`.as("da"),
+                    pendingCount: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pc"),
+                    confirmedCount: sql<number>`count(*) filter (where ${order.status} = 'confirmed')`.as("cc"),
+                    processingCount: sql<number>`count(*) filter (where ${order.status} = 'processing')`.as("prc"),
+                    cancelledCount: sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as("canc"),
+                })
+                .from(order)
+                .where(and(eq(order.userId, userId), eq(order.warehouseId, whId)));
+
+            const totalPaid = Number(stats?.deliveredAmount) || 0;
+            const totalPurchased = Number(stats?.totalAmount) || 0;
+            const totalDue = totalPurchased - totalPaid;
+
+            // Pending orders (active)
+            const pendingOrders = await db.query.order.findMany({
+                where: and(
+                    eq(order.userId, userId),
+                    eq(order.warehouseId, whId),
+                    inArray(order.status, ["pending", "confirmed", "processing"]),
+                ),
+                with: {
+                    items: {
+                        columns: { id: true, productName: true, productImage: true, quantity: true, modifiedQty: true },
+                    },
+                },
+                orderBy: [desc(order.createdAt)],
+                limit: 5,
+            });
+
+            // Recent history (last 5 completed)
+            const recentHistory = await db.query.order.findMany({
+                where: and(
+                    eq(order.userId, userId),
+                    eq(order.warehouseId, whId),
+                    inArray(order.status, ["delivered", "cancelled", "returned"]),
+                ),
+                orderBy: [desc(order.createdAt)],
+                limit: 5,
+            });
+
+            // Top purchased products
+            const topProducts = await db
+                .select({
+                    productName: orderItem.productName,
+                    productImage: orderItem.productImage,
+                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
+                    orderCount: count(),
+                })
+                .from(orderItem)
+                .innerJoin(order, eq(orderItem.orderId, order.id))
+                .where(and(eq(order.userId, userId), eq(order.warehouseId, whId)))
+                .groupBy(orderItem.productName, orderItem.productImage)
+                .orderBy(sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`)
+                .limit(10);
+
+            // Performance: avg delivery days + modification rate
+            const perfData = await db
+                .select({
+                    avgDays: sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as("ad"),
+                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as("mc"),
+                    deliveredTotal: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, userId),
+                        eq(order.warehouseId, whId),
+                        eq(order.status, "delivered"),
+                    ),
+                );
+
+            const avgDeliveryDays = Math.round(Number(perfData[0]?.avgDays) || 0);
+            const deliveredTotal = Number(perfData[0]?.deliveredTotal) || 1;
+            const modifiedRate = Math.round(((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100);
+
+            return {
+                identity: {
+                    warehouseId: whUser.id,
+                    name: whUser.warehouseName || whUser.shopName || whUser.name,
+                    phone: whUser.phoneNumber,
+                    email: whUser.email,
+                    address: whUser.address,
+                },
+                financial: {
+                    totalPurchased,
+                    totalPaid,
+                    totalDue,
+                },
+                orderStats: {
+                    total: Number(stats?.totalOrders) || 0,
+                    pending: Number(stats?.pendingCount) || 0,
+                    confirmed: Number(stats?.confirmedCount) || 0,
+                    processing: Number(stats?.processingCount) || 0,
+                    delivered: Number(stats?.deliveredCount) || 0,
+                    cancelled: Number(stats?.cancelledCount) || 0,
+                },
+                pendingOrders: pendingOrders.map((o: any) => ({
+                    id: o.id,
+                    orderNumber: o.orderNumber,
+                    status: o.status,
+                    createdAt: o.createdAt,
+                    total: o.total,
+                    items: o.items,
+                })),
+                recentHistory: recentHistory.map((o: any) => ({
+                    id: o.id,
+                    orderNumber: o.orderNumber,
+                    status: o.status,
+                    createdAt: o.createdAt,
+                    total: o.total,
+                })),
+                topProducts: topProducts.map((p) => ({
+                    name: p.productName,
+                    image: p.productImage,
+                    totalQty: Number(p.totalQty),
+                    orderCount: Number(p.orderCount),
+                })),
+                performance: {
+                    avgDeliveryDays,
+                    modificationRate: modifiedRate,
+                    orderAccuracy: 100 - modifiedRate,
+                    deliverySpeed: avgDeliveryDays <= 1 ? "Fast" : avgDeliveryDays <= 3 ? "Normal" : "Slow",
+                },
+            };
+        }),
+
     /**
      * Get dashboard summary stats for the shop owner.
      */

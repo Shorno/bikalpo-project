@@ -327,6 +327,26 @@ export function usePurchaseHistory(params?: {
   );
 }
 
+/** List of suppliers (warehouses this shop has ordered from) */
+export function useMySuppliers(search?: string) {
+  return useQuery(
+    orpc.shopOwner.getMySuppliers.queryOptions({
+      input: { search: search || undefined },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Full supplier detail profile */
+export function useSupplierDetail(warehouseId: string) {
+  return useQuery(
+    orpc.shopOwner.getSupplierDetail.queryOptions({
+      input: { warehouseId },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
 /** Dashboard summary stats */
 export function useDashboardStats() {
   return useQuery(
