@@ -85,6 +85,7 @@ const shopOwnerNavGroups: NavGroup[] = [
         icon: ShoppingCartIcon,
         items: [
           { title: "Purchase Orders", url: `${D}/orders` },
+          { title: "Order Tracking", url: `${D}/orders/tracking` },
           { title: "Order from Warehouse", url: `${D}/order-from-warehouse` },
           { title: "Purchase History", url: `${D}/orders?status=delivered` },
         ],
