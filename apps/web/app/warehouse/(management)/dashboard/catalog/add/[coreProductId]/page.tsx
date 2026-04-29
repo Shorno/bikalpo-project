@@ -895,11 +895,14 @@ function BrandConfigCard({
                       </span>
                       <Input
                         className="h-7 text-sm pl-6 pr-2 text-right"
-                        type="number"
-                        step="1"
-                        min="0"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={settings.retailerPrice}
-                        onChange={(e) => onUpdatePrice(v.id, e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9]/g, '');
+                          onUpdatePrice(v.id, val);
+                        }}
                         placeholder="Price"
                       />
                     </div>

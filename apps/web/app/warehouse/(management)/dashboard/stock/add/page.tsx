@@ -703,11 +703,14 @@ export default function AddStockPage() {
                       <Field>
                         <FieldLabel>Number of Cartons *</FieldLabel>
                         <Input
-                          type="number"
-                          step="1"
-                          min="1"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={cartonCount}
-                          onChange={(e) => setCartonCount(e.target.value)}
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/[^0-9]/g, '');
+                            setCartonCount(v);
+                          }}
                           placeholder="e.g. 5"
                         />
                       </Field>
@@ -719,11 +722,14 @@ export default function AddStockPage() {
                             : "Number of Packs"}
                         </FieldLabel>
                         <Input
-                          type="number"
-                          step="1"
-                          min="0"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={quantity}
-                          onChange={(e) => setQuantity(e.target.value)}
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/[^0-9]/g, '');
+                            setQuantity(v);
+                          }}
                           placeholder={
                             entryType === "loose" ? "e.g. 100" : "e.g. 50"
                           }
@@ -861,11 +867,14 @@ export default function AddStockPage() {
                         {costType === "per_kg" ? "/ KG" : costType === "per_carton" ? "/ Carton" : "/ Pack"}) *
                       </FieldLabel>
                       <Input
-                        type="number"
-                        step="1"
-                        min="0"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={purchasePrice}
-                        onChange={(e) => setPurchasePrice(e.target.value)}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/[^0-9]/g, '');
+                          setPurchasePrice(v);
+                        }}
                         placeholder="e.g. 350"
                       />
                     </Field>
