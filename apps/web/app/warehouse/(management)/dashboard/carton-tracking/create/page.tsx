@@ -17,6 +17,7 @@ import {
   Trash2,
   Weight,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -32,10 +33,13 @@ type CartonItem = {
   variantId: number;
   sku: string;
   productName: string;
+  brandName: string | null;
   variantLabel: string;
   weightKg: number;
   price: number;
   packCount: number;
+  availableStock: number;
+  image: string | null;
 };
 
 const STEPS = [
@@ -151,12 +155,17 @@ export default function CreateCartonPage() {
     queryKey: ["w", "areas"],
     queryFn: () => (orpc.warehouse as any).getStorageAreas.call({}),
   });
+  const { data: nextIdData } = useQuery({
+    queryKey: ["w", "next-carton-id"],
+    queryFn: () => (orpc.warehouse as any).getNextCartonIdPreview.call({}),
+  });
 
   const allProductsList = allProductsData?.products ?? [];
   const products = searchData?.products ?? [];
   const configs = configsData?.configs ?? [];
   const areas = areasData?.areas ?? [];
   const selectedConfig = configs.find((c: any) => c.id === selectedConfigId);
+  const nextCartonId = nextIdData?.nextCartonId ?? "CTN-...";
 
   // Extract filter options from all products
   const allCategories = allProductsList.reduce((acc: any[], p: any) => {
@@ -185,14 +194,18 @@ export default function CreateCartonPage() {
   const addItem = (variant: any, product: any) => {
     const vid = variant.variantId || variant.id;
     if (items.find((i) => i.variantId === vid)) return;
+    const looseStock = variant.stock?.looseStock ?? 0;
     const newItem: CartonItem = {
       variantId: vid,
       sku: variant.sku || "—",
       productName: product.name || product.productName,
+      brandName: variant.brand?.name || product.brand?.name || null,
       variantLabel: `${variant.unitLabel || variant.label} · ${variant.weightKg || variant.weight}KG`,
       weightKg: parseFloat(variant.weightKg || variant.weight || "0"),
       price: parseFloat(variant.price || "0"),
       packCount: 0,
+      availableStock: Math.max(0, Math.floor(looseStock)),
+      image: product.coreProduct?.image || product.image || null,
     };
     if (isSingleMode) {
       setItems([newItem]);
@@ -232,7 +245,10 @@ export default function CreateCartonPage() {
   const canNext = () => {
     switch (step) {
       case 2:
-        return items.length > 0 && items.every((i) => i.packCount > 0);
+        return (
+          items.length > 0 &&
+          items.every((i) => i.packCount > 0 && i.packCount <= i.availableStock)
+        );
       default:
         return true;
     }
@@ -457,34 +473,59 @@ export default function CreateCartonPage() {
                         (p.variants || []).map((v: any) => {
                           const vid = v.variantId || v.id;
                           const alreadyAdded = items.find((i) => i.variantId === vid);
+                          const looseStock = Math.max(0, Math.floor(v.stock?.looseStock ?? 0));
+                          const outOfStock = looseStock <= 0;
+                          const productImage = p.coreProduct?.image || p.image;
                           return (
                             <div
                               key={vid}
                               className={`flex items-center gap-4 px-5 py-4 transition-colors ${
-                                alreadyAdded ? "bg-emerald-50/40 cursor-default" : "cursor-pointer hover:bg-gray-50"
+                                alreadyAdded
+                                  ? "bg-emerald-50/40 cursor-default"
+                                  : outOfStock
+                                    ? "bg-gray-50/50 cursor-not-allowed opacity-60"
+                                    : "cursor-pointer hover:bg-gray-50"
                               }`}
-                              onClick={() => !alreadyAdded && addItem(v, p)}
+                              onClick={() => !alreadyAdded && !outOfStock && addItem(v, p)}
                             >
-                              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                                <Package size={18} className="text-gray-400" />
+                              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                {productImage ? (
+                                  <Image src={productImage} alt={p.name || ""} width={40} height={40} className="w-full h-full object-cover" />
+                                ) : (
+                                  <Package size={18} className="text-gray-400" />
+                                )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="font-semibold text-sm text-gray-900 truncate">{p.name || p.productName}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-semibold text-sm text-gray-900 truncate">{p.name || p.productName}</p>
+                                  {(v.brand?.name || p.brand?.name) && (
+                                    <span className="text-[11px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                                      {v.brand?.name || p.brand?.name}
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                   {v.unitLabel || v.label} · {v.weightKg || v.weight}KG
                                   {v.sku ? ` · ${v.sku}` : ""}
                                   {p.category ? ` · ${p.category.name}` : ""}
                                 </p>
                               </div>
+                              <span className={`text-xs font-semibold tabular-nums px-2.5 py-1 rounded-full ${
+                                outOfStock
+                                  ? "bg-red-50 text-red-600"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}>
+                                {outOfStock ? "No stock" : `${looseStock} available`}
+                              </span>
                               {alreadyAdded ? (
                                 <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-full">
                                   <Check size={14} /> Added
                                 </span>
-                              ) : (
+                              ) : !outOfStock ? (
                                 <span className="text-xs text-gray-500 font-medium bg-gray-100 px-3 py-1.5 rounded-full hover:bg-gray-200 transition-colors">
                                   + Add
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           );
                         })
@@ -515,37 +556,65 @@ export default function CreateCartonPage() {
                               Variant
                             </th>
                             <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                              Available
+                            </th>
+                            <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                               Qty (Pack)
                             </th>
                             <th className="w-16" />
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {items.map((item) => (
-                            <tr key={item.variantId} className="hover:bg-gray-50/50 transition-colors">
-                              <td className="px-5 py-4 font-mono text-xs text-gray-500">{item.sku}</td>
-                              <td className="px-5 py-4 font-semibold text-gray-900">{item.productName}</td>
-                              <td className="px-5 py-4 text-gray-600">{item.variantLabel}</td>
-                              <td className="px-5 py-4 text-center">
-                                <Input
-                                  type="number"
-                                  min={1}
-                                  value={item.packCount || ""}
-                                  onChange={(e) => updatePackCount(item.variantId, Number(e.target.value) || 0)}
-                                  placeholder="0"
-                                  className="w-24 h-9 text-center font-semibold mx-auto bg-gray-50 border-gray-200"
-                                />
-                              </td>
-                              <td className="px-3 py-4 text-center">
-                                <button
-                                  onClick={() => removeItem(item.variantId)}
-                                  className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          {items.map((item) => {
+                            const overLimit = item.packCount > item.availableStock;
+                            return (
+                              <tr key={item.variantId} className="hover:bg-gray-50/50 transition-colors">
+                                <td className="px-5 py-4 font-mono text-xs text-gray-500">{item.sku}</td>
+                                <td className="px-5 py-4">
+                                  <span className="font-semibold text-gray-900">{item.productName}</span>
+                                  {item.brandName && (
+                                    <span className="ml-2 text-[11px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">
+                                      {item.brandName}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-5 py-4 text-gray-600">{item.variantLabel}</td>
+                                <td className="px-5 py-4 text-center">
+                                  <span className="text-sm font-semibold tabular-nums text-gray-600">
+                                    {item.availableStock}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-4 text-center">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      max={item.availableStock}
+                                      value={item.packCount || ""}
+                                      onChange={(e) => updatePackCount(item.variantId, Number(e.target.value) || 0)}
+                                      placeholder="0"
+                                      className={`w-24 h-9 text-center font-semibold mx-auto bg-gray-50 ${
+                                        overLimit ? "border-red-400 text-red-600 focus:ring-red-200" : "border-gray-200"
+                                      }`}
+                                    />
+                                    {overLimit && (
+                                      <span className="text-[11px] text-red-500 font-medium">
+                                        Max {item.availableStock}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-4 text-center">
+                                  <button
+                                    onClick={() => removeItem(item.variantId)}
+                                    className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -693,9 +762,9 @@ export default function CreateCartonPage() {
                   </div>
                   <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold mb-2">Carton ID</p>
                   <p className="text-3xl font-mono font-bold text-gray-900 tracking-wider">
-                    CTN-{new Date().getFullYear()}-XXXXXX
+                    {nextCartonId}
                   </p>
-                  <p className="text-sm text-gray-500 mt-3">Will be assigned automatically upon creation</p>
+                  <p className="text-sm text-gray-500 mt-3">This ID will be assigned when you create the carton</p>
                 </div>
 
                 {/* Barcode option */}
@@ -740,7 +809,7 @@ export default function CreateCartonPage() {
                         <div>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Carton ID</p>
                           <p className="text-sm font-mono font-bold text-gray-900 mt-0.5">
-                            CTN-{new Date().getFullYear()}-XXXXXX
+                            {nextCartonId}
                           </p>
                         </div>
                         <span className="text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full font-semibold">
@@ -753,11 +822,22 @@ export default function CreateCartonPage() {
                           {items.map((item) => (
                             <div key={item.variantId} className="flex items-center justify-between py-2">
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center">
-                                  <Package size={16} className="text-gray-400" />
+                                <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
+                                  {item.image ? (
+                                    <Image src={item.image} alt={item.productName} width={36} height={36} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <Package size={16} className="text-gray-400" />
+                                  )}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-semibold text-gray-900">{item.productName}</p>
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-sm font-semibold text-gray-900">{item.productName}</p>
+                                    {item.brandName && (
+                                      <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">
+                                        {item.brandName}
+                                      </span>
+                                    )}
+                                  </div>
                                   <p className="text-xs text-gray-500">{item.variantLabel.split(" · ")[0]}</p>
                                 </div>
                               </div>
@@ -799,7 +879,7 @@ export default function CreateCartonPage() {
 
                       <div className="pt-4 border-t border-gray-200">
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                          Loose Pack Pricing
+                          Pack Value Breakdown
                         </p>
                         <div className="space-y-2.5">
                           {items.map((item) => (
@@ -813,7 +893,7 @@ export default function CreateCartonPage() {
                             </div>
                           ))}
                           <div className="flex justify-between text-sm pt-3 border-t border-gray-100">
-                            <span className="text-gray-700 font-semibold">Total Loose Value</span>
+                            <span className="text-gray-700 font-semibold">Total Pack Value</span>
                             <span className="font-bold text-gray-900 tabular-nums">
                               ৳{Number(totalLoosePrice).toLocaleString()}
                             </span>

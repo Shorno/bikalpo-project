@@ -2384,6 +2384,7 @@ const stockEntryQueries = {
                         columns: {
                             id: true,
                             name: true,
+                            image: true,
                             supportsPack: true,
                             supportsLoose: true,
                         },
@@ -2406,7 +2407,43 @@ const stockEntryQueries = {
                 },
             });
 
-            return { products };
+            // Attach available stock for each variant
+            const allVariantIds = products.flatMap((p) => p.variants.map((v) => v.id));
+            const inventoryRows = allVariantIds.length > 0
+                ? await db.query.inventory.findMany({
+                    where: and(
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, userId),
+                        inArray(inventory.variantId, allVariantIds),
+                    ),
+                    columns: {
+                        variantId: true,
+                        availableQty: true,
+                        inCartonQty: true,
+                    },
+                })
+                : [];
+
+            const stockMap = new Map(
+                inventoryRows.map((inv) => [
+                    inv.variantId,
+                    {
+                        availableQty: parseFloat(inv.availableQty),
+                        inCartonQty: parseFloat(inv.inCartonQty),
+                        looseStock: parseFloat(inv.availableQty) - parseFloat(inv.inCartonQty),
+                    },
+                ]),
+            );
+
+            const productsWithStock = products.map((p) => ({
+                ...p,
+                variants: p.variants.map((v) => ({
+                    ...v,
+                    stock: stockMap.get(v.id) ?? { availableQty: 0, inCartonQty: 0, looseStock: 0 },
+                })),
+            }));
+
+            return { products: productsWithStock };
         }),
 
     /**
@@ -3224,6 +3261,31 @@ const cartonQueries = {
         }),
 
     // ── Physical Carton Management ──
+
+    /**
+     * Preview the next carton ID that will be assigned.
+     */
+    getNextCartonIdPreview: warehouseProcedure
+        .handler(async () => {
+            const year = new Date().getFullYear();
+            const [lastCarton] = await db
+                .select({ cartonId: carton.cartonId })
+                .from(carton)
+                .where(sql`${carton.cartonId} LIKE ${"CTN-" + year + "-%"}`)
+                .orderBy(desc(carton.id))
+                .limit(1);
+
+            let nextNum = 1;
+            if (lastCarton?.cartonId) {
+                const parts = lastCarton.cartonId.split("-");
+                const lastNum = parseInt(parts[2] || "0", 10);
+                nextNum = lastNum + 1;
+            }
+
+            return {
+                nextCartonId: `CTN-${year}-${String(nextNum).padStart(6, "0")}`,
+            };
+        }),
 
     /**
      * Create a physical carton from existing loose/pack stock.
