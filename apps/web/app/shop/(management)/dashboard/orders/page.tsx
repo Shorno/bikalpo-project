@@ -2,18 +2,34 @@
 
 import {
   AlertCircle,
+  CalendarIcon,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   KeyRound,
   Package,
+  PackageCheck,
   RotateCcw,
+  Search,
   ShoppingBag,
+  ShoppingCart,
   Truck,
+  Wallet,
   XCircle,
 } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -30,53 +46,66 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMyOrders } from "@/hooks/use-shop-owner-api";
+import { usePurchaseOrders } from "@/hooks/use-shop-owner-api";
 import { useQuery } from "@tanstack/react-query";
 import { orpc } from "@/utils/orpc";
 
+// ─── Status Config ───────────────────────────────────────────
+
+type OrderStatus = "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+
 const statusConfig: Record<
   string,
-  { label: string; icon: React.ReactNode; className: string }
+  { label: string; icon: React.ReactNode; className: string; dotColor: string }
 > = {
   pending: {
     label: "Pending",
     icon: <Clock className="w-3 h-3" />,
-    className: "text-amber-700 bg-amber-50 border-amber-200",
+    className: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-800",
+    dotColor: "bg-amber-500",
   },
   confirmed: {
-    label: "Confirmed",
+    label: "Accepted",
     icon: <CheckCircle2 className="w-3 h-3" />,
-    className: "text-blue-700 bg-blue-50 border-blue-200",
+    className: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30 dark:border-blue-800",
+    dotColor: "bg-blue-500",
   },
   processing: {
-    label: "Processing",
+    label: "In Delivery",
     icon: <Truck className="w-3 h-3" />,
-    className: "text-indigo-700 bg-indigo-50 border-indigo-200",
+    className: "text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/30 dark:border-indigo-800",
+    dotColor: "bg-indigo-500",
   },
   delivered: {
-    label: "Delivered",
-    icon: <CheckCircle2 className="w-3 h-3" />,
-    className: "text-emerald-700 bg-emerald-50 border-emerald-200",
+    label: "Received",
+    icon: <PackageCheck className="w-3 h-3" />,
+    className: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
+    dotColor: "bg-emerald-500",
   },
   returned: {
     label: "Returned",
     icon: <RotateCcw className="w-3 h-3" />,
-    className: "text-orange-700 bg-orange-50 border-orange-200",
+    className: "text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-300 dark:bg-orange-950/30 dark:border-orange-800",
+    dotColor: "bg-orange-500",
   },
   cancelled: {
     label: "Cancelled",
     icon: <XCircle className="w-3 h-3" />,
-    className: "text-red-700 bg-red-50 border-red-200",
+    className: "text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950/30 dark:border-red-800",
+    dotColor: "bg-red-500",
   },
 };
 
-type OrderStatus =
-  | "pending"
-  | "confirmed"
-  | "processing"
-  | "delivered"
-  | "returned"
-  | "cancelled";
+const statusTabs: { value: OrderStatus | "all"; label: string }[] = [
+  { value: "all", label: "All Orders" },
+  { value: "pending", label: "Pending" },
+  { value: "confirmed", label: "Accepted" },
+  { value: "processing", label: "In Delivery" },
+  { value: "delivered", label: "Received" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+// ─── OTP Badge ──────────────────────────────────────────────
 
 function DeliveryOtpBadge({ orderId, status }: { orderId: number; status: string }) {
   const showForStatuses = ["confirmed", "processing"];
@@ -84,152 +113,353 @@ function DeliveryOtpBadge({ orderId, status }: { orderId: number; status: string
     queryKey: ["delivery-otp", orderId],
     queryFn: () => orpc.deliveryman.getOrderDeliveryOtp.call({ orderId }),
     enabled: showForStatuses.includes(status),
-    refetchInterval: 30000, // refresh every 30s
+    refetchInterval: 30000,
   });
 
-  if (!showForStatuses.includes(status)) return <span className="text-xs text-gray-300">—</span>;
+  if (!showForStatuses.includes(status)) return null;
   if (isLoading) return <Skeleton className="h-6 w-16" />;
-  if (!data?.showOtp || !data.otp) return <span className="text-xs text-gray-400">Awaiting dispatch</span>;
+  if (!data?.showOtp || !data.otp) return <span className="text-xs text-muted-foreground">Awaiting</span>;
 
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 border-2 border-emerald-300 rounded-lg">
-        <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
-        <span className="font-mono text-base font-bold tracking-widest text-emerald-700">
-          {data.otp}
-        </span>
-      </div>
+    <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-md">
+      <KeyRound className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+      <span className="font-mono text-xs font-bold tracking-widest text-emerald-700 dark:text-emerald-300">
+        {data.otp}
+      </span>
     </div>
   );
 }
 
-export default function OrdersPage() {
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
-  const [page, setPage] = useState(1);
+// ─── Main Component ─────────────────────────────────────────
 
-  const { data, isLoading, isError } = useMyOrders({
-    status: statusFilter === "all" ? undefined : (statusFilter as OrderStatus),
+export default function PurchaseOrdersPage() {
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
+  const [search, setSearch] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
+  const [page, setPage] = useState(1);
+  const [dateRange, setDateRange] = useState<string>("all");
+
+  // Debounce search
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    clearTimeout((window as any).__poSearchTimer);
+    (window as any).__poSearchTimer = setTimeout(() => {
+      setSearchDebounced(value);
+      setPage(1);
+    }, 400);
+  };
+
+  // Calculate date filters
+  const getDateFilters = () => {
+    const now = new Date();
+    if (dateRange === "7d") {
+      const from = new Date(now);
+      from.setDate(from.getDate() - 7);
+      return { dateFrom: from.toISOString().split("T")[0], dateTo: undefined };
+    }
+    if (dateRange === "30d") {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { dateFrom: from.toISOString().split("T")[0], dateTo: undefined };
+    }
+    return { dateFrom: undefined, dateTo: undefined };
+  };
+
+  const dateFilters = getDateFilters();
+
+  const { data, isLoading, isError } = usePurchaseOrders({
+    search: searchDebounced || undefined,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    dateFrom: dateFilters.dateFrom,
+    dateTo: dateFilters.dateTo,
     page,
     limit: 15,
   });
 
   const orders = data?.orders ?? [];
   const pagination = data?.pagination;
+  const kpi = data?.kpi;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">My Orders</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Your B2B wholesale purchase orders
+          <h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Track and manage your wholesale purchase orders
           </p>
         </div>
+        <Button asChild>
+          <Link href="/dashboard/order-from-warehouse">
+            <ShoppingCart className="mr-2 h-4 w-4" />
+            New Order
+          </Link>
+        </Button>
+      </div>
 
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => {
-            setStatusFilter(v as OrderStatus | "all");
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="All statuses" />
+      {/* ── KPI Cards ──────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard
+          title="Total Orders"
+          value={kpi?.totalOrders ?? 0}
+          subtitle={`৳ ${Number(kpi?.totalAmount || 0).toLocaleString("en-BD")}`}
+          icon={<ShoppingBag className="h-4 w-4" />}
+          iconBg="bg-slate-100 dark:bg-slate-800"
+          iconColor="text-slate-600 dark:text-slate-400"
+          loading={isLoading}
+        />
+        <KpiCard
+          title="Pending"
+          value={(kpi?.pendingCount ?? 0) + (kpi?.confirmedCount ?? 0)}
+          subtitle={`৳ ${Number(kpi?.pendingAmount || 0).toLocaleString("en-BD")}`}
+          icon={<Clock className="h-4 w-4" />}
+          iconBg="bg-amber-50 dark:bg-amber-950/30"
+          iconColor="text-amber-600 dark:text-amber-400"
+          loading={isLoading}
+        />
+        <KpiCard
+          title="In Delivery"
+          value={kpi?.processingCount ?? 0}
+          icon={<Truck className="h-4 w-4" />}
+          iconBg="bg-indigo-50 dark:bg-indigo-950/30"
+          iconColor="text-indigo-600 dark:text-indigo-400"
+          loading={isLoading}
+        />
+        <KpiCard
+          title="Received"
+          value={kpi?.deliveredCount ?? 0}
+          icon={<PackageCheck className="h-4 w-4" />}
+          iconBg="bg-emerald-50 dark:bg-emerald-950/30"
+          iconColor="text-emerald-600 dark:text-emerald-400"
+          loading={isLoading}
+        />
+      </div>
+
+      {/* ── Filters ────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        {/* Search */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by PO number, product..."
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        {/* Date filter */}
+        <Select value={dateRange} onValueChange={(v) => { setDateRange(v); setPage(1); }}>
+          <SelectTrigger className="w-[150px]">
+            <CalendarIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="confirmed">Confirmed</SelectItem>
-            <SelectItem value="processing">Processing</SelectItem>
-            <SelectItem value="delivered">Delivered</SelectItem>
-            <SelectItem value="returned">Returned</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
+            <SelectItem value="all">All Time</SelectItem>
+            <SelectItem value="7d">Last 7 Days</SelectItem>
+            <SelectItem value="30d">This Month</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
+      {/* ── Status Tabs ────────────────────────────────────── */}
+      <div className="flex gap-1 overflow-x-auto pb-1 -mx-1 px-1">
+        {statusTabs.map((tab) => {
+          const isActive = statusFilter === tab.value;
+          const count = tab.value === "all"
+            ? kpi?.totalOrders
+            : tab.value === "pending"
+              ? kpi?.pendingCount
+              : tab.value === "confirmed"
+                ? kpi?.confirmedCount
+                : tab.value === "processing"
+                  ? kpi?.processingCount
+                  : tab.value === "delivered"
+                    ? kpi?.deliveredCount
+                    : kpi?.cancelledCount;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => { setStatusFilter(tab.value); setPage(1); }}
+              className={`
+                flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all cursor-pointer
+                ${isActive
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }
+              `}
+            >
+              {tab.label}
+              {count !== undefined && count > 0 && (
+                <span className={`
+                  text-[10px] px-1.5 py-0.5 rounded-full font-semibold
+                  ${isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted-foreground/10 text-muted-foreground"}
+                `}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Orders Table ───────────────────────────────────── */}
       {isLoading ? (
         <OrdersTableSkeleton />
       ) : isError ? (
-        <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
+        <div className="bg-card rounded-xl border shadow-sm p-12 text-center">
           <AlertCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">Failed to load orders</p>
+          <p className="text-muted-foreground font-medium">Failed to load orders</p>
+          <p className="text-sm text-muted-foreground mt-1">Please try again later</p>
         </div>
       ) : orders.length === 0 ? (
-        <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
-          <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">No orders found</p>
-          <p className="text-sm text-gray-400 mt-1">
-            {statusFilter !== "all"
-              ? "Try changing the status filter"
-              : "Place a wholesale order to get started"}
+        <div className="bg-card rounded-xl border shadow-sm p-12 text-center">
+          <ShoppingBag className="w-14 h-14 text-muted-foreground/20 mx-auto mb-4" />
+          <p className="text-lg font-semibold text-foreground">No purchase orders found</p>
+          <p className="text-sm text-muted-foreground mt-1 mb-6">
+            {searchDebounced || statusFilter !== "all"
+              ? "Try adjusting your search or filter criteria"
+              : "Place your first wholesale order to get started"}
           </p>
+          {!searchDebounced && statusFilter === "all" && (
+            <Button asChild>
+              <Link href="/dashboard/order-from-warehouse">
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                Create Purchase Order
+              </Link>
+            </Button>
+          )}
         </div>
       ) : (
         <>
-          <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+          <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Order #</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Delivery OTP</TableHead>
-                  <TableHead>Date</TableHead>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="font-semibold">Order #</TableHead>
+                  <TableHead className="font-semibold">Wholesaler</TableHead>
+                  <TableHead className="font-semibold">Products</TableHead>
+                  <TableHead className="text-right font-semibold">Amount</TableHead>
+                  <TableHead className="font-semibold">Status</TableHead>
+                  <TableHead className="font-semibold">OTP</TableHead>
+                  <TableHead className="font-semibold">Date</TableHead>
+                  <TableHead className="text-right font-semibold">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {orders.map((o: any) => {
                   const config = statusConfig[o.status] || statusConfig.pending;
+                  const hasModifications = o.items?.some(
+                    (item: any) => item.modifiedQty !== null
+                  );
+
                   return (
-                    <TableRow key={o.id}>
-                      <TableCell className="font-mono text-sm font-medium">
-                        {o.orderNumber}
-                      </TableCell>
+                    <TableRow
+                      key={o.id}
+                      className="group hover:bg-muted/30 transition-colors"
+                    >
+                      {/* Order Number */}
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Package className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm">
-                            {o.items?.length || 0} item
-                            {(o.items?.length || 0) !== 1 ? "s" : ""}
+                          <span className="font-mono text-sm font-semibold text-foreground">
+                            {o.orderNumber}
                           </span>
+                          {hasModifications && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30">
+                              Modified
+                            </Badge>
+                          )}
                         </div>
-                        {o.items?.slice(0, 2).map((item: any, i: number) => (
-                          <p
-                            key={i}
-                            className="text-xs text-gray-400 ml-6 truncate max-w-[200px]"
-                          >
-                            {item.productName} × {item.quantity}
-                          </p>
-                        ))}
-                        {(o.items?.length || 0) > 2 && (
-                          <p className="text-xs text-gray-400 ml-6">
-                            +{o.items.length - 2} more
-                          </p>
-                        )}
                       </TableCell>
-                      <TableCell className="text-right font-medium text-sm">
-                        ৳{Number(o.total).toLocaleString("en-BD")}
+
+                      {/* Wholesaler */}
+                      <TableCell>
+                        <span className="text-sm font-medium">{o.warehouseName}</span>
                       </TableCell>
+
+                      {/* Products */}
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {/* Stacked product images */}
+                          <div className="flex -space-x-2 shrink-0">
+                            {o.items?.slice(0, 3).map((item: any, i: number) => (
+                              item.productImage ? (
+                                <Image
+                                  key={i}
+                                  src={item.productImage}
+                                  alt={item.productName}
+                                  width={28}
+                                  height={28}
+                                  className="w-7 h-7 rounded-md border-2 border-background object-cover"
+                                />
+                              ) : (
+                                <div
+                                  key={i}
+                                  className="w-7 h-7 rounded-md border-2 border-background bg-muted flex items-center justify-center"
+                                >
+                                  <Package className="w-3 h-3 text-muted-foreground" />
+                                </div>
+                              )
+                            ))}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm truncate max-w-[160px]">
+                              {o.items?.[0]?.productName || "—"}
+                            </p>
+                            {(o.items?.length || 0) > 1 && (
+                              <p className="text-[11px] text-muted-foreground">
+                                +{o.items.length - 1} more item{o.items.length - 1 > 1 ? "s" : ""}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      {/* Amount */}
+                      <TableCell className="text-right">
+                        <span className="text-sm font-semibold tabular-nums">
+                          ৳ {Number(o.total).toLocaleString("en-BD")}
+                        </span>
+                      </TableCell>
+
+                      {/* Status */}
                       <TableCell>
                         <Badge
                           variant="outline"
-                          className={`gap-1 ${config.className}`}
+                          className={`gap-1 text-[11px] font-medium ${config.className}`}
                         >
                           {config.icon}
                           {config.label}
                         </Badge>
                       </TableCell>
+
+                      {/* OTP */}
                       <TableCell>
                         <DeliveryOtpBadge orderId={o.id} status={o.status} />
                       </TableCell>
-                      <TableCell className="text-sm text-gray-500">
-                        {new Date(o.createdAt).toLocaleDateString("en-BD", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
+
+                      {/* Date */}
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground tabular-nums">
+                          {new Date(o.createdAt).toLocaleDateString("en-BD", {
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </span>
+                      </TableCell>
+
+                      {/* Action */}
+                      <TableCell className="text-right">
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs opacity-60 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Link href={`/dashboard/orders/${o.id}`}>
+                            View →
+                          </Link>
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -240,27 +470,29 @@ export default function OrdersPage() {
 
           {/* Pagination */}
           {pagination && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-500">
-                Page {pagination.page} of {pagination.totalPages} (
-                {pagination.totalCount} orders)
-              </span>
-              <div className="flex gap-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Page {pagination.page} of {pagination.totalPages}
+                <span className="hidden sm:inline"> · {pagination.totalCount} orders</span>
+              </p>
+              <div className="flex gap-1.5">
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="icon"
+                  className="h-8 w-8"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => p - 1)}
                 >
-                  Previous
+                  <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="icon"
+                  className="h-8 w-8"
                   disabled={page >= pagination.totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
+                  <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -271,37 +503,88 @@ export default function OrdersPage() {
   );
 }
 
+// ─── KPI Card Component ─────────────────────────────────────
+
+function KpiCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  iconBg,
+  iconColor,
+  loading,
+}: {
+  title: string;
+  value: number;
+  subtitle?: string;
+  icon: React.ReactNode;
+  iconBg: string;
+  iconColor: string;
+  loading?: boolean;
+}) {
+  return (
+    <Card className="border shadow-sm">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            {title}
+          </span>
+          <div className={`p-1.5 rounded-lg ${iconBg} ${iconColor}`}>
+            {icon}
+          </div>
+        </div>
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-7 w-16" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        ) : (
+          <>
+            <p className="text-2xl font-bold tracking-tight">{value}</p>
+            {subtitle && (
+              <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Skeleton ───────────────────────────────────────────────
+
 function OrdersTableSkeleton() {
   return (
-    <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+    <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="bg-muted/30">
             <TableHead>Order #</TableHead>
-            <TableHead>Items</TableHead>
-            <TableHead className="text-right">Total</TableHead>
+            <TableHead>Wholesaler</TableHead>
+            <TableHead>Products</TableHead>
+            <TableHead className="text-right">Amount</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>OTP</TableHead>
             <TableHead>Date</TableHead>
+            <TableHead className="text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {Array.from({ length: 5 }).map((_, i) => (
+          {Array.from({ length: 6 }).map((_, i) => (
             <TableRow key={i}>
+              <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+              <TableCell><Skeleton className="h-4 w-28" /></TableCell>
               <TableCell>
-                <Skeleton className="h-4 w-24" />
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-7 w-7 rounded-md" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
               </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-32" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-16 ml-auto" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-5 w-20" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-20" />
-              </TableCell>
+              <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+              <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+              <TableCell><Skeleton className="h-5 w-14" /></TableCell>
+              <TableCell><Skeleton className="h-4 w-14" /></TableCell>
+              <TableCell><Skeleton className="h-7 w-12 ml-auto" /></TableCell>
             </TableRow>
           ))}
         </TableBody>
