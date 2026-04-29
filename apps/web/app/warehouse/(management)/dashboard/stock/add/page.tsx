@@ -720,7 +720,8 @@ export default function AddStockPage() {
                         </FieldLabel>
                         <Input
                           type="number"
-                          step="0.01"
+                          step="1"
+                          min="0"
                           value={quantity}
                           onChange={(e) => setQuantity(e.target.value)}
                           placeholder={
@@ -861,7 +862,8 @@ export default function AddStockPage() {
                       </FieldLabel>
                       <Input
                         type="number"
-                        step="0.01"
+                        step="1"
+                        min="0"
                         value={purchasePrice}
                         onChange={(e) => setPurchasePrice(e.target.value)}
                         placeholder="e.g. 350"
