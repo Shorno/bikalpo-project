@@ -41,11 +41,13 @@ export default function CreateCartonPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [step, setStep] = useState(1);
+  const [productType, setProductType] = useState<"single" | "mixed">("single");
 
-  // Step 2 — multi-item state
+  // Step 2 — item state
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [items, setItems] = useState<CartonItem[]>([]);
+  const isSingleMode = productType === "single";
 
   // Step 4+
   const [selectedConfigId, setSelectedConfigId] = useState<number | null>(null);
@@ -89,7 +91,7 @@ export default function CreateCartonPage() {
   const addItem = (variant: any, product: any) => {
     const vid = variant.variantId || variant.id;
     if (items.find((i) => i.variantId === vid)) return; // already added
-    setItems([...items, {
+    const newItem: CartonItem = {
       variantId: vid,
       sku: variant.sku || "—",
       productName: product.name || product.productName,
@@ -97,7 +99,14 @@ export default function CreateCartonPage() {
       weightKg: parseFloat(variant.weightKg || variant.weight || "0"),
       price: parseFloat(variant.price || "0"),
       packCount: 0,
-    }]);
+    };
+    // Single mode: replace any existing item
+    if (isSingleMode) {
+      setItems([newItem]);
+      setSearchQuery("");
+    } else {
+      setItems([...items, newItem]);
+    }
   };
 
   const updatePackCount = (variantId: number, count: number) => {
@@ -153,9 +162,9 @@ export default function CreateCartonPage() {
         {step === 1 && (
           <div className="space-y-4">
             <h3 className="text-base font-bold text-gray-900">Select Product Type</h3>
-            <div className="p-4 rounded-lg border-2 border-gray-900 bg-gray-50 cursor-pointer">
+            <div className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${productType === "single" ? "border-gray-900 bg-gray-50" : "border-gray-200 hover:border-gray-300"}`} onClick={() => { setProductType("single"); setItems([]); }}>
               <div className="flex items-center gap-3">
-                <div className="w-5 h-5 rounded-full bg-gray-900 flex items-center justify-center"><Check size={12} className="text-white" strokeWidth={3} /></div>
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center ${productType === "single" ? "bg-gray-900" : "border-2 border-gray-300"}`}>{productType === "single" && <Check size={12} className="text-white" strokeWidth={3} />}</div>
                 <div><p className="font-semibold text-gray-900 text-sm">Single Product Carton</p><p className="text-xs text-gray-500 mt-0.5">One product variant per carton</p></div>
               </div>
             </div>
@@ -172,30 +181,33 @@ export default function CreateCartonPage() {
         {step === 2 && (
           <div className="space-y-4">
             <h3 className="text-base font-bold text-gray-900">Add Items (Carton Composition)</h3>
+            {isSingleMode && <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 font-medium">📦 Single Product Mode — Only one product variant allowed per carton</p>}
 
-            {/* Filters Row */}
-            <div className="flex gap-3 items-end">
-              <div className="flex-1">
-                <Label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Search</Label>
-                <div className="relative">
-                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <Input placeholder="Search SKU, product name…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-10 text-sm" />
+            {/* Filters Row — hidden in single mode when item already selected */}
+            {!(isSingleMode && items.length > 0) && (
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <Label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Search</Label>
+                  <div className="relative">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Input placeholder="Search SKU, product name…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-10 text-sm" />
+                  </div>
+                </div>
+                <div className="w-44">
+                  <Label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Category</Label>
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger className="h-10"><SelectValue placeholder="All Categories" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {allCategories.map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-              <div className="w-44">
-                <Label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Category</Label>
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="h-10"><SelectValue placeholder="All Categories" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {allCategories.map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            )}
 
-            {/* Search Results */}
-            {(searchQuery.length >= 1 || categoryFilter !== "all") && (
+            {/* Search Results — hidden in single mode when item already selected */}
+            {(searchQuery.length >= 1 || categoryFilter !== "all") && !(isSingleMode && items.length > 0) && (
               <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-200 divide-y bg-white shadow-md">
                 {products.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-6">No products found</p>
