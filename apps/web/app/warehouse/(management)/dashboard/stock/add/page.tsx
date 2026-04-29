@@ -68,6 +68,10 @@ type ProductResult = {
   image: string;
   trackingType: string;
   expiryEnabled: boolean;
+  categoryId: number;
+  subCategoryId: number | null;
+  category?: { id: number; name: string } | null;
+  subCategory?: { id: number; name: string } | null;
   brand?: { id: number; name: string } | null;
   coreProduct?: {
     id: number;
@@ -126,6 +130,10 @@ export default function AddStockPage() {
     null,
   );
 
+  // Product filters
+  const [filterCategoryId, setFilterCategoryId] = useState<number | undefined>();
+  const [filterSubCategoryId, setFilterSubCategoryId] = useState<number | undefined>();
+
   // Step 2 — Variant
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(
     null,
@@ -169,16 +177,40 @@ export default function AddStockPage() {
   // === Queries ===
 
   const { data: productsData, isLoading: loadingProducts } = useQuery({
-    queryKey: ["warehouse", "getWarehouseProductsForStock", { search: productSearch }],
+    queryKey: ["warehouse", "getWarehouseProductsForStock", { search: productSearch, categoryId: filterCategoryId, subCategoryId: filterSubCategoryId }],
     queryFn: () =>
       (orpc.warehouse as any).getWarehouseProductsForStock.call({
         search: productSearch || undefined,
-        limit: 20,
+        categoryId: filterCategoryId,
+        subCategoryId: filterSubCategoryId,
+        limit: 50,
       }),
     enabled: true,
   });
 
   const products: ProductResult[] = productsData?.products ?? [];
+
+  // Derive filter options from all products (unfiltered fetch for options)
+  const { data: allProductsData } = useQuery({
+    queryKey: ["warehouse", "getWarehouseProductsForStock", { forFilters: true }],
+    queryFn: () =>
+      (orpc.warehouse as any).getWarehouseProductsForStock.call({ limit: 500 }),
+  });
+  const allProducts: ProductResult[] = allProductsData?.products ?? [];
+
+  const categoryOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    allProducts.forEach(p => { if (p.category) map.set(p.category.id, p.category.name); });
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allProducts]);
+
+  const subCategoryOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    allProducts
+      .filter(p => !filterCategoryId || p.categoryId === filterCategoryId)
+      .forEach(p => { if (p.subCategory) map.set(p.subCategory.id, p.subCategory.name); });
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allProducts, filterCategoryId]);
 
   const { data: suppliersData } = useQuery({
     queryKey: ["warehouse", "getSuppliers"],
@@ -642,6 +674,44 @@ export default function AddStockPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
+                {/* Category / SubCategory filters */}
+                <div className="flex gap-2">
+                  <Select
+                    value={filterCategoryId ? String(filterCategoryId) : "all"}
+                    onValueChange={(v) => {
+                      setFilterCategoryId(v === "all" ? undefined : Number(v));
+                      setFilterSubCategoryId(undefined);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {categoryOptions.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {subCategoryOptions.length > 0 && (
+                    <Select
+                      value={filterSubCategoryId ? String(filterSubCategoryId) : "all"}
+                      onValueChange={(v) => setFilterSubCategoryId(v === "all" ? undefined : Number(v))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="All Sub-categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sub-categories</SelectItem>
+                        {subCategoryOptions.map((s) => (
+                          <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -688,15 +758,15 @@ export default function AddStockPage() {
                     </Badge>
                   </div>
                 ) : (
-                  <div className="max-h-[250px] overflow-y-auto space-y-1">
+                  <div className="max-h-[300px] overflow-y-auto space-y-1">
                     {loadingProducts ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
                       </div>
                     ) : products.length === 0 ? (
                       <div className="text-center py-8 text-sm text-muted-foreground">
-                        {productSearch
-                          ? "No products match your search"
+                        {productSearch || filterCategoryId
+                          ? "No products match your search or filters"
                           : "No products found. Create products from the catalog first."}
                       </div>
                     ) : (
@@ -721,7 +791,8 @@ export default function AddStockPage() {
                               {p.name}
                             </p>
                             <p className="text-xs text-muted-foreground truncate">
-                              {p.coreProduct?.name}
+                              {p.category?.name}
+                              {p.subCategory ? ` › ${p.subCategory.name}` : ""}
                               {p.brand ? ` · ${p.brand.name}` : ""}
                               {" · "}
                               {p.variants.length} variant
