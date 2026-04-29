@@ -2331,7 +2331,10 @@ const stockEntryQueries = {
         .input(
             z.object({
                 search: z.string().optional(),
-                limit: z.number().default(20),
+                categoryId: z.number().int().optional(),
+                subCategoryId: z.number().int().optional(),
+                productId: z.number().int().optional(),
+                limit: z.number().default(50),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -2348,6 +2351,18 @@ const stockEntryQueries = {
                 );
             }
 
+            if (input.categoryId) {
+                conditions.push(eq(productTable.categoryId, input.categoryId));
+            }
+
+            if (input.subCategoryId) {
+                conditions.push(eq(productTable.subCategoryId, input.subCategoryId));
+            }
+
+            if (input.productId) {
+                conditions.push(eq(productTable.id, input.productId));
+            }
+
             const products = await db.query.product.findMany({
                 where: and(...conditions),
                 limit: input.limit,
@@ -2358,13 +2373,18 @@ const stockEntryQueries = {
                     image: true,
                     trackingType: true,
                     expiryEnabled: true,
+                    categoryId: true,
+                    subCategoryId: true,
                 },
                 with: {
                     brand: { columns: { id: true, name: true } },
+                    category: { columns: { id: true, name: true } },
+                    subCategory: { columns: { id: true, name: true } },
                     coreProduct: {
                         columns: {
                             id: true,
                             name: true,
+                            image: true,
                             supportsPack: true,
                             supportsLoose: true,
                         },
@@ -2387,7 +2407,43 @@ const stockEntryQueries = {
                 },
             });
 
-            return { products };
+            // Attach available stock for each variant
+            const allVariantIds = products.flatMap((p) => p.variants.map((v) => v.id));
+            const inventoryRows = allVariantIds.length > 0
+                ? await db.query.inventory.findMany({
+                    where: and(
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, userId),
+                        inArray(inventory.variantId, allVariantIds),
+                    ),
+                    columns: {
+                        variantId: true,
+                        availableQty: true,
+                        inCartonQty: true,
+                    },
+                })
+                : [];
+
+            const stockMap = new Map(
+                inventoryRows.map((inv) => [
+                    inv.variantId,
+                    {
+                        availableQty: parseFloat(inv.availableQty),
+                        inCartonQty: parseFloat(inv.inCartonQty),
+                        looseStock: parseFloat(inv.availableQty) - parseFloat(inv.inCartonQty),
+                    },
+                ]),
+            );
+
+            const productsWithStock = products.map((p) => ({
+                ...p,
+                variants: p.variants.map((v) => ({
+                    ...v,
+                    stock: stockMap.get(v.id) ?? { availableQty: 0, inCartonQty: 0, looseStock: 0 },
+                })),
+            }));
+
+            return { products: productsWithStock };
         }),
 
     /**
@@ -3208,6 +3264,31 @@ const cartonQueries = {
     // ── Physical Carton Management ──
 
     /**
+     * Preview the next carton ID that will be assigned.
+     */
+    getNextCartonIdPreview: warehouseProcedure
+        .handler(async () => {
+            const year = new Date().getFullYear();
+            const [lastCarton] = await db
+                .select({ cartonId: carton.cartonId })
+                .from(carton)
+                .where(sql`${carton.cartonId} LIKE ${"CTN-" + year + "-%"}`)
+                .orderBy(desc(carton.id))
+                .limit(1);
+
+            let nextNum = 1;
+            if (lastCarton?.cartonId) {
+                const parts = lastCarton.cartonId.split("-");
+                const lastNum = parseInt(parts[2] || "0", 10);
+                nextNum = lastNum + 1;
+            }
+
+            return {
+                nextCartonId: `CTN-${year}-${String(nextNum).padStart(6, "0")}`,
+            };
+        }),
+
+    /**
      * Create a physical carton from existing loose/pack stock.
      * Deducts from available stock and marks as in-carton.
      */
@@ -3215,28 +3296,48 @@ const cartonQueries = {
         .input(
             z.object({
                 variantId: z.number().int(),
-                cartonConfigId: z.number().int(),
+                packCount: z.number().int().min(1),
+                cartonConfigId: z.number().int().optional(),
                 storageAreaId: z.number().int().optional(),
                 note: z.string().optional(),
+                // Editable pricing overrides
+                overrideCartonPrice: z.string().optional(),
+                overrideDeliveryCost: z.string().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            // 1. Get the carton config
-            const config = await db.query.cartonConfig.findFirst({
-                where: and(
-                    eq(cartonConfig.id, input.cartonConfigId),
-                    eq(cartonConfig.variantId, input.variantId),
-                    eq(cartonConfig.isActive, true),
-                ),
+            // 1. Get variant to auto-calculate weight
+            const variant = await db.query.productVariant.findFirst({
+                where: eq(productVariant.id, input.variantId),
             });
 
-            if (!config) {
-                throw new ORPCError("NOT_FOUND", { message: "Carton config not found" });
+            if (!variant) {
+                throw new ORPCError("NOT_FOUND", { message: "Variant not found" });
             }
 
-            // 2. Check inventory has enough loose stock
+            // 2. Optionally get carton config (for pricing defaults)
+            let configPrice: string | null = null;
+            let configDeliveryCost: string | null = null;
+            let configId: number | null = null;
+
+            if (input.cartonConfigId) {
+                const config = await db.query.cartonConfig.findFirst({
+                    where: and(
+                        eq(cartonConfig.id, input.cartonConfigId),
+                        eq(cartonConfig.variantId, input.variantId),
+                        eq(cartonConfig.isActive, true),
+                    ),
+                });
+                if (config) {
+                    configId = config.id;
+                    configPrice = config.cartonPrice;
+                    configDeliveryCost = config.deliveryCostPerCarton;
+                }
+            }
+
+            // 3. Check inventory has enough loose stock
             const inv = await db.query.inventory.findFirst({
                 where: and(
                     eq(inventory.ownerType, "warehouse"),
@@ -3253,13 +3354,17 @@ const cartonQueries = {
             const inCarton = parseFloat(inv.inCartonQty);
             const looseStock = available - inCarton;
 
-            if (looseStock < config.packsPerCarton) {
+            if (looseStock < input.packCount) {
                 throw new ORPCError("BAD_REQUEST", {
-                    message: `Not enough loose stock. Need ${config.packsPerCarton} packs, only ${looseStock.toFixed(0)} available.`,
+                    message: `Not enough loose stock. Need ${input.packCount} packs, only ${looseStock.toFixed(0)} available.`,
                 });
             }
 
-            // 3. Generate carton ID: CTN-YYYY-NNNNNN
+            // 4. Auto-calculate carton weight: packCount × variant.weightKg
+            const packWeightKg = parseFloat(variant.weightKg);
+            const totalWeightKg = (input.packCount * packWeightKg).toFixed(2);
+
+            // 5. Generate carton ID: CTN-YYYY-NNNNNN
             const year = new Date().getFullYear();
             const [lastCarton] = await db
                 .select({ cartonId: carton.cartonId })
@@ -3276,27 +3381,28 @@ const cartonQueries = {
             }
             const cartonIdStr = `CTN-${year}-${String(nextNum).padStart(6, "0")}`;
 
-            // 4. Transaction: create carton + update inventory
+            // 6. Transaction: create carton + update inventory
             const result = await db.transaction(async (tx) => {
-                // Create carton record
                 const [newCarton] = await tx
                     .insert(carton)
                     .values({
                         cartonId: cartonIdStr,
                         warehouseId: userId,
-                        cartonConfigId: config.id,
+                        cartonConfigId: configId,
                         variantId: input.variantId,
-                        totalPacks: config.packsPerCarton,
-                        totalWeightKg: config.cartonWeightKg,
+                        totalPacks: input.packCount,
+                        totalWeightKg,
                         status: "active",
-                        barcode: cartonIdStr, // Simple barcode = carton ID
+                        barcode: cartonIdStr,
                         storageAreaId: input.storageAreaId || null,
                         note: input.note || null,
+                        cartonPrice: input.overrideCartonPrice || configPrice || null,
+                        deliveryCostPerUnit: input.overrideDeliveryCost || configDeliveryCost || null,
                     })
                     .returning();
 
                 // Update inventory: move packs from loose → in-carton
-                const newInCartonQty = inCarton + config.packsPerCarton;
+                const newInCartonQty = inCarton + input.packCount;
                 const newActiveCount = (inv.activeCartonCount || 0) + 1;
 
                 await tx
@@ -3493,6 +3599,343 @@ const cartonQueries = {
             }
 
             return { carton: result };
+        }),
+
+    // ── Carton Tracking System (New) ──
+
+    /**
+     * Get products that have cartons — Level 1 of the carton tracking drill-down.
+     * Aggregates carton data grouped by product.
+     */
+    getCartonTrackingProducts: warehouseProcedure
+        .input(
+            z.object({
+                search: z.string().optional(),
+                page: z.number().int().min(1).default(1),
+                pageSize: z.number().int().min(1).max(100).default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // 1. Fetch all cartons for this warehouse with deep relations
+            const allCartons = await db.query.carton.findMany({
+                where: eq(carton.warehouseId, userId),
+                with: {
+                    config: true,
+                    variant: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, image: true },
+                            },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                    storageArea: { columns: { id: true, name: true } },
+                },
+            });
+
+            // 2. Group by product
+            const productMap = new Map<number, {
+                productId: number;
+                productName: string;
+                productImage: string;
+                variants: Set<string>;
+                packType: string;
+                totalCartons: number;
+                activeCartons: number;
+                totalPacks: number;
+                totalWeightKg: number;
+                locations: Set<string>;
+            }>();
+
+            for (const c of allCartons) {
+                const v = c.variant;
+                if (!v?.product) continue;
+                const p = v.product as any;
+
+                if (!productMap.has(p.id)) {
+                    productMap.set(p.id, {
+                        productId: p.id,
+                        productName: p.name,
+                        productImage: p.image || "",
+                        variants: new Set(),
+                        packType: (v as any).packType || (v as any).packagingType || "carton",
+                        totalCartons: 0,
+                        activeCartons: 0,
+                        totalPacks: 0,
+                        totalWeightKg: 0,
+                        locations: new Set(),
+                    });
+                }
+
+                const entry = productMap.get(p.id)!;
+                const variantLabel = (v.brand as any)?.name
+                    ? `${(v.brand as any).name} ${v.unitLabel}`
+                    : v.unitLabel;
+                entry.variants.add(variantLabel);
+                entry.totalCartons += 1;
+                if (c.status === "active") {
+                    entry.activeCartons += 1;
+                    entry.totalPacks += c.totalPacks;
+                    entry.totalWeightKg += parseFloat(c.totalWeightKg);
+                }
+                if (c.storageArea) {
+                    entry.locations.add((c.storageArea as any).name);
+                }
+            }
+
+            // 3. Convert to array and apply search
+            let products = Array.from(productMap.values()).map((p) => ({
+                productId: p.productId,
+                productName: p.productName,
+                productImage: p.productImage,
+                variantsAvailable: Array.from(p.variants).join(", "),
+                packType: p.packType,
+                totalCartons: p.totalCartons,
+                activeCartons: p.activeCartons,
+                totalPacks: p.totalPacks,
+                totalWeightKg: Math.round(p.totalWeightKg * 100) / 100,
+                locationCount: p.locations.size,
+            }));
+
+            if (input.search?.trim()) {
+                const s = input.search.trim().toLowerCase();
+                products = products.filter(
+                    (p) =>
+                        p.productName.toLowerCase().includes(s) ||
+                        p.variantsAvailable.toLowerCase().includes(s),
+                );
+            }
+
+            // Sort by active cartons descending
+            products.sort((a, b) => b.activeCartons - a.activeCartons);
+
+            // 4. KPI stats
+            const allActiveCartons = allCartons.filter((c) => c.status === "active");
+            const allLocations = new Set(allActiveCartons.map((c) => (c.storageArea as any)?.name).filter(Boolean));
+
+            const kpi = {
+                totalProducts: productMap.size,
+                totalCartons: allActiveCartons.length,
+                totalUnits: allActiveCartons.reduce((s, c) => s + c.totalPacks, 0),
+                activeLocations: allLocations.size,
+            };
+
+            // 5. Paginate
+            const totalCount = products.length;
+            const totalPages = Math.ceil(totalCount / input.pageSize);
+            const offset = (input.page - 1) * input.pageSize;
+            const paginatedProducts = products.slice(offset, offset + input.pageSize);
+
+            return {
+                products: paginatedProducts,
+                kpi,
+                pagination: {
+                    page: input.page,
+                    pageSize: input.pageSize,
+                    totalCount,
+                    totalPages,
+                },
+            };
+        }),
+
+    /**
+     * Get variant breakdown for a specific product — Level 2 of the carton tracking drill-down.
+     */
+    getCartonTrackingVariants: warehouseProcedure
+        .input(
+            z.object({
+                productId: z.number().int(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Get all cartons for this warehouse with variant relations
+            const allCartons = await db.query.carton.findMany({
+                where: eq(carton.warehouseId, userId),
+                with: {
+                    config: true,
+                    variant: {
+                        with: {
+                            product: { columns: { id: true, name: true, image: true } },
+                            brand: { columns: { id: true, name: true } },
+                        },
+                    },
+                    storageArea: { columns: { id: true, name: true } },
+                },
+            });
+
+            // Filter to the specific product
+            const productCartons = allCartons.filter(
+                (c) => (c.variant?.product as any)?.id === input.productId,
+            );
+
+            // Get product info from the first carton
+            const firstCarton = productCartons[0];
+            const productInfo = firstCarton
+                ? {
+                    productId: (firstCarton.variant?.product as any)?.id,
+                    productName: (firstCarton.variant?.product as any)?.name || "Unknown",
+                    productImage: (firstCarton.variant?.product as any)?.image || "",
+                }
+                : { productId: input.productId, productName: "Unknown", productImage: "" };
+
+            // Group by variant
+            const variantMap = new Map<number, {
+                variantId: number;
+                variantLabel: string;
+                brandName: string;
+                sku: string;
+                weightKg: string;
+                totalCartons: number;
+                activeCartons: number;
+                totalPacks: number;
+            }>();
+
+            for (const c of productCartons) {
+                const v = c.variant;
+                if (!v) continue;
+
+                if (!variantMap.has(v.id)) {
+                    variantMap.set(v.id, {
+                        variantId: v.id,
+                        variantLabel: v.unitLabel || `Variant #${v.id}`,
+                        brandName: (v.brand as any)?.name || "—",
+                        sku: v.sku || "—",
+                        weightKg: v.weightKg,
+                        totalCartons: 0,
+                        activeCartons: 0,
+                        totalPacks: 0,
+                    });
+                }
+
+                const entry = variantMap.get(v.id)!;
+                entry.totalCartons += 1;
+                if (c.status === "active") {
+                    entry.activeCartons += 1;
+                    entry.totalPacks += c.totalPacks;
+                }
+            }
+
+            return {
+                product: productInfo,
+                variants: Array.from(variantMap.values()).sort((a, b) => b.activeCartons - a.activeCartons),
+            };
+        }),
+
+    /**
+     * Transfer a carton to a different storage area.
+     */
+    transferCarton: warehouseProcedure
+        .input(
+            z.object({
+                cartonId: z.number().int(),
+                newStorageAreaId: z.number().int(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Validate carton exists, is active, and belongs to this warehouse
+            const existingCarton = await db.query.carton.findFirst({
+                where: and(
+                    eq(carton.id, input.cartonId),
+                    eq(carton.warehouseId, userId),
+                    eq(carton.status, "active"),
+                ),
+            });
+
+            if (!existingCarton) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Active carton not found or doesn't belong to your warehouse",
+                });
+            }
+
+            // Validate storage area belongs to this warehouse
+            const area = await db.query.warehouseStorageArea.findFirst({
+                where: and(
+                    eq(warehouseStorageArea.id, input.newStorageAreaId),
+                    eq(warehouseStorageArea.warehouseId, userId),
+                ),
+            });
+
+            if (!area) {
+                throw new ORPCError("NOT_FOUND", { message: "Storage area not found" });
+            }
+
+            await db
+                .update(carton)
+                .set({ storageAreaId: input.newStorageAreaId })
+                .where(eq(carton.id, input.cartonId));
+
+            return { success: true, message: `Carton transferred to ${area.name}` };
+        }),
+
+    /**
+     * Mark a carton as empty — removes it from active inventory.
+     */
+    markCartonEmpty: warehouseProcedure
+        .input(z.object({ cartonId: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Validate carton
+            const existingCarton = await db.query.carton.findFirst({
+                where: and(
+                    eq(carton.id, input.cartonId),
+                    eq(carton.warehouseId, userId),
+                    eq(carton.status, "active"),
+                ),
+            });
+
+            if (!existingCarton) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Active carton not found",
+                });
+            }
+
+            // Get inventory
+            const inv = await db.query.inventory.findFirst({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, userId),
+                    eq(inventory.variantId, existingCarton.variantId),
+                ),
+            });
+
+            if (!inv) {
+                throw new ORPCError("NOT_FOUND", { message: "Inventory not found" });
+            }
+
+            // Transaction: mark carton sold/empty + adjust inventory
+            await db.transaction(async (tx) => {
+                await tx
+                    .update(carton)
+                    .set({ status: "sold" })
+                    .where(eq(carton.id, input.cartonId));
+
+                // Remove packs from in-carton count
+                const inCartonQty = parseFloat(inv.inCartonQty);
+                const newInCartonQty = Math.max(0, inCartonQty - existingCarton.totalPacks);
+                const newActiveCount = Math.max(0, (inv.activeCartonCount || 0) - 1);
+
+                // Also reduce available qty since items are consumed
+                const availableQty = parseFloat(inv.availableQty);
+                const newAvailableQty = Math.max(0, availableQty - existingCarton.totalPacks);
+
+                await tx
+                    .update(inventory)
+                    .set({
+                        inCartonQty: newInCartonQty.toFixed(2),
+                        activeCartonCount: newActiveCount,
+                        availableQty: newAvailableQty.toFixed(2),
+                    })
+                    .where(eq(inventory.id, inv.id));
+            });
+
+            return { success: true, message: "Carton marked as empty" };
         }),
 
     /**
