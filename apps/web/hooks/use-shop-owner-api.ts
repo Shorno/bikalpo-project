@@ -301,6 +301,32 @@ export function useRejectPurchaseModification() {
   });
 }
 
+/** Purchase history with stock impact and trends */
+export function usePurchaseHistory(params?: {
+  search?: string;
+  status?: "delivered" | "cancelled" | "returned";
+  warehouseId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseHistory.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        status: params?.status,
+        warehouseId: params?.warehouseId,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
 /** Dashboard summary stats */
 export function useDashboardStats() {
   return useQuery(

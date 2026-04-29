@@ -44,6 +44,7 @@ import {
     supplier,
     purchaseItem,
     purchase,
+    invoice,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -2422,6 +2423,207 @@ const orderQueries = {
             return {
                 success: true,
                 message: `Modifications rejected, order ${existingOrder.orderNumber} cancelled`,
+            };
+        }),
+
+    // ── Purchase History ─────────────────────────────────────
+
+    /**
+     * Get completed/past purchase orders with stock impact, payment info,
+     * invoice data, and 7-day trend.
+     */
+    getPurchaseHistory: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-history",
+            tags: ["Shop Owner"],
+            summary: "Get purchase history with stock impact and trends",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z.enum(["delivered", "cancelled", "returned"]).optional(),
+                warehouseId: z.string().optional(),
+                dateFrom: z.string().optional(),
+                dateTo: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { page, limit, search, status, warehouseId, dateFrom, dateTo } = input;
+            const offset = (page - 1) * limit;
+
+            // Only completed statuses
+            const conditions: SQL[] = [
+                eq(order.userId, userId),
+                inArray(order.status, ["delivered", "cancelled", "returned"]),
+            ];
+
+            if (status) conditions.push(eq(order.status, status));
+            if (warehouseId) conditions.push(eq(order.warehouseId, warehouseId));
+            if (dateFrom) conditions.push(gte(order.createdAt, new Date(dateFrom)));
+            if (dateTo) {
+                const d = new Date(dateTo);
+                d.setHours(23, 59, 59, 999);
+                conditions.push(lte(order.createdAt, d));
+            }
+
+            if (search) {
+                const s = `%${search}%`;
+                const matchingIds = await db
+                    .select({ orderId: orderItem.orderId })
+                    .from(orderItem)
+                    .where(ilike(orderItem.productName, s));
+                const ids = matchingIds.map((r) => r.orderId);
+                if (ids.length > 0) {
+                    conditions.push(or(ilike(order.orderNumber, s), inArray(order.id, ids))!);
+                } else {
+                    conditions.push(ilike(order.orderNumber, s));
+                }
+            }
+
+            const where = and(...conditions);
+
+            const [orders, countResult] = await Promise.all([
+                db.query.order.findMany({
+                    where,
+                    with: {
+                        items: {
+                            columns: {
+                                id: true,
+                                productName: true,
+                                productImage: true,
+                                productSize: true,
+                                quantity: true,
+                                unitPrice: true,
+                                totalPrice: true,
+                                modifiedQty: true,
+                                modifiedUnitPrice: true,
+                                deliveredQty: true,
+                                convertedQty: true,
+                            },
+                        },
+                    },
+                    orderBy: [desc(order.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db.select({ count: count() }).from(order).where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count || 0;
+
+            // Resolve warehouse names
+            const whIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            let whMap: Record<string, string> = {};
+            if (whIds.length > 0) {
+                const whs = await db
+                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .from(user)
+                    .where(inArray(user.id, whIds));
+                for (const w of whs) whMap[w.id] = w.shopName || w.name;
+            }
+
+            // Fetch invoices for these orders
+            const orderIds = orders.map((o: any) => o.id);
+            let invoiceMap: Record<number, string> = {};
+            if (orderIds.length > 0) {
+                const invoices = await db
+                    .select({ orderId: invoice.orderId, invoiceNumber: invoice.invoiceNumber })
+                    .from(invoice)
+                    .where(inArray(invoice.orderId, orderIds));
+                for (const inv of invoices) invoiceMap[inv.orderId] = inv.invoiceNumber;
+            }
+
+            // Build history records
+            const historyOrders = orders.map((o: any) => {
+                const totalQty = o.items.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0);
+                const totalAmount = o.items.reduce((s: number, i: any) => {
+                    const qty = i.modifiedQty ?? i.quantity;
+                    const price = i.modifiedUnitPrice ?? i.unitPrice;
+                    return s + qty * Number(price);
+                }, 0);
+
+                // Stock impact
+                const stockImpact = o.items.map((item: any) => {
+                    const qty = item.modifiedQty ?? item.quantity;
+                    if (o.status === "delivered") {
+                        return { product: item.productName, change: `+${qty}`, type: "added" };
+                    } else if (o.status === "cancelled") {
+                        return { product: item.productName, change: "0", type: "no_impact" };
+                    } else {
+                        return { product: item.productName, change: `-${qty}`, type: "returned" };
+                    }
+                });
+
+                return {
+                    id: o.id,
+                    orderNumber: o.orderNumber,
+                    status: o.status,
+                    createdAt: o.createdAt,
+                    deliveredAt: o.deliveredAt,
+                    receivedAt: o.receivedAt,
+                    cancelledAt: o.cancelledAt,
+                    paymentMethod: o.paymentMethod,
+                    paymentStatus: o.paymentStatus,
+                    total: o.total,
+                    subtotal: o.subtotal,
+                    warehouseName: o.warehouseId ? (whMap[o.warehouseId] || "Unknown") : "Admin",
+                    invoiceNumber: invoiceMap[o.id] || null,
+                    items: o.items,
+                    totalQty,
+                    totalAmount,
+                    stockImpact,
+                };
+            });
+
+            // 7-day purchase trend
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+            sevenDaysAgo.setHours(0, 0, 0, 0);
+
+            const trendData = await db
+                .select({
+                    day: sql<string>`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`.as("day"),
+                    orderCount: count(),
+                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("total_amount"),
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, userId),
+                        inArray(order.status, ["delivered", "cancelled", "returned"]),
+                        gte(order.createdAt, sevenDaysAgo),
+                    ),
+                )
+                .groupBy(sql`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`)
+                .orderBy(sql`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`);
+
+            // Fill missing days
+            const trend: { day: string; label: string; orders: number; amount: number }[] = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(sevenDaysAgo);
+                d.setDate(d.getDate() + i);
+                const key = d.toISOString().split("T")[0]!;
+                const match = trendData.find((t) => t.day === key);
+                trend.push({
+                    day: key,
+                    label: d.toLocaleDateString("en-BD", { weekday: "short" }),
+                    orders: match ? Number(match.orderCount) : 0,
+                    amount: match ? Number(match.totalAmount) : 0,
+                });
+            }
+
+            // Distinct wholesalers for filter dropdown
+            const wholesalers = Object.entries(whMap).map(([id, name]) => ({ id, name }));
+
+            return {
+                orders: historyOrders,
+                pagination: { page, limit, totalCount, totalPages: Math.ceil(totalCount / limit) },
+                trend,
+                wholesalers,
             };
         }),
 
