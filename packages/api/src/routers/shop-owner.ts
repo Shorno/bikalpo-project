@@ -2140,6 +2140,291 @@ const orderQueries = {
             };
         }),
 
+    // ── Purchase Order Tracking ──────────────────────────────
+
+    /**
+     * Get purchase orders with tracking-focused data:
+     * ordered vs received quantities, modification flags, 8-step timeline, alerts.
+     */
+    getPurchaseTracking: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-tracking",
+            tags: ["Shop Owner"],
+            summary: "Get purchase orders with tracking data",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z
+                    .enum([
+                        "pending",
+                        "confirmed",
+                        "processing",
+                        "delivered",
+                        "cancelled",
+                    ])
+                    .optional(),
+                dateFrom: z.string().optional(),
+                dateTo: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { page, limit, search, status, dateFrom, dateTo } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [eq(order.userId, userId)];
+
+            if (status) conditions.push(eq(order.status, status));
+            if (dateFrom) conditions.push(gte(order.createdAt, new Date(dateFrom)));
+            if (dateTo) {
+                const toDate = new Date(dateTo);
+                toDate.setHours(23, 59, 59, 999);
+                conditions.push(lte(order.createdAt, toDate));
+            }
+
+            if (search) {
+                const s = `%${search}%`;
+                const matchingOrderIds = await db
+                    .select({ orderId: orderItem.orderId })
+                    .from(orderItem)
+                    .where(ilike(orderItem.productName, s));
+                const orderIds = matchingOrderIds.map((r) => r.orderId);
+                if (orderIds.length > 0) {
+                    conditions.push(
+                        or(ilike(order.orderNumber, s), inArray(order.id, orderIds))!,
+                    );
+                } else {
+                    conditions.push(ilike(order.orderNumber, s));
+                }
+            }
+
+            const where = and(...conditions);
+
+            const [orders, countResult] = await Promise.all([
+                db.query.order.findMany({
+                    where,
+                    with: {
+                        items: {
+                            columns: {
+                                id: true,
+                                productName: true,
+                                productImage: true,
+                                productSize: true,
+                                quantity: true,
+                                unitPrice: true,
+                                totalPrice: true,
+                                modifiedQty: true,
+                                modifiedUnitPrice: true,
+                                deliveredQty: true,
+                            },
+                        },
+                    },
+                    orderBy: [desc(order.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db.select({ count: count() }).from(order).where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count || 0;
+
+            // Resolve warehouse names
+            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            let warehouseMap: Record<string, string> = {};
+            if (warehouseIds.length > 0) {
+                const warehouses = await db
+                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .from(user)
+                    .where(inArray(user.id, warehouseIds));
+                for (const w of warehouses) {
+                    warehouseMap[w.id] = w.shopName || w.name;
+                }
+            }
+
+            // Build tracking data for each order
+            const trackingOrders = orders.map((o: any) => {
+                const totalOrdered = o.items.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0);
+                const totalDelivered = o.items.reduce((s: number, i: any) => s + (i.deliveredQty || 0), 0);
+                const isModified = !!o.modifiedByWarehouseAt;
+                const needsApproval = isModified && !o.modificationAcceptedAt && !o.modificationRejectedAt && o.status !== "cancelled";
+
+                // Build 8-step timeline
+                const timeline = [
+                    { step: "Placed", date: o.createdAt, completed: true },
+                    { step: "Modified", date: o.modifiedByWarehouseAt, completed: !!o.modifiedByWarehouseAt, isModification: true },
+                    { step: "Accepted", date: o.modificationAcceptedAt || o.confirmedAt, completed: !!o.confirmedAt || !!o.modificationAcceptedAt },
+                    { step: "Processing", date: o.processingStartedAt, completed: !!o.processingStartedAt || o.status === "processing" || o.status === "delivered" },
+                    { step: "Packing", date: o.packingStartedAt, completed: !!o.packingStartedAt },
+                    { step: "Ready", date: o.readyAt, completed: !!o.readyAt },
+                    { step: "Delivered", date: o.deliveredAt, completed: !!o.deliveredAt || o.status === "delivered" },
+                    { step: "Received", date: o.receivedAt, completed: !!o.receivedAt },
+                ].filter((t) => !t.isModification || t.completed);
+
+                return {
+                    ...o,
+                    warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
+                    tracking: {
+                        totalOrdered,
+                        totalDelivered,
+                        remaining: totalOrdered - totalDelivered,
+                        deliveryProgress: totalOrdered > 0 ? Math.round((totalDelivered / totalOrdered) * 100) : 0,
+                        isPartialDelivery: totalDelivered > 0 && totalDelivered < totalOrdered,
+                    },
+                    modification: {
+                        isModified,
+                        needsApproval,
+                        acceptedAt: o.modificationAcceptedAt,
+                        rejectedAt: o.modificationRejectedAt,
+                    },
+                    timeline,
+                };
+            });
+
+            // Alerts / Insights
+            const allUserOrders = await db
+                .select({
+                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null and ${order.modificationAcceptedAt} is null and ${order.modificationRejectedAt} is null and ${order.status} != 'cancelled')`.as("mc"),
+                    pendingApprovals: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pa"),
+                    totalActive: sql<number>`count(*) filter (where ${order.status} not in ('delivered', 'cancelled'))`.as("ta"),
+                })
+                .from(order)
+                .where(eq(order.userId, userId));
+
+            const alerts = {
+                modifiedOrders: Number(allUserOrders[0]?.modifiedCount) || 0,
+                pendingApprovals: Number(allUserOrders[0]?.pendingApprovals) || 0,
+                totalActive: Number(allUserOrders[0]?.totalActive) || 0,
+            };
+
+            return {
+                orders: trackingOrders,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+                alerts,
+            };
+        }),
+
+    /**
+     * Retailer accepts wholesaler's quantity modifications.
+     */
+    acceptPurchaseModification: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders/accept-modification",
+            tags: ["Shop Owner"],
+            summary: "Accept wholesaler modifications",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!existingOrder.modifiedByWarehouseAt) {
+                throw new ORPCError("BAD_REQUEST", { message: "This order has no modifications to accept" });
+            }
+
+            if (existingOrder.modificationAcceptedAt || existingOrder.modificationRejectedAt) {
+                throw new ORPCError("BAD_REQUEST", { message: "Modification already resolved" });
+            }
+
+            await db
+                .update(order)
+                .set({
+                    modificationAcceptedAt: new Date(),
+                    confirmedAt: existingOrder.confirmedAt || new Date(),
+                    status: "confirmed",
+                })
+                .where(eq(order.id, input.orderId));
+
+            return {
+                success: true,
+                message: `Modifications accepted for ${existingOrder.orderNumber}`,
+            };
+        }),
+
+    /**
+     * Retailer rejects wholesaler's modifications → order cancelled, inventory restored.
+     */
+    rejectPurchaseModification: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders/reject-modification",
+            tags: ["Shop Owner"],
+            summary: "Reject wholesaler modifications and cancel order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!existingOrder.modifiedByWarehouseAt) {
+                throw new ORPCError("BAD_REQUEST", { message: "This order has no modifications to reject" });
+            }
+
+            if (existingOrder.modificationAcceptedAt || existingOrder.modificationRejectedAt) {
+                throw new ORPCError("BAD_REQUEST", { message: "Modification already resolved" });
+            }
+
+            await db.transaction(async (tx) => {
+                // Restore warehouse inventory
+                if (existingOrder.warehouseId) {
+                    for (const item of existingOrder.items) {
+                        if (!item.variantId) continue;
+                        const qty = item.modifiedQty ?? item.quantity;
+                        await tx
+                            .update(inventory)
+                            .set({
+                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${qty}`,
+                            })
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, existingOrder.warehouseId!),
+                                    eq(inventory.variantId, item.variantId),
+                                ),
+                            );
+                    }
+                }
+
+                await tx
+                    .update(order)
+                    .set({
+                        modificationRejectedAt: new Date(),
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+            });
+
+            return {
+                success: true,
+                message: `Modifications rejected, order ${existingOrder.orderNumber} cancelled`,
+            };
+        }),
+
     /**
      * Get dashboard summary stats for the shop owner.
      */

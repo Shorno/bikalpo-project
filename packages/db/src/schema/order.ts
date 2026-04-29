@@ -151,6 +151,17 @@ export const order = pgTable(
         adminModifiedAt: timestamp("admin_modified_at"),
         /** When the warehouse/wholesaler modified the order */
         modifiedByWarehouseAt: timestamp("modified_by_warehouse_at"),
+
+        // === Modification Acceptance ===
+        /** When the retailer accepted wholesaler modifications */
+        modificationAcceptedAt: timestamp("modification_accepted_at"),
+        /** When the retailer rejected wholesaler modifications */
+        modificationRejectedAt: timestamp("modification_rejected_at"),
+
+        // === Processing Sub-stages (timestamps, not enum) ===
+        processingStartedAt: timestamp("processing_started_at"),
+        packingStartedAt: timestamp("packing_started_at"),
+        readyAt: timestamp("ready_at"),
     },
     (table) => [
         index("order_userId_idx").on(table.userId),
@@ -189,6 +200,10 @@ export const orderItem = pgTable(
         modifiedQty: integer("modified_qty"),
         /** Modified unit price set by warehouse (null = no change) */
         modifiedUnitPrice: decimal("modified_unit_price", { precision: 10, scale: 2 }),
+
+        // === Partial Delivery Tracking ===
+        /** How many units have been delivered so far for this item */
+        deliveredQty: integer("delivered_qty").default(0),
 
         // === B2B → B2C Conversion Fields ===
 

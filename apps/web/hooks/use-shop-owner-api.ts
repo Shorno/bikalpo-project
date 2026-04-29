@@ -241,6 +241,66 @@ export function useCancelPurchaseOrder() {
   });
 }
 
+/** Purchase order tracking with delivery progress and timelines */
+export function usePurchaseTracking(params?: {
+  search?: string;
+  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseTracking.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        status: params?.status,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 15,
+    }),
+  );
+}
+
+/** Accept wholesaler's modifications */
+export function useAcceptPurchaseModification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { orderId: number }) =>
+      orpc.shopOwner.acceptPurchaseModification.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Modifications accepted");
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseTracking"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to accept modifications");
+    },
+  });
+}
+
+/** Reject wholesaler's modifications (cancels order) */
+export function useRejectPurchaseModification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { orderId: number }) =>
+      orpc.shopOwner.rejectPurchaseModification.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Order cancelled");
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseTracking"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to reject modifications");
+    },
+  });
+}
+
 /** Dashboard summary stats */
 export function useDashboardStats() {
   return useQuery(
