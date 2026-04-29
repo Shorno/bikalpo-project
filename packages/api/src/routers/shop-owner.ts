@@ -2871,7 +2871,7 @@ const warehouseConnectionEndpoints = {
                     variantPackType: productVariant.packType,
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
-                    productUnitSize: product.unitSize,
+                    productUnitSize: product.size,
                     productBrandId: product.brandId,
                     brandName: brand.name,
                 })

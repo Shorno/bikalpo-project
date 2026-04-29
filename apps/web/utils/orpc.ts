@@ -25,12 +25,18 @@ export const queryClient = new QueryClient({
 export const link = new RPCLink({
   url: `${env.NEXT_PUBLIC_SERVER_URL}/rpc`,
   async fetch(url, options: RequestInit | undefined) {
-    console.log("orpc fetch", { url, backend: env.NEXT_PUBLIC_SERVER_URL });
+    const bodyStr = typeof options?.body === 'string' ? options.body : '';
+    console.log("orpc fetch →", { url, body: bodyStr.substring(0, 500) });
     try {
-      return await fetch(url, {
+      const response = await fetch(url, {
         ...options,
         credentials: "include",
       });
+      if (!response.ok) {
+        const errText = await response.clone().text();
+        console.error("orpc response error", { status: response.status, url, body: errText.substring(0, 500) });
+      }
+      return response;
     } catch (error: any) {
       console.error("orpc fetch failed", { error, url });
       if (error?.cause?.code === "ECONNREFUSED") {
@@ -44,12 +50,8 @@ export const link = new RPCLink({
     }
   },
   headers: async () => {
-    if (typeof window !== "undefined") {
-      return {};
-    }
-
-    const { headers } = await import("next/headers");
-    return Object.fromEntries(await headers());
+    // For now, always return empty headers to test if next/headers is crashing the client
+    return {};
   },
 });
 

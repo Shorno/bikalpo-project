@@ -5,6 +5,7 @@ import { Poppins } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import Providers from "@/app/providers";
+import React from "react";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -26,10 +27,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{__html: `
+          window.onerror = function(msg, url, line, col, error) {
+            document.body.innerHTML = '<div style="background:red;color:white;font-size:24px;padding:20px;z-index:99999;position:fixed;top:0;left:0;right:0;bottom:0;">GLOBAL ERROR: ' + msg + '<br/>' + url + ':' + line + ':' + col + '<br/><pre>' + (error && error.stack ? error.stack : '') + '</pre></div>';
+          };
+          window.addEventListener('unhandledrejection', function(event) {
+            document.body.innerHTML = '<div style="background:red;color:white;font-size:24px;padding:20px;z-index:99999;position:fixed;top:0;left:0;right:0;bottom:0;">UNHANDLED PROMISE REJECTION: ' + event.reason + '</div>';
+          });
+        `}} />
+      </head>
       <body
         className={`${poppins.variable} font-(family-name:--font-poppins) antialiased`}
         suppressHydrationWarning
       >
+
         <NuqsAdapter>
           <Providers>
             {children}
