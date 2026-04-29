@@ -2331,6 +2331,7 @@ const stockEntryQueries = {
         .input(
             z.object({
                 search: z.string().optional(),
+                categoryId: z.number().int().optional(),
                 limit: z.number().default(20),
             }),
         )
@@ -2348,6 +2349,10 @@ const stockEntryQueries = {
                 );
             }
 
+            if (input.categoryId) {
+                conditions.push(eq(productTable.categoryId, input.categoryId));
+            }
+
             const products = await db.query.product.findMany({
                 where: and(...conditions),
                 limit: input.limit,
@@ -2358,9 +2363,11 @@ const stockEntryQueries = {
                     image: true,
                     trackingType: true,
                     expiryEnabled: true,
+                    categoryId: true,
                 },
                 with: {
                     brand: { columns: { id: true, name: true } },
+                    category: { columns: { id: true, name: true } },
                     coreProduct: {
                         columns: {
                             id: true,
