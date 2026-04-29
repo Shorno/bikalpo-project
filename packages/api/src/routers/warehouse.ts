@@ -3099,6 +3099,61 @@ const cartonQueries = {
         }),
 
     /**
+     * Get a summary of active physical cartons for multiple variants.
+     * Used by the pricing page to display carton info sourced from actual carton data.
+     * Returns the most recent active carton per variant with its weight, pack count, price, and delivery cost.
+     */
+    getCartonSummaryBatch: warehouseProcedure
+        .input(z.object({ variantIds: z.array(z.number().int()) }))
+        .handler(async ({ context, input }) => {
+            if (input.variantIds.length === 0) return { cartons: [] };
+
+            const userId = context.session.user.id;
+
+            // Fetch all active cartons for these variants belonging to this warehouse
+            const activeCartons = await db.query.carton.findMany({
+                where: and(
+                    eq(carton.warehouseId, userId),
+                    eq(carton.status, "active"),
+                    inArray(carton.variantId, input.variantIds),
+                ),
+                orderBy: [desc(carton.createdAt)],
+            });
+
+            // Group by variantId — pick the most recent active carton as the representative
+            const summaryMap = new Map<number, {
+                variantId: number;
+                totalPacks: number;
+                totalWeightKg: string;
+                cartonPrice: string | null;
+                deliveryCostPerUnit: string | null;
+                activeCartonCount: number;
+                latestCartonId: string;
+            }>();
+
+            for (const c of activeCartons) {
+                if (!summaryMap.has(c.variantId)) {
+                    // First (most recent) carton for this variant becomes the representative
+                    summaryMap.set(c.variantId, {
+                        variantId: c.variantId,
+                        totalPacks: c.totalPacks,
+                        totalWeightKg: c.totalWeightKg,
+                        cartonPrice: c.cartonPrice,
+                        deliveryCostPerUnit: c.deliveryCostPerUnit,
+                        activeCartonCount: 1,
+                        latestCartonId: c.cartonId,
+                    });
+                } else {
+                    // Accumulate count
+                    const existing = summaryMap.get(c.variantId)!;
+                    existing.activeCartonCount += 1;
+                }
+            }
+
+            return { cartons: Array.from(summaryMap.values()) };
+        }),
+
+    /**
      * Create a new carton config for a variant.
      */
     createCartonConfig: warehouseProcedure
