@@ -2332,7 +2332,9 @@ const stockEntryQueries = {
             z.object({
                 search: z.string().optional(),
                 categoryId: z.number().int().optional(),
-                limit: z.number().default(20),
+                subCategoryId: z.number().int().optional(),
+                productId: z.number().int().optional(),
+                limit: z.number().default(50),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -2353,6 +2355,14 @@ const stockEntryQueries = {
                 conditions.push(eq(productTable.categoryId, input.categoryId));
             }
 
+            if (input.subCategoryId) {
+                conditions.push(eq(productTable.subCategoryId, input.subCategoryId));
+            }
+
+            if (input.productId) {
+                conditions.push(eq(productTable.id, input.productId));
+            }
+
             const products = await db.query.product.findMany({
                 where: and(...conditions),
                 limit: input.limit,
@@ -2364,10 +2374,12 @@ const stockEntryQueries = {
                     trackingType: true,
                     expiryEnabled: true,
                     categoryId: true,
+                    subCategoryId: true,
                 },
                 with: {
                     brand: { columns: { id: true, name: true } },
                     category: { columns: { id: true, name: true } },
+                    subCategory: { columns: { id: true, name: true } },
                     coreProduct: {
                         columns: {
                             id: true,
