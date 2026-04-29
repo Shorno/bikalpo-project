@@ -168,6 +168,41 @@ export function useMyOrders(params?: {
   );
 }
 
+/** Purchase orders with search, filters, and KPIs */
+export function usePurchaseOrders(params?: {
+  search?: string;
+  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseOrders.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        status: params?.status,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Full detail for a single purchase order */
+export function usePurchaseOrderDetail(orderId: number | null) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseOrderDetail.queryOptions({
+      input: { orderId: orderId! },
+      enabled: !!orderId,
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
 /** Dashboard summary stats */
 export function useDashboardStats() {
   return useQuery(

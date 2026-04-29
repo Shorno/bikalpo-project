@@ -1711,6 +1711,273 @@ const orderQueries = {
     /**
      * Get dashboard summary stats for the shop owner.
      */
+
+    // ── Purchase Orders (enhanced) ──────────────────────────────
+
+    /**
+     * Get shop owner's purchase orders with search, filters, and warehouse info.
+     */
+    getPurchaseOrders: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders",
+            tags: ["Shop Owner"],
+            summary: "Get purchase orders with search/filter/pagination",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z
+                    .enum([
+                        "pending",
+                        "confirmed",
+                        "processing",
+                        "delivered",
+                        "cancelled",
+                    ])
+                    .optional(),
+                dateFrom: z.string().optional(),
+                dateTo: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { page, limit, search, status, dateFrom, dateTo } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [eq(order.userId, userId)];
+
+            if (status) conditions.push(eq(order.status, status));
+
+            if (dateFrom) {
+                conditions.push(gte(order.createdAt, new Date(dateFrom)));
+            }
+            if (dateTo) {
+                const toDate = new Date(dateTo);
+                toDate.setHours(23, 59, 59, 999);
+                conditions.push(lte(order.createdAt, toDate));
+            }
+
+            // Search by order number or product name
+            if (search) {
+                const s = `%${search}%`;
+                // Get order IDs that match product name search
+                const matchingOrderIds = await db
+                    .select({ orderId: orderItem.orderId })
+                    .from(orderItem)
+                    .where(ilike(orderItem.productName, s));
+                const orderIds = matchingOrderIds.map((r) => r.orderId);
+
+                if (orderIds.length > 0) {
+                    conditions.push(
+                        or(
+                            ilike(order.orderNumber, s),
+                            inArray(order.id, orderIds),
+                        )!,
+                    );
+                } else {
+                    conditions.push(ilike(order.orderNumber, s));
+                }
+            }
+
+            const where = and(...conditions);
+
+            const [orders, countResult, kpiResult] = await Promise.all([
+                db.query.order.findMany({
+                    where,
+                    with: {
+                        items: {
+                            columns: {
+                                id: true,
+                                productName: true,
+                                productImage: true,
+                                productSize: true,
+                                quantity: true,
+                                unitPrice: true,
+                                totalPrice: true,
+                                modifiedQty: true,
+                                modifiedUnitPrice: true,
+                            },
+                        },
+                    },
+                    orderBy: [desc(order.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db
+                    .select({ count: count() })
+                    .from(order)
+                    .where(where),
+                // KPI aggregation
+                db
+                    .select({
+                        totalOrders: count(),
+                        pendingCount: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pending_count"),
+                        confirmedCount: sql<number>`count(*) filter (where ${order.status} = 'confirmed')`.as("confirmed_count"),
+                        processingCount: sql<number>`count(*) filter (where ${order.status} = 'processing')`.as("processing_count"),
+                        deliveredCount: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("delivered_count"),
+                        cancelledCount: sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as("cancelled_count"),
+                        totalAmount: sql<string>`coalesce(sum(${order.total}), 0)`.as("total_amount"),
+                        pendingAmount: sql<string>`coalesce(sum(case when ${order.status} in ('pending','confirmed','processing') then ${order.total} else 0 end), 0)`.as("pending_amount"),
+                    })
+                    .from(order)
+                    .where(eq(order.userId, userId)),
+            ]);
+
+            const totalCount = countResult[0]?.count || 0;
+            const kpi = kpiResult[0];
+
+            // Resolve warehouse names for orders that have warehouseId
+            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            let warehouseMap: Record<string, string> = {};
+            if (warehouseIds.length > 0) {
+                const warehouses = await db
+                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .from(user)
+                    .where(inArray(user.id, warehouseIds));
+                for (const w of warehouses) {
+                    warehouseMap[w.id] = w.shopName || w.name;
+                }
+            }
+
+            const enrichedOrders = orders.map((o: any) => ({
+                ...o,
+                warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
+            }));
+
+            return {
+                orders: enrichedOrders,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+                kpi: {
+                    totalOrders: kpi?.totalOrders || 0,
+                    pendingCount: Number(kpi?.pendingCount) || 0,
+                    confirmedCount: Number(kpi?.confirmedCount) || 0,
+                    processingCount: Number(kpi?.processingCount) || 0,
+                    deliveredCount: Number(kpi?.deliveredCount) || 0,
+                    cancelledCount: Number(kpi?.cancelledCount) || 0,
+                    totalAmount: kpi?.totalAmount || "0",
+                    pendingAmount: kpi?.pendingAmount || "0",
+                },
+            };
+        }),
+
+    /**
+     * Get full details for a single purchase order.
+     */
+    getPurchaseOrderDetail: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-order-detail",
+            tags: ["Shop Owner"],
+            summary: "Get full detail for a single purchase order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const result = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+                with: {
+                    items: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, image: true },
+                            },
+                            variant: {
+                                columns: {
+                                    id: true,
+                                    sku: true,
+                                    weightKg: true,
+                                    unitLabel: true,
+                                    packType: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            if (!result) {
+                throw new ORPCError("NOT_FOUND", { message: "Purchase order not found" });
+            }
+
+            // Resolve warehouse info
+            let warehouseInfo: { name: string; phone: string | null; shopName: string | null } | null = null;
+            if (result.warehouseId) {
+                const wh = await db
+                    .select({
+                        name: user.name,
+                        phone: user.phoneNumber,
+                        shopName: user.shopName,
+                    })
+                    .from(user)
+                    .where(eq(user.id, result.warehouseId))
+                    .limit(1);
+                if (wh[0]) warehouseInfo = wh[0];
+            }
+
+            // Build status timeline
+            const timeline = [
+                { step: "Placed", date: result.createdAt, completed: true },
+                {
+                    step: "Confirmed",
+                    date: result.confirmedAt,
+                    completed: !!result.confirmedAt,
+                },
+                {
+                    step: "Modified",
+                    date: result.modifiedByWarehouseAt,
+                    completed: !!result.modifiedByWarehouseAt,
+                    isModification: true,
+                },
+                {
+                    step: "Dispatched",
+                    date: result.shippedAt,
+                    completed: !!result.shippedAt,
+                },
+                {
+                    step: "Delivered",
+                    date: result.deliveredAt,
+                    completed: !!result.deliveredAt,
+                },
+                {
+                    step: "Received",
+                    date: result.receivedAt,
+                    completed: !!result.receivedAt,
+                },
+            ].filter((t) => !t.isModification || t.completed); // Only show "Modified" if it actually happened
+
+            // Check if any items were modified
+            const hasModifications = result.items.some(
+                (item: any) => item.modifiedQty !== null || item.modifiedUnitPrice !== null,
+            );
+
+            return {
+                order: {
+                    ...result,
+                    warehouseName: warehouseInfo?.shopName || warehouseInfo?.name || "Admin",
+                    warehousePhone: warehouseInfo?.phone || null,
+                },
+                timeline,
+                hasModifications,
+                delivery: {
+                    trackingId: result.trackingId,
+                    riderName: result.riderName,
+                    riderPhone: result.riderPhone,
+                },
+            };
+        }),
+
+    /**
+     * Get dashboard summary stats for the shop owner.
+     */
     getDashboardStats: shopOwnerProcedure
         .route({
             method: "GET",
