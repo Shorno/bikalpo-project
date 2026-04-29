@@ -1,9 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import {
   ArrowLeft,
   Box,
+  CalendarIcon,
   Check,
   ChevronRight,
   Loader,
@@ -11,15 +13,18 @@ import {
   Plus,
   Search,
   Tag,
+  Trash2,
   Truck,
+  Wallet,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Card,
   CardContent,
@@ -38,6 +43,11 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -45,6 +55,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 
 // ============================================================
@@ -78,6 +89,29 @@ type ProductResult = {
 
 type SelectedVariant = ProductResult["variants"][0];
 
+/** One row in the multi-item stock entry table */
+type StockItem = {
+  id: number;
+  productName: string;
+  productImage: string;
+  variantId: number;
+  variantLabel: string;
+  sku: string;
+  weightKg: number;
+  brandName: string;
+  entryType: "loose" | "pack" | "carton";
+  quantity: number;        // packs, KG, or carton count
+  costType: "per_kg" | "per_pack" | "per_carton";
+  purchasePrice: number;
+  // Carton-specific
+  cartonConfigId: number | null;
+  packsPerCarton: number;
+  // Pre-computed
+  totalKg: number;
+  totalPacks: number;
+  totalCost: number;
+};
+
 // ============================================================
 // Main Component
 // ============================================================
@@ -104,25 +138,33 @@ export default function AddStockPage() {
   const [selectedCartonConfigId, setSelectedCartonConfigId] = useState<number | null>(null);
   const [cartonCount, setCartonCount] = useState("");
 
-  // Step 4 — Supplier & cost
+  // Payment & Supplier (top-level header — shared across all items)
   const [supplierId, setSupplierId] = useState<number | null>(null);
-  const [costType, setCostType] = useState<"per_kg" | "per_pack" | "per_carton">("per_pack");
-  const [purchasePrice, setPurchasePrice] = useState("");
+  const [paymentAccount, setPaymentAccount] = useState<"cash" | "bank">("cash");
+  const [paymentDate, setPaymentDate] = useState<Date>(new Date());
   const [reference, setReference] = useState("");
-
-  // Step 5 — Batch/Expiry
-  const [batchNo, setBatchNo] = useState("");
-  const [expiryDate, setExpiryDate] = useState("");
-  const [manufactureDate, setManufactureDate] = useState("");
-
-  // Step 6 — Storage Location
   const [storageAreaId, setStorageAreaId] = useState<number | null>(null);
   const [shelfRack, setShelfRack] = useState("");
   const [showCreateAreaDialog, setShowCreateAreaDialog] = useState(false);
   const [newAreaName, setNewAreaName] = useState("");
   const [newAreaDescription, setNewAreaDescription] = useState("");
 
+  // Cost
+  const [costType, setCostType] = useState<"per_kg" | "per_pack" | "per_carton">("per_pack");
+  const [purchasePrice, setPurchasePrice] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [vatTax, setVatTax] = useState("");
+
+  // Batch/Expiry
+  const [batchNo, setBatchNo] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [manufactureDate, setManufactureDate] = useState("");
+
   const [note, setNote] = useState("");
+
+  // === Multi-row items table ===
+  const itemIdRef = useRef(0);
+  const [items, setItems] = useState<StockItem[]>([]);
 
   // === Queries ===
 
@@ -231,6 +273,14 @@ export default function AddStockPage() {
     }
   }, [selectedVariant, purchasePrice, costType, conversions, cartonCount, selectedCartonConfig]);
 
+  // Aggregate totals from items table
+  const itemsSubtotal = useMemo(() => items.reduce((sum, item) => sum + item.totalCost, 0), [items]);
+  const itemsTotalKg = useMemo(() => items.reduce((sum, item) => sum + item.totalKg, 0), [items]);
+  const itemsTotalPacks = useMemo(() => items.reduce((sum, item) => sum + item.totalPacks, 0), [items]);
+  const grandTotal = useMemo(() => {
+    return itemsSubtotal - (parseFloat(discount) || 0) + (parseFloat(vatTax) || 0);
+  }, [itemsSubtotal, discount, vatTax]);
+
   // === Mutation ===
 
   const addStockMutation = useMutation({
@@ -277,9 +327,9 @@ export default function AddStockPage() {
     }
   };
 
-  const handleSubmit = () => {
-    if (!selectedVariant) {
-      toast.error("Please select a variant");
+  const handleAddItem = useCallback(() => {
+    if (!selectedVariant || !selectedProduct) {
+      toast.error("Please select a product and variant");
       return;
     }
     if (entryType === "carton") {
@@ -295,37 +345,93 @@ export default function AddStockPage() {
       toast.error("Please enter a quantity");
       return;
     }
-    if (!supplierId) {
-      toast.error("Please select a supplier");
-      return;
-    }
     if (!purchasePrice || parseFloat(purchasePrice) <= 0) {
       toast.error("Please enter a purchase price");
       return;
     }
 
-    const effectiveQty = entryType === "carton"
-      ? String(conversions.packs) // carton entry → quantity is in packs
-      : quantity;
-
-    addStockMutation.mutate({
+    const newItem: StockItem = {
+      id: ++itemIdRef.current,
+      productName: selectedProduct.name,
+      productImage: selectedProduct.image || "",
       variantId: selectedVariant.id,
+      variantLabel: selectedVariant.unitLabel,
+      sku: selectedVariant.sku || "",
+      weightKg: parseFloat(selectedVariant.weightKg),
+      brandName: selectedVariant.brand?.name || "",
       entryType,
-      quantity: effectiveQty,
-      quantityUnit: entryType === "loose" ? "KG" : entryType === "carton" ? "Carton" : "Pack",
-      supplierId,
+      quantity: entryType === "carton" ? parseInt(cartonCount) : parseFloat(quantity),
       costType,
-      purchasePrice,
-      reference: reference || undefined,
-      batchNo: batchNo || undefined,
-      expiryDate: expiryDate || undefined,
-      manufactureDate: manufactureDate || undefined,
-      storageAreaId: storageAreaId || undefined,
-      shelfRack: shelfRack || undefined,
-      note: note || undefined,
-      // Carton fields
-      cartonConfigId: entryType === "carton" ? selectedCartonConfigId || undefined : undefined,
-      cartonCount: entryType === "carton" ? parseInt(cartonCount) || undefined : undefined,
+      purchasePrice: parseFloat(purchasePrice),
+      cartonConfigId: entryType === "carton" ? selectedCartonConfigId : null,
+      packsPerCarton: selectedCartonConfig?.packsPerCarton || 0,
+      totalKg: conversions.kg,
+      totalPacks: conversions.packs,
+      totalCost: costConversions.total,
+    };
+
+    setItems(prev => [...prev, newItem]);
+
+    // Reset the add-item form
+    setSelectedProduct(null);
+    setSelectedVariantId(null);
+    setQuantity("");
+    setCartonCount("");
+    setSelectedCartonConfigId(null);
+    setPurchasePrice("");
+    setProductSearch("");
+    toast.success(`Added ${newItem.productName} to the list`);
+  }, [selectedVariant, selectedProduct, entryType, quantity, cartonCount, purchasePrice, costType, selectedCartonConfigId, selectedCartonConfig, conversions, costConversions]);
+
+  const handleRemoveItem = useCallback((itemId: number) => {
+    setItems(prev => prev.filter(i => i.id !== itemId));
+  }, []);
+
+  const handleSubmit = () => {
+    if (items.length === 0) {
+      toast.error("Please add at least one item to the table");
+      return;
+    }
+    if (!supplierId) {
+      toast.error("Please select a supplier");
+      return;
+    }
+
+    // Submit the first item, then the rest sequentially
+    const submitItem = (item: StockItem) => {
+      const effectiveQty = item.entryType === "carton"
+        ? String(item.totalPacks)
+        : String(item.quantity);
+
+      return {
+        variantId: item.variantId,
+        entryType: item.entryType,
+        quantity: effectiveQty,
+        quantityUnit: item.entryType === "loose" ? "KG" : item.entryType === "carton" ? "Carton" : "Pack",
+        supplierId,
+        costType: item.costType,
+        purchasePrice: String(item.purchasePrice),
+        reference: reference || undefined,
+        batchNo: batchNo || undefined,
+        expiryDate: expiryDate || undefined,
+        manufactureDate: manufactureDate || undefined,
+        storageAreaId: storageAreaId || undefined,
+        shelfRack: shelfRack || undefined,
+        note: note || undefined,
+        cartonConfigId: item.entryType === "carton" ? item.cartonConfigId || undefined : undefined,
+        cartonCount: item.entryType === "carton" ? item.quantity || undefined : undefined,
+      };
+    };
+
+    // Submit all items
+    Promise.all(items.map(item =>
+      (orpc.warehouse as any).addStockEntry.call(submitItem(item))
+    )).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["warehouse"] });
+      toast.success(`${items.length} item${items.length > 1 ? "s" : ""} added to stock!`);
+      router.push("/warehouse/dashboard/stock");
+    }).catch((err: any) => {
+      toast.error(err?.message || "Failed to add stock");
     });
   };
 
@@ -362,20 +468,163 @@ export default function AddStockPage() {
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={isPending || !selectedVariant}
+                disabled={isPending || items.length === 0}
               >
                 {isPending && (
                   <Loader className="mr-2 h-4 w-4 animate-spin" />
                 )}
                 <Check className="mr-2 h-4 w-4" />
-                Confirm & Add Stock
+                Confirm & Add Stock ({items.length})
               </Button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto px-4 py-6 space-y-6">
+        {/* ── Payment & Supplier Info (shared header) ── */}
+        <Card>
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-blue-600" />
+              <CardTitle className="text-base">Payment & Supplier Info</CardTitle>
+            </div>
+            <CardDescription>
+              This information applies to the entire stock entry
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Field>
+                <FieldLabel>Supplier / Payee *</FieldLabel>
+                <Select
+                  value={supplierId ? String(supplierId) : ""}
+                  onValueChange={(v) => setSupplierId(Number(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select supplier..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((s: any) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name}
+                        {s.company ? ` (${s.company})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field>
+                <FieldLabel>Payment Account</FieldLabel>
+                <Select
+                  value={paymentAccount}
+                  onValueChange={(v) => setPaymentAccount(v as "cash" | "bank")}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">💵 Cash</SelectItem>
+                    <SelectItem value="bank">🏦 Bank</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field>
+                <FieldLabel>Payment Date</FieldLabel>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !paymentDate && "text-muted-foreground",
+                      )}
+                    >
+                      {paymentDate ? (
+                        format(paymentDate, "PPP")
+                      ) : (
+                        <span>Pick a date</span>
+                      )}
+                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={paymentDate}
+                      onSelect={(date) => setPaymentDate(date ?? new Date())}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </Field>
+
+              <Field>
+                <FieldLabel>Reference / Invoice No</FieldLabel>
+                <Input
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  placeholder="e.g. INV-001"
+                />
+              </Field>
+
+              <Field>
+                <FieldLabel>Location</FieldLabel>
+                {storageAreas.length > 0 ? (
+                  <Select
+                    value={storageAreaId ? String(storageAreaId) : ""}
+                    onValueChange={(v) => {
+                      if (v === "__create__") {
+                        setShowCreateAreaDialog(true);
+                        return;
+                      }
+                      setStorageAreaId(Number(v));
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select location..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {storageAreas.map((a: any) => (
+                        <SelectItem key={a.id} value={String(a.id)}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem
+                        value="__create__"
+                        className="text-primary font-medium"
+                      >
+                        + Create New Area
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-start text-muted-foreground font-normal"
+                    onClick={() => setShowCreateAreaDialog(true)}
+                  >
+                    No areas — click to create
+                  </Button>
+                )}
+              </Field>
+
+              <Field>
+                <FieldLabel>Shelf / Rack</FieldLabel>
+                <Input
+                  value={shelfRack}
+                  onChange={(e) => setShelfRack(e.target.value)}
+                  placeholder="e.g. A-01, Rack 3B"
+                />
+              </Field>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
@@ -389,7 +638,7 @@ export default function AddStockPage() {
                   <CardTitle className="text-base">Select Product</CardTitle>
                 </div>
                 <CardDescription>
-                  Search and select a product to add stock for
+                  Search and select a product to add stock
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -570,7 +819,7 @@ export default function AddStockPage() {
                       3
                     </div>
                     <CardTitle className="text-base">
-                      Entry Type & Quantity
+                      Entry Mode & Quantity
                     </CardTitle>
                   </div>
                 </CardHeader>
@@ -760,147 +1009,136 @@ export default function AddStockPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Price + Add to Table */}
+                  <Separator />
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1">
+                      <Field>
+                        <FieldLabel>
+                          Price (৳{" "}
+                          {costType === "per_kg" ? "/ KG" : costType === "per_carton" ? "/ Carton" : "/ Pack"})
+                        </FieldLabel>
+                        <div className="flex gap-2">
+                          <Select
+                            value={costType}
+                            onValueChange={(v) => setCostType(v as any)}
+                          >
+                            <SelectTrigger className="w-[110px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="per_kg">Per KG</SelectItem>
+                              {entryType !== "loose" && <SelectItem value="per_pack">Per Pack</SelectItem>}
+                              {entryType === "carton" && <SelectItem value="per_carton">Per Carton</SelectItem>}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={purchasePrice}
+                            onChange={(e) => setPurchasePrice(e.target.value)}
+                            placeholder="e.g. 350"
+                            className="flex-1"
+                          />
+                        </div>
+                      </Field>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleAddItem}
+                      disabled={!selectedVariant || !purchasePrice}
+                      className="shrink-0"
+                    >
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      Add to Table
+                    </Button>
+                  </div>
+
+                  {/* Inline price conversion hint */}
+                  {purchasePrice && parseFloat(purchasePrice) > 0 && costConversions.total > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      = ৳{costConversions.perKg.toFixed(2)}/KG
+                      {entryType !== "loose" && ` · ৳${costConversions.perPack.toFixed(2)}/Pack`}
+                      {" "}· Total: ৳{costConversions.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
 
-            {/* ── Step 4: Supplier & Cost ── */}
-            {selectedVariant && (
+
+            {/* ── Items Table ── */}
+            {items.length > 0 && (
               <Card>
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                      4
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Package className="h-5 w-5 text-primary" />
+                      <CardTitle className="text-base">Items ({items.length})</CardTitle>
                     </div>
-                    <CardTitle className="text-base">Supplier & Cost</CardTitle>
+                    <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setItems([])}>
+                      Clear All
+                    </Button>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Field>
-                      <FieldLabel>Supplier *</FieldLabel>
-                      <Select
-                        value={supplierId ? String(supplierId) : ""}
-                        onValueChange={(v) => setSupplierId(Number(v))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select supplier..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {suppliers.map((s: any) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.name}
-                              {s.company ? ` (${s.company})` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-
-                    <Field>
-                      <FieldLabel>Reference / Invoice No</FieldLabel>
-                      <Input
-                        value={reference}
-                        onChange={(e) => setReference(e.target.value)}
-                        placeholder="e.g. INV-001"
-                      />
-                    </Field>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-t border-b bg-muted/40">
+                          <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Product</th>
+                          <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Variant</th>
+                          <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">Mode</th>
+                          <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">Qty</th>
+                          <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">Total KG</th>
+                          <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">Cost</th>
+                          <th className="w-10 px-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((item) => (
+                          <tr key={item.id} className="border-b last:border-b-0 hover:bg-muted/20 transition-colors">
+                            <td className="px-4 py-2.5 font-medium">{item.productName}</td>
+                            <td className="px-3 py-2.5 text-muted-foreground">{item.brandName ? `${item.brandName} · ` : ""}{item.variantLabel}</td>
+                            <td className="px-3 py-2.5 text-center"><Badge variant="secondary" className="text-xs capitalize">{item.entryType}</Badge></td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{item.quantity} {item.entryType === "loose" ? "KG" : item.entryType === "carton" ? "Ctn" : "Pk"}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{item.totalKg.toFixed(2)}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums font-medium">৳{item.totalCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                            <td className="px-2 py-2.5">
+                              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => handleRemoveItem(item.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-
-                  {/* Cost type radio */}
-                  <div className="flex gap-3">
-                    <label
-                      className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${costType === "per_kg"
-                        ? "bg-primary/5 border-primary/30"
-                        : "hover:bg-muted/50"
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="costType"
-                        value="per_kg"
-                        checked={costType === "per_kg"}
-                        onChange={() => setCostType("per_kg")}
-                        className="accent-primary"
-                      />
-                      <span className="text-sm font-medium">Per KG</span>
-                    </label>
-                    {entryType !== "loose" && (
-                    <label
-                      className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${costType === "per_pack"
-                        ? "bg-primary/5 border-primary/30"
-                        : "hover:bg-muted/50"
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="costType"
-                        value="per_pack"
-                        checked={costType === "per_pack"}
-                        onChange={() => setCostType("per_pack")}
-                        className="accent-primary"
-                      />
-                      <span className="text-sm font-medium">Per Pack</span>
-                    </label>
-                    )}
-                    {entryType === "carton" && (
-                      <label
-                        className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${costType === "per_carton"
-                          ? "bg-primary/5 border-primary/30"
-                          : "hover:bg-muted/50"
-                          }`}
-                      >
-                        <input
-                          type="radio"
-                          name="costType"
-                          value="per_carton"
-                          checked={costType === "per_carton"}
-                          onChange={() => setCostType("per_carton")}
-                          className="accent-primary"
-                        />
-                        <span className="text-sm font-medium">Per Carton</span>
-                      </label>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Field>
-                      <FieldLabel>
-                        Purchase Price (৳{" "}
-                        {costType === "per_kg" ? "/ KG" : costType === "per_carton" ? "/ Carton" : "/ Pack"}) *
-                      </FieldLabel>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={purchasePrice}
-                        onChange={(e) => setPurchasePrice(e.target.value)}
-                        placeholder="e.g. 350"
-                      />
-                    </Field>
-
-                    {purchasePrice && parseFloat(purchasePrice) > 0 && (
-                      <div className="flex flex-col justify-center p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                        <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">
-                          Price Conversion
-                        </p>
-                        <p className="text-sm text-blue-800 dark:text-blue-300">
-                          Per KG: ৳ {costConversions.perKg.toFixed(2)}
-                        </p>
-                        {entryType !== "loose" && (
-                          <p className="text-sm text-blue-800 dark:text-blue-300">
-                            Per Pack: ৳ {costConversions.perPack.toFixed(2)}
-                          </p>
-                        )}
-                        {conversions.kg > 0 && (
-                          <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mt-1">
-                            Total: ৳{" "}
-                            {costConversions.total.toLocaleString("en-IN", {
-                              minimumFractionDigits: 2,
-                            })}
-                          </p>
-                        )}
+                  {/* Cost Summary */}
+                  <div className="border-t">
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30">
+                      <span className="text-sm text-muted-foreground">Subtotal ({items.length} items)</span>
+                      <span className="text-sm font-medium tabular-nums">৳ {itemsSubtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-2 border-t">
+                      <span className="text-sm text-muted-foreground">Discount</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">৳</span>
+                        <input type="number" step="0.01" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" className="w-24 px-2 py-1 text-sm text-right border rounded focus:ring-1 focus:ring-primary/50 outline-none bg-background" />
                       </div>
-                    )}
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-2 border-t">
+                      <span className="text-sm text-muted-foreground">VAT / Tax</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">৳</span>
+                        <input type="number" step="0.01" min="0" value={vatTax} onChange={(e) => setVatTax(e.target.value)} placeholder="0" className="w-24 px-2 py-1 text-sm text-right border rounded focus:ring-1 focus:ring-primary/50 outline-none bg-background" />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-3 border-t bg-primary/5">
+                      <span className="text-sm font-semibold">TOTAL</span>
+                      <span className="text-lg font-bold text-primary tabular-nums">৳ {grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -914,7 +1152,7 @@ export default function AddStockPage() {
                 <Card>
                   <CardHeader className="pb-4">
                     <div className="flex items-center gap-2">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs font-bold">
                         5
                       </div>
                       <CardTitle className="text-base">
@@ -957,85 +1195,6 @@ export default function AddStockPage() {
                 </Card>
               )}
 
-            {/* ── Step 6: Storage Location ── */}
-            {selectedVariant && (
-              <Card>
-                <CardHeader className="pb-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                        6
-                      </div>
-                      <CardTitle className="text-base">
-                        Storage Location
-                      </CardTitle>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowCreateAreaDialog(true)}
-                    >
-                      <Plus className="mr-1 h-3.5 w-3.5" />
-                      New Area
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Field>
-                      <FieldLabel>Storage Area</FieldLabel>
-                      {storageAreas.length > 0 ? (
-                        <Select
-                          value={storageAreaId ? String(storageAreaId) : ""}
-                          onValueChange={(v) => {
-                            if (v === "__create__") {
-                              setShowCreateAreaDialog(true);
-                              return;
-                            }
-                            setStorageAreaId(Number(v));
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select storage area..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {storageAreas.map((a: any) => (
-                              <SelectItem key={a.id} value={String(a.id)}>
-                                {a.name}
-                              </SelectItem>
-                            ))}
-                            <SelectItem
-                              value="__create__"
-                              className="text-primary font-medium"
-                            >
-                              + Create New Area
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full justify-start text-muted-foreground font-normal"
-                          onClick={() => setShowCreateAreaDialog(true)}
-                        >
-                          No storage areas — click to create one
-                        </Button>
-                      )}
-                    </Field>
-                    <Field>
-                      <FieldLabel>Shelf / Rack</FieldLabel>
-                      <Input
-                        value={shelfRack}
-                        onChange={(e) => setShelfRack(e.target.value)}
-                        placeholder="e.g. A-01, Rack 3B"
-                      />
-                    </Field>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
             {/* Note */}
             {selectedVariant && (
               <Card>
@@ -1056,112 +1215,112 @@ export default function AddStockPage() {
           {/* Sidebar — Summary */}
           <div className="space-y-6">
             <Card className="sticky top-20">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base">Summary</CardTitle>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Entry Summary</CardTitle>
+                {items.length > 0 && (
+                  <CardDescription>{items.length} item{items.length > 1 ? "s" : ""} added</CardDescription>
+                )}
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Product */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Product</p>
-                  <p className="text-sm font-medium">
-                    {selectedProduct?.name || "—"}
-                  </p>
+              <CardContent className="space-y-5">
+                {/* Quick Stats */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900">
+                    <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium mb-0.5">Total Items</p>
+                    <p className="text-xl font-bold text-blue-700 dark:text-blue-300 tabular-nums">{items.length}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900">
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mb-0.5">Total Weight</p>
+                    <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">{itemsTotalKg > 0 ? `${itemsTotalKg.toFixed(1)}` : "0"}<span className="text-xs font-medium ml-0.5">KG</span></p>
+                  </div>
                 </div>
 
+                {itemsTotalPacks > 0 && (
+                  <div className="flex items-center justify-between text-sm px-1">
+                    <span className="text-muted-foreground">Total Packs</span>
+                    <span className="font-semibold tabular-nums">{itemsTotalPacks.toFixed(0)}</span>
+                  </div>
+                )}
+
+                {/* Items Mini List */}
+                {items.length > 0 && (
+                  <>
+                    <Separator />
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Items</p>
+                      {items.map((item, idx) => (
+                        <div key={item.id} className="flex items-center justify-between text-sm gap-2">
+                          <span className="truncate text-muted-foreground">
+                            <span className="text-foreground font-medium">{idx + 1}.</span> {item.productName}
+                          </span>
+                          <span className="shrink-0 tabular-nums font-medium">৳{item.totalCost.toLocaleString("en-IN", { minimumFractionDigits: 0 })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Cost Breakdown */}
                 <Separator />
-
-                {/* Variant */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Variant</p>
-                  <p className="text-sm font-medium">
-                    {selectedVariant
-                      ? `${selectedVariant.brand?.name ? selectedVariant.brand.name + " · " : ""}${selectedVariant.unitLabel} (${selectedVariant.weightKg} KG)`
-                      : "—"}
-                  </p>
-                </div>
-
-                <Separator />
-
-                {/* Entry Type */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Entry Type
-                  </p>
-                  <p className="text-sm font-medium capitalize">{entryType}{entryType === "carton" && selectedCartonConfig ? ` (${selectedCartonConfig.label || selectedCartonConfig.packsPerCarton + " Pack"})` : ""}</p>
-                </div>
-
-                <Separator />
-
-                {/* Quantities */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Total Quantity
-                  </p>
-                  {conversions.kg > 0 || conversions.packs > 0 ? (
-                    <>
-                      {entryType !== "loose" && (
-                        <p className="text-sm font-semibold">
-                          {conversions.packs.toFixed(2)} Packs
-                        </p>
-                      )}
-                      <p className="text-sm font-semibold">
-                        {conversions.kg.toFixed(2)} KG
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">—</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="tabular-nums">{itemsSubtotal > 0 ? `৳ ${itemsSubtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "—"}</span>
+                  </div>
+                  {(parseFloat(discount) || 0) > 0 && (
+                    <div className="flex justify-between text-sm text-red-600">
+                      <span>Discount</span>
+                      <span className="tabular-nums">- ৳ {parseFloat(discount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {(parseFloat(vatTax) || 0) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">VAT / Tax</span>
+                      <span className="tabular-nums">+ ৳ {parseFloat(vatTax).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                    </div>
                   )}
                 </div>
 
-                <Separator />
-
-                {/* Cost */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Cost Summary
-                  </p>
-                  {costConversions.total > 0 ? (
-                    <>
-                      <p className="text-sm">
-                        Rate: ৳ {parseFloat(purchasePrice).toFixed(2)}{" "}
-                        {costType === "per_kg" ? "/ KG" : "/ Pack"}
-                      </p>
-                      <p className="text-lg font-bold text-primary mt-1">
-                        Total: ৳{" "}
-                        {costConversions.total.toLocaleString("en-IN", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">—</p>
-                  )}
+                {/* Grand Total */}
+                <div className="p-3 -mx-1 rounded-lg bg-primary/5 border border-primary/10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">Grand Total</span>
+                    <span className="text-xl font-bold text-primary tabular-nums">
+                      ৳ {grandTotal > 0 ? grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "0.00"}
+                    </span>
+                  </div>
                 </div>
 
+                {/* Payment Info */}
                 <Separator />
-
-                {/* Supplier */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Supplier</p>
-                  <p className="text-sm font-medium">
-                    {supplierId
-                      ? suppliers.find((s: any) => s.id === supplierId)?.name ||
-                      "—"
-                      : "—"}
-                  </p>
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Supplier</span>
+                    <span className="font-medium truncate ml-2 text-right">
+                      {supplierId ? suppliers.find((s: any) => s.id === supplierId)?.name || "—" : "—"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Payment</span>
+                    <Badge variant="secondary" className="text-xs capitalize">{paymentAccount === "cash" ? "💵 Cash" : "🏦 Bank"}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Date</span>
+                    <span className="font-medium">{paymentDate ? format(paymentDate, "PP") : "—"}</span>
+                  </div>
                 </div>
 
                 {/* Action */}
                 <Button
                   className="w-full"
+                  size="lg"
                   onClick={handleSubmit}
-                  disabled={isPending || !selectedVariant}
+                  disabled={isPending || items.length === 0}
                 >
                   {isPending && (
                     <Loader className="mr-2 h-4 w-4 animate-spin" />
                   )}
                   <Check className="mr-2 h-4 w-4" />
-                  Confirm & Add Stock
+                  {items.length === 0 ? "Add items to continue" : `Confirm & Add Stock (${items.length})`}
                 </Button>
               </CardContent>
             </Card>
