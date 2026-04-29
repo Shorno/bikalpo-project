@@ -1247,6 +1247,12 @@ const managementQueries = {
 
     /** B2B → B2C conversion history for the shop owner */
     getConversionHistory: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/conversion-history",
+            tags: ["Shop Owner"],
+            summary: "Get B2B to B2C stock conversion history",
+        })
         .handler(async ({ context }) => {
             const userId = context.session.user.id;
 
