@@ -40,7 +40,12 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePurchaseOrderDetail } from "@/hooks/use-shop-owner-api";
+import { Input } from "@/components/ui/input";
+import {
+  usePurchaseOrderDetail,
+  useMarkPurchaseReceived,
+  useCancelPurchaseOrder,
+} from "@/hooks/use-shop-owner-api";
 
 // ─── Status Config ───────────────────────────────────────────
 
@@ -112,6 +117,41 @@ export default function PurchaseOrderDetailPage() {
   const config = statusConfig[po.status] || statusConfig.pending;
   const isCancellable = ["pending", "confirmed"].includes(po.status);
   const isReceivable = ["processing", "delivered"].includes(po.status) && !po.receivedAt;
+
+  // Dialog states
+  const [showReceiveDialog, setShowReceiveDialog] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [receivedItems, setReceivedItems] = useState<Record<number, number>>({});
+
+  const receiveMutation = useMarkPurchaseReceived();
+  const cancelMutation = useCancelPurchaseOrder();
+
+  const initReceiveItems = () => {
+    const items: Record<number, number> = {};
+    for (const item of po.items || []) {
+      items[item.id] = item.modifiedQty ?? item.quantity;
+    }
+    setReceivedItems(items);
+    setShowReceiveDialog(true);
+  };
+
+  const handleReceive = () => {
+    const itemsArr = Object.entries(receivedItems).map(([id, qty]) => ({
+      itemId: Number(id),
+      receivedQty: qty,
+    }));
+    receiveMutation.mutate(
+      { orderId: po.id, receivedItems: itemsArr },
+      { onSuccess: () => { setShowReceiveDialog(false); router.refresh(); } },
+    );
+  };
+
+  const handleCancel = () => {
+    cancelMutation.mutate(
+      { orderId: po.id },
+      { onSuccess: () => { setShowCancelDialog(false); router.push("/dashboard/orders"); } },
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -409,13 +449,17 @@ export default function PurchaseOrderDetailPage() {
           {/* Actions */}
           <div className="space-y-2">
             {isReceivable && (
-              <Button className="w-full" size="lg">
+              <Button className="w-full" size="lg" onClick={initReceiveItems}>
                 <PackageCheck className="mr-2 h-4 w-4" />
                 Mark as Received
               </Button>
             )}
             {isCancellable && (
-              <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20">
+              <Button
+                variant="outline"
+                className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20"
+                onClick={() => setShowCancelDialog(true)}
+              >
                 <Ban className="mr-2 h-4 w-4" />
                 Cancel Order
               </Button>
@@ -423,6 +467,133 @@ export default function PurchaseOrderDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Quick Receive Dialog ────────────────────────────── */}
+      <Dialog open={showReceiveDialog} onOpenChange={setShowReceiveDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PackageCheck className="h-5 w-5 text-emerald-600" />
+              Confirm Receipt
+            </DialogTitle>
+            <DialogDescription>
+              Verify received quantities for each item. Adjust if any items are short.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+            {po.items?.map((item: any) => {
+              const expectedQty = item.modifiedQty ?? item.quantity;
+              const currentQty = receivedItems[item.id] ?? expectedQty;
+              const isMatch = currentQty === expectedQty;
+
+              return (
+                <div
+                  key={item.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${
+                    isMatch
+                      ? "border-border bg-muted/20"
+                      : "border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/20"
+                  }`}
+                >
+                  {item.productImage ? (
+                    <Image
+                      src={item.productImage}
+                      alt={item.productName}
+                      width={40}
+                      height={40}
+                      className="w-10 h-10 rounded-md object-cover border shrink-0"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center border shrink-0">
+                      <Package className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{item.productName}</p>
+                    <p className="text-xs text-muted-foreground">Ordered: {expectedQty}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      className="w-20 h-8 text-center text-sm"
+                      value={currentQty}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, "");
+                        setReceivedItems((prev) => ({
+                          ...prev,
+                          [item.id]: Number(val) || 0,
+                        }));
+                      }}
+                    />
+                    {isMatch && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowReceiveDialog(false)}
+              disabled={receiveMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleReceive}
+              disabled={receiveMutation.isPending}
+            >
+              {receiveMutation.isPending ? (
+                <><Loader className="mr-2 h-4 w-4 animate-spin" /> Receiving...</>
+              ) : (
+                <><PackageCheck className="mr-2 h-4 w-4" /> Confirm Receive</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Cancel Confirmation Dialog ─────────────────────── */}
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Ban className="h-5 w-5" />
+              Cancel Order
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel order <strong>{po.orderNumber}</strong>?
+              This will restore the warehouse inventory and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowCancelDialog(false)}
+              disabled={cancelMutation.isPending}
+            >
+              Keep Order
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancel}
+              disabled={cancelMutation.isPending}
+            >
+              {cancelMutation.isPending ? (
+                <><Loader className="mr-2 h-4 w-4 animate-spin" /> Cancelling...</>
+              ) : (
+                <><XCircle className="mr-2 h-4 w-4" /> Yes, Cancel Order</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -203,6 +203,44 @@ export function usePurchaseOrderDetail(orderId: number | null) {
   );
 }
 
+/** Mark a purchase order as received */
+export function useMarkPurchaseReceived() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      orderId: number;
+      receivedItems?: { itemId: number; receivedQty: number }[];
+    }) => orpc.shopOwner.markPurchaseReceived.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Order received successfully");
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to receive order");
+    },
+  });
+}
+
+/** Cancel a purchase order */
+export function useCancelPurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { orderId: number }) =>
+      orpc.shopOwner.cancelPurchaseOrder.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Order cancelled");
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to cancel order");
+    },
+  });
+}
+
 /** Dashboard summary stats */
 export function useDashboardStats() {
   return useQuery(

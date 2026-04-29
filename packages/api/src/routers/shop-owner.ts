@@ -74,6 +74,7 @@ import {
     DEFAULT_LOCK_TIMEOUT_SECONDS,
     checkAndExpireBids,
 } from "../services/open-order-matching";
+import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -1624,6 +1625,170 @@ const mutations = {
                 success: true,
                 message: "Shop location updated",
                 location: { lat: input.lat, lng: input.lng },
+            };
+        }),
+
+    // ── Purchase Order Actions ───────────────────────────────
+
+    /**
+     * Mark a purchase order as received by the shop owner.
+     * Optionally adjust received quantities per item.
+     * Triggers B2B → Retail inventory conversion.
+     */
+    markPurchaseReceived: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders/receive",
+            tags: ["Shop Owner"],
+            summary: "Mark a purchase order as received",
+        })
+        .input(
+            z.object({
+                orderId: z.number(),
+                /** Optional per-item received quantities (null = accept all as ordered) */
+                receivedItems: z
+                    .array(
+                        z.object({
+                            itemId: z.number(),
+                            receivedQty: z.number().min(0),
+                        }),
+                    )
+                    .optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            // Can only receive orders that are in delivery or already marked delivered by warehouse
+            if (!["processing", "delivered"].includes(existingOrder.status)) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot receive an order with status '${existingOrder.status}'`,
+                });
+            }
+
+            if (existingOrder.receivedAt) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Order has already been received",
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                // If received quantities provided, update items
+                if (input.receivedItems && input.receivedItems.length > 0) {
+                    for (const ri of input.receivedItems) {
+                        const existingItem = existingOrder.items.find(
+                            (i) => i.id === ri.itemId,
+                        );
+                        if (!existingItem) continue;
+
+                        // Store the received qty as modifiedQty if different from ordered
+                        const effectiveQty = existingItem.modifiedQty ?? existingItem.quantity;
+                        if (ri.receivedQty !== effectiveQty) {
+                            await tx
+                                .update(orderItem)
+                                .set({ modifiedQty: ri.receivedQty })
+                                .where(eq(orderItem.id, ri.itemId));
+                        }
+                    }
+                }
+
+                // Mark as delivered (if not already) + received
+                await tx
+                    .update(order)
+                    .set({
+                        status: "delivered",
+                        deliveredAt: existingOrder.deliveredAt || new Date(),
+                        receivedAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+
+                // Trigger B2B → Retail inventory conversion
+                try {
+                    await convertB2bOrderToRetailInventory(tx, input.orderId);
+                } catch (err: any) {
+                    console.error(`[RECEIVE-PO] B2B conversion failed for order #${input.orderId}:`, err);
+                    // Don't rollback — still mark as received
+                }
+            });
+
+            return {
+                success: true,
+                message: `Order ${existingOrder.orderNumber} received successfully`,
+            };
+        }),
+
+    /**
+     * Cancel a pending/confirmed purchase order.
+     * Restores warehouse inventory for deducted items.
+     */
+    cancelPurchaseOrder: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders/cancel",
+            tags: ["Shop Owner"],
+            summary: "Cancel a purchase order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!["pending", "confirmed"].includes(existingOrder.status)) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot cancel an order with status '${existingOrder.status}'`,
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                // Restore warehouse inventory for each item
+                if (existingOrder.warehouseId) {
+                    for (const item of existingOrder.items) {
+                        if (!item.variantId) continue;
+                        await tx
+                            .update(inventory)
+                            .set({
+                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${item.quantity}`,
+                            })
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, existingOrder.warehouseId!),
+                                    eq(inventory.variantId, item.variantId),
+                                ),
+                            );
+                    }
+                }
+
+                // Update order status
+                await tx
+                    .update(order)
+                    .set({
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+            });
+
+            return {
+                success: true,
+                message: `Order ${existingOrder.orderNumber} cancelled`,
             };
         }),
 };
