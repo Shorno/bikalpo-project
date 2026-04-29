@@ -2722,7 +2722,7 @@ const orderQueries = {
                     warehouseName: user.warehouseName,
                     phoneNumber: user.phoneNumber,
                     email: user.email,
-                    address: user.address,
+                    address: user.warehouseAddress,
                 })
                 .from(user)
                 .where(eq(user.id, whId))
