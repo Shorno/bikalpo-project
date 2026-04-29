@@ -38,6 +38,10 @@ export const link = new RPCLink({
       }
       return response;
     } catch (error: any) {
+      // Ignore abort errors — caused by React Strict Mode double-mount or navigation cancellation
+      if (error?.name === "AbortError" || error instanceof DOMException) {
+        throw error;
+      }
       console.error("orpc fetch failed", { error, url });
       if (error?.cause?.code === "ECONNREFUSED") {
         // During build / prerender when backend is not available, return a graceful 503.

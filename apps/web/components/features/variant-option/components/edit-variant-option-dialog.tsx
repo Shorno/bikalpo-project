@@ -241,64 +241,70 @@ export default function EditVariantOptionDialog({
           </form.Field>
 
           {/* Name, Unit, Size */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <form.Field name="name">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Variant Name *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="e.g. 1KG Pack"
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
+          <form.Subscribe selector={(state) => state.values.variantType}>
+            {(variantType) => (
+              <div className={`grid grid-cols-1 ${variantType === "loose" ? "sm:grid-cols-2" : "sm:grid-cols-3"} gap-4`}>
+                <form.Field name="name">
+                  {(field) => (
+                    <Field>
+                      <FieldLabel htmlFor={field.name}>Variant Name *</FieldLabel>
+                      <Input
+                        id={field.name}
+                        name={field.name}
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        placeholder={variantType === "loose" ? "e.g. Per Piece" : "e.g. 1KG Pack"}
+                        autoComplete="off"
+                      />
+                    </Field>
+                  )}
+                </form.Field>
 
-            <form.Field name="unit">
-              {(field) => (
-                <Field>
-                  <FieldLabel>Unit *</FieldLabel>
-                  <Select
-                    value={field.state.value}
-                    onValueChange={field.handleChange}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select unit" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {UNITS.map((u) => (
-                        <SelectItem key={u} value={u}>
-                          {u}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
+                <form.Field name="unit">
+                  {(field) => (
+                    <Field>
+                      <FieldLabel>Unit *</FieldLabel>
+                      <Select
+                        value={field.state.value}
+                        onValueChange={field.handleChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {UNITS.map((u) => (
+                            <SelectItem key={u} value={u}>
+                              {u}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  )}
+                </form.Field>
 
-            <form.Field name="size">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Size</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="e.g. 1, S, 38"
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
+                {variantType !== "loose" && (
+                  <form.Field name="size">
+                    {(field) => (
+                      <Field>
+                        <FieldLabel htmlFor={field.name}>Size</FieldLabel>
+                        <Input
+                          id={field.name}
+                          name={field.name}
+                          value={field.state.value}
+                          onBlur={field.handleBlur}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          placeholder="e.g. 1, S, 38"
+                          autoComplete="off"
+                        />
+                      </Field>
+                    )}
+                  </form.Field>
+                )}
+              </div>
+            )}
+          </form.Subscribe>
 
           {/* Sort Order & Active */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

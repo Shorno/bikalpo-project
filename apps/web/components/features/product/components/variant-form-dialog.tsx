@@ -203,13 +203,15 @@ export function VariantFormDialog({
     },
     onSubmit: async ({ value }) => {
       // Auto-calculate derived fields
-      const autoUnitLabel = value.unitLabel || generateUnitLabel(value.packType, value.weightKg);
-      const totalW = Number(value.weightKg) || 0;
+      const isLoose = value.packType === "loose";
+      const effectiveWeightKg = isLoose ? "0" : value.weightKg;
+      const autoUnitLabel = value.unitLabel || (isLoose ? "Loose" : generateUnitLabel(value.packType, effectiveWeightKg));
+      const totalW = Number(effectiveWeightKg) || 0;
       const innerW = Number(value.innerPackSizeKg) || 0;
       const autoPiecesPerUnit = innerW > 0 ? Math.floor(totalW / innerW) : undefined;
 
       const draftData = {
-        sku: value.sku || generateSku(value.packType, value.weightKg, value.variantType),
+        sku: value.sku || generateSku(value.packType, effectiveWeightKg, value.variantType),
         unitLabel: autoUnitLabel,
         quantitySelectorLabel: autoUnitLabel,
         brandId: value.brandId || undefined,
@@ -217,15 +219,15 @@ export function VariantFormDialog({
         packType: value.packType || undefined,
         // Keep packagingType for DB compat — derive from packType
         packagingType: value.packType || "loose",
-        weightKg: value.weightKg,
-        pieceWeightKg: value.innerPackSizeKg || undefined,
+        weightKg: effectiveWeightKg,
+        pieceWeightKg: isLoose ? undefined : (value.innerPackSizeKg || undefined),
         piecesPerUnit: autoPiecesPerUnit,
         // Fill redundant DB fields automatically
         sellUnit: value.packType
           ? PACK_TYPES.find((p) => p.value === value.packType)?.label
           : undefined,
-        packWeightKg: value.weightKg || undefined,
-        innerPackSizeKg: value.innerPackSizeKg || undefined,
+        packWeightKg: isLoose ? undefined : (effectiveWeightKg || undefined),
+        innerPackSizeKg: isLoose ? undefined : (value.innerPackSizeKg || undefined),
         packCountInside: autoPiecesPerUnit,
         pricingType: value.pricingType,
         price: value.variantType === "trade" ? "0" : value.price,
@@ -388,6 +390,8 @@ export function VariantFormDialog({
           <div className="grid grid-cols-2 gap-4">
             <form.Subscribe selector={(state) => state.values.packType}>
               {(packType) => {
+                const isLoose = packType === "loose";
+                if (isLoose) return null;
                 const mu = getMeasurementUnit(packType ?? undefined);
                 return (
                   <form.Field name="weightKg">
@@ -451,22 +455,22 @@ export function VariantFormDialog({
             p: state.values.packType,
           })}>
             {({ w, i, p }) => {
-              const totalW = Number(w) || 0;
-              if (totalW <= 0) return null;
-
               const isLoose = p === "loose";
-              const packLabel = PACK_TYPES.find(pt => pt.value === p)?.label || "Unit";
-
-              const mu = getMeasurementUnit(p ?? undefined);
-              const unit = mu.short;
 
               if (isLoose) {
                 return (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-800 dark:text-blue-200">
-                    <strong>Pack:</strong> {w}{unit} — Loose (sold by {unit === "L" ? "volume" : "weight"})
+                    <strong>Type:</strong> Loose — sold by unit (no weight required)
                   </div>
                 );
               }
+
+              const totalW = Number(w) || 0;
+              if (totalW <= 0) return null;
+
+              const packLabel = PACK_TYPES.find(pt => pt.value === p)?.label || "Unit";
+              const mu = getMeasurementUnit(p ?? undefined);
+              const unit = mu.short;
 
               const innerW = Number(i) || 0;
               const pieces = innerW > 0 ? Math.floor(totalW / innerW) : 0;
