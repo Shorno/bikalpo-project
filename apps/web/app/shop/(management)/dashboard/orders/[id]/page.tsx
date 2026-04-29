@@ -94,6 +94,14 @@ export default function PurchaseOrderDetailPage() {
 
   const { data, isLoading, isError } = usePurchaseOrderDetail(orderId || null);
 
+  // Dialog states — must be before any early returns (Rules of Hooks)
+  const [showReceiveDialog, setShowReceiveDialog] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [receivedItems, setReceivedItems] = useState<Record<number, number>>({});
+
+  const receiveMutation = useMarkPurchaseReceived();
+  const cancelMutation = useCancelPurchaseOrder();
+
   if (isLoading) return <DetailSkeleton />;
 
   if (isError || !data) {
@@ -117,14 +125,6 @@ export default function PurchaseOrderDetailPage() {
   const config = statusConfig[po.status] || statusConfig.pending;
   const isCancellable = ["pending", "confirmed"].includes(po.status);
   const isReceivable = ["processing", "delivered"].includes(po.status) && !po.receivedAt;
-
-  // Dialog states
-  const [showReceiveDialog, setShowReceiveDialog] = useState(false);
-  const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [receivedItems, setReceivedItems] = useState<Record<number, number>>({});
-
-  const receiveMutation = useMarkPurchaseReceived();
-  const cancelMutation = useCancelPurchaseOrder();
 
   const initReceiveItems = () => {
     const items: Record<number, number> = {};
