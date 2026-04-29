@@ -896,7 +896,8 @@ function BrandConfigCard({
                       <Input
                         className="h-7 text-sm pl-6 pr-2 text-right"
                         type="number"
-                        step="0.01"
+                        step="1"
+                        min="0"
                         value={settings.retailerPrice}
                         onChange={(e) => onUpdatePrice(v.id, e.target.value)}
                         placeholder="Price"
