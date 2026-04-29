@@ -66,6 +66,8 @@ type PriceItem = {
   isActive: boolean;
   availableQty: string;
   updatedAt: string;
+  isLoose: boolean;
+  weightKg: number;
 };
 
 type FilterOption = { id: number; name: string };
@@ -321,7 +323,7 @@ function CoreProductSection({
                 <TableHead className="text-xs w-[14%]">Variant</TableHead>
                 <TableHead className="text-xs w-[10%]">Pack Unit</TableHead>
                 <TableHead className="text-xs w-[18%]">Carton Unit</TableHead>
-                <TableHead className="text-xs w-[11%]">Pack Price</TableHead>
+                <TableHead className="text-xs w-[11%]">Price</TableHead>
                 <TableHead className="text-xs w-[12%]">Carton Price</TableHead>
                 <TableHead className="text-xs w-[9%]">Delivery</TableHead>
                 <TableHead className="text-xs text-right w-[12%]">Action</TableHead>
@@ -378,10 +380,14 @@ function CoreProductSection({
                               if (e.key === "Escape") onCancelEdit();
                             }}
                           />
+                          {item.isLoose && <span className="text-[10px] text-muted-foreground">/KG</span>}
                         </div>
                       ) : (
                         <span className="font-semibold">
-                          ৳ {Number(item.packPrice).toLocaleString()}
+                          ৳ {item.isLoose && item.weightKg > 0
+                            ? (Number(item.packPrice) / item.weightKg).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                            : Number(item.packPrice).toLocaleString()}
+                          {item.isLoose && <span className="text-xs font-normal text-muted-foreground ml-0.5">/KG</span>}
                         </span>
                       )}
                     </TableCell>
@@ -515,6 +521,7 @@ export default function WarehousePricingPage() {
   // Edit state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editPrice, setEditPrice] = useState("");
+  const [editingItem, setEditingItem] = useState<PriceItem | null>(null);
 
   // Search debounce
   const handleSearch = (val: string) => {
@@ -559,6 +566,7 @@ export default function WarehousePricingPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["warehouse", "getWarehousePriceList"] });
       setEditingId(null);
+      setEditingItem(null);
       toast.success("Price updated successfully");
     },
     onError: (err: any) => {
@@ -628,20 +636,32 @@ export default function WarehousePricingPage() {
 
   const handleStartEdit = (item: PriceItem) => {
     setEditingId(item.inventoryId);
-    setEditPrice(item.packPrice);
+    setEditingItem(item);
+    // For loose products, show per-KG price in the edit field
+    if (item.isLoose && item.weightKg > 0) {
+      setEditPrice(String(Number(item.packPrice) / item.weightKg));
+    } else {
+      setEditPrice(item.packPrice);
+    }
   };
 
   const handleSaveEdit = () => {
     if (editingId === null) return;
+    // For loose products, convert per-KG price back to total
+    let priceToSave = editPrice;
+    if (editingItem?.isLoose && editingItem.weightKg > 0) {
+      priceToSave = String(Number(editPrice) * editingItem.weightKg);
+    }
     priceMutation.mutate({
       inventoryId: editingId,
-      retailPrice: editPrice,
+      retailPrice: priceToSave,
     });
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
     setEditPrice("");
+    setEditingItem(null);
   };
 
   const clearFilters = () => {

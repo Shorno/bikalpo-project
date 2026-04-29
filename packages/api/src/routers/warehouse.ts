@@ -2842,6 +2842,8 @@ const pricingQueries = {
                 isActive: boolean;
                 availableQty: string;
                 updatedAt: Date;
+                isLoose: boolean;
+                weightKg: number;
             };
 
             const priceItems: PriceItem[] = [];
@@ -2896,6 +2898,8 @@ const pricingQueries = {
                     isActive: v.isActive,
                     availableQty: item.availableQty || "0",
                     updatedAt: item.updatedAt,
+                    isLoose: v.packagingType === "loose",
+                    weightKg,
                 });
             }
 
