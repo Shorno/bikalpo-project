@@ -58,7 +58,7 @@ export const variantFormSchema = z.object({
       "box",
     ])
     .optional(),
-  weightKg: requiredNumericString("Weight"),
+  weightKg: numericString("Weight").default(""),
   innerPackSizeKg: numericString("Inner pack size"),
 
   // Pricing
@@ -92,6 +92,17 @@ export const variantFormSchema = z.object({
   note: z.string().optional(),
   sortOrder: z.number().int().default(0),
 }).superRefine((data, ctx) => {
+  // Weight is required only for non-loose variants
+  if (data.packType !== "loose") {
+    if (!data.weightKg || data.weightKg.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Weight is required",
+        path: ["weightKg"],
+      });
+    }
+  }
+
   // Price is required only for non-trade variants
   if (data.variantType !== "trade") {
     if (!data.price || data.price.trim() === "") {

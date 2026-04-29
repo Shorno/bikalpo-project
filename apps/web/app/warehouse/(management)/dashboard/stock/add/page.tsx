@@ -589,7 +589,10 @@ export default function AddStockPage() {
                           name="entryType"
                           value="loose"
                           checked={entryType === "loose"}
-                          onChange={() => setEntryType("loose")}
+                          onChange={() => {
+                            setEntryType("loose");
+                            setCostType("per_kg");
+                          }}
                           className="accent-primary"
                         />
                         <div>
@@ -612,7 +615,10 @@ export default function AddStockPage() {
                           name="entryType"
                           value="pack"
                           checked={entryType === "pack"}
-                          onChange={() => setEntryType("pack")}
+                          onChange={() => {
+                            setEntryType("pack");
+                            setCostType("per_pack");
+                          }}
                           className="accent-primary"
                         />
                         <div>
@@ -742,10 +748,12 @@ export default function AddStockPage() {
                             = {conversions.cartons} Carton{conversions.cartons !== 1 ? "s" : ""}
                           </p>
                         )}
-                        <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-                          = {conversions.packs.toFixed(2)} Pack
-                          {conversions.packs !== 1 ? "s" : ""}
-                        </p>
+                        {entryType !== "loose" && (
+                          <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                            = {conversions.packs.toFixed(2)} Pack
+                            {conversions.packs !== 1 ? "s" : ""}
+                          </p>
+                        )}
                         <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                           = {conversions.kg.toFixed(2)} KG
                         </p>
@@ -817,6 +825,7 @@ export default function AddStockPage() {
                       />
                       <span className="text-sm font-medium">Per KG</span>
                     </label>
+                    {entryType !== "loose" && (
                     <label
                       className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${costType === "per_pack"
                         ? "bg-primary/5 border-primary/30"
@@ -833,6 +842,7 @@ export default function AddStockPage() {
                       />
                       <span className="text-sm font-medium">Per Pack</span>
                     </label>
+                    )}
                     {entryType === "carton" && (
                       <label
                         className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${costType === "per_carton"
@@ -876,9 +886,11 @@ export default function AddStockPage() {
                         <p className="text-sm text-blue-800 dark:text-blue-300">
                           Per KG: ৳ {costConversions.perKg.toFixed(2)}
                         </p>
-                        <p className="text-sm text-blue-800 dark:text-blue-300">
-                          Per Pack: ৳ {costConversions.perPack.toFixed(2)}
-                        </p>
+                        {entryType !== "loose" && (
+                          <p className="text-sm text-blue-800 dark:text-blue-300">
+                            Per Pack: ৳ {costConversions.perPack.toFixed(2)}
+                          </p>
+                        )}
                         {conversions.kg > 0 && (
                           <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mt-1">
                             Total: ৳{" "}
@@ -1087,9 +1099,11 @@ export default function AddStockPage() {
                   </p>
                   {conversions.kg > 0 || conversions.packs > 0 ? (
                     <>
-                      <p className="text-sm font-semibold">
-                        {conversions.packs.toFixed(2)} Packs
-                      </p>
+                      {entryType !== "loose" && (
+                        <p className="text-sm font-semibold">
+                          {conversions.packs.toFixed(2)} Packs
+                        </p>
+                      )}
                       <p className="text-sm font-semibold">
                         {conversions.kg.toFixed(2)} KG
                       </p>
