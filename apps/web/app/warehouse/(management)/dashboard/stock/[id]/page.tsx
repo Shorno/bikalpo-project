@@ -466,79 +466,66 @@ export default function StockDetailPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════
-          📦 LOOSE CARTON STOCK
-          ══════════════════════════════════════════════════════════════ */}
       {(() => {
-        // Show cartons created from loose variants
+        // Show cartons created from loose variants, grouped by brand
         const looseGroups = variantGroups.filter(
           (g: any) => g.packType === "loose"
         );
         if (looseGroups.length === 0) return null;
 
-        // Check if any loose variant has cartons
-        let totalLooseCartons = 0;
-        let totalLooseCartonWeightKg = 0;
+        // Build per-brand carton data from all loose items
+        const brandCartonMap = new Map<string, { brandName: string; cartons: number; weightKg: number }>();
 
         for (const group of looseGroups) {
           for (const it of group.items) {
             const summary = cartonByVariant.get(it.variantId);
-            if (summary) {
-              totalLooseCartons += summary.activeCartonCount;
-              totalLooseCartonWeightKg += parseFloat(summary.totalWeightKg || "0");
+            if (!summary || summary.activeCartonCount === 0) continue;
+
+            const brandKey = it.brand?.name || "Unknown";
+            if (!brandCartonMap.has(brandKey)) {
+              brandCartonMap.set(brandKey, { brandName: brandKey, cartons: 0, weightKg: 0 });
             }
+            const entry = brandCartonMap.get(brandKey)!;
+            entry.cartons += summary.activeCartonCount;
+            entry.weightKg += parseFloat(summary.totalWeightKg || "0");
           }
         }
 
-        if (totalLooseCartons === 0) return null;
+        if (brandCartonMap.size === 0) return null;
+
+        const brandRows = Array.from(brandCartonMap.values());
 
         return (
           <div>
             <SectionHeader emoji="📦" title="Loose Carton Stock" />
             <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-              {looseGroups.map((group: any, gi: number) => {
-                let groupCartons = 0;
-                let groupWeight = 0;
-                for (const it of group.items) {
-                  const summary = cartonByVariant.get(it.variantId);
-                  if (summary) {
-                    groupCartons += summary.activeCartonCount;
-                    groupWeight += parseFloat(summary.totalWeightKg || "0");
-                  }
-                }
-
-                if (groupCartons === 0) return null;
-
-                return (
-                  <div
-                    key={gi}
-                    className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
-                  >
-                    <span className="text-sm text-gray-800 font-medium">
-                      Loose Carton
-                      {group.items[0]?.brand?.name && (
-                        <span className="text-gray-500 ml-1">
-                          ({group.items[0].brand.name})
-                        </span>
-                      )}
+              {brandRows.map((row, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                >
+                  <span className="text-sm text-gray-800 font-medium">
+                    Loose Carton
+                    <span className="text-gray-500 ml-1">
+                      ({row.brandName})
                     </span>
-                    <div className="flex items-center gap-6">
-                      <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                        →{" "}
-                        {groupCartons.toLocaleString()}{" "}
-                        <span className="text-xs font-normal text-gray-500">
-                          Carton
-                        </span>
+                  </span>
+                  <div className="flex items-center gap-6">
+                    <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
+                      →{" "}
+                      {row.cartons.toLocaleString()}{" "}
+                      <span className="text-xs font-normal text-gray-500">
+                        Carton
                       </span>
-                      <div className="min-w-[120px]">
-                        <span className="text-xs text-gray-500">
-                          ({groupWeight.toFixed(1)} KG)
-                        </span>
-                      </div>
+                    </span>
+                    <div className="min-w-[120px]">
+                      <span className="text-xs text-gray-500">
+                        ({row.weightKg.toFixed(1)} KG)
+                      </span>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           </div>
         );
