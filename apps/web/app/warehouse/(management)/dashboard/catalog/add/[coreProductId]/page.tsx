@@ -875,64 +875,81 @@ function BrandConfigCard({
       {isExpanded && (
         <div className="pl-7 space-y-3">
           <div className="space-y-1.5">
-            {variantOptions.map((v: any) => {
-              const isIncluded = config.selectedVariantIds.includes(v.id);
-              const settings = isIncluded ? config.variantSettings[v.id] : null;
-              const isLoose = v.variantType === "loose";
+            {(() => {
+              // Check if a loose variant is already selected for this brand
+              const hasLooseSelected = config.selectedVariantIds.some(
+                (id) => variantOptions.find((v: any) => v.id === id)?.variantType === "loose"
+              );
 
-              return (
-                <div
-                  key={v.id}
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
-                    isIncluded ? "bg-muted/50" : "hover:bg-muted/30"
-                  }`}
-                >
-                  <Checkbox
-                    checked={isIncluded}
-                    onCheckedChange={() => onToggleVariant(v.id)}
-                  />
-                  <span
-                    className={`text-sm flex-1 min-w-0 ${
-                      isIncluded ? "text-foreground" : "text-muted-foreground"
+              return variantOptions.map((v: any) => {
+                const isIncluded = config.selectedVariantIds.includes(v.id);
+                const settings = isIncluded ? config.variantSettings[v.id] : null;
+                const isLoose = v.variantType === "loose";
+                // Disable this loose checkbox if another loose is already selected
+                const isDisabledLoose = isLoose && !isIncluded && hasLooseSelected;
+
+                return (
+                  <div
+                    key={v.id}
+                    className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
+                      isDisabledLoose
+                        ? "opacity-50 cursor-not-allowed"
+                        : isIncluded ? "bg-muted/50" : "hover:bg-muted/30"
                     }`}
                   >
-                    {v.name}
-                    {v.size && (
-                      <span className="text-muted-foreground ml-1">
-                        · {v.size} {v.unit}
-                      </span>
-                    )}
-                    {isLoose && (
-                      <span className="ml-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
-                        Loose
-                      </span>
-                    )}
-                  </span>
-                  {isIncluded && settings && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <div className="relative w-28">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
-                          ৳
-                        </span>
-                        <Input
-                          className="h-7 text-sm pl-6 pr-2 text-right"
-                          type="number"
-                          step="0.01"
-                          value={settings.retailerPrice}
-                          onChange={(e) => onUpdatePrice(v.id, e.target.value)}
-                          placeholder={isLoose ? "Optional" : "Price"}
-                        />
-                      </div>
-                      {isLoose && (
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                          per KG
+                    <Checkbox
+                      checked={isIncluded}
+                      disabled={isDisabledLoose}
+                      onCheckedChange={() => onToggleVariant(v.id)}
+                    />
+                    <span
+                      className={`text-sm flex-1 min-w-0 ${
+                        isIncluded ? "text-foreground" : "text-muted-foreground"
+                      }`}
+                    >
+                      {v.name}
+                      {v.size && (
+                        <span className="text-muted-foreground ml-1">
+                          · {v.size} {v.unit}
                         </span>
                       )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                      {isLoose && (
+                        <span className="ml-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                          Loose
+                        </span>
+                      )}
+                      {isDisabledLoose && (
+                        <span className="ml-1.5 text-[10px] text-muted-foreground italic">
+                          (only one loose allowed)
+                        </span>
+                      )}
+                    </span>
+                    {isIncluded && settings && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="relative w-28">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                            ৳
+                          </span>
+                          <Input
+                            className="h-7 text-sm pl-6 pr-2 text-right"
+                            type="text"
+                            inputMode="numeric"
+                            value={settings.retailerPrice}
+                            onChange={(e) => onUpdatePrice(v.id, e.target.value.replace(/[^0-9]/g, ''))}
+                            placeholder={isLoose ? "Optional" : "Price"}
+                          />
+                        </div>
+                        {isLoose && (
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            per KG
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
           {variantOptions.some((v: any) => v.variantType === "loose") && (
             <p className="text-[11px] text-amber-600/80 pl-1">
