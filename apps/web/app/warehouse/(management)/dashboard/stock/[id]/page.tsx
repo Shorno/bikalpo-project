@@ -153,7 +153,7 @@ export default function StockDetailPage() {
     };
   }, [allBreakdowns, productIds]);
 
-  // Collect all variant IDs from breakdown for carton config fetch
+  // Collect all variant IDs from breakdown
   const variantGroups = breakdownData?.variantGroups ?? [];
   const allVariantIds = useMemo(() => {
     const ids: number[] = [];
@@ -165,24 +165,22 @@ export default function StockDetailPage() {
     return ids;
   }, [variantGroups]);
 
-  // Fetch carton configs for all variants
-  const { data: cartonConfigsData } = useQuery({
-    queryKey: ["warehouse", "getCartonConfigsBatch", allVariantIds],
-    queryFn: () => (orpc.warehouse as any).getCartonConfigsBatch.call({ variantIds: allVariantIds }),
+  // Fetch actual carton data for all variants (from the carton table, not deprecated cartonConfig)
+  const { data: cartonSummaryData } = useQuery({
+    queryKey: ["warehouse", "getCartonSummaryBatch", allVariantIds],
+    queryFn: () => (orpc.warehouse as any).getCartonSummaryBatch.call({ variantIds: allVariantIds }),
     enabled: allVariantIds.length > 0,
   });
-  const allCartonConfigs: any[] = cartonConfigsData?.configs ?? [];
+  const cartonSummaries: any[] = cartonSummaryData?.cartons ?? [];
 
-  // Build carton config lookup: variantId → config
-  const configByVariant = useMemo(() => {
+  // Build carton summary lookup: variantId → summary
+  const cartonByVariant = useMemo(() => {
     const map = new Map<number, any>();
-    for (const c of allCartonConfigs) {
-      if (!map.has(c.variantId) || c.isDefault) {
-        map.set(c.variantId, c);
-      }
+    for (const c of cartonSummaries) {
+      map.set(c.variantId, c);
     }
     return map;
-  }, [allCartonConfigs]);
+  }, [cartonSummaries]);
 
   // Selected pack for the "SELECTED PACK" section
   const [selectedPackIndex, setSelectedPackIndex] = useState<number | null>(null);
@@ -250,31 +248,31 @@ export default function StockDetailPage() {
   // Calculate loose convertible
   const looseTotal = (loosePool?.openStock ?? 0) + (loosePool?.fullDrum ?? 0);
 
-  // Compute carton counts for pack type groups
+  // Compute actual carton counts from real carton table data (not deprecated cartonConfig)
   function getCartonInfo(group: any) {
-    const totalPacks = group.items.reduce(
-      (sum: number, i: any) => sum + i.availableQty,
-      0
-    );
     const weightKg = parseFloat(group.weightKg || "0");
+    let totalActiveCartons = 0;
+    let totalWeightInCartons = 0;
 
-    // Check if any variant in this group has a carton config
-    let packsPerCarton = 0;
     for (const it of group.items) {
-      const cfg = configByVariant.get(it.variantId);
-      if (cfg) {
-        packsPerCarton = cfg.packsPerCarton;
-        break;
+      const summary = cartonByVariant.get(it.variantId);
+      if (summary) {
+        totalActiveCartons += summary.activeCartonCount;
+        totalWeightInCartons += parseFloat(summary.totalWeightKg || "0");
       }
     }
 
-    if (packsPerCarton > 0) {
-      const cartonCount = Math.floor(totalPacks / packsPerCarton);
-      const totalKg = totalPacks * weightKg;
-      return { cartonCount, totalKg, hasConfig: true };
-    }
+    const totalPacks = group.items.reduce(
+      (sum: number, i: any) => sum + i.availableQty, 0
+    );
+    const totalKg = totalPacks * weightKg;
 
-    return { cartonCount: 0, totalKg: totalPacks * weightKg, hasConfig: false };
+    return {
+      cartonCount: totalActiveCartons,
+      totalKg,
+      totalWeightInCartons,
+      hasCartons: totalActiveCartons > 0,
+    };
   }
 
   return (
