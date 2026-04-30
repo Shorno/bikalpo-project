@@ -101,19 +101,57 @@ export default function StockDetailPage() {
 
   const item = listData;
 
-  // Fetch variant breakdown for each product under this core identity
+  // Fetch variant breakdown for ALL products under this core identity
   const productIds: number[] = item?.productIds ?? [];
-  const primaryProductId = productIds[0];
 
-  const { data: breakdownData, isLoading: breakdownLoading } = useQuery({
-    queryKey: ["stockOverview", "breakdown", primaryProductId, "warehouse"],
-    queryFn: () =>
-      orpc.stockOverview.getStockBreakdown.call({
-        productId: primaryProductId!,
-        ownerType: "warehouse",
-      }),
-    enabled: !!primaryProductId,
+  const { data: allBreakdowns, isLoading: breakdownLoading } = useQuery({
+    queryKey: ["stockOverview", "breakdown", productIds, "warehouse"],
+    queryFn: async () => {
+      const results = await Promise.all(
+        productIds.map((pid) =>
+          orpc.stockOverview.getStockBreakdown.call({
+            productId: pid,
+            ownerType: "warehouse",
+          })
+        )
+      );
+      return results;
+    },
+    enabled: productIds.length > 0,
   });
+
+  // Merge all breakdowns into a single view
+  const breakdownData = useMemo(() => {
+    if (!allBreakdowns || allBreakdowns.length === 0) return null;
+    const mergedGroups: any[] = [];
+    let mergedLooseOpen = 0;
+    let mergedLooseDrum = 0;
+    let mergedTotal = 0;
+
+    for (const bd of allBreakdowns) {
+      mergedTotal += bd.totalQty;
+      mergedLooseOpen += bd.loosePool?.openStock ?? 0;
+      mergedLooseDrum += bd.loosePool?.fullDrum ?? 0;
+      for (const group of bd.variantGroups) {
+        // Try to merge into existing group with same packType + weightKg
+        const existing = mergedGroups.find(
+          (g) => g.packType === group.packType && g.weightKg === group.weightKg
+        );
+        if (existing) {
+          existing.items.push(...group.items);
+        } else {
+          mergedGroups.push({ ...group, items: [...group.items] });
+        }
+      }
+    }
+
+    return {
+      productId: productIds[0],
+      totalQty: mergedTotal,
+      variantGroups: mergedGroups,
+      loosePool: { openStock: mergedLooseOpen, fullDrum: mergedLooseDrum },
+    };
+  }, [allBreakdowns, productIds]);
 
   // Collect all variant IDs from breakdown for carton config fetch
   const variantGroups = breakdownData?.variantGroups ?? [];
