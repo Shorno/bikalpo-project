@@ -1,4 +1,5 @@
 import { and, asc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
+import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import {
@@ -182,9 +183,9 @@ export const adminVariantOptionRouter = {
                     where: and(...looseConditions),
                 });
                 if (existingLoose) {
-                    throw new Error(
-                        `A loose variant already exists in this scope ("${existingLoose.name}"). Only one loose variant is allowed per type/category.`,
-                    );
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `A loose variant already exists in this scope ("${existingLoose.name}"). Only one loose variant is allowed per type/category.`,
+                    });
                 }
             }
 
@@ -281,9 +282,9 @@ export const adminVariantOptionRouter = {
                     where: and(...looseConditions),
                 });
                 if (existingLoose) {
-                    throw new Error(
-                        `A loose variant already exists in this scope ("${existingLoose.name}"). Only one loose variant is allowed per type/category.`,
-                    );
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `A loose variant already exists in this scope ("${existingLoose.name}"). Only one loose variant is allowed per type/category.`,
+                    });
                 }
             }
 
