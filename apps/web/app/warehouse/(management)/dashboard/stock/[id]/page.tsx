@@ -432,6 +432,14 @@ export default function StockDetailPage() {
                 >
                   <span className="text-sm text-gray-800 font-medium">
                     {group.unitLabel} Carton
+                    {(() => {
+                      const brands = [...new Set(group.items.map((i: any) => i.brand?.name).filter(Boolean))];
+                      return brands.length > 0 ? (
+                        <span className="text-gray-500 ml-1">
+                          ({brands.join(", ")})
+                        </span>
+                      ) : null;
+                    })()}
                   </span>
                   <div className="flex items-center gap-6">
                     <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
