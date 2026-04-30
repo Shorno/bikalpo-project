@@ -754,6 +754,128 @@ const orderQueries = {
         }),
 
     /**
+     * Record a partial delivery for an order.
+     * Warehouse records how many units were delivered per item in this batch.
+     */
+    recordPartialDelivery: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/incoming-orders/partial-delivery",
+            tags: ["Warehouse"],
+            summary: "Record partial delivery for an order",
+        })
+        .input(
+            z.object({
+                orderId: z.number(),
+                items: z.array(
+                    z.object({
+                        itemId: z.number(),
+                        deliveredQty: z.number().min(0),
+                    }),
+                ),
+                riderName: z.string().optional(),
+                riderPhone: z.string().optional(),
+                trackingId: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.warehouseId, userId),
+                ),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Order not found or not assigned to your warehouse",
+                });
+            }
+
+            if (!["confirmed", "processing"].includes(existingOrder.status)) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot record delivery for order with status '${existingOrder.status}'`,
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                let allFullyDelivered = true;
+
+                for (const delivery of input.items) {
+                    const existingItem = existingOrder.items.find(
+                        (i) => i.id === delivery.itemId,
+                    );
+                    if (!existingItem) continue;
+
+                    const newDelivered =
+                        (existingItem.deliveredQty || 0) + delivery.deliveredQty;
+                    const targetQty =
+                        existingItem.modifiedQty ?? existingItem.quantity;
+
+                    // Cap at target quantity
+                    const cappedDelivered = Math.min(newDelivered, targetQty);
+
+                    await tx
+                        .update(orderItem)
+                        .set({ deliveredQty: cappedDelivered })
+                        .where(eq(orderItem.id, delivery.itemId));
+
+                    if (cappedDelivered < targetQty) {
+                        allFullyDelivered = false;
+                    }
+                }
+
+                // Update order: set processing if first delivery, or delivered if all items fully delivered
+                const updateData: Record<string, any> = {
+                    status: "processing",
+                    processingStartedAt:
+                        existingOrder.processingStartedAt || new Date(),
+                };
+
+                // Update rider/tracking info if provided
+                if (input.riderName)
+                    updateData.riderName = input.riderName;
+                if (input.riderPhone)
+                    updateData.riderPhone = input.riderPhone;
+                if (input.trackingId)
+                    updateData.trackingId = input.trackingId;
+
+                if (allFullyDelivered) {
+                    updateData.status = "delivered";
+                    updateData.deliveredAt = new Date();
+                }
+
+                await tx
+                    .update(order)
+                    .set(updateData)
+                    .where(eq(order.id, input.orderId));
+
+                // If fully delivered, trigger B2B conversion
+                if (allFullyDelivered) {
+                    try {
+                        await convertB2bOrderToRetailInventory(
+                            tx,
+                            input.orderId,
+                        );
+                    } catch (err: any) {
+                        console.error(
+                            `[PARTIAL-DELIVERY] B2B conversion failed for order #${input.orderId}:`,
+                            err,
+                        );
+                    }
+                }
+            });
+
+            return {
+                success: true,
+                message: "Partial delivery recorded",
+            };
+        }),
+
+    /**
      * Get warehouse's own purchase orders (buying from other warehouses).
      */
     getMyOrders: warehouseProcedure
@@ -2156,6 +2278,18 @@ const warehouseProductCreation = {
                     voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
                 }
 
+                // Validate: each brand can have at most one loose variant
+                for (const bc of input.brandConfigs) {
+                    const looseCount = bc.variants.filter(
+                        (v) => voMap[v.variantOptionId]?.variantType === "loose"
+                    ).length;
+                    if (looseCount > 1) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Brand ID ${bc.brandId} has ${looseCount} loose variants. Only one loose variant is allowed per brand.`,
+                        });
+                    }
+                }
+
                 let sortIdx = 0;
                 for (const bc of input.brandConfigs) {
                     for (const v of bc.variants) {
@@ -2688,11 +2822,15 @@ const stockEntryQueries = {
                     // Update inventory carton tracking
                     if (updatedInv) {
                         const currentInCarton = parseFloat(updatedInv.inCartonQty);
-                        const totalPacksInCartons = cartonCount * packsPerSingleCarton;
+                        // For loose cartons, track total KG in cartons (cartonCount × kgPerCarton)
+                        // For pack cartons, track total packs in cartons (cartonCount × packsPerSingleCarton)
+                        const totalInCartons = input.cartonSource === "loose"
+                            ? cartonCount * (input.kgPerCarton || 0)
+                            : cartonCount * packsPerSingleCarton;
                         await tx
                             .update(inventory)
                             .set({
-                                inCartonQty: (currentInCarton + totalPacksInCartons).toFixed(2),
+                                inCartonQty: (currentInCarton + totalInCartons).toFixed(2),
                                 activeCartonCount: (updatedInv.activeCartonCount || 0) + cartonCount,
                             })
                             .where(eq(inventory.id, updatedInv.id));
@@ -3228,9 +3366,14 @@ const cartonQueries = {
                         latestCartonId: c.cartonId,
                     });
                 } else {
-                    // Accumulate count
+                    // Accumulate count and weight
                     const existing = summaryMap.get(c.variantId)!;
                     existing.activeCartonCount += 1;
+                    existing.totalPacks += c.totalPacks;
+                    existing.totalWeightKg = (
+                        parseFloat(existing.totalWeightKg) +
+                        parseFloat(c.totalWeightKg)
+                    ).toFixed(2);
                 }
             }
 

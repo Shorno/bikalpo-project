@@ -432,6 +432,14 @@ export default function StockDetailPage() {
                 >
                   <span className="text-sm text-gray-800 font-medium">
                     {group.unitLabel} Carton
+                    {(() => {
+                      const brands = [...new Set(group.items.map((i: any) => i.brand?.name).filter(Boolean))];
+                      return brands.length > 0 ? (
+                        <span className="text-gray-500 ml-1">
+                          ({brands.join(", ")})
+                        </span>
+                      ) : null;
+                    })()}
                   </span>
                   <div className="flex items-center gap-6">
                     <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
@@ -457,6 +465,71 @@ export default function StockDetailPage() {
           </div>
         </div>
       )}
+
+      {(() => {
+        // Show cartons created from loose variants, grouped by brand
+        const looseGroups = variantGroups.filter(
+          (g: any) => g.packType === "loose"
+        );
+        if (looseGroups.length === 0) return null;
+
+        // Build per-brand carton data from all loose items
+        const brandCartonMap = new Map<string, { brandName: string; cartons: number; weightKg: number }>();
+
+        for (const group of looseGroups) {
+          for (const it of group.items) {
+            const summary = cartonByVariant.get(it.variantId);
+            if (!summary || summary.activeCartonCount === 0) continue;
+
+            const brandKey = it.brand?.name || "Unknown";
+            if (!brandCartonMap.has(brandKey)) {
+              brandCartonMap.set(brandKey, { brandName: brandKey, cartons: 0, weightKg: 0 });
+            }
+            const entry = brandCartonMap.get(brandKey)!;
+            entry.cartons += summary.activeCartonCount;
+            entry.weightKg += parseFloat(summary.totalWeightKg || "0");
+          }
+        }
+
+        if (brandCartonMap.size === 0) return null;
+
+        const brandRows = Array.from(brandCartonMap.values());
+
+        return (
+          <div>
+            <SectionHeader emoji="📦" title="Loose Carton Stock" />
+            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+              {brandRows.map((row, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                >
+                  <span className="text-sm text-gray-800 font-medium">
+                    Loose Carton
+                    <span className="text-gray-500 ml-1">
+                      ({row.brandName})
+                    </span>
+                  </span>
+                  <div className="flex items-center gap-6">
+                    <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
+                      →{" "}
+                      {row.cartons.toLocaleString()}{" "}
+                      <span className="text-xs font-normal text-gray-500">
+                        Carton
+                      </span>
+                    </span>
+                    <div className="min-w-[120px]">
+                      <span className="text-xs text-gray-500">
+                        ({row.weightKg.toFixed(1)} KG)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════════
           📦 LOOSE / READY STOCK

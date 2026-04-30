@@ -44,6 +44,7 @@ import {
     supplier,
     purchaseItem,
     purchase,
+    invoice,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -74,6 +75,7 @@ import {
     DEFAULT_LOCK_TIMEOUT_SECONDS,
     checkAndExpireBids,
 } from "../services/open-order-matching";
+import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -1245,6 +1247,111 @@ const managementQueries = {
             };
         }),
 
+    /** B2B → B2C conversion history for the shop owner */
+    getConversionHistory: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/conversion-history",
+            tags: ["Shop Owner"],
+            summary: "Get B2B to B2C stock conversion history",
+        })
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // Get all B2B orders for this shop
+            const b2bOrders = await db.query.order.findMany({
+                where: and(
+                    eq(order.userId, userId),
+                    eq(order.orderType, "b2b"),
+                ),
+                columns: {
+                    id: true,
+                    orderNumber: true,
+                    status: true,
+                    createdAt: true,
+                    deliveredAt: true,
+                },
+                with: {
+                    items: {
+                        columns: {
+                            id: true,
+                            productId: true,
+                            variantId: true,
+                            productName: true,
+                            productImage: true,
+                            productSize: true,
+                            quantity: true,
+                            unitPrice: true,
+                            totalPrice: true,
+                            supplyMode: true,
+                            targetVariantId: true,
+                            conversionStatus: true,
+                            convertedQty: true,
+                        },
+                    },
+                },
+                orderBy: [desc(order.createdAt)],
+            });
+
+            // Build flat list of conversion items
+            const conversionItems: {
+                orderItemId: number;
+                orderNumber: string;
+                orderStatus: string;
+                orderedAt: Date;
+                deliveredAt: Date | null;
+                productName: string;
+                productImage: string;
+                productSize: string;
+                quantity: number;
+                unitPrice: string;
+                supplyMode: string | null;
+                targetVariantId: number | null;
+                conversionStatus: string | null;
+                convertedQty: string | null;
+            }[] = [];
+
+            let totalConverted = 0;
+            let totalPending = 0;
+            let totalFailed = 0;
+
+            for (const o of b2bOrders) {
+                for (const item of o.items) {
+                    const status = item.conversionStatus ?? (o.status === "delivered" ? "converted" : "pending");
+                    if (status === "converted") totalConverted++;
+                    else if (status === "failed") totalFailed++;
+                    else totalPending++;
+
+                    conversionItems.push({
+                        orderItemId: item.id,
+                        orderNumber: o.orderNumber,
+                        orderStatus: o.status,
+                        orderedAt: o.createdAt,
+                        deliveredAt: o.deliveredAt,
+                        productName: item.productName,
+                        productImage: item.productImage,
+                        productSize: item.productSize,
+                        quantity: item.quantity,
+                        unitPrice: item.unitPrice,
+                        supplyMode: item.supplyMode,
+                        targetVariantId: item.targetVariantId,
+                        conversionStatus: status,
+                        convertedQty: item.convertedQty,
+                    });
+                }
+            }
+
+            return {
+                summary: {
+                    totalItems: conversionItems.length,
+                    converted: totalConverted,
+                    pending: totalPending,
+                    failed: totalFailed,
+                },
+                items: conversionItems,
+            };
+        }),
+
     /**
      * Get shop owner's retail products (what they sell to consumers).
      * Shows RETAIL variants with inventory info.
@@ -1521,6 +1628,170 @@ const mutations = {
                 location: { lat: input.lat, lng: input.lng },
             };
         }),
+
+    // ── Purchase Order Actions ───────────────────────────────
+
+    /**
+     * Mark a purchase order as received by the shop owner.
+     * Optionally adjust received quantities per item.
+     * Triggers B2B → Retail inventory conversion.
+     */
+    markPurchaseReceived: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders/receive",
+            tags: ["Shop Owner"],
+            summary: "Mark a purchase order as received",
+        })
+        .input(
+            z.object({
+                orderId: z.number(),
+                /** Optional per-item received quantities (null = accept all as ordered) */
+                receivedItems: z
+                    .array(
+                        z.object({
+                            itemId: z.number(),
+                            receivedQty: z.number().min(0),
+                        }),
+                    )
+                    .optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            // Can only receive orders that are in delivery or already marked delivered by warehouse
+            if (!["processing", "delivered"].includes(existingOrder.status)) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot receive an order with status '${existingOrder.status}'`,
+                });
+            }
+
+            if (existingOrder.receivedAt) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Order has already been received",
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                // If received quantities provided, update items
+                if (input.receivedItems && input.receivedItems.length > 0) {
+                    for (const ri of input.receivedItems) {
+                        const existingItem = existingOrder.items.find(
+                            (i) => i.id === ri.itemId,
+                        );
+                        if (!existingItem) continue;
+
+                        // Store the received qty as modifiedQty if different from ordered
+                        const effectiveQty = existingItem.modifiedQty ?? existingItem.quantity;
+                        if (ri.receivedQty !== effectiveQty) {
+                            await tx
+                                .update(orderItem)
+                                .set({ modifiedQty: ri.receivedQty })
+                                .where(eq(orderItem.id, ri.itemId));
+                        }
+                    }
+                }
+
+                // Mark as delivered (if not already) + received
+                await tx
+                    .update(order)
+                    .set({
+                        status: "delivered",
+                        deliveredAt: existingOrder.deliveredAt || new Date(),
+                        receivedAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+
+                // Trigger B2B → Retail inventory conversion
+                try {
+                    await convertB2bOrderToRetailInventory(tx, input.orderId);
+                } catch (err: any) {
+                    console.error(`[RECEIVE-PO] B2B conversion failed for order #${input.orderId}:`, err);
+                    // Don't rollback — still mark as received
+                }
+            });
+
+            return {
+                success: true,
+                message: `Order ${existingOrder.orderNumber} received successfully`,
+            };
+        }),
+
+    /**
+     * Cancel a pending/confirmed purchase order.
+     * Restores warehouse inventory for deducted items.
+     */
+    cancelPurchaseOrder: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders/cancel",
+            tags: ["Shop Owner"],
+            summary: "Cancel a purchase order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!["pending", "confirmed"].includes(existingOrder.status)) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot cancel an order with status '${existingOrder.status}'`,
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                // Restore warehouse inventory for each item
+                if (existingOrder.warehouseId) {
+                    for (const item of existingOrder.items) {
+                        if (!item.variantId) continue;
+                        await tx
+                            .update(inventory)
+                            .set({
+                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${item.quantity}`,
+                            })
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, existingOrder.warehouseId!),
+                                    eq(inventory.variantId, item.variantId),
+                                ),
+                            );
+                    }
+                }
+
+                // Update order status
+                await tx
+                    .update(order)
+                    .set({
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+            });
+
+            return {
+                success: true,
+                message: `Order ${existingOrder.orderNumber} cancelled`,
+            };
+        }),
 };
 
 // ────────────────────────────────────────────────────────────────
@@ -1599,6 +1870,994 @@ const orderQueries = {
                     limit,
                     totalCount,
                     totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    /**
+     * Get dashboard summary stats for the shop owner.
+     */
+
+    // ── Purchase Orders (enhanced) ──────────────────────────────
+
+    /**
+     * Get shop owner's purchase orders with search, filters, and warehouse info.
+     */
+    getPurchaseOrders: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders",
+            tags: ["Shop Owner"],
+            summary: "Get purchase orders with search/filter/pagination",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z
+                    .enum([
+                        "pending",
+                        "confirmed",
+                        "processing",
+                        "delivered",
+                        "cancelled",
+                    ])
+                    .optional(),
+                dateFrom: z.string().optional(),
+                dateTo: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { page, limit, search, status, dateFrom, dateTo } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [eq(order.userId, userId)];
+
+            if (status) conditions.push(eq(order.status, status));
+
+            if (dateFrom) {
+                conditions.push(gte(order.createdAt, new Date(dateFrom)));
+            }
+            if (dateTo) {
+                const toDate = new Date(dateTo);
+                toDate.setHours(23, 59, 59, 999);
+                conditions.push(lte(order.createdAt, toDate));
+            }
+
+            // Search by order number or product name
+            if (search) {
+                const s = `%${search}%`;
+                // Get order IDs that match product name search
+                const matchingOrderIds = await db
+                    .select({ orderId: orderItem.orderId })
+                    .from(orderItem)
+                    .where(ilike(orderItem.productName, s));
+                const orderIds = matchingOrderIds.map((r) => r.orderId);
+
+                if (orderIds.length > 0) {
+                    conditions.push(
+                        or(
+                            ilike(order.orderNumber, s),
+                            inArray(order.id, orderIds),
+                        )!,
+                    );
+                } else {
+                    conditions.push(ilike(order.orderNumber, s));
+                }
+            }
+
+            const where = and(...conditions);
+
+            const [orders, countResult, kpiResult] = await Promise.all([
+                db.query.order.findMany({
+                    where,
+                    with: {
+                        items: {
+                            columns: {
+                                id: true,
+                                productName: true,
+                                productImage: true,
+                                productSize: true,
+                                quantity: true,
+                                unitPrice: true,
+                                totalPrice: true,
+                                modifiedQty: true,
+                                modifiedUnitPrice: true,
+                            },
+                        },
+                    },
+                    orderBy: [desc(order.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db
+                    .select({ count: count() })
+                    .from(order)
+                    .where(where),
+                // KPI aggregation
+                db
+                    .select({
+                        totalOrders: count(),
+                        pendingCount: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pending_count"),
+                        confirmedCount: sql<number>`count(*) filter (where ${order.status} = 'confirmed')`.as("confirmed_count"),
+                        processingCount: sql<number>`count(*) filter (where ${order.status} = 'processing')`.as("processing_count"),
+                        deliveredCount: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("delivered_count"),
+                        cancelledCount: sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as("cancelled_count"),
+                        totalAmount: sql<string>`coalesce(sum(${order.total}), 0)`.as("total_amount"),
+                        pendingAmount: sql<string>`coalesce(sum(case when ${order.status} in ('pending','confirmed','processing') then ${order.total} else 0 end), 0)`.as("pending_amount"),
+                    })
+                    .from(order)
+                    .where(eq(order.userId, userId)),
+            ]);
+
+            const totalCount = countResult[0]?.count || 0;
+            const kpi = kpiResult[0];
+
+            // Resolve warehouse names for orders that have warehouseId
+            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            let warehouseMap: Record<string, string> = {};
+            if (warehouseIds.length > 0) {
+                const warehouses = await db
+                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .from(user)
+                    .where(inArray(user.id, warehouseIds));
+                for (const w of warehouses) {
+                    warehouseMap[w.id] = w.shopName || w.name;
+                }
+            }
+
+            const enrichedOrders = orders.map((o: any) => ({
+                ...o,
+                warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
+            }));
+
+            return {
+                orders: enrichedOrders,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+                kpi: {
+                    totalOrders: kpi?.totalOrders || 0,
+                    pendingCount: Number(kpi?.pendingCount) || 0,
+                    confirmedCount: Number(kpi?.confirmedCount) || 0,
+                    processingCount: Number(kpi?.processingCount) || 0,
+                    deliveredCount: Number(kpi?.deliveredCount) || 0,
+                    cancelledCount: Number(kpi?.cancelledCount) || 0,
+                    totalAmount: kpi?.totalAmount || "0",
+                    pendingAmount: kpi?.pendingAmount || "0",
+                },
+            };
+        }),
+
+    /**
+     * Get full details for a single purchase order.
+     */
+    getPurchaseOrderDetail: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-order-detail",
+            tags: ["Shop Owner"],
+            summary: "Get full detail for a single purchase order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const result = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+                with: {
+                    items: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, image: true },
+                            },
+                            variant: {
+                                columns: {
+                                    id: true,
+                                    sku: true,
+                                    weightKg: true,
+                                    unitLabel: true,
+                                    packType: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            if (!result) {
+                throw new ORPCError("NOT_FOUND", { message: "Purchase order not found" });
+            }
+
+            // Resolve warehouse info
+            let warehouseInfo: { name: string; phone: string | null; shopName: string | null } | null = null;
+            if (result.warehouseId) {
+                const wh = await db
+                    .select({
+                        name: user.name,
+                        phone: user.phoneNumber,
+                        shopName: user.shopName,
+                    })
+                    .from(user)
+                    .where(eq(user.id, result.warehouseId))
+                    .limit(1);
+                if (wh[0]) warehouseInfo = wh[0];
+            }
+
+            // Build status timeline
+            const timeline = [
+                { step: "Placed", date: result.createdAt, completed: true },
+                {
+                    step: "Confirmed",
+                    date: result.confirmedAt,
+                    completed: !!result.confirmedAt,
+                },
+                {
+                    step: "Modified",
+                    date: result.modifiedByWarehouseAt,
+                    completed: !!result.modifiedByWarehouseAt,
+                    isModification: true,
+                },
+                {
+                    step: "Dispatched",
+                    date: result.shippedAt,
+                    completed: !!result.shippedAt,
+                },
+                {
+                    step: "Delivered",
+                    date: result.deliveredAt,
+                    completed: !!result.deliveredAt,
+                },
+                {
+                    step: "Received",
+                    date: result.receivedAt,
+                    completed: !!result.receivedAt,
+                },
+            ].filter((t) => !t.isModification || t.completed); // Only show "Modified" if it actually happened
+
+            // Check if any items were modified
+            const hasModifications = result.items.some(
+                (item: any) => item.modifiedQty !== null || item.modifiedUnitPrice !== null,
+            );
+
+            return {
+                order: {
+                    ...result,
+                    warehouseName: warehouseInfo?.shopName || warehouseInfo?.name || "Admin",
+                    warehousePhone: warehouseInfo?.phone || null,
+                },
+                timeline,
+                hasModifications,
+                delivery: {
+                    trackingId: result.trackingId,
+                    riderName: result.riderName,
+                    riderPhone: result.riderPhone,
+                },
+            };
+        }),
+
+    // ── Purchase Order Tracking ──────────────────────────────
+
+    /**
+     * Get purchase orders with tracking-focused data:
+     * ordered vs received quantities, modification flags, 8-step timeline, alerts.
+     */
+    getPurchaseTracking: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-tracking",
+            tags: ["Shop Owner"],
+            summary: "Get purchase orders with tracking data",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z
+                    .enum([
+                        "pending",
+                        "confirmed",
+                        "processing",
+                        "delivered",
+                        "cancelled",
+                    ])
+                    .optional(),
+                dateFrom: z.string().optional(),
+                dateTo: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { page, limit, search, status, dateFrom, dateTo } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [eq(order.userId, userId)];
+
+            if (status) conditions.push(eq(order.status, status));
+            if (dateFrom) conditions.push(gte(order.createdAt, new Date(dateFrom)));
+            if (dateTo) {
+                const toDate = new Date(dateTo);
+                toDate.setHours(23, 59, 59, 999);
+                conditions.push(lte(order.createdAt, toDate));
+            }
+
+            if (search) {
+                const s = `%${search}%`;
+                const matchingOrderIds = await db
+                    .select({ orderId: orderItem.orderId })
+                    .from(orderItem)
+                    .where(ilike(orderItem.productName, s));
+                const orderIds = matchingOrderIds.map((r) => r.orderId);
+                if (orderIds.length > 0) {
+                    conditions.push(
+                        or(ilike(order.orderNumber, s), inArray(order.id, orderIds))!,
+                    );
+                } else {
+                    conditions.push(ilike(order.orderNumber, s));
+                }
+            }
+
+            const where = and(...conditions);
+
+            const [orders, countResult] = await Promise.all([
+                db.query.order.findMany({
+                    where,
+                    with: {
+                        items: {
+                            columns: {
+                                id: true,
+                                productName: true,
+                                productImage: true,
+                                productSize: true,
+                                quantity: true,
+                                unitPrice: true,
+                                totalPrice: true,
+                                modifiedQty: true,
+                                modifiedUnitPrice: true,
+                                deliveredQty: true,
+                            },
+                        },
+                    },
+                    orderBy: [desc(order.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db.select({ count: count() }).from(order).where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count || 0;
+
+            // Resolve warehouse names
+            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            let warehouseMap: Record<string, string> = {};
+            if (warehouseIds.length > 0) {
+                const warehouses = await db
+                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .from(user)
+                    .where(inArray(user.id, warehouseIds));
+                for (const w of warehouses) {
+                    warehouseMap[w.id] = w.shopName || w.name;
+                }
+            }
+
+            // Build tracking data for each order
+            const trackingOrders = orders.map((o: any) => {
+                const totalOrdered = o.items.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0);
+                const totalDelivered = o.items.reduce((s: number, i: any) => s + (i.deliveredQty || 0), 0);
+                const isModified = !!o.modifiedByWarehouseAt;
+                const needsApproval = isModified && !o.modificationAcceptedAt && !o.modificationRejectedAt && o.status !== "cancelled";
+
+                // Build 8-step timeline
+                const timeline = [
+                    { step: "Placed", date: o.createdAt, completed: true },
+                    { step: "Modified", date: o.modifiedByWarehouseAt, completed: !!o.modifiedByWarehouseAt, isModification: true },
+                    { step: "Accepted", date: o.modificationAcceptedAt || o.confirmedAt, completed: !!o.confirmedAt || !!o.modificationAcceptedAt },
+                    { step: "Processing", date: o.processingStartedAt, completed: !!o.processingStartedAt || o.status === "processing" || o.status === "delivered" },
+                    { step: "Packing", date: o.packingStartedAt, completed: !!o.packingStartedAt },
+                    { step: "Ready", date: o.readyAt, completed: !!o.readyAt },
+                    { step: "Delivered", date: o.deliveredAt, completed: !!o.deliveredAt || o.status === "delivered" },
+                    { step: "Received", date: o.receivedAt, completed: !!o.receivedAt },
+                ].filter((t) => !t.isModification || t.completed);
+
+                return {
+                    ...o,
+                    warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
+                    tracking: {
+                        totalOrdered,
+                        totalDelivered,
+                        remaining: totalOrdered - totalDelivered,
+                        deliveryProgress: totalOrdered > 0 ? Math.round((totalDelivered / totalOrdered) * 100) : 0,
+                        isPartialDelivery: totalDelivered > 0 && totalDelivered < totalOrdered,
+                    },
+                    modification: {
+                        isModified,
+                        needsApproval,
+                        acceptedAt: o.modificationAcceptedAt,
+                        rejectedAt: o.modificationRejectedAt,
+                    },
+                    timeline,
+                };
+            });
+
+            // Alerts / Insights
+            const allUserOrders = await db
+                .select({
+                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null and ${order.modificationAcceptedAt} is null and ${order.modificationRejectedAt} is null and ${order.status} != 'cancelled')`.as("mc"),
+                    pendingApprovals: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pa"),
+                    totalActive: sql<number>`count(*) filter (where ${order.status} not in ('delivered', 'cancelled'))`.as("ta"),
+                })
+                .from(order)
+                .where(eq(order.userId, userId));
+
+            const alerts = {
+                modifiedOrders: Number(allUserOrders[0]?.modifiedCount) || 0,
+                pendingApprovals: Number(allUserOrders[0]?.pendingApprovals) || 0,
+                totalActive: Number(allUserOrders[0]?.totalActive) || 0,
+            };
+
+            return {
+                orders: trackingOrders,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+                alerts,
+            };
+        }),
+
+    /**
+     * Retailer accepts wholesaler's quantity modifications.
+     */
+    acceptPurchaseModification: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders/accept-modification",
+            tags: ["Shop Owner"],
+            summary: "Accept wholesaler modifications",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!existingOrder.modifiedByWarehouseAt) {
+                throw new ORPCError("BAD_REQUEST", { message: "This order has no modifications to accept" });
+            }
+
+            if (existingOrder.modificationAcceptedAt || existingOrder.modificationRejectedAt) {
+                throw new ORPCError("BAD_REQUEST", { message: "Modification already resolved" });
+            }
+
+            await db
+                .update(order)
+                .set({
+                    modificationAcceptedAt: new Date(),
+                    confirmedAt: existingOrder.confirmedAt || new Date(),
+                    status: "confirmed",
+                })
+                .where(eq(order.id, input.orderId));
+
+            return {
+                success: true,
+                message: `Modifications accepted for ${existingOrder.orderNumber}`,
+            };
+        }),
+
+    /**
+     * Retailer rejects wholesaler's modifications → order cancelled, inventory restored.
+     */
+    rejectPurchaseModification: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-orders/reject-modification",
+            tags: ["Shop Owner"],
+            summary: "Reject wholesaler modifications and cancel order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!existingOrder.modifiedByWarehouseAt) {
+                throw new ORPCError("BAD_REQUEST", { message: "This order has no modifications to reject" });
+            }
+
+            if (existingOrder.modificationAcceptedAt || existingOrder.modificationRejectedAt) {
+                throw new ORPCError("BAD_REQUEST", { message: "Modification already resolved" });
+            }
+
+            await db.transaction(async (tx) => {
+                // Restore warehouse inventory
+                if (existingOrder.warehouseId) {
+                    for (const item of existingOrder.items) {
+                        if (!item.variantId) continue;
+                        const qty = item.modifiedQty ?? item.quantity;
+                        await tx
+                            .update(inventory)
+                            .set({
+                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${qty}`,
+                            })
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, existingOrder.warehouseId!),
+                                    eq(inventory.variantId, item.variantId),
+                                ),
+                            );
+                    }
+                }
+
+                await tx
+                    .update(order)
+                    .set({
+                        modificationRejectedAt: new Date(),
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+            });
+
+            return {
+                success: true,
+                message: `Modifications rejected, order ${existingOrder.orderNumber} cancelled`,
+            };
+        }),
+
+    // ── Purchase History ─────────────────────────────────────
+
+    /**
+     * Get completed/past purchase orders with stock impact, payment info,
+     * invoice data, and 7-day trend.
+     */
+    getPurchaseHistory: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/purchase-history",
+            tags: ["Shop Owner"],
+            summary: "Get purchase history with stock impact and trends",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z.enum(["delivered", "cancelled", "returned"]).optional(),
+                warehouseId: z.string().optional(),
+                dateFrom: z.string().optional(),
+                dateTo: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { page, limit, search, status, warehouseId, dateFrom, dateTo } = input;
+            const offset = (page - 1) * limit;
+
+            // Only completed statuses
+            const conditions: SQL[] = [
+                eq(order.userId, userId),
+                inArray(order.status, ["delivered", "cancelled", "returned"]),
+            ];
+
+            if (status) conditions.push(eq(order.status, status));
+            if (warehouseId) conditions.push(eq(order.warehouseId, warehouseId));
+            if (dateFrom) conditions.push(gte(order.createdAt, new Date(dateFrom)));
+            if (dateTo) {
+                const d = new Date(dateTo);
+                d.setHours(23, 59, 59, 999);
+                conditions.push(lte(order.createdAt, d));
+            }
+
+            if (search) {
+                const s = `%${search}%`;
+                const matchingIds = await db
+                    .select({ orderId: orderItem.orderId })
+                    .from(orderItem)
+                    .where(ilike(orderItem.productName, s));
+                const ids = matchingIds.map((r) => r.orderId);
+                if (ids.length > 0) {
+                    conditions.push(or(ilike(order.orderNumber, s), inArray(order.id, ids))!);
+                } else {
+                    conditions.push(ilike(order.orderNumber, s));
+                }
+            }
+
+            const where = and(...conditions);
+
+            const [orders, countResult] = await Promise.all([
+                db.query.order.findMany({
+                    where,
+                    with: {
+                        items: {
+                            columns: {
+                                id: true,
+                                productName: true,
+                                productImage: true,
+                                productSize: true,
+                                quantity: true,
+                                unitPrice: true,
+                                totalPrice: true,
+                                modifiedQty: true,
+                                modifiedUnitPrice: true,
+                                deliveredQty: true,
+                                convertedQty: true,
+                            },
+                        },
+                    },
+                    orderBy: [desc(order.createdAt)],
+                    limit,
+                    offset,
+                }),
+                db.select({ count: count() }).from(order).where(where),
+            ]);
+
+            const totalCount = countResult[0]?.count || 0;
+
+            // Resolve warehouse names
+            const whIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            let whMap: Record<string, string> = {};
+            if (whIds.length > 0) {
+                const whs = await db
+                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .from(user)
+                    .where(inArray(user.id, whIds));
+                for (const w of whs) whMap[w.id] = w.shopName || w.name;
+            }
+
+            // Fetch invoices for these orders
+            const orderIds = orders.map((o: any) => o.id);
+            let invoiceMap: Record<number, string> = {};
+            if (orderIds.length > 0) {
+                const invoices = await db
+                    .select({ orderId: invoice.orderId, invoiceNumber: invoice.invoiceNumber })
+                    .from(invoice)
+                    .where(inArray(invoice.orderId, orderIds));
+                for (const inv of invoices) invoiceMap[inv.orderId] = inv.invoiceNumber;
+            }
+
+            // Build history records
+            const historyOrders = orders.map((o: any) => {
+                const totalQty = o.items.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0);
+                const totalAmount = o.items.reduce((s: number, i: any) => {
+                    const qty = i.modifiedQty ?? i.quantity;
+                    const price = i.modifiedUnitPrice ?? i.unitPrice;
+                    return s + qty * Number(price);
+                }, 0);
+
+                // Stock impact
+                const stockImpact = o.items.map((item: any) => {
+                    const qty = item.modifiedQty ?? item.quantity;
+                    if (o.status === "delivered") {
+                        return { product: item.productName, change: `+${qty}`, type: "added" };
+                    } else if (o.status === "cancelled") {
+                        return { product: item.productName, change: "0", type: "no_impact" };
+                    } else {
+                        return { product: item.productName, change: `-${qty}`, type: "returned" };
+                    }
+                });
+
+                return {
+                    id: o.id,
+                    orderNumber: o.orderNumber,
+                    status: o.status,
+                    createdAt: o.createdAt,
+                    deliveredAt: o.deliveredAt,
+                    receivedAt: o.receivedAt,
+                    cancelledAt: o.cancelledAt,
+                    paymentMethod: o.paymentMethod,
+                    paymentStatus: o.paymentStatus,
+                    total: o.total,
+                    subtotal: o.subtotal,
+                    warehouseName: o.warehouseId ? (whMap[o.warehouseId] || "Unknown") : "Admin",
+                    invoiceNumber: invoiceMap[o.id] || null,
+                    items: o.items,
+                    totalQty,
+                    totalAmount,
+                    stockImpact,
+                };
+            });
+
+            // 7-day purchase trend
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+            sevenDaysAgo.setHours(0, 0, 0, 0);
+
+            const trendData = await db
+                .select({
+                    day: sql<string>`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`.as("day"),
+                    orderCount: count(),
+                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("total_amount"),
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, userId),
+                        inArray(order.status, ["delivered", "cancelled", "returned"]),
+                        gte(order.createdAt, sevenDaysAgo),
+                    ),
+                )
+                .groupBy(sql`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`)
+                .orderBy(sql`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`);
+
+            // Fill missing days
+            const trend: { day: string; label: string; orders: number; amount: number }[] = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(sevenDaysAgo);
+                d.setDate(d.getDate() + i);
+                const key = d.toISOString().split("T")[0]!;
+                const match = trendData.find((t) => t.day === key);
+                trend.push({
+                    day: key,
+                    label: d.toLocaleDateString("en-BD", { weekday: "short" }),
+                    orders: match ? Number(match.orderCount) : 0,
+                    amount: match ? Number(match.totalAmount) : 0,
+                });
+            }
+
+            // Distinct wholesalers for filter dropdown
+            const wholesalers = Object.entries(whMap).map(([id, name]) => ({ id, name }));
+
+            return {
+                orders: historyOrders,
+                pagination: { page, limit, totalCount, totalPages: Math.ceil(totalCount / limit) },
+                trend,
+                wholesalers,
+            };
+        }),
+
+    // ── Supplier Management ──────────────────────────────────
+
+    /**
+     * List all warehouses this shop has ordered from (= suppliers).
+     */
+    getMySuppliers: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/my-suppliers",
+            tags: ["Shop Owner"],
+            summary: "List suppliers (warehouses ordered from)",
+        })
+        .input(z.object({ search: z.string().optional() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Get distinct warehouseIds from orders
+            const warehouseOrders = await db
+                .select({
+                    warehouseId: order.warehouseId,
+                    totalOrders: count(),
+                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("ta"),
+                    lastOrderDate: sql<Date>`MAX(${order.createdAt})`.as("lo"),
+                    pendingCount: sql<number>`count(*) filter (where ${order.status} in ('pending', 'confirmed', 'processing'))`.as("pc"),
+                })
+                .from(order)
+                .where(and(eq(order.userId, userId), sql`${order.warehouseId} is not null`))
+                .groupBy(order.warehouseId);
+
+            if (warehouseOrders.length === 0) return { suppliers: [] };
+
+            const whIds = warehouseOrders.map((w) => w.warehouseId!).filter(Boolean);
+            const warehouseUsers = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    shopName: user.shopName,
+                    warehouseName: user.warehouseName,
+                    phoneNumber: user.phoneNumber,
+                    email: user.email,
+                })
+                .from(user)
+                .where(inArray(user.id, whIds));
+
+            const userMap = new Map(warehouseUsers.map((u) => [u.id, u]));
+
+            let suppliers = warehouseOrders.map((wo) => {
+                const u = userMap.get(wo.warehouseId!);
+                return {
+                    warehouseId: wo.warehouseId!,
+                    name: u?.warehouseName || u?.shopName || u?.name || "Unknown",
+                    phone: u?.phoneNumber || null,
+                    email: u?.email || null,
+                    totalOrders: Number(wo.totalOrders),
+                    totalAmount: Number(wo.totalAmount),
+                    lastOrderDate: wo.lastOrderDate,
+                    pendingCount: Number(wo.pendingCount),
+                };
+            });
+
+            if (input.search) {
+                const s = input.search.toLowerCase();
+                suppliers = suppliers.filter((sup) => sup.name.toLowerCase().includes(s));
+            }
+
+            suppliers.sort((a, b) => Number(b.totalAmount) - Number(a.totalAmount));
+
+            return { suppliers };
+        }),
+
+    /**
+     * Full supplier detail: financial summary, order stats, pending orders,
+     * recent history, top products, performance metrics.
+     */
+    getSupplierDetail: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/supplier-detail",
+            tags: ["Shop Owner"],
+            summary: "Get full supplier profile",
+        })
+        .input(z.object({ warehouseId: z.string() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const whId = input.warehouseId;
+
+            // Supplier identity
+            const [whUser] = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    shopName: user.shopName,
+                    warehouseName: user.warehouseName,
+                    phoneNumber: user.phoneNumber,
+                    email: user.email,
+                    address: user.warehouseAddress,
+                })
+                .from(user)
+                .where(eq(user.id, whId))
+                .limit(1);
+
+            if (!whUser) throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+
+            // Order stats
+            const [stats] = await db
+                .select({
+                    totalOrders: count(),
+                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("ta"),
+                    deliveredCount: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dc"),
+                    deliveredAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)) filter (where ${order.status} = 'delivered'), 0)`.as("da"),
+                    pendingCount: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pc"),
+                    confirmedCount: sql<number>`count(*) filter (where ${order.status} = 'confirmed')`.as("cc"),
+                    processingCount: sql<number>`count(*) filter (where ${order.status} = 'processing')`.as("prc"),
+                    cancelledCount: sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as("canc"),
+                })
+                .from(order)
+                .where(and(eq(order.userId, userId), eq(order.warehouseId, whId)));
+
+            const totalPaid = Number(stats?.deliveredAmount) || 0;
+            const totalPurchased = Number(stats?.totalAmount) || 0;
+            const totalDue = totalPurchased - totalPaid;
+
+            // Pending orders (active)
+            const pendingOrders = await db.query.order.findMany({
+                where: and(
+                    eq(order.userId, userId),
+                    eq(order.warehouseId, whId),
+                    inArray(order.status, ["pending", "confirmed", "processing"]),
+                ),
+                with: {
+                    items: {
+                        columns: { id: true, productName: true, productImage: true, quantity: true, modifiedQty: true },
+                    },
+                },
+                orderBy: [desc(order.createdAt)],
+                limit: 5,
+            });
+
+            // Recent history (last 5 completed)
+            const recentHistory = await db.query.order.findMany({
+                where: and(
+                    eq(order.userId, userId),
+                    eq(order.warehouseId, whId),
+                    inArray(order.status, ["delivered", "cancelled", "returned"]),
+                ),
+                orderBy: [desc(order.createdAt)],
+                limit: 5,
+            });
+
+            // Top purchased products
+            const topProducts = await db
+                .select({
+                    productName: orderItem.productName,
+                    productImage: orderItem.productImage,
+                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
+                    orderCount: count(),
+                })
+                .from(orderItem)
+                .innerJoin(order, eq(orderItem.orderId, order.id))
+                .where(and(eq(order.userId, userId), eq(order.warehouseId, whId)))
+                .groupBy(orderItem.productName, orderItem.productImage)
+                .orderBy(sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`)
+                .limit(10);
+
+            // Performance: avg delivery days + modification rate
+            const perfData = await db
+                .select({
+                    avgDays: sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as("ad"),
+                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as("mc"),
+                    deliveredTotal: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, userId),
+                        eq(order.warehouseId, whId),
+                        eq(order.status, "delivered"),
+                    ),
+                );
+
+            const avgDeliveryDays = Math.round(Number(perfData[0]?.avgDays) || 0);
+            const deliveredTotal = Number(perfData[0]?.deliveredTotal) || 1;
+            const modifiedRate = Math.round(((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100);
+
+            return {
+                identity: {
+                    warehouseId: whUser.id,
+                    name: whUser.warehouseName || whUser.shopName || whUser.name,
+                    phone: whUser.phoneNumber,
+                    email: whUser.email,
+                    address: whUser.address,
+                },
+                financial: {
+                    totalPurchased,
+                    totalPaid,
+                    totalDue,
+                },
+                orderStats: {
+                    total: Number(stats?.totalOrders) || 0,
+                    pending: Number(stats?.pendingCount) || 0,
+                    confirmed: Number(stats?.confirmedCount) || 0,
+                    processing: Number(stats?.processingCount) || 0,
+                    delivered: Number(stats?.deliveredCount) || 0,
+                    cancelled: Number(stats?.cancelledCount) || 0,
+                },
+                pendingOrders: pendingOrders.map((o: any) => ({
+                    id: o.id,
+                    orderNumber: o.orderNumber,
+                    status: o.status,
+                    createdAt: o.createdAt,
+                    total: o.total,
+                    items: o.items,
+                })),
+                recentHistory: recentHistory.map((o: any) => ({
+                    id: o.id,
+                    orderNumber: o.orderNumber,
+                    status: o.status,
+                    createdAt: o.createdAt,
+                    total: o.total,
+                })),
+                topProducts: topProducts.map((p) => ({
+                    name: p.productName,
+                    image: p.productImage,
+                    totalQty: Number(p.totalQty),
+                    orderCount: Number(p.orderCount),
+                })),
+                performance: {
+                    avgDeliveryDays,
+                    modificationRate: modifiedRate,
+                    orderAccuracy: 100 - modifiedRate,
+                    deliverySpeed: avgDeliveryDays <= 1 ? "Fast" : avgDeliveryDays <= 3 ? "Normal" : "Slow",
                 },
             };
         }),
@@ -1843,6 +3102,8 @@ const warehouseOrderQueries = {
                     z.object({
                         variantId: z.number(),
                         quantity: z.number().min(1),
+                        supplyMode: z.enum(["loose", "pack"]).default("loose"),
+                        targetVariantId: z.number().optional(),
                     }),
                 ).min(1),
                 shippingName: z.string().min(1),
@@ -1887,6 +3148,8 @@ const warehouseOrderQueries = {
                 productId: number;
                 inventoryId: number;
                 currentQty: string;
+                supplyMode: string;
+                targetVariantId: number | null;
             }[] = [];
 
             for (const item of input.items) {
@@ -1926,6 +3189,22 @@ const warehouseOrderQueries = {
                 const unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
+                // Validate targetVariantId for pack mode
+                let resolvedTargetVariantId: number | null = item.targetVariantId ?? null;
+                if (item.supplyMode === "pack" && item.targetVariantId) {
+                    const targetVar = await db.query.productVariant.findFirst({
+                        where: and(
+                            eq(productVariant.id, item.targetVariantId),
+                            eq(productVariant.productId, inv.variant?.product?.id || 0),
+                        ),
+                    });
+                    if (!targetVar) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Target variant ${item.targetVariantId} not found for product ${inv.variant?.product?.name}`,
+                        });
+                    }
+                }
+
                 validatedItems.push({
                     variantId: item.variantId,
                     quantity: item.quantity,
@@ -1937,6 +3216,8 @@ const warehouseOrderQueries = {
                     productId: inv.variant?.product?.id || 0,
                     inventoryId: inv.id,
                     currentQty: inv.availableQty,
+                    supplyMode: item.supplyMode,
+                    targetVariantId: resolvedTargetVariantId,
                 });
             }
 
@@ -1983,6 +3264,9 @@ const warehouseOrderQueries = {
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         totalPrice: item.totalPrice,
+                        supplyMode: item.supplyMode,
+                        targetVariantId: item.targetVariantId,
+                        conversionStatus: "pending",
                     });
                 }
 
@@ -2741,7 +4025,7 @@ const warehouseConnectionEndpoints = {
                     variantPackType: productVariant.packType,
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
-                    productUnitSize: product.unitSize,
+                    productUnitSize: product.size,
                     productBrandId: product.brandId,
                     brandName: brand.name,
                 })

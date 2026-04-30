@@ -108,6 +108,16 @@ export function useEmptyPackSummary() {
   );
 }
 
+/** B2B → B2C conversion history */
+export function useConversionHistory() {
+  return useQuery(
+    orpc.shopOwner.getConversionHistory.queryOptions({
+      input: undefined,
+      staleTime: 1000 * 60 * 2, // 2 min cache
+    }),
+  );
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;
@@ -154,6 +164,185 @@ export function useMyOrders(params?: {
         limit: params?.limit ?? 20,
       },
       staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** Purchase orders with search, filters, and KPIs */
+export function usePurchaseOrders(params?: {
+  search?: string;
+  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseOrders.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        status: params?.status,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Full detail for a single purchase order */
+export function usePurchaseOrderDetail(orderId: number | null) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseOrderDetail.queryOptions({
+      input: { orderId: orderId! },
+      enabled: !!orderId,
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Mark a purchase order as received */
+export function useMarkPurchaseReceived() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      orderId: number;
+      receivedItems?: { itemId: number; receivedQty: number }[];
+    }) => orpc.shopOwner.markPurchaseReceived.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Order received successfully");
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to receive order");
+    },
+  });
+}
+
+/** Cancel a purchase order */
+export function useCancelPurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { orderId: number }) =>
+      orpc.shopOwner.cancelPurchaseOrder.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Order cancelled");
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to cancel order");
+    },
+  });
+}
+
+/** Purchase order tracking with delivery progress and timelines */
+export function usePurchaseTracking(params?: {
+  search?: string;
+  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseTracking.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        status: params?.status,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 15,
+    }),
+  );
+}
+
+/** Accept wholesaler's modifications */
+export function useAcceptPurchaseModification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { orderId: number }) =>
+      orpc.shopOwner.acceptPurchaseModification.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Modifications accepted");
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseTracking"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to accept modifications");
+    },
+  });
+}
+
+/** Reject wholesaler's modifications (cancels order) */
+export function useRejectPurchaseModification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { orderId: number }) =>
+      orpc.shopOwner.rejectPurchaseModification.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Order cancelled");
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseTracking"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
+      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to reject modifications");
+    },
+  });
+}
+
+/** Purchase history with stock impact and trends */
+export function usePurchaseHistory(params?: {
+  search?: string;
+  status?: "delivered" | "cancelled" | "returned";
+  warehouseId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseHistory.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        status: params?.status,
+        warehouseId: params?.warehouseId,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 20,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** List of suppliers (warehouses this shop has ordered from) */
+export function useMySuppliers(search?: string) {
+  return useQuery(
+    orpc.shopOwner.getMySuppliers.queryOptions({
+      input: { search: search || undefined },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Full supplier detail profile */
+export function useSupplierDetail(warehouseId: string) {
+  return useQuery(
+    orpc.shopOwner.getSupplierDetail.queryOptions({
+      input: { warehouseId },
+      staleTime: 1000 * 30,
     }),
   );
 }

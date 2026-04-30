@@ -9,6 +9,7 @@ import {
     serial,
     text,
     timestamp,
+    varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { product } from "./product";
@@ -127,6 +128,14 @@ export const order = pgTable(
         customerNote: text("customer_note"),
         adminNote: text("admin_note"),
 
+        // === Delivery Tracking ===
+        /** Courier / logistics tracking ID */
+        trackingId: varchar("tracking_id", { length: 100 }),
+        /** Delivery rider name */
+        riderName: varchar("rider_name", { length: 150 }),
+        /** Delivery rider phone number */
+        riderPhone: varchar("rider_phone", { length: 20 }),
+
         // Timestamps
         createdAt: timestamp("created_at").defaultNow().notNull(),
         updatedAt: timestamp("updated_at")
@@ -136,8 +145,23 @@ export const order = pgTable(
         confirmedAt: timestamp("confirmed_at"),
         shippedAt: timestamp("shipped_at"),
         deliveredAt: timestamp("delivered_at"),
+        /** When the shop owner confirmed receipt */
+        receivedAt: timestamp("received_at"),
         cancelledAt: timestamp("cancelled_at"),
         adminModifiedAt: timestamp("admin_modified_at"),
+        /** When the warehouse/wholesaler modified the order */
+        modifiedByWarehouseAt: timestamp("modified_by_warehouse_at"),
+
+        // === Modification Acceptance ===
+        /** When the retailer accepted wholesaler modifications */
+        modificationAcceptedAt: timestamp("modification_accepted_at"),
+        /** When the retailer rejected wholesaler modifications */
+        modificationRejectedAt: timestamp("modification_rejected_at"),
+
+        // === Processing Sub-stages (timestamps, not enum) ===
+        processingStartedAt: timestamp("processing_started_at"),
+        packingStartedAt: timestamp("packing_started_at"),
+        readyAt: timestamp("ready_at"),
     },
     (table) => [
         index("order_userId_idx").on(table.userId),
@@ -170,6 +194,32 @@ export const orderItem = pgTable(
         quantity: integer("quantity").notNull(),
         unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
         totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+
+        // === Supplier Modification Fields ===
+        /** Modified quantity set by warehouse (null = no change) */
+        modifiedQty: integer("modified_qty"),
+        /** Modified unit price set by warehouse (null = no change) */
+        modifiedUnitPrice: decimal("modified_unit_price", { precision: 10, scale: 2 }),
+
+        // === Partial Delivery Tracking ===
+        /** How many units have been delivered so far for this item */
+        deliveredQty: integer("delivered_qty").default(0),
+
+        // === B2B → B2C Conversion Fields ===
+
+        /** Supply mode selected by shop: "loose" or "pack" */
+        supplyMode: varchar("supply_mode", { length: 20 }),
+
+        /** Target RETAIL variant for pack conversion (the 1KG/2KG/5KG variant) */
+        targetVariantId: integer("target_variant_id")
+            .references(() => productVariant.id, { onDelete: "set null" }),
+
+        /** Conversion result: pending | converted | failed */
+        conversionStatus: varchar("conversion_status", { length: 20 })
+            .default("pending"),
+
+        /** Actual quantity received in shop inventory after conversion */
+        convertedQty: decimal("converted_qty", { precision: 12, scale: 2 }),
 
         createdAt: timestamp("created_at").defaultNow().notNull(),
     },

@@ -908,11 +908,10 @@ export default function AddStockPage() {
                           <Field>
                             <FieldLabel>Packs Per Carton *</FieldLabel>
                             <Input
-                              type="number"
-                              step="1"
-                              min="1"
+                              type="text"
+                              inputMode="numeric"
                               value={packsPerCarton}
-                              onChange={(e) => setPacksPerCarton(e.target.value)}
+                              onChange={(e) => setPacksPerCarton(e.target.value.replace(/[^0-9]/g, ''))}
                               placeholder="e.g. 12"
                             />
                           </Field>
@@ -920,11 +919,10 @@ export default function AddStockPage() {
                           <Field>
                             <FieldLabel>KG Per Carton *</FieldLabel>
                             <Input
-                              type="number"
-                              step="0.01"
-                              min="0.01"
+                              type="text"
+                              inputMode="numeric"
                               value={kgPerCarton}
-                              onChange={(e) => setKgPerCarton(e.target.value)}
+                              onChange={(e) => setKgPerCarton(e.target.value.replace(/[^0-9]/g, ''))}
                               placeholder="e.g. 25"
                             />
                           </Field>
@@ -932,11 +930,10 @@ export default function AddStockPage() {
                         <Field>
                           <FieldLabel>Number of Cartons *</FieldLabel>
                           <Input
-                            type="number"
-                            step="1"
-                            min="1"
+                            type="text"
+                            inputMode="numeric"
                             value={cartonCount}
-                            onChange={(e) => setCartonCount(e.target.value)}
+                            onChange={(e) => setCartonCount(e.target.value.replace(/[^0-9]/g, ''))}
                             placeholder="e.g. 5"
                           />
                         </Field>
@@ -952,10 +949,10 @@ export default function AddStockPage() {
                           {entryType === "loose" ? "Quantity (KG)" : "Number of Packs"}
                         </FieldLabel>
                         <Input
-                          type="number"
-                          step="0.01"
+                          type="text"
+                          inputMode="numeric"
                           value={quantity}
-                          onChange={(e) => setQuantity(e.target.value)}
+                          onChange={(e) => setQuantity(e.target.value.replace(/[^0-9]/g, ''))}
                           placeholder={entryType === "loose" ? "e.g. 100" : "e.g. 50"}
                         />
                       </Field>
@@ -1026,10 +1023,10 @@ export default function AddStockPage() {
                             </Select>
                           )}
                           <Input
-                            type="number"
-                            step="0.01"
+                            type="text"
+                            inputMode="numeric"
                             value={purchasePrice}
-                            onChange={(e) => setPurchasePrice(e.target.value)}
+                            onChange={(e) => setPurchasePrice(e.target.value.replace(/[^0-9]/g, ''))}
                             placeholder={entryType === "carton" ? "e.g. 580 per carton" : "e.g. 350"}
                             className="flex-1"
                           />
@@ -1121,14 +1118,14 @@ export default function AddStockPage() {
                       <span className="text-sm text-muted-foreground">Discount</span>
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-muted-foreground">৳</span>
-                        <input type="number" step="0.01" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" className="w-24 px-2 py-1 text-sm text-right border rounded focus:ring-1 focus:ring-primary/50 outline-none bg-background" />
+                        <input type="text" inputMode="numeric" value={discount} onChange={(e) => setDiscount(e.target.value.replace(/[^0-9]/g, ''))} placeholder="0" className="w-24 px-2 py-1 text-sm text-right border rounded focus:ring-1 focus:ring-primary/50 outline-none bg-background" />
                       </div>
                     </div>
                     <div className="flex items-center justify-between px-4 py-2 border-t">
                       <span className="text-sm text-muted-foreground">VAT / Tax</span>
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-muted-foreground">৳</span>
-                        <input type="number" step="0.01" min="0" value={vatTax} onChange={(e) => setVatTax(e.target.value)} placeholder="0" className="w-24 px-2 py-1 text-sm text-right border rounded focus:ring-1 focus:ring-primary/50 outline-none bg-background" />
+                        <input type="text" inputMode="numeric" value={vatTax} onChange={(e) => setVatTax(e.target.value.replace(/[^0-9]/g, ''))} placeholder="0" className="w-24 px-2 py-1 text-sm text-right border rounded focus:ring-1 focus:ring-primary/50 outline-none bg-background" />
                       </div>
                     </div>
                     <div className="flex items-center justify-between px-4 py-3 border-t bg-primary/5">

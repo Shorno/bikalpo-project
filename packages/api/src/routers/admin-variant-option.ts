@@ -1,4 +1,5 @@
 import { and, asc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
+import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import {
@@ -163,6 +164,31 @@ export const adminVariantOptionRouter = {
                 );
             }
 
+            // Enforce: only one loose variant per (typeId, categoryId) scope
+            if (input.variantType === "loose") {
+                const looseConditions: SQL[] = [
+                    eq(variantOption.variantType, "loose"),
+                ];
+                if (input.typeId === null) {
+                    looseConditions.push(isNull(variantOption.typeId));
+                } else {
+                    looseConditions.push(eq(variantOption.typeId, input.typeId));
+                }
+                if (input.categoryId === null) {
+                    looseConditions.push(isNull(variantOption.categoryId));
+                } else {
+                    looseConditions.push(eq(variantOption.categoryId, input.categoryId));
+                }
+                const existingLoose = await db.query.variantOption.findFirst({
+                    where: and(...looseConditions),
+                });
+                if (existingLoose) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `A loose variant already exists in this scope ("${existingLoose.name}"). Only one loose variant is allowed per type/category.`,
+                    });
+                }
+            }
+
             // Auto-generate next 2-digit skuCode scoped to typeId + categoryId
             const skuFilterCondition = input.typeId === null
                 ? (input.categoryId === null
@@ -234,6 +260,32 @@ export const adminVariantOptionRouter = {
                 throw new Error(
                     `A variant option named "${input.name}" already exists in this scope`,
                 );
+            }
+
+            // Enforce: only one loose variant per (typeId, categoryId) scope
+            if (input.variantType === "loose") {
+                const looseConditions: SQL[] = [
+                    eq(variantOption.variantType, "loose"),
+                    sql`${variantOption.id} != ${input.id}`,
+                ];
+                if (input.typeId === null) {
+                    looseConditions.push(isNull(variantOption.typeId));
+                } else {
+                    looseConditions.push(eq(variantOption.typeId, input.typeId));
+                }
+                if (input.categoryId === null) {
+                    looseConditions.push(isNull(variantOption.categoryId));
+                } else {
+                    looseConditions.push(eq(variantOption.categoryId, input.categoryId));
+                }
+                const existingLoose = await db.query.variantOption.findFirst({
+                    where: and(...looseConditions),
+                });
+                if (existingLoose) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `A loose variant already exists in this scope ("${existingLoose.name}"). Only one loose variant is allowed per type/category.`,
+                    });
+                }
             }
 
             await db

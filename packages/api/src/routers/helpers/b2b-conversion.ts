@@ -8,6 +8,11 @@
  *
  * Flow: Warehouse → Shop (warehouse is the sole stock source)
  *
+ * Supply Mode (NEW):
+ *   - If order item has supplyMode="pack" + targetVariantId → use shop's choice
+ *   - If order item has supplyMode="loose" → find loose RETAIL variant
+ *   - Otherwise → fall back to existing conversion map logic (backward compat)
+ *
  * Note: Stock ledger writes have been removed — audit trail is handled
  * at the application level if needed in the future.
  */
@@ -53,7 +58,7 @@ export async function convertB2bOrderToRetailInventory(
     for (const item of items) {
         // Resolve variant: use order item's variant, or fall back to product's first variant
         let resolvedVariantId = item.variantId;
-        console.log(`[B2B-CONVERT] Item productId=${item.productId}, variantId=${item.variantId}`);
+        console.log(`[B2B-CONVERT] Item productId=${item.productId}, variantId=${item.variantId}, supplyMode=${item.supplyMode ?? 'legacy'}`);
         if (!resolvedVariantId) {
             const firstVariant = await tx.query.productVariant.findFirst({
                 where: eq(productVariant.productId, item.productId),
@@ -93,45 +98,98 @@ export async function convertB2bOrderToRetailInventory(
         });
         const productUnitSize = Number(productData?.unitSize || 0);
 
-        // Look up conversion rule from variantConversionMap (set by admin UI)
-        const conversionMap = await tx.query.variantConversionMap.findFirst({
-            where: eq(variantConversionMap.fromVariantId, tradeVariant.id),
-        });
+        // ─── Determine target variant & conversion ratio ───
+        // NEW: Check shop's supplyMode first, then fall back to legacy logic
 
-        // Use map rule first, then fall back to variant's own fields
-        let targetRetailVariantId =
-            conversionMap?.toVariantId ??
-            tradeVariant.linkedRetailVariantId ??
-            tradeVariant.id;
-
-        // Brand-aware conversion is no longer needed: brand is at product level,
-        // so all variants of a product share the same brand by definition.
-
-        // ─── Determine conversion ratio ───
-        // Priority: conversionMap > variant.conversionRatio > packCountInside > product.unitSize/variant.size > 1
-        // IMPORTANT: Loose products (packType='loose') skip pack conversion.
-        const isLoose = tradeVariant.packType === "loose";
-        const packCount = Number(tradeVariant.packCountInside || 0);
-        const variantSize = Number(tradeVariant.weightKg || 0);
+        let targetRetailVariantId: number;
         let conversionRatio: number;
         let isPackBreakdown = false;
+        let conversionSource = "legacy"; // For logging
 
-        if (conversionMap?.conversionRatio) {
-            conversionRatio = Number(conversionMap.conversionRatio);
-        } else if (tradeVariant.conversionRatio) {
-            conversionRatio = Number(tradeVariant.conversionRatio);
-        } else if (!isLoose && packCount > 1) {
-            // Auto-convert using pack breakdown: 1 Carton = packCountInside inner packs
-            conversionRatio = packCount;
+        const shopSupplyMode = item.supplyMode; // "loose" | "pack" | null (legacy)
+        const shopTargetVariantId = item.targetVariantId; // number | null
+
+        if (shopSupplyMode === "pack" && shopTargetVariantId) {
+            // ═══ PACK MODE: Shop chose a specific retail variant (e.g. 5KG) ═══
+            targetRetailVariantId = shopTargetVariantId;
+
+            // Load the target variant to calculate ratio
+            const targetVariant = await tx.query.productVariant.findFirst({
+                where: eq(productVariant.id, shopTargetVariantId),
+                columns: { id: true, weightKg: true },
+            });
+
+            const targetWeightKg = Number(targetVariant?.weightKg || 0);
+            const tradeWeightKg = Number(tradeVariant.weightKg || 0);
+
+            if (targetWeightKg > 0 && tradeWeightKg > 0) {
+                // 50KG carton / 5KG pack = 10 packs per carton
+                conversionRatio = tradeWeightKg / targetWeightKg;
+            } else if (productUnitSize > 0 && targetWeightKg > 0) {
+                // Fallback: use product unitSize
+                conversionRatio = productUnitSize / targetWeightKg;
+            } else {
+                // Last resort: use packCountInside or 1
+                conversionRatio = Number(tradeVariant.packCountInside || 1);
+            }
+
             isPackBreakdown = true;
-        } else if (!isLoose && productUnitSize > 0 && variantSize > 0 && productUnitSize > variantSize) {
-            // Auto-calculate: product.unitSize / variant.size
-            // e.g. 50KG carton / 5KG variant = 10 packs
-            conversionRatio = productUnitSize / variantSize;
-            isPackBreakdown = true;
-            console.log(`[B2B-CONVERT] Auto-calc from unitSize: ${productUnitSize}KG / ${variantSize}KG = ${conversionRatio}`);
+            conversionSource = "shop_pack_choice";
+            console.log(`[B2B-CONVERT] Pack mode: target=${shopTargetVariantId}, tradeKg=${tradeWeightKg}, targetKg=${targetWeightKg}, ratio=${conversionRatio}`);
+
+        } else if (shopSupplyMode === "loose") {
+            // ═══ LOOSE MODE: Shop wants KG added as loose stock ═══
+            // Find the loose RETAIL variant for this product
+            const looseVariant = await tx.query.productVariant.findFirst({
+                where: and(
+                    eq(productVariant.productId, tradeVariant.productId),
+                    eq(productVariant.packType, "loose"),
+                ),
+                columns: { id: true },
+            });
+
+            targetRetailVariantId = looseVariant?.id ?? tradeVariant.id;
+
+            // For loose: 1 carton = cartonWeightKg in KG
+            const tradeWeightKg = Number(tradeVariant.weightKg || 0);
+            conversionRatio = tradeWeightKg > 0 ? tradeWeightKg : productUnitSize > 0 ? productUnitSize : 1;
+
+            conversionSource = "shop_loose_choice";
+            console.log(`[B2B-CONVERT] Loose mode: target=${targetRetailVariantId}, tradeKg=${tradeWeightKg}, ratio=${conversionRatio} (KG per unit)`);
+
         } else {
-            conversionRatio = 1;
+            // ═══ LEGACY MODE: No supplyMode set — use existing logic ═══
+            // Look up conversion rule from variantConversionMap (set by admin UI)
+            const conversionMap = await tx.query.variantConversionMap.findFirst({
+                where: eq(variantConversionMap.fromVariantId, tradeVariant.id),
+            });
+
+            // Use map rule first, then fall back to variant's own fields
+            targetRetailVariantId =
+                conversionMap?.toVariantId ??
+                tradeVariant.linkedRetailVariantId ??
+                tradeVariant.id;
+
+            const isLoose = tradeVariant.packType === "loose";
+            const packCount = Number(tradeVariant.packCountInside || 0);
+            const variantSize = Number(tradeVariant.weightKg || 0);
+
+            if (conversionMap?.conversionRatio) {
+                conversionRatio = Number(conversionMap.conversionRatio);
+            } else if (tradeVariant.conversionRatio) {
+                conversionRatio = Number(tradeVariant.conversionRatio);
+            } else if (!isLoose && packCount > 1) {
+                conversionRatio = packCount;
+                isPackBreakdown = true;
+            } else if (!isLoose && productUnitSize > 0 && variantSize > 0 && productUnitSize > variantSize) {
+                conversionRatio = productUnitSize / variantSize;
+                isPackBreakdown = true;
+                console.log(`[B2B-CONVERT] Auto-calc from unitSize: ${productUnitSize}KG / ${variantSize}KG = ${conversionRatio}`);
+            } else {
+                conversionRatio = 1;
+            }
+
+            conversionSource = conversionMap ? "conversion_map" : "variant_fields";
         }
 
         const lossPercent = Number(tradeVariant.conversionLossPercent || 0);
@@ -139,12 +197,13 @@ export async function convertB2bOrderToRetailInventory(
             orderedQty * conversionRatio * (1 - lossPercent / 100);
 
         // Calculate per-pack price when doing pack breakdown
+        const packCount = Number(tradeVariant.packCountInside || 0);
         let effectiveRetailPrice = purchaseUnitPrice;
-        if (isPackBreakdown && purchaseUnitPrice && packCount > 1) {
-            effectiveRetailPrice = (Number(purchaseUnitPrice) / packCount).toFixed(2);
+        if (isPackBreakdown && purchaseUnitPrice && conversionRatio > 1) {
+            effectiveRetailPrice = (Number(purchaseUnitPrice) / conversionRatio).toFixed(2);
         }
 
-        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: map=${conversionMap ? 'YES' : 'NO'}, target=${targetRetailVariantId}, ratio=${conversionRatio}, packBreakdown=${isPackBreakdown}, brand=${tradeVariant.brandId ?? 'none'}, orderedQty=${orderedQty}, retailQty=${retailQty}, perPackPrice=${effectiveRetailPrice ?? 'N/A'}`);
+        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: source=${conversionSource}, target=${targetRetailVariantId}, ratio=${conversionRatio}, packBreakdown=${isPackBreakdown}, orderedQty=${orderedQty}, retailQty=${retailQty}, perPackPrice=${effectiveRetailPrice ?? 'N/A'}`);
 
         // ─── A. Deduct warehouse inventory ───
 
@@ -207,6 +266,21 @@ export async function convertB2bOrderToRetailInventory(
                 reservedQty: "0",
                 ...(initialRetailPrice ? { retailPrice: initialRetailPrice } : {}),
             });
+        }
+
+        // ─── C. Update order item conversion status ───
+
+        try {
+            await tx
+                .update(orderItem)
+                .set({
+                    conversionStatus: "converted",
+                    convertedQty: retailQty.toFixed(2),
+                })
+                .where(eq(orderItem.id, item.id));
+        } catch (e) {
+            // Graceful: if columns don't exist yet (legacy DB), skip
+            console.warn(`[B2B-CONVERT] Could not update conversionStatus for item ${item.id}:`, e);
         }
     }
 }

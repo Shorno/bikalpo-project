@@ -447,6 +447,7 @@ export const stockOverviewRouter = {
                     color: productVariant.color,
                     size: productVariant.size,
                     availableQty: inventory.availableQty,
+                    inCartonQty: inventory.inCartonQty,
                     reservedQty: inventory.reservedQty,
                     retailPrice: inventory.retailPrice,
                     brandId: brand.id,
@@ -456,7 +457,8 @@ export const stockOverviewRouter = {
                 .from(inventory)
                 .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
                 .innerJoin(product, eq(productVariant.productId, product.id))
-                .leftJoin(brand, eq(product.brandId, brand.id))
+                // Prefer variant-level brand, fall back to product-level brand
+                .leftJoin(brand, eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`))
                 .where(
                     and(
                         eq(inventory.ownerType, input.ownerType),
@@ -499,12 +501,13 @@ export const stockOverviewRouter = {
 
             for (const row of enrichedRows) {
                 const qty = parseFloat(row.availableQty || "0");
+                const inCartonQty = parseFloat(row.inCartonQty || "0");
                 const packKey = row.packType || row.packagingType || "other";
                 const isLoose = packKey === "loose";
 
                 if (isLoose) {
-                    // For loose variants, just accumulate totals
-                    looseOpenStock += qty;
+                    // For loose variants, subtract in-carton qty to get actual loose stock
+                    looseOpenStock += Math.max(0, qty - inCartonQty);
                 }
 
                 // Group key: packType + weightKg for uniqueness
@@ -529,16 +532,19 @@ export const stockOverviewRouter = {
                     });
                 }
 
+                // For loose variants, subtract in-carton qty so display shows actual loose stock
+                const displayQty = isLoose ? Math.max(0, qty - inCartonQty) : qty;
+
                 variantGroupMap.get(groupKey)!.items.push({
                     variantId: row.variantId,
                     brand: row.brand,
                     color: row.color,
                     size: row.size,
-                    availableQty: qty,
+                    availableQty: displayQty,
                     reservedQty: parseFloat(row.reservedQty || "0"),
                     retailPrice: row.retailPrice,
                     sku: row.sku,
-                    status: getStockStatus(qty),
+                    status: getStockStatus(displayQty),
                 });
             }
 

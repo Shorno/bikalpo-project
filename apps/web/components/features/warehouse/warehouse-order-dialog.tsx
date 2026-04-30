@@ -122,9 +122,16 @@ export function WarehouseOrderDialog({
       return;
     }
 
+    const isLoose = (product.packType || "").toLowerCase() === "loose";
+
     orderMutation.mutate({
       warehouseSlug,
-      items: [{ variantId: product.variantId, quantity }],
+      items: [{
+        variantId: product.variantId,
+        quantity,
+        supplyMode: isLoose ? "loose" as const : "pack" as const,
+        targetVariantId: isLoose ? undefined : product.variantId,
+      }],
       shippingName,
       shippingPhone,
       shippingAddress,

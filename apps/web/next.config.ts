@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: [
     "warehouse.bikalpo.localhost",
     "bikalpo.localhost",
+    "shop.bikalpo.localhost",
+    "b2b.bikalpo.localhost",
   ],
   experimental: {
     authInterrupts: true,
