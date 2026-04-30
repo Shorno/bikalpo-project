@@ -447,6 +447,7 @@ export const stockOverviewRouter = {
                     color: productVariant.color,
                     size: productVariant.size,
                     availableQty: inventory.availableQty,
+                    inCartonQty: inventory.inCartonQty,
                     reservedQty: inventory.reservedQty,
                     retailPrice: inventory.retailPrice,
                     brandId: brand.id,
@@ -499,12 +500,13 @@ export const stockOverviewRouter = {
 
             for (const row of enrichedRows) {
                 const qty = parseFloat(row.availableQty || "0");
+                const inCartonQty = parseFloat(row.inCartonQty || "0");
                 const packKey = row.packType || row.packagingType || "other";
                 const isLoose = packKey === "loose";
 
                 if (isLoose) {
-                    // For loose variants, just accumulate totals
-                    looseOpenStock += qty;
+                    // For loose variants, subtract in-carton qty to get actual loose stock
+                    looseOpenStock += Math.max(0, qty - inCartonQty);
                 }
 
                 // Group key: packType + weightKg for uniqueness
