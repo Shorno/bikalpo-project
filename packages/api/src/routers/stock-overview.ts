@@ -457,7 +457,8 @@ export const stockOverviewRouter = {
                 .from(inventory)
                 .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
                 .innerJoin(product, eq(productVariant.productId, product.id))
-                .leftJoin(brand, eq(product.brandId, brand.id))
+                // Prefer variant-level brand, fall back to product-level brand
+                .leftJoin(brand, eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`))
                 .where(
                     and(
                         eq(inventory.ownerType, input.ownerType),
