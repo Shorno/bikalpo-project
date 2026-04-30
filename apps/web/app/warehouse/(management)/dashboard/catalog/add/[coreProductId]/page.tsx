@@ -260,10 +260,15 @@ export default function WarehouseAddProductPage() {
         return;
       }
       for (const voId of bc.selectedVariantIds) {
-        const settings = bc.variantSettings[voId];
-        if (!settings?.retailerPrice || Number(settings.retailerPrice) <= 0) {
-          toast.error(`Set a retailer price for all variants in "${bc.brandName}"`);
-          return;
+        const vo = allVariantOptions.find((v: any) => v.id === voId);
+        const isLoose = vo?.variantType === "loose";
+        // Loose variants don't require a price
+        if (!isLoose) {
+          const settings = bc.variantSettings[voId];
+          if (!settings?.retailerPrice || Number(settings.retailerPrice) <= 0) {
+            toast.error(`Set a retailer price for all pack variants in "${bc.brandName}"`);
+            return;
+          }
         }
       }
     }
@@ -279,10 +284,16 @@ export default function WarehouseAddProductPage() {
       subCategoryId: coreProduct?.subCategoryId || null,
       brandConfigs: brandConfigs.map((bc) => ({
         brandId: bc.brandId,
-        variants: bc.selectedVariantIds.map((voId) => ({
-          variantOptionId: voId,
-          retailerPrice: bc.variantSettings[voId]?.retailerPrice || "0",
-        })),
+        variants: bc.selectedVariantIds.map((voId) => {
+          const vo = allVariantOptions.find((v: any) => v.id === voId);
+          const isLoose = vo?.variantType === "loose";
+          const price = bc.variantSettings[voId]?.retailerPrice;
+          return {
+            variantOptionId: voId,
+            // Loose variants can have blank price — send "0" as fallback
+            retailerPrice: price || (isLoose ? "0" : "0"),
+          };
+        }),
       })),
       trackingType,
       expiryEnabled,
@@ -477,6 +488,7 @@ export default function WarehouseAddProductPage() {
                     key={bc.brandId}
                     config={bc}
                     variantOptions={allVariantOptions}
+                    allBrands={allBrands}
                     isExpanded={expandedBrandId === bc.brandId}
                     onToggleExpand={() =>
                       setExpandedBrandId(expandedBrandId === bc.brandId ? null : bc.brandId)
@@ -811,6 +823,7 @@ export default function WarehouseAddProductPage() {
 function BrandConfigCard({
   config,
   variantOptions,
+  allBrands,
   isExpanded,
   onToggleExpand,
   onRemove,
@@ -819,6 +832,7 @@ function BrandConfigCard({
 }: {
   config: BrandConfig;
   variantOptions: any[];
+  allBrands: any[];
   isExpanded: boolean;
   onToggleExpand: () => void;
   onRemove: () => void;
@@ -864,6 +878,7 @@ function BrandConfigCard({
             {variantOptions.map((v: any) => {
               const isIncluded = config.selectedVariantIds.includes(v.id);
               const settings = isIncluded ? config.variantSettings[v.id] : null;
+              const isLoose = v.variantType === "loose";
 
               return (
                 <div
@@ -887,26 +902,43 @@ function BrandConfigCard({
                         · {v.size} {v.unit}
                       </span>
                     )}
+                    {isLoose && (
+                      <span className="ml-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                        Loose
+                      </span>
+                    )}
                   </span>
                   {isIncluded && settings && (
-                    <div className="relative w-28 shrink-0">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
-                        ৳
-                      </span>
-                      <Input
-                        className="h-7 text-sm pl-6 pr-2 text-right"
-                        type="number"
-                        step="0.01"
-                        value={settings.retailerPrice}
-                        onChange={(e) => onUpdatePrice(v.id, e.target.value)}
-                        placeholder="Price"
-                      />
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="relative w-28">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                          ৳
+                        </span>
+                        <Input
+                          className="h-7 text-sm pl-6 pr-2 text-right"
+                          type="number"
+                          step="0.01"
+                          value={settings.retailerPrice}
+                          onChange={(e) => onUpdatePrice(v.id, e.target.value)}
+                          placeholder={isLoose ? "Optional" : "Price"}
+                        />
+                      </div>
+                      {isLoose && (
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          per KG
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+          {variantOptions.some((v: any) => v.variantType === "loose") && (
+            <p className="text-[11px] text-amber-600/80 pl-1">
+              💡 Loose variants don't require a price — leave blank if not applicable.
+            </p>
+          )}
         </div>
       )}
 

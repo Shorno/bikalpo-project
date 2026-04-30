@@ -40,6 +40,7 @@ type CartonItem = {
   packCount: number;
   availableStock: number;
   image: string | null;
+  isLoose: boolean;
 };
 
 const STEPS = [
@@ -188,24 +189,32 @@ export default function CreateCartonPage() {
   }, []);
 
   const totalPacks = items.reduce((s, i) => s + i.packCount, 0);
-  const totalWeightKg = items.reduce((s, i) => s + i.packCount * i.weightKg, 0).toFixed(2);
+  const totalWeightKg = items.reduce((s, i) =>
+    s + (i.isLoose ? i.packCount : i.packCount * i.weightKg), 0).toFixed(2);
   const totalLoosePrice = items.reduce((s, i) => s + i.packCount * i.price, 0).toFixed(2);
 
   const addItem = (variant: any, product: any) => {
     const vid = variant.variantId || variant.id;
     if (items.find((i) => i.variantId === vid)) return;
+    const packType = variant.packType || variant.packagingType || "other";
+    const isLoose = packType === "loose";
     const looseStock = variant.stock?.looseStock ?? 0;
     const newItem: CartonItem = {
       variantId: vid,
       sku: variant.sku || "—",
       productName: product.name || product.productName,
       brandName: variant.brand?.name || product.brand?.name || null,
-      variantLabel: `${variant.unitLabel || variant.label} · ${variant.weightKg || variant.weight}KG`,
+      variantLabel: isLoose
+        ? `Loose · per KG`
+        : `${variant.unitLabel || variant.label} · ${variant.weightKg || variant.weight}KG`,
       weightKg: parseFloat(variant.weightKg || variant.weight || "0"),
       price: parseFloat(variant.price || "0"),
       packCount: 0,
-      availableStock: Math.max(0, Math.floor(looseStock)),
+      availableStock: isLoose
+        ? Math.max(0, parseFloat(String(looseStock)))
+        : Math.max(0, Math.floor(looseStock)),
       image: product.coreProduct?.image || product.image || null,
+      isLoose,
     };
     if (isSingleMode) {
       setItems([newItem]);
@@ -253,6 +262,10 @@ export default function CreateCartonPage() {
         return true;
     }
   };
+
+  // Check if any item in the carton is loose
+  const hasLooseItems = items.some((i) => i.isLoose);
+  const hasPackItems = items.some((i) => !i.isLoose);
 
   return (
     <div className="min-h-screen bg-gray-50/60">
@@ -559,7 +572,7 @@ export default function CreateCartonPage() {
                               Available
                             </th>
                             <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                              Qty (Pack)
+                              Qty {hasLooseItems && hasPackItems ? "" : hasLooseItems ? "(KG)" : "(Pack)"}
                             </th>
                             <th className="w-16" />
                           </tr>
@@ -581,25 +594,31 @@ export default function CreateCartonPage() {
                                 <td className="px-5 py-4 text-gray-600">{item.variantLabel}</td>
                                 <td className="px-5 py-4 text-center">
                                   <span className="text-sm font-semibold tabular-nums text-gray-600">
-                                    {item.availableStock}
+                                    {item.isLoose ? `${item.availableStock.toFixed(1)} KG` : item.availableStock}
                                   </span>
                                 </td>
                                 <td className="px-5 py-4 text-center">
                                   <div className="flex flex-col items-center gap-1">
-                                    <Input
-                                      type="number"
-                                      min={1}
-                                      max={item.availableStock}
-                                      value={item.packCount || ""}
-                                      onChange={(e) => updatePackCount(item.variantId, Number(e.target.value) || 0)}
-                                      placeholder="0"
-                                      className={`w-24 h-9 text-center font-semibold mx-auto bg-gray-50 ${
-                                        overLimit ? "border-red-400 text-red-600 focus:ring-red-200" : "border-gray-200"
-                                      }`}
-                                    />
+                                    <div className="flex items-center gap-1">
+                                      <Input
+                                        type="number"
+                                        min={item.isLoose ? 0.1 : 1}
+                                        max={item.availableStock}
+                                        step={item.isLoose ? 0.1 : 1}
+                                        value={item.packCount || ""}
+                                        onChange={(e) => updatePackCount(item.variantId, Number(e.target.value) || 0)}
+                                        placeholder="0"
+                                        className={`w-24 h-9 text-center font-semibold mx-auto bg-gray-50 ${
+                                          overLimit ? "border-red-400 text-red-600 focus:ring-red-200" : "border-gray-200"
+                                        }`}
+                                      />
+                                      {item.isLoose && (
+                                        <span className="text-xs text-gray-400 font-medium">KG</span>
+                                      )}
+                                    </div>
                                     {overLimit && (
                                       <span className="text-[11px] text-red-500 font-medium">
-                                        Max {item.availableStock}
+                                        Max {item.isLoose ? `${item.availableStock.toFixed(1)} KG` : item.availableStock}
                                       </span>
                                     )}
                                   </div>
@@ -626,15 +645,21 @@ export default function CreateCartonPage() {
                         <span className="text-sm font-medium text-gray-700">Total Items</span>
                       </div>
                       <div className="flex items-center gap-4">
-                        <span className="text-sm font-bold text-gray-900">
-                          {totalPacks} Pack{totalPacks !== 1 ? "s" : ""}
-                        </span>
-                        {totalPacks > 0 && (
+                        {hasPackItems && (
+                          <span className="text-sm font-bold text-gray-900">
+                            {items.filter(i => !i.isLoose).reduce((s, i) => s + i.packCount, 0)} Pack{items.filter(i => !i.isLoose).reduce((s, i) => s + i.packCount, 0) !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {hasLooseItems && (
                           <>
-                            <div className="h-4 w-px bg-gray-300" />
-                            <span className="text-sm text-gray-600 font-medium">{totalWeightKg} KG</span>
+                            {hasPackItems && <div className="h-4 w-px bg-gray-300" />}
+                            <span className="text-sm font-bold text-gray-900">
+                              {items.filter(i => i.isLoose).reduce((s, i) => s + i.packCount, 0).toFixed(1)} KG Loose
+                            </span>
                           </>
                         )}
+                        <div className="h-4 w-px bg-gray-300" />
+                        <span className="text-sm text-gray-600 font-medium">{totalWeightKg} KG Total</span>
                       </div>
                     </div>
                   </div>
@@ -842,7 +867,7 @@ export default function CreateCartonPage() {
                                 </div>
                               </div>
                               <span className="text-sm font-bold text-gray-900 tabular-nums">
-                                x {item.packCount}
+                                {item.isLoose ? `${item.packCount} KG` : `x ${item.packCount}`}
                               </span>
                             </div>
                           ))}
@@ -852,7 +877,19 @@ export default function CreateCartonPage() {
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-semibold text-gray-700">Carton Total</span>
                           <div className="flex items-center gap-4">
-                            <span className="text-sm font-bold text-gray-900">{totalPacks} pcs</span>
+                            {hasPackItems && (
+                              <span className="text-sm font-bold text-gray-900">
+                                {items.filter(i => !i.isLoose).reduce((s, i) => s + i.packCount, 0)} pcs
+                              </span>
+                            )}
+                            {hasLooseItems && (
+                              <>
+                                {hasPackItems && <div className="h-4 w-px bg-gray-300" />}
+                                <span className="text-sm font-bold text-gray-900">
+                                  {items.filter(i => i.isLoose).reduce((s, i) => s + i.packCount, 0).toFixed(1)} KG
+                                </span>
+                              </>
+                            )}
                             <div className="h-4 w-px bg-gray-300" />
                             <span className="text-sm font-bold text-gray-900">{totalWeightKg} KG</span>
                           </div>
@@ -945,7 +982,14 @@ export default function CreateCartonPage() {
           <div className="flex gap-3">
             {step < 5 ? (
               <Button
-                onClick={() => setStep(step + 1)}
+                onClick={() => {
+                  const nextStep = step + 1;
+                  // Auto-populate carton price with total pack value when entering Preview
+                  if (nextStep === 5 && !cartonPrice) {
+                    setCartonPrice(totalLoosePrice);
+                  }
+                  setStep(nextStep);
+                }}
                 disabled={!canNext()}
                 className="gap-2 h-11 px-8 text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white"
               >

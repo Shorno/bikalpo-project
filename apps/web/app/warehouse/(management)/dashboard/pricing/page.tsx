@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
-  BoxIcon,
   Check,
   ChevronDown,
   ChevronRight,
@@ -11,10 +10,8 @@ import {
   Filter,
   Package,
   Pencil,
-  Plus,
   Search,
   Tag,
-  Trash2,
   Wallet,
   X,
 } from "lucide-react";
@@ -24,13 +21,7 @@ import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+
 import {
   Select,
   SelectContent,
@@ -75,6 +66,8 @@ type PriceItem = {
   isActive: boolean;
   availableQty: string;
   updatedAt: string;
+  isLoose: boolean;
+  weightKg: number;
 };
 
 type FilterOption = { id: number; name: string };
@@ -200,298 +193,6 @@ function StatCard({
   );
 }
 
-// ─── Carton Config Section (per product) ─────────────────────────────
-
-type VariantInfo = { id: number; label: string; packPrice: string };
-
-function CartonConfigSection({ variants }: { variants: VariantInfo[] }) {
-  const variantIds = variants.map((v) => v.id);
-  const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
-
-  // New config form state
-  const [addVariantId, setAddVariantId] = useState<number | null>(variants[0]?.id || null);
-  const [addPacks, setAddPacks] = useState("");
-  const [addPrice, setAddPrice] = useState("");
-  const [addCostPrice, setAddCostPrice] = useState("");
-  const [addDelivery, setAddDelivery] = useState("");
-  const [addLabel, setAddLabel] = useState("");
-
-  // Edit form state
-  const [editPacks, setEditPacks] = useState("");
-  const [editPrice, setEditPrice] = useState("");
-  const [editCostPrice, setEditCostPrice] = useState("");
-  const [editDelivery, setEditDelivery] = useState("");
-  const [editLabel, setEditLabel] = useState("");
-
-  const { data: configsData, isLoading } = useQuery({
-    queryKey: ["warehouse", "getCartonConfigsBatch", variantIds],
-    queryFn: () => (orpc.warehouse as any).getCartonConfigsBatch.call({ variantIds }),
-    enabled: expanded && variantIds.length > 0,
-  });
-
-  const configs: any[] = configsData?.configs ?? [];
-
-  const createMutation = useMutation({
-    mutationFn: (d: any) => (orpc.warehouse as any).createCartonConfig.call(d),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "getCartonConfigsBatch"] });
-      resetAddForm();
-      toast.success("Carton config created");
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to create"),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (d: any) => (orpc.warehouse as any).updateCartonConfig.call(d),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "getCartonConfigsBatch"] });
-      setEditingConfigId(null);
-      toast.success("Carton config updated");
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to update"),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => (orpc.warehouse as any).deleteCartonConfig.call({ id }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "getCartonConfigsBatch"] });
-      toast.success("Carton config removed");
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to remove"),
-  });
-
-  const resetAddForm = () => {
-    setShowAddForm(false);
-    setAddPacks("");
-    setAddPrice("");
-    setAddCostPrice("");
-    setAddDelivery("");
-    setAddLabel("");
-  };
-
-  const startEdit = (c: any) => {
-    setEditingConfigId(c.id);
-    setEditPacks(String(c.packsPerCarton));
-    setEditPrice(c.cartonPrice);
-    setEditCostPrice(c.cartonCostPrice || "");
-    setEditDelivery(c.deliveryCostPerCarton || "");
-    setEditLabel(c.label || "");
-  };
-
-  const handleCreate = () => {
-    if (!addVariantId || !addPacks || !addPrice) {
-      toast.error("Packs per carton and price are required");
-      return;
-    }
-    createMutation.mutate({
-      variantId: addVariantId,
-      packsPerCarton: parseInt(addPacks),
-      cartonPrice: addPrice,
-      cartonCostPrice: addCostPrice || undefined,
-      deliveryCostPerCarton: addDelivery || undefined,
-      label: addLabel || undefined,
-    });
-  };
-
-  const handleUpdate = () => {
-    if (!editingConfigId) return;
-    updateMutation.mutate({
-      id: editingConfigId,
-      packsPerCarton: editPacks ? parseInt(editPacks) : undefined,
-      cartonPrice: editPrice || undefined,
-      cartonCostPrice: editCostPrice || undefined,
-      deliveryCostPerCarton: editDelivery || undefined,
-      label: editLabel || undefined,
-    });
-  };
-
-  return (
-    <div className="border-t border-gray-200/80">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-5 py-2 hover:bg-gray-50/50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <BoxIcon className="w-3.5 h-3.5 text-amber-500" />
-          <span className="text-xs font-semibold text-gray-600">
-            Carton Configs
-          </span>
-          {configs.length > 0 && (
-            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-              {configs.length}
-            </Badge>
-          )}
-        </div>
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-        )}
-      </button>
-
-      {expanded && (
-        <div className="bg-amber-50/30 border-t border-gray-200/60 px-5 py-3 space-y-3">
-          {isLoading ? (
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              <div className="w-3 h-3 border-2 border-gray-300 border-t-amber-500 rounded-full animate-spin" />
-              Loading configs...
-            </div>
-          ) : configs.length === 0 && !showAddForm ? (
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-400 italic">No carton configs yet</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1"
-                onClick={() => setShowAddForm(true)}
-              >
-                <Plus size={12} /> Add Config
-              </Button>
-            </div>
-          ) : (
-            <>
-              {/* Existing configs table */}
-              {configs.length > 0 && (
-                <div className="space-y-1">
-                  {/* Header */}
-                  <div className="grid grid-cols-[1fr_80px_90px_90px_90px_80px] gap-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider pb-1">
-                    <span>Label</span>
-                    <span>Packs</span>
-                    <span>Price</span>
-                    <span>Cost</span>
-                    <span>Delivery</span>
-                    <span className="text-right">Action</span>
-                  </div>
-                  {/* Rows */}
-                  {configs.map((c: any) => {
-                    const isEd = editingConfigId === c.id;
-                    return (
-                      <div key={c.id} className={`grid grid-cols-[1fr_80px_90px_90px_90px_80px] gap-2 items-center py-1.5 rounded ${
-                        isEd ? "bg-amber-100/50" : ""
-                      }`}>
-                        {isEd ? (
-                          <>
-                            <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} placeholder="Label" className="text-xs px-1.5 py-1 border rounded bg-white w-full" />
-                            <input value={editPacks} onChange={(e) => setEditPacks(e.target.value)} type="number" className="text-xs px-1.5 py-1 border rounded bg-white w-full" />
-                            <input value={editPrice} onChange={(e) => setEditPrice(e.target.value)} type="number" placeholder="৳" className="text-xs px-1.5 py-1 border rounded bg-white w-full" />
-                            <input value={editCostPrice} onChange={(e) => setEditCostPrice(e.target.value)} type="number" placeholder="৳" className="text-xs px-1.5 py-1 border rounded bg-white w-full" />
-                            <input value={editDelivery} onChange={(e) => setEditDelivery(e.target.value)} type="number" placeholder="৳" className="text-xs px-1.5 py-1 border rounded bg-white w-full" />
-                            <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600" onClick={handleUpdate} disabled={updateMutation.isPending}>
-                                <Check size={12} />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-gray-400" onClick={() => setEditingConfigId(null)}>
-                                <X size={12} />
-                              </Button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-xs font-medium text-gray-800 truncate">{c.label || `${c.packsPerCarton} Pack`}</span>
-                            <span className="text-xs text-gray-600">{c.packsPerCarton}</span>
-                            <span className="text-xs font-semibold text-gray-800">৳{Number(c.cartonPrice).toLocaleString()}</span>
-                            <span className="text-xs text-gray-500">{c.cartonCostPrice ? `৳${Number(c.cartonCostPrice).toLocaleString()}` : "—"}</span>
-                            <span className="text-xs text-gray-500">{c.deliveryCostPerCarton ? `৳${Number(c.deliveryCostPerCarton).toLocaleString()}` : "—"}</span>
-                            <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-gray-400 hover:text-amber-600" onClick={() => startEdit(c)}>
-                                <Pencil size={11} />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 text-gray-400 hover:text-red-500"
-                                onClick={() => {
-                                  if (confirm("Remove this carton config?")) deleteMutation.mutate(c.id);
-                                }}
-                                disabled={deleteMutation.isPending}
-                              >
-                                <Trash2 size={11} />
-                              </Button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Add config form */}
-              {showAddForm ? (
-                <div className="border border-amber-200 rounded-lg p-3 bg-white space-y-2">
-                  <p className="text-xs font-semibold text-gray-700">New Carton Config</p>
-                  {variants.length > 1 && (
-                    <select
-                      value={addVariantId || ""}
-                      onChange={(e) => setAddVariantId(Number(e.target.value) || null)}
-                      className="w-full text-xs px-2 py-1.5 border rounded"
-                    >
-                      {variants.map((v) => (
-                        <option key={v.id} value={v.id}>{v.label}</option>
-                      ))}
-                    </select>
-                  )}
-                  <div className="grid grid-cols-5 gap-2">
-                    <div>
-                      <label className="text-[10px] text-gray-500 font-medium">Units per Carton *</label>
-                      <input value={addPacks} onChange={(e) => {
-                        setAddPacks(e.target.value);
-                        // Auto-calculate price
-                        const packs = parseInt(e.target.value) || 0;
-                        const selectedVariant = variants.find((v) => v.id === addVariantId);
-                        if (packs > 0 && selectedVariant) {
-                          const autoPrice = (packs * parseFloat(selectedVariant.packPrice || "0")).toFixed(2);
-                          setAddPrice(autoPrice);
-                        }
-                      }} type="number" min="1" placeholder="e.g. 12" className="w-full text-xs px-2 py-1.5 border rounded" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-500 font-medium">Carton Price (৳) *</label>
-                      <input value={addPrice} onChange={(e) => setAddPrice(e.target.value)} type="number" placeholder="auto-calculated" className="w-full text-xs px-2 py-1.5 border rounded" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-500 font-medium">Cost (৳)</label>
-                      <input value={addCostPrice} onChange={(e) => setAddCostPrice(e.target.value)} type="number" placeholder="optional" className="w-full text-xs px-2 py-1.5 border rounded" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-500 font-medium">Delivery (৳)</label>
-                      <input value={addDelivery} onChange={(e) => setAddDelivery(e.target.value)} type="number" placeholder="optional" className="w-full text-xs px-2 py-1.5 border rounded" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-500 font-medium">Label</label>
-                      <input value={addLabel} onChange={(e) => setAddLabel(e.target.value)} placeholder="optional" className="w-full text-xs px-2 py-1.5 border rounded" />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={resetAddForm}>Cancel</Button>
-                    <Button size="sm" className="h-7 text-xs gap-1" onClick={handleCreate} disabled={createMutation.isPending}>
-                      {createMutation.isPending ? "Saving..." : "Save Config"}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs gap-1"
-                    onClick={() => setShowAddForm(true)}
-                  >
-                    <Plus size={12} /> Add Config
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Core Product Price Section ────────────────────────────────
 
 function CoreProductSection({
@@ -518,8 +219,29 @@ function CoreProductSection({
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(true);
 
-  // Fetch carton configs for all variants in this product
+  // Fetch carton summary from PHYSICAL cartons for all variants in this product
   const variantIds = group.items.map((i) => i.variantId);
+  const { data: cartonSummaryData } = useQuery({
+    queryKey: ["warehouse", "getCartonSummaryBatch", variantIds],
+    queryFn: () => (orpc.warehouse as any).getCartonSummaryBatch.call({ variantIds }),
+    enabled: expanded && variantIds.length > 0,
+  });
+  const allCartonSummaries: any[] = cartonSummaryData?.cartons ?? [];
+
+  // Map: variantId → carton summary (from physical cartons)
+  const cartonByVariant = useMemo(() => {
+    const map = new Map<number, any>();
+    for (const c of allCartonSummaries) {
+      map.set(c.variantId, c);
+    }
+    return map;
+  }, [allCartonSummaries]);
+
+  // --- Inline delivery editing (updates the carton_config delivery cost) ---
+  const [editingDeliveryVariantId, setEditingDeliveryVariantId] = useState<number | null>(null);
+  const [editDeliveryValue, setEditDeliveryValue] = useState("");
+
+  // Also fetch carton configs for delivery editing (we need the config ID to update)
   const { data: cartonConfigsData } = useQuery({
     queryKey: ["warehouse", "getCartonConfigsBatch", variantIds],
     queryFn: () => (orpc.warehouse as any).getCartonConfigsBatch.call({ variantIds }),
@@ -527,7 +249,6 @@ function CoreProductSection({
   });
   const allCartonConfigs: any[] = cartonConfigsData?.configs ?? [];
 
-  // Map: variantId → first/default carton config
   const configByVariant = useMemo(() => {
     const map = new Map<number, any>();
     for (const c of allCartonConfigs) {
@@ -538,69 +259,16 @@ function CoreProductSection({
     return map;
   }, [allCartonConfigs]);
 
-  // --- Inline carton config add form state ---
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [addVariantId, setAddVariantId] = useState<number | null>(variantIds[0] || null);
-  const [addPacks, setAddPacks] = useState("");
-  const [addPrice, setAddPrice] = useState("");
-  const [addCostPrice, setAddCostPrice] = useState("");
-  const [addDelivery, setAddDelivery] = useState("");
-  const [addLabel, setAddLabel] = useState("");
-
-  // --- Inline delivery editing ---
-  const [editingDeliveryConfigId, setEditingDeliveryConfigId] = useState<number | null>(null);
-  const [editDeliveryValue, setEditDeliveryValue] = useState("");
-
-  const resetAddForm = () => {
-    setShowAddForm(false);
-    setAddPacks("");
-    setAddPrice("");
-    setAddCostPrice("");
-    setAddDelivery("");
-    setAddLabel("");
-  };
-
-  const createMutation = useMutation({
-    mutationFn: (d: any) => (orpc.warehouse as any).createCartonConfig.call(d),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "getCartonConfigsBatch"] });
-      resetAddForm();
-      toast.success("Carton config created");
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to create"),
-  });
-
   const updateConfigMutation = useMutation({
     mutationFn: (d: any) => (orpc.warehouse as any).updateCartonConfig.call(d),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["warehouse", "getCartonConfigsBatch"] });
-      setEditingDeliveryConfigId(null);
+      queryClient.invalidateQueries({ queryKey: ["warehouse", "getCartonSummaryBatch"] });
+      setEditingDeliveryVariantId(null);
       toast.success("Delivery cost updated");
     },
     onError: (err: any) => toast.error(err?.message || "Failed to update"),
   });
-
-  const handleCreate = () => {
-    if (!addVariantId || !addPacks || !addPrice) {
-      toast.error("Units per carton and price are required");
-      return;
-    }
-    createMutation.mutate({
-      variantId: addVariantId,
-      packsPerCarton: parseInt(addPacks),
-      cartonPrice: addPrice,
-      cartonCostPrice: addCostPrice || undefined,
-      deliveryCostPerCarton: addDelivery || undefined,
-      label: addLabel || undefined,
-    });
-  };
-
-  // Get variants for the selector
-  const variants: VariantInfo[] = group.items.map((i) => ({
-    id: i.variantId,
-    label: `${i.brandName ? i.brandName + " · " : ""}${i.variantLabel} (${i.packUnit})`,
-    packPrice: i.packPrice,
-  }));
 
   return (
     <div className="border-t first:border-t-0">
@@ -655,7 +323,7 @@ function CoreProductSection({
                 <TableHead className="text-xs w-[14%]">Variant</TableHead>
                 <TableHead className="text-xs w-[10%]">Pack Unit</TableHead>
                 <TableHead className="text-xs w-[18%]">Carton Unit</TableHead>
-                <TableHead className="text-xs w-[11%]">Pack Price</TableHead>
+                <TableHead className="text-xs w-[11%]">Price</TableHead>
                 <TableHead className="text-xs w-[12%]">Carton Price</TableHead>
                 <TableHead className="text-xs w-[9%]">Delivery</TableHead>
                 <TableHead className="text-xs text-right w-[12%]">Action</TableHead>
@@ -665,7 +333,11 @@ function CoreProductSection({
               {group.items.map((item) => {
                 const isEditing = editingId === item.inventoryId;
                 const isAvailable = Number(item.availableQty) > 0;
+                const cartonInfo = cartonByVariant.get(item.variantId);
                 const cartonCfg = configByVariant.get(item.variantId);
+
+                // Use physical carton data for display, fall back to config
+                const displayDelivery = cartonInfo?.deliveryCostPerUnit || cartonCfg?.deliveryCostPerCarton;
 
                 return (
                   <TableRow
@@ -682,9 +354,12 @@ function CoreProductSection({
                       {item.packUnit}
                     </TableCell>
                     <TableCell>
-                      {cartonCfg ? (
+                      {cartonInfo ? (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium">
-                          📦 {cartonCfg.packsPerCarton} Pack ({cartonCfg.cartonWeightKg} KG)
+                          📦 {cartonInfo.totalPacks} Pack ({cartonInfo.totalWeightKg} KG)
+                          {cartonInfo.activeCartonCount > 1 && (
+                            <span className="text-amber-500 ml-0.5">×{cartonInfo.activeCartonCount}</span>
+                          )}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
@@ -705,23 +380,27 @@ function CoreProductSection({
                               if (e.key === "Escape") onCancelEdit();
                             }}
                           />
+                          {item.isLoose && <span className="text-[10px] text-muted-foreground">/KG</span>}
                         </div>
                       ) : (
                         <span className="font-semibold">
-                          ৳ {Number(item.packPrice).toLocaleString()}
+                          ৳ {item.isLoose && item.weightKg > 0
+                            ? (Number(item.packPrice) / item.weightKg).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                            : Number(item.packPrice).toLocaleString()}
+                          {item.isLoose && <span className="text-xs font-normal text-muted-foreground ml-0.5">/KG</span>}
                         </span>
                       )}
                     </TableCell>
                     <TableCell className="font-semibold">
-                      {cartonCfg ? (
-                        <>৳ {Number(cartonCfg.cartonPrice).toLocaleString()}</>
+                      {cartonInfo?.cartonPrice ? (
+                        <>৳ {Number(cartonInfo.cartonPrice).toLocaleString()}</>
                       ) : (
                         <span className="text-muted-foreground font-normal">—</span>
                       )}
                     </TableCell>
                     <TableCell>
-                      {cartonCfg ? (
-                        editingDeliveryConfigId === cartonCfg.id ? (
+                      {(cartonInfo || cartonCfg) ? (
+                        editingDeliveryVariantId === item.variantId ? (
                           <div className="flex items-center gap-1">
                             <span className="text-xs text-muted-foreground">৳</span>
                             <input
@@ -731,13 +410,17 @@ function CoreProductSection({
                               className="w-24 px-2 py-1 text-sm border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 outline-none bg-white"
                               autoFocus
                               onKeyDown={(e) => {
-                                if (e.key === "Enter") {
+                                if (e.key === "Enter" && cartonCfg) {
                                   updateConfigMutation.mutate({ id: cartonCfg.id, deliveryCostPerCarton: editDeliveryValue || "0" });
                                 }
-                                if (e.key === "Escape") setEditingDeliveryConfigId(null);
+                                if (e.key === "Escape") setEditingDeliveryVariantId(null);
                               }}
                               onBlur={() => {
-                                updateConfigMutation.mutate({ id: cartonCfg.id, deliveryCostPerCarton: editDeliveryValue || "0" });
+                                if (cartonCfg) {
+                                  updateConfigMutation.mutate({ id: cartonCfg.id, deliveryCostPerCarton: editDeliveryValue || "0" });
+                                } else {
+                                  setEditingDeliveryVariantId(null);
+                                }
                               }}
                             />
                           </div>
@@ -745,13 +428,13 @@ function CoreProductSection({
                           <span
                             className="cursor-pointer hover:text-amber-600 transition-colors"
                             onClick={() => {
-                              setEditingDeliveryConfigId(cartonCfg.id);
-                              setEditDeliveryValue(cartonCfg.deliveryCostPerCarton || "");
+                              setEditingDeliveryVariantId(item.variantId);
+                              setEditDeliveryValue(displayDelivery || "");
                             }}
                             title="Click to edit delivery cost"
                           >
-                            {cartonCfg.deliveryCostPerCarton ? (
-                              <>৳ {Number(cartonCfg.deliveryCostPerCarton).toLocaleString()}</>
+                            {displayDelivery ? (
+                              <>৳ {Number(displayDelivery).toLocaleString()}</>
                             ) : (
                               <span className="text-muted-foreground italic text-xs">+ add</span>
                             )}
@@ -814,111 +497,7 @@ function CoreProductSection({
             </TableBody>
           </Table>
 
-          {/* Add Carton Config button */}
-          <div className="px-5 py-2 border-t flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs gap-1"
-              onClick={() => setShowAddForm(true)}
-            >
-              <Plus size={12} /> Add Carton Config
-            </Button>
-          </div>
 
-          {/* Add Carton Config Modal */}
-          <Dialog open={showAddForm} onOpenChange={(open) => { if (!open) resetAddForm(); }}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  📦 New Carton Config
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                {/* Variant selector */}
-                {variants.length > 1 && (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Variant</Label>
-                    <Select
-                      value={addVariantId ? String(addVariantId) : undefined}
-                      onValueChange={(val) => setAddVariantId(Number(val) || null)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select variant" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {variants.map((v) => (
-                          <SelectItem key={v.id} value={String(v.id)}>{v.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Units per Carton <span className="text-red-500">*</span></Label>
-                    <Input
-                      value={addPacks}
-                      onChange={(e) => {
-                        setAddPacks(e.target.value);
-                        const packs = parseInt(e.target.value) || 0;
-                        const sv = variants.find((v) => v.id === addVariantId);
-                        if (packs > 0 && sv) {
-                          setAddPrice((packs * parseFloat(sv.packPrice || "0")).toFixed(2));
-                        }
-                      }}
-                      type="number"
-                      min="1"
-                      placeholder="e.g. 12"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Carton Price (৳) <span className="text-red-500">*</span></Label>
-                    <Input
-                      value={addPrice}
-                      onChange={(e) => setAddPrice(e.target.value)}
-                      type="number"
-                      placeholder="auto-calculated"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Cost Price (৳)</Label>
-                    <Input
-                      value={addCostPrice}
-                      onChange={(e) => setAddCostPrice(e.target.value)}
-                      type="number"
-                      placeholder="optional"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Delivery (৳)</Label>
-                    <Input
-                      value={addDelivery}
-                      onChange={(e) => setAddDelivery(e.target.value)}
-                      type="number"
-                      placeholder="optional"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Label</Label>
-                  <Input
-                    value={addLabel}
-                    onChange={(e) => setAddLabel(e.target.value)}
-                    placeholder="e.g. 12 Pack Carton (optional)"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="ghost" size="sm" onClick={resetAddForm}>Cancel</Button>
-                <Button size="sm" className="gap-1" onClick={handleCreate} disabled={createMutation.isPending}>
-                  {createMutation.isPending ? "Saving..." : "Save Config"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </div>
       )}
     </div>
@@ -942,6 +521,7 @@ export default function WarehousePricingPage() {
   // Edit state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editPrice, setEditPrice] = useState("");
+  const [editingItem, setEditingItem] = useState<PriceItem | null>(null);
 
   // Search debounce
   const handleSearch = (val: string) => {
@@ -986,6 +566,7 @@ export default function WarehousePricingPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["warehouse", "getWarehousePriceList"] });
       setEditingId(null);
+      setEditingItem(null);
       toast.success("Price updated successfully");
     },
     onError: (err: any) => {
@@ -1055,20 +636,32 @@ export default function WarehousePricingPage() {
 
   const handleStartEdit = (item: PriceItem) => {
     setEditingId(item.inventoryId);
-    setEditPrice(item.packPrice);
+    setEditingItem(item);
+    // For loose products, show per-KG price in the edit field
+    if (item.isLoose && item.weightKg > 0) {
+      setEditPrice(String(Number(item.packPrice) / item.weightKg));
+    } else {
+      setEditPrice(item.packPrice);
+    }
   };
 
   const handleSaveEdit = () => {
     if (editingId === null) return;
+    // For loose products, convert per-KG price back to total
+    let priceToSave = editPrice;
+    if (editingItem?.isLoose && editingItem.weightKg > 0) {
+      priceToSave = String(Number(editPrice) * editingItem.weightKg);
+    }
     priceMutation.mutate({
       inventoryId: editingId,
-      retailPrice: editPrice,
+      retailPrice: priceToSave,
     });
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
     setEditPrice("");
+    setEditingItem(null);
   };
 
   const clearFilters = () => {

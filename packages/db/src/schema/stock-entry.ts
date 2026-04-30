@@ -70,8 +70,7 @@ export const stockEntry = pgTable(
 
         /** Which supplier provided this stock */
         supplierId: integer("supplier_id")
-            .notNull()
-            .references(() => supplier.id, { onDelete: "restrict" }),
+            .references(() => supplier.id, { onDelete: "set null" }),
 
         /** How the purchase price was quoted */
         costType: stockEntryCostTypeEnum("cost_type").notNull(),

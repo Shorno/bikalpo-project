@@ -986,6 +986,7 @@ export const stockOverviewRouter = {
                     variantId: productVariant.id,
                     variantSku: productVariant.sku,
                     unitLabel: productVariant.unitLabel,
+                    packType: productVariant.packType,
                     weightKg: productVariant.weightKg,
                     productId: product.id,
                     productName: product.name,
