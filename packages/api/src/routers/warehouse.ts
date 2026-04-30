@@ -2822,11 +2822,15 @@ const stockEntryQueries = {
                     // Update inventory carton tracking
                     if (updatedInv) {
                         const currentInCarton = parseFloat(updatedInv.inCartonQty);
-                        const totalPacksInCartons = cartonCount * packsPerSingleCarton;
+                        // For loose cartons, track total KG in cartons (cartonCount × kgPerCarton)
+                        // For pack cartons, track total packs in cartons (cartonCount × packsPerSingleCarton)
+                        const totalInCartons = input.cartonSource === "loose"
+                            ? cartonCount * (input.kgPerCarton || 0)
+                            : cartonCount * packsPerSingleCarton;
                         await tx
                             .update(inventory)
                             .set({
-                                inCartonQty: (currentInCarton + totalPacksInCartons).toFixed(2),
+                                inCartonQty: (currentInCarton + totalInCartons).toFixed(2),
                                 activeCartonCount: (updatedInv.activeCartonCount || 0) + cartonCount,
                             })
                             .where(eq(inventory.id, updatedInv.id));
