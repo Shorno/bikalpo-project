@@ -132,7 +132,9 @@ function VariantSection({ variant, productId }: { variant: any; productId: numbe
           {variant.activeCartons}
         </td>
         <td className="px-4 py-3.5 text-center font-semibold text-emerald-600 tabular-nums">
-          {variant.totalPacks.toLocaleString()} pcs
+          {variant.packType === "loose"
+            ? "—"
+            : `${variant.totalPacks.toLocaleString()} pcs`}
         </td>
       </tr>
 
@@ -192,7 +194,9 @@ function VariantSection({ variant, productId }: { variant: any; productId: numbe
                             {c.totalWeightKg} KG
                           </td>
                           <td className="px-4 py-2.5 text-center font-bold text-gray-900 tabular-nums text-xs">
-                            {c.totalPacks} <span className="text-gray-400 font-normal">pcs</span>
+                            {variant.packType === "loose"
+                              ? <span className="text-gray-400 font-normal">—</span>
+                              : <>{c.totalPacks} <span className="text-gray-400 font-normal">pcs</span></>}
                           </td>
                           <td className="px-4 py-2.5 text-center text-xs text-gray-600">
                             {c.storageArea?.name || "—"}

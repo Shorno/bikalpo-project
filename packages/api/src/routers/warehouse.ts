@@ -3435,7 +3435,7 @@ const cartonQueries = {
         .input(
             z.object({
                 variantId: z.number().int(),
-                packCount: z.number().int().min(1),
+                packCount: z.number().min(0.01), // Allow decimal for loose (KG)
                 cartonConfigId: z.number().int().optional(),
                 storageAreaId: z.number().int().optional(),
                 note: z.string().optional(),
@@ -3447,7 +3447,7 @@ const cartonQueries = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            // 1. Get variant to auto-calculate weight
+            // 1. Get variant to auto-calculate weight and detect type
             const variant = await db.query.productVariant.findFirst({
                 where: eq(productVariant.id, input.variantId),
             });
@@ -3455,6 +3455,8 @@ const cartonQueries = {
             if (!variant) {
                 throw new ORPCError("NOT_FOUND", { message: "Variant not found" });
             }
+
+            const isLoose = (variant.packType || variant.packagingType) === "loose";
 
             // 2. Optionally get carton config (for pricing defaults)
             let configPrice: string | null = null;
@@ -3476,7 +3478,7 @@ const cartonQueries = {
                 }
             }
 
-            // 3. Check inventory has enough loose stock
+            // 3. Check inventory has enough stock
             const inv = await db.query.inventory.findFirst({
                 where: and(
                     eq(inventory.ownerType, "warehouse"),
@@ -3494,14 +3496,19 @@ const cartonQueries = {
             const looseStock = available - inCarton;
 
             if (looseStock < input.packCount) {
+                const unit = isLoose ? "KG" : "packs";
                 throw new ORPCError("BAD_REQUEST", {
-                    message: `Not enough loose stock. Need ${input.packCount} packs, only ${looseStock.toFixed(0)} available.`,
+                    message: `Not enough stock. Need ${input.packCount} ${unit}, only ${looseStock.toFixed(isLoose ? 1 : 0)} available.`,
                 });
             }
 
-            // 4. Auto-calculate carton weight: packCount × variant.weightKg
+            // 4. Calculate carton weight
+            // For loose: quantity IS the weight in KG directly
+            // For packs: packCount × variant.weightKg
             const packWeightKg = parseFloat(variant.weightKg);
-            const totalWeightKg = (input.packCount * packWeightKg).toFixed(2);
+            const totalWeightKg = isLoose
+                ? input.packCount.toFixed(2)     // Loose: quantity is already KG
+                : (input.packCount * packWeightKg).toFixed(2);
 
             // 5. Generate carton ID: CTN-YYYY-NNNNNN
             const year = new Date().getFullYear();
@@ -3529,7 +3536,7 @@ const cartonQueries = {
                         warehouseId: userId,
                         cartonConfigId: configId,
                         variantId: input.variantId,
-                        totalPacks: input.packCount,
+                        totalPacks: isLoose ? 0 : Math.round(input.packCount),
                         totalWeightKg,
                         status: "active",
                         barcode: cartonIdStr,
@@ -3540,7 +3547,7 @@ const cartonQueries = {
                     })
                     .returning();
 
-                // Update inventory: move packs from loose → in-carton
+                // Update inventory: move stock from available → in-carton
                 const newInCartonQty = inCarton + input.packCount;
                 const newActiveCount = (inv.activeCartonCount || 0) + 1;
 
@@ -3928,6 +3935,7 @@ const cartonQueries = {
                 brandName: string;
                 sku: string;
                 weightKg: string;
+                packType: string;
                 totalCartons: number;
                 activeCartons: number;
                 totalPacks: number;
@@ -3944,6 +3952,7 @@ const cartonQueries = {
                         brandName: (v.brand as any)?.name || "—",
                         sku: v.sku || "—",
                         weightKg: v.weightKg,
+                        packType: (v as any).packType || (v as any).packagingType || "other",
                         totalCartons: 0,
                         activeCartons: 0,
                         totalPacks: 0,
