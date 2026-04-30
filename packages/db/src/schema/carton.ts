@@ -101,6 +101,18 @@ export const carton = pgTable(
         /** Optional note */
         note: text("note"),
 
+        /** Override carton selling price (null = use config default) */
+        cartonPrice: decimal("carton_price", {
+            precision: 10,
+            scale: 2,
+        }),
+
+        /** Delivery cost per unit/carton */
+        deliveryCostPerUnit: decimal("delivery_cost_per_unit", {
+            precision: 10,
+            scale: 2,
+        }),
+
         ...timestamps,
     },
     (table) => [

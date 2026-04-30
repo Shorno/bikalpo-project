@@ -101,21 +101,59 @@ export default function StockDetailPage() {
 
   const item = listData;
 
-  // Fetch variant breakdown for each product under this core identity
+  // Fetch variant breakdown for ALL products under this core identity
   const productIds: number[] = item?.productIds ?? [];
-  const primaryProductId = productIds[0];
 
-  const { data: breakdownData, isLoading: breakdownLoading } = useQuery({
-    queryKey: ["stockOverview", "breakdown", primaryProductId, "warehouse"],
-    queryFn: () =>
-      orpc.stockOverview.getStockBreakdown.call({
-        productId: primaryProductId!,
-        ownerType: "warehouse",
-      }),
-    enabled: !!primaryProductId,
+  const { data: allBreakdowns, isLoading: breakdownLoading } = useQuery({
+    queryKey: ["stockOverview", "breakdown", productIds, "warehouse"],
+    queryFn: async () => {
+      const results = await Promise.all(
+        productIds.map((pid) =>
+          orpc.stockOverview.getStockBreakdown.call({
+            productId: pid,
+            ownerType: "warehouse",
+          })
+        )
+      );
+      return results;
+    },
+    enabled: productIds.length > 0,
   });
 
-  // Collect all variant IDs from breakdown for carton config fetch
+  // Merge all breakdowns into a single view
+  const breakdownData = useMemo(() => {
+    if (!allBreakdowns || allBreakdowns.length === 0) return null;
+    const mergedGroups: any[] = [];
+    let mergedLooseOpen = 0;
+    let mergedLooseDrum = 0;
+    let mergedTotal = 0;
+
+    for (const bd of allBreakdowns) {
+      mergedTotal += bd.totalQty;
+      mergedLooseOpen += bd.loosePool?.openStock ?? 0;
+      mergedLooseDrum += bd.loosePool?.fullDrum ?? 0;
+      for (const group of bd.variantGroups) {
+        // Try to merge into existing group with same packType + weightKg
+        const existing = mergedGroups.find(
+          (g) => g.packType === group.packType && g.weightKg === group.weightKg
+        );
+        if (existing) {
+          existing.items.push(...group.items);
+        } else {
+          mergedGroups.push({ ...group, items: [...group.items] });
+        }
+      }
+    }
+
+    return {
+      productId: productIds[0],
+      totalQty: mergedTotal,
+      variantGroups: mergedGroups,
+      loosePool: { openStock: mergedLooseOpen, fullDrum: mergedLooseDrum },
+    };
+  }, [allBreakdowns, productIds]);
+
+  // Collect all variant IDs from breakdown
   const variantGroups = breakdownData?.variantGroups ?? [];
   const allVariantIds = useMemo(() => {
     const ids: number[] = [];
@@ -127,24 +165,22 @@ export default function StockDetailPage() {
     return ids;
   }, [variantGroups]);
 
-  // Fetch carton configs for all variants
-  const { data: cartonConfigsData } = useQuery({
-    queryKey: ["warehouse", "getCartonConfigsBatch", allVariantIds],
-    queryFn: () => (orpc.warehouse as any).getCartonConfigsBatch.call({ variantIds: allVariantIds }),
+  // Fetch actual carton data for all variants (from the carton table, not deprecated cartonConfig)
+  const { data: cartonSummaryData } = useQuery({
+    queryKey: ["warehouse", "getCartonSummaryBatch", allVariantIds],
+    queryFn: () => (orpc.warehouse as any).getCartonSummaryBatch.call({ variantIds: allVariantIds }),
     enabled: allVariantIds.length > 0,
   });
-  const allCartonConfigs: any[] = cartonConfigsData?.configs ?? [];
+  const cartonSummaries: any[] = cartonSummaryData?.cartons ?? [];
 
-  // Build carton config lookup: variantId → config
-  const configByVariant = useMemo(() => {
+  // Build carton summary lookup: variantId → summary
+  const cartonByVariant = useMemo(() => {
     const map = new Map<number, any>();
-    for (const c of allCartonConfigs) {
-      if (!map.has(c.variantId) || c.isDefault) {
-        map.set(c.variantId, c);
-      }
+    for (const c of cartonSummaries) {
+      map.set(c.variantId, c);
     }
     return map;
-  }, [allCartonConfigs]);
+  }, [cartonSummaries]);
 
   // Selected pack for the "SELECTED PACK" section
   const [selectedPackIndex, setSelectedPackIndex] = useState<number | null>(null);
@@ -212,31 +248,31 @@ export default function StockDetailPage() {
   // Calculate loose convertible
   const looseTotal = (loosePool?.openStock ?? 0) + (loosePool?.fullDrum ?? 0);
 
-  // Compute carton counts for pack type groups
+  // Compute actual carton counts from real carton table data (not deprecated cartonConfig)
   function getCartonInfo(group: any) {
-    const totalPacks = group.items.reduce(
-      (sum: number, i: any) => sum + i.availableQty,
-      0
-    );
     const weightKg = parseFloat(group.weightKg || "0");
+    let totalActiveCartons = 0;
+    let totalWeightInCartons = 0;
 
-    // Check if any variant in this group has a carton config
-    let packsPerCarton = 0;
     for (const it of group.items) {
-      const cfg = configByVariant.get(it.variantId);
-      if (cfg) {
-        packsPerCarton = cfg.packsPerCarton;
-        break;
+      const summary = cartonByVariant.get(it.variantId);
+      if (summary) {
+        totalActiveCartons += summary.activeCartonCount;
+        totalWeightInCartons += parseFloat(summary.totalWeightKg || "0");
       }
     }
 
-    if (packsPerCarton > 0) {
-      const cartonCount = Math.floor(totalPacks / packsPerCarton);
-      const totalKg = totalPacks * weightKg;
-      return { cartonCount, totalKg, hasConfig: true };
-    }
+    const totalPacks = group.items.reduce(
+      (sum: number, i: any) => sum + i.availableQty, 0
+    );
+    const totalKg = totalPacks * weightKg;
 
-    return { cartonCount: 0, totalKg: totalPacks * weightKg, hasConfig: false };
+    return {
+      cartonCount: totalActiveCartons,
+      totalKg,
+      totalWeightInCartons,
+      hasCartons: totalActiveCartons > 0,
+    };
   }
 
   return (
