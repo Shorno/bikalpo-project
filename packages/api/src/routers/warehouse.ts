@@ -2278,6 +2278,18 @@ const warehouseProductCreation = {
                     voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
                 }
 
+                // Validate: each brand can have at most one loose variant
+                for (const bc of input.brandConfigs) {
+                    const looseCount = bc.variants.filter(
+                        (v) => voMap[v.variantOptionId]?.variantType === "loose"
+                    ).length;
+                    if (looseCount > 1) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Brand ID ${bc.brandId} has ${looseCount} loose variants. Only one loose variant is allowed per brand.`,
+                        });
+                    }
+                }
+
                 let sortIdx = 0;
                 for (const bc of input.brandConfigs) {
                     for (const v of bc.variants) {
