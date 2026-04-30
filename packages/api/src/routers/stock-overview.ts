@@ -531,16 +531,19 @@ export const stockOverviewRouter = {
                     });
                 }
 
+                // For loose variants, subtract in-carton qty so display shows actual loose stock
+                const displayQty = isLoose ? Math.max(0, qty - inCartonQty) : qty;
+
                 variantGroupMap.get(groupKey)!.items.push({
                     variantId: row.variantId,
                     brand: row.brand,
                     color: row.color,
                     size: row.size,
-                    availableQty: qty,
+                    availableQty: displayQty,
                     reservedQty: parseFloat(row.reservedQty || "0"),
                     retailPrice: row.retailPrice,
                     sku: row.sku,
-                    status: getStockStatus(qty),
+                    status: getStockStatus(displayQty),
                 });
             }
 
