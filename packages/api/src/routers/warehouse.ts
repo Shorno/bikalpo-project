@@ -3362,9 +3362,14 @@ const cartonQueries = {
                         latestCartonId: c.cartonId,
                     });
                 } else {
-                    // Accumulate count
+                    // Accumulate count and weight
                     const existing = summaryMap.get(c.variantId)!;
                     existing.activeCartonCount += 1;
+                    existing.totalPacks += c.totalPacks;
+                    existing.totalWeightKg = (
+                        parseFloat(existing.totalWeightKg) +
+                        parseFloat(c.totalWeightKg)
+                    ).toFixed(2);
                 }
             }
 
