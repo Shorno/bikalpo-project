@@ -356,11 +356,17 @@ function CoreProductSection({
                     <TableCell>
                       {cartonInfo ? (() => {
                         const perCartonKg = cartonInfo.activeCartonCount > 0
-                          ? (parseFloat(cartonInfo.totalWeightKg) / cartonInfo.activeCartonCount).toFixed(1).replace(/\.0$/, "")
-                          : cartonInfo.totalWeightKg;
+                          ? parseFloat(cartonInfo.totalWeightKg) / cartonInfo.activeCartonCount
+                          : parseFloat(cartonInfo.totalWeightKg);
+                        const perCartonKgStr = perCartonKg % 1 === 0 ? String(perCartonKg) : perCartonKg.toFixed(1);
+                        const packKg = item.weightKg || 0;
+                        const packsPerCarton = !item.isLoose && packKg > 0 ? Math.round(perCartonKg / packKg) : 0;
                         return (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium">
-                            📦 {perCartonKg} KG × {cartonInfo.activeCartonCount} carton
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium flex-wrap">
+                            📦 {!item.isLoose && packsPerCarton > 0
+                              ? <>{packKg} KG × {packsPerCarton} pcs = {perCartonKgStr} KG × {cartonInfo.activeCartonCount} carton</>
+                              : <>{perCartonKgStr} KG × {cartonInfo.activeCartonCount} carton</>
+                            }
                           </span>
                         );
                       })() : (
