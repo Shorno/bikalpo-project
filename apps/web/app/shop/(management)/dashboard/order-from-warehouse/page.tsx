@@ -416,19 +416,6 @@ function VariantModal({
             </div>
           </div>
 
-          {/* Carton availability */}
-          {selected.variant.cartonCount > 0 && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
-              <span className="text-sm">📦</span>
-              <span className="text-xs font-medium text-blue-700">
-                {selected.variant.cartonCount} Carton Available
-              </span>
-              <span className="text-xs text-blue-500">
-                ({selected.variant.cartonWeightKg} KG)
-              </span>
-            </div>
-          )}
-
           {/* ─── Select Variant / Pack Type within selected brand ─── */}
           {brandVariants.length > 1 && (() => {
             const packVariants = brandVariants.filter(v => (v.variant.packType || "").toLowerCase() !== "loose");
@@ -450,6 +437,7 @@ function VariantModal({
                         const vWeight = Number(v.variant.weightKg) || 0;
                         const isSelected = v.idx === selectedIdx;
                         const vInCart = cart.find((c) => c.variantId === v.variantId);
+                        const vCartons = v.variant.cartonCount || 0;
 
                         return (
                           <button
@@ -465,6 +453,11 @@ function VariantModal({
                             <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
                               ৳{Number(v.price).toLocaleString()}
                             </div>
+                            {vCartons > 0 && (
+                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                                📦 {vCartons} carton ({v.variant.cartonWeightKg} KG)
+                              </div>
+                            )}
                             {vInCart && (
                               <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
                                 {vInCart.quantity} in cart
@@ -485,9 +478,9 @@ function VariantModal({
                     </h3>
                     <div className="flex flex-wrap gap-2">
                       {looseVariants.map((v) => {
-                        const vWeight = Number(v.variant.weightKg) || 0;
                         const isSelected = v.idx === selectedIdx;
                         const vInCart = cart.find((c) => c.variantId === v.variantId);
+                        const vCartons = v.variant.cartonCount || 0;
                         return (
                           <button
                             key={v.variantId}
@@ -502,6 +495,11 @@ function VariantModal({
                             <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-gray-400"}`}>
                               ৳{Number(v.price).toLocaleString()}
                             </div>
+                            {vCartons > 0 && (
+                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-blue-500"}`}>
+                                📦 {vCartons} carton ({v.variant.cartonWeightKg} KG)
+                              </div>
+                            )}
                             {vInCart && (
                               <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-teal-500"}`}>
                                 {vInCart.quantity} in cart
@@ -518,17 +516,17 @@ function VariantModal({
           })()}
 
           {/* ─── Pack Conversion Info ─── */}
-          {innerCount > 0 && (
+          {!isLoose && innerCount > 0 && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
               <h4 className="text-[10px] font-semibold text-blue-700 uppercase tracking-wider mb-1.5">
                 📦 Pack Breakdown
               </h4>
               <div className="text-sm text-blue-800 font-medium">
-                1 {packLabel} = {innerLabel} × {innerCount} pcs = {cartonWeightKg}kg total
+                1 Carton = {innerLabel} × {innerCount} pcs = {cartonWeightKg}kg total
               </div>
               {qty > 1 && (
                 <div className="text-xs text-blue-600 mt-1 pt-1 border-t border-blue-100">
-                  {qty} {packLabel}(s) = {totalInnerPacks} pcs ({totalWeight}kg total)
+                  {qty} Carton(s) = {totalInnerPacks} pcs ({totalWeight}kg total)
                 </div>
               )}
             </div>
@@ -548,7 +546,49 @@ function VariantModal({
               ) : (
                 <div className="text-center text-sm text-red-400 py-3 bg-red-50 rounded-lg border border-red-100">Out of stock</div>
               )
+            ) : isLoose ? (
+              /* ── Loose: free-form KG input ── */
+              <>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setQty(Math.max(1, qty - 1))}
+                    className="w-10 h-10 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <div className="flex-1 flex items-center justify-center gap-1">
+                    <input
+                      type="number"
+                      min={1}
+                      max={stockQty}
+                      value={qty}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(stockQty, Number(e.target.value) || 0));
+                        setQty(v);
+                      }}
+                      className="w-20 text-center text-2xl font-bold text-gray-900 border-b-2 border-gray-300 focus:border-teal-500 outline-none bg-transparent"
+                    />
+                    <span className="text-sm text-gray-500">KG</span>
+                  </div>
+                  <button
+                    onClick={() => setQty(Math.min(stockQty, qty + 1))}
+                    className="w-10 h-10 flex items-center justify-center text-teal-600 hover:bg-teal-50 rounded-lg border border-teal-200 transition-colors"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+                <div className="text-center text-[10px] text-gray-400 mt-1">
+                  Type any amount up to {stockQty} KG
+                </div>
+
+                {/* Total calculation */}
+                <div className="flex items-center justify-between mt-2 px-2 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-500">
+                  <span>Total: {qty} KG × ৳{Number(selected.price).toLocaleString()}</span>
+                  <span className="font-bold text-gray-900">= ৳{(qty * Number(selected.price)).toLocaleString()}</span>
+                </div>
+              </>
             ) : (
+              /* ── Pack: carton stepper ── */
               <>
                 <div className="flex items-center gap-3">
                   <button
@@ -559,10 +599,10 @@ function VariantModal({
                   </button>
                   <div className="flex-1 text-center">
                     <span className="text-2xl font-bold text-gray-900">{qty}</span>
-                    <span className="text-sm text-gray-500 ml-1.5">{isLoose ? "KG" : packLabel}</span>
+                    <span className="text-sm text-gray-500 ml-1.5">Carton</span>
                   </div>
                   <button
-                    onClick={() => setQty(Math.min(stockQty, qty + 1))}
+                    onClick={() => setQty(Math.min(selected.variant.cartonCount > 0 ? selected.variant.cartonCount : stockQty, qty + 1))}
                     className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors"
                   >
                     <Plus size={16} />
@@ -571,7 +611,7 @@ function VariantModal({
 
                 {/* Total calculation */}
                 <div className="flex items-center justify-between mt-2 px-2 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-500">
-                  <span>Total: {qty} × ৳{Number(selected.price).toLocaleString()}</span>
+                  <span>Total: {qty} Carton × ৳{Number(selected.price).toLocaleString()}</span>
                   <span className="font-bold text-gray-900">= ৳{(qty * Number(selected.price)).toLocaleString()}</span>
                 </div>
 
