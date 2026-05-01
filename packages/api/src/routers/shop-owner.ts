@@ -611,7 +611,7 @@ const managementQueries = {
                         totalAvailableQty: 0,
                         totalPackQty: 0,
                         totalLooseQty: 0,
-                        looseUnit: inv.variant.unitLabel || "pcs",
+                        looseUnit: (inv.variant.packagingType || "").toLowerCase() === "loose" ? "KG" : (inv.variant.unitLabel || "pcs"),
                         variants: [],
                     });
                 }
@@ -627,7 +627,7 @@ const managementQueries = {
                     sku: inv.variant.sku,
                     brandName: inv.variant.brand?.name ?? null,
                     weightKg: inv.variant.weightKg,
-                    unitLabel: inv.variant.unitLabel,
+                    unitLabel: (inv.variant.packagingType || "").toLowerCase() === "loose" ? "KG" : inv.variant.unitLabel,
                     packType: inv.variant.packagingType,
                     availableQty: qty,
                     inCartonQty: cartonQty,
