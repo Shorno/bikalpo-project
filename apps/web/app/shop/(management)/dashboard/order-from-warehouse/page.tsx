@@ -55,6 +55,8 @@ type VariantItem = {
     packCountInside: number | null;
     brandId: number | null;
     brandName: string | null;
+    cartonCount: number;
+    cartonWeightKg: string;
   };
 };
 
@@ -360,6 +362,15 @@ function VariantModal({
                         <span className={`text-[10px] ${totalBrandStock > 20 ? "text-emerald-500" : totalBrandStock > 0 ? "text-amber-500" : "text-red-400"}`}>
                           {totalBrandStock} in stock
                         </span>
+                        {(() => {
+                          const brandCartons = bg.variants.reduce((s, v) => s + (v.variant.cartonCount || 0), 0);
+                          return brandCartons > 0 ? (
+                            <>
+                              <span className="text-[10px] text-gray-300">•</span>
+                              <span className="text-[10px] text-blue-500">📦 {brandCartons} carton</span>
+                            </>
+                          ) : null;
+                        })()}
                       </div>
                     </button>
                   );
@@ -404,6 +415,19 @@ function VariantModal({
               </span>
             </div>
           </div>
+
+          {/* Carton availability */}
+          {selected.variant.cartonCount > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+              <span className="text-sm">📦</span>
+              <span className="text-xs font-medium text-blue-700">
+                {selected.variant.cartonCount} Carton Available
+              </span>
+              <span className="text-xs text-blue-500">
+                ({selected.variant.cartonWeightKg} KG)
+              </span>
+            </div>
+          )}
 
           {/* ─── Select Variant / Pack Type within selected brand ─── */}
           {brandVariants.length > 1 && (() => {

@@ -45,6 +45,7 @@ import {
     purchaseItem,
     purchase,
     invoice,
+    carton,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -4102,7 +4103,43 @@ const warehouseConnectionEndpoints = {
                 };
             });
 
-            return { products };
+            // Enrich with carton data per variant
+            const allVariantIds = products.map((p) => p.variantId);
+            let cartonMap = new Map<number, { cartonCount: number; totalWeightKg: number }>();
+
+            if (allVariantIds.length > 0) {
+                const activeCartons = await db.query.carton.findMany({
+                    where: and(
+                        eq(carton.warehouseId, warehouseId),
+                        eq(carton.status, "active"),
+                        inArray(carton.variantId, allVariantIds),
+                    ),
+                });
+
+                for (const c of activeCartons) {
+                    if (!cartonMap.has(c.variantId)) {
+                        cartonMap.set(c.variantId, { cartonCount: 0, totalWeightKg: 0 });
+                    }
+                    const entry = cartonMap.get(c.variantId)!;
+                    entry.cartonCount += 1;
+                    entry.totalWeightKg += parseFloat(c.totalWeightKg);
+                }
+            }
+
+            // Attach carton data to each product
+            const enrichedProducts = products.map((p) => {
+                const cd = cartonMap.get(p.variantId);
+                return {
+                    ...p,
+                    variant: {
+                        ...p.variant,
+                        cartonCount: cd?.cartonCount ?? 0,
+                        cartonWeightKg: (cd?.totalWeightKg ?? 0).toFixed(1),
+                    },
+                };
+            });
+
+            return { products: enrichedProducts };
         }),
 };
 
