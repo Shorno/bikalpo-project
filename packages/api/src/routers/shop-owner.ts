@@ -4105,7 +4105,12 @@ const warehouseConnectionEndpoints = {
 
             // Enrich with carton data per variant
             const allVariantIds = products.map((p) => p.variantId);
-            let cartonMap = new Map<number, { cartonCount: number; totalWeightKg: number }>();
+            let cartonMap = new Map<number, {
+                cartonCount: number;
+                totalWeightKg: number;
+                kgPerCarton: number;
+                packsPerCarton: number;
+            }>();
 
             if (allVariantIds.length > 0) {
                 const activeCartons = await db.query.carton.findMany({
@@ -4118,7 +4123,13 @@ const warehouseConnectionEndpoints = {
 
                 for (const c of activeCartons) {
                     if (!cartonMap.has(c.variantId)) {
-                        cartonMap.set(c.variantId, { cartonCount: 0, totalWeightKg: 0 });
+                        // Use first carton as representative for per-carton breakdown
+                        cartonMap.set(c.variantId, {
+                            cartonCount: 0,
+                            totalWeightKg: 0,
+                            kgPerCarton: parseFloat(c.totalWeightKg),
+                            packsPerCarton: c.totalPacks,
+                        });
                     }
                     const entry = cartonMap.get(c.variantId)!;
                     entry.cartonCount += 1;
@@ -4135,6 +4146,8 @@ const warehouseConnectionEndpoints = {
                         ...p.variant,
                         cartonCount: cd?.cartonCount ?? 0,
                         cartonWeightKg: (cd?.totalWeightKg ?? 0).toFixed(1),
+                        kgPerCarton: cd?.kgPerCarton ?? 0,
+                        packsPerCarton: cd?.packsPerCarton ?? 0,
                     },
                 };
             });

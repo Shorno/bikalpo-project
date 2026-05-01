@@ -57,6 +57,8 @@ type VariantItem = {
     brandName: string | null;
     cartonCount: number;
     cartonWeightKg: string;
+    kgPerCarton: number;
+    packsPerCarton: number;
   };
 };
 
@@ -385,7 +387,9 @@ function VariantModal({
               <div className="text-sm font-semibold text-gray-800">
                 {isLoose
                   ? `Loose${selected.variant.brandName ? ` (${selected.variant.brandName})` : ""}`
-                  : <>Pack: {cartonWeightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}</>
+                  : selected.variant.kgPerCarton > 0
+                    ? <>Pack: {selected.variant.kgPerCarton} KG ({Number(selected.variant.weightKg)} KG × {selected.variant.packsPerCarton} pcs) – Carton</>
+                    : <>Pack: {Number(selected.variant.weightKg)} KG – {packLabel}</>
                 }
               </div>
               {selected.variant.brandName && (
@@ -403,16 +407,29 @@ function VariantModal({
           <div className="flex items-center justify-between">
             <div>
               <div className="text-xl font-bold text-gray-900">৳{Number(selected.price).toLocaleString()}</div>
-              <div className="text-[10px] text-gray-400">per {isLoose ? "KG" : packLabel}</div>
+              <div className="text-[10px] text-gray-400">per {isLoose ? "KG" : "Carton"}</div>
             </div>
             <div className="text-right">
-              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                stockQty > 50 ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
-                stockQty > 10 ? "text-amber-600 bg-amber-50 border-amber-200" :
-                "text-red-600 bg-red-50 border-red-200"
-              }`}>
-                {stockQty > 0 ? `${stockQty} ${isLoose ? "KG" : packLabel} available` : "Out of stock"}
-              </span>
+              {isLoose ? (
+                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                  stockQty > 50 ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
+                  stockQty > 10 ? "text-amber-600 bg-amber-50 border-amber-200" :
+                  "text-red-600 bg-red-50 border-red-200"
+                }`}>
+                  {stockQty > 0 ? `${stockQty} KG available` : "Out of stock"}
+                </span>
+              ) : (
+                <div className="space-y-1">
+                  {selected.variant.cartonCount > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border text-blue-600 bg-blue-50 border-blue-200">
+                      📦 {selected.variant.cartonCount} Carton available
+                    </span>
+                  )}
+                  <div className={`text-[10px] ${stockQty > 0 ? "text-emerald-500" : "text-red-400"}`}>
+                    {stockQty > 0 ? `${stockQty} KG total stock` : "Out of stock"}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -431,30 +448,34 @@ function VariantModal({
                     </h3>
                     <div className="flex flex-wrap gap-2">
                       {packVariants.map((v) => {
-                        const vPack = v.variant.packType
-                          ? v.variant.packType.charAt(0).toUpperCase() + v.variant.packType.slice(1)
-                          : "Unit";
                         const vWeight = Number(v.variant.weightKg) || 0;
                         const isSelected = v.idx === selectedIdx;
                         const vInCart = cart.find((c) => c.variantId === v.variantId);
                         const vCartons = v.variant.cartonCount || 0;
+                        const vKgPerCarton = v.variant.kgPerCarton || 0;
+                        const vPacksPerCarton = v.variant.packsPerCarton || 0;
 
                         return (
                           <button
                             key={v.variantId}
                             onClick={() => { setSelectedIdx(v.idx); setQty(1); }}
-                            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+                            className={`px-3 py-2.5 rounded-lg text-xs font-medium border transition-all text-left ${
                               isSelected
                                 ? "bg-blue-600 text-white border-blue-600 shadow-sm"
                                 : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
                             }`}
                           >
-                            <div>{vPack} ({vWeight}kg)</div>
+                            <div className="font-semibold">{vWeight} KG</div>
+                            {vKgPerCarton > 0 && (
+                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
+                                {vKgPerCarton} KG ({vWeight} KG × {vPacksPerCarton} pcs) – Carton
+                              </div>
+                            )}
                             <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
                               ৳{Number(v.price).toLocaleString()}
                             </div>
                             {vCartons > 0 && (
-                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                              <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
                                 📦 {vCartons} carton ({v.variant.cartonWeightKg} KG)
                               </div>
                             )}
