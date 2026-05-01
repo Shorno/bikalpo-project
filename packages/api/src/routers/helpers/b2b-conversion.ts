@@ -18,7 +18,8 @@
  */
 
 import {and, eq} from "drizzle-orm";
-import {inventory, order, orderItem, product, productVariant, variantConversionMap,} from "@bikalpo-project/db/schema";
+import {carton, inventory, order, orderItem, product, productVariant, variantConversionMap,} from "@bikalpo-project/db/schema";
+import {desc} from "drizzle-orm";
 
 /**
  * Convert B2B order items to retail inventory upon delivery.
@@ -113,29 +114,47 @@ export async function convertB2bOrderToRetailInventory(
             // ═══ PACK MODE: Shop chose a specific retail variant (e.g. 5KG) ═══
             targetRetailVariantId = shopTargetVariantId;
 
-            // Load the target variant to calculate ratio
-            const targetVariant = await tx.query.productVariant.findFirst({
-                where: eq(productVariant.id, shopTargetVariantId),
-                columns: { id: true, weightKg: true },
-            });
-
-            const targetWeightKg = Number(targetVariant?.weightKg || 0);
+            const isLooseTrade = (tradeVariant.packType || "").toLowerCase() === "loose";
             const tradeWeightKg = Number(tradeVariant.weightKg || 0);
 
-            if (targetWeightKg > 0 && tradeWeightKg > 0) {
-                // 50KG carton / 5KG pack = 10 packs per carton
-                conversionRatio = tradeWeightKg / targetWeightKg;
-            } else if (productUnitSize > 0 && targetWeightKg > 0) {
-                // Fallback: use product unitSize
-                conversionRatio = productUnitSize / targetWeightKg;
-            } else {
-                // Last resort: use packCountInside or 1
-                conversionRatio = Number(tradeVariant.packCountInside || 1);
-            }
+            if (isLooseTrade) {
+                // Loose variant ordered as carton: look up actual carton weight
+                const activeCarton = await tx.query.carton.findFirst({
+                    where: and(
+                        eq(carton.variantId, tradeVariant.id),
+                        eq(carton.status, "active"),
+                    ),
+                    columns: { totalWeightKg: true },
+                    orderBy: [desc(carton.createdAt)],
+                });
 
-            isPackBreakdown = true;
-            conversionSource = "shop_pack_choice";
-            console.log(`[B2B-CONVERT] Pack mode: target=${shopTargetVariantId}, tradeKg=${tradeWeightKg}, targetKg=${targetWeightKg}, ratio=${conversionRatio}`);
+                const cartonWeightKg = Number(activeCarton?.totalWeightKg || 0);
+                // Each ordered unit = 1 carton = cartonWeightKg in KG
+                conversionRatio = cartonWeightKg > 0 ? cartonWeightKg : 1;
+                conversionSource = "loose_carton_weight";
+                console.log(`[B2B-CONVERT] Loose carton mode: cartonKg=${cartonWeightKg}, ratio=${conversionRatio} (KG per carton)`);
+            } else {
+                // Pack variant: load target to calculate ratio
+                const targetVariant = await tx.query.productVariant.findFirst({
+                    where: eq(productVariant.id, shopTargetVariantId),
+                    columns: { id: true, weightKg: true },
+                });
+
+                const targetWeightKg = Number(targetVariant?.weightKg || 0);
+
+                if (targetWeightKg > 0 && tradeWeightKg > 0) {
+                    // 50KG carton / 5KG pack = 10 packs per carton
+                    conversionRatio = tradeWeightKg / targetWeightKg;
+                } else if (productUnitSize > 0 && targetWeightKg > 0) {
+                    conversionRatio = productUnitSize / targetWeightKg;
+                } else {
+                    conversionRatio = Number(tradeVariant.packCountInside || 1);
+                }
+
+                isPackBreakdown = true;
+                conversionSource = "shop_pack_choice";
+                console.log(`[B2B-CONVERT] Pack mode: target=${shopTargetVariantId}, tradeKg=${tradeWeightKg}, targetKg=${targetWeightKg}, ratio=${conversionRatio}`);
+            }
 
         } else if (shopSupplyMode === "loose") {
             // ═══ LOOSE MODE: Shop wants KG added as loose stock ═══
@@ -216,9 +235,11 @@ export async function convertB2bOrderToRetailInventory(
         });
 
         if (sourceInv) {
+            // For loose cartons: deduct in KG (retailQty), not carton count
+            const deductQty = conversionSource === "loose_carton_weight" ? retailQty : orderedQty;
             const newSourceQty = Math.max(
                 0,
-                Number(sourceInv.availableQty) - orderedQty,
+                Number(sourceInv.availableQty) - deductQty,
             );
 
             await tx
