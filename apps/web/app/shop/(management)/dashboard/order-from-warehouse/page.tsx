@@ -385,6 +385,54 @@ function VariantModal({
             </div>
           </div>
 
+          {/* ─── Select Variant within selected brand ─── */}
+          {brandVariants.length > 1 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Select Variant
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {brandVariants.map((v) => {
+                  const vWeight = Number(v.variant.weightKg) || 0;
+                  const isSelected = v.idx === selectedIdx;
+                  const vInCart = cart.find((c) => c.variantId === v.variantId);
+                  const vTotalCartons = v.variant.totalCartonCount || 0;
+                  const isLooseV = (v.variant.packType || "").toLowerCase() === "loose";
+                  const label = isLooseV
+                    ? (v.variant.brandName || "Loose")
+                    : `${vWeight > 0 ? `${vWeight} KG` : v.variant.unitLabel || "Pack"}`;
+
+                  return (
+                    <button
+                      key={v.variantId}
+                      onClick={() => { setSelectedIdx(v.idx); setSelectedCartonSizeIdx(0); setQty(1); }}
+                      className={`px-3 py-2.5 rounded-lg text-xs font-medium border transition-all text-left ${
+                        isSelected
+                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+                      }`}
+                    >
+                      <div className="font-semibold">{label}</div>
+                      <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
+                        ৳{Number(v.price).toLocaleString()}
+                      </div>
+                      {vTotalCartons > 0 && (
+                        <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                          📦 {vTotalCartons} carton
+                        </div>
+                      )}
+                      {vInCart && (
+                        <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                          {vInCart.quantity} in cart
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ─── Select Carton Size ─── */}
           {cartonOptions.length > 1 && (
             <div>
