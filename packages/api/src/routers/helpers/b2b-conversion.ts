@@ -134,7 +134,7 @@ export async function convertB2bOrderToRetailInventory(
                 conversionSource = "loose_carton_weight";
                 console.log(`[B2B-CONVERT] Loose carton mode: cartonKg=${cartonWeightKg}, ratio=${conversionRatio} (KG per carton)`);
             } else {
-                // Pack variant: load target to calculate ratio
+                // Pack variant ordered as carton: use carton weight for ratio
                 const targetVariant = await tx.query.productVariant.findFirst({
                     where: eq(productVariant.id, shopTargetVariantId),
                     columns: { id: true, weightKg: true },
@@ -142,8 +142,29 @@ export async function convertB2bOrderToRetailInventory(
 
                 const targetWeightKg = Number(targetVariant?.weightKg || 0);
 
-                if (targetWeightKg > 0 && tradeWeightKg > 0) {
-                    // 50KG carton / 5KG pack = 10 packs per carton
+                // Look up actual carton weight first (e.g. 50 KG per carton)
+                const packCarton = await tx.query.carton.findFirst({
+                    where: and(
+                        eq(carton.variantId, tradeVariant.id),
+                        eq(carton.status, "active"),
+                    ),
+                    columns: { totalWeightKg: true, totalPacks: true },
+                    orderBy: [desc(carton.createdAt)],
+                });
+
+                const cartonTotalWeightKg = Number(packCarton?.totalWeightKg || 0);
+                const cartonTotalPacks = Number(packCarton?.totalPacks || 0);
+
+                if (cartonTotalPacks > 0) {
+                    // Best: carton has pack count (e.g. 10 pcs per carton)
+                    conversionRatio = cartonTotalPacks;
+                    console.log(`[B2B-CONVERT] Pack carton mode: ${cartonTotalPacks} pcs/carton from totalPacks`);
+                } else if (cartonTotalWeightKg > 0 && targetWeightKg > 0) {
+                    // Fallback: carton weight / pack weight (e.g. 50 KG / 5 KG = 10 pcs)
+                    conversionRatio = cartonTotalWeightKg / targetWeightKg;
+                    console.log(`[B2B-CONVERT] Pack carton mode: ${cartonTotalWeightKg}KG carton / ${targetWeightKg}KG pack = ${conversionRatio} pcs`);
+                } else if (tradeWeightKg > 0 && targetWeightKg > 0) {
+                    // Last resort: variant weight ratio
                     conversionRatio = tradeWeightKg / targetWeightKg;
                 } else if (productUnitSize > 0 && targetWeightKg > 0) {
                     conversionRatio = productUnitSize / targetWeightKg;
@@ -153,7 +174,7 @@ export async function convertB2bOrderToRetailInventory(
 
                 isPackBreakdown = true;
                 conversionSource = "shop_pack_choice";
-                console.log(`[B2B-CONVERT] Pack mode: target=${shopTargetVariantId}, tradeKg=${tradeWeightKg}, targetKg=${targetWeightKg}, ratio=${conversionRatio}`);
+                console.log(`[B2B-CONVERT] Pack mode: target=${shopTargetVariantId}, cartonKg=${cartonTotalWeightKg}, cartonPacks=${cartonTotalPacks}, tradeKg=${tradeWeightKg}, targetKg=${targetWeightKg}, ratio=${conversionRatio}`);
             }
 
         } else if (shopSupplyMode === "loose") {
