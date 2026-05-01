@@ -170,11 +170,28 @@ export async function convertB2bOrderToRetailInventory(
             targetRetailVariantId = looseVariant?.id ?? tradeVariant.id;
 
             // For loose: 1 carton = cartonWeightKg in KG
+            // Look up actual carton weight from active cartons
+            const looseCarton = await tx.query.carton.findFirst({
+                where: and(
+                    eq(carton.variantId, tradeVariant.id),
+                    eq(carton.status, "active"),
+                ),
+                columns: { totalWeightKg: true },
+                orderBy: [desc(carton.createdAt)],
+            });
+
+            const looseCartonWeightKg = Number(looseCarton?.totalWeightKg || 0);
             const tradeWeightKg = Number(tradeVariant.weightKg || 0);
-            conversionRatio = tradeWeightKg > 0 ? tradeWeightKg : productUnitSize > 0 ? productUnitSize : 1;
+            conversionRatio = looseCartonWeightKg > 0
+                ? looseCartonWeightKg
+                : tradeWeightKg > 0
+                    ? tradeWeightKg
+                    : productUnitSize > 0
+                        ? productUnitSize
+                        : 1;
 
             conversionSource = "shop_loose_choice";
-            console.log(`[B2B-CONVERT] Loose mode: target=${targetRetailVariantId}, tradeKg=${tradeWeightKg}, ratio=${conversionRatio} (KG per unit)`);
+            console.log(`[B2B-CONVERT] Loose mode: target=${targetRetailVariantId}, cartonKg=${looseCartonWeightKg}, tradeKg=${tradeWeightKg}, ratio=${conversionRatio} (KG per unit)`);
 
         } else {
             // ═══ LEGACY MODE: No supplyMode set — use existing logic ═══
@@ -236,7 +253,8 @@ export async function convertB2bOrderToRetailInventory(
 
         if (sourceInv) {
             // For loose cartons: deduct in KG (retailQty), not carton count
-            const deductQty = conversionSource === "loose_carton_weight" ? retailQty : orderedQty;
+            const isLooseDeduction = conversionSource === "loose_carton_weight" || conversionSource === "shop_loose_choice";
+            const deductQty = isLooseDeduction ? retailQty : orderedQty;
             const newSourceQty = Math.max(
                 0,
                 Number(sourceInv.availableQty) - deductQty,
