@@ -386,52 +386,95 @@ function VariantModal({
           </div>
 
           {/* ─── Select Variant within selected brand ─── */}
-          {brandVariants.length > 1 && (
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Select Variant
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {brandVariants.map((v) => {
-                  const vWeight = Number(v.variant.weightKg) || 0;
-                  const isSelected = v.idx === selectedIdx;
-                  const vInCart = cart.find((c) => c.variantId === v.variantId);
-                  const vTotalCartons = v.variant.totalCartonCount || 0;
-                  const isLooseV = (v.variant.packType || "").toLowerCase() === "loose";
-                  const label = isLooseV
-                    ? "Loose"
-                    : `${vWeight > 0 ? `${vWeight} KG` : v.variant.unitLabel || "Pack"}`;
+          {brandVariants.length > 1 && (() => {
+            const packVars = brandVariants.filter(v => (v.variant.packType || "").toLowerCase() !== "loose");
+            const looseVars = brandVariants.filter(v => (v.variant.packType || "").toLowerCase() === "loose");
+            const selectedIsLoose = (selected.variant.packType || "").toLowerCase() === "loose";
 
-                  return (
-                    <button
-                      key={v.variantId}
-                      onClick={() => { setSelectedIdx(v.idx); setSelectedCartonSizeIdx(0); setQty(1); }}
-                      className={`px-3 py-2.5 rounded-lg text-xs font-medium border transition-all text-left ${
-                        isSelected
-                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                          : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+            return (
+              <div className="space-y-3">
+                {/* Pack variant buttons */}
+                {packVars.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                      Select Pack
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {packVars.map((v) => {
+                        const vWeight = Number(v.variant.weightKg) || 0;
+                        const isSelected = v.idx === selectedIdx;
+                        const vInCart = cart.find((c) => c.variantId === v.variantId);
+                        const vTotalCartons = v.variant.totalCartonCount || 0;
+
+                        return (
+                          <button
+                            key={v.variantId}
+                            onClick={() => { setSelectedIdx(v.idx); setSelectedCartonSizeIdx(0); setQty(1); }}
+                            className={`px-3 py-2.5 rounded-lg text-xs font-medium border transition-all text-left ${
+                              isSelected
+                                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+                            }`}
+                          >
+                            <div className="font-semibold">{vWeight > 0 ? `${vWeight} KG` : v.variant.unitLabel || "Pack"}</div>
+                            <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
+                              ৳{Number(v.price).toLocaleString()}
+                            </div>
+                            {vTotalCartons > 0 && (
+                              <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                                📦 {vTotalCartons} carton
+                              </div>
+                            )}
+                            {vInCart && (
+                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                                {vInCart.quantity} in cart
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Loose dropdown */}
+                {looseVars.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                      Loose
+                    </h3>
+                    <select
+                      value={selectedIsLoose ? String(selectedIdx) : ""}
+                      onChange={(e) => {
+                        const idx = Number(e.target.value);
+                        if (!isNaN(idx)) {
+                          setSelectedIdx(idx);
+                          setSelectedCartonSizeIdx(0);
+                          setQty(1);
+                        }
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-lg text-sm font-medium border transition-all appearance-none bg-no-repeat bg-[length:16px] bg-[right_12px_center] cursor-pointer ${
+                        selectedIsLoose
+                          ? "bg-blue-50 text-blue-700 border-blue-300"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-blue-300"
                       }`}
+                      style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")` }}
                     >
-                      <div className="font-semibold">{label}</div>
-                      <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
-                        ৳{Number(v.price).toLocaleString()}
-                      </div>
-                      {vTotalCartons > 0 && (
-                        <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
-                          📦 {vTotalCartons} carton
-                        </div>
-                      )}
-                      {vInCart && (
-                        <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
-                          {vInCart.quantity} in cart
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
+                      <option value="">— Select loose variant —</option>
+                      {looseVars.map((v) => {
+                        const vTotalCartons = v.variant.totalCartonCount || 0;
+                        return (
+                          <option key={v.variantId} value={String(v.idx)}>
+                            {v.variant.brandName || "Loose"} — 📦 {vTotalCartons} carton — ৳{Number(v.price).toLocaleString()}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ─── Select Carton Size ─── */}
           {cartonOptions.length > 1 && (
