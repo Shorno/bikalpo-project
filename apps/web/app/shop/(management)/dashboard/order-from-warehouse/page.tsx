@@ -223,16 +223,17 @@ function VariantModal({
   const selected = product.variants[selectedIdx]!;
   const selectedBrandKey = selected.variant.brandName || "Unbranded";
   const inCart = cart.find((c) => c.variantId === selected.variantId);
-  const stockQty = Number(selected.availableQty) || 0;
-  const canOrder = selected.canOrder !== false && stockQty > 0;
+  const rawStockQty = Number(selected.availableQty) || 0;
+  const isLoose = (selected.variant.packType || "").toLowerCase() === "loose";
+  // For pack variants: orderable stock = carton count. For loose: orderable stock = KG.
+  const stockQty = isLoose ? rawStockQty : (selected.variant.cartonCount > 0 ? selected.variant.cartonCount : rawStockQty);
+  const canOrder = selected.canOrder !== false && (rawStockQty > 0 || selected.variant.cartonCount > 0);
   const packLabel = selected.variant.packType
     ? selected.variant.packType.charAt(0).toUpperCase() + selected.variant.packType.slice(1)
     : "Unit";
   const variantWeightKg = Number(selected.variant.weightKg) || 0;
   const unitSizeKg = Number(product.unitSize) || 0;
   const cartonWeightKg = unitSizeKg > 0 ? unitSizeKg : variantWeightKg;
-
-  const isLoose = (selected.variant.packType || "").toLowerCase() === "loose";
 
   let innerKg = variantWeightKg;
   let innerCount = unitSizeKg > 0 && variantWeightKg > 0
