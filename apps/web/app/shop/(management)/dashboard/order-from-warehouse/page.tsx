@@ -462,10 +462,13 @@ function VariantModal({
                     >
                       <option value="">— Select loose variant —</option>
                       {looseVars.map((v) => {
-                        const vTotalCartons = v.variant.totalCartonCount || 0;
+                        const opts = v.variant.cartonOptions || [];
+                        const sizeLabel = opts.length > 0
+                          ? opts.map(o => `${o.weightKg} KG × ${o.count}`).join(", ")
+                          : `${v.variant.totalCartonCount || 0} carton`;
                         return (
                           <option key={v.variantId} value={String(v.idx)}>
-                            {v.variant.brandName || "Loose"} — 📦 {vTotalCartons} carton — ৳{Number(v.price).toLocaleString()}
+                            {v.variant.brandName || "Loose"} — {sizeLabel} — ৳{Number(v.price).toLocaleString()}
                           </option>
                         );
                       })}
