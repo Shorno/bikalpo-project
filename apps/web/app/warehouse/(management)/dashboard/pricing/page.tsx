@@ -354,14 +354,16 @@ function CoreProductSection({
                       {item.packUnit}
                     </TableCell>
                     <TableCell>
-                      {cartonInfo ? (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium">
-                          📦 {cartonInfo.totalPacks} Pack ({cartonInfo.totalWeightKg} KG)
-                          {cartonInfo.activeCartonCount > 1 && (
-                            <span className="text-amber-500 ml-0.5">×{cartonInfo.activeCartonCount}</span>
-                          )}
-                        </span>
-                      ) : (
+                      {cartonInfo ? (() => {
+                        const perCartonKg = cartonInfo.activeCartonCount > 0
+                          ? (parseFloat(cartonInfo.totalWeightKg) / cartonInfo.activeCartonCount).toFixed(1).replace(/\.0$/, "")
+                          : cartonInfo.totalWeightKg;
+                        return (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium">
+                            📦 {perCartonKg} KG × {cartonInfo.activeCartonCount} carton
+                          </span>
+                        );
+                      })() : (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
