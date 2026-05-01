@@ -362,12 +362,12 @@ function CoreProductSection({
                         const packKg = item.weightKg || 0;
                         const packsPerCarton = !item.isLoose && packKg > 0 ? Math.round(perCartonKg / packKg) : 0;
                         return (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium flex-wrap">
-                            📦 {!item.isLoose && packsPerCarton > 0
-                              ? <>{packKg} KG × {packsPerCarton} pcs = {perCartonKgStr} KG × {cartonInfo.activeCartonCount} carton</>
-                              : <>{perCartonKgStr} KG × {cartonInfo.activeCartonCount} carton</>
-                            }
-                          </span>
+                          <div className="inline-flex flex-col gap-0.5 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-700 font-medium">
+                            {!item.isLoose && packsPerCarton > 0 && (
+                              <div>📦 {packKg} KG × {packsPerCarton} pcs</div>
+                            )}
+                            <div>{perCartonKgStr} KG × {cartonInfo.activeCartonCount} carton</div>
+                          </div>
                         );
                       })() : (
                         <span className="text-muted-foreground">—</span>
