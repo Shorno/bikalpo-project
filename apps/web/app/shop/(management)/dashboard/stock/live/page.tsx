@@ -151,6 +151,12 @@ export default function StockLivePage() {
                 const isExpanded = expandedId === p.productId;
                 const sc = STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG];
 
+                // Calculate total KG for pack variants
+                const totalPackKg = (p.variants || []).reduce((sum: number, v: any) => {
+                  const isPack = (v.packType || "").toLowerCase() !== "loose";
+                  return sum + (isPack ? v.availableQty * parseFloat(v.weightKg || "0") : 0);
+                }, 0);
+
                 return (
                   <>
                     {/* ── Product Row ── */}
@@ -202,10 +208,13 @@ export default function StockLivePage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-gray-900 tabular-nums">
                             {Math.round(p.totalPackQty)} Pack
+                            {totalPackKg > 0 && (
+                              <span className="text-xs text-gray-400 font-normal ml-1">({Math.round(totalPackKg * 100) / 100} KG)</span>
+                            )}
                           </span>
                           <span className="text-gray-300">+</span>
                           <span className="text-sm font-bold text-gray-900 tabular-nums">
-                            {Math.round(p.totalLooseQty * 100) / 100} {p.looseUnit} Loose
+                            {Math.round(p.totalLooseQty * 100) / 100} KG Loose
                           </span>
                         </div>
                       </TableCell>
@@ -246,7 +255,7 @@ export default function StockLivePage() {
                                   )}
                                 </h3>
                                 <p className="text-xs text-gray-500 mt-0.5">
-                                  📦 {Math.round(p.totalPackQty)} Pack + {Math.round(p.totalLooseQty * 100) / 100} {p.looseUnit} Loose
+                                  📦 {Math.round(p.totalPackQty)} Pack{totalPackKg > 0 ? ` (${Math.round(totalPackKg * 100) / 100} KG)` : ''} + {Math.round(p.totalLooseQty * 100) / 100} KG Loose
                                   <Badge
                                     variant="outline"
                                     className={`text-[10px] font-bold ml-2 ${sc.color}`}
@@ -284,18 +293,26 @@ export default function StockLivePage() {
                                         <TableRow key={v.variantId} className="hover:bg-gray-50/50">
                                           <TableCell className="py-2">
                                             <span className="text-sm font-medium text-gray-800">
-                                              {v.brandName || "No Brand"} · {v.weightKg}KG
+                                              {v.brandName || "No Brand"} · {(v.packType || "").toLowerCase() === "loose" ? "Loose" : `${v.weightKg}KG`}
                                             </span>
-                                            <span className="text-[10px] text-gray-400 ml-1.5">{v.unitLabel}</span>
+                                            <span className="text-[10px] text-gray-400 ml-1.5">
+                                              {(v.packType || "").toLowerCase() === "loose" ? "KG" : v.unitLabel}
+                                            </span>
                                           </TableCell>
                                           <TableCell className="py-2 text-sm font-bold text-gray-900 tabular-nums">
-                                            {v.availableQty} {v.unitLabel}
+                                            {(v.packType || "").toLowerCase() === "loose"
+                                              ? `${v.availableQty} KG`
+                                              : `${v.availableQty} Pack (${Math.round(v.availableQty * parseFloat(v.weightKg || "0") * 100) / 100} KG)`
+                                            }
                                           </TableCell>
                                           <TableCell className="py-2 text-sm text-gray-600 tabular-nums">
-                                            {v.inCartonQty} Pack
+                                            {v.inCartonQty > 0 ? `${v.inCartonQty} Pack` : "—"}
                                           </TableCell>
                                           <TableCell className="py-2 text-sm text-gray-600 tabular-nums">
-                                            {Math.round(v.looseQty * 100) / 100} {v.unitLabel}
+                                            {(v.packType || "").toLowerCase() === "loose"
+                                              ? `${Math.round(v.looseQty * 100) / 100} KG`
+                                              : v.looseQty > 0 ? `${Math.round(v.looseQty * 100) / 100} Pack` : "—"
+                                            }
                                           </TableCell>
                                           <TableCell className="text-center py-2">
                                             <span className={`inline-block w-2 h-2 rounded-full ${vs.dot}`} />
@@ -318,7 +335,7 @@ export default function StockLivePage() {
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-bold text-gray-900 tabular-nums">
-                                  {Math.round(p.totalLooseQty * 100) / 100} {p.looseUnit}
+                                  {Math.round(p.totalLooseQty * 100) / 100} KG
                                 </span>
                                 <span className={`w-2 h-2 rounded-full ${p.totalLooseQty > 0 ? "bg-emerald-500" : "bg-red-500"}`} />
                               </div>

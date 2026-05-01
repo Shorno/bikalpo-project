@@ -45,6 +45,7 @@ import {
     purchaseItem,
     purchase,
     invoice,
+    carton,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -265,8 +266,8 @@ const b2bQueries = {
                         variantPrice > 0
                             ? variantPrice
                             : Number.isFinite(basePrice)
-                              ? basePrice
-                              : 0,
+                                ? basePrice
+                                : 0,
                 };
             });
 
@@ -596,8 +597,13 @@ const managementQueries = {
                 const pid = prod.id;
                 const qty = parseFloat(inv.availableQty || "0");
                 const cartonQty = parseFloat(inv.inCartonQty || "0");
-                const looseQty = qty - cartonQty;
+                const isLoose = (inv.variant.packagingType || "").toLowerCase() === "loose";
                 const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
+
+                // Pack variants: all qty counts as packs
+                // Loose variants: all qty counts as loose KG
+                const packQty = isLoose ? 0 : qty;
+                const looseQty = isLoose ? qty : 0;
 
                 if (!productMap.has(pid)) {
                     productMap.set(pid, {
@@ -610,14 +616,14 @@ const managementQueries = {
                         totalAvailableQty: 0,
                         totalPackQty: 0,
                         totalLooseQty: 0,
-                        looseUnit: inv.variant.unitLabel || "pcs",
+                        looseUnit: "KG",
                         variants: [],
                     });
                 }
 
                 const group = productMap.get(pid)!;
                 group.totalAvailableQty += qty;
-                group.totalPackQty += cartonQty;
+                group.totalPackQty += packQty;
                 group.totalLooseQty += looseQty;
 
                 group.variants.push({
@@ -626,11 +632,11 @@ const managementQueries = {
                     sku: inv.variant.sku,
                     brandName: inv.variant.brand?.name ?? null,
                     weightKg: inv.variant.weightKg,
-                    unitLabel: inv.variant.unitLabel,
+                    unitLabel: isLoose ? "KG" : inv.variant.unitLabel,
                     packType: inv.variant.packagingType,
                     availableQty: qty,
                     inCartonQty: cartonQty,
-                    looseQty: Math.max(0, looseQty),
+                    looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),
                     retailPrice,
                 });
             }
@@ -1204,7 +1210,7 @@ const managementQueries = {
                     verified: pack.status === "verified" ? qty : 0,
                     rejected: pack.status === "rejected" ? qty : 0,
                     condition: pack.status === "rejected" ? "damaged" :
-                               pack.status === "verified" ? "reusable" : "pending",
+                        pack.status === "verified" ? "reusable" : "pending",
                 });
             }
 
@@ -3186,7 +3192,36 @@ const warehouseOrderQueries = {
 
                 const rp = Number(inv.retailPrice || 0);
                 const vp = Number(inv.variant?.price || 0);
-                const unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
+                let unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
+
+                // For loose variants: price is per-KG, need to multiply by carton weight
+                const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
+                console.log(`[ORDER-PRICE] variantId=${item.variantId}, packType="${inv.variant?.packType}", isLoose=${isLooseVariant}, weightKg=${inv.variant?.weightKg}, unitPrice=${unitPrice}`);
+                if (isLooseVariant) {
+                    const variantWeightKg = Number(inv.variant?.weightKg || 0);
+                    const rawUnitPrice = Number(unitPrice);
+
+                    // Get carton weight from active cartons
+                    const activeCarton = await db.query.carton.findFirst({
+                        where: and(
+                            eq(carton.warehouseId, warehouseId),
+                            eq(carton.variantId, item.variantId),
+                            eq(carton.status, "active"),
+                        ),
+                        columns: { totalWeightKg: true },
+                    });
+
+                    console.log(`[ORDER-PRICE] activeCarton=`, activeCarton, `cartonWeightKg=${Number(activeCarton?.totalWeightKg || 0)}`);
+                    if (activeCarton) {
+                        const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
+                        const perKg = variantWeightKg > 0
+                            ? rawUnitPrice / variantWeightKg
+                            : rawUnitPrice; // if weightKg=0, price IS per-KG
+                        unitPrice = (perKg * cartonWeightKg).toFixed(2);
+                        console.log(`[ORDER-PRICE] FIXED: perKg=${perKg}, cartonKg=${cartonWeightKg}, newUnitPrice=${unitPrice}`);
+                    }
+                }
+
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
                 // Validate targetVariantId for pack mode
@@ -3869,58 +3904,58 @@ const warehouseConnectionEndpoints = {
             summary: "Get recently connected warehouses (smart memory)",
         })
         .handler(
-        async ({ context }) => {
-            const shopId = context.session.user.id;
+            async ({ context }) => {
+                const shopId = context.session.user.id;
 
-            const connections = await db
-                .select({
-                    connectionId: shopWarehouseConnection.id,
-                    status: shopWarehouseConnection.status,
-                    connectedAt: shopWarehouseConnection.connectedAt,
-                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
-                    warehouseId: user.id,
-                    warehouseName: user.warehouseName,
-                    warehouseSlug: user.warehouseSlug,
-                    warehouseAddress: user.warehouseAddress,
-                    name: user.name,
-                })
-                .from(shopWarehouseConnection)
-                .innerJoin(
-                    user,
-                    eq(shopWarehouseConnection.warehouseId, user.id),
-                )
-                .where(
-                    and(
-                        eq(shopWarehouseConnection.shopId, shopId),
-                        eq(shopWarehouseConnection.status, "active"),
-                    ),
-                )
-                .orderBy(desc(shopWarehouseConnection.lastOrderedAt));
+                const connections = await db
+                    .select({
+                        connectionId: shopWarehouseConnection.id,
+                        status: shopWarehouseConnection.status,
+                        connectedAt: shopWarehouseConnection.connectedAt,
+                        lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                        warehouseId: user.id,
+                        warehouseName: user.warehouseName,
+                        warehouseSlug: user.warehouseSlug,
+                        warehouseAddress: user.warehouseAddress,
+                        name: user.name,
+                    })
+                    .from(shopWarehouseConnection)
+                    .innerJoin(
+                        user,
+                        eq(shopWarehouseConnection.warehouseId, user.id),
+                    )
+                    .where(
+                        and(
+                            eq(shopWarehouseConnection.shopId, shopId),
+                            eq(shopWarehouseConnection.status, "active"),
+                        ),
+                    )
+                    .orderBy(desc(shopWarehouseConnection.lastOrderedAt));
 
-            // Get product counts for each warehouse
-            const result = await Promise.all(
-                connections.map(async (conn) => {
-                    const [countResult] = await db
-                        .select({ count: count() })
-                        .from(inventory)
-                        .where(
-                            and(
-                                eq(inventory.ownerType, "warehouse"),
-                                eq(inventory.ownerId, conn.warehouseId),
-                                sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
-                            ),
-                        );
+                // Get product counts for each warehouse
+                const result = await Promise.all(
+                    connections.map(async (conn) => {
+                        const [countResult] = await db
+                            .select({ count: count() })
+                            .from(inventory)
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, conn.warehouseId),
+                                    sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                                ),
+                            );
 
-                    return {
-                        ...conn,
-                        productCount: countResult?.count || 0,
-                    };
-                }),
-            );
+                        return {
+                            ...conn,
+                            productCount: countResult?.count || 0,
+                        };
+                    }),
+                );
 
-            return { warehouses: result };
-        },
-    ),
+                return { warehouses: result };
+            },
+        ),
 
     /**
      * Step 4: Get warehouse products filtered by shop's allowed categories.
@@ -4010,6 +4045,7 @@ const warehouseConnectionEndpoints = {
                     inventoryId: inventory.id,
                     variantId: inventory.variantId,
                     availableQty: inventory.availableQty,
+                    inCartonQty: inventory.inCartonQty,
                     retailPrice: inventory.retailPrice,
                     productId: product.id,
                     productName: product.name,
@@ -4027,6 +4063,7 @@ const warehouseConnectionEndpoints = {
                     variantPackCountInside: productVariant.packCountInside,
                     productUnitSize: product.size,
                     productBrandId: product.brandId,
+                    variantBrandId: productVariant.brandId,
                     brandName: brand.name,
                 })
                 .from(inventory)
@@ -4042,9 +4079,10 @@ const warehouseConnectionEndpoints = {
                     category,
                     eq(product.categoryId, category.id),
                 )
+                // Prefer variant-level brand, fall back to product-level brand
                 .leftJoin(
                     brand,
-                    eq(product.brandId, brand.id),
+                    eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`),
                 )
                 .where(and(...conditions))
                 .orderBy(asc(category.name), asc(product.name))
@@ -4066,10 +4104,15 @@ const warehouseConnectionEndpoints = {
                 const vp = Number(item.variantPrice || 0);
                 const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
 
+                // Deduct carton-committed qty from available
+                const rawQty = Number(item.availableQty || 0);
+                const inCarton = Number(item.inCartonQty || 0);
+                const effectiveQty = Math.max(0, rawQty - inCarton);
+
                 return {
                     inventoryId: item.inventoryId,
                     variantId: item.variantId,
-                    availableQty: item.availableQty,
+                    availableQty: effectiveQty.toFixed(2),
                     price,
                     canOrder,
                     product: {
@@ -4088,13 +4131,83 @@ const warehouseConnectionEndpoints = {
                         packType: item.variantPackType,
                         innerPackSizeKg: item.variantInnerPackSizeKg,
                         packCountInside: item.variantPackCountInside,
-                        brandId: item.productBrandId,
+                        brandId: item.variantBrandId ?? item.productBrandId,
                         brandName: item.brandName,
                     },
                 };
             });
 
-            return { products };
+            // Enrich with carton data per variant
+            const allVariantIds = products.map((p) => p.variantId);
+            let cartonMap = new Map<number, { cartonCount: number; totalWeightKg: number }>();
+
+            if (allVariantIds.length > 0) {
+                const activeCartons = await db.query.carton.findMany({
+                    where: and(
+                        eq(carton.warehouseId, warehouseId),
+                        eq(carton.status, "active"),
+                        inArray(carton.variantId, allVariantIds),
+                    ),
+                });
+
+                for (const c of activeCartons) {
+                    if (!cartonMap.has(c.variantId)) {
+                        cartonMap.set(c.variantId, { cartonCount: 0, totalWeightKg: 0 });
+                    }
+                    const entry = cartonMap.get(c.variantId)!;
+                    entry.cartonCount += 1;
+                    entry.totalWeightKg += parseFloat(c.totalWeightKg);
+                }
+            }
+
+            // Attach carton data to each product
+            // Build cartonOptions: group active cartons by totalWeightKg for each variant
+            const cartonOptionsByVariant = new Map<number, { weightKg: number; count: number; totalKg: number; packsPerCarton: number }[]>();
+            if (allVariantIds.length > 0) {
+                const activeCartons = await db.query.carton.findMany({
+                    where: and(
+                        eq(carton.warehouseId, warehouseId),
+                        eq(carton.status, "active"),
+                        inArray(carton.variantId, allVariantIds),
+                    ),
+                    columns: { variantId: true, totalWeightKg: true, totalPacks: true },
+                });
+                for (const c of activeCartons) {
+                    if (!cartonOptionsByVariant.has(c.variantId)) {
+                        cartonOptionsByVariant.set(c.variantId, []);
+                    }
+                    const list = cartonOptionsByVariant.get(c.variantId)!;
+                    const wt = parseFloat(c.totalWeightKg);
+                    const existing = list.find((o) => o.totalKg === wt);
+                    if (existing) {
+                        existing.count += 1;
+                    } else {
+                        list.push({
+                            weightKg: wt,      // per-carton weight
+                            totalKg: wt,        // same as weightKg (per-carton)
+                            count: 1,           // how many cartons of this size
+                            packsPerCarton: c.totalPacks || 0,
+                        });
+                    }
+                }
+            }
+
+            const enrichedProducts = products.map((p) => {
+                const cd = cartonMap.get(p.variantId);
+                const opts = cartonOptionsByVariant.get(p.variantId) || [];
+                return {
+                    ...p,
+                    variant: {
+                        ...p.variant,
+                        cartonCount: cd?.cartonCount ?? 0,
+                        totalCartonCount: cd?.cartonCount ?? 0,
+                        cartonWeightKg: (cd?.totalWeightKg ?? 0).toFixed(1),
+                        cartonOptions: opts,
+                    },
+                };
+            });
+
+            return { products: enrichedProducts };
         }),
 };
 
@@ -4624,7 +4737,7 @@ const publicCatalogEndpoints = {
             }
 
             // 5. Extract unique brands across all linked products
-            const brandMap = new Map<number, { id: number; name: string }>(); 
+            const brandMap = new Map<number, { id: number; name: string }>();
             for (const p of linkedProducts) {
                 if (p.brand) {
                     brandMap.set(p.brand.id, { id: p.brand.id, name: p.brand.name });
