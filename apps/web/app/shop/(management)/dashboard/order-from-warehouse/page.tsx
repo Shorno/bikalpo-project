@@ -399,7 +399,7 @@ function VariantModal({
                   const vTotalCartons = v.variant.totalCartonCount || 0;
                   const isLooseV = (v.variant.packType || "").toLowerCase() === "loose";
                   const label = isLooseV
-                    ? (v.variant.brandName || "Loose")
+                    ? "Loose"
                     : `${vWeight > 0 ? `${vWeight} KG` : v.variant.unitLabel || "Pack"}`;
 
                   return (
