@@ -373,7 +373,7 @@ function VariantModal({
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-800">
                 {isLoose
-                  ? `Loose: ${variantWeightKg > 0 ? variantWeightKg : (Number(selected.variant.unitLabel) || unitSizeKg)} KG`
+                  ? `Loose${selected.variant.brandName ? ` (${selected.variant.brandName})` : ""}`
                   : <>Pack: {cartonWeightKg} KG{innerCount > 0 && ` (${innerLabel} × ${innerCount} pcs)`} – {packLabel}</>
                 }
               </div>
@@ -474,7 +474,7 @@ function VariantModal({
                                 : "bg-white text-gray-700 border-gray-200 hover:border-teal-300 hover:bg-teal-50"
                             }`}
                           >
-                            <div>Loose ({vWeight}kg)</div>
+                            <div>{v.variant.brandName || "Loose"} ({(Number(v.availableQty) || 0)} KG)</div>
                             <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-gray-400"}`}>
                               ৳{Number(v.price).toLocaleString()}
                             </div>

@@ -4010,6 +4010,7 @@ const warehouseConnectionEndpoints = {
                     inventoryId: inventory.id,
                     variantId: inventory.variantId,
                     availableQty: inventory.availableQty,
+                    inCartonQty: inventory.inCartonQty,
                     retailPrice: inventory.retailPrice,
                     productId: product.id,
                     productName: product.name,
@@ -4027,6 +4028,7 @@ const warehouseConnectionEndpoints = {
                     variantPackCountInside: productVariant.packCountInside,
                     productUnitSize: product.size,
                     productBrandId: product.brandId,
+                    variantBrandId: productVariant.brandId,
                     brandName: brand.name,
                 })
                 .from(inventory)
@@ -4042,9 +4044,10 @@ const warehouseConnectionEndpoints = {
                     category,
                     eq(product.categoryId, category.id),
                 )
+                // Prefer variant-level brand, fall back to product-level brand
                 .leftJoin(
                     brand,
-                    eq(product.brandId, brand.id),
+                    eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`),
                 )
                 .where(and(...conditions))
                 .orderBy(asc(category.name), asc(product.name))
@@ -4066,10 +4069,15 @@ const warehouseConnectionEndpoints = {
                 const vp = Number(item.variantPrice || 0);
                 const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
 
+                // Deduct carton-committed qty from available
+                const rawQty = Number(item.availableQty || 0);
+                const inCarton = Number(item.inCartonQty || 0);
+                const effectiveQty = Math.max(0, rawQty - inCarton);
+
                 return {
                     inventoryId: item.inventoryId,
                     variantId: item.variantId,
-                    availableQty: item.availableQty,
+                    availableQty: effectiveQty.toFixed(2),
                     price,
                     canOrder,
                     product: {
@@ -4088,7 +4096,7 @@ const warehouseConnectionEndpoints = {
                         packType: item.variantPackType,
                         innerPackSizeKg: item.variantInnerPackSizeKg,
                         packCountInside: item.variantPackCountInside,
-                        brandId: item.productBrandId,
+                        brandId: item.variantBrandId ?? item.productBrandId,
                         brandName: item.brandName,
                     },
                 };
