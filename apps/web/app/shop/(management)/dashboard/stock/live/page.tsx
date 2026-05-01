@@ -302,7 +302,7 @@ export default function StockLivePage() {
                                           <TableCell className="py-2 text-sm font-bold text-gray-900 tabular-nums">
                                             {(v.packType || "").toLowerCase() === "loose"
                                               ? `${v.availableQty} KG`
-                                              : `${v.availableQty} pcs (${Math.round(v.availableQty * parseFloat(v.weightKg || "0") * 100) / 100} KG)`
+                                              : `${v.availableQty} Pack (${Math.round(v.availableQty * parseFloat(v.weightKg || "0") * 100) / 100} KG)`
                                             }
                                           </TableCell>
                                           <TableCell className="py-2 text-sm text-gray-600 tabular-nums">
@@ -311,7 +311,7 @@ export default function StockLivePage() {
                                           <TableCell className="py-2 text-sm text-gray-600 tabular-nums">
                                             {(v.packType || "").toLowerCase() === "loose"
                                               ? `${Math.round(v.looseQty * 100) / 100} KG`
-                                              : v.looseQty > 0 ? `${Math.round(v.looseQty * 100) / 100} pcs` : "—"
+                                              : v.looseQty > 0 ? `${Math.round(v.looseQty * 100) / 100} Pack` : "—"
                                             }
                                           </TableCell>
                                           <TableCell className="text-center py-2">
