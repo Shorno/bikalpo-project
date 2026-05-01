@@ -438,16 +438,20 @@ function VariantModal({
           {brandVariants.length > 1 && (() => {
             const packVariants = brandVariants.filter(v => (v.variant.packType || "").toLowerCase() !== "loose");
             const looseVariants = brandVariants.filter(v => (v.variant.packType || "").toLowerCase() === "loose");
+            // Loose variants that have cartons should also appear in pack type section
+            const looseWithCartons = looseVariants.filter(v => (v.variant.cartonCount || 0) > 0);
+            const hasPackSection = packVariants.length > 0 || looseWithCartons.length > 0;
 
             return (
               <div className="space-y-3">
-                {/* Pack type buttons */}
-                {packVariants.length > 0 && (
+                {/* Pack type buttons (including cartons from loose) */}
+                {hasPackSection && (
                   <div>
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                       Select Pack Type
                     </h3>
                     <div className="flex flex-wrap gap-2">
+                      {/* Standard pack variants */}
                       {packVariants.map((v) => {
                         const vWeight = Number(v.variant.weightKg) || 0;
                         const isSelected = v.idx === selectedIdx;
@@ -467,7 +471,7 @@ function VariantModal({
                             }`}
                           >
                             <div className="font-semibold">{vWeight} KG</div>
-                            {vKgPerCarton > 0 && (
+                            {vKgPerCarton > 0 && vPacksPerCarton > 0 && (
                               <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
                                 {vKgPerCarton} KG ({vWeight} KG × {vPacksPerCarton} pcs) – Carton
                               </div>
@@ -488,11 +492,44 @@ function VariantModal({
                           </button>
                         );
                       })}
+
+                      {/* Cartons created from loose stock */}
+                      {looseWithCartons.map((v) => {
+                        const isSelected = v.idx === selectedIdx;
+                        const vInCart = cart.find((c) => c.variantId === v.variantId);
+                        const vCartons = v.variant.cartonCount || 0;
+                        const vKgPerCarton = v.variant.kgPerCarton || 0;
+
+                        return (
+                          <button
+                            key={`carton-${v.variantId}`}
+                            onClick={() => { setSelectedIdx(v.idx); setQty(1); }}
+                            className={`px-3 py-2.5 rounded-lg text-xs font-medium border transition-all text-left ${
+                              isSelected
+                                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+                            }`}
+                          >
+                            <div className="font-semibold">{vKgPerCarton > 0 ? `${vKgPerCarton} KG` : "Carton"} – Carton</div>
+                            <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
+                              ৳{Number(v.price).toLocaleString()}
+                            </div>
+                            <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                              📦 {vCartons} carton ({v.variant.cartonWeightKg} KG)
+                            </div>
+                            {vInCart && (
+                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
+                                {vInCart.quantity} in cart
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
-                {/* Loose buttons */}
+                {/* Loose buttons (no carton info — cartons shown above) */}
                 {looseVariants.length > 0 && (
                   <div>
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -502,7 +539,6 @@ function VariantModal({
                       {looseVariants.map((v) => {
                         const isSelected = v.idx === selectedIdx;
                         const vInCart = cart.find((c) => c.variantId === v.variantId);
-                        const vCartons = v.variant.cartonCount || 0;
                         return (
                           <button
                             key={v.variantId}
@@ -517,11 +553,6 @@ function VariantModal({
                             <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-gray-400"}`}>
                               ৳{Number(v.price).toLocaleString()}
                             </div>
-                            {vCartons > 0 && (
-                              <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-blue-500"}`}>
-                                📦 {vCartons} carton ({v.variant.cartonWeightKg} KG)
-                              </div>
-                            )}
                             {vInCart && (
                               <div className={`text-[9px] mt-0.5 ${isSelected ? "text-teal-200" : "text-teal-500"}`}>
                                 {vInCart.quantity} in cart
