@@ -4157,7 +4157,7 @@ const warehouseConnectionEndpoints = {
 
             // Attach carton data to each product
             // Build cartonOptions: group active cartons by totalWeightKg for each variant
-            const cartonOptionsByVariant = new Map<number, { totalKg: number; count: number }[]>();
+            const cartonOptionsByVariant = new Map<number, { weightKg: number; count: number; totalKg: number; packsPerCarton: number }[]>();
             if (allVariantIds.length > 0) {
                 const activeCartons = await db.query.carton.findMany({
                     where: and(
@@ -4165,7 +4165,7 @@ const warehouseConnectionEndpoints = {
                         eq(carton.status, "active"),
                         inArray(carton.variantId, allVariantIds),
                     ),
-                    columns: { variantId: true, totalWeightKg: true },
+                    columns: { variantId: true, totalWeightKg: true, totalPacks: true },
                 });
                 for (const c of activeCartons) {
                     if (!cartonOptionsByVariant.has(c.variantId)) {
@@ -4177,7 +4177,12 @@ const warehouseConnectionEndpoints = {
                     if (existing) {
                         existing.count += 1;
                     } else {
-                        list.push({ totalKg: wt, count: 1 });
+                        list.push({
+                            weightKg: wt,      // per-carton weight
+                            totalKg: wt,        // same as weightKg (per-carton)
+                            count: 1,           // how many cartons of this size
+                            packsPerCarton: c.totalPacks || 0,
+                        });
                     }
                 }
             }
