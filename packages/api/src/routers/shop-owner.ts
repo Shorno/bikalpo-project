@@ -597,8 +597,13 @@ const managementQueries = {
                 const pid = prod.id;
                 const qty = parseFloat(inv.availableQty || "0");
                 const cartonQty = parseFloat(inv.inCartonQty || "0");
-                const looseQty = qty - cartonQty;
+                const isLoose = (inv.variant.packagingType || "").toLowerCase() === "loose";
                 const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
+
+                // Pack variants: all qty counts as packs
+                // Loose variants: all qty counts as loose KG
+                const packQty = isLoose ? 0 : qty;
+                const looseQty = isLoose ? qty : 0;
 
                 if (!productMap.has(pid)) {
                     productMap.set(pid, {
@@ -611,14 +616,14 @@ const managementQueries = {
                         totalAvailableQty: 0,
                         totalPackQty: 0,
                         totalLooseQty: 0,
-                        looseUnit: (inv.variant.packagingType || "").toLowerCase() === "loose" ? "KG" : (inv.variant.unitLabel || "pcs"),
+                        looseUnit: "KG",
                         variants: [],
                     });
                 }
 
                 const group = productMap.get(pid)!;
                 group.totalAvailableQty += qty;
-                group.totalPackQty += cartonQty;
+                group.totalPackQty += packQty;
                 group.totalLooseQty += looseQty;
 
                 group.variants.push({
@@ -627,11 +632,11 @@ const managementQueries = {
                     sku: inv.variant.sku,
                     brandName: inv.variant.brand?.name ?? null,
                     weightKg: inv.variant.weightKg,
-                    unitLabel: (inv.variant.packagingType || "").toLowerCase() === "loose" ? "KG" : inv.variant.unitLabel,
+                    unitLabel: isLoose ? "KG" : inv.variant.unitLabel,
                     packType: inv.variant.packagingType,
                     availableQty: qty,
                     inCartonQty: cartonQty,
-                    looseQty: Math.max(0, looseQty),
+                    looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),
                     retailPrice,
                 });
             }
