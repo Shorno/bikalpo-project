@@ -234,6 +234,20 @@ function VariantModal({
   const stockQty = selectedCarton?.count ?? 0;
   const canOrder = selected.canOrder !== false && stockQty > 0;
 
+  // Calculate per-carton price
+  const isLooseVariant = (selected.variant.packType || "").toLowerCase() === "loose";
+  const variantWeightKg = Number(selected.variant.weightKg) || 0;
+  const rawPrice = Number(selected.price) || 0;
+  const perCartonPrice = (() => {
+    if (isLooseVariant && variantWeightKg > 0 && selectedCarton) {
+      // Loose: stored price is per-KG × variantWeight, so per-KG = price / variantWeight
+      const perKg = rawPrice / variantWeightKg;
+      return perKg * selectedCarton.weightKg;
+    }
+    // Pack: price is per pack unit — already the carton price
+    return rawPrice;
+  })();
+
   // Get variants for the currently selected brand
   const currentBrandGroup = brandGroups.find(bg => bg.brandName === selectedBrandKey);
   const brandVariants = currentBrandGroup?.variants ?? [];
@@ -371,7 +385,7 @@ function VariantModal({
           {/* Price & Stock */}
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-xl font-bold text-gray-900">৳{Number(selected.price).toLocaleString()}</div>
+              <div className="text-xl font-bold text-gray-900">৳{perCartonPrice.toLocaleString()}</div>
               <div className="text-[10px] text-gray-400">per Carton</div>
             </div>
             <div className="text-right">
@@ -546,8 +560,8 @@ function VariantModal({
 
                 {/* Total calculation */}
                 <div className="flex items-center justify-between mt-2 px-2 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-500">
-                  <span>Total: {qty} Carton × ৳{Number(selected.price).toLocaleString()}</span>
-                  <span className="font-bold text-gray-900">= ৳{(qty * Number(selected.price)).toLocaleString()}</span>
+                  <span>Total: {qty} Carton × ৳{perCartonPrice.toLocaleString()}</span>
+                  <span className="font-bold text-gray-900">= ৳{(qty * perCartonPrice).toLocaleString()}</span>
                 </div>
 
                 {selectedCarton && (
@@ -584,7 +598,7 @@ function VariantModal({
                         productName: product.name,
                         unitLabel: "Carton",
                         weightKg: selectedCarton ? String(selectedCarton.weightKg) : selected.variant.weightKg,
-                        retailPrice: selected.price,
+                        retailPrice: String(perCartonPrice),
                         productImage: product.image || "",
                         innerPackSizeKg: selected.variant.innerPackSizeKg,
                         packCountInside: selected.variant.packCountInside,
@@ -595,7 +609,7 @@ function VariantModal({
                     }}
                     className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 transition-colors"
                   >
-                    <ShoppingCart size={14} /> Add to Cart — ৳{(qty * Number(selected.price)).toLocaleString()}
+                    <ShoppingCart size={14} /> Add to Cart — ৳{(qty * perCartonPrice).toLocaleString()}
                   </button>
                   <button onClick={onClose} className="px-4 py-2.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
                     Close
