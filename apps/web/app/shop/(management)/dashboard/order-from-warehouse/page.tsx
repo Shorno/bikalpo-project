@@ -987,7 +987,3 @@ export default function OrderFromWarehousePage() {
     </div>
   );
 }
-      )}
-    </div >
-  );
-}
