@@ -4103,14 +4103,10 @@ const warehouseConnectionEndpoints = {
                 };
             });
 
-            // Enrich with carton data per variant
+            // Enrich with carton data per variant, grouped by carton weight
             const allVariantIds = products.map((p) => p.variantId);
-            let cartonMap = new Map<number, {
-                cartonCount: number;
-                totalWeightKg: number;
-                kgPerCarton: number;
-                packsPerCarton: number;
-            }>();
+            // Map: variantId → Map<weightKg, { count, totalKg, packsPerCarton }>
+            let cartonMap = new Map<number, Map<number, { count: number; totalKg: number; packsPerCarton: number }>>();
 
             if (allVariantIds.length > 0) {
                 const activeCartons = await db.query.carton.findMany({
@@ -4123,34 +4119,51 @@ const warehouseConnectionEndpoints = {
 
                 for (const c of activeCartons) {
                     if (!cartonMap.has(c.variantId)) {
-                        // Use first carton as representative for per-carton breakdown
-                        cartonMap.set(c.variantId, {
-                            cartonCount: 0,
-                            totalWeightKg: 0,
-                            kgPerCarton: parseFloat(c.totalWeightKg),
-                            packsPerCarton: c.totalPacks,
-                        });
+                        cartonMap.set(c.variantId, new Map());
                     }
-                    const entry = cartonMap.get(c.variantId)!;
-                    entry.cartonCount += 1;
-                    entry.totalWeightKg += parseFloat(c.totalWeightKg);
+                    const weightKey = parseFloat(c.totalWeightKg);
+                    const sizeMap = cartonMap.get(c.variantId)!;
+                    if (!sizeMap.has(weightKey)) {
+                        sizeMap.set(weightKey, { count: 0, totalKg: 0, packsPerCarton: c.totalPacks });
+                    }
+                    const entry = sizeMap.get(weightKey)!;
+                    entry.count += 1;
+                    entry.totalKg += weightKey;
                 }
             }
 
-            // Attach carton data to each product
-            const enrichedProducts = products.map((p) => {
-                const cd = cartonMap.get(p.variantId);
-                return {
-                    ...p,
-                    variant: {
-                        ...p.variant,
-                        cartonCount: cd?.cartonCount ?? 0,
-                        cartonWeightKg: (cd?.totalWeightKg ?? 0).toFixed(1),
-                        kgPerCarton: cd?.kgPerCarton ?? 0,
-                        packsPerCarton: cd?.packsPerCarton ?? 0,
-                    },
-                };
-            });
+            // Build cartonOptions array and filter out variants with no cartons
+            const enrichedProducts = products
+                .map((p) => {
+                    const sizeMap = cartonMap.get(p.variantId);
+                    const cartonOptions: { weightKg: number; count: number; totalKg: number; packsPerCarton: number }[] = [];
+                    let totalCartonCount = 0;
+
+                    if (sizeMap) {
+                        for (const [weightKg, data] of sizeMap.entries()) {
+                            cartonOptions.push({
+                                weightKg,
+                                count: data.count,
+                                totalKg: data.totalKg,
+                                packsPerCarton: data.packsPerCarton,
+                            });
+                            totalCartonCount += data.count;
+                        }
+                        // Sort by weight ascending
+                        cartonOptions.sort((a, b) => a.weightKg - b.weightKg);
+                    }
+
+                    return {
+                        ...p,
+                        variant: {
+                            ...p.variant,
+                            cartonOptions,
+                            totalCartonCount,
+                        },
+                    };
+                })
+                // Only show variants that have active cartons
+                .filter((p) => p.variant.totalCartonCount > 0);
 
             return { products: enrichedProducts };
         }),
