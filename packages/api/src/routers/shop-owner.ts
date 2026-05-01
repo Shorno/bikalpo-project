@@ -3187,7 +3187,33 @@ const warehouseOrderQueries = {
 
                 const rp = Number(inv.retailPrice || 0);
                 const vp = Number(inv.variant?.price || 0);
-                const unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
+                let unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
+
+                // For loose variants: price is per-KG, need to multiply by carton weight
+                const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
+                if (isLooseVariant) {
+                    const variantWeightKg = Number(inv.variant?.weightKg || 0);
+                    const rawUnitPrice = Number(unitPrice);
+
+                    // Get carton weight from active cartons
+                    const activeCarton = await db.query.carton.findFirst({
+                        where: and(
+                            eq(carton.warehouseId, warehouseId),
+                            eq(carton.variantId, item.variantId),
+                            eq(carton.status, "active"),
+                        ),
+                        columns: { totalWeightKg: true },
+                    });
+
+                    if (activeCarton) {
+                        const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
+                        const perKg = variantWeightKg > 0
+                            ? rawUnitPrice / variantWeightKg
+                            : rawUnitPrice; // if weightKg=0, price IS per-KG
+                        unitPrice = (perKg * cartonWeightKg).toFixed(2);
+                    }
+                }
+
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
                 // Validate targetVariantId for pack mode
