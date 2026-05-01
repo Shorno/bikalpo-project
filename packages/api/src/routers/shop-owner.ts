@@ -3191,6 +3191,7 @@ const warehouseOrderQueries = {
 
                 // For loose variants: price is per-KG, need to multiply by carton weight
                 const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
+                console.log(`[ORDER-PRICE] variantId=${item.variantId}, packType="${inv.variant?.packType}", isLoose=${isLooseVariant}, weightKg=${inv.variant?.weightKg}, unitPrice=${unitPrice}`);
                 if (isLooseVariant) {
                     const variantWeightKg = Number(inv.variant?.weightKg || 0);
                     const rawUnitPrice = Number(unitPrice);
@@ -3205,12 +3206,14 @@ const warehouseOrderQueries = {
                         columns: { totalWeightKg: true },
                     });
 
+                    console.log(`[ORDER-PRICE] activeCarton=`, activeCarton, `cartonWeightKg=${Number(activeCarton?.totalWeightKg || 0)}`);
                     if (activeCarton) {
                         const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
                         const perKg = variantWeightKg > 0
                             ? rawUnitPrice / variantWeightKg
                             : rawUnitPrice; // if weightKg=0, price IS per-KG
                         unitPrice = (perKg * cartonWeightKg).toFixed(2);
+                        console.log(`[ORDER-PRICE] FIXED: perKg=${perKg}, cartonKg=${cartonWeightKg}, newUnitPrice=${unitPrice}`);
                     }
                 }
 
@@ -4153,14 +4156,43 @@ const warehouseConnectionEndpoints = {
             }
 
             // Attach carton data to each product
+            // Build cartonOptions: group active cartons by totalWeightKg for each variant
+            const cartonOptionsByVariant = new Map<number, { totalKg: number; count: number }[]>();
+            if (allVariantIds.length > 0) {
+                const activeCartons = await db.query.carton.findMany({
+                    where: and(
+                        eq(carton.warehouseId, warehouseId),
+                        eq(carton.status, "active"),
+                        inArray(carton.variantId, allVariantIds),
+                    ),
+                    columns: { variantId: true, totalWeightKg: true },
+                });
+                for (const c of activeCartons) {
+                    if (!cartonOptionsByVariant.has(c.variantId)) {
+                        cartonOptionsByVariant.set(c.variantId, []);
+                    }
+                    const list = cartonOptionsByVariant.get(c.variantId)!;
+                    const wt = parseFloat(c.totalWeightKg);
+                    const existing = list.find((o) => o.totalKg === wt);
+                    if (existing) {
+                        existing.count += 1;
+                    } else {
+                        list.push({ totalKg: wt, count: 1 });
+                    }
+                }
+            }
+
             const enrichedProducts = products.map((p) => {
                 const cd = cartonMap.get(p.variantId);
+                const opts = cartonOptionsByVariant.get(p.variantId) || [];
                 return {
                     ...p,
                     variant: {
                         ...p.variant,
                         cartonCount: cd?.cartonCount ?? 0,
+                        totalCartonCount: cd?.cartonCount ?? 0,
                         cartonWeightKg: (cd?.totalWeightKg ?? 0).toFixed(1),
+                        cartonOptions: opts,
                     },
                 };
             });
@@ -6511,45 +6543,6 @@ const shopProductEndpoints = {
                 totalDamageQty: result?.totalDamageQty ?? 0,
                 totalLossValue: parseFloat(result?.totalLossValue ?? "0"),
             };
-        }),
-};
-
-// ────────────────────────────────────────────────────────────────
-// Export combined router
-// ────────────────────────────────────────────────────────────────
-
-export const shopOwnerRouter = {
-    ...b2bQueries,
-    ...managementQueries,
-    ...mutations,
-    ...orderQueries,
-    ...incomingOrderQueries,
-    ...warehouseOrderQueries,
-    ...openOrderEndpoints,
-    ...warehouseConnectionEndpoints,
-    ...shopStorefrontEndpoints,
-    ...publicCatalogEndpoints,
-    ...shopProductEndpoints,
-};
-const [result] = await db
-    .select({
-        totalEntries: sql<number>`COUNT(*)::int`,
-        totalDamageQty: sql<number>`COALESCE(SUM(${damageEntry.totalQty}), 0)::int`,
-        totalLossValue: sql<string>`COALESCE(SUM(${damageEntry.totalLossValue}::numeric), 0)::text`,
-    })
-    .from(damageEntry)
-    .where(
-        and(
-            eq(damageEntry.shopId, userId),
-            eq(damageEntry.status, "active"),
-        ),
-    );
-
-return {
-    totalEntries: result?.totalEntries ?? 0,
-    totalDamageQty: result?.totalDamageQty ?? 0,
-    totalLossValue: parseFloat(result?.totalLossValue ?? "0"),
-};
         }),
 };
 
