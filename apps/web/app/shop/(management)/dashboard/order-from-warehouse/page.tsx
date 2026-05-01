@@ -239,12 +239,16 @@ function VariantModal({
   const variantWeightKg = Number(selected.variant.weightKg) || 0;
   const rawPrice = Number(selected.price) || 0;
   const perCartonPrice = (() => {
-    if (isLooseVariant && variantWeightKg > 0 && selectedCarton) {
-      // Loose: stored price is per-KG × variantWeight, so per-KG = price / variantWeight
-      const perKg = rawPrice / variantWeightKg;
-      return perKg * selectedCarton.weightKg;
+    if (isLooseVariant && selectedCarton) {
+      if (variantWeightKg > 0) {
+        // Loose with weight: stored price = per_kg × variantWeight
+        const perKg = rawPrice / variantWeightKg;
+        return perKg * selectedCarton.weightKg;
+      }
+      // Loose without weight: stored price IS per-KG directly
+      return rawPrice * selectedCarton.weightKg;
     }
-    // Pack: price is per pack unit — already the carton price
+    // Pack: price is per pack unit
     return rawPrice;
   })();
 
