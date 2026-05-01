@@ -568,6 +568,7 @@ const managementQueries = {
                 weightKg: string;
                 unitLabel: string;
                 packType: string | null;
+                pcsPerPack: number;
                 availableQty: number;
                 inCartonQty: number;
                 looseQty: number;
@@ -634,6 +635,7 @@ const managementQueries = {
                     weightKg: inv.variant.weightKg,
                     unitLabel: isLoose ? "KG" : inv.variant.unitLabel,
                     packType: inv.variant.packagingType,
+                    pcsPerPack: Number(inv.variant.packCountInside || 0),
                     availableQty: qty,
                     inCartonQty: cartonQty,
                     looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),

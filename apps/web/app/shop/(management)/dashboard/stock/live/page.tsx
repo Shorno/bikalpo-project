@@ -151,10 +151,14 @@ export default function StockLivePage() {
                 const isExpanded = expandedId === p.productId;
                 const sc = STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG];
 
-                // Calculate total KG for pack variants
+                // Calculate total KG and total pcs for pack variants
                 const totalPackKg = (p.variants || []).reduce((sum: number, v: any) => {
                   const isPack = (v.packType || "").toLowerCase() !== "loose";
                   return sum + (isPack ? v.availableQty * parseFloat(v.weightKg || "0") : 0);
+                }, 0);
+                const totalPackPcs = (p.variants || []).reduce((sum: number, v: any) => {
+                  const isPack = (v.packType || "").toLowerCase() !== "loose";
+                  return sum + (isPack ? v.availableQty * (v.pcsPerPack || 0) : 0);
                 }, 0);
 
                 return (
@@ -208,8 +212,10 @@ export default function StockLivePage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-gray-900 tabular-nums">
                             {Math.round(p.totalPackQty)} Pack
-                            {totalPackKg > 0 && (
-                              <span className="text-xs text-gray-400 font-normal ml-1">({Math.round(totalPackKg * 100) / 100} KG)</span>
+                            {(totalPackPcs > 0 || totalPackKg > 0) && (
+                              <span className="text-xs text-gray-400 font-normal ml-1">
+                                ({totalPackPcs > 0 ? `${totalPackPcs} pcs, ` : ''}{Math.round(totalPackKg * 100) / 100} KG)
+                              </span>
                             )}
                           </span>
                           <span className="text-gray-300">+</span>
@@ -255,7 +261,7 @@ export default function StockLivePage() {
                                   )}
                                 </h3>
                                 <p className="text-xs text-gray-500 mt-0.5">
-                                  📦 {Math.round(p.totalPackQty)} Pack{totalPackKg > 0 ? ` (${Math.round(totalPackKg * 100) / 100} KG)` : ''} + {Math.round(p.totalLooseQty * 100) / 100} KG Loose
+                                  📦 {Math.round(p.totalPackQty)} Pack{(totalPackPcs > 0 || totalPackKg > 0) ? ` (${totalPackPcs > 0 ? `${totalPackPcs} pcs, ` : ''}${Math.round(totalPackKg * 100) / 100} KG)` : ''} + {Math.round(p.totalLooseQty * 100) / 100} KG Loose
                                   <Badge
                                     variant="outline"
                                     className={`text-[10px] font-bold ml-2 ${sc.color}`}
@@ -302,7 +308,7 @@ export default function StockLivePage() {
                                           <TableCell className="py-2 text-sm font-bold text-gray-900 tabular-nums">
                                             {(v.packType || "").toLowerCase() === "loose"
                                               ? `${v.availableQty} KG`
-                                              : `${v.availableQty} Pack (${Math.round(v.availableQty * parseFloat(v.weightKg || "0") * 100) / 100} KG)`
+                                              : `${v.availableQty} Pack${v.pcsPerPack > 0 ? ` (${v.availableQty * v.pcsPerPack} pcs)` : ''}`
                                             }
                                           </TableCell>
                                           <TableCell className="py-2 text-sm text-gray-600 tabular-nums">
