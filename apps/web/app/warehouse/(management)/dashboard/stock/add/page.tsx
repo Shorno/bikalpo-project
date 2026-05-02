@@ -103,6 +103,7 @@ type TableRow = {
   brandName: string;
   variantId: number | null;
   looseWeight: string;
+  cartonUnitSize: string;
   quantity: string;
   pricePerPack: string;
   totalPrice: string;
@@ -120,8 +121,6 @@ export default function AddStockPage() {
   const [entryType, setEntryType] = useState<"loose" | "pack" | "carton">(
     "pack",
   );
-  const [cartonSource, setCartonSource] = useState<"packs" | "loose">("packs");
-
   // === Table rows (new table-first approach) ===
   const rowIdRef = useRef(0);
   const [tableRows, setTableRows] = useState<TableRow[]>([]);
@@ -246,7 +245,41 @@ export default function AddStockPage() {
 
   const storageAreas: any[] = storageAreasData?.areas ?? [];
 
+  const { data: nextCartonIdData } = useQuery({
+    queryKey: ["warehouse", "getNextCartonIdPreview"],
+    queryFn: () => (orpc.warehouse as any).getNextCartonIdPreview.call({}),
+  });
+
   // === Derived state ===
+
+  const nextCartonId = nextCartonIdData?.nextCartonId ?? "";
+
+  const nextCartonIdParts = useMemo(() => {
+    const match = nextCartonId.match(/^(.*-)(\d+)$/);
+    if (!match) return null;
+    return {
+      prefix: match[1]!,
+      nextNumber: Number(match[2]),
+      width: match[2]!.length,
+    };
+  }, [nextCartonId]);
+
+  const getCartonCount = useCallback((row: TableRow) => {
+    const count = Math.floor(parseFloat(row.quantity) || 0);
+    return count > 0 ? count : 0;
+  }, []);
+
+  const getCartonPacksPerCarton = useCallback((row: TableRow) => {
+    const variant = row.variantId
+      ? row.product.variants.find((v) => v.id === row.variantId)
+      : null;
+    const unitSizeKg = parseFloat(row.cartonUnitSize) || 0;
+    const packWeightKg = parseFloat(variant?.weightKg || "0");
+    if (!variant || unitSizeKg <= 0 || packWeightKg <= 0) return 0;
+    const packs = unitSizeKg / packWeightKg;
+    const roundedPacks = Math.round(packs);
+    return Math.abs(packs - roundedPacks) < 0.001 ? roundedPacks : 0;
+  }, []);
 
   // Available brands for modal selected product (filtered by entry type)
   const modalAvailableBrands = useMemo(() => {
@@ -270,7 +303,9 @@ export default function AddStockPage() {
       if (
         row.variantId === null ||
         row.quantity === "" ||
-        parseFloat(row.quantity) <= 0
+        (entryType === "carton"
+          ? getCartonCount(row) <= 0
+          : parseFloat(row.quantity) <= 0)
       )
         return false;
       if (entryType === "loose") {
@@ -281,24 +316,34 @@ export default function AddStockPage() {
           parseFloat(row.totalPrice) > 0
         );
       }
+      if (entryType === "carton") {
+        return (
+          row.cartonUnitSize !== "" &&
+          parseFloat(row.cartonUnitSize) > 0 &&
+          getCartonPacksPerCarton(row) > 0 &&
+          row.pricePerPack !== "" &&
+          parseFloat(row.pricePerPack) > 0
+        );
+      }
       return row.pricePerPack !== "" && parseFloat(row.pricePerPack) > 0;
     });
-  }, [tableRows, entryType]);
+  }, [getCartonCount, getCartonPacksPerCarton, tableRows, entryType]);
 
   // Get filtered variants for a row (by brand + entry type)
   const getVariantsForRow = useCallback(
     (row: TableRow) => {
-      return row.product.variants.filter((v) => {
-        if (v.brandId !== row.brandId) return false;
-        if (entryType === "loose") return v.packType === "loose";
-        if (entryType === "carton")
-          return cartonSource === "loose"
-            ? v.packType === "loose"
-            : v.packType !== "loose";
-        return v.packType !== "loose";
-      });
+      return row.product.variants
+        .filter((v) => {
+          if (v.brandId !== row.brandId) return false;
+          if (entryType === "loose") return v.packType === "loose";
+          return v.packType !== "loose";
+        })
+        .sort(
+          (a, b) =>
+            (parseFloat(a.weightKg) || 0) - (parseFloat(b.weightKg) || 0),
+        );
     },
-    [entryType, cartonSource],
+    [entryType],
   );
 
   // Get variant object for a row
@@ -315,6 +360,10 @@ export default function AddStockPage() {
       if (entryType === "loose") {
         const looseWeight = parseFloat(row.looseWeight) || 0;
         return qty * looseWeight;
+      }
+      if (entryType === "carton") {
+        const cartonUnitSize = parseFloat(row.cartonUnitSize) || 0;
+        return qty * cartonUnitSize;
       }
       const weight = parseFloat(variant.weightKg);
       return qty * weight;
@@ -346,6 +395,22 @@ export default function AddStockPage() {
   const totalWeight = useMemo(() => {
     return tableRows.reduce((sum, row) => sum + getRowTotalQtyValue(row), 0);
   }, [tableRows, getRowTotalQtyValue]);
+
+  const getCartonCodeRange = useCallback(
+    (rowIndex: number) => {
+      if (!nextCartonIdParts) return "CTN-...";
+      const startOffset = tableRows
+        .slice(0, rowIndex)
+        .reduce((sum, row) => sum + Math.max(1, getCartonCount(row)), 0);
+      const count = Math.max(1, getCartonCount(tableRows[rowIndex]!));
+      const startNumber = nextCartonIdParts.nextNumber + startOffset;
+      const endNumber = startNumber + count - 1;
+      const startId = `${nextCartonIdParts.prefix}${String(startNumber).padStart(nextCartonIdParts.width, "0")}`;
+      if (count === 1) return startId;
+      return `${startId}-${String(endNumber).padStart(nextCartonIdParts.width, "0")}`;
+    },
+    [getCartonCount, nextCartonIdParts, tableRows],
+  );
 
   // === Mutations ===
 
@@ -384,27 +449,29 @@ export default function AddStockPage() {
     const brand = modalSelectedProduct.variants.find(
       (v) => v.brandId === modalSelectedBrandId,
     )?.brand;
-    const availableVariants = modalSelectedProduct.variants.filter((v) => {
-      if (v.brandId !== modalSelectedBrandId) return false;
-      if (entryType === "loose") return v.packType === "loose";
-      if (entryType === "carton")
-        return cartonSource === "loose"
-          ? v.packType === "loose"
-          : v.packType !== "loose";
-      return v.packType !== "loose";
-    });
+    const availableVariants = modalSelectedProduct.variants
+      .filter((v) => {
+        if (v.brandId !== modalSelectedBrandId) return false;
+        if (entryType === "loose") return v.packType === "loose";
+        return v.packType !== "loose";
+      })
+      .sort(
+        (a, b) => (parseFloat(a.weightKg) || 0) - (parseFloat(b.weightKg) || 0),
+      );
     const newRow: TableRow = {
       id: ++rowIdRef.current,
       product: modalSelectedProduct,
       brandId: modalSelectedBrandId,
       brandName: brand?.name || "",
       variantId:
-        entryType === "loose" && availableVariants.length > 0
+        (entryType === "loose" || entryType === "carton") &&
+        availableVariants.length > 0
           ? availableVariants[0]!.id
           : availableVariants.length === 1
             ? availableVariants[0]!.id
             : null,
       looseWeight: "",
+      cartonUnitSize: "",
       quantity: "",
       pricePerPack: "",
       totalPrice: "",
@@ -414,7 +481,7 @@ export default function AddStockPage() {
     setModalSelectedProduct(null);
     setModalSelectedBrandId(null);
     toast.success(`Added ${modalSelectedProduct.name} to the table`);
-  }, [modalSelectedProduct, modalSelectedBrandId, entryType, cartonSource]);
+  }, [modalSelectedProduct, modalSelectedBrandId, entryType]);
 
   const updateRow = useCallback((rowId: number, updates: Partial<TableRow>) => {
     setTableRows((prev) =>
@@ -432,7 +499,13 @@ export default function AddStockPage() {
       return;
     }
     const incomplete = tableRows.find((r) => {
-      if (!r.variantId || !r.quantity || parseFloat(r.quantity) <= 0)
+      if (
+        !r.variantId ||
+        !r.quantity ||
+        (entryType === "carton"
+          ? getCartonCount(r) <= 0
+          : parseFloat(r.quantity) <= 0)
+      )
         return true;
       if (entryType === "loose") {
         return (
@@ -440,6 +513,15 @@ export default function AddStockPage() {
           parseFloat(r.looseWeight) <= 0 ||
           !r.totalPrice ||
           parseFloat(r.totalPrice) <= 0
+        );
+      }
+      if (entryType === "carton") {
+        return (
+          !r.cartonUnitSize ||
+          parseFloat(r.cartonUnitSize) <= 0 ||
+          getCartonPacksPerCarton(r) <= 0 ||
+          !r.pricePerPack ||
+          parseFloat(r.pricePerPack) <= 0
         );
       }
       return !r.pricePerPack || parseFloat(r.pricePerPack) <= 0;
@@ -451,33 +533,62 @@ export default function AddStockPage() {
 
     setIsSubmitting(true);
     try {
-      await Promise.all(
-        tableRows.map((row) => {
-          const totalLooseQty = getRowTotalQtyValue(row);
-          const qty =
-            entryType === "loose" ? totalLooseQty : parseFloat(row.quantity);
-          const price =
+      const submitRow = (row: TableRow) => {
+        const totalLooseQty = getRowTotalQtyValue(row);
+        const qty =
+          entryType === "loose"
+            ? totalLooseQty
+            : entryType === "carton"
+              ? getCartonCount(row)
+              : parseFloat(row.quantity);
+        const price =
+          entryType === "loose"
+            ? getLooseSupplierPricePerKg(row)
+            : parseFloat(row.pricePerPack);
+
+        return (orpc.warehouse as any).addStockEntry.call({
+          variantId: row.variantId,
+          entryType,
+          quantity: String(qty),
+          quantityUnit:
             entryType === "loose"
-              ? getLooseSupplierPricePerKg(row)
-              : parseFloat(row.pricePerPack);
-          return (orpc.warehouse as any).addStockEntry.call({
-            variantId: row.variantId,
-            entryType,
-            quantity: String(qty),
-            quantityUnit: entryType === "loose" ? "KG" : "Pack",
-            supplierId: supplierId || undefined,
-            costType: entryType === "loose" ? "per_kg" : "per_pack",
-            purchasePrice: String(price),
-            reference: reference || undefined,
-            batchNo: batchNo || undefined,
-            expiryDate: expiryDate || undefined,
-            manufactureDate: manufactureDate || undefined,
-            storageAreaId: storageAreaId || undefined,
-            shelfRack: shelfRack || undefined,
-            note: note || undefined,
-          });
-        }),
-      );
+              ? "KG"
+              : entryType === "carton"
+                ? "Carton"
+                : "Pack",
+          supplierId: supplierId || undefined,
+          costType:
+            entryType === "loose"
+              ? "per_kg"
+              : entryType === "carton"
+                ? "per_carton"
+                : "per_pack",
+          purchasePrice: String(price),
+          reference: reference || undefined,
+          batchNo: batchNo || undefined,
+          expiryDate: expiryDate || undefined,
+          manufactureDate: manufactureDate || undefined,
+          storageAreaId: storageAreaId || undefined,
+          shelfRack: shelfRack || undefined,
+          note: note || undefined,
+          ...(entryType === "carton"
+            ? {
+                cartonCount: getCartonCount(row),
+                packsPerCarton: getCartonPacksPerCarton(row),
+                cartonSource: "packs" as const,
+                createCartonRecords: true,
+              }
+            : {}),
+        });
+      };
+
+      if (entryType === "carton") {
+        for (const row of tableRows) {
+          await submitRow(row);
+        }
+      } else {
+        await Promise.all(tableRows.map((row) => submitRow(row)));
+      }
       queryClient.invalidateQueries({ queryKey: ["warehouse"] });
       toast.success(
         `${tableRows.length} item${tableRows.length > 1 ? "s" : ""} added to stock!`,
@@ -673,39 +784,6 @@ export default function AddStockPage() {
                 </div>
               </button>
             </div>
-
-            {/* Carton Source Sub-toggle */}
-            {entryType === "carton" && (
-              <div className="mt-4 p-3 bg-emerald-50/50 border border-emerald-200 rounded-lg">
-                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2">
-                  Carton Source
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCartonSource("packs")}
-                    className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      cartonSource === "packs"
-                        ? "bg-emerald-600 text-white"
-                        : "bg-white text-gray-600 border border-gray-200 hover:bg-emerald-50"
-                    }`}
-                  >
-                    From Packs
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCartonSource("loose")}
-                    className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      cartonSource === "loose"
-                        ? "bg-emerald-600 text-white"
-                        : "bg-white text-gray-600 border border-gray-200 hover:bg-emerald-50"
-                    }`}
-                  >
-                    From Loose (KG)
-                  </button>
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -745,7 +823,7 @@ export default function AddStockPage() {
                     <thead>
                       <tr className="border-t border-b bg-muted/40">
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">
-                          SKU
+                          {entryType === "carton" ? "SKU / Code" : "SKU"}
                         </th>
                         <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">
                           Product Name
@@ -754,13 +832,19 @@ export default function AddStockPage() {
                           {entryType === "loose" ? "Weight" : "Unit Size"}
                         </th>
                         <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">
-                          {entryType === "loose" ? "Qty" : "Qty (Pack)"}
+                          {entryType === "loose" || entryType === "carton"
+                            ? "Qty"
+                            : "Qty (Pack)"}
                         </th>
                         <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">
                           Total Qty
                         </th>
                         <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">
-                          {entryType === "loose" ? "Total Price" : "Price/Pack"}
+                          {entryType === "loose"
+                            ? "Total Price"
+                            : entryType === "carton"
+                              ? "Price/Carton"
+                              : "Price/Pack"}
                         </th>
                         <th className="w-10 px-2"></th>
                       </tr>
@@ -782,22 +866,30 @@ export default function AddStockPage() {
                           </td>
                         </tr>
                       ) : (
-                        tableRows.map((row) => {
+                        tableRows.map((row, rowIndex) => {
                           const variants = getVariantsForRow(row);
                           const variant = getRowVariant(row);
                           const supplierPricePerKg =
                             getLooseSupplierPricePerKg(row);
+                          const cartonRowTotalPrice =
+                            getCartonCount(row) *
+                            (parseFloat(row.pricePerPack) || 0);
                           return (
                             <tr
                               key={row.id}
                               className="border-b last:border-b-0 hover:bg-muted/20 transition-colors"
                             >
                               <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-                                {variant?.sku || "—"}
+                                {entryType === "carton"
+                                  ? getCartonCodeRange(rowIndex)
+                                  : variant?.sku || "—"}
                               </td>
                               <td className="px-3 py-2.5">
                                 <p className="font-medium text-sm">
-                                  {row.product.name}
+                                  {entryType === "carton"
+                                    ? row.product.coreProduct?.name ||
+                                      row.product.name
+                                    : row.product.name}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
                                   {row.brandName}
@@ -812,6 +904,22 @@ export default function AddStockPage() {
                                     onChange={(e) =>
                                       updateRow(row.id, {
                                         looseWeight: e.target.value.replace(
+                                          /[^0-9.]/g,
+                                          "",
+                                        ),
+                                      })
+                                    }
+                                    placeholder="KG"
+                                    className="h-8 w-[90px] text-right text-sm"
+                                  />
+                                ) : entryType === "carton" ? (
+                                  <Input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={row.cartonUnitSize}
+                                    onChange={(e) =>
+                                      updateRow(row.id, {
+                                        cartonUnitSize: e.target.value.replace(
                                           /[^0-9.]/g,
                                           "",
                                         ),
@@ -854,14 +962,23 @@ export default function AddStockPage() {
                                   value={row.quantity}
                                   onChange={(e) =>
                                     updateRow(row.id, {
-                                      quantity: e.target.value.replace(
-                                        /[^0-9.]/g,
-                                        "",
-                                      ),
+                                      quantity:
+                                        entryType === "carton"
+                                          ? e.target.value.replace(
+                                              /[^0-9]/g,
+                                              "",
+                                            )
+                                          : e.target.value.replace(
+                                              /[^0-9.]/g,
+                                              "",
+                                            ),
                                     })
                                   }
                                   placeholder={
-                                    entryType === "loose" ? "1" : "0"
+                                    entryType === "loose" ||
+                                    entryType === "carton"
+                                      ? "1"
+                                      : "0"
                                   }
                                   className="h-8 w-[80px] text-center text-sm mx-auto"
                                 />
@@ -891,6 +1008,27 @@ export default function AddStockPage() {
                                       {supplierPricePerKg > 0
                                         ? `৳ ${supplierPricePerKg.toFixed(2)}/KG`
                                         : "৳ 0.00/KG"}
+                                    </p>
+                                  </div>
+                                ) : entryType === "carton" ? (
+                                  <div className="ml-auto w-[120px]">
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={row.pricePerPack}
+                                      onChange={(e) =>
+                                        updateRow(row.id, {
+                                          pricePerPack: e.target.value.replace(
+                                            /[^0-9.]/g,
+                                            "",
+                                          ),
+                                        })
+                                      }
+                                      placeholder="৳ 0"
+                                      className="h-8 text-right text-sm"
+                                    />
+                                    <p className="mt-1 text-[11px] leading-none text-muted-foreground">
+                                      ৳ {cartonRowTotalPrice.toFixed(2)} total
                                     </p>
                                   </div>
                                 ) : (
