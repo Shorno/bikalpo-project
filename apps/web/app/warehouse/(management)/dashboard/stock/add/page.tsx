@@ -75,7 +75,7 @@ type ProductResult = {
   expiryEnabled: boolean;
   categoryId: number;
   subCategoryId: number | null;
-  category?: { id: number; name: string } | null;
+  category?: { id: number; name: string; typeId?: number | null; type?: { id: number; name: string } | null } | null;
   subCategory?: { id: number; name: string } | null;
   brand?: { id: number; name: string } | null;
   coreProduct?: {
@@ -128,6 +128,7 @@ export default function AddStockPage() {
   // === Product selection modal state ===
   const [showProductModal, setShowProductModal] = useState(false);
   const [modalSearch, setModalSearch] = useState("");
+  const [modalTypeId, setModalTypeId] = useState<number | undefined>();
   const [modalCategoryId, setModalCategoryId] = useState<number | undefined>();
   const [modalSubCategoryId, setModalSubCategoryId] = useState<number | undefined>();
   const [modalSelectedProduct, setModalSelectedProduct] = useState<ProductResult | null>(null);
@@ -178,12 +179,26 @@ export default function AddStockPage() {
   });
   const allProducts: ProductResult[] = allProductsData?.products ?? [];
 
-  const categoryOptions = useMemo(() => {
+  // Type options (derived from categories' type relation)
+  const typeOptions = useMemo(() => {
     const map = new Map<number, string>();
-    allProducts.forEach(p => { if (p.category) map.set(p.category.id, p.category.name); });
+    allProducts.forEach(p => {
+      const t = p.category?.type;
+      if (t) map.set(t.id, t.name);
+    });
     return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [allProducts]);
 
+  // Category options (filtered by selected type)
+  const categoryOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    allProducts
+      .filter(p => !modalTypeId || p.category?.typeId === modalTypeId)
+      .forEach(p => { if (p.category) map.set(p.category.id, p.category.name); });
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allProducts, modalTypeId]);
+
+  // Sub-category options (filtered by selected category)
   const subCategoryOptions = useMemo(() => {
     const map = new Map<number, string>();
     allProducts
@@ -289,6 +304,7 @@ export default function AddStockPage() {
 
   const handleOpenProductModal = useCallback(() => {
     setModalSearch("");
+    setModalTypeId(undefined);
     setModalCategoryId(undefined);
     setModalSubCategoryId(undefined);
     setModalSelectedProduct(null);
@@ -847,20 +863,29 @@ export default function AddStockPage() {
 
           {!modalSelectedProduct ? (
             <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
-              {/* Filters */}
-              <div className="flex gap-2">
-                <Select value={modalCategoryId ? String(modalCategoryId) : "all"} onValueChange={(v) => { setModalCategoryId(v === "all" ? undefined : Number(v)); setModalSubCategoryId(undefined); }}>
-                  <SelectTrigger className="w-full text-sm h-9"><SelectValue placeholder="All Categories" /></SelectTrigger>
+              {/* Filters: Type → Category → Sub-category */}
+              <div className="flex gap-2 flex-wrap">
+                <Select value={modalTypeId ? String(modalTypeId) : "all"} onValueChange={(v) => { setModalTypeId(v === "all" ? undefined : Number(v)); setModalCategoryId(undefined); setModalSubCategoryId(undefined); }}>
+                  <SelectTrigger className="w-full text-sm h-9 min-w-[120px] flex-1"><SelectValue placeholder="All Types" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categoryOptions.map((c) => (<SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>))}
+                    <SelectItem value="all">All Types</SelectItem>
+                    {typeOptions.map((t) => (<SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>))}
                   </SelectContent>
                 </Select>
+                {categoryOptions.length > 0 && (
+                  <Select value={modalCategoryId ? String(modalCategoryId) : "all"} onValueChange={(v) => { setModalCategoryId(v === "all" ? undefined : Number(v)); setModalSubCategoryId(undefined); }}>
+                    <SelectTrigger className="w-full text-sm h-9 min-w-[120px] flex-1"><SelectValue placeholder="All Categories" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {categoryOptions.map((c) => (<SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                )}
                 {subCategoryOptions.length > 0 && (
                   <Select value={modalSubCategoryId ? String(modalSubCategoryId) : "all"} onValueChange={(v) => setModalSubCategoryId(v === "all" ? undefined : Number(v))}>
-                    <SelectTrigger className="w-full text-sm h-9"><SelectValue placeholder="Sub-category" /></SelectTrigger>
+                    <SelectTrigger className="w-full text-sm h-9 min-w-[120px] flex-1"><SelectValue placeholder="Sub-category" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="all">All Sub-categories</SelectItem>
                       {subCategoryOptions.map((s) => (<SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>))}
                     </SelectContent>
                   </Select>
@@ -881,7 +906,7 @@ export default function AddStockPage() {
                       {p.image && <Image src={p.image} alt={p.name} width={36} height={36} className="w-9 h-9 rounded-md object-cover border" />}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{p.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{p.category?.name}{p.subCategory ? ` > ${p.subCategory.name}` : ""}{p.coreProduct ? ` · ${p.coreProduct.name}` : ""}</p>
+                        <p className="text-xs text-muted-foreground truncate">{p.category?.type?.name ? `${p.category.type.name} > ` : ""}{p.category?.name}{p.subCategory ? ` > ${p.subCategory.name}` : ""}</p>
                       </div>
                       <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                     </button>

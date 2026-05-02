@@ -2512,7 +2512,12 @@ const stockEntryQueries = {
                 },
                 with: {
                     brand: { columns: { id: true, name: true } },
-                    category: { columns: { id: true, name: true } },
+                    category: {
+                        columns: { id: true, name: true, typeId: true },
+                        with: {
+                            type: { columns: { id: true, name: true } },
+                        },
+                    },
                     subCategory: { columns: { id: true, name: true } },
                     coreProduct: {
                         columns: {
