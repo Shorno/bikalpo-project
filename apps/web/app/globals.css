@@ -249,3 +249,54 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }
+
+/* POS receipt printing */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 80mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /*
+    The receipt is portaled to <body>, so hiding only the direct body children
+    (page content, modal portals, toast containers) isolates just the receipt.
+  */
+  body > *:not([data-pos-receipt]) {
+    display: none !important;
+  }
+
+  [data-pos-receipt] {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    display: block !important;
+    width: 80mm !important;
+    padding: 10px 10px 14px !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    overflow: visible !important;
+  }
+
+  [data-pos-receipt] *,
+  [data-pos-receipt] :is(svg, path) {
+    color: #000 !important;
+    fill: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  [data-pos-receipt] .no-print {
+    display: none !important;
+  }
+}

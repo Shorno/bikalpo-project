@@ -1,0 +1,330 @@
+import { relations } from "drizzle-orm";
+import {
+    boolean,
+    decimal,
+    index,
+    integer,
+    jsonb,
+    pgEnum,
+    pgTable,
+    serial,
+    text,
+    timestamp,
+    varchar,
+} from "drizzle-orm/pg-core";
+import { user } from "./auth-schema";
+import { product } from "./product";
+import { productVariant } from "./product-variant";
+
+export const warehousePosCustomerTypeEnum = pgEnum("warehouse_pos_customer_type", [
+    "walk_in",
+    "retail",
+    "wholesale",
+]);
+
+export const warehousePosSaleTypeEnum = pgEnum("warehouse_pos_sale_type", [
+    "retail",
+    "wholesale",
+]);
+
+export const warehousePosPaymentMethodEnum = pgEnum("warehouse_pos_payment_method", [
+    "cash",
+    "bkash",
+    "nagad",
+    "bank",
+    "due",
+]);
+
+export const warehousePosSaleStatusEnum = pgEnum("warehouse_pos_sale_status", [
+    "completed",
+    "cancelled",
+]);
+
+export const warehousePosCartStatusEnum = pgEnum("warehouse_pos_cart_status", [
+    "held",
+    "converted",
+    "cancelled",
+]);
+
+export type WarehousePosCartItem = {
+    variantId: number;
+    productId: number;
+    sku: string | null;
+    productName: string;
+    variantLabel: string;
+    unitLabel: string;
+    quantity: string;
+    unitPrice: string;
+    lineTotal: string;
+};
+
+export type WarehousePosCartData = {
+    saleType: "retail" | "wholesale";
+    items: WarehousePosCartItem[];
+    note?: string | null;
+};
+
+export const warehousePosCustomer = pgTable(
+    "warehouse_pos_customer",
+    {
+        id: serial("id").primaryKey(),
+        warehouseId: text("warehouse_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
+        linkedUserId: text("linked_user_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
+        name: varchar("name", { length: 150 }).notNull(),
+        phone: varchar("phone", { length: 30 }),
+        address: text("address"),
+        customerType: warehousePosCustomerTypeEnum("customer_type")
+            .default("walk_in")
+            .notNull(),
+        isDefault: boolean("is_default").default(false).notNull(),
+        createdById: text("created_by_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
+        createdAt: timestamp("created_at").defaultNow().notNull(),
+        updatedAt: timestamp("updated_at")
+            .defaultNow()
+            .$onUpdate(() => new Date())
+            .notNull(),
+    },
+    (table) => [
+        index("warehousePosCustomer_warehouseId_idx").on(table.warehouseId),
+        index("warehousePosCustomer_phone_idx").on(table.phone),
+        index("warehousePosCustomer_linkedUserId_idx").on(table.linkedUserId),
+    ],
+);
+
+export const warehousePosCart = pgTable(
+    "warehouse_pos_cart",
+    {
+        id: serial("id").primaryKey(),
+        warehouseId: text("warehouse_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
+        customerId: integer("customer_id").references(() => warehousePosCustomer.id, {
+            onDelete: "set null",
+        }),
+        heldRef: varchar("held_ref", { length: 40 }).notNull().unique(),
+        cartData: jsonb("cart_data").$type<WarehousePosCartData>().notNull(),
+        subtotal: decimal("subtotal", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+        discount: decimal("discount", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+        tax: decimal("tax", { precision: 12, scale: 2 }).default("0").notNull(),
+        total: decimal("total", { precision: 12, scale: 2 }).default("0").notNull(),
+        status: warehousePosCartStatusEnum("status").default("held").notNull(),
+        heldById: text("held_by_id").references(() => user.id, { onDelete: "set null" }),
+        createdAt: timestamp("created_at").defaultNow().notNull(),
+        updatedAt: timestamp("updated_at")
+            .defaultNow()
+            .$onUpdate(() => new Date())
+            .notNull(),
+    },
+    (table) => [
+        index("warehousePosCart_warehouseId_idx").on(table.warehouseId),
+        index("warehousePosCart_customerId_idx").on(table.customerId),
+        index("warehousePosCart_status_idx").on(table.status),
+    ],
+);
+
+export const warehousePosSale = pgTable(
+    "warehouse_pos_sale",
+    {
+        id: serial("id").primaryKey(),
+        warehouseId: text("warehouse_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
+        saleType: warehousePosSaleTypeEnum("sale_type").default("retail").notNull(),
+        invoiceNo: varchar("invoice_no", { length: 40 }).notNull().unique(),
+        customerId: integer("customer_id").references(() => warehousePosCustomer.id, {
+            onDelete: "set null",
+        }),
+        customerName: varchar("customer_name", { length: 150 }).notNull(),
+        customerPhone: varchar("customer_phone", { length: 30 }),
+        customerAddress: text("customer_address"),
+        subtotal: decimal("subtotal", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+        discount: decimal("discount", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+        tax: decimal("tax", { precision: 12, scale: 2 }).default("0").notNull(),
+        total: decimal("total", { precision: 12, scale: 2 }).default("0").notNull(),
+        paid: decimal("paid", { precision: 12, scale: 2 }).default("0").notNull(),
+        due: decimal("due", { precision: 12, scale: 2 }).default("0").notNull(),
+        paymentMethod: warehousePosPaymentMethodEnum("payment_method").notNull(),
+        status: warehousePosSaleStatusEnum("status").default("completed").notNull(),
+        note: text("note"),
+        heldCartId: integer("held_cart_id").references(() => warehousePosCart.id, {
+            onDelete: "set null",
+        }),
+        soldById: text("sold_by_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
+        createdAt: timestamp("created_at").defaultNow().notNull(),
+        updatedAt: timestamp("updated_at")
+            .defaultNow()
+            .$onUpdate(() => new Date())
+            .notNull(),
+    },
+    (table) => [
+        index("warehousePosSale_warehouseId_idx").on(table.warehouseId),
+        index("warehousePosSale_customerId_idx").on(table.customerId),
+        index("warehousePosSale_saleType_idx").on(table.saleType),
+        index("warehousePosSale_createdAt_idx").on(table.createdAt),
+    ],
+);
+
+export const warehousePosSaleItem = pgTable(
+    "warehouse_pos_sale_item",
+    {
+        id: serial("id").primaryKey(),
+        saleId: integer("sale_id")
+            .notNull()
+            .references(() => warehousePosSale.id, { onDelete: "cascade" }),
+        variantId: integer("variant_id").references(() => productVariant.id, {
+            onDelete: "set null",
+        }),
+        productId: integer("product_id").references(() => product.id, {
+            onDelete: "set null",
+        }),
+        sku: varchar("sku", { length: 100 }),
+        productName: varchar("product_name", { length: 160 }).notNull(),
+        variantLabel: varchar("variant_label", { length: 200 }).notNull(),
+        quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
+        unitLabel: varchar("unit_label", { length: 50 }).notNull(),
+        unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
+        lineTotal: decimal("line_total", { precision: 12, scale: 2 }).notNull(),
+        createdAt: timestamp("created_at").defaultNow().notNull(),
+    },
+    (table) => [
+        index("warehousePosSaleItem_saleId_idx").on(table.saleId),
+        index("warehousePosSaleItem_variantId_idx").on(table.variantId),
+    ],
+);
+
+export const warehousePosPayment = pgTable(
+    "warehouse_pos_payment",
+    {
+        id: serial("id").primaryKey(),
+        saleId: integer("sale_id")
+            .notNull()
+            .references(() => warehousePosSale.id, { onDelete: "cascade" }),
+        paymentMethod: warehousePosPaymentMethodEnum("payment_method").notNull(),
+        amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+        transactionRef: varchar("transaction_ref", { length: 100 }),
+        note: text("note"),
+        paidAt: timestamp("paid_at").defaultNow().notNull(),
+        createdById: text("created_by_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
+        createdAt: timestamp("created_at").defaultNow().notNull(),
+    },
+    (table) => [
+        index("warehousePosPayment_saleId_idx").on(table.saleId),
+        index("warehousePosPayment_method_idx").on(table.paymentMethod),
+    ],
+);
+
+export const warehousePosCustomerRelations = relations(warehousePosCustomer, ({ one, many }) => ({
+    warehouse: one(user, {
+        fields: [warehousePosCustomer.warehouseId],
+        references: [user.id],
+        relationName: "warehousePosCustomerWarehouse",
+    }),
+    linkedUser: one(user, {
+        fields: [warehousePosCustomer.linkedUserId],
+        references: [user.id],
+        relationName: "warehousePosCustomerLinkedUser",
+    }),
+    createdBy: one(user, {
+        fields: [warehousePosCustomer.createdById],
+        references: [user.id],
+        relationName: "warehousePosCustomerCreatedBy",
+    }),
+    sales: many(warehousePosSale),
+    carts: many(warehousePosCart),
+}));
+
+export const warehousePosCartRelations = relations(warehousePosCart, ({ one }) => ({
+    warehouse: one(user, {
+        fields: [warehousePosCart.warehouseId],
+        references: [user.id],
+        relationName: "warehousePosCartWarehouse",
+    }),
+    customer: one(warehousePosCustomer, {
+        fields: [warehousePosCart.customerId],
+        references: [warehousePosCustomer.id],
+    }),
+    heldBy: one(user, {
+        fields: [warehousePosCart.heldById],
+        references: [user.id],
+        relationName: "warehousePosCartHeldBy",
+    }),
+}));
+
+export const warehousePosSaleRelations = relations(warehousePosSale, ({ one, many }) => ({
+    warehouse: one(user, {
+        fields: [warehousePosSale.warehouseId],
+        references: [user.id],
+        relationName: "warehousePosSaleWarehouse",
+    }),
+    customer: one(warehousePosCustomer, {
+        fields: [warehousePosSale.customerId],
+        references: [warehousePosCustomer.id],
+    }),
+    heldCart: one(warehousePosCart, {
+        fields: [warehousePosSale.heldCartId],
+        references: [warehousePosCart.id],
+    }),
+    soldBy: one(user, {
+        fields: [warehousePosSale.soldById],
+        references: [user.id],
+        relationName: "warehousePosSaleSoldBy",
+    }),
+    items: many(warehousePosSaleItem),
+    payments: many(warehousePosPayment),
+}));
+
+export const warehousePosSaleItemRelations = relations(warehousePosSaleItem, ({ one }) => ({
+    sale: one(warehousePosSale, {
+        fields: [warehousePosSaleItem.saleId],
+        references: [warehousePosSale.id],
+    }),
+    variant: one(productVariant, {
+        fields: [warehousePosSaleItem.variantId],
+        references: [productVariant.id],
+    }),
+    product: one(product, {
+        fields: [warehousePosSaleItem.productId],
+        references: [product.id],
+    }),
+}));
+
+export const warehousePosPaymentRelations = relations(warehousePosPayment, ({ one }) => ({
+    sale: one(warehousePosSale, {
+        fields: [warehousePosPayment.saleId],
+        references: [warehousePosSale.id],
+    }),
+    createdBy: one(user, {
+        fields: [warehousePosPayment.createdById],
+        references: [user.id],
+        relationName: "warehousePosPaymentCreatedBy",
+    }),
+}));
+
+export type WarehousePosCustomer = typeof warehousePosCustomer.$inferSelect;
+export type NewWarehousePosCustomer = typeof warehousePosCustomer.$inferInsert;
+export type WarehousePosCart = typeof warehousePosCart.$inferSelect;
+export type NewWarehousePosCart = typeof warehousePosCart.$inferInsert;
+export type WarehousePosSale = typeof warehousePosSale.$inferSelect;
+export type NewWarehousePosSale = typeof warehousePosSale.$inferInsert;
+export type WarehousePosSaleItem = typeof warehousePosSaleItem.$inferSelect;
+export type NewWarehousePosSaleItem = typeof warehousePosSaleItem.$inferInsert;
+export type WarehousePosPayment = typeof warehousePosPayment.$inferSelect;
+export type NewWarehousePosPayment = typeof warehousePosPayment.$inferInsert;

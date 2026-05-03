@@ -2512,7 +2512,12 @@ const stockEntryQueries = {
                 },
                 with: {
                     brand: { columns: { id: true, name: true } },
-                    category: { columns: { id: true, name: true } },
+                    category: {
+                        columns: { id: true, name: true, typeId: true },
+                        with: {
+                            type: { columns: { id: true, name: true } },
+                        },
+                    },
                     subCategory: { columns: { id: true, name: true } },
                     coreProduct: {
                         columns: {
@@ -2657,20 +2662,36 @@ const stockEntryQueries = {
             const packWeightKg = parseFloat(variant.weightKg);
             let convertedQtyKg: number;
             let convertedQtyPacks: number;
-            const cartonCount = input.cartonCount || 0;
+            const cartonCount = input.entryType === "carton"
+                ? (input.cartonCount ?? Math.floor(qty))
+                : 0;
+            let packsPerCartonForEntry: number | null = null;
 
             if (input.entryType === "loose") {
                 // Entered in KG — stored directly in KG
                 convertedQtyKg = qty;
                 convertedQtyPacks = packWeightKg > 0 ? qty / packWeightKg : 0;
             } else if (input.entryType === "carton") {
-                // NEW: Inline carton definition (no cartonConfig required)
-                if (input.cartonSource === "loose" && input.kgPerCarton) {
-                    // Carton from loose: user defined KG per carton
-                    convertedQtyKg = input.kgPerCarton * cartonCount;
-                    convertedQtyPacks = packWeightKg > 0 ? convertedQtyKg / packWeightKg : 0;
-                } else if (input.packsPerCarton) {
+                const variantPackType = variant.packType || variant.packagingType;
+                if (
+                    variantPackType === "loose"
+                    || input.cartonSource === "loose"
+                    || input.kgPerCarton !== undefined
+                ) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Carton stock entry must use packed variants, not loose stock",
+                    });
+                }
+
+                if (cartonCount <= 0) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Carton entry requires at least one carton",
+                    });
+                }
+
+                if (input.packsPerCarton) {
                     // Carton from packs: user defined packs per carton
+                    packsPerCartonForEntry = input.packsPerCarton;
                     convertedQtyPacks = cartonCount * input.packsPerCarton;
                     convertedQtyKg = convertedQtyPacks * packWeightKg;
                 } else if (input.cartonConfigId) {
@@ -2686,11 +2707,12 @@ const stockEntryQueries = {
                             message: "Carton config not found for this variant",
                         });
                     }
+                    packsPerCartonForEntry = config.packsPerCarton;
                     convertedQtyPacks = cartonCount * config.packsPerCarton;
                     convertedQtyKg = convertedQtyPacks * packWeightKg;
                 } else {
                     throw new ORPCError("BAD_REQUEST", {
-                        message: "Carton entry requires packsPerCarton, kgPerCarton, or cartonConfigId",
+                        message: "Carton entry requires packsPerCarton or cartonConfigId",
                     });
                 }
             } else {
@@ -2742,6 +2764,15 @@ const stockEntryQueries = {
 
                 // Upsert inventory — add to available quantity
                 const inventoryQty = input.entryType === "loose" ? convertedQtyKg : convertedQtyPacks;
+                const shouldCreateStockInCartons =
+                    input.entryType === "carton"
+                    && input.createCartonRecords
+                    && cartonCount > 0;
+                const packsPerSingleCarton = packsPerCartonForEntry || 1;
+                const weightPerCarton = packsPerSingleCarton * packWeightKg;
+                const stockInCartonUnits = shouldCreateStockInCartons
+                    ? cartonCount * packsPerSingleCarton
+                    : 0;
                 const existingInv = await tx.query.inventory.findFirst({
                     where: and(
                         eq(inventory.ownerType, "warehouse"),
@@ -2753,9 +2784,18 @@ const stockEntryQueries = {
                 if (existingInv) {
                     const newQty =
                         parseFloat(existingInv.availableQty) + inventoryQty;
+                    const currentInCarton = parseFloat(existingInv.inCartonQty || "0");
                     await tx
                         .update(inventory)
-                        .set({ availableQty: newQty.toFixed(2) })
+                        .set({
+                            availableQty: newQty.toFixed(2),
+                            ...(shouldCreateStockInCartons
+                                ? {
+                                    inCartonQty: (currentInCarton + stockInCartonUnits).toFixed(2),
+                                    activeCartonCount: (existingInv.activeCartonCount || 0) + cartonCount,
+                                }
+                                : {}),
+                        })
                         .where(eq(inventory.id, existingInv.id));
                 } else {
                     await tx.insert(inventory).values({
@@ -2763,27 +2803,17 @@ const stockEntryQueries = {
                         ownerId: userId,
                         variantId: input.variantId,
                         availableQty: inventoryQty.toFixed(2),
+                        ...(shouldCreateStockInCartons
+                            ? {
+                                inCartonQty: stockInCartonUnits.toFixed(2),
+                                activeCartonCount: cartonCount,
+                            }
+                            : {}),
                     });
                 }
 
                 // 6. Create physical carton records for carton entries
-                if (input.entryType === "carton" && input.createCartonRecords && cartonCount > 0) {
-                    // Re-fetch inventory after update
-                    const updatedInv = await tx.query.inventory.findFirst({
-                        where: and(
-                            eq(inventory.ownerType, "warehouse"),
-                            eq(inventory.ownerId, userId),
-                            eq(inventory.variantId, input.variantId),
-                        ),
-                    });
-
-                    const packsPerSingleCarton = input.cartonSource === "loose"
-                        ? 1
-                        : (input.packsPerCarton || 1);
-                    const weightPerCarton = input.cartonSource === "loose"
-                        ? (input.kgPerCarton || 0)
-                        : packsPerSingleCarton * packWeightKg;
-
+                if (shouldCreateStockInCartons) {
                     // Generate carton IDs
                     const year = new Date().getFullYear();
                     const [lastCarton] = await tx
@@ -2817,23 +2847,6 @@ const stockEntryQueries = {
                             cartonPrice: null, // Selling price set later on pricing page
                             deliveryCostPerUnit: null,
                         });
-                    }
-
-                    // Update inventory carton tracking
-                    if (updatedInv) {
-                        const currentInCarton = parseFloat(updatedInv.inCartonQty);
-                        // For loose cartons, track total KG in cartons (cartonCount × kgPerCarton)
-                        // For pack cartons, track total packs in cartons (cartonCount × packsPerSingleCarton)
-                        const totalInCartons = input.cartonSource === "loose"
-                            ? cartonCount * (input.kgPerCarton || 0)
-                            : cartonCount * packsPerSingleCarton;
-                        await tx
-                            .update(inventory)
-                            .set({
-                                inCartonQty: (currentInCarton + totalInCartons).toFixed(2),
-                                activeCartonCount: (updatedInv.activeCartonCount || 0) + cartonCount,
-                            })
-                            .where(eq(inventory.id, updatedInv.id));
                     }
                 }
 

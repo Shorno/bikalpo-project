@@ -4,6 +4,7 @@ import {
   BarChart3Icon,
   BookOpenIcon,
   BoxesIcon,
+  CalculatorIcon,
   ClipboardIcon,
   ClipboardListIcon,
   CreditCardIcon,
@@ -17,7 +18,6 @@ import {
   PackageIcon,
   PackagePlusIcon,
   PackageSearchIcon,
-  PaletteIcon,
   PercentIcon,
   RotateCcwIcon,
   SettingsIcon,
@@ -102,6 +102,7 @@ const warehouseNavGroups: NavGroup[] = [
   {
     label: "Sales Management",
     items: [
+      { title: "POS", url: `${WH}/pos`, icon: CalculatorIcon },
       { title: "Sales", url: `${WH}/sales`, icon: ShoppingCartIcon },
       { title: "Customer", url: `${WH}/customers`, icon: UsersIcon },
       { title: "Sales History", url: `${WH}/sales-history`, icon: FileTextIcon },
@@ -111,6 +112,7 @@ const warehouseNavGroups: NavGroup[] = [
   {
     label: "Purchase Management",
     items: [
+      { title: "Quick Purchase", url: `${WH}/quick-purchase`, icon: PackagePlusIcon },
       { title: "Purchase Orders", url: `${WH}/purchases`, icon: ClipboardListIcon },
       { title: "Suppliers", url: `${WH}/suppliers`, icon: UsersIcon },
       { title: "Purchase History", url: `${WH}/purchase-history`, icon: FileTextIcon },
