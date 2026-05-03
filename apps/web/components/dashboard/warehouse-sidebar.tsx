@@ -4,6 +4,7 @@ import {
   BarChart3Icon,
   BookOpenIcon,
   BoxesIcon,
+  CalculatorIcon,
   ClipboardIcon,
   ClipboardListIcon,
   CreditCardIcon,
@@ -15,9 +16,7 @@ import {
   MegaphoneIcon,
   NetworkIcon,
   PackageIcon,
-  PackagePlusIcon,
   PackageSearchIcon,
-  PaletteIcon,
   PercentIcon,
   RotateCcwIcon,
   SettingsIcon,
@@ -102,6 +101,7 @@ const warehouseNavGroups: NavGroup[] = [
   {
     label: "Sales Management",
     items: [
+      { title: "POS", url: `${WH}/pos`, icon: CalculatorIcon },
       { title: "Sales", url: `${WH}/sales`, icon: ShoppingCartIcon },
       { title: "Customer", url: `${WH}/customers`, icon: UsersIcon },
       { title: "Sales History", url: `${WH}/sales-history`, icon: FileTextIcon },
