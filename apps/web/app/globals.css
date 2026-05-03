@@ -249,3 +249,53 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }
+
+/* POS receipt printing */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 80mm;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Hide everything by default */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Only show the receipt */
+  [data-pos-receipt],
+  [data-pos-receipt] * {
+    visibility: visible !important;
+  }
+
+  [data-pos-receipt] {
+    position: fixed !important;
+    inset: 0 auto auto 0 !important;
+    width: 80mm !important;
+    padding: 10px 10px 14px !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    overflow: visible !important;
+  }
+
+  [data-pos-receipt] *,
+  [data-pos-receipt] :is(svg, path) {
+    color: #000 !important;
+    fill: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  [data-pos-receipt] .no-print {
+    display: none !important;
+  }
+}

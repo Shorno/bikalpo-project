@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import {
   CalendarDays,
   CheckCircle2,
@@ -121,6 +121,20 @@ function parseNumeric(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function formatDateTimeLabel(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const dateLabel = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+  const timeLabel = date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${dateLabel} ${timeLabel}`;
+}
+
 
 export default function WarehousePosPage() {
   const [saleType, setSaleType] = useState<"retail" | "wholesale">("retail");
@@ -192,6 +206,7 @@ export default function WarehousePosPage() {
         brandId,
         pack,
       }),
+    placeholderData: keepPreviousData,
   });
 
   const customersQuery = useQuery({
@@ -467,6 +482,176 @@ export default function WarehousePosPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+      {/* Printable receipt (only visible while printing) */}
+      {invoice && (
+        <div data-pos-receipt className="hidden">
+          <div
+            style={{
+              fontSize: 12,
+              lineHeight: 1.25,
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+            }}
+          >
+            <div style={{ textAlign: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{invoice.store.name}</div>
+              {invoice.store.address && <div>{invoice.store.address}</div>}
+              {invoice.store.phone && <div>{invoice.store.phone}</div>}
+            </div>
+
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Invoice</span>
+                <span style={{ fontWeight: 700 }}>{invoice.sale.invoiceNo}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Date</span>
+                <span>{formatDateTimeLabel(invoice.sale.createdAt)}</span>
+              </div>
+              <div style={{ marginTop: 6 }}>
+                <span style={{ opacity: 0.8 }}>Customer: </span>
+                <span style={{ fontWeight: 700 }}>{invoice.customer.name}</span>
+                {invoice.customer.phone ? ` (${invoice.customer.phone})` : ""}
+              </div>
+            </div>
+
+            <div style={{ borderTop: "1px solid #000", margin: "8px 0" }} />
+
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", padding: "4px 0", fontWeight: 700 }}>
+                    Item
+                  </th>
+                  <th style={{ textAlign: "right", padding: "4px 0", fontWeight: 700 }}>
+                    Qty
+                  </th>
+                  <th style={{ textAlign: "right", padding: "4px 0", fontWeight: 700 }}>
+                    Price
+                  </th>
+                  <th style={{ textAlign: "right", padding: "4px 0", fontWeight: 700 }}>
+                    Total
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoice.items.map((item: any) => {
+                  const qty = parseNumeric(String(item.quantity));
+                  const price = parseNumeric(String(item.unitPrice));
+                  const lineTotal = parseNumeric(String(item.lineTotal));
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ padding: "4px 0" }}>
+                        <div style={{ fontWeight: 700 }}>{item.productName}</div>
+                        <div style={{ opacity: 0.85 }}>{item.variantLabel}</div>
+                      </td>
+                      <td
+                        style={{
+                          textAlign: "right",
+                          padding: "4px 0",
+                          verticalAlign: "top",
+                        }}
+                      >
+                        {formatMoney(qty)}
+                      </td>
+                      <td
+                        style={{
+                          textAlign: "right",
+                          padding: "4px 0",
+                          verticalAlign: "top",
+                        }}
+                      >
+                        ৳{formatMoney(price)}
+                      </td>
+                      <td
+                        style={{
+                          textAlign: "right",
+                          padding: "4px 0",
+                          verticalAlign: "top",
+                          fontWeight: 700,
+                        }}
+                      >
+                        ৳{formatMoney(lineTotal)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <div style={{ borderTop: "1px solid #000", margin: "8px 0" }} />
+
+            <div style={{ display: "grid", gap: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Subtotal</span>
+                <span style={{ fontWeight: 700 }}>
+                  ৳{formatMoney(parseNumeric(String(invoice.sale.subtotal)))}
+                </span>
+              </div>
+              {parseNumeric(String(invoice.sale.discount)) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Discount</span>
+                  <span style={{ fontWeight: 700 }}>
+                    -৳{formatMoney(parseNumeric(String(invoice.sale.discount)))}
+                  </span>
+                </div>
+              )}
+              {parseNumeric(String(invoice.sale.tax)) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Tax</span>
+                  <span style={{ fontWeight: 700 }}>
+                    ৳{formatMoney(parseNumeric(String(invoice.sale.tax)))}
+                  </span>
+                </div>
+              )}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  marginTop: 2,
+                }}
+              >
+                <span>Total</span>
+                <span>৳{formatMoney(parseNumeric(String(invoice.sale.total)))}</span>
+              </div>
+            </div>
+
+            <div style={{ borderTop: "1px solid #000", margin: "8px 0" }} />
+
+            <div style={{ display: "grid", gap: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Payment</span>
+                <span style={{ fontWeight: 700, textTransform: "uppercase" }}>
+                  {invoice.sale.paymentMethod}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Paid</span>
+                <span style={{ fontWeight: 700 }}>
+                  ৳{formatMoney(parseNumeric(String(invoice.sale.paid)))}
+                </span>
+              </div>
+              {parseNumeric(String(invoice.sale.due)) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Due</span>
+                  <span style={{ fontWeight: 700 }}>
+                    ৳{formatMoney(parseNumeric(String(invoice.sale.due)))}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ borderTop: "1px solid #000", margin: "10px 0 8px" }} />
+
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontWeight: 700 }}>Thank you for your purchase!</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3 border-b bg-white px-4 py-2.5 shrink-0">
         <div className="flex items-center gap-3">
