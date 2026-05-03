@@ -20,6 +20,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -164,7 +165,12 @@ export default function WarehousePosPage() {
   const [activeHeldCartId, setActiveHeldCartId] = useState<number | undefined>(undefined);
   const [completedSaleId, setCompletedSaleId] = useState<number | undefined>(undefined);
   const [showInvoice, setShowInvoice] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(searchText), 300);
@@ -482,13 +488,20 @@ export default function WarehousePosPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
-      {/* Printable receipt (only visible while printing) */}
-      {invoice && (
-        <div data-pos-receipt className="hidden">
+      {/* Printable receipt: portaled to <body> so print CSS can isolate it via `body > *` */}
+      {mounted && invoice &&
+        createPortal(
           <div
+            data-pos-receipt
             style={{
+              position: "absolute",
+              left: "-10000px",
+              top: 0,
+              width: "80mm",
               fontSize: 12,
               lineHeight: 1.25,
+              color: "#000",
+              background: "#fff",
               fontFamily:
                 "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
             }}
@@ -648,9 +661,9 @@ export default function WarehousePosPage() {
             <div style={{ textAlign: "center" }}>
               <div style={{ fontWeight: 700 }}>Thank you for your purchase!</div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
 
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3 border-b bg-white px-4 py-2.5 shrink-0">
