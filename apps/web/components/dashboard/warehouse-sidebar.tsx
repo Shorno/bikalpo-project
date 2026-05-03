@@ -16,6 +16,7 @@ import {
   MegaphoneIcon,
   NetworkIcon,
   PackageIcon,
+  PackagePlusIcon,
   PackageSearchIcon,
   PercentIcon,
   RotateCcwIcon,
@@ -111,6 +112,7 @@ const warehouseNavGroups: NavGroup[] = [
   {
     label: "Purchase Management",
     items: [
+      { title: "Quick Purchase", url: `${WH}/quick-purchase`, icon: PackagePlusIcon },
       { title: "Purchase Orders", url: `${WH}/purchases`, icon: ClipboardListIcon },
       { title: "Suppliers", url: `${WH}/suppliers`, icon: UsersIcon },
       { title: "Purchase History", url: `${WH}/purchase-history`, icon: FileTextIcon },
