@@ -1,13 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Package, Loader } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Package } from "lucide-react";
+import { AdminCatalogRequests } from "@/components/catalog-approval/admin-catalog-requests";
 import {
   useVariantOptionColumns,
   type VariantOptionRow,
 } from "@/components/features/variant-option/components/variant-option-columns";
 import VariantOptionTable from "@/components/features/variant-option/components/variant-option-table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
 
 export default function VariantOptionsPage() {
@@ -68,6 +69,11 @@ export default function VariantOptionsPage() {
         data={(variantOptions as VariantOptionRow[]) ?? []}
         types={types}
         categories={categories}
+      />
+
+      <AdminCatalogRequests
+        requestType="variant_option"
+        title="Variant Requests"
       />
     </div>
   );

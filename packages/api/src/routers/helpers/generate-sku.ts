@@ -18,7 +18,7 @@
 
 import { db } from "@bikalpo-project/db";
 import { sql } from "drizzle-orm";
-import type { PgTable, PgColumn } from "drizzle-orm/pg-core";
+import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Auto-assign next available skuCode
@@ -37,14 +37,15 @@ export async function nextSkuCode(
     table: PgTable,
     skuColumn: PgColumn,
     digits: 2 | 3,
-    filterConditions?: ReturnType<typeof sql>
+    filterConditions?: ReturnType<typeof sql>,
+    database: Pick<typeof db, "execute"> = db,
 ): Promise<string> {
     // Find the maximum existing skuCode within the scope
     const query = filterConditions
         ? sql`SELECT COALESCE(MAX(CAST(${skuColumn} AS INTEGER)), 0) AS max_code FROM ${table} WHERE ${filterConditions}`
         : sql`SELECT COALESCE(MAX(CAST(${skuColumn} AS INTEGER)), 0) AS max_code FROM ${table}`;
 
-    const result = await db.execute(query);
+    const result = await database.execute(query);
     const maxCode = Number(result.rows?.[0]?.max_code ?? 0);
     const nextCode = maxCode + 1;
 

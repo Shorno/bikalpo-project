@@ -1,70 +1,73 @@
 import type { RouterClient } from "@orpc/server";
 
 import { protectedProcedure, publicProcedure } from "../index";
-import { adminCoreProductRouter } from "./admin-core-product";
-import { adminOfferRouter } from "./admin-offer";
-import { adminProductTypeRouter } from "./admin-product-type";
-import { adminEmployeeReportRouter } from "./admin-employee-report";
-import { adminBrandUpdateRouter } from "./admin-brand-update";
 import { adminAnnouncementRouter } from "./admin-announcement";
+import { adminAreaRouter } from "./admin-area";
+import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
+import { adminAssistedInviteRouter } from "./admin-assisted-invite";
+import { adminBrandUpdateRouter } from "./admin-brand-update";
+import { adminComplaintRouter } from "./admin-complaint";
+import { adminCoreProductRouter } from "./admin-core-product";
 import { adminCustomerHomeTabRouter } from "./admin-customer-home-tab";
+import { adminEmployeeReportRouter } from "./admin-employee-report";
 import { adminEstimateRouter } from "./admin-estimate";
+import { adminInviteTrackingRouter } from "./admin-invite-tracking";
 import { adminInvoiceRouter } from "./admin-invoice";
 import { adminItemRequestRouter } from "./admin-item-request";
+import { adminLandingRouter } from "./admin-landing";
+import { adminMarketingRouter } from "./admin-marketing";
+import { adminOfferRouter } from "./admin-offer";
 import { adminOrderRouter } from "./admin-order";
+import { adminProductTypeRouter } from "./admin-product-type";
 import { adminProductVariantRouter } from "./admin-product-variant";
+import { adminRewardRouter } from "./admin-reward";
 import { adminSalesReportRouter } from "./admin-sales-report";
+import { adminSellerAreaRouter } from "./admin-seller-area";
+import { adminShopCategoryAssignmentRouter } from "./admin-shop-category-assignment";
 import { adminSubcategoryRouter } from "./admin-subcategory";
 import { adminTicketRouter } from "./admin-ticket";
+import { adminUserManagementRouter } from "./admin-user-management";
+import { adminVariantOptionRouter } from "./admin-variant-option";
+import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
 import { auditRouter } from "./audit";
+import { barikoiRouter } from "./barikoi";
 import { brandRouter } from "./brand";
+import {
+  adminCatalogApprovalRouter,
+  warehouseCatalogApprovalRouter,
+} from "./catalog-approval-request";
 import { categoryRouter } from "./category";
 import { cloudinaryRouter } from "./cloudinary";
+import { customerRouter } from "./customer";
 import { customerManagementRouter } from "./customer-management";
 import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
-import { employeeRouter } from "./employee";
-import { productRouter } from "./product";
-import { customerRouter } from "./customer";
-import { returnsRouter } from "./returns";
-import { salesmanRouter } from "./salesman";
-import { inventoryRouter } from "./inventory";
-
-import { verifiedUserRouter } from "./verified-user";
-import { sellerApplicationRouter } from "./seller-application";
-import { shopOwnerRouter } from "./shop-owner";
-import { warehouseApplicationRouter } from "./warehouse-application";
-import { warehouseRouter } from "./warehouse";
-import { adminLandingRouter } from "./admin-landing";
-import { landingRouter } from "./landing";
-import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
-import { adminShopCategoryAssignmentRouter } from "./admin-shop-category-assignment";
-import { adminAreaRouter } from "./admin-area";
-import { adminSellerAreaRouter } from "./admin-seller-area";
-import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
-import { adminToLetRouter, toLetRouter } from "./tolet";
-import { barikoiRouter } from "./barikoi";
 import { devOtpRouter } from "./dev-otp";
-import { payeeRouter } from "./payee";
+import { employeeRouter } from "./employee";
 import { expenseRouter } from "./expense";
-import { supplierPaymentRouter } from "./supplier-payment";
+import { inventoryRouter } from "./inventory";
+import { landingRouter } from "./landing";
+import { marketingRouter } from "./marketing";
+import { payeeRouter } from "./payee";
+import { productRouter } from "./product";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
-import { stockOverviewRouter } from "./stock-overview";
-import { adminVariantOptionRouter } from "./admin-variant-option";
-import { adminInviteTrackingRouter } from "./admin-invite-tracking";
-import { adminAssistedInviteRouter } from "./admin-assisted-invite";
-import { adminRewardRouter } from "./admin-reward";
-import { userInviteRouter } from "./user-invite";
-import { adminUserManagementRouter } from "./admin-user-management";
-import { adminMarketingRouter } from "./admin-marketing";
-import { marketingRouter } from "./marketing";
-import { userTicketRouter } from "./user-ticket";
-import { userComplaintRouter } from "./user-complaint";
-import { adminComplaintRouter } from "./admin-complaint";
-import { warehouseEmployeeRouter } from "./warehouse-employee";
-import { warehouseDeliveryRouter } from "./warehouse-delivery";
+import { returnsRouter } from "./returns";
+import { salesmanRouter } from "./salesman";
+import { sellerApplicationRouter } from "./seller-application";
+import { shopOwnerRouter } from "./shop-owner";
 import { stockAdjustmentRouter } from "./stock-adjustment";
+import { stockOverviewRouter } from "./stock-overview";
+import { supplierPaymentRouter } from "./supplier-payment";
+import { adminToLetRouter, toLetRouter } from "./tolet";
+import { userComplaintRouter } from "./user-complaint";
+import { userInviteRouter } from "./user-invite";
+import { userTicketRouter } from "./user-ticket";
+import { verifiedUserRouter } from "./verified-user";
+import { warehouseRouter } from "./warehouse";
+import { warehouseApplicationRouter } from "./warehouse-application";
+import { warehouseDeliveryRouter } from "./warehouse-delivery";
+import { warehouseEmployeeRouter } from "./warehouse-employee";
 import { warehousePosRouter } from "./warehouse-pos";
 
 export const appRouter = {
@@ -144,6 +147,8 @@ export const appRouter = {
   warehouseDelivery: warehouseDeliveryRouter,
   stockAdjustment: stockAdjustmentRouter,
   warehousePos: warehousePosRouter,
+  warehouseCatalogApproval: warehouseCatalogApprovalRouter,
+  adminCatalogApproval: adminCatalogApprovalRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;
