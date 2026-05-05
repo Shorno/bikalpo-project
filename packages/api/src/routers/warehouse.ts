@@ -1509,67 +1509,8 @@ const supplierQueries = {
                 throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
             }
 
-            // Purchase stats by status
-            const statusCounts = await db
-                .select({
-                    status: purchase.status,
-                    count: count(),
-                })
-                .from(purchase)
-                .where(
-                    and(
-                        eq(purchase.warehouseId, userId),
-                        eq(purchase.supplierId, input.id),
-                    ),
-                )
-                .groupBy(purchase.status);
-
-            const orderStats = { total: 0, draft: 0, received: 0, partial: 0, cancelled: 0 };
-            for (const s of statusCounts) {
-                (orderStats as any)[s.status] = s.count;
-                orderStats.total += s.count;
-            }
-
-            // Total purchase value
-            const [purchaseSum] = await db
-                .select({
-                    total: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
-                })
-                .from(purchase)
-                .where(
-                    and(
-                        eq(purchase.warehouseId, userId),
-                        eq(purchase.supplierId, input.id),
-                    ),
-                );
-
-            const totalPurchaseValue = parseFloat(purchaseSum?.total ?? "0");
-
-            // Products supplied — distinct product names from purchase items
-            const purchaseIds = await db
-                .select({ id: purchase.id })
-                .from(purchase)
-                .where(
-                    and(
-                        eq(purchase.warehouseId, userId),
-                        eq(purchase.supplierId, input.id),
-                    ),
-                );
-
-            let productsSupplied: string[] = [];
-            if (purchaseIds.length > 0) {
-                const pIds = purchaseIds.map((p) => p.id);
-                const items = await db
-                    .select({ productName: purchaseItem.productName })
-                    .from(purchaseItem)
-                    .where(inArray(purchaseItem.purchaseId, pIds));
-
-                const uniqueNames = new Set(items.map((i) => i.productName));
-                productsSupplied = Array.from(uniqueNames).slice(0, 20);
-            }
-
-            // Last 5 purchases with items
-            const lastPurchases = await db.query.purchase.findMany({
+            // ── Purchase History (all purchases with items count) ──
+            const purchases = await db.query.purchase.findMany({
                 where: and(
                     eq(purchase.warehouseId, userId),
                     eq(purchase.supplierId, input.id),
@@ -1584,7 +1525,92 @@ const supplierQueries = {
                     },
                 },
                 orderBy: [desc(purchase.createdAt)],
-                limit: 5,
+            });
+
+            // ── Total Purchase Value ──
+            const totalPurchaseValue = purchases.reduce(
+                (sum, p) => sum + parseFloat(p.total ?? "0"),
+                0,
+            );
+
+            // ── Payment History from Ledger ──
+            const { financialLedger } = await import("@bikalpo-project/db/schema");
+            const payments = await db
+                .select({
+                    id: financialLedger.id,
+                    amount: financialLedger.amount,
+                    description: financialLedger.description,
+                    createdAt: financialLedger.createdAt,
+                })
+                .from(financialLedger)
+                .where(
+                    and(
+                        eq(financialLedger.ownerId, userId),
+                        eq(financialLedger.referenceType, "supplier_payment"),
+                        eq(financialLedger.referenceId, input.id),
+                    ),
+                )
+                .orderBy(desc(financialLedger.createdAt));
+
+            const totalPaid = payments.reduce(
+                (sum, p) => sum + parseFloat(p.amount ?? "0"),
+                0,
+            );
+
+            // Also sum cash purchases as "paid" (only credit purchases create payables)
+            const cashPurchaseTotal = purchases
+                .filter((p) => p.paymentType === "cash")
+                .reduce((sum, p) => sum + parseFloat(p.total ?? "0"), 0);
+
+            // ── Product Supply Breakdown ──
+            const productMap = new Map<string, { totalQty: number; totalValue: number }>();
+            for (const p of purchases) {
+                for (const item of p.items) {
+                    const name = item.productName;
+                    const existing = productMap.get(name) ?? { totalQty: 0, totalValue: 0 };
+                    existing.totalQty += parseFloat(item.quantity ?? "0");
+                    existing.totalValue += parseFloat(item.totalCost ?? "0");
+                    productMap.set(name, existing);
+                }
+            }
+            const productBreakdown = Array.from(productMap.entries())
+                .map(([name, data]) => ({
+                    productName: name,
+                    totalQty: data.totalQty,
+                    totalValue: data.totalValue,
+                }))
+                .sort((a, b) => b.totalValue - a.totalValue)
+                .slice(0, 30);
+
+            // ── Due Alert ──
+            const currentPayable = parseFloat(sup.currentPayable ?? "0");
+
+            // Build purchase history rows with paid/due
+            const purchaseHistory = purchases.map((p) => {
+                const total = parseFloat(p.total ?? "0");
+                const isCash = p.paymentType === "cash";
+                const paid = isCash ? total : 0;
+                const due = isCash ? 0 : total;
+                return {
+                    id: p.id,
+                    purchaseNumber: p.purchaseNumber,
+                    purchaseDate: p.purchaseDate,
+                    itemCount: p.items.length,
+                    total,
+                    paid,
+                    due,
+                    status: p.status,
+                    paymentType: p.paymentType,
+                    discount: p.discount,
+                    transportCost: p.transportCost,
+                    note: p.note,
+                    createdAt: p.createdAt,
+                    items: p.items.map((item) => ({
+                        productName: item.productName,
+                        quantity: item.quantity,
+                        totalCost: item.totalCost,
+                    })),
+                };
             });
 
             return {
@@ -1592,10 +1618,12 @@ const supplierQueries = {
                     ...sup,
                     categoryName: sup.category?.name ?? null,
                 },
-                orderStats,
+                purchaseHistory,
+                productBreakdown,
+                payments,
                 totalPurchaseValue,
-                productsSupplied,
-                lastPurchases,
+                totalPaid: totalPaid + cashPurchaseTotal,
+                currentPayable,
             };
         }),
 
@@ -1672,22 +1700,23 @@ const supplierQueries = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
+            // Only include fields that were explicitly provided
+            const updateData: Record<string, any> = { name: input.name };
+            if (input.company !== undefined) updateData.company = input.company || null;
+            if (input.contactPerson !== undefined) updateData.contactPerson = input.contactPerson || null;
+            if (input.phone !== undefined) updateData.phone = input.phone || null;
+            if (input.email !== undefined) updateData.email = input.email || null;
+            if (input.address !== undefined) updateData.address = input.address || null;
+            if (input.notes !== undefined) updateData.notes = input.notes || null;
+            if (input.creditLimit !== undefined) updateData.creditLimit = input.creditLimit;
+            if (input.returnPackAgreement !== undefined) updateData.returnPackAgreement = input.returnPackAgreement;
+            if (input.categoryId !== undefined) updateData.categoryId = input.categoryId;
+            if (input.isActive !== undefined) updateData.isActive = input.isActive;
+            if (input.status !== undefined) updateData.status = input.status;
+
             const [updated] = await db
                 .update(supplier)
-                .set({
-                    name: input.name,
-                    company: input.company || null,
-                    contactPerson: input.contactPerson || null,
-                    phone: input.phone || null,
-                    email: input.email || null,
-                    address: input.address || null,
-                    notes: input.notes || null,
-                    creditLimit: input.creditLimit ?? undefined,
-                    returnPackAgreement: input.returnPackAgreement ?? undefined,
-                    categoryId: input.categoryId !== undefined ? input.categoryId : undefined,
-                    isActive: input.isActive,
-                    status: input.status ?? undefined,
-                })
+                .set(updateData)
                 .where(and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)))
                 .returning();
 
