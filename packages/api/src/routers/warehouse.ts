@@ -3103,8 +3103,10 @@ const pricingQueries = {
                     ? labelParts.join(" ")
                     : v.unitLabel || v.sku || `Variant #${v.id}`;
 
-                // Pack unit display
-                const packUnit = v.unitLabel || "Unit";
+                // Pack unit display — show just the weight/unit (e.g. "5 KG", "1 L", "1 Pc")
+                const packUnit = weightKg > 0
+                    ? `${weightKg % 1 === 0 ? Math.round(weightKg) : weightKg} KG`
+                    : v.unitLabel || "Unit";
 
                 priceItems.push({
                     inventoryId: item.id,
@@ -4240,6 +4242,49 @@ const cartonQueries = {
             });
 
             return { success: true, message: "Carton marked as empty" };
+        }),
+
+    /**
+     * Update carton price and delivery cost for an existing active carton.
+     */
+    updateCartonPrice: warehouseProcedure
+        .input(
+            z.object({
+                cartonId: z.number().int(),
+                cartonPrice: z.string().optional(),
+                deliveryCostPerUnit: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingCarton = await db.query.carton.findFirst({
+                where: and(
+                    eq(carton.id, input.cartonId),
+                    eq(carton.warehouseId, userId),
+                ),
+            });
+
+            if (!existingCarton) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Carton not found or doesn't belong to your warehouse",
+                });
+            }
+
+            const updateData: Record<string, any> = {};
+            if (input.cartonPrice !== undefined) updateData.cartonPrice = input.cartonPrice;
+            if (input.deliveryCostPerUnit !== undefined) updateData.deliveryCostPerUnit = input.deliveryCostPerUnit;
+
+            if (Object.keys(updateData).length === 0) {
+                return { success: true, message: "Nothing to update" };
+            }
+
+            await db
+                .update(carton)
+                .set(updateData)
+                .where(eq(carton.id, input.cartonId));
+
+            return { success: true, message: "Carton price updated" };
         }),
 
     /**

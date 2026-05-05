@@ -12,6 +12,7 @@ import {
   Layers,
   MapPin,
   Package,
+  Pencil,
   QrCode,
   Scale,
   SquareSlash,
@@ -24,6 +25,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -247,7 +250,10 @@ function CartonDetailModal({ cartonId, productId, onClose }: {
   const [showTransfer, setShowTransfer] = useState(false);
   const [showBreak, setShowBreak] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
+  const [showEditPrice, setShowEditPrice] = useState(false);
   const [selectedAreaId, setSelectedAreaId] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+  const [editDeliveryCost, setEditDeliveryCost] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["warehouse", "getCartonById", cartonId],
@@ -284,6 +290,21 @@ function CartonDetailModal({ cartonId, productId, onClose }: {
     mutationFn: () => (orpc.warehouse as any).markCartonEmpty.call({ cartonId }),
     onSuccess: () => { toast.success("Carton marked empty"); invalidateAll(); onClose(); },
     onError: (err: any) => toast.error(err.message || "Failed"),
+  });
+
+  const updatePriceMutation = useMutation({
+    mutationFn: () =>
+      (orpc.warehouse as any).updateCartonPrice.call({
+        cartonId,
+        cartonPrice: editPrice || undefined,
+        deliveryCostPerUnit: editDeliveryCost || undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Carton price updated");
+      invalidateAll();
+      setShowEditPrice(false);
+    },
+    onError: (err: any) => toast.error(err.message || "Failed to update price"),
   });
 
   return (
@@ -344,6 +365,9 @@ function CartonDetailModal({ cartonId, productId, onClose }: {
               {/* Actions */}
               {isActive && (
                 <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/50 flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" className="gap-1.5 text-xs hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700" onClick={() => { setEditPrice(c.cartonPrice ? String(c.cartonPrice) : ""); setEditDeliveryCost(c.deliveryCostPerUnit ? String(c.deliveryCostPerUnit) : ""); setShowEditPrice(true); }}>
+                    <Pencil size={13} /> Edit Price
+                  </Button>
                   <Button variant="outline" size="sm" className="gap-1.5 text-xs hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700" onClick={() => setShowTransfer(true)}>
                     <ArrowRightLeft size={13} /> Transfer
                   </Button>
@@ -403,6 +427,47 @@ function CartonDetailModal({ cartonId, productId, onClose }: {
             <Button variant="outline" onClick={() => setShowEmpty(false)}>Cancel</Button>
             <Button className="bg-gray-800 hover:bg-gray-900 text-white" disabled={emptyMutation.isPending} onClick={() => emptyMutation.mutate()}>
               {emptyMutation.isPending ? "Processing…" : "Mark Empty"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditPrice} onOpenChange={setShowEditPrice}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Carton Price</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-500 mb-1">
+            Update pricing for <span className="font-mono font-bold text-gray-700">{c?.cartonId}</span>
+          </p>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label className="text-xs font-medium text-gray-600 mb-2 block">Carton Price (৳)</Label>
+              <Input
+                type="number"
+                placeholder="Enter carton price"
+                value={editPrice}
+                onChange={(e) => setEditPrice(e.target.value)}
+                className="h-11 bg-gray-50 border-gray-200"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-600 mb-2 block">Delivery Cost (৳)</Label>
+              <Input
+                type="number"
+                placeholder="Enter delivery cost"
+                value={editDeliveryCost}
+                onChange={(e) => setEditDeliveryCost(e.target.value)}
+                className="h-11 bg-gray-50 border-gray-200"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditPrice(false)}>Cancel</Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={updatePriceMutation.isPending || (!editPrice && !editDeliveryCost)}
+              onClick={() => updatePriceMutation.mutate()}
+            >
+              {updatePriceMutation.isPending ? "Saving…" : "Save Price"}
             </Button>
           </DialogFooter>
         </DialogContent>
