@@ -317,7 +317,7 @@ export default function CartonTrackingPage() {
                     <span className="font-bold text-gray-900 tabular-nums">
                       {p.activeCartons}
                     </span>
-                    <span className="text-gray-500 ml-1 text-xs capitalize">{p.packType || "Carton"}</span>
+                    <span className="text-gray-500 ml-1 text-xs">Carton</span>
                   </td>
                   <td className="px-4 py-3.5 text-center">
                     <Link

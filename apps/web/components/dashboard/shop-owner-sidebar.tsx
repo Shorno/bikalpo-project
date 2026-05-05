@@ -28,6 +28,7 @@ import {
   UsersIcon,
   WalletIcon,
   ExternalLinkIcon,
+  Warehouse as WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
@@ -79,6 +80,7 @@ const shopOwnerNavGroups: NavGroup[] = [
       { title: "Add Stock", url: `${D}/stock/add`, icon: PlusCircleIcon },
       { title: "Stock Adjustment", url: `${D}/stock-adjustment`, icon: ArrowRightLeftIcon },
       { title: "Damage", url: `${D}/damage`, icon: AlertTriangleIcon },
+      { title: "Warehouses", url: `${D}/warehouses`, icon: WarehouseIcon },
       {
         title: "Purchase Management",
         url: `${D}/orders`,
@@ -86,7 +88,6 @@ const shopOwnerNavGroups: NavGroup[] = [
         items: [
           { title: "Purchase Orders", url: `${D}/orders` },
           { title: "Order Tracking", url: `${D}/orders/tracking` },
-          { title: "Order from Warehouse", url: `${D}/order-from-warehouse` },
           { title: "Purchase History", url: `${D}/orders/history` },
         ],
       },

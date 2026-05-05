@@ -47,6 +47,87 @@ export function useShopOwnerProductDetails(slug: string) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// B2B CONNECTION HOOKS
+// ────────────────────────────────────────────────────────────────
+
+/** Get all warehouse connections for this shop */
+export function useMyWarehouses(status?: "all" | "active" | "pending" | "disconnected") {
+  return useQuery(
+    orpc.shopOwner.getMyWarehouses.queryOptions({
+      input: { status: status ?? "all" },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Lookup a warehouse by slug/code without connecting */
+export function useLookupWarehouse(warehouseSlug: string) {
+  return useQuery(
+    orpc.shopOwner.lookupWarehouseByCode.queryOptions({
+      input: { warehouseSlug },
+      enabled: !!warehouseSlug,
+      retry: false, // Don't retry on 404
+    }),
+  );
+}
+
+/** Request access to a warehouse */
+export function useConnectToWarehouse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { warehouseSlug: string }) =>
+      orpc.shopOwner.connectToWarehouse.call(input),
+    onSuccess: (data) => {
+      if (data.status === "already_connected") {
+        toast.info(data.message);
+      } else if (data.status === "already_pending") {
+        toast.info(data.message);
+      } else {
+        toast.success(data.message || "Connection request sent");
+      }
+      qc.invalidateQueries({ queryKey: orpc.shopOwner.getMyWarehouses.key() });
+
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to connect to warehouse");
+    },
+  });
+}
+
+/** Cancel a pending warehouse request */
+export function useCancelWarehouseRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { connectionId: number }) =>
+      orpc.shopOwner.cancelWarehouseRequest.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Request cancelled");
+      qc.invalidateQueries({ queryKey: orpc.shopOwner.getMyWarehouses.key() });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to cancel request");
+    },
+  });
+}
+
+/** Disconnect from an active warehouse */
+export function useDisconnectWarehouse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { connectionId: number }) =>
+      orpc.shopOwner.disconnectWarehouse.call(input),
+    onSuccess: (data) => {
+      toast.success(data.message || "Disconnected successfully");
+      qc.invalidateQueries({ queryKey: orpc.shopOwner.getMyWarehouses.key() });
+
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to disconnect");
+    },
+  });
+}
+
+// ────────────────────────────────────────────────────────────────
 // MANAGEMENT QUERY HOOKS (Shop Owner as Seller)
 // ────────────────────────────────────────────────────────────────
 
