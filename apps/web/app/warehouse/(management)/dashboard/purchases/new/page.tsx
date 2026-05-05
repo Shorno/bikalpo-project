@@ -45,12 +45,13 @@ export default function NewPurchasePage() {
     queryFn: () => orpc.warehouse.getSuppliers.call({}),
   });
 
-  // Search variants for the dropdown
+  // Search variants for the dropdown — filtered by supplier's category
   const { data: variantsData } = useQuery({
-    queryKey: ["warehouse", "searchVariants", variantSearch],
+    queryKey: ["warehouse", "searchVariants", variantSearch, supplierId],
     queryFn: () =>
       orpc.warehouse.searchVariants.call({
         search: variantSearch || undefined,
+        supplierId: supplierId ?? undefined,
       }),
   });
 

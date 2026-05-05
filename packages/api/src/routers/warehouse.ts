@@ -1321,6 +1321,7 @@ import {
     purchaseItem,
     product as productTable,
     productVariant,
+    category,
 } from "@bikalpo-project/db/schema";
 
 // ────────────────────────────────────────────────────────────────
@@ -1329,19 +1330,37 @@ import {
 
 const variantQueries = {
     // Search product variants for the purchase form dropdown
+    // Optionally filter by supplier's category when supplierId is provided
     searchVariants: warehouseProcedure
         .input(
             z.object({
                 search: z.string().optional(),
+                supplierId: z.number().int().optional(),
             }),
         )
-        .handler(async ({ input }) => {
+        .handler(async ({ context, input }) => {
             const conditions: SQL[] = [eq(productTable.status, "active")];
 
             if (input.search) {
                 conditions.push(
                     sql`${productTable.name} ILIKE ${`%${input.search}%`}`,
                 );
+            }
+
+            // If supplierId provided, filter products to supplier's category
+            let supplierCategoryName: string | null = null;
+            if (input.supplierId) {
+                const sup = await db.query.supplier.findFirst({
+                    where: and(
+                        eq(supplier.id, input.supplierId),
+                        eq(supplier.addedBy, context.session.user.id),
+                    ),
+                    with: { category: { columns: { id: true, name: true } } },
+                });
+                if (sup?.categoryId) {
+                    conditions.push(eq(productTable.categoryId, sup.categoryId));
+                    supplierCategoryName = sup.category?.name ?? null;
+                }
             }
 
             const results = await db
@@ -1361,16 +1380,18 @@ const variantQueries = {
                 .orderBy(productTable.name)
                 .limit(50);
 
-            return { variants: results };
+            return { variants: results, supplierCategoryName };
         }),
 };
 
 const supplierQueries = {
-    // Get all suppliers for the current warehouse
+    // Get all suppliers for the current warehouse — enriched with category + purchase totals
     getSuppliers: warehouseProcedure
         .input(
             z.object({
                 search: z.string().optional(),
+                status: z.enum(["all", "active", "suspended"]).default("all"),
+                categoryId: z.number().int().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -1379,17 +1400,215 @@ const supplierQueries = {
 
             if (input.search) {
                 conditions.push(
-                    sql`(${supplier.name} ILIKE ${`%${input.search}%`} OR ${supplier.company} ILIKE ${`%${input.search}%`})`,
+                    sql`(${supplier.name} ILIKE ${`%${input.search}%`} OR ${supplier.company} ILIKE ${`%${input.search}%`} OR ${supplier.phone} ILIKE ${`%${input.search}%`})`,
                 );
             }
 
-            const suppliers = await db
-                .select()
-                .from(supplier)
-                .where(and(...conditions))
-                .orderBy(desc(supplier.createdAt));
+            if (input.status !== "all") {
+                conditions.push(eq(supplier.status, input.status));
+            }
 
-            return { suppliers };
+            if (input.categoryId) {
+                conditions.push(eq(supplier.categoryId, input.categoryId));
+            }
+
+            // Fetch suppliers with category relation
+            const suppliers = await db.query.supplier.findMany({
+                where: and(...conditions),
+                with: {
+                    category: { columns: { id: true, name: true, slug: true } },
+                },
+                orderBy: [desc(supplier.createdAt)],
+            });
+
+            // Aggregate total purchase per supplier
+            const supplierIds = suppliers.map((s) => s.id);
+            let purchaseTotals: Record<number, number> = {};
+
+            if (supplierIds.length > 0) {
+                const totals = await db
+                    .select({
+                        supplierId: purchase.supplierId,
+                        totalPurchase: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
+                    })
+                    .from(purchase)
+                    .where(
+                        and(
+                            eq(purchase.warehouseId, userId),
+                            inArray(purchase.supplierId, supplierIds),
+                        ),
+                    )
+                    .groupBy(purchase.supplierId);
+
+                for (const t of totals) {
+                    purchaseTotals[t.supplierId] = parseFloat(t.totalPurchase) || 0;
+                }
+            }
+
+            return {
+                suppliers: suppliers.map((s) => ({
+                    ...s,
+                    categoryName: s.category?.name ?? null,
+                    totalPurchase: purchaseTotals[s.id] ?? 0,
+                })),
+            };
+        }),
+
+    // Financial KPI summary for all suppliers
+    getSupplierStats: warehouseProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // Total payable across all active suppliers
+            const allSuppliers = await db.query.supplier.findMany({
+                where: eq(supplier.addedBy, userId),
+                columns: { id: true, currentPayable: true, status: true, isActive: true },
+            });
+
+            const activeCount = allSuppliers.filter((s) => s.status === "active").length;
+            const totalPayable = allSuppliers.reduce(
+                (sum, s) => sum + parseFloat(s.currentPayable),
+                0,
+            );
+
+            // Total purchases across all suppliers
+            const [purchaseStats] = await db
+                .select({
+                    totalPurchase: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
+                })
+                .from(purchase)
+                .where(eq(purchase.warehouseId, userId));
+
+            const totalPurchase = parseFloat(purchaseStats?.totalPurchase ?? "0");
+            const totalPaid = totalPurchase - totalPayable;
+
+            return {
+                totalPurchase,
+                totalPaid: Math.max(0, totalPaid),
+                totalPayable,
+                activeCount,
+                totalCount: allSuppliers.length,
+            };
+        }),
+
+    // Detailed view for a single supplier
+    getSupplierDetail: warehouseProcedure
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Fetch supplier with category
+            const sup = await db.query.supplier.findFirst({
+                where: and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)),
+                with: {
+                    category: { columns: { id: true, name: true, slug: true } },
+                },
+            });
+
+            if (!sup) {
+                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            }
+
+            // Purchase stats by status
+            const statusCounts = await db
+                .select({
+                    status: purchase.status,
+                    count: count(),
+                })
+                .from(purchase)
+                .where(
+                    and(
+                        eq(purchase.warehouseId, userId),
+                        eq(purchase.supplierId, input.id),
+                    ),
+                )
+                .groupBy(purchase.status);
+
+            const orderStats = { total: 0, draft: 0, received: 0, partial: 0, cancelled: 0 };
+            for (const s of statusCounts) {
+                (orderStats as any)[s.status] = s.count;
+                orderStats.total += s.count;
+            }
+
+            // Total purchase value
+            const [purchaseSum] = await db
+                .select({
+                    total: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
+                })
+                .from(purchase)
+                .where(
+                    and(
+                        eq(purchase.warehouseId, userId),
+                        eq(purchase.supplierId, input.id),
+                    ),
+                );
+
+            const totalPurchaseValue = parseFloat(purchaseSum?.total ?? "0");
+
+            // Products supplied — distinct product names from purchase items
+            const purchaseIds = await db
+                .select({ id: purchase.id })
+                .from(purchase)
+                .where(
+                    and(
+                        eq(purchase.warehouseId, userId),
+                        eq(purchase.supplierId, input.id),
+                    ),
+                );
+
+            let productsSupplied: string[] = [];
+            if (purchaseIds.length > 0) {
+                const pIds = purchaseIds.map((p) => p.id);
+                const items = await db
+                    .select({ productName: purchaseItem.productName })
+                    .from(purchaseItem)
+                    .where(inArray(purchaseItem.purchaseId, pIds));
+
+                const uniqueNames = new Set(items.map((i) => i.productName));
+                productsSupplied = Array.from(uniqueNames).slice(0, 20);
+            }
+
+            // Last 5 purchases with items
+            const lastPurchases = await db.query.purchase.findMany({
+                where: and(
+                    eq(purchase.warehouseId, userId),
+                    eq(purchase.supplierId, input.id),
+                ),
+                with: {
+                    items: {
+                        columns: {
+                            productName: true,
+                            quantity: true,
+                            totalCost: true,
+                        },
+                    },
+                },
+                orderBy: [desc(purchase.createdAt)],
+                limit: 5,
+            });
+
+            return {
+                supplier: {
+                    ...sup,
+                    categoryName: sup.category?.name ?? null,
+                },
+                orderStats,
+                totalPurchaseValue,
+                productsSupplied,
+                lastPurchases,
+            };
+        }),
+
+    // Get all categories for supplier form dropdown
+    getSupplierCategories: warehouseProcedure
+        .handler(async () => {
+            const categories = await db
+                .select({ id: category.id, name: category.name, slug: category.slug })
+                .from(category)
+                .where(eq(category.isActive, true))
+                .orderBy(category.name);
+
+            return { categories };
         }),
 
     // Create a new supplier
@@ -1405,6 +1624,7 @@ const supplierQueries = {
                 notes: z.string().optional(),
                 creditLimit: z.string().optional(),
                 returnPackAgreement: z.boolean().optional(),
+                categoryId: z.number().int().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -1422,6 +1642,7 @@ const supplierQueries = {
                     notes: input.notes || null,
                     creditLimit: input.creditLimit || "0",
                     returnPackAgreement: input.returnPackAgreement ?? false,
+                    categoryId: input.categoryId ?? null,
                     addedBy: userId,
                 })
                 .returning();
@@ -1443,6 +1664,7 @@ const supplierQueries = {
                 notes: z.string().optional(),
                 creditLimit: z.string().optional(),
                 returnPackAgreement: z.boolean().optional(),
+                categoryId: z.number().int().optional().nullable(),
                 isActive: z.boolean().optional(),
                 status: z.enum(["active", "suspended"]).optional(),
             }),
@@ -1462,6 +1684,7 @@ const supplierQueries = {
                     notes: input.notes || null,
                     creditLimit: input.creditLimit ?? undefined,
                     returnPackAgreement: input.returnPackAgreement ?? undefined,
+                    categoryId: input.categoryId !== undefined ? input.categoryId : undefined,
                     isActive: input.isActive,
                     status: input.status ?? undefined,
                 })

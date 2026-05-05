@@ -3,6 +3,7 @@ import {
     boolean,
     decimal,
     index,
+    integer,
     jsonb,
     pgEnum,
     pgTable,
@@ -12,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
 import { user } from "./auth-schema";
+import { category } from "./category";
 
 /** Supplier account status */
 export const supplierStatusEnum = pgEnum("supplier_status", [
@@ -35,6 +37,10 @@ export const supplier = pgTable(
         email: varchar("email", { length: 150 }),
         address: text("address"),
         notes: text("notes"),
+
+        /** Product category this supplier is assigned to (one supplier = one category) */
+        categoryId: integer("category_id")
+            .references(() => category.id, { onDelete: "set null" }),
 
         /** Who added this supplier (warehouse owner's userId) */
         addedBy: text("added_by")
@@ -66,6 +72,7 @@ export const supplier = pgTable(
     },
     (table) => [
         index("supplier_addedBy_idx").on(table.addedBy),
+        index("supplier_categoryId_idx").on(table.categoryId),
     ],
 );
 
@@ -73,6 +80,10 @@ export const supplierRelations = relations(supplier, ({ one }) => ({
     addedByUser: one(user, {
         fields: [supplier.addedBy],
         references: [user.id],
+    }),
+    category: one(category, {
+        fields: [supplier.categoryId],
+        references: [category.id],
     }),
 }));
 
