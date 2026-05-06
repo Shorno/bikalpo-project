@@ -3144,6 +3144,21 @@ const warehouseOrderQueries = {
 
             const warehouseId = warehouseUser[0]!.id;
 
+            // 1.5 Enforce explicit approval: check for an active connection
+            const connection = await db.query.shopWarehouseConnection.findFirst({
+                where: and(
+                    eq(shopWarehouseConnection.shopId, userId),
+                    eq(shopWarehouseConnection.warehouseId, warehouseId),
+                    eq(shopWarehouseConnection.status, "active")
+                )
+            });
+
+            if (!connection) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "You must be approved by this warehouse to place an order.",
+                });
+            }
+
             // 2. Validate each item: check inventory + get prices
             const validatedItems: {
                 variantId: number;
@@ -3738,16 +3753,77 @@ const openOrderEndpoints = {
 
 const warehouseConnectionEndpoints = {
     /**
-     * Step 2-3: Connect to a warehouse.
-     * Validates warehouse exists, runs category matching engine,
-     * creates/updates connection record.
+     * Preview warehouse details before connecting
+     */
+    lookupWarehouseByCode: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/lookup-warehouse",
+            tags: ["Shop Owner"],
+            summary: "Lookup warehouse by code/slug without connecting",
+        })
+        .input(
+            z.object({
+                warehouseSlug: z.string().min(1),
+            }),
+        )
+        .handler(async ({ input }) => {
+            const warehouseUser = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    warehouseName: user.warehouseName,
+                    warehouseAddress: user.warehouseAddress,
+                    warehouseSlug: user.warehouseSlug,
+                    image: user.image,
+                })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.warehouseSlug, input.warehouseSlug),
+                        eq(user.role, "warehouse"),
+                    ),
+                )
+                .limit(1);
+
+            if (warehouseUser.length === 0) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Warehouse not found",
+                });
+            }
+
+            const wh = warehouseUser[0]!;
+
+            // Get product count
+            const [countResult] = await db
+                .select({ count: count() })
+                .from(inventory)
+                .where(
+                    and(
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, wh.id),
+                        sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                    ),
+                );
+
+            return {
+                warehouse: {
+                    ...wh,
+                    productCount: countResult?.count || 0,
+                },
+            };
+        }),
+
+    /**
+     * Connect to a warehouse (Request Access).
+     * Always creates a pending request requiring manual approval.
      */
     connectToWarehouse: shopOwnerProcedure
         .route({
             method: "POST",
             path: "/shop-owner/connect-to-warehouse",
             tags: ["Shop Owner"],
-            summary: "Connect to a warehouse (with category matching)",
+            summary: "Request access to a warehouse",
         })
         .input(
             z.object({
@@ -3783,7 +3859,7 @@ const warehouseConnectionEndpoints = {
 
             const warehouseId = warehouseUser[0]!.id;
 
-            // 2. Check if already connected
+            // 2. Check existing connection status
             const existingConn = await db.query.shopWarehouseConnection.findFirst({
                 where: and(
                     eq(shopWarehouseConnection.shopId, shopId),
@@ -3791,112 +3867,207 @@ const warehouseConnectionEndpoints = {
                 ),
             });
 
-            if (existingConn && existingConn.status === "active") {
-                return {
-                    status: "already_connected" as const,
-                    connectionId: existingConn.id,
-                    warehouse: warehouseUser[0]!,
-                    matchedCategories: [],
-                };
-            }
-
-            // 3. Category Matching Engine
-            // Get shop's allowed subcategory IDs
-            const shopCategories = await db
-                .select({
-                    categoryId: shopCategoryAssignment.categoryId,
-                    subcategoryId: shopCategoryAssignment.subcategoryId,
-                })
-                .from(shopCategoryAssignment)
-                .where(eq(shopCategoryAssignment.shopId, shopId));
-
-            // Get warehouse's assigned subcategory IDs
-            const warehouseCategories = await db
-                .select({
-                    categoryId: warehouseCategoryAssignment.categoryId,
-                    subcategoryId: warehouseCategoryAssignment.subcategoryId,
-                })
-                .from(warehouseCategoryAssignment)
-                .where(eq(warehouseCategoryAssignment.warehouseId, warehouseId));
-
-            // Compute intersection
-            const shopSubcatIds = new Set(
-                shopCategories
-                    .map((sc) => sc.subcategoryId)
-                    .filter(Boolean) as number[],
-            );
-            const shopCatIds = new Set(
-                shopCategories.map((sc) => sc.categoryId),
-            );
-
-            const matchedSubcategoryIds: number[] = [];
-            for (const wc of warehouseCategories) {
-                // Match if shop has the specific subcategory, OR if shop has the
-                // whole category (subcategoryId = null) and warehouse has a subcategory in it
-                if (wc.subcategoryId && shopSubcatIds.has(wc.subcategoryId)) {
-                    matchedSubcategoryIds.push(wc.subcategoryId);
-                } else if (shopCatIds.has(wc.categoryId)) {
-                    // Shop is allowed for the whole category
-                    if (wc.subcategoryId) matchedSubcategoryIds.push(wc.subcategoryId);
+            if (existingConn) {
+                if (existingConn.status === "active") {
+                    return {
+                        status: "already_connected" as const,
+                        connectionId: existingConn.id,
+                        warehouse: warehouseUser[0]!,
+                        message: "You are already connected to this warehouse.",
+                    };
                 }
-            }
-
-            // If no shop categories assigned yet, allow all (flexible for new setups)
-            const hasShopCategories = shopCategories.length > 0;
-            const hasMatch = !hasShopCategories || matchedSubcategoryIds.length > 0;
-
-            if (hasMatch) {
-                // Auto-connect
-                if (existingConn) {
-                    await db
-                        .update(shopWarehouseConnection)
-                        .set({
-                            status: "active",
-                            connectedAt: new Date(),
-                        })
-                        .where(eq(shopWarehouseConnection.id, existingConn.id));
-                } else {
-                    await db.insert(shopWarehouseConnection).values({
-                        shopId,
-                        warehouseId,
-                        status: "active",
-                        connectedAt: new Date(),
-                    });
+                
+                if (existingConn.status === "pending") {
+                    return {
+                        status: "already_pending" as const,
+                        connectionId: existingConn.id,
+                        warehouse: warehouseUser[0]!,
+                        message: "Your request is already pending approval.",
+                    };
                 }
 
-                return {
-                    status: "connected" as const,
-                    warehouse: warehouseUser[0]!,
-                    matchedCategories: matchedSubcategoryIds,
-                };
-            } else {
-                // No match — pending
-                if (existingConn) {
-                    await db
-                        .update(shopWarehouseConnection)
-                        .set({ status: "pending" })
-                        .where(eq(shopWarehouseConnection.id, existingConn.id));
-                } else {
-                    await db.insert(shopWarehouseConnection).values({
-                        shopId,
-                        warehouseId,
-                        status: "pending",
-                    });
-                }
-
+                // If disconnected, reactivate as pending
+                await db
+                    .update(shopWarehouseConnection)
+                    .set({ status: "pending", connectedAt: null })
+                    .where(eq(shopWarehouseConnection.id, existingConn.id));
+                
                 return {
                     status: "pending" as const,
                     warehouse: warehouseUser[0]!,
-                    matchedCategories: [],
-                    message:
-                        "No matching categories found. Connection is pending admin approval.",
+                    message: "Connection request sent successfully.",
                 };
             }
+
+            // 3. Create new pending connection request
+            await db.insert(shopWarehouseConnection).values({
+                shopId,
+                warehouseId,
+                status: "pending",
+            });
+
+            return {
+                status: "pending" as const,
+                warehouse: warehouseUser[0]!,
+                message: "Connection request sent successfully.",
+            };
+        }),
+
+    /**
+     * Get all connected/pending warehouses for this shop
+     */
+    getMyWarehouses: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/my-warehouses",
+            tags: ["Shop Owner"],
+            summary: "Get all warehouse connections (active/pending/rejected)",
+        })
+        .input(
+            z.object({
+                status: z.enum(["all", "active", "pending", "disconnected"]).default("all"),
+            }).optional(),
+        )
+        .handler(
+            async ({ context, input }) => {
+                const shopId = context.session.user.id;
+                const statusFilter = input?.status || "all";
+
+                const conditions: SQL[] = [eq(shopWarehouseConnection.shopId, shopId)];
+                if (statusFilter !== "all") {
+                    conditions.push(eq(shopWarehouseConnection.status, statusFilter));
+                }
+
+                const connections = await db
+                    .select({
+                        connectionId: shopWarehouseConnection.id,
+                        status: shopWarehouseConnection.status,
+                        connectedAt: shopWarehouseConnection.connectedAt,
+                        lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                        warehouseId: user.id,
+                        warehouseName: user.warehouseName,
+                        warehouseSlug: user.warehouseSlug,
+                        warehouseAddress: user.warehouseAddress,
+                        name: user.name,
+                        image: user.image,
+                    })
+                    .from(shopWarehouseConnection)
+                    .innerJoin(
+                        user,
+                        eq(shopWarehouseConnection.warehouseId, user.id),
+                    )
+                    .where(and(...conditions))
+                    .orderBy(desc(shopWarehouseConnection.lastOrderedAt), desc(shopWarehouseConnection.connectedAt));
+
+                // Get product counts for active warehouses
+                const result = await Promise.all(
+                    connections.map(async (conn) => {
+                        if (conn.status !== "active") {
+                            return { ...conn, productCount: 0 };
+                        }
+                        
+                        const [countResult] = await db
+                            .select({ count: count() })
+                            .from(inventory)
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, conn.warehouseId),
+                                    sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                                ),
+                            );
+
+                        return {
+                            ...conn,
+                            productCount: countResult?.count || 0,
+                        };
+                    }),
+                );
+
+                return { warehouses: result };
+            },
+        ),
+
+    /**
+     * Cancel a pending warehouse connection request
+     */
+    cancelWarehouseRequest: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/cancel-warehouse-request",
+            tags: ["Shop Owner"],
+            summary: "Cancel a pending warehouse request",
+        })
+        .input(
+            z.object({
+                connectionId: z.number(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            const existingConn = await db.query.shopWarehouseConnection.findFirst({
+                where: and(
+                    eq(shopWarehouseConnection.id, input.connectionId),
+                    eq(shopWarehouseConnection.shopId, shopId),
+                    eq(shopWarehouseConnection.status, "pending")
+                ),
+            });
+
+            if (!existingConn) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Pending request not found",
+                });
+            }
+
+            await db.delete(shopWarehouseConnection).where(eq(shopWarehouseConnection.id, input.connectionId));
+
+            return { success: true, message: "Request cancelled" };
+        }),
+
+    /**
+     * Disconnect from an active warehouse
+     */
+    disconnectWarehouse: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/disconnect-warehouse",
+            tags: ["Shop Owner"],
+            summary: "Disconnect from an active warehouse",
+        })
+        .input(
+            z.object({
+                connectionId: z.number(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            const existingConn = await db.query.shopWarehouseConnection.findFirst({
+                where: and(
+                    eq(shopWarehouseConnection.id, input.connectionId),
+                    eq(shopWarehouseConnection.shopId, shopId),
+                    eq(shopWarehouseConnection.status, "active")
+                ),
+            });
+
+            if (!existingConn) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Active connection not found",
+                });
+            }
+
+            await db
+                .update(shopWarehouseConnection)
+                .set({ status: "disconnected" })
+                .where(eq(shopWarehouseConnection.id, input.connectionId));
+
+            return { success: true, message: "Disconnected successfully" };
         }),
 
     /**
      * Step 7: Get recently connected warehouses (smart memory).
-     * Sorted by lastOrderedAt descending.
+     * Sorted by lastOrderedAt descending. (Alias for backwards compatibility)
      */
     getConnectedWarehouses: shopOwnerProcedure
         .route({
@@ -4001,6 +4172,21 @@ const warehouseConnectionEndpoints = {
             }
 
             const warehouseId = warehouseUser[0]!.id;
+
+            // Enforce explicit approval: check for an active connection
+            const connection = await db.query.shopWarehouseConnection.findFirst({
+                where: and(
+                    eq(shopWarehouseConnection.shopId, shopId),
+                    eq(shopWarehouseConnection.warehouseId, warehouseId),
+                    eq(shopWarehouseConnection.status, "active")
+                )
+            });
+
+            if (!connection) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "You must be approved by this warehouse to view its catalog",
+                });
+            }
 
             // Get shop's allowed subcategory IDs and category IDs
             const shopAssignments = await db

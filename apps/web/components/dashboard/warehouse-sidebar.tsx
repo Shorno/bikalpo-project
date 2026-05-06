@@ -4,20 +4,20 @@ import {
   BarChart3Icon,
   BookOpenIcon,
   BoxesIcon,
+  CalculatorIcon,
   ClipboardIcon,
   ClipboardListIcon,
   CreditCardIcon,
   FileTextIcon,
-  HeadphonesIcon,
   InboxIcon,
   LayoutDashboardIcon,
+  LifeBuoyIcon,
   MapPinIcon,
   MegaphoneIcon,
   NetworkIcon,
   PackageIcon,
   PackagePlusIcon,
   PackageSearchIcon,
-  PaletteIcon,
   PercentIcon,
   RotateCcwIcon,
   SettingsIcon,
@@ -66,7 +66,17 @@ const warehouseNavGroups: NavGroup[] = [
       { title: "My Store", url: `${WH}/store`, icon: StoreIcon },
       { title: "Products", url: `${WH}/products`, icon: PackageIcon },
       { title: "Product Catalog", url: `${WH}/catalog`, icon: TagIcon },
+      {
+        title: "Catalog Requests",
+        url: `${WH}/catalog/requests`,
+        icon: ClipboardListIcon,
+      },
       { title: "Pricing", url: `${WH}/pricing`, icon: WalletIcon },
+      {
+        title: "Inventory Management",
+        url: `${WH}/inventory`,
+        icon: ClipboardIcon,
+      },
       {
         title: "Stock Control",
         url: `${WH}/stock`,
@@ -76,7 +86,10 @@ const warehouseNavGroups: NavGroup[] = [
           { title: "Stock", url: `${WH}/stock/list` },
           { title: "Brands", url: `${WH}/stock/brands` },
           { title: "Carton Tracking", url: `${WH}/carton-tracking` },
-          { title: "Variant Attributes", url: `${WH}/stock/variant-attributes` },
+          {
+            title: "Variant Attributes",
+            url: `${WH}/stock/variant-attributes`,
+          },
           { title: "Low Stocks", url: `${WH}/stock/low-stocks` },
           { title: "Expired Products", url: `${WH}/stock/expired` },
           { title: "Empty Pack", url: `${WH}/stock/empty-pack` },
@@ -93,27 +106,57 @@ const warehouseNavGroups: NavGroup[] = [
     label: "Supply Management",
     items: [
       { title: "Supply Orders", url: `${WH}/supply-orders`, icon: InboxIcon },
-      { title: "Dispatch Orders", url: `${WH}/dispatch-orders`, icon: TruckIcon },
-      { title: "Delivery Tracking", url: `${WH}/delivery-tracking`, icon: PackageSearchIcon },
-      { title: "Delivery Areas", url: `${WH}/delivery-management/areas`, icon: MapPinIcon },
+      {
+        title: "Dispatch Orders",
+        url: `${WH}/dispatch-orders`,
+        icon: TruckIcon,
+      },
+      {
+        title: "Delivery Tracking",
+        url: `${WH}/delivery-tracking`,
+        icon: PackageSearchIcon,
+      },
+      {
+        title: "Delivery Areas",
+        url: `${WH}/delivery-management/areas`,
+        icon: MapPinIcon,
+      },
       { title: "Returns", url: `${WH}/returns`, icon: RotateCcwIcon },
     ],
   },
   {
     label: "Sales Management",
     items: [
+      { title: "POS", url: `${WH}/pos`, icon: CalculatorIcon },
       { title: "Sales", url: `${WH}/sales`, icon: ShoppingCartIcon },
       { title: "Customer", url: `${WH}/customers`, icon: UsersIcon },
-      { title: "Sales History", url: `${WH}/sales-history`, icon: FileTextIcon },
+      {
+        title: "Sales History",
+        url: `${WH}/sales-history`,
+        icon: FileTextIcon,
+      },
       { title: "Daybook", url: `${WH}/daybook`, icon: BookOpenIcon },
     ],
   },
   {
     label: "Purchase Management",
     items: [
-      { title: "Purchase Orders", url: `${WH}/purchases`, icon: ClipboardListIcon },
+      {
+        title: "Quick Purchase",
+        url: `${WH}/quick-purchase`,
+        icon: PackagePlusIcon,
+      },
+      {
+        title: "Purchase Orders",
+        url: `${WH}/purchases`,
+        icon: ClipboardListIcon,
+      },
       { title: "Suppliers", url: `${WH}/suppliers`, icon: UsersIcon },
-      { title: "Purchase History", url: `${WH}/purchase-history`, icon: FileTextIcon },
+      {
+        title: "Purchase History",
+        url: `${WH}/purchase-history`,
+        icon: FileTextIcon,
+      },
     ],
   },
   {
@@ -121,51 +164,110 @@ const warehouseNavGroups: NavGroup[] = [
     items: [
       { title: "Sales Team", url: `${WH}/sales-team`, icon: UserCheckIcon },
       { title: "Delivery Team", url: `${WH}/delivery-team`, icon: TruckIcon },
-      { title: "Staff Performance", url: `${WH}/staff-performance`, icon: BarChart3Icon },
+      {
+        title: "Staff Performance",
+        url: `${WH}/staff-performance`,
+        icon: BarChart3Icon,
+      },
     ],
   },
   {
     label: "Network Stores",
     items: [
-      { title: "Connected Stores", url: `${WH}/connected-stores`, icon: NetworkIcon },
+      {
+        title: "Connected Stores",
+        url: `${WH}/connected-stores`,
+        icon: NetworkIcon,
+      },
       { title: "Store Requests", url: `${WH}/store-requests`, icon: InboxIcon },
     ],
   },
   {
     label: "Promotions & Marketing",
     items: [
-      { title: "Promo Campaigns", url: `${WH}/promo-campaigns`, icon: MegaphoneIcon },
-      { title: "Discount Offers", url: `${WH}/discount-offers`, icon: PercentIcon },
-      { title: "Marketing Materials", url: `${WH}/marketing-materials`, icon: PackageIcon },
+      {
+        title: "Promo Campaigns",
+        url: `${WH}/promo-campaigns`,
+        icon: MegaphoneIcon,
+      },
+      {
+        title: "Discount Offers",
+        url: `${WH}/discount-offers`,
+        icon: PercentIcon,
+      },
+      {
+        title: "Marketing Materials",
+        url: `${WH}/marketing-materials`,
+        icon: PackageIcon,
+      },
     ],
   },
   {
     label: "Reports",
     items: [
-      { title: "Inventory Report", url: `${WH}/reports/inventory`, icon: ClipboardIcon },
+      {
+        title: "Inventory Report",
+        url: `${WH}/reports/inventory`,
+        icon: ClipboardIcon,
+      },
       { title: "Supply Report", url: `${WH}/reports/supply`, icon: TruckIcon },
-      { title: "Purchase Report", url: `${WH}/reports/purchase`, icon: FileTextIcon },
-      { title: "Team Performance", url: `${WH}/reports/team-performance`, icon: BarChart3Icon },
+      {
+        title: "Purchase Report",
+        url: `${WH}/reports/purchase`,
+        icon: FileTextIcon,
+      },
+      {
+        title: "Team Performance",
+        url: `${WH}/reports/team-performance`,
+        icon: BarChart3Icon,
+      },
     ],
   },
   {
     label: "Finance & Accounts",
     items: [
       { title: "Finance Dashboard", url: `${WH}/finance`, icon: WalletIcon },
-      { title: "Expenses", url: `${WH}/finance/expenses`, icon: TrendingDownIcon },
+      {
+        title: "Expenses",
+        url: `${WH}/finance/expenses`,
+        icon: TrendingDownIcon,
+      },
       { title: "Payable", url: `${WH}/finance/payable`, icon: CreditCardIcon },
-      { title: "Profit & Loss", url: `${WH}/finance/profit-loss`, icon: BarChart3Icon },
+      {
+        title: "Profit & Loss",
+        url: `${WH}/finance/profit-loss`,
+        icon: BarChart3Icon,
+      },
       { title: "Payees", url: `${WH}/finance/payees`, icon: UsersIcon },
-      { title: "Transactions", url: `${WH}/transactions`, icon: CreditCardIcon },
+      {
+        title: "Transactions",
+        url: `${WH}/transactions`,
+        icon: CreditCardIcon,
+      },
     ],
   },
   {
     label: "Settings",
     items: [
       { title: "Warehouse Profile", url: `${WH}/settings`, icon: SettingsIcon },
-      { title: "Payment Accounts", url: `${WH}/payment-accounts`, icon: CreditCardIcon },
+      {
+        title: "Payment Accounts",
+        url: `${WH}/payment-accounts`,
+        icon: CreditCardIcon,
+      },
       { title: "User Roles", url: `${WH}/user-roles`, icon: ShieldIcon },
-      { title: "Support", url: `${WH}/support`, icon: HeadphonesIcon },
+      {
+        title: "Support & Help",
+        url: `${WH}/support`,
+        icon: LifeBuoyIcon,
+        items: [
+          { title: "Live Support", url: `${WH}/support/live` },
+          { title: "My Tickets", url: `${WH}/support` },
+          { title: "Complaint", url: `${WH}/support/complaints` },
+          { title: "Help Center", url: `${WH}/support/help-center` },
+          { title: "Emergency Contact", url: `${WH}/support/emergency` },
+        ],
+      },
     ],
   },
 ];
@@ -196,7 +298,11 @@ export function WarehouseSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <NavGrouped groups={warehouseNavGroups} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data as any} />}
+        {isPending || !data ? (
+          <UserNavSkeleton />
+        ) : (
+          <NavUser session={data as any} />
+        )}
       </SidebarFooter>
     </Sidebar>
   );

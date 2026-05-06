@@ -957,7 +957,7 @@ export default function CreateCartonPage() {
                         <p className="text-sm font-semibold text-amber-800">Important</p>
                       </div>
                       <ul className="text-sm text-amber-700 space-y-1.5 ml-6 list-disc">
-                        <li>Carton cannot be edited once created</li>
+                        <li>Carton price can be edited after creation</li>
                         <li>Stock will be auto-deducted from inventory</li>
                         <li>Linked with inventory tracking system</li>
                       </ul>

@@ -13,6 +13,7 @@ import {
     order,
     orderItem,
     user,
+    shopWarehouseConnection,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { localDateStamp } from "../utils/date";
@@ -180,7 +181,7 @@ const storefrontQueries = {
             });
 
             // Filter in application layer
-            let filtered = warehouseInventory.filter((inv) => {
+            const filtered = warehouseInventory.filter((inv) => {
                 const prod = inv.variant?.product;
                 if (!prod) return false;
 
@@ -315,6 +316,378 @@ const storefrontQueries = {
             }
 
             return { categories: Array.from(categoryMap.values()) };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
+// Store Connections (Store Requests & Connected Stores)
+// ────────────────────────────────────────────────────────────────
+
+const storeConnectionQueries = {
+    /**
+     * Get store access requests (pending, rejected, disconnected)
+     */
+    getStoreRequests: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/store-requests",
+            tags: ["Warehouse"],
+            summary: "Get store access requests",
+        })
+        .input(
+            z.object({
+                status: z.enum(["all", "pending", "active", "disconnected"]).default("all"),
+                search: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            try {
+            const userId = context.session.user.id;
+            const { status, search, page, limit } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [eq(shopWarehouseConnection.warehouseId, userId)];
+            
+            if (status !== "all") {
+                conditions.push(eq(shopWarehouseConnection.status, status));
+            }
+
+            // Filtering by search
+            let whereClause = and(...conditions);
+            if (search?.trim()) {
+                const s = `%${search.toLowerCase()}%`;
+                whereClause = and(
+                    ...conditions,
+                    sql`(LOWER(${user.shopName}) LIKE ${s} OR LOWER(${user.name}) LIKE ${s} OR ${user.phoneNumber} LIKE ${s})`
+                );
+            }
+
+            // Build two independent queries (Drizzle builders are mutable, can't reuse)
+            const [items, countResult] = await Promise.all([
+                db
+                    .select({
+                        connectionId: shopWarehouseConnection.id,
+                        status: shopWarehouseConnection.status,
+                        connectedAt: shopWarehouseConnection.connectedAt,
+                        createdAt: shopWarehouseConnection.createdAt,
+                        shopId: user.id,
+                        shopName: user.shopName,
+                        name: user.name,
+                        phone: user.phoneNumber,
+                        address: user.shopAddress,
+                        shopLat: user.shopLat,
+                        shopLng: user.shopLng,
+                        image: user.image,
+                    })
+                    .from(shopWarehouseConnection)
+                    .innerJoin(user, eq(shopWarehouseConnection.shopId, user.id))
+                    .where(whereClause!)
+                    .orderBy(desc(shopWarehouseConnection.createdAt))
+                    .limit(limit)
+                    .offset(offset),
+                db
+                    .select({ count: count() })
+                    .from(shopWarehouseConnection)
+                    .innerJoin(user, eq(shopWarehouseConnection.shopId, user.id))
+                    .where(whereClause!),
+            ]);
+
+            const totalCount = Number(countResult[0]?.count || 0);
+
+            return {
+                items,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+            } catch (err) {
+                console.error("[getStoreRequests] ERROR:", err);
+                throw err;
+            }
+        }),
+
+    /**
+     * Get KPI stats for store requests
+     */
+    getStoreRequestStats: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/store-requests/stats",
+            tags: ["Warehouse"],
+            summary: "Get stats for store access requests",
+        })
+        .handler(async ({ context }) => {
+            try {
+            const userId = context.session.user.id;
+
+            const [stats] = await db
+                .select({
+                    total: count(),
+                    pending: sql<number>`COALESCE(SUM(CASE WHEN ${shopWarehouseConnection.status} = 'pending' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+                    approved: sql<number>`COALESCE(SUM(CASE WHEN ${shopWarehouseConnection.status} = 'active' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+                    rejected: sql<number>`COALESCE(SUM(CASE WHEN ${shopWarehouseConnection.status} = 'disconnected' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+                })
+                .from(shopWarehouseConnection)
+                .where(eq(shopWarehouseConnection.warehouseId, userId));
+
+            return {
+                total: stats?.total ?? 0,
+                pending: stats?.pending ?? 0,
+                approved: stats?.approved ?? 0,
+                rejected: stats?.rejected ?? 0,
+            };
+            } catch (err) {
+                console.error("[getStoreRequestStats] ERROR:", err);
+                throw err;
+            }
+        }),
+
+    /**
+     * Get details for a single store request
+     */
+    getStoreRequestDetail: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/store-requests/{connectionId}",
+            tags: ["Warehouse"],
+            summary: "Get details for a store request",
+        })
+        .input(z.object({ connectionId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const conn = await db
+                .select({
+                    connectionId: shopWarehouseConnection.id,
+                    status: shopWarehouseConnection.status,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    createdAt: shopWarehouseConnection.createdAt,
+                    shopId: user.id,
+                    shopName: user.shopName,
+                    name: user.name,
+                    phone: user.phoneNumber,
+                    address: user.shopAddress,
+                    shopLat: user.shopLat,
+                    shopLng: user.shopLng,
+                    area: sql<string | null>`NULL`,
+                    image: user.image,
+                })
+                .from(shopWarehouseConnection)
+                .innerJoin(user, eq(shopWarehouseConnection.shopId, user.id))
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.id, input.connectionId),
+                        eq(shopWarehouseConnection.warehouseId, userId)
+                    )
+                )
+                .limit(1);
+
+            if (conn.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Request not found" });
+            }
+
+            const shopData = conn[0]!;
+
+            // Get total orders and spent from this shop
+            const [orderStats] = await db
+                .select({
+                    totalOrders: count(order.id),
+                    totalSpent: sum(order.total),
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, shopData.shopId),
+                        eq(order.warehouseId, userId),
+                        inArray(order.status, ["confirmed", "processing", "delivered"])
+                    )
+                );
+
+            return {
+                ...shopData,
+                totalOrders: Number(orderStats?.totalOrders || 0),
+                totalSpent: Number(orderStats?.totalSpent || 0),
+            };
+        }),
+
+    /**
+     * Approve a store request
+     */
+    approveStoreRequest: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/store-requests/{connectionId}/approve",
+            tags: ["Warehouse"],
+            summary: "Approve a store request",
+        })
+        .input(z.object({ connectionId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.shopWarehouseConnection.findFirst({
+                where: and(
+                    eq(shopWarehouseConnection.id, input.connectionId),
+                    eq(shopWarehouseConnection.warehouseId, userId)
+                )
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Request not found" });
+            }
+
+            await db
+                .update(shopWarehouseConnection)
+                .set({
+                    status: "active",
+                    connectedAt: new Date(),
+                })
+                .where(eq(shopWarehouseConnection.id, input.connectionId));
+
+            return { success: true, message: "Store approved" };
+        }),
+
+    /**
+     * Reject a store request
+     */
+    rejectStoreRequest: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/store-requests/{connectionId}/reject",
+            tags: ["Warehouse"],
+            summary: "Reject a store request",
+        })
+        .input(z.object({ connectionId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.shopWarehouseConnection.findFirst({
+                where: and(
+                    eq(shopWarehouseConnection.id, input.connectionId),
+                    eq(shopWarehouseConnection.warehouseId, userId)
+                )
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Request not found" });
+            }
+
+            await db
+                .update(shopWarehouseConnection)
+                .set({
+                    status: "disconnected",
+                })
+                .where(eq(shopWarehouseConnection.id, input.connectionId));
+
+            return { success: true, message: "Store rejected" };
+        }),
+
+    /**
+     * Get all connected stores
+     */
+    getConnectedStores: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/connected-stores",
+            tags: ["Warehouse"],
+            summary: "Get connected stores",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const { search, page, limit } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [
+                eq(shopWarehouseConnection.warehouseId, userId),
+                eq(shopWarehouseConnection.status, "active")
+            ];
+
+            // Filtering by search
+            let whereClause = and(...conditions);
+            if (search?.trim()) {
+                const s = `%${search.toLowerCase()}%`;
+                whereClause = and(
+                    ...conditions,
+                    sql`(LOWER(${user.shopName}) LIKE ${s} OR LOWER(${user.name}) LIKE ${s} OR ${user.phoneNumber} LIKE ${s})`
+                );
+            }
+
+            // Build two independent queries (Drizzle builders are mutable, can't reuse)
+            const [items, countResult] = await Promise.all([
+                db
+                    .select({
+                        connectionId: shopWarehouseConnection.id,
+                        connectedAt: shopWarehouseConnection.connectedAt,
+                        lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                        shopId: user.id,
+                        shopName: user.shopName,
+                        name: user.name,
+                        phone: user.phoneNumber,
+                        address: user.shopAddress,
+                        shopLat: user.shopLat,
+                        shopLng: user.shopLng,
+                        image: user.image,
+                    })
+                    .from(shopWarehouseConnection)
+                    .innerJoin(user, eq(shopWarehouseConnection.shopId, user.id))
+                    .where(whereClause!)
+                    .orderBy(desc(shopWarehouseConnection.lastOrderedAt), desc(shopWarehouseConnection.connectedAt))
+                    .limit(limit)
+                    .offset(offset),
+                db
+                    .select({ count: count() })
+                    .from(shopWarehouseConnection)
+                    .innerJoin(user, eq(shopWarehouseConnection.shopId, user.id))
+                    .where(whereClause!),
+            ]);
+
+            // Enrich with order stats for each connected store
+            const enrichedItems = await Promise.all(
+                items.map(async (item) => {
+                    const [orderStats] = await db
+                        .select({
+                            totalOrders: count(order.id),
+                            totalRevenue: sum(order.total),
+                        })
+                        .from(order)
+                        .where(
+                            and(
+                                eq(order.userId, item.shopId),
+                                eq(order.warehouseId, userId),
+                                inArray(order.status, ["confirmed", "processing", "delivered"])
+                            )
+                        );
+                        
+                    return {
+                        ...item,
+                        totalOrders: Number(orderStats?.totalOrders || 0),
+                        totalRevenue: Number(orderStats?.totalRevenue || 0),
+                    };
+                })
+            );
+
+            const totalCount = Number(countResult[0]?.count || 0);
+
+            return {
+                items: enrichedItems,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
         }),
 };
 
@@ -954,6 +1327,7 @@ import {
     purchaseItem,
     product as productTable,
     productVariant,
+    category,
 } from "@bikalpo-project/db/schema";
 
 // ────────────────────────────────────────────────────────────────
@@ -962,19 +1336,37 @@ import {
 
 const variantQueries = {
     // Search product variants for the purchase form dropdown
+    // Optionally filter by supplier's category when supplierId is provided
     searchVariants: warehouseProcedure
         .input(
             z.object({
                 search: z.string().optional(),
+                supplierId: z.number().int().optional(),
             }),
         )
-        .handler(async ({ input }) => {
+        .handler(async ({ context, input }) => {
             const conditions: SQL[] = [eq(productTable.status, "active")];
 
             if (input.search) {
                 conditions.push(
                     sql`${productTable.name} ILIKE ${`%${input.search}%`}`,
                 );
+            }
+
+            // If supplierId provided, filter products to supplier's category
+            let supplierCategoryName: string | null = null;
+            if (input.supplierId) {
+                const sup = await db.query.supplier.findFirst({
+                    where: and(
+                        eq(supplier.id, input.supplierId),
+                        eq(supplier.addedBy, context.session.user.id),
+                    ),
+                    with: { category: { columns: { id: true, name: true } } },
+                });
+                if (sup?.categoryId) {
+                    conditions.push(eq(productTable.categoryId, sup.categoryId));
+                    supplierCategoryName = sup.category?.name ?? null;
+                }
             }
 
             const results = await db
@@ -994,16 +1386,18 @@ const variantQueries = {
                 .orderBy(productTable.name)
                 .limit(50);
 
-            return { variants: results };
+            return { variants: results, supplierCategoryName };
         }),
 };
 
 const supplierQueries = {
-    // Get all suppliers for the current warehouse
+    // Get all suppliers for the current warehouse — enriched with category + purchase totals
     getSuppliers: warehouseProcedure
         .input(
             z.object({
                 search: z.string().optional(),
+                status: z.enum(["all", "active", "suspended"]).default("all"),
+                categoryId: z.number().int().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -1012,17 +1406,243 @@ const supplierQueries = {
 
             if (input.search) {
                 conditions.push(
-                    sql`(${supplier.name} ILIKE ${`%${input.search}%`} OR ${supplier.company} ILIKE ${`%${input.search}%`})`,
+                    sql`(${supplier.name} ILIKE ${`%${input.search}%`} OR ${supplier.company} ILIKE ${`%${input.search}%`} OR ${supplier.phone} ILIKE ${`%${input.search}%`})`,
                 );
             }
 
-            const suppliers = await db
-                .select()
-                .from(supplier)
-                .where(and(...conditions))
-                .orderBy(desc(supplier.createdAt));
+            if (input.status !== "all") {
+                conditions.push(eq(supplier.status, input.status));
+            }
 
-            return { suppliers };
+            if (input.categoryId) {
+                conditions.push(eq(supplier.categoryId, input.categoryId));
+            }
+
+            // Fetch suppliers with category relation
+            const suppliers = await db.query.supplier.findMany({
+                where: and(...conditions),
+                with: {
+                    category: { columns: { id: true, name: true, slug: true } },
+                },
+                orderBy: [desc(supplier.createdAt)],
+            });
+
+            // Aggregate total purchase per supplier
+            const supplierIds = suppliers.map((s) => s.id);
+            const purchaseTotals: Record<number, number> = {};
+
+            if (supplierIds.length > 0) {
+                const totals = await db
+                    .select({
+                        supplierId: purchase.supplierId,
+                        totalPurchase: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
+                    })
+                    .from(purchase)
+                    .where(
+                        and(
+                            eq(purchase.warehouseId, userId),
+                            inArray(purchase.supplierId, supplierIds),
+                        ),
+                    )
+                    .groupBy(purchase.supplierId);
+
+                for (const t of totals) {
+                    purchaseTotals[t.supplierId] = parseFloat(t.totalPurchase) || 0;
+                }
+            }
+
+            return {
+                suppliers: suppliers.map((s) => ({
+                    ...s,
+                    categoryName: s.category?.name ?? null,
+                    totalPurchase: purchaseTotals[s.id] ?? 0,
+                })),
+            };
+        }),
+
+    // Financial KPI summary for all suppliers
+    getSupplierStats: warehouseProcedure
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            // Total payable across all active suppliers
+            const allSuppliers = await db.query.supplier.findMany({
+                where: eq(supplier.addedBy, userId),
+                columns: { id: true, currentPayable: true, status: true, isActive: true },
+            });
+
+            const activeCount = allSuppliers.filter((s) => s.status === "active").length;
+            const totalPayable = allSuppliers.reduce(
+                (sum, s) => sum + parseFloat(s.currentPayable),
+                0,
+            );
+
+            // Total purchases across all suppliers
+            const [purchaseStats] = await db
+                .select({
+                    totalPurchase: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
+                })
+                .from(purchase)
+                .where(eq(purchase.warehouseId, userId));
+
+            const totalPurchase = parseFloat(purchaseStats?.totalPurchase ?? "0");
+            const totalPaid = totalPurchase - totalPayable;
+
+            return {
+                totalPurchase,
+                totalPaid: Math.max(0, totalPaid),
+                totalPayable,
+                activeCount,
+                totalCount: allSuppliers.length,
+            };
+        }),
+
+    // Detailed view for a single supplier
+    getSupplierDetail: warehouseProcedure
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            // Fetch supplier with category
+            const sup = await db.query.supplier.findFirst({
+                where: and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)),
+                with: {
+                    category: { columns: { id: true, name: true, slug: true } },
+                },
+            });
+
+            if (!sup) {
+                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            }
+
+            // ── Purchase History (all purchases with items count) ──
+            const purchases = await db.query.purchase.findMany({
+                where: and(
+                    eq(purchase.warehouseId, userId),
+                    eq(purchase.supplierId, input.id),
+                ),
+                with: {
+                    items: {
+                        columns: {
+                            productName: true,
+                            quantity: true,
+                            totalCost: true,
+                        },
+                    },
+                },
+                orderBy: [desc(purchase.createdAt)],
+            });
+
+            // ── Total Purchase Value ──
+            const totalPurchaseValue = purchases.reduce(
+                (sum, p) => sum + parseFloat(p.total ?? "0"),
+                0,
+            );
+
+            // ── Payment History from Ledger ──
+            const { financialLedger } = await import("@bikalpo-project/db/schema");
+            const payments = await db
+                .select({
+                    id: financialLedger.id,
+                    amount: financialLedger.amount,
+                    description: financialLedger.description,
+                    createdAt: financialLedger.createdAt,
+                })
+                .from(financialLedger)
+                .where(
+                    and(
+                        eq(financialLedger.ownerId, userId),
+                        eq(financialLedger.referenceType, "supplier_payment"),
+                        eq(financialLedger.referenceId, input.id),
+                    ),
+                )
+                .orderBy(desc(financialLedger.createdAt));
+
+            const totalPaid = payments.reduce(
+                (sum, p) => sum + parseFloat(p.amount ?? "0"),
+                0,
+            );
+
+            // Also sum cash purchases as "paid" (only credit purchases create payables)
+            const cashPurchaseTotal = purchases
+                .filter((p) => p.paymentType === "cash")
+                .reduce((sum, p) => sum + parseFloat(p.total ?? "0"), 0);
+
+            // ── Product Supply Breakdown ──
+            const productMap = new Map<string, { totalQty: number; totalValue: number }>();
+            for (const p of purchases) {
+                for (const item of p.items) {
+                    const name = item.productName;
+                    const existing = productMap.get(name) ?? { totalQty: 0, totalValue: 0 };
+                    existing.totalQty += parseFloat(item.quantity ?? "0");
+                    existing.totalValue += parseFloat(item.totalCost ?? "0");
+                    productMap.set(name, existing);
+                }
+            }
+            const productBreakdown = Array.from(productMap.entries())
+                .map(([name, data]) => ({
+                    productName: name,
+                    totalQty: data.totalQty,
+                    totalValue: data.totalValue,
+                }))
+                .sort((a, b) => b.totalValue - a.totalValue)
+                .slice(0, 30);
+
+            // ── Due Alert ──
+            const currentPayable = parseFloat(sup.currentPayable ?? "0");
+
+            // Build purchase history rows with paid/due
+            const purchaseHistory = purchases.map((p) => {
+                const total = parseFloat(p.total ?? "0");
+                const isCash = p.paymentType === "cash";
+                const paid = isCash ? total : 0;
+                const due = isCash ? 0 : total;
+                return {
+                    id: p.id,
+                    purchaseNumber: p.purchaseNumber,
+                    purchaseDate: p.purchaseDate,
+                    itemCount: p.items.length,
+                    total,
+                    paid,
+                    due,
+                    status: p.status,
+                    paymentType: p.paymentType,
+                    discount: p.discount,
+                    transportCost: p.transportCost,
+                    note: p.note,
+                    createdAt: p.createdAt,
+                    items: p.items.map((item) => ({
+                        productName: item.productName,
+                        quantity: item.quantity,
+                        totalCost: item.totalCost,
+                    })),
+                };
+            });
+
+            return {
+                supplier: {
+                    ...sup,
+                    categoryName: sup.category?.name ?? null,
+                },
+                purchaseHistory,
+                productBreakdown,
+                payments,
+                totalPurchaseValue,
+                totalPaid: totalPaid + cashPurchaseTotal,
+                currentPayable,
+            };
+        }),
+
+    // Get all categories for supplier form dropdown
+    getSupplierCategories: warehouseProcedure
+        .handler(async () => {
+            const categories = await db
+                .select({ id: category.id, name: category.name, slug: category.slug })
+                .from(category)
+                .where(eq(category.isActive, true))
+                .orderBy(category.name);
+
+            return { categories };
         }),
 
     // Create a new supplier
@@ -1038,6 +1658,7 @@ const supplierQueries = {
                 notes: z.string().optional(),
                 creditLimit: z.string().optional(),
                 returnPackAgreement: z.boolean().optional(),
+                categoryId: z.number().int().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -1055,6 +1676,7 @@ const supplierQueries = {
                     notes: input.notes || null,
                     creditLimit: input.creditLimit || "0",
                     returnPackAgreement: input.returnPackAgreement ?? false,
+                    categoryId: input.categoryId ?? null,
                     addedBy: userId,
                 })
                 .returning();
@@ -1076,6 +1698,7 @@ const supplierQueries = {
                 notes: z.string().optional(),
                 creditLimit: z.string().optional(),
                 returnPackAgreement: z.boolean().optional(),
+                categoryId: z.number().int().optional().nullable(),
                 isActive: z.boolean().optional(),
                 status: z.enum(["active", "suspended"]).optional(),
             }),
@@ -1083,21 +1706,23 @@ const supplierQueries = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
+            // Only include fields that were explicitly provided
+            const updateData: Record<string, any> = { name: input.name };
+            if (input.company !== undefined) updateData.company = input.company || null;
+            if (input.contactPerson !== undefined) updateData.contactPerson = input.contactPerson || null;
+            if (input.phone !== undefined) updateData.phone = input.phone || null;
+            if (input.email !== undefined) updateData.email = input.email || null;
+            if (input.address !== undefined) updateData.address = input.address || null;
+            if (input.notes !== undefined) updateData.notes = input.notes || null;
+            if (input.creditLimit !== undefined) updateData.creditLimit = input.creditLimit;
+            if (input.returnPackAgreement !== undefined) updateData.returnPackAgreement = input.returnPackAgreement;
+            if (input.categoryId !== undefined) updateData.categoryId = input.categoryId;
+            if (input.isActive !== undefined) updateData.isActive = input.isActive;
+            if (input.status !== undefined) updateData.status = input.status;
+
             const [updated] = await db
                 .update(supplier)
-                .set({
-                    name: input.name,
-                    company: input.company || null,
-                    contactPerson: input.contactPerson || null,
-                    phone: input.phone || null,
-                    email: input.email || null,
-                    address: input.address || null,
-                    notes: input.notes || null,
-                    creditLimit: input.creditLimit ?? undefined,
-                    returnPackAgreement: input.returnPackAgreement ?? undefined,
-                    isActive: input.isActive,
-                    status: input.status ?? undefined,
-                })
+                .set(updateData)
                 .where(and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)))
                 .returning();
 
@@ -2423,6 +3048,40 @@ const warehouseProductCreation = {
         }),
 
     /**
+     * Activate or deactivate a product owned by this warehouse.
+     */
+    updateWarehouseProductStatus: warehouseProcedure
+        .input(
+            z.object({
+                productId: z.number().int(),
+                status: z.enum(["active", "inactive"]),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.product.findFirst({
+                where: and(
+                    eq(productTable.id, input.productId),
+                    eq(productTable.createdByWarehouseId, userId),
+                ),
+                columns: { id: true },
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+            }
+
+            const [updated] = await db
+                .update(productTable)
+                .set({ status: input.status })
+                .where(eq(productTable.id, input.productId))
+                .returning({ id: productTable.id, status: productTable.status });
+
+            return { product: updated };
+        }),
+
+    /**
      * Get a single core product identity by ID (for the add product form).
      */
     getCoreProductById: warehouseProcedure
@@ -2512,7 +3171,12 @@ const stockEntryQueries = {
                 },
                 with: {
                     brand: { columns: { id: true, name: true } },
-                    category: { columns: { id: true, name: true } },
+                    category: {
+                        columns: { id: true, name: true, typeId: true },
+                        with: {
+                            type: { columns: { id: true, name: true } },
+                        },
+                    },
                     subCategory: { columns: { id: true, name: true } },
                     coreProduct: {
                         columns: {
@@ -2657,20 +3321,36 @@ const stockEntryQueries = {
             const packWeightKg = parseFloat(variant.weightKg);
             let convertedQtyKg: number;
             let convertedQtyPacks: number;
-            const cartonCount = input.cartonCount || 0;
+            const cartonCount = input.entryType === "carton"
+                ? (input.cartonCount ?? Math.floor(qty))
+                : 0;
+            let packsPerCartonForEntry: number | null = null;
 
             if (input.entryType === "loose") {
                 // Entered in KG — stored directly in KG
                 convertedQtyKg = qty;
                 convertedQtyPacks = packWeightKg > 0 ? qty / packWeightKg : 0;
             } else if (input.entryType === "carton") {
-                // NEW: Inline carton definition (no cartonConfig required)
-                if (input.cartonSource === "loose" && input.kgPerCarton) {
-                    // Carton from loose: user defined KG per carton
-                    convertedQtyKg = input.kgPerCarton * cartonCount;
-                    convertedQtyPacks = packWeightKg > 0 ? convertedQtyKg / packWeightKg : 0;
-                } else if (input.packsPerCarton) {
+                const variantPackType = variant.packType || variant.packagingType;
+                if (
+                    variantPackType === "loose"
+                    || input.cartonSource === "loose"
+                    || input.kgPerCarton !== undefined
+                ) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Carton stock entry must use packed variants, not loose stock",
+                    });
+                }
+
+                if (cartonCount <= 0) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Carton entry requires at least one carton",
+                    });
+                }
+
+                if (input.packsPerCarton) {
                     // Carton from packs: user defined packs per carton
+                    packsPerCartonForEntry = input.packsPerCarton;
                     convertedQtyPacks = cartonCount * input.packsPerCarton;
                     convertedQtyKg = convertedQtyPacks * packWeightKg;
                 } else if (input.cartonConfigId) {
@@ -2686,11 +3366,12 @@ const stockEntryQueries = {
                             message: "Carton config not found for this variant",
                         });
                     }
+                    packsPerCartonForEntry = config.packsPerCarton;
                     convertedQtyPacks = cartonCount * config.packsPerCarton;
                     convertedQtyKg = convertedQtyPacks * packWeightKg;
                 } else {
                     throw new ORPCError("BAD_REQUEST", {
-                        message: "Carton entry requires packsPerCarton, kgPerCarton, or cartonConfigId",
+                        message: "Carton entry requires packsPerCarton or cartonConfigId",
                     });
                 }
             } else {
@@ -2742,6 +3423,15 @@ const stockEntryQueries = {
 
                 // Upsert inventory — add to available quantity
                 const inventoryQty = input.entryType === "loose" ? convertedQtyKg : convertedQtyPacks;
+                const shouldCreateStockInCartons =
+                    input.entryType === "carton"
+                    && input.createCartonRecords
+                    && cartonCount > 0;
+                const packsPerSingleCarton = packsPerCartonForEntry || 1;
+                const weightPerCarton = packsPerSingleCarton * packWeightKg;
+                const stockInCartonUnits = shouldCreateStockInCartons
+                    ? cartonCount * packsPerSingleCarton
+                    : 0;
                 const existingInv = await tx.query.inventory.findFirst({
                     where: and(
                         eq(inventory.ownerType, "warehouse"),
@@ -2753,9 +3443,18 @@ const stockEntryQueries = {
                 if (existingInv) {
                     const newQty =
                         parseFloat(existingInv.availableQty) + inventoryQty;
+                    const currentInCarton = parseFloat(existingInv.inCartonQty || "0");
                     await tx
                         .update(inventory)
-                        .set({ availableQty: newQty.toFixed(2) })
+                        .set({
+                            availableQty: newQty.toFixed(2),
+                            ...(shouldCreateStockInCartons
+                                ? {
+                                    inCartonQty: (currentInCarton + stockInCartonUnits).toFixed(2),
+                                    activeCartonCount: (existingInv.activeCartonCount || 0) + cartonCount,
+                                }
+                                : {}),
+                        })
                         .where(eq(inventory.id, existingInv.id));
                 } else {
                     await tx.insert(inventory).values({
@@ -2763,27 +3462,17 @@ const stockEntryQueries = {
                         ownerId: userId,
                         variantId: input.variantId,
                         availableQty: inventoryQty.toFixed(2),
+                        ...(shouldCreateStockInCartons
+                            ? {
+                                inCartonQty: stockInCartonUnits.toFixed(2),
+                                activeCartonCount: cartonCount,
+                            }
+                            : {}),
                     });
                 }
 
                 // 6. Create physical carton records for carton entries
-                if (input.entryType === "carton" && input.createCartonRecords && cartonCount > 0) {
-                    // Re-fetch inventory after update
-                    const updatedInv = await tx.query.inventory.findFirst({
-                        where: and(
-                            eq(inventory.ownerType, "warehouse"),
-                            eq(inventory.ownerId, userId),
-                            eq(inventory.variantId, input.variantId),
-                        ),
-                    });
-
-                    const packsPerSingleCarton = input.cartonSource === "loose"
-                        ? 1
-                        : (input.packsPerCarton || 1);
-                    const weightPerCarton = input.cartonSource === "loose"
-                        ? (input.kgPerCarton || 0)
-                        : packsPerSingleCarton * packWeightKg;
-
+                if (shouldCreateStockInCartons) {
                     // Generate carton IDs
                     const year = new Date().getFullYear();
                     const [lastCarton] = await tx
@@ -2817,23 +3506,6 @@ const stockEntryQueries = {
                             cartonPrice: null, // Selling price set later on pricing page
                             deliveryCostPerUnit: null,
                         });
-                    }
-
-                    // Update inventory carton tracking
-                    if (updatedInv) {
-                        const currentInCarton = parseFloat(updatedInv.inCartonQty);
-                        // For loose cartons, track total KG in cartons (cartonCount × kgPerCarton)
-                        // For pack cartons, track total packs in cartons (cartonCount × packsPerSingleCarton)
-                        const totalInCartons = input.cartonSource === "loose"
-                            ? cartonCount * (input.kgPerCarton || 0)
-                            : cartonCount * packsPerSingleCarton;
-                        await tx
-                            .update(inventory)
-                            .set({
-                                inCartonQty: (currentInCarton + totalInCartons).toFixed(2),
-                                activeCartonCount: (updatedInv.activeCartonCount || 0) + cartonCount,
-                            })
-                            .where(eq(inventory.id, updatedInv.id));
                     }
                 }
 
@@ -2956,9 +3628,7 @@ const storageAreaQueries = {
 // ────────────────────────────────────────────────────────────────
 
 import {
-    brand as brandTable,
     category as catTable,
-    subCategory as subCatTable,
     productType as productTypeTable,
 } from "@bikalpo-project/db/schema";
 
@@ -3017,7 +3687,7 @@ const pricingQueries = {
                     .filter((id): id is number => id != null),
             )];
 
-            let categoryTypeMap = new Map<number, { typeId: number; typeName: string }>();
+            const categoryTypeMap = new Map<number, { typeId: number; typeName: string }>();
             if (categoryIds.length > 0) {
                 const catTypes = await db
                     .select({
@@ -3040,8 +3710,12 @@ const pricingQueries = {
             type PriceItem = {
                 inventoryId: number;
                 variantId: number;
+                sku: string | null;
+                variantSku: string | null;
                 productId: number;
+                productSku: string | null;
                 productName: string;
+                productStatus: string;
                 coreProductId: number | null;
                 coreProductName: string;
                 coreProductImage: string;
@@ -3054,11 +3728,17 @@ const pricingQueries = {
                 brandId: number | null;
                 brandName: string;
                 variantLabel: string;
+                unitLabel: string;
+                packagingType: string;
                 packUnit: string;
                 packPrice: string;
                 basePrice: string;
                 isActive: boolean;
                 availableQty: string;
+                reservedQty: string;
+                inCartonQty: string;
+                activeCartonCount: number;
+                reorderLevel: number;
                 updatedAt: Date;
                 isLoose: boolean;
                 weightKg: number;
@@ -3090,14 +3770,20 @@ const pricingQueries = {
                     ? labelParts.join(" ")
                     : v.unitLabel || v.sku || `Variant #${v.id}`;
 
-                // Pack unit display
-                const packUnit = v.unitLabel || "Unit";
+                // Pack unit display — show just the weight/unit (e.g. "5 KG", "1 L", "1 Pc")
+                const packUnit = weightKg > 0
+                    ? `${weightKg % 1 === 0 ? Math.round(weightKg) : weightKg} KG`
+                    : v.unitLabel || "Unit";
 
                 priceItems.push({
                     inventoryId: item.id,
                     variantId: v.id,
+                    sku: v.sku || p.sku || null,
+                    variantSku: v.sku || null,
                     productId: p.id,
+                    productSku: p.sku || null,
                     productName: p.name,
+                    productStatus: p.status,
                     coreProductId: core?.id ?? null,
                     coreProductName: core?.name ?? p.name,
                     coreProductImage: core?.image ?? (p as any).image ?? "",
@@ -3110,11 +3796,17 @@ const pricingQueries = {
                     brandId: brandInfo?.id ?? null,
                     brandName: brandInfo?.name ?? "—",
                     variantLabel,
+                    unitLabel: v.unitLabel || "Unit",
+                    packagingType: v.packagingType || v.packType || "unit",
                     packUnit,
                     packPrice: item.retailPrice || v.price || "0",
                     basePrice: v.price || "0",
                     isActive: v.isActive,
                     availableQty: item.availableQty || "0",
+                    reservedQty: item.reservedQty || "0",
+                    inCartonQty: item.inCartonQty || "0",
+                    activeCartonCount: item.activeCartonCount ?? 0,
+                    reorderLevel: v.reorderLevel ?? p.reorderLevel ?? 0,
                     updatedAt: item.updatedAt,
                     isLoose: v.packagingType === "loose",
                     weightKg,
@@ -3146,7 +3838,8 @@ const pricingQueries = {
                         i.productName.toLowerCase().includes(s) ||
                         i.coreProductName.toLowerCase().includes(s) ||
                         i.brandName.toLowerCase().includes(s) ||
-                        i.variantLabel.toLowerCase().includes(s),
+                        i.variantLabel.toLowerCase().includes(s) ||
+                        (i.sku?.toLowerCase().includes(s) ?? false),
                 );
             }
 
@@ -4230,6 +4923,49 @@ const cartonQueries = {
         }),
 
     /**
+     * Update carton price and delivery cost for an existing active carton.
+     */
+    updateCartonPrice: warehouseProcedure
+        .input(
+            z.object({
+                cartonId: z.number().int(),
+                cartonPrice: z.string().optional(),
+                deliveryCostPerUnit: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingCarton = await db.query.carton.findFirst({
+                where: and(
+                    eq(carton.id, input.cartonId),
+                    eq(carton.warehouseId, userId),
+                ),
+            });
+
+            if (!existingCarton) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Carton not found or doesn't belong to your warehouse",
+                });
+            }
+
+            const updateData: Record<string, any> = {};
+            if (input.cartonPrice !== undefined) updateData.cartonPrice = input.cartonPrice;
+            if (input.deliveryCostPerUnit !== undefined) updateData.deliveryCostPerUnit = input.deliveryCostPerUnit;
+
+            if (Object.keys(updateData).length === 0) {
+                return { success: true, message: "Nothing to update" };
+            }
+
+            await db
+                .update(carton)
+                .set(updateData)
+                .where(eq(carton.id, input.cartonId));
+
+            return { success: true, message: "Carton price updated" };
+        }),
+
+    /**
      * Unit/Carton Inventory — product-level view showing unit stock
      * split between loose and in-carton, with carton breakdown per config.
      */
@@ -4629,7 +5365,7 @@ const expiryQueries = {
                 variantId: number;
                 variantLabel: string;
                 brandName: string;
-                supplierId: number;
+                supplierId: number | null;
                 supplierName: string;
                 storageAreaName: string | null;
                 expiryStatus: ExpiryStatus;
@@ -4774,7 +5510,9 @@ const expiryQueries = {
             const supplierOptions = new Map<number, string>();
             for (const item of items) {
                 categoryOptions.set(item.categoryId, item.categoryName);
-                supplierOptions.set(item.supplierId, item.supplierName);
+                if (item.supplierId !== null) {
+                    supplierOptions.set(item.supplierId, item.supplierName);
+                }
             }
 
             const alerts = items
@@ -4834,6 +5572,7 @@ const expiryQueries = {
 
 export const warehouseRouter = {
     ...storefrontQueries,
+    ...storeConnectionQueries,
     ...managementQueries,
     ...orderQueries,
     ...variantQueries,

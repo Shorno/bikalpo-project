@@ -1,804 +1,826 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { LucideIcon } from "lucide-react";
 import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Filter,
-  Layers,
-  PackageIcon,
-  Plus,
-  Search,
-  Send,
-  ShoppingBag,
-  Tag,
-  X,
-  XCircle,
-  CheckCircle2,
   AlertCircle,
+  Boxes,
+  Filter,
+  MoreHorizontal,
+  Package,
+  PackagePlus,
+  Printer,
+  Search,
+  SlidersHorizontal,
 } from "lucide-react";
-import Image from "next/image";
-import { useState } from "react";
+import Link from "next/link";
+import { useDeferredValue, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { orpc } from "@/utils/orpc";
 
-// ─── Types ─────────────────────────────────────────────────────
+const WH = "/warehouse/dashboard";
 
-type CatalogVariant = {
-  id: number;
-  sku: string;
-  unitLabel: string;
-  weightKg: string;
-  price: string;
+type FilterOption = { id: number; name: string };
+
+type WarehouseProductRow = {
+  inventoryId: number;
+  variantId: number;
+  sku: string | null;
+  variantSku: string | null;
+  productId: number;
+  productSku: string | null;
+  productName: string;
+  productStatus: string;
+  coreProductId: number | null;
+  coreProductName: string;
+  coreProductImage: string;
+  categoryId: number;
+  categoryName: string;
+  subCategoryId: number | null;
+  subCategoryName: string;
+  typeId: number | null;
+  typeName: string;
   brandId: number | null;
-  brand: { id: number; name: string } | null;
-  inInventory: boolean;
+  brandName: string;
+  variantLabel: string;
+  unitLabel: string;
+  packagingType: string;
+  packUnit: string;
+  packPrice: string;
+  basePrice: string;
+  isActive: boolean;
+  availableQty: string;
+  reservedQty: string;
+  inCartonQty: string;
+  activeCartonCount: number;
+  reorderLevel: number;
+  updatedAt: string;
+  isLoose: boolean;
+  weightKg: number;
 };
 
-type CatalogProduct = {
-  id: number;
-  name: string;
-  unitSize: string | null;
-  variants: CatalogVariant[];
-};
-
-type CoreProduct = {
-  id: number;
-  name: string;
-  slug: string;
-  image: string;
-  products: CatalogProduct[];
-};
-
-type SubCategory = {
-  id: number;
-  name: string;
-  slug: string;
-  coreProducts: CoreProduct[];
-};
-
-type CatalogCategory = {
-  id: number;
-  name: string;
-  slug: string;
-  subCategories: SubCategory[];
-  directCoreProducts: CoreProduct[];
-};
-
-type CatalogType = {
-  id: number;
-  name: string;
-  slug: string;
-  categories: CatalogCategory[];
-};
-
-// ─── Main Page Component ───────────────────────────────────────
-
-export default function WarehouseProductCatalogPage() {
-  const queryClient = useQueryClient();
-
-  // Filters
-  const [selectedTypeId, setSelectedTypeId] = useState<number | undefined>();
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | undefined>();
-  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<number | undefined>();
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-
-  // Expand/collapse state
-  const [expandedCoreProducts, setExpandedCoreProducts] = useState<Set<number>>(new Set());
-
-  // Add to inventory state
-  const [addingVariant, setAddingVariant] = useState<number | null>(null);
-  const [retailPrice, setRetailPrice] = useState("");
-  const [initialStock, setInitialStock] = useState("0");
-
-  // Request modal
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [showRequests, setShowRequests] = useState(false);
-
-  // Search debounce
-  const handleSearch = (val: string) => {
-    setSearch(val);
-    clearTimeout((window as any).__catalogSearchTimer);
-    (window as any).__catalogSearchTimer = setTimeout(() => {
-      setDebouncedSearch(val);
-    }, 400);
+type PriceListData = {
+  items?: WarehouseProductRow[];
+  stats?: {
+    totalProducts: number;
+    totalVariants: number;
+    lastUpdated: string | null;
   };
+  filterOptions?: {
+    types?: FilterOption[];
+    categories?: FilterOption[];
+    subCategories?: FilterOption[];
+    coreProducts?: FilterOption[];
+    brands?: FilterOption[];
+  };
+};
 
-  // ─── Queries ─────────────────────────────────────────────────
+type StockFilter = "all" | "in_stock" | "low_stock" | "out_of_stock";
+type StockState = Exclude<StockFilter, "all">;
+type SortBy =
+  | "name_asc"
+  | "name_desc"
+  | "stock_desc"
+  | "stock_asc"
+  | "price_desc"
+  | "price_asc";
 
-  const { data: catalogData, isLoading: loadingCatalog } = useQuery({
+function toNumber(value: number | string | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatNumber(value: number | string | null | undefined) {
+  return Math.round(toNumber(value)).toLocaleString("en-BD");
+}
+
+function formatCurrency(value: number | string | null | undefined) {
+  return `৳${toNumber(value).toLocaleString("en-BD")}`;
+}
+
+function titleCase(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getStockUnit(item: WarehouseProductRow) {
+  if (item.isLoose || item.packagingType === "loose") return "KG";
+  if (item.packagingType === "packet") return "Pack";
+  return titleCase(item.packagingType || item.unitLabel || "Unit");
+}
+
+function getStockState(item: WarehouseProductRow): StockState {
+  const qty = toNumber(item.availableQty);
+  const threshold = item.reorderLevel > 0 ? item.reorderLevel : 10;
+
+  if (qty <= 0) return "out_of_stock";
+  if (qty <= threshold) return "low_stock";
+  return "in_stock";
+}
+
+function getVariantText(item: WarehouseProductRow) {
+  const parts = [
+    item.brandName && item.brandName !== "—" ? item.brandName : null,
+    item.variantLabel || item.unitLabel || item.packUnit,
+  ].filter(Boolean);
+
+  return parts.join(" + ") || "—";
+}
+
+function getDetailHref(item: WarehouseProductRow) {
+  if (item.coreProductId) return `${WH}/stock/core-${item.coreProductId}`;
+  return `${WH}/stock/product-${item.productId}`;
+}
+
+function uniqueOptions(
+  rows: WarehouseProductRow[],
+  idKey: keyof WarehouseProductRow,
+  nameKey: keyof WarehouseProductRow,
+) {
+  const map = new Map<number, string>();
+
+  for (const row of rows) {
+    const id = row[idKey];
+    const name = row[nameKey];
+    if (typeof id === "number" && typeof name === "string" && name !== "—") {
+      map.set(id, name);
+    }
+  }
+
+  return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+}
+
+function isActiveProductRow(item: WarehouseProductRow) {
+  return item.productStatus === "active" && item.isActive;
+}
+
+export default function WarehouseProductsPage() {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search.trim());
+  const [selectedTypeId, setSelectedTypeId] = useState<number | undefined>();
+  const [selectedCategoryId, setSelectedCategoryId] = useState<
+    number | undefined
+  >();
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<
+    number | undefined
+  >();
+  const [selectedCoreProductId, setSelectedCoreProductId] = useState<
+    number | undefined
+  >();
+  const [selectedBrandId, setSelectedBrandId] = useState<number | undefined>();
+  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
+  const [sortBy, setSortBy] = useState<SortBy>("name_asc");
+  const [visibleCount, setVisibleCount] = useState(50);
+
+  const { data, isLoading, isError, error, refetch } = useQuery<PriceListData>({
     queryKey: [
       "warehouse",
-      "getCatalogHierarchy",
-      { typeId: selectedTypeId, categoryId: selectedCategoryId, subCategoryId: selectedSubCategoryId, search: debouncedSearch },
-    ],
-    queryFn: () =>
-      orpc.warehouse.getCatalogHierarchy.call({
+      "getWarehousePriceList",
+      "productsPage",
+      {
         typeId: selectedTypeId,
         categoryId: selectedCategoryId,
         subCategoryId: selectedSubCategoryId,
-        search: debouncedSearch || undefined,
+        coreProductId: selectedCoreProductId,
+        brandId: selectedBrandId,
+        search: deferredSearch,
+      },
+    ],
+    queryFn: () =>
+      (orpc.warehouse as any).getWarehousePriceList.call({
+        typeId: selectedTypeId,
+        categoryId: selectedCategoryId,
+        subCategoryId: selectedSubCategoryId,
+        coreProductId: selectedCoreProductId,
+        brandId: selectedBrandId,
+        search: deferredSearch || undefined,
       }),
+    staleTime: 30_000,
   });
 
-  const { data: inventoryData, isLoading: loadingInventory } = useQuery({
-    queryKey: ["warehouse", "getMyInventory", { search: "", page: 1, limit: 100 }],
-    queryFn: () => orpc.warehouse.getMyInventory.call({ search: "", page: 1, limit: 100 }),
-  });
-
-  const { data: requestsData } = useQuery({
-    queryKey: ["warehouse", "getMyProductRequests", {}],
-    queryFn: () => orpc.warehouse.getMyProductRequests.call({}),
-    enabled: showRequests,
-  });
-
-  // ─── Mutations ───────────────────────────────────────────────
-
-  const addMutation = useMutation({
-    mutationFn: (data: { variantId: number; retailPrice: string; initialStock: string }) =>
-      orpc.warehouse.addToInventory.call(data),
+  const deactivateMutation = useMutation({
+    mutationFn: (productId: number) =>
+      (orpc.warehouse as any).updateWarehouseProductStatus.call({
+        productId,
+        status: "inactive",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse"] });
-      setAddingVariant(null);
-      setRetailPrice("");
-      setInitialStock("0");
+      queryClient.invalidateQueries({
+        queryKey: ["warehouse", "getWarehousePriceList"],
+      });
+      toast.success("Product deactivated");
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || "Failed to deactivate product");
     },
   });
 
-  const removeMutation = useMutation({
-    mutationFn: (inventoryId: number) =>
-      orpc.warehouse.removeFromInventory.call({ inventoryId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse"] });
-    },
-  });
+  const allItems = data?.items ?? [];
+  const activeRows = useMemo(
+    () => allItems.filter(isActiveProductRow),
+    [allItems],
+  );
 
-  const requestMutation = useMutation({
-    mutationFn: (data: { typeName?: string; categoryName?: string; subCategoryName?: string; productName: string; description?: string }) =>
-      orpc.warehouse.submitProductRequest.call(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "getMyProductRequests"] });
-      setShowRequestModal(false);
-    },
-  });
+  const filterOptions = data?.filterOptions ?? {};
+  const scopedRows = activeRows.length > 0 ? activeRows : allItems;
 
-  // ─── Derived Data ────────────────────────────────────────────
+  const typeOptions =
+    filterOptions.types ?? uniqueOptions(scopedRows, "typeId", "typeName");
+  const categoryOptions =
+    selectedTypeId || deferredSearch
+      ? uniqueOptions(scopedRows, "categoryId", "categoryName")
+      : (filterOptions.categories ??
+        uniqueOptions(scopedRows, "categoryId", "categoryName"));
+  const subCategoryOptions =
+    selectedCategoryId || selectedTypeId || deferredSearch
+      ? uniqueOptions(scopedRows, "subCategoryId", "subCategoryName")
+      : (filterOptions.subCategories ??
+        uniqueOptions(scopedRows, "subCategoryId", "subCategoryName"));
+  const coreProductOptions =
+    selectedTypeId ||
+    selectedCategoryId ||
+    selectedSubCategoryId ||
+    deferredSearch
+      ? uniqueOptions(scopedRows, "coreProductId", "coreProductName")
+      : (filterOptions.coreProducts ??
+        uniqueOptions(scopedRows, "coreProductId", "coreProductName"));
+  const brandOptions =
+    selectedTypeId ||
+    selectedCategoryId ||
+    selectedSubCategoryId ||
+    deferredSearch
+      ? uniqueOptions(scopedRows, "brandId", "brandName")
+      : (filterOptions.brands ??
+        uniqueOptions(scopedRows, "brandId", "brandName"));
 
-  const types: CatalogType[] = catalogData?.types ?? [];
-  const inventoryItems = inventoryData?.items ?? [];
-  const requests = requestsData?.requests ?? [];
+  const stockCounts = useMemo(() => {
+    const counts = { inStock: 0, lowStock: 0, outOfStock: 0 };
 
-  // Extract unique types and categories for filter dropdowns
-  const allTypes = types.map((t) => ({ id: t.id, name: t.name }));
-  const allCategories = selectedTypeId
-    ? types.find((t) => t.id === selectedTypeId)?.categories ?? []
-    : types.flatMap((t) => t.categories);
-  const allSubCategories = selectedCategoryId
-    ? allCategories.find((c) => c.id === selectedCategoryId)?.subCategories ?? []
-    : [];
+    for (const row of activeRows) {
+      const state = getStockState(row);
+      if (state === "in_stock") counts.inStock++;
+      if (state === "low_stock") counts.lowStock++;
+      if (state === "out_of_stock") counts.outOfStock++;
+    }
 
-  // Toggle core product expansion
-  const toggleCoreProduct = (id: number) => {
-    setExpandedCoreProducts((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+    return counts;
+  }, [activeRows]);
+
+  const filteredRows = useMemo(() => {
+    const rows = activeRows.filter((row) => {
+      if (stockFilter === "all") return true;
+      return getStockState(row) === stockFilter;
     });
+
+    return [...rows].sort((left, right) => {
+      if (sortBy === "name_asc") {
+        return left.coreProductName.localeCompare(right.coreProductName);
+      }
+      if (sortBy === "name_desc") {
+        return right.coreProductName.localeCompare(left.coreProductName);
+      }
+      if (sortBy === "stock_desc") {
+        return toNumber(right.availableQty) - toNumber(left.availableQty);
+      }
+      if (sortBy === "stock_asc") {
+        return toNumber(left.availableQty) - toNumber(right.availableQty);
+      }
+      if (sortBy === "price_desc") {
+        return toNumber(right.packPrice) - toNumber(left.packPrice);
+      }
+      return toNumber(left.packPrice) - toNumber(right.packPrice);
+    });
+  }, [activeRows, sortBy, stockFilter]);
+
+  const visibleRows = filteredRows.slice(0, visibleCount);
+  const activeProductCount = new Set(
+    activeRows.map((row) => row.coreProductId ?? row.productId),
+  ).size;
+  const hasMore = visibleRows.length < filteredRows.length;
+  const hasActiveFilters = Boolean(
+    search ||
+      selectedTypeId ||
+      selectedCategoryId ||
+      selectedSubCategoryId ||
+      selectedCoreProductId ||
+      selectedBrandId ||
+      stockFilter !== "all" ||
+      sortBy !== "name_asc",
+  );
+  const hasNoAssignedProducts = !isLoading && !isError && allItems.length === 0;
+
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedTypeId(undefined);
+    setSelectedCategoryId(undefined);
+    setSelectedSubCategoryId(undefined);
+    setSelectedCoreProductId(undefined);
+    setSelectedBrandId(undefined);
+    setStockFilter("all");
+    setSortBy("name_asc");
+    setVisibleCount(50);
   };
 
-  // ─── Render Helpers ──────────────────────────────────────────
-
-  const renderVariantRow = (variant: CatalogVariant, unitSize?: string | null) => {
-    const isLoose = variant.unitLabel.toLowerCase().includes("loose");
-    const packsPerUnit = !isLoose && unitSize && Number(unitSize) > 0 && Number(variant.weightKg) > 0
-      ? Math.floor(Number(unitSize) / Number(variant.weightKg))
-      : null;
-
-    return (
-    <div
-      key={variant.id}
-      className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs ${
-        variant.inInventory
-          ? "bg-emerald-50 border border-emerald-100"
-          : "bg-gray-50 border border-gray-100 hover:border-gray-200"
-      }`}
-    >
-      <div className="flex items-center gap-2 flex-1 flex-wrap">
-        {variant.brand && (
-          <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
-            {variant.brand.name}
-          </span>
-        )}
-        <span className="font-medium text-gray-700">
-          {variant.unitLabel} — {variant.weightKg}kg
-        </span>
-        {packsPerUnit && packsPerUnit > 1 && (
-          <span className="text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
-            {packsPerUnit} pcs/carton
-          </span>
-        )}
-        {variant.sku && (
-          <span className="text-gray-400 text-[10px]">
-            {variant.sku}
-          </span>
-        )}
-        <span className="text-gray-500">
-          Base: ৳{Number(variant.price).toLocaleString()}
-        </span>
-      </div>
-
-      {variant.inInventory ? (
-        <span className="flex items-center gap-1 text-emerald-600 font-medium text-[10px]">
-          <Check size={12} />
-          In Stock
-        </span>
-      ) : addingVariant === variant.id ? (
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            placeholder="Retail ৳"
-            value={retailPrice}
-            onChange={(e) => setRetailPrice(e.target.value)}
-            className="w-24 px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-emerald-500 outline-none"
-          />
-          <input
-            type="number"
-            placeholder="Qty"
-            value={initialStock}
-            onChange={(e) => setInitialStock(e.target.value)}
-            className="w-16 px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-emerald-500 outline-none"
-          />
-          <button
-            onClick={() => {
-              if (!retailPrice) return;
-              addMutation.mutate({
-                variantId: variant.id,
-                retailPrice,
-                initialStock: initialStock || "0",
-              });
-            }}
-            disabled={addMutation.isPending || !retailPrice}
-            className="px-2 py-1 bg-emerald-600 text-white rounded text-[10px] font-medium hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {addMutation.isPending ? "..." : "Add"}
-          </button>
-          <button
-            onClick={() => { setAddingVariant(null); setRetailPrice(""); setInitialStock("0"); }}
-            className="px-1 py-1 text-gray-400 hover:text-gray-600"
-          >
-            <X size={12} />
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={() => {
-            setAddingVariant(variant.id);
-            setRetailPrice(variant.price);
-            setInitialStock("0");
-          }}
-          className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-medium hover:bg-emerald-100 transition-colors"
-        >
-          + Add
-        </button>
-      )}
-    </div>
-    );
+  const handleDeactivate = (item: WarehouseProductRow) => {
+    if (
+      window.confirm(
+        `Deactivate ${item.coreProductName || item.productName}? This will hide the product from active product lists.`,
+      )
+    ) {
+      deactivateMutation.mutate(item.productId);
+    }
   };
 
-  const renderCoreProduct = (cp: CoreProduct) => {
-    const isExpanded = expandedCoreProducts.has(cp.id);
-    const allVariants = cp.products.flatMap((p) => p.variants);
-    const inStockCount = allVariants.filter((v) => v.inInventory).length;
-    const unitSize = cp.products[0]?.unitSize;
-
-    return (
-      <div key={cp.id} className="border border-gray-200 rounded-lg overflow-hidden">
-        {/* Core Product Header */}
-        <button
-          onClick={() => toggleCoreProduct(cp.id)}
-          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
-        >
-          {cp.image && (
-            <Image
-              src={cp.image}
-              alt={cp.name}
-              width={40}
-              height={40}
-              className="w-10 h-10 rounded-lg object-cover border border-gray-100"
-            />
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-              {cp.name}
-              {unitSize && Number(unitSize) > 0 && (
-                <span className="text-[10px] font-medium text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200">
-                  📦 {Number(unitSize)}KG Carton/Sack
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {allVariants.length > 0 && (
-              <span className="text-[10px] text-gray-400">
-                {inStockCount}/{allVariants.length} added
-              </span>
-            )}
-            {isExpanded ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
-          </div>
-        </button>
-
-        {/* Expanded: Variants */}
-        {isExpanded && (
-          <div className="border-t border-gray-100 px-4 py-3 space-y-1.5 bg-gray-50/50">
-            {unitSize && Number(unitSize) > 0 && (
-              <div className="text-[10px] text-orange-600 bg-orange-50 border border-orange-100 rounded px-2.5 py-1.5 mb-2">
-                📦 Total Unit Size: <strong>{Number(unitSize)}KG</strong> per carton/sack
-              </div>
-            )}
-            {allVariants.length === 0 ? (
-              <div className="text-xs text-gray-400 py-2 text-center">
-                No sellable variants yet. Admin needs to create a product for this Core Identity.
-              </div>
-            ) : (
-              allVariants.map((v) => renderVariantRow(v, unitSize))
-            )}
-          </div>
-        )}
-      </div>
-    );
+  const notifyNotImplemented = (action: string) => {
+    toast.info(`${action} is not implemented yet.`);
   };
-
-  // ─── Page Layout ─────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Layers className="text-emerald-600" size={24} />
-            Product Catalog
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
+            <Package className="h-6 w-6 text-emerald-600" />
+            Products
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Browse products by Type → Category → Sub Category → Core Identity
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {activeProductCount.toLocaleString("en-BD")} active products · {activeRows.length.toLocaleString("en-BD")} variants
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowRequests(!showRequests)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <Clock size={14} />
-            My Requests
-          </button>
-          <button
-            onClick={() => setShowRequestModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition-colors"
-          >
-            <Plus size={14} />
-            Request Product
-          </button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => notifyNotImplemented("Print labels")}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print Labels
+          </Button>
+          <Button asChild className="gap-1.5">
+            <Link href={`${WH}/catalog`}>
+              <PackagePlus className="h-4 w-4" />
+              Add Product
+            </Link>
+          </Button>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Filter size={14} className="text-gray-400" />
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filter By</span>
-        </div>
-        <div className="flex gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search product name..."
-              value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-            />
-          </div>
-          <select
-            value={selectedTypeId ?? ""}
-            onChange={(e) => {
-              setSelectedTypeId(e.target.value ? Number(e.target.value) : undefined);
-              setSelectedCategoryId(undefined);
-              setSelectedSubCategoryId(undefined);
+      {/* ── KPI Cards ── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <KpiCard
+          icon={Package}
+          label="Total Products"
+          value={activeProductCount}
+          iconBg="bg-blue-100 dark:bg-blue-950/30"
+          iconColor="text-blue-600"
+        />
+        <KpiCard
+          icon={Boxes}
+          label="In Stock"
+          value={stockCounts.inStock}
+          iconBg="bg-emerald-100 dark:bg-emerald-950/30"
+          iconColor="text-emerald-600"
+          valueColor="text-emerald-600"
+          onClick={() => setStockFilter("in_stock")}
+          active={stockFilter === "in_stock"}
+        />
+        <KpiCard
+          icon={AlertCircle}
+          label="Low Stock"
+          value={stockCounts.lowStock}
+          iconBg="bg-amber-100 dark:bg-amber-950/30"
+          iconColor="text-amber-500"
+          valueColor={stockCounts.lowStock > 0 ? "text-amber-600" : undefined}
+          onClick={() => setStockFilter("low_stock")}
+          active={stockFilter === "low_stock"}
+        />
+        <KpiCard
+          icon={AlertCircle}
+          label="Out of Stock"
+          value={stockCounts.outOfStock}
+          iconBg="bg-red-100 dark:bg-red-950/30"
+          iconColor="text-red-500"
+          valueColor={stockCounts.outOfStock > 0 ? "text-red-600" : undefined}
+          onClick={() => setStockFilter("out_of_stock")}
+          active={stockFilter === "out_of_stock"}
+        />
+      </div>
+
+      {/* ── Search & Filter Toolbar ── */}
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setVisibleCount(50);
             }}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-500 outline-none min-w-[140px]"
-          >
-            <option value="">All Types</option>
-            {allTypes.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          <select
-            value={selectedCategoryId ?? ""}
-            onChange={(e) => {
-              setSelectedCategoryId(e.target.value ? Number(e.target.value) : undefined);
-              setSelectedSubCategoryId(undefined);
-            }}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-500 outline-none min-w-[160px]"
-          >
-            <option value="">All Categories</option>
-            {allCategories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select
-            value={selectedSubCategoryId ?? ""}
-            onChange={(e) =>
-              setSelectedSubCategoryId(e.target.value ? Number(e.target.value) : undefined)
-            }
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-500 outline-none min-w-[180px]"
-            disabled={!selectedCategoryId}
-          >
-            <option value="">All Sub Categories</option>
-            {allSubCategories.map((sc) => (
-              <option key={sc.id} value={sc.id}>{sc.name}</option>
-            ))}
-          </select>
+            placeholder="Search by name, SKU..."
+            className="pl-9"
+          />
         </div>
-      </div>
 
-      {/* Catalog Content */}
-      {loadingCatalog ? (
-        <div className="text-center py-16 text-gray-400 text-sm">Loading catalog...</div>
-      ) : types.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center border rounded-xl bg-gray-50/50">
-          <Tag className="text-gray-300 mb-3" size={48} />
-          <p className="text-gray-500 text-lg font-medium">No products available</p>
-          <p className="text-sm text-gray-400 mt-1 max-w-sm">
-            Ask admin to assign categories to your warehouse, then products from those categories will appear here.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {types.map((type) => (
-            <div key={type.id} className="space-y-4">
-              {/* Type Header */}
-              <div className="flex items-center gap-2">
-                <div className="h-6 w-1 bg-emerald-500 rounded-full" />
-                <h2 className="text-lg font-bold text-gray-800">{type.name}</h2>
-                <span className="text-xs text-gray-400 ml-1">
-                  {type.categories.length} categories
-                </span>
-              </div>
+        <Tabs value={stockFilter} onValueChange={(v) => { setStockFilter(v as StockFilter); setVisibleCount(50); }}>
+          <TabsList>
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger value="in_stock">In Stock</TabsTrigger>
+            <TabsTrigger value="low_stock">Low Stock</TabsTrigger>
+            <TabsTrigger value="out_of_stock">Out of Stock</TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-              {type.categories.map((cat) => (
-                <div key={cat.id} className="ml-3 space-y-3">
-                  {/* Category Header */}
-                  <div className="flex items-center gap-2">
-                    <div className="h-4 w-0.5 bg-blue-400 rounded-full" />
-                    <h3 className="text-sm font-semibold text-gray-700">{cat.name}</h3>
-                    <span className="text-[10px] text-gray-400">
-                      {cat.subCategories.length} sub-categories
-                    </span>
-                  </div>
+        <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+          <SelectTrigger className="w-[180px]">
+            <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name_asc">Name A-Z</SelectItem>
+            <SelectItem value="name_desc">Name Z-A</SelectItem>
+            <SelectItem value="stock_desc">Stock High</SelectItem>
+            <SelectItem value="stock_asc">Stock Low</SelectItem>
+            <SelectItem value="price_desc">Price High</SelectItem>
+            <SelectItem value="price_asc">Price Low</SelectItem>
+          </SelectContent>
+        </Select>
 
-                  {/* Sub Categories */}
-                  {cat.subCategories.map((sc) => (
-                    <div key={sc.id} className="ml-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-3 w-0.5 bg-purple-300 rounded-full" />
-                        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                          {sc.name}
-                        </h4>
-                        <span className="text-[10px] text-gray-300">
-                          {sc.coreProducts.length} products
-                        </span>
-                      </div>
-
-                      <div className="ml-3 space-y-2">
-                        {sc.coreProducts.map(renderCoreProduct)}
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Direct core products (no subcategory) */}
-                  {cat.directCoreProducts?.length > 0 && (
-                    <div className="ml-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-3 w-0.5 bg-gray-300 rounded-full" />
-                        <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-                          General
-                        </h4>
-                      </div>
-                      <div className="ml-3 space-y-2">
-                        {cat.directCoreProducts.map(renderCoreProduct)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Can't find product? */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
-        <AlertCircle className="mx-auto text-amber-500 mb-2" size={24} />
-        <p className="text-sm font-medium text-amber-800">Can&apos;t find your product?</p>
-        <p className="text-xs text-amber-600 mt-1">
-          If your product or design is not listed, request a new product identity.
-        </p>
-        <button
-          onClick={() => setShowRequestModal(true)}
-          className="mt-3 px-4 py-2 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors"
-        >
-          + Request New Product Identity
-        </button>
-      </div>
-
-      {/* My Requests */}
-      {showRequests && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-              <Clock size={14} />
-              My Product Requests
-            </h3>
-            <button onClick={() => setShowRequests(false)} className="text-gray-400 hover:text-gray-600">
-              <X size={14} />
-            </button>
-          </div>
-          {requests.length === 0 ? (
-            <p className="text-xs text-gray-400 py-4 text-center">No requests yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {requests.map((req: any) => (
-                <div
-                  key={req.id}
-                  className={`flex items-center justify-between px-3 py-2.5 rounded-lg border ${
-                    req.status === "pending"
-                      ? "bg-yellow-50 border-yellow-200"
-                      : req.status === "approved"
-                      ? "bg-emerald-50 border-emerald-200"
-                      : "bg-red-50 border-red-200"
-                  }`}
-                >
-                  <div>
-                    <div className="text-sm font-medium text-gray-800">{req.productName}</div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">
-                      {[req.typeName, req.categoryName, req.subCategoryName].filter(Boolean).join(" → ")}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {req.status === "pending" && <Clock size={12} className="text-yellow-600" />}
-                    {req.status === "approved" && <CheckCircle2 size={12} className="text-emerald-600" />}
-                    {req.status === "rejected" && <XCircle size={12} className="text-red-600" />}
-                    <span className={`text-[10px] font-medium capitalize ${
-                      req.status === "pending" ? "text-yellow-700" : req.status === "approved" ? "text-emerald-700" : "text-red-700"
-                    }`}>
-                      {req.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Current Inventory */}
-      <div>
-        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-3">
-          <ShoppingBag size={20} className="text-emerald-600" />
-          My Inventory
-          <span className="text-xs font-normal text-gray-400 ml-1">
-            ({inventoryItems.length} items)
-          </span>
-        </h2>
-
-        {loadingInventory ? (
-          <div className="text-center py-8 text-gray-400 text-sm">Loading inventory...</div>
-        ) : inventoryItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center border rounded-lg bg-gray-50/50">
-            <PackageIcon className="text-gray-300 mb-3" size={36} />
-            <p className="text-gray-500 font-medium">No products in inventory</p>
-            <p className="text-sm text-gray-400 mt-1">
-              Browse the catalog above and add products to start selling.
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-2">
-            <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-2 text-xs font-semibold text-gray-400 uppercase">
-              <div className="col-span-4">Product</div>
-              <div className="col-span-2">Base Price</div>
-              <div className="col-span-2">Retail Price</div>
-              <div className="col-span-2">Stock</div>
-              <div className="col-span-2 text-right">Actions</div>
-            </div>
-
-            {inventoryItems.map((item: any) => {
-              const product = item.variant?.product;
-              const variant = item.variant;
-              return (
-                <div
-                  key={item.id}
-                  className="grid grid-cols-12 gap-3 items-center bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-gray-300 transition-colors"
-                >
-                  <div className="col-span-4 flex items-center gap-3">
-                    {product?.images?.[0] && (
-                      <Image
-                        src={product.images[0].imageUrl}
-                        alt={product.name}
-                        width={40}
-                        height={40}
-                        className="w-10 h-10 rounded-lg object-cover"
-                      />
-                    )}
-                    <div>
-                      <div className="text-sm font-medium text-gray-900 line-clamp-1 flex items-center gap-1.5">
-                        {product?.name || "Unknown"}
-                        {variant?.brand && (
-                          <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
-                            {variant.brand.name}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-gray-400">
-                        {variant?.unitLabel} — {variant?.weightKg}kg
-                        {variant?.sku && ` • ${variant.sku}`}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-span-2 text-sm text-gray-500">
-                    ৳{Number(variant?.price || 0).toLocaleString()}
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-sm font-semibold text-emerald-700">
-                      ৳{Number(item.retailPrice || 0).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className={`text-sm font-medium ${Number(item.availableQty) > 0 ? "text-gray-900" : "text-red-500"}`}>
-                      {Number(item.availableQty).toLocaleString()}
-                    </span>
-                    <span className="text-xs text-gray-400 ml-1">qty</span>
-                  </div>
-                  <div className="col-span-2 flex justify-end">
-                    <button
-                      onClick={() => {
-                        if (confirm("Remove this product from your inventory?")) {
-                          removeMutation.mutate(item.id);
-                        }
-                      }}
-                      className="text-[10px] px-2 py-1 text-red-500 hover:bg-red-50 border border-red-200 rounded"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+            <Filter className="mr-1.5 h-3.5 w-3.5" />
+            Clear
+          </Button>
         )}
       </div>
 
-      {/* Request Modal */}
-      {showRequestModal && <RequestModal onClose={() => setShowRequestModal(false)} onSubmit={requestMutation} />}
+      {/* ── Advanced Filters (collapsible row) ── */}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <FilterSelect label="Type" value={selectedTypeId} placeholder="All Types" options={typeOptions}
+          onChange={(value) => { setSelectedTypeId(value); setSelectedCategoryId(undefined); setSelectedSubCategoryId(undefined); setSelectedCoreProductId(undefined); setVisibleCount(50); }}
+        />
+        <FilterSelect label="Category" value={selectedCategoryId} placeholder="All Categories" options={categoryOptions}
+          onChange={(value) => { setSelectedCategoryId(value); setSelectedSubCategoryId(undefined); setSelectedCoreProductId(undefined); setVisibleCount(50); }}
+        />
+        <FilterSelect label="Sub Category" value={selectedSubCategoryId} placeholder="All Sub Categories" options={subCategoryOptions}
+          onChange={(value) => { setSelectedSubCategoryId(value); setSelectedCoreProductId(undefined); setVisibleCount(50); }}
+        />
+        <FilterSelect label="Core Identity" value={selectedCoreProductId} placeholder="All Core Identities" options={coreProductOptions}
+          onChange={(value) => { setSelectedCoreProductId(value); setVisibleCount(50); }}
+        />
+        <FilterSelect label="Brand" value={selectedBrandId} placeholder="All Brands" options={brandOptions}
+          onChange={(value) => { setSelectedBrandId(value); setVisibleCount(50); }}
+        />
+      </div>
+
+      {/* ── Product Table ── */}
+      <section id="product-list">
+        {isLoading ? (
+          <LoadingState />
+        ) : isError ? (
+          <ErrorState message={(error as any)?.message || "Could not load warehouse products."} onRetry={() => refetch()} />
+        ) : hasNoAssignedProducts ? (
+          <EmptyProductsState />
+        ) : filteredRows.length === 0 ? (
+          <NoResultsState onClear={clearFilters} />
+        ) : (
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[240px]">Product</TableHead>
+                      <TableHead className="min-w-[130px]">Category</TableHead>
+                      <TableHead className="min-w-[180px]">Variant</TableHead>
+                      <TableHead className="min-w-[140px]">Stock</TableHead>
+                      <TableHead className="min-w-[100px] text-right">Price</TableHead>
+                      <TableHead className="w-[70px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleRows.map((item) => {
+                      const qty = toNumber(item.availableQty);
+                      const stock = getStockState(item);
+
+                      return (
+                        <TableRow key={item.inventoryId} className="cursor-pointer transition-colors hover:bg-muted/50">
+                          <TableCell>
+                            <Link href={getDetailHref(item)} className="block">
+                              <div className="font-medium">{item.coreProductName || item.productName}</div>
+                              {item.sku && (
+                                <span className="mt-0.5 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                                  {item.sku}
+                                </span>
+                              )}
+                            </Link>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm font-medium">{item.categoryName}</div>
+                            {item.subCategoryName && item.subCategoryName !== "—" && (
+                              <div className="text-xs text-muted-foreground">{item.subCategoryName}</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs font-medium">
+                              {getVariantText(item)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium tabular-nums">
+                                {formatNumber(qty)} {getStockUnit(item)}
+                              </span>
+                              {stock === "low_stock" && (
+                                <Badge className="border-amber-200 bg-amber-50 text-[10px] text-amber-700 hover:bg-amber-50">
+                                  Low
+                                </Badge>
+                              )}
+                              {stock === "out_of_stock" && (
+                                <Badge className="border-red-200 bg-red-50 text-[10px] text-red-700 hover:bg-red-50">
+                                  Out
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatCurrency(item.packPrice)}
+                          </TableCell>
+                          <TableCell>
+                            <RowActions
+                              item={item}
+                              stockQty={qty}
+                              onDeactivate={handleDeactivate}
+                              onNotImplemented={notifyNotImplemented}
+                              isDeactivating={deactivateMutation.isPending}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              {hasMore && (
+                <div className="flex items-center justify-between border-t px-4 py-3">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {visibleRows.length} of {filteredRows.length.toLocaleString("en-BD")} results
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => setVisibleCount((c) => c + 50)}>
+                    Load More
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </section>
     </div>
   );
 }
 
-// ─── Request Modal Component ───────────────────────────────────
-
-function RequestModal({
-  onClose,
-  onSubmit,
+function FilterSelect({
+  label,
+  value,
+  placeholder,
+  options,
+  onChange,
 }: {
-  onClose: () => void;
-  onSubmit: { mutate: (data: any) => void; isPending: boolean };
+  label: string;
+  value: number | undefined;
+  placeholder: string;
+  options: FilterOption[];
+  onChange: (value: number | undefined) => void;
 }) {
-  const [form, setForm] = useState({
-    typeName: "",
-    categoryName: "",
-    subCategoryName: "",
-    productName: "",
-    description: "",
-  });
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+        {label}
+      </Label>
+      <Select
+        value={value ? String(value) : "all"}
+        onValueChange={(nextValue) =>
+          onChange(nextValue === "all" ? undefined : Number(nextValue))
+        }
+      >
+        <SelectTrigger className="h-10">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{placeholder}</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.id} value={String(option.id)}>
+              {option.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function RowActions({
+  item,
+  stockQty,
+  onDeactivate,
+  onNotImplemented,
+  isDeactivating,
+}: {
+  item: WarehouseProductRow;
+  stockQty: number;
+  onDeactivate: (item: WarehouseProductRow) => void;
+  onNotImplemented: (action: string) => void;
+  isDeactivating: boolean;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-8 w-8">
+          <MoreHorizontal className="h-4 w-4" />
+          <span className="sr-only">Open row actions</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel>Row Action</DropdownMenuLabel>
+        <DropdownMenuItem asChild>
+          <Link href={getDetailHref(item)}>View Details</Link>
+        </DropdownMenuItem>
+        {stockQty <= 0 ? (
+          <DropdownMenuItem asChild>
+            <Link href={`${WH}/stock/add`}>Add Stock</Link>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem onSelect={() => onNotImplemented("Edit product")}>
+          Edit Product (Not implemented)
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href={`${WH}/stock-adjustment/create`}>Adjust Stock</Link>
+        </DropdownMenuItem>
+        {stockQty > 0 ? (
+          <DropdownMenuItem asChild>
+            <Link href={`${WH}/carton-tracking/${item.productId}`}>
+              Transfer
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem onSelect={() => onNotImplemented("Print label")}>
+          Print Label (Not implemented)
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          disabled={isDeactivating}
+          onSelect={() => onDeactivate(item)}
+        >
+          Deactivate
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function KpiCard({
+  icon: Icon,
+  label,
+  value,
+  iconBg,
+  iconColor,
+  valueColor,
+  onClick,
+  active,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: number;
+  iconBg: string;
+  iconColor: string;
+  valueColor?: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Send size={18} className="text-amber-500" />
-            Request New Product
-          </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X size={18} />
-          </button>
+    <Card className={active ? "ring-2 ring-primary ring-offset-1" : ""}>
+      <CardContent
+        className="flex items-center gap-3 p-4"
+        {...(onClick ? { onClick, role: "button", tabIndex: 0 } : {})}
+      >
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${iconBg}`}
+        >
+          <Icon className={`h-5 w-5 ${iconColor}`} />
         </div>
-
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-gray-500 block mb-1">Type (optional)</label>
-            <input
-              type="text"
-              placeholder="e.g. Grocery, Fashion, Electronics"
-              value={form.typeName}
-              onChange={(e) => setForm({ ...form, typeName: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-amber-500 outline-none"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500 block mb-1">Category (optional)</label>
-            <input
-              type="text"
-              placeholder="e.g. Rice, Oil, T-Shirt"
-              value={form.categoryName}
-              onChange={(e) => setForm({ ...form, categoryName: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-amber-500 outline-none"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500 block mb-1">Sub Category (optional)</label>
-            <input
-              type="text"
-              placeholder="e.g. Miniket, Basmati, Round Neck"
-              value={form.subCategoryName}
-              onChange={(e) => setForm({ ...form, subCategoryName: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-amber-500 outline-none"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500 block mb-1">Product Name *</label>
-            <input
-              type="text"
-              placeholder="e.g. Miniket Rice, Soybean Oil"
-              value={form.productName}
-              onChange={(e) => setForm({ ...form, productName: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-amber-500 outline-none"
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500 block mb-1">Description (optional)</label>
-            <textarea
-              placeholder="Any additional details or notes..."
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-amber-500 outline-none resize-none"
-            />
-          </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className={`text-lg font-bold tabular-nums ${valueColor ?? ""}`}>
+            {value.toLocaleString("en-BD")}
+          </p>
         </div>
-
-        <div className="flex gap-2 mt-5">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              if (!form.productName.trim()) return;
-              onSubmit.mutate({
-                typeName: form.typeName || undefined,
-                categoryName: form.categoryName || undefined,
-                subCategoryName: form.subCategoryName || undefined,
-                productName: form.productName,
-                description: form.description || undefined,
-              });
-            }}
-            disabled={onSubmit.isPending || !form.productName.trim()}
-            className="flex-1 px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors"
-          >
-            {onSubmit.isPending ? "Submitting..." : "Submit Request"}
-          </button>
-        </div>
-
-        <p className="text-[10px] text-gray-400 mt-3 text-center">
-          Your request will be reviewed by admin. Once approved, the product will appear in the catalog.
-        </p>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
+
+function LoadingState() {
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-6">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="py-16 text-center">
+        <AlertCircle className="mx-auto mb-3 h-10 w-10 text-red-400" />
+        <p className="font-semibold text-red-700">Failed to load products</p>
+        <p className="mt-1 max-w-md mx-auto text-sm text-muted-foreground">{message}</p>
+        <Button variant="destructive" size="sm" className="mt-4" onClick={onRetry}>
+          Retry
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmptyProductsState() {
+  return (
+    <Card>
+      <CardContent className="py-20 text-center">
+        <Package className="mx-auto mb-4 h-14 w-14 text-muted-foreground/20" />
+        <p className="text-lg font-semibold">No products assigned</p>
+        <p className="mt-1 text-sm text-muted-foreground mb-6">
+          Activate products from the warehouse catalog to start stock management.
+        </p>
+        <Button asChild>
+          <Link href={`${WH}/catalog`}>
+            <PackagePlus className="mr-2 h-4 w-4" />
+            Activate Products
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function NoResultsState({ onClear }: { onClear: () => void }) {
+  return (
+    <Card>
+      <CardContent className="py-16 text-center">
+        <Filter className="mx-auto mb-3 h-10 w-10 text-muted-foreground/20" />
+        <p className="font-semibold">No products match this view</p>
+        <p className="mt-1 text-sm text-muted-foreground mb-6">
+          Try changing filters or search.
+        </p>
+        <Button variant="outline" size="sm" onClick={onClear}>
+          Clear Filters
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
