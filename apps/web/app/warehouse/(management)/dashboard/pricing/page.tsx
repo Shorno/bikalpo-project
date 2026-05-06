@@ -237,7 +237,20 @@ function CoreProductSection({
     return map;
   }, [allCartonSummaries]);
 
-  // --- Inline delivery editing (updates the carton_config delivery cost) ---
+  // --- Inline carton price editing (updates physical cartons via updateCartonPrice) ---
+  const [editingCartonPriceVariantId, setEditingCartonPriceVariantId] = useState<number | null>(null);
+  const [editCartonPriceValue, setEditCartonPriceValue] = useState("");
+
+  const updateCartonPriceMutation = useMutation({
+    mutationFn: (d: { cartonId: number; cartonPrice: string }) =>
+      (orpc.warehouse as any).updateCartonPrice.call(d),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["warehouse", "getCartonSummaryBatch"] });
+      setEditingCartonPriceVariantId(null);
+      toast.success("Carton price updated");
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to update carton price"),
+  });
   const [editingDeliveryVariantId, setEditingDeliveryVariantId] = useState<number | null>(null);
   const [editDeliveryValue, setEditDeliveryValue] = useState("");
 
@@ -408,8 +421,53 @@ function CoreProductSection({
                       )}
                     </TableCell>
                     <TableCell className="font-semibold">
-                      {cartonInfo?.cartonPrice ? (
-                        <>৳ {Number(cartonInfo.cartonPrice).toLocaleString()}</>
+                      {cartonInfo ? (
+                        editingCartonPriceVariantId === item.variantId ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">৳</span>
+                            <input
+                              type="number"
+                              value={editCartonPriceValue}
+                              onChange={(e) => setEditCartonPriceValue(e.target.value)}
+                              className="w-24 px-2 py-1 text-sm border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 outline-none bg-white"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && cartonInfo?.latestCartonDbId) {
+                                  updateCartonPriceMutation.mutate({
+                                    cartonId: cartonInfo.latestCartonDbId,
+                                    cartonPrice: editCartonPriceValue || "0",
+                                  });
+                                }
+                                if (e.key === "Escape") setEditingCartonPriceVariantId(null);
+                              }}
+                              onBlur={() => {
+                                if (cartonInfo?.latestCartonDbId) {
+                                  updateCartonPriceMutation.mutate({
+                                    cartonId: cartonInfo.latestCartonDbId,
+                                    cartonPrice: editCartonPriceValue || "0",
+                                  });
+                                } else {
+                                  setEditingCartonPriceVariantId(null);
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <span
+                            className="cursor-pointer hover:text-amber-600 transition-colors"
+                            onClick={() => {
+                              setEditingCartonPriceVariantId(item.variantId);
+                              setEditCartonPriceValue(cartonInfo.cartonPrice || "");
+                            }}
+                            title="Click to edit carton price"
+                          >
+                            {cartonInfo.cartonPrice ? (
+                              <>৳ {Number(cartonInfo.cartonPrice).toLocaleString()}</>
+                            ) : (
+                              <span className="text-muted-foreground italic text-xs font-normal">+ add</span>
+                            )}
+                          </span>
+                        )
                       ) : (
                         <span className="text-muted-foreground font-normal">—</span>
                       )}

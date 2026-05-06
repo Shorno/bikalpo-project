@@ -4044,6 +4044,7 @@ const cartonQueries = {
                 deliveryCostPerUnit: string | null;
                 activeCartonCount: number;
                 latestCartonId: string;
+                latestCartonDbId: number;
             }>();
 
             for (const c of activeCartons) {
@@ -4057,9 +4058,10 @@ const cartonQueries = {
                         deliveryCostPerUnit: c.deliveryCostPerUnit,
                         activeCartonCount: 1,
                         latestCartonId: c.cartonId,
+                        latestCartonDbId: c.id,
                     });
                 } else {
-                    // Accumulate count and weight
+                    // Accumulate count, weight, and fill missing pricing from other cartons
                     const existing = summaryMap.get(c.variantId)!;
                     existing.activeCartonCount += 1;
                     existing.totalPacks += c.totalPacks;
@@ -4067,6 +4069,13 @@ const cartonQueries = {
                         parseFloat(existing.totalWeightKg) +
                         parseFloat(c.totalWeightKg)
                     ).toFixed(2);
+                    // If the representative carton has no price, inherit from this carton
+                    if (!existing.cartonPrice && c.cartonPrice) {
+                        existing.cartonPrice = c.cartonPrice;
+                    }
+                    if (!existing.deliveryCostPerUnit && c.deliveryCostPerUnit) {
+                        existing.deliveryCostPerUnit = c.deliveryCostPerUnit;
+                    }
                 }
             }
 
@@ -4957,10 +4966,40 @@ const cartonQueries = {
                 return { success: true, message: "Nothing to update" };
             }
 
+            // Update the target carton
             await db
                 .update(carton)
                 .set(updateData)
                 .where(eq(carton.id, input.cartonId));
+
+            // Also propagate to sibling active cartons of the same variant
+            // that currently have no price set (batch-created cartons start with null)
+            const siblingUpdateData: Record<string, any> = {};
+            if (input.cartonPrice !== undefined) {
+                siblingUpdateData.cartonPrice = input.cartonPrice;
+            }
+            if (input.deliveryCostPerUnit !== undefined) {
+                siblingUpdateData.deliveryCostPerUnit = input.deliveryCostPerUnit;
+            }
+
+            if (Object.keys(siblingUpdateData).length > 0) {
+                const conditions = [
+                    eq(carton.warehouseId, userId),
+                    eq(carton.variantId, existingCarton.variantId),
+                    eq(carton.status, "active"),
+                    sql`${carton.id} != ${input.cartonId}`,
+                ];
+
+                // Only update siblings that have null for the fields being set
+                if (input.cartonPrice !== undefined) {
+                    conditions.push(sql`${carton.cartonPrice} IS NULL`);
+                }
+
+                await db
+                    .update(carton)
+                    .set(siblingUpdateData)
+                    .where(and(...conditions));
+            }
 
             return { success: true, message: "Carton price updated" };
         }),
