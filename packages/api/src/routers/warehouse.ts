@@ -181,7 +181,7 @@ const storefrontQueries = {
             });
 
             // Filter in application layer
-            let filtered = warehouseInventory.filter((inv) => {
+            const filtered = warehouseInventory.filter((inv) => {
                 const prod = inv.variant?.product;
                 if (!prod) return false;
 
@@ -1429,7 +1429,7 @@ const supplierQueries = {
 
             // Aggregate total purchase per supplier
             const supplierIds = suppliers.map((s) => s.id);
-            let purchaseTotals: Record<number, number> = {};
+            const purchaseTotals: Record<number, number> = {};
 
             if (supplierIds.length > 0) {
                 const totals = await db
@@ -3048,6 +3048,40 @@ const warehouseProductCreation = {
         }),
 
     /**
+     * Activate or deactivate a product owned by this warehouse.
+     */
+    updateWarehouseProductStatus: warehouseProcedure
+        .input(
+            z.object({
+                productId: z.number().int(),
+                status: z.enum(["active", "inactive"]),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existing = await db.query.product.findFirst({
+                where: and(
+                    eq(productTable.id, input.productId),
+                    eq(productTable.createdByWarehouseId, userId),
+                ),
+                columns: { id: true },
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+            }
+
+            const [updated] = await db
+                .update(productTable)
+                .set({ status: input.status })
+                .where(eq(productTable.id, input.productId))
+                .returning({ id: productTable.id, status: productTable.status });
+
+            return { product: updated };
+        }),
+
+    /**
      * Get a single core product identity by ID (for the add product form).
      */
     getCoreProductById: warehouseProcedure
@@ -3594,9 +3628,7 @@ const storageAreaQueries = {
 // ────────────────────────────────────────────────────────────────
 
 import {
-    brand as brandTable,
     category as catTable,
-    subCategory as subCatTable,
     productType as productTypeTable,
 } from "@bikalpo-project/db/schema";
 
@@ -3655,7 +3687,7 @@ const pricingQueries = {
                     .filter((id): id is number => id != null),
             )];
 
-            let categoryTypeMap = new Map<number, { typeId: number; typeName: string }>();
+            const categoryTypeMap = new Map<number, { typeId: number; typeName: string }>();
             if (categoryIds.length > 0) {
                 const catTypes = await db
                     .select({
@@ -3678,8 +3710,12 @@ const pricingQueries = {
             type PriceItem = {
                 inventoryId: number;
                 variantId: number;
+                sku: string | null;
+                variantSku: string | null;
                 productId: number;
+                productSku: string | null;
                 productName: string;
+                productStatus: string;
                 coreProductId: number | null;
                 coreProductName: string;
                 coreProductImage: string;
@@ -3692,11 +3728,17 @@ const pricingQueries = {
                 brandId: number | null;
                 brandName: string;
                 variantLabel: string;
+                unitLabel: string;
+                packagingType: string;
                 packUnit: string;
                 packPrice: string;
                 basePrice: string;
                 isActive: boolean;
                 availableQty: string;
+                reservedQty: string;
+                inCartonQty: string;
+                activeCartonCount: number;
+                reorderLevel: number;
                 updatedAt: Date;
                 isLoose: boolean;
                 weightKg: number;
@@ -3736,8 +3778,12 @@ const pricingQueries = {
                 priceItems.push({
                     inventoryId: item.id,
                     variantId: v.id,
+                    sku: v.sku || p.sku || null,
+                    variantSku: v.sku || null,
                     productId: p.id,
+                    productSku: p.sku || null,
                     productName: p.name,
+                    productStatus: p.status,
                     coreProductId: core?.id ?? null,
                     coreProductName: core?.name ?? p.name,
                     coreProductImage: core?.image ?? (p as any).image ?? "",
@@ -3750,11 +3796,17 @@ const pricingQueries = {
                     brandId: brandInfo?.id ?? null,
                     brandName: brandInfo?.name ?? "—",
                     variantLabel,
+                    unitLabel: v.unitLabel || "Unit",
+                    packagingType: v.packagingType || v.packType || "unit",
                     packUnit,
                     packPrice: item.retailPrice || v.price || "0",
                     basePrice: v.price || "0",
                     isActive: v.isActive,
                     availableQty: item.availableQty || "0",
+                    reservedQty: item.reservedQty || "0",
+                    inCartonQty: item.inCartonQty || "0",
+                    activeCartonCount: item.activeCartonCount ?? 0,
+                    reorderLevel: v.reorderLevel ?? p.reorderLevel ?? 0,
                     updatedAt: item.updatedAt,
                     isLoose: v.packagingType === "loose",
                     weightKg,
@@ -3786,7 +3838,8 @@ const pricingQueries = {
                         i.productName.toLowerCase().includes(s) ||
                         i.coreProductName.toLowerCase().includes(s) ||
                         i.brandName.toLowerCase().includes(s) ||
-                        i.variantLabel.toLowerCase().includes(s),
+                        i.variantLabel.toLowerCase().includes(s) ||
+                        (i.sku?.toLowerCase().includes(s) ?? false),
                 );
             }
 
@@ -5312,7 +5365,7 @@ const expiryQueries = {
                 variantId: number;
                 variantLabel: string;
                 brandName: string;
-                supplierId: number;
+                supplierId: number | null;
                 supplierName: string;
                 storageAreaName: string | null;
                 expiryStatus: ExpiryStatus;
@@ -5457,7 +5510,9 @@ const expiryQueries = {
             const supplierOptions = new Map<number, string>();
             for (const item of items) {
                 categoryOptions.set(item.categoryId, item.categoryName);
-                supplierOptions.set(item.supplierId, item.supplierName);
+                if (item.supplierId !== null) {
+                    supplierOptions.set(item.supplierId, item.supplierName);
+                }
             }
 
             const alerts = items
