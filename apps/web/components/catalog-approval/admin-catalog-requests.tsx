@@ -142,8 +142,8 @@ export function AdminCatalogRequests({
   });
 
   const optionsQuery = useQuery({
-    queryKey: ["warehouseCatalogApproval", "requestOptions"],
-    queryFn: () => orpc.warehouseCatalogApproval.getRequestOptions.call({}),
+    queryKey: ["adminCatalogApproval", "requestOptions"],
+    queryFn: () => orpc.adminCatalogApproval.getRequestOptions.call({}),
     enabled: requestType !== "brand",
   });
 

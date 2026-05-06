@@ -502,6 +502,28 @@ export const warehouseCatalogApprovalRouter = {
 };
 
 export const adminCatalogApprovalRouter = {
+  getRequestOptions: adminProcedure.handler(async () => {
+    const [types, categories, subCategories] = await Promise.all([
+      db.query.productType.findMany({
+        where: eq(productType.isActive, true),
+        orderBy: [asc(productType.displayOrder), asc(productType.name)],
+        columns: { id: true, name: true, slug: true },
+      }),
+      db.query.category.findMany({
+        where: eq(category.isActive, true),
+        orderBy: [asc(category.displayOrder), asc(category.name)],
+        columns: { id: true, name: true, slug: true, typeId: true },
+      }),
+      db.query.subCategory.findMany({
+        where: eq(subCategory.isActive, true),
+        orderBy: [asc(subCategory.displayOrder), asc(subCategory.name)],
+        columns: { id: true, name: true, slug: true, categoryId: true },
+      }),
+    ]);
+
+    return { types, categories, subCategories, units: UNITS };
+  }),
+
   listRequests: adminProcedure
     .input(requestListInput.optional())
     .handler(async ({ input }) => {
