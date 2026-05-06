@@ -377,6 +377,8 @@ const storeConnectionQueries = {
                         name: user.name,
                         phone: user.phoneNumber,
                         address: user.shopAddress,
+                        shopLat: user.shopLat,
+                        shopLng: user.shopLng,
                         image: user.image,
                     })
                     .from(shopWarehouseConnection)
@@ -470,6 +472,8 @@ const storeConnectionQueries = {
                     name: user.name,
                     phone: user.phoneNumber,
                     address: user.shopAddress,
+                    shopLat: user.shopLat,
+                    shopLng: user.shopLng,
                     area: sql<string | null>`NULL`,
                     image: user.image,
                 })
@@ -631,6 +635,8 @@ const storeConnectionQueries = {
                         name: user.name,
                         phone: user.phoneNumber,
                         address: user.shopAddress,
+                        shopLat: user.shopLat,
+                        shopLng: user.shopLng,
                         image: user.image,
                     })
                     .from(shopWarehouseConnection)
