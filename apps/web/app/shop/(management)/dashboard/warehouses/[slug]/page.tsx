@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { orpc } from "@/utils/orpc";
 
@@ -632,10 +632,11 @@ function VariantModal({
 /* ═══════════════════════════════════════════════════════════
    MAIN PAGE
    ═══════════════════════════════════════════════════════════ */
-export default function OrderFromWarehousePage({ params }: { params: { slug: string } }) {
+export default function OrderFromWarehousePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
   const queryClient = useQueryClient();
   const [step, setStep] = useState<"browse" | "checkout" | "success">("browse");
-  const selectedSlug = params.slug;
+  const selectedSlug = slug;
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<GroupedProduct | null>(null);
