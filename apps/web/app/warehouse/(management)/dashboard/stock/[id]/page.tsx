@@ -416,49 +416,82 @@ export default function StockDetailPage() {
           <SectionHeader emoji="📦" title="Pack Type Stock (Supply Level)" />
           <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
             {packTypeGroups.map((group: any, gi: number) => {
-              const info = getCartonInfo(group);
+              // Build per-brand carton info for this weight group
+              const brandCartonRows: { brandName: string; cartonCount: number; totalKg: number; weightKg: number }[] = [];
+              const weightKg = parseFloat(group.weightKg || "0");
+
+              for (const it of group.items) {
+                const summary = cartonByVariant.get(it.variantId);
+                const brandName = it.brand?.name || "Unbranded";
+                const activeCount = summary?.activeCartonCount ?? 0;
+                const wtInCartons = parseFloat(summary?.totalWeightKg || "0");
+                brandCartonRows.push({ brandName, cartonCount: activeCount, totalKg: wtInCartons || (activeCount * weightKg * (it.availableQty > 0 ? 1 : 0)), weightKg });
+              }
+
+              // Group by brand — sum if same brand has multiple variant items
+              const brandMap = new Map<string, { cartonCount: number; totalKg: number }>();
+              for (const row of brandCartonRows) {
+                if (!brandMap.has(row.brandName)) {
+                  brandMap.set(row.brandName, { cartonCount: 0, totalKg: 0 });
+                }
+                const e = brandMap.get(row.brandName)!;
+                e.cartonCount += row.cartonCount;
+                e.totalKg += row.totalKg;
+              }
+              const brandEntries = Array.from(brandMap.entries());
+              const totalCartons = brandEntries.reduce((s, [, v]) => s + v.cartonCount, 0);
+              const totalKg = brandEntries.reduce((s, [, v]) => s + v.totalKg, 0);
 
               return (
-                <div
-                  key={gi}
-                  className={`flex items-center justify-between px-5 py-3 cursor-pointer transition-colors ${
-                    selectedPackIndex === gi
-                      ? "bg-blue-50 border-l-2 border-l-blue-500"
-                      : "hover:bg-gray-50/50"
-                  }`}
-                  onClick={() =>
-                    setSelectedPackIndex(selectedPackIndex === gi ? null : gi)
-                  }
-                >
-                  <span className="text-sm text-gray-800 font-medium">
-                    {group.unitLabel} Carton
-                    {(() => {
-                      const brands = [...new Set(group.items.map((i: any) => i.brand?.name).filter(Boolean))];
-                      return brands.length > 0 ? (
-                        <span className="text-gray-500 ml-1">
-                          ({brands.join(", ")})
-                        </span>
-                      ) : null;
-                    })()}
-                  </span>
-                  <div className="flex items-center gap-6">
-                    <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                      →{" "}
-                      {info.cartonCount.toLocaleString()}{" "}
-                      <span className="text-xs font-normal text-gray-500">
-                        Carton
-                      </span>
+                <div key={gi}>
+                  <div
+                    className={`flex items-center justify-between px-5 py-3 cursor-pointer transition-colors ${
+                      selectedPackIndex === gi
+                        ? "bg-blue-50 border-l-2 border-l-blue-500"
+                        : "hover:bg-gray-50/50"
+                    }`}
+                    onClick={() =>
+                      setSelectedPackIndex(selectedPackIndex === gi ? null : gi)
+                    }
+                  >
+                    <span className="text-sm text-gray-800 font-medium">
+                      {group.unitLabel} Carton
                     </span>
-                    <div className="min-w-[120px]">
-                      {info.cartonCount > 0 ? (
-                        <span className="text-xs text-gray-500">
-                          ({Math.round(info.totalKg).toLocaleString()} KG)
+                    <div className="flex items-center gap-6">
+                      <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
+                        →{" "}
+                        {totalCartons.toLocaleString()}{" "}
+                        <span className="text-xs font-normal text-gray-500">
+                          Carton
                         </span>
-                      ) : (
-                        <NotAvailable />
-                      )}
+                      </span>
+                      <div className="min-w-[120px]">
+                        {totalCartons > 0 ? (
+                          <span className="text-xs text-gray-500">
+                            ({Math.round(totalKg).toLocaleString()} KG)
+                          </span>
+                        ) : (
+                          <NotAvailable />
+                        )}
+                      </div>
                     </div>
                   </div>
+                  {/* Per-brand breakdown */}
+                  {brandEntries.length > 1 && (
+                    <div className="px-8 pb-2 pt-0.5 space-y-1">
+                      {brandEntries.map(([brand, info], bi) => (
+                        <div key={bi} className="flex items-center justify-between text-xs text-gray-500">
+                          <span className="text-gray-600">{brand}</span>
+                          <span className="tabular-nums">
+                            {info.cartonCount > 0
+                              ? `${info.cartonCount} carton (${Math.round(info.totalKg)} KG)`
+                              : "—  no cartons"
+                            }
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

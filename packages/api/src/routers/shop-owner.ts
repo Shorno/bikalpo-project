@@ -4340,28 +4340,7 @@ const warehouseConnectionEndpoints = {
                     ),
                 });
 
-                // DEBUG: log carton matching info
-                console.log("[DEBUG getWarehouseProductsFiltered] warehouseId:", warehouseId);
-                console.log("[DEBUG getWarehouseProductsFiltered] allVariantIds:", allVariantIds);
-                console.log("[DEBUG getWarehouseProductsFiltered] activeCartons found:", activeCartons.length);
-                console.log("[DEBUG getWarehouseProductsFiltered] carton variantIds:", activeCartons.map(c => ({ variantId: c.variantId, status: c.status, wt: c.totalWeightKg })));
-
-                // Also query ALL active cartons for this warehouse to see if any exist outside our variantId list
-                const allWarehouseCartons = await db.query.carton.findMany({
-                    where: and(
-                        eq(carton.warehouseId, warehouseId),
-                        eq(carton.status, "active"),
-                    ),
-                    columns: { variantId: true, totalWeightKg: true, totalPacks: true, status: true },
-                });
-                console.log("[DEBUG getWarehouseProductsFiltered] ALL warehouse cartons:", allWarehouseCartons.length,
-                    "variantIds:", [...new Set(allWarehouseCartons.map(c => c.variantId))]);
-                const missingCartonVariants = allWarehouseCartons
-                    .filter(c => !allVariantIds.includes(c.variantId))
-                    .map(c => c.variantId);
-                if (missingCartonVariants.length > 0) {
-                    console.log("[DEBUG getWarehouseProductsFiltered] CARTONS EXIST for variantIds NOT in inventory results:", [...new Set(missingCartonVariants)]);
-                }
+                // No debug logging needed
 
                 for (const c of activeCartons) {
                     // Build cartonMap (totals per variant)
