@@ -4292,7 +4292,7 @@ const warehouseConnectionEndpoints = {
                 const vp = Number(item.variantPrice || 0);
                 const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
 
-                // Deduct carton-committed qty from available
+                // Track both total pack stock and loose (non-carton) stock
                 const rawQty = Number(item.availableQty || 0);
                 const inCarton = Number(item.inCartonQty || 0);
                 const effectiveQty = Math.max(0, rawQty - inCarton);
@@ -4301,6 +4301,7 @@ const warehouseConnectionEndpoints = {
                     inventoryId: item.inventoryId,
                     variantId: item.variantId,
                     availableQty: effectiveQty.toFixed(2),
+                    totalPackStock: rawQty.toFixed(2),
                     price,
                     canOrder,
                     product: {
@@ -4325,9 +4326,10 @@ const warehouseConnectionEndpoints = {
                 };
             });
 
-            // Enrich with carton data per variant
+            // Enrich with carton data per variant (single query)
             const allVariantIds = products.map((p) => p.variantId);
             let cartonMap = new Map<number, { cartonCount: number; totalWeightKg: number }>();
+            const cartonOptionsByVariant = new Map<number, { weightKg: number; count: number; totalKg: number; packsPerCarton: number }[]>();
 
             if (allVariantIds.length > 0) {
                 const activeCartons = await db.query.carton.findMany({
@@ -4339,28 +4341,15 @@ const warehouseConnectionEndpoints = {
                 });
 
                 for (const c of activeCartons) {
+                    // Build cartonMap (totals per variant)
                     if (!cartonMap.has(c.variantId)) {
                         cartonMap.set(c.variantId, { cartonCount: 0, totalWeightKg: 0 });
                     }
                     const entry = cartonMap.get(c.variantId)!;
                     entry.cartonCount += 1;
                     entry.totalWeightKg += parseFloat(c.totalWeightKg);
-                }
-            }
 
-            // Attach carton data to each product
-            // Build cartonOptions: group active cartons by totalWeightKg for each variant
-            const cartonOptionsByVariant = new Map<number, { weightKg: number; count: number; totalKg: number; packsPerCarton: number }[]>();
-            if (allVariantIds.length > 0) {
-                const activeCartons = await db.query.carton.findMany({
-                    where: and(
-                        eq(carton.warehouseId, warehouseId),
-                        eq(carton.status, "active"),
-                        inArray(carton.variantId, allVariantIds),
-                    ),
-                    columns: { variantId: true, totalWeightKg: true, totalPacks: true },
-                });
-                for (const c of activeCartons) {
+                    // Build cartonOptions (grouped by weight per variant)
                     if (!cartonOptionsByVariant.has(c.variantId)) {
                         cartonOptionsByVariant.set(c.variantId, []);
                     }
@@ -4371,9 +4360,9 @@ const warehouseConnectionEndpoints = {
                         existing.count += 1;
                     } else {
                         list.push({
-                            weightKg: wt,      // per-carton weight
-                            totalKg: wt,        // same as weightKg (per-carton)
-                            count: 1,           // how many cartons of this size
+                            weightKg: wt,
+                            totalKg: wt,
+                            count: 1,
                             packsPerCarton: c.totalPacks || 0,
                         });
                     }
