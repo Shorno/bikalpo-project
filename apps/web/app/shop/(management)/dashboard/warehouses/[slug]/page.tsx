@@ -233,7 +233,8 @@ function VariantModal({
   updateQty: (variantId: number, delta: number) => void;
   onClose: () => void;
 }) {
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const defaultIdx = product.variants.findIndex(v => (v.variant.totalCartonCount || 0) > 0);
+  const [selectedIdx, setSelectedIdx] = useState(defaultIdx >= 0 ? defaultIdx : 0);
   const [qty, setQty] = useState(1);
   const [selectedCartonSizeIdx, setSelectedCartonSizeIdx] = useState(0);
 
@@ -346,7 +347,10 @@ function VariantModal({
                     <button
                       key={bg.brandName}
                       onClick={() => {
-                        setSelectedIdx(bg.variants[0]!.idx);
+                        // Prefer first variant with cartons
+                        const withCartons = bg.variants.find(v => (v.variant.totalCartonCount || 0) > 0);
+                        setSelectedIdx((withCartons || bg.variants[0])!.idx);
+                        setSelectedCartonSizeIdx(0);
                         setQty(1);
                       }}
                       className={`relative p-3 rounded-xl border-2 text-left transition-all ${
