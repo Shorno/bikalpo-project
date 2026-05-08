@@ -371,7 +371,7 @@ function VariantModal({
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-800">
                 {selectedCarton
-                  ? <>{selectedCarton.weightKg} KG – Carton</>
+                  ? <>{selectedCarton.weightKg} KG{selectedCarton.packsPerCarton > 0 && variantWeightKg > 0 ? ` (${variantWeightKg} KG × ${selectedCarton.packsPerCarton} pcs)` : " – Carton"}</>
                   : "Select a carton size"
                 }
               </div>
