@@ -326,7 +326,11 @@ function VariantModal({
               </h3>
               <div className="grid grid-cols-2 gap-2">
                 {brandGroups.map((bg) => {
-                  const cartonPrices = bg.variants
+                  const orderableVariants = bg.variants.filter(v => {
+                    const isLoose = (v.variant.packType || "").toLowerCase() === "loose";
+                    return !isLoose || (v.variant.totalCartonCount || 0) > 0;
+                  });
+                  const cartonPrices = orderableVariants
                     .map(v => getCartonPriceForVariant(v))
                     .filter(p => p > 0);
                   const minPrice = cartonPrices.length > 0 ? Math.min(...cartonPrices) : 0;
