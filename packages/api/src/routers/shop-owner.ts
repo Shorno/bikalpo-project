@@ -4340,8 +4340,6 @@ const warehouseConnectionEndpoints = {
                     ),
                 });
 
-                // No debug logging needed
-
                 for (const c of activeCartons) {
                     // Build cartonMap (totals per variant)
                     if (!cartonMap.has(c.variantId)) {
@@ -4366,6 +4364,8 @@ const warehouseConnectionEndpoints = {
                             totalKg: wt,
                             count: 1,
                             packsPerCarton: c.totalPacks || 0,
+                            cartonPrice: c.cartonPrice || null,
+                            deliveryCost: c.deliveryCostPerUnit || null,
                         });
                     }
                 }
