@@ -4,7 +4,6 @@ import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  Check,
   ChevronDown,
   ChevronRight,
   ImageIcon,
@@ -15,19 +14,17 @@ import {
   Search,
   Settings,
   Tag,
-  Trash2,
-  Truck,
   X,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -35,6 +32,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -61,9 +59,7 @@ import {
 import { generateSlug } from "@/utils/generate-slug";
 import { client, orpc } from "@/utils/orpc";
 import type { ProductWithRelations } from "./product-columns";
-import { ProductDraftVariantsCard } from "./product-draft-variants-card";
 import ProductFeaturesInput from "./product-features-input";
-import { ProductVariantsCard } from "./product-variants-card";
 import type { DraftVariant } from "./variant-form-dialog";
 
 // ============================================================
@@ -93,11 +89,22 @@ type BrandConfig = {
 interface ProductFormProps {
   mode: "create" | "edit";
   product?: ProductWithRelations;
+  initialCoreProductId?: number | null;
 }
 
-export default function ProductForm({ mode, product }: ProductFormProps) {
+export default function ProductForm({
+  mode,
+  product,
+  initialCoreProductId = null,
+}: ProductFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const isEdit = mode === "edit";
+  const initialCoreProductIdForCreate =
+    !isEdit && initialCoreProductId && Number.isFinite(initialCoreProductId)
+      ? initialCoreProductId
+      : null;
+  const isCoreIdentityLocked = initialCoreProductIdForCreate !== null;
 
   // === State for cascading selection ===
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(
@@ -111,8 +118,11 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   >(product?.subCategoryId ?? null);
   const [selectedCoreProductId, setSelectedCoreProductId] = useState<
     number | null
-  >((product as any)?.coreProductId ?? null);
-  const [draftVariants, setDraftVariants] = useState<DraftVariant[]>([]);
+  >((product as any)?.coreProductId ?? initialCoreProductIdForCreate);
+  const [initializedCoreProductId, setInitializedCoreProductId] = useState<
+    number | null
+  >(null);
+  const [draftVariants] = useState<DraftVariant[]>([]);
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
 
@@ -127,7 +137,9 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
     for (const pb of pbs) {
       // Find variant prices for this brand
       const brandVPs = (existingVPs || []).filter(
-        (vp: any) => (vp.brandId ?? null) === pb.brandId || (!vp.brandId && pbs.length === 1),
+        (vp: any) =>
+          (vp.brandId ?? null) === pb.brandId ||
+          (!vp.brandId && pbs.length === 1),
       );
 
       const variantSettings: Record<number, VariantPriceSettings> = {};
@@ -184,18 +196,45 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   );
   const coreProducts = coreProductsData?.coreProducts ?? [];
 
-  // ALL brands (global, unrestricted)
-  const { data: allBrandsData } = useQuery(
-    orpc.brand.getAll.queryOptions(),
-  );
-  const allBrands = Array.isArray(allBrandsData) ? allBrandsData : [];
+  const lockedCoreProductQuery = useQuery({
+    ...orpc.adminCoreProduct.getById.queryOptions({
+      input: { id: initialCoreProductIdForCreate ?? 0 },
+    }),
+    enabled: isCoreIdentityLocked,
+  });
 
-  const isEdit = mode === "edit";
+  const { data: catalogOptionsData } = useQuery({
+    queryKey: ["adminCatalogApproval", "productFormOptions"],
+    queryFn: () => orpc.adminCatalogApproval.getRequestOptions.call({}),
+  });
+
+  // ALL brands (global, unrestricted)
+  const { data: allBrandsData } = useQuery(orpc.brand.getAll.queryOptions());
+  const allBrands = Array.isArray(allBrandsData) ? allBrandsData : [];
 
   // Derived: selected core product details
   const selectedCoreProduct = coreProducts.find(
     (cp: any) => cp.id === selectedCoreProductId,
   );
+  const lockedCoreProduct = lockedCoreProductQuery.data?.coreProduct;
+  const activeCoreProduct = lockedCoreProduct ?? selectedCoreProduct;
+  const availableVariantOptions =
+    isCoreIdentityLocked && !activeCoreProduct
+      ? []
+      : getAvailableVariantsForCoreProduct(
+          activeCoreProduct,
+          catalogOptionsData?.variantOptions ?? [],
+        );
+  const isLoadingLockedCoreProduct =
+    isCoreIdentityLocked &&
+    lockedCoreProductQuery.isLoading &&
+    !activeCoreProduct;
+  const activeTypeName =
+    (activeCoreProduct as any)?.category?.type?.name ??
+    productTypes.find(
+      (type: any) => type.id === (activeCoreProduct as any)?.category?.typeId,
+    )?.name ??
+    "Unassigned";
 
   // Filter cascades
   const filteredCategories = selectedTypeId
@@ -251,7 +290,10 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
     onError: handleError,
   });
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    isLoadingLockedCoreProduct;
 
   const form = useForm({
     defaultValues: {
@@ -280,7 +322,8 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
       brandId: product?.brandId ?? (undefined as number | undefined),
 
       // New fields
-      coreProductId: (product as any)?.coreProductId ?? null,
+      coreProductId:
+        (product as any)?.coreProductId ?? initialCoreProductIdForCreate,
       shortDescription: (product as any)?.shortDescription ?? "",
       videoUrl: (product as any)?.videoUrl ?? "",
       trackingType: (product as any)?.trackingType ?? "none",
@@ -331,21 +374,50 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
     form.setFieldValue("slug", generatedSlug);
   };
 
+  const applyCoreProductToForm = useCallback(
+    (cp: any) => {
+      setSelectedCoreProductId(cp.id);
+      setSelectedTypeId(cp.category?.typeId ?? null);
+      setSelectedCategory(cp.categoryId);
+      setSelectedSubCategoryId(cp.subCategoryId ?? null);
+      form.setFieldValue("name", cp.name);
+      form.setFieldValue("slug", cp.slug);
+      form.setFieldValue("image", cp.image);
+      form.setFieldValue("categoryId", cp.categoryId);
+      form.setFieldValue("subCategoryId", cp.subCategoryId ?? undefined);
+      form.setFieldValue("coreProductId", cp.id);
+    },
+    [form],
+  );
+
   // When a core product is selected, auto-fill fields
   const handleCoreProductSelect = (cpId: number | null) => {
     setSelectedCoreProductId(cpId);
     if (cpId && coreProducts.length > 0) {
       const cp = coreProducts.find((c: any) => c.id === cpId);
       if (cp) {
-        form.setFieldValue("name", cp.name);
-        form.setFieldValue("slug", cp.slug);
-        form.setFieldValue("image", cp.image);
-        form.setFieldValue("categoryId", cp.categoryId);
-        form.setFieldValue("subCategoryId", cp.subCategoryId ?? undefined);
-        form.setFieldValue("coreProductId", cp.id);
+        applyCoreProductToForm(cp);
       }
     }
   };
+
+  useEffect(() => {
+    if (
+      !isCoreIdentityLocked ||
+      !activeCoreProduct ||
+      initializedCoreProductId === activeCoreProduct.id
+    ) {
+      return;
+    }
+
+    applyCoreProductToForm(activeCoreProduct);
+    setInitializedCoreProductId(activeCoreProduct.id);
+  }, [
+    activeCoreProduct,
+    applyCoreProductToForm,
+    initializedCoreProductId,
+    isCoreIdentityLocked,
+  ]);
 
   // Add a brand configuration
   const handleAddBrand = (brandId: number) => {
@@ -372,13 +444,19 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
   };
 
   // Toggle variant inclusion for a brand
-  const handleToggleVariant = (brandId: number, variantOptionId: number, variantOption: any) => {
+  const handleToggleVariant = (
+    brandId: number,
+    variantOptionId: number,
+    variantOption: any,
+  ) => {
     setBrandConfigs((prev) =>
       prev.map((bc) => {
         if (bc.brandId !== brandId) return bc;
         const isIncluded = bc.selectedVariantIds.includes(variantOptionId);
         if (isIncluded) {
-          const newIds = bc.selectedVariantIds.filter((id) => id !== variantOptionId);
+          const newIds = bc.selectedVariantIds.filter(
+            (id) => id !== variantOptionId,
+          );
           const { [variantOptionId]: _, ...rest } = bc.variantSettings;
           return { ...bc, selectedVariantIds: newIds, variantSettings: rest };
         } else {
@@ -405,7 +483,9 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
     setBrandConfigs((prev) =>
       prev.map((bc) => {
         if (bc.brandId !== brandId) return bc;
-        const current = bc.variantSettings[variantOptionId] ?? makeDefaultSettings(variantOptionId, brandId);
+        const current =
+          bc.variantSettings[variantOptionId] ??
+          makeDefaultSettings(variantOptionId, brandId);
         return {
           ...bc,
           variantSettings: {
@@ -462,9 +542,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                 Save Draft
               </Button>
               <Button onClick={() => form.handleSubmit()} disabled={isPending}>
-                {isPending && (
-                  <Loader className="mr-2 h-4 w-4 animate-spin" />
-                )}
+                {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
                 <Save className="mr-2 h-4 w-4" />
                 {isEdit ? "Save Changes" : "Publish Product"}
               </Button>
@@ -495,142 +573,207 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       </CardTitle>
                     </div>
                     <CardDescription>
-                      Select a pre-defined Core Identity to create a product
-                      from
+                      {isCoreIdentityLocked
+                        ? "This product is based on the selected core identity."
+                        : "Select a pre-defined Core Identity to create a product from"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Type */}
-                      <Field>
-                        <FieldLabel>Type</FieldLabel>
-                        <Select
-                          value={
-                            selectedTypeId ? String(selectedTypeId) : "all"
-                          }
-                          onValueChange={(v) => {
-                            const val = v === "all" ? null : Number(v);
-                            setSelectedTypeId(val);
-                            setSelectedCategory(null);
-                            setSelectedSubCategoryId(null);
-                            setSelectedCoreProductId(null);
-                            form.setFieldValue("categoryId", 0);
-                            form.setFieldValue("subCategoryId", undefined);
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Types</SelectItem>
-                            {productTypes.map((t: any) => (
-                              <SelectItem key={t.id} value={String(t.id)}>
-                                {t.name}
+                    {isCoreIdentityLocked ? (
+                      <div className="space-y-4">
+                        {isLoadingLockedCoreProduct ? (
+                          <div className="flex items-center gap-2 rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+                            <Loader className="h-4 w-4 animate-spin" />
+                            Loading core identity...
+                          </div>
+                        ) : activeCoreProduct ? (
+                          <>
+                            <div className="flex items-center gap-4 rounded-lg border bg-muted/40 p-3">
+                              {activeCoreProduct.image ? (
+                                <Image
+                                  src={activeCoreProduct.image}
+                                  alt={activeCoreProduct.name}
+                                  width={56}
+                                  height={56}
+                                  className="h-14 w-14 rounded-lg border bg-background object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-14 w-14 items-center justify-center rounded-lg border bg-background">
+                                  <Package className="h-5 w-5 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate font-semibold">
+                                  {activeCoreProduct.name}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  Slug: {activeCoreProduct.slug}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <ReadOnlyIdentityField
+                                label="Type"
+                                value={activeTypeName}
+                              />
+                              <ReadOnlyIdentityField
+                                label="Category"
+                                value={
+                                  activeCoreProduct.category?.name ?? "None"
+                                }
+                              />
+                              <ReadOnlyIdentityField
+                                label="Sub Category"
+                                value={
+                                  activeCoreProduct.subCategory?.name ?? "None"
+                                }
+                              />
+                              <ReadOnlyIdentityField
+                                label="Core Identity"
+                                value={activeCoreProduct.name}
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                            Core identity could not be loaded.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Type */}
+                        <Field>
+                          <FieldLabel>Type</FieldLabel>
+                          <Select
+                            value={
+                              selectedTypeId ? String(selectedTypeId) : "all"
+                            }
+                            onValueChange={(v) => {
+                              const val = v === "all" ? null : Number(v);
+                              setSelectedTypeId(val);
+                              setSelectedCategory(null);
+                              setSelectedSubCategoryId(null);
+                              setSelectedCoreProductId(null);
+                              form.setFieldValue("categoryId", 0);
+                              form.setFieldValue("subCategoryId", undefined);
+                              form.setFieldValue("coreProductId", null);
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Types</SelectItem>
+                              {productTypes.map((t: any) => (
+                                <SelectItem key={t.id} value={String(t.id)}>
+                                  {t.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+
+                        {/* Category */}
+                        <Field>
+                          <FieldLabel>Category *</FieldLabel>
+                          <Select
+                            value={
+                              selectedCategory ? String(selectedCategory) : "0"
+                            }
+                            onValueChange={(v) => {
+                              const val = Number(v);
+                              setSelectedCategory(val || null);
+                              setSelectedSubCategoryId(null);
+                              setSelectedCoreProductId(null);
+                              form.setFieldValue("categoryId", val);
+                              form.setFieldValue("subCategoryId", undefined);
+                              form.setFieldValue("coreProductId", null);
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0" disabled>
+                                Select category
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </Field>
+                              {filteredCategories.map((c: any) => (
+                                <SelectItem key={c.id} value={String(c.id)}>
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
 
-                      {/* Category */}
-                      <Field>
-                        <FieldLabel>Category *</FieldLabel>
-                        <Select
-                          value={
-                            selectedCategory ? String(selectedCategory) : "0"
-                          }
-                          onValueChange={(v) => {
-                            const val = Number(v);
-                            setSelectedCategory(val || null);
-                            setSelectedSubCategoryId(null);
-                            setSelectedCoreProductId(null);
-                            form.setFieldValue("categoryId", val);
-                            form.setFieldValue("subCategoryId", undefined);
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0" disabled>
-                              Select category
-                            </SelectItem>
-                            {filteredCategories.map((c: any) => (
-                              <SelectItem key={c.id} value={String(c.id)}>
-                                {c.name}
+                        {/* Sub Category */}
+                        <Field>
+                          <FieldLabel>Sub Category</FieldLabel>
+                          <Select
+                            value={
+                              selectedSubCategoryId
+                                ? String(selectedSubCategoryId)
+                                : "none"
+                            }
+                            onValueChange={(v) => {
+                              const val = v === "none" ? null : Number(v);
+                              setSelectedSubCategoryId(val);
+                              setSelectedCoreProductId(null);
+                              form.setFieldValue(
+                                "subCategoryId",
+                                val ?? undefined,
+                              );
+                              form.setFieldValue("coreProductId", null);
+                            }}
+                            disabled={filteredSubcategories.length === 0}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">All</SelectItem>
+                              {filteredSubcategories.map((sc: any) => (
+                                <SelectItem key={sc.id} value={String(sc.id)}>
+                                  {sc.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+
+                        {/* Core Identity */}
+                        <Field>
+                          <FieldLabel>Core Identity *</FieldLabel>
+                          <Select
+                            value={
+                              selectedCoreProductId
+                                ? String(selectedCoreProductId)
+                                : "0"
+                            }
+                            onValueChange={(v) => {
+                              const val = Number(v);
+                              handleCoreProductSelect(val || null);
+                            }}
+                            disabled={!selectedCategory}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select core product" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0" disabled>
+                                Select core identity
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </Field>
-
-                      {/* Sub Category */}
-                      <Field>
-                        <FieldLabel>Sub Category</FieldLabel>
-                        <Select
-                          value={
-                            selectedSubCategoryId
-                              ? String(selectedSubCategoryId)
-                              : "none"
-                          }
-                          onValueChange={(v) => {
-                            const val = v === "none" ? null : Number(v);
-                            setSelectedSubCategoryId(val);
-                            setSelectedCoreProductId(null);
-                            form.setFieldValue(
-                              "subCategoryId",
-                              val ?? undefined,
-                            );
-                          }}
-                          disabled={filteredSubcategories.length === 0}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">All</SelectItem>
-                            {filteredSubcategories.map((sc: any) => (
-                              <SelectItem key={sc.id} value={String(sc.id)}>
-                                {sc.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </Field>
-
-                      {/* Core Identity */}
-                      <Field>
-                        <FieldLabel>Core Identity *</FieldLabel>
-                        <Select
-                          value={
-                            selectedCoreProductId
-                              ? String(selectedCoreProductId)
-                              : "0"
-                          }
-                          onValueChange={(v) => {
-                            const val = Number(v);
-                            handleCoreProductSelect(val || null);
-                          }}
-                          disabled={!selectedCategory}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select core product" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0" disabled>
-                              Select core identity
-                            </SelectItem>
-                            {coreProducts.map((cp: any) => (
-                              <SelectItem key={cp.id} value={String(cp.id)}>
-                                {cp.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                    </div>
-
-
+                              {coreProducts.map((cp: any) => (
+                                <SelectItem key={cp.id} value={String(cp.id)}>
+                                  {cp.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
@@ -644,7 +787,8 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       <CardTitle className="text-base">Product Name</CardTitle>
                     </div>
                     <CardDescription>
-                      Set the display name for this product. Pre-filled from Core Identity but can be customized.
+                      Set the display name for this product. Pre-filled from
+                      Core Identity but can be customized.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -697,7 +841,8 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       </CardTitle>
                     </div>
                     <CardDescription>
-                      Select brands and configure variants for each. You must complete variant setup before adding another brand.
+                      Select brands and configure variants for each. You must
+                      complete variant setup before adding another brand.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -706,7 +851,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       <BrandConfigCard
                         key={bc.brandId}
                         config={bc}
-                        coreProductId={selectedCoreProductId!}
+                        variantOptions={availableVariantOptions}
                         isExpanded={expandedBrandId === bc.brandId}
                         onToggleExpand={() =>
                           setExpandedBrandId(
@@ -718,7 +863,12 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                           handleToggleVariant(bc.brandId, voId, vo)
                         }
                         onUpdateField={(voId, field, value) =>
-                          updateBrandVariantField(bc.brandId, voId, field, value)
+                          updateBrandVariantField(
+                            bc.brandId,
+                            voId,
+                            field,
+                            value,
+                          )
                         }
                       />
                     ))}
@@ -739,13 +889,17 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                       </Button>
                       {brandConfigs.length === 0 && (
                         <p className="text-xs text-muted-foreground mt-2">
-                          Select a brand to begin configuring variants for this product.
+                          Select a brand to begin configuring variants for this
+                          product.
                         </p>
                       )}
                     </div>
 
                     {/* Brand Selector Modal */}
-                    <Dialog open={brandModalOpen} onOpenChange={setBrandModalOpen}>
+                    <Dialog
+                      open={brandModalOpen}
+                      onOpenChange={setBrandModalOpen}
+                    >
                       <DialogContent className="sm:max-w-md">
                         <DialogHeader>
                           <DialogTitle>Select Brand</DialogTitle>
@@ -769,8 +923,11 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                           {/* Brand List */}
                           <div className="max-h-[300px] overflow-y-auto space-y-1 -mx-1 px-1">
                             {(() => {
-                              const filtered = availableBrands.filter((b: any) =>
-                                b.name.toLowerCase().includes(brandSearch.toLowerCase())
+                              const filtered = availableBrands.filter(
+                                (b: any) =>
+                                  b.name
+                                    .toLowerCase()
+                                    .includes(brandSearch.toLowerCase()),
                               );
                               if (filtered.length === 0) {
                                 return (
@@ -793,9 +950,11 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                                   }}
                                 >
                                   {b.logo ? (
-                                    <img
+                                    <Image
                                       src={b.logo}
                                       alt={b.name}
+                                      width={32}
+                                      height={32}
                                       className="h-8 w-8 rounded-md object-cover border"
                                     />
                                   ) : (
@@ -814,16 +973,14 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
 
                     {brandConfigs.length > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        {brandConfigs.length} brand{brandConfigs.length > 1 ? "s" : ""} configured
-                        {" "} — one product will be created with all brands attached
+                        {brandConfigs.length} brand
+                        {brandConfigs.length > 1 ? "s" : ""} configured — one
+                        product will be created with all brands attached
                       </p>
                     )}
                   </CardContent>
                 </Card>
               )}
-
-
-
 
               {/* ── 5. Product Details ── */}
               <Card>
@@ -985,9 +1142,7 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                     <ImageIcon className="h-4 w-4 text-muted-foreground" />
                     <CardTitle className="text-base">Media</CardTitle>
                   </div>
-                  <CardDescription>
-                    Product images and media
-                  </CardDescription>
+                  <CardDescription>Product images and media</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1066,7 +1221,9 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                           />
                           <div>
                             <p className="text-sm font-medium">Public</p>
-                            <p className="text-xs text-muted-foreground">Visible to all customers</p>
+                            <p className="text-xs text-muted-foreground">
+                              Visible to all customers
+                            </p>
                           </div>
                         </label>
                         <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
@@ -1080,7 +1237,9 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                           />
                           <div>
                             <p className="text-sm font-medium">Private</p>
-                            <p className="text-xs text-muted-foreground">Only visible to admins</p>
+                            <p className="text-xs text-muted-foreground">
+                              Only visible to admins
+                            </p>
                           </div>
                         </label>
                       </div>
@@ -1098,8 +1257,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-
-
                   <form.Field name="isFeatured">
                     {(field) => (
                       <div className="flex items-center justify-between">
@@ -1120,8 +1277,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
                   </form.Field>
                 </CardContent>
               </Card>
-
-
             </div>
           </div>
         </div>
@@ -1129,7 +1284,6 @@ export default function ProductForm({ mode, product }: ProductFormProps) {
     </div>
   );
 }
-
 
 // ============================================================
 // Helper: default variant settings
@@ -1146,6 +1300,44 @@ function makeDefaultSettings(
   };
 }
 
+function getAvailableVariantsForCoreProduct(
+  coreProduct: any,
+  variantOptions: any[] = [],
+) {
+  if (!coreProduct) return variantOptions;
+
+  const typeId = coreProduct.category?.typeId ?? null;
+  const categoryId = coreProduct.categoryId ?? null;
+
+  return variantOptions
+    .filter((variant) => {
+      const isGlobal = variant.typeId == null && variant.categoryId == null;
+      const isTypeWide =
+        variant.typeId === typeId && variant.categoryId == null;
+      const isCategoryScoped =
+        variant.typeId === typeId && variant.categoryId === categoryId;
+
+      return isGlobal || isTypeWide || isCategoryScoped;
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function ReadOnlyIdentityField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-background p-3">
+      <p className="text-xs font-medium uppercase text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-medium">{value}</p>
+    </div>
+  );
+}
 
 // ============================================================
 // Brand Config Card — collapsible per-brand variant config
@@ -1153,7 +1345,7 @@ function makeDefaultSettings(
 
 function BrandConfigCard({
   config,
-  coreProductId,
+  variantOptions,
   isExpanded,
   onToggleExpand,
   onRemove,
@@ -1161,7 +1353,7 @@ function BrandConfigCard({
   onUpdateField,
 }: {
   config: BrandConfig;
-  coreProductId: number;
+  variantOptions: any[];
   isExpanded: boolean;
   onToggleExpand: () => void;
   onRemove: () => void;
@@ -1172,15 +1364,6 @@ function BrandConfigCard({
     value: any,
   ) => void;
 }) {
-  // Fetch all active variant options directly (variants are independent)
-  const { data: variantOptions } = useQuery(
-    orpc.adminVariantOption.getAll.queryOptions({
-      input: { status: "active" },
-    }),
-  );
-
-  const allVariants = Array.isArray(variantOptions) ? variantOptions : [];
-
   return (
     <div className="space-y-3">
       {/* Brand header — flat row */}
@@ -1195,7 +1378,8 @@ function BrandConfigCard({
         )}
         <span className="font-semibold text-sm">{config.brandName}</span>
         <Badge variant="outline" className="text-[10px] font-normal">
-          {config.selectedVariantIds.length} variant{config.selectedVariantIds.length !== 1 ? "s" : ""}
+          {config.selectedVariantIds.length} variant
+          {config.selectedVariantIds.length !== 1 ? "s" : ""}
         </Badge>
         <div className="flex-1" />
         <Button
@@ -1217,49 +1401,60 @@ function BrandConfigCard({
         <div className="pl-7 space-y-3">
           {/* Variant selection + pricing — unified list */}
           <div className="space-y-1.5">
-            {allVariants.map((v: any) => {
-              const isIncluded = config.selectedVariantIds.includes(v.id);
-              const settings = isIncluded
-                ? (config.variantSettings[v.id] ?? makeDefaultSettings(v.id, config.brandId))
-                : null;
+            {variantOptions.length === 0 ? (
+              <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                No variant options are available for this core identity.
+              </div>
+            ) : (
+              variantOptions.map((v: any) => {
+                const isIncluded = config.selectedVariantIds.includes(v.id);
+                const settings = isIncluded
+                  ? (config.variantSettings[v.id] ??
+                    makeDefaultSettings(v.id, config.brandId))
+                  : null;
 
-              return (
-                <div
-                  key={v.id}
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
-                    isIncluded
-                      ? "bg-muted/50"
-                      : "hover:bg-muted/30"
-                  }`}
-                >
-                  <Checkbox
-                    checked={isIncluded}
-                    onCheckedChange={() => onToggleVariant(v.id, v)}
-                  />
-                  <span className={`text-sm flex-1 min-w-0 ${isIncluded ? "text-foreground" : "text-muted-foreground"}`}>
-                    {v.name}
-                    {v.size && (
-                      <span className="text-muted-foreground ml-1">· {v.size} {v.unit}</span>
+                return (
+                  <div
+                    key={v.id}
+                    className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
+                      isIncluded ? "bg-muted/50" : "hover:bg-muted/30"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={isIncluded}
+                      onCheckedChange={() => onToggleVariant(v.id, v)}
+                    />
+                    <span
+                      className={`text-sm flex-1 min-w-0 ${isIncluded ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                      {v.name}
+                      {v.size && (
+                        <span className="text-muted-foreground ml-1">
+                          · {v.size} {v.unit}
+                        </span>
+                      )}
+                    </span>
+                    {isIncluded && settings && (
+                      <div className="relative w-24 shrink-0">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                          ৳
+                        </span>
+                        <Input
+                          className="h-7 text-sm pl-6 pr-2 text-right"
+                          type="number"
+                          step="0.01"
+                          value={settings.consumerPrice}
+                          onChange={(e) =>
+                            onUpdateField(v.id, "consumerPrice", e.target.value)
+                          }
+                          placeholder="0"
+                        />
+                      </div>
                     )}
-                  </span>
-                  {isIncluded && settings && (
-                    <div className="relative w-24 shrink-0">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">৳</span>
-                      <Input
-                        className="h-7 text-sm pl-6 pr-2 text-right"
-                        type="number"
-                        step="0.01"
-                        value={settings.consumerPrice}
-                        onChange={(e) =>
-                          onUpdateField(v.id, "consumerPrice", e.target.value)
-                        }
-                        placeholder="0"
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -1268,6 +1463,3 @@ function BrandConfigCard({
     </div>
   );
 }
-
-
-

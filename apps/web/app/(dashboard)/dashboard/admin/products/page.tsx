@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Package,
   Pause,
+  Plus,
   Search,
   Settings,
   ShoppingBag,
@@ -438,14 +439,24 @@ export default function ProductsPage() {
                         className="text-right"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setSelectedProduct(product)}
-                        >
-                          <Eye className="h-4 w-4" />
-                          View
-                        </Button>
+                        <div className="flex justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelectedProduct(product)}
+                          >
+                            <Eye className="h-4 w-4" />
+                            View
+                          </Button>
+                          <Button size="sm" asChild>
+                            <Link
+                              href={`${ADMIN_BASE}/products/new?coreProductId=${product.id}`}
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add
+                            </Link>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
