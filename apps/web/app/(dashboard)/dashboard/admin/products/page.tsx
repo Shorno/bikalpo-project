@@ -532,6 +532,10 @@ function ProductDetailDialog({
     }),
   );
   const priceItems = priceQuery.data?.items ?? [];
+  const productsQuery = useQuery({
+    ...orpc.product.getAll.queryOptions({ input: {} }),
+    queryKey: ["admin-products"],
+  });
 
   const priceBrands = useMemo(() => {
     const map = new Map<string, string>();
@@ -542,6 +546,31 @@ function ProductDetailDialog({
     }
     return Array.from(map.values());
   }, [priceItems]);
+
+  const editableProducts = useMemo(() => {
+    const map = new Map<number, string>();
+    const createdProducts = productsQuery.data?.products ?? [];
+
+    for (const createdProduct of createdProducts) {
+      if ((createdProduct as any).coreProductId === product.id) {
+        map.set(createdProduct.id, createdProduct.name);
+      }
+    }
+
+    for (const item of priceItems) {
+      map.set(item.productId, item.productName);
+    }
+
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [priceItems, product.id, productsQuery.data?.products]);
+
+  const primaryEditableProduct = editableProducts[0];
+  const isResolvingEditableProduct =
+    productsQuery.isLoading || priceQuery.isLoading;
+  const primaryActionHref = primaryEditableProduct
+    ? `${ADMIN_BASE}/products/${primaryEditableProduct.id}/edit`
+    : `${ADMIN_BASE}/products/new?coreProductId=${product.id}`;
+  const primaryActionLabel = primaryEditableProduct ? "Edit" : "Add";
 
   const [selectedPriceBrand, setSelectedPriceBrand] = useState<string>("");
 
@@ -615,6 +644,24 @@ function ProductDetailDialog({
                   </Tooltip>
                 </TooltipProvider>
 
+                {isResolvingEditableProduct ? (
+                  <Button variant="outline" size="sm" disabled>
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    Loading
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={primaryActionHref}>
+                      {primaryEditableProduct ? (
+                        <Edit3 className="mr-1.5 h-4 w-4" />
+                      ) : (
+                        <Plus className="mr-1.5 h-4 w-4" />
+                      )}
+                      {primaryActionLabel}
+                    </Link>
+                  </Button>
+                )}
+
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm">
@@ -622,12 +669,36 @@ function ProductDetailDialog({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem asChild>
-                      <Link href={`${ADMIN_BASE}/core-products/${product.id}`}>
-                        <Edit3 className="mr-2 h-4 w-4" />
-                        Edit Product
-                      </Link>
-                    </DropdownMenuItem>
+                    {editableProducts.length > 1 ? (
+                      editableProducts.map((editableProduct) => (
+                        <DropdownMenuItem key={editableProduct.id} asChild>
+                          <Link
+                            href={`${ADMIN_BASE}/products/${editableProduct.id}/edit`}
+                          >
+                            <Edit3 className="mr-2 h-4 w-4" />
+                            Edit {editableProduct.name}
+                          </Link>
+                        </DropdownMenuItem>
+                      ))
+                    ) : isResolvingEditableProduct ? (
+                      <DropdownMenuItem disabled>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Loading product
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem asChild>
+                        <Link href={primaryActionHref}>
+                          {primaryEditableProduct ? (
+                            <Edit3 className="mr-2 h-4 w-4" />
+                          ) : (
+                            <Plus className="mr-2 h-4 w-4" />
+                          )}
+                          {primaryEditableProduct
+                            ? "Edit Product"
+                            : "Add Product"}
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem>
                       <Activity className="mr-2 h-4 w-4" />
                       Update Now
