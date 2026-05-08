@@ -46,6 +46,7 @@ import {
     purchase,
     invoice,
     carton,
+    cartonConfig,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -4340,6 +4341,26 @@ const warehouseConnectionEndpoints = {
                     ),
                 });
 
+                // Query cartonConfig for fallback pricing (warehouse sets price here)
+                const configs = await db.query.cartonConfig.findMany({
+                    where: and(
+                        inArray(cartonConfig.variantId, allVariantIds),
+                        eq(cartonConfig.isActive, true),
+                    ),
+                });
+                // Build map: variantId → default config price
+                const configPriceMap = new Map<number, string>();
+                const configDeliveryCostMap = new Map<number, string>();
+                for (const cfg of configs) {
+                    // Use the first (or default) config's price per variant
+                    if (!configPriceMap.has(cfg.variantId) || cfg.isDefault) {
+                        configPriceMap.set(cfg.variantId, cfg.cartonPrice);
+                        if (cfg.deliveryCostPerCarton) {
+                            configDeliveryCostMap.set(cfg.variantId, cfg.deliveryCostPerCarton);
+                        }
+                    }
+                }
+
                 for (const c of activeCartons) {
                     // Build cartonMap (totals per variant)
                     if (!cartonMap.has(c.variantId)) {
@@ -4359,13 +4380,16 @@ const warehouseConnectionEndpoints = {
                     if (existing) {
                         existing.count += 1;
                     } else {
+                        // Use carton price → cartonConfig price → null
+                        const resolvedPrice = c.cartonPrice || configPriceMap.get(c.variantId) || null;
+                        const resolvedDelivery = c.deliveryCostPerUnit || configDeliveryCostMap.get(c.variantId) || null;
                         list.push({
                             weightKg: wt,
                             totalKg: wt,
                             count: 1,
                             packsPerCarton: c.totalPacks || 0,
-                            cartonPrice: c.cartonPrice || null,
-                            deliveryCost: c.deliveryCostPerUnit || null,
+                            cartonPrice: resolvedPrice,
+                            deliveryCost: resolvedDelivery,
                         });
                     }
                 }
