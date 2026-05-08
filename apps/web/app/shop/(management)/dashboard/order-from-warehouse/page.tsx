@@ -498,7 +498,7 @@ function VariantModal({
           })()}
 
           {/* ─── Select Carton Size ─── */}
-          {cartonOptions.length > 1 && (
+          {cartonOptions.length >= 1 && (
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                 Select Carton Size
