@@ -77,6 +77,31 @@ type GroupedProduct = {
   variants: VariantItem[];
 };
 
+/* ─── Compute per-carton price for a variant ─── */
+function getCartonPriceForVariant(v: VariantItem): number {
+  const rawPrice = Number(v.price) || 0;
+  const isLoose = (v.variant.packType || "").toLowerCase() === "loose";
+  const weightKg = Number(v.variant.weightKg) || 0;
+  const opts = v.variant.cartonOptions || [];
+  const firstCarton = opts[0];
+
+  // 1. Use actual carton price from DB
+  const dbPrice = Number(firstCarton?.cartonPrice || 0);
+  if (dbPrice > 0) return dbPrice;
+
+  // 2. Fallback: calculate
+  if (firstCarton) {
+    if (isLoose) {
+      const perKg = weightKg > 0 ? rawPrice / weightKg : rawPrice;
+      return perKg * firstCarton.weightKg;
+    }
+    if (firstCarton.packsPerCarton > 0) {
+      return rawPrice * firstCarton.packsPerCarton;
+    }
+  }
+  return rawPrice;
+}
+
 /* ─── Group flat API data → category → product → variants ─── */
 function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
   const productMap = new Map<number, GroupedProduct>();
@@ -301,9 +326,11 @@ function VariantModal({
               </h3>
               <div className="grid grid-cols-2 gap-2">
                 {brandGroups.map((bg) => {
-                  const prices = bg.variants.map(v => Number(v.price) || 0);
-                  const minPrice = Math.min(...prices);
-                  const maxPrice = Math.max(...prices);
+                  const cartonPrices = bg.variants
+                    .map(v => getCartonPriceForVariant(v))
+                    .filter(p => p > 0);
+                  const minPrice = cartonPrices.length > 0 ? Math.min(...cartonPrices) : 0;
+                  const maxPrice = cartonPrices.length > 0 ? Math.max(...cartonPrices) : 0;
                   const isActive = bg.brandName === selectedBrandKey;
                   const brandCartCount = bg.variants.reduce((sum, v) => {
                     const ci = cart.find(c => c.variantId === v.variantId);
@@ -430,6 +457,7 @@ function VariantModal({
                         const isSelected = v.idx === selectedIdx;
                         const vInCart = cart.find((c) => c.variantId === v.variantId);
                         const vTotalCartons = v.variant.totalCartonCount || 0;
+                        const vCartonPrice = getCartonPriceForVariant(v);
 
                         return (
                           <button
@@ -443,7 +471,7 @@ function VariantModal({
                           >
                             <div className="font-semibold">{vWeight > 0 ? `${vWeight} KG` : v.variant.unitLabel || "Pack"}</div>
                             <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
-                              ৳{Number(v.price).toLocaleString()}
+                              ৳{vCartonPrice.toLocaleString()}
                             </div>
                             {vTotalCartons > 0 && (
                               <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
