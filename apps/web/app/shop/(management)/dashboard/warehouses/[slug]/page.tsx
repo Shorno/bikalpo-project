@@ -74,6 +74,7 @@ type GroupedProduct = {
   image: string | null;
   categoryName: string;
   unitSize: string | null;
+  brandName?: string;
   variants: VariantItem[];
 };
 
@@ -102,23 +103,29 @@ function getCartonPriceForVariant(v: VariantItem): number {
   return rawPrice;
 }
 
-/* ─── Group flat API data → category → product → variants ─── */
+/* ─── Group flat API data → category → product×brand → variants ─── */
 function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
-  const productMap = new Map<number, GroupedProduct>();
+  // Group by product+brand combination (each brand gets its own card)
+  const productBrandMap = new Map<string, GroupedProduct>();
   for (const item of products) {
     const pid = item.product?.id;
     if (!pid) continue;
-    if (!productMap.has(pid)) {
-      productMap.set(pid, {
+    const brandName = item.variant?.brandName || "Unbranded";
+    const brandId = item.variant?.brandId || 0;
+    const key = `${pid}_${brandId}`;
+    
+    if (!productBrandMap.has(key)) {
+      productBrandMap.set(key, {
         productId: pid,
         name: item.product.name,
         image: item.product.image,
         categoryName: item.product.categoryName || "Uncategorized",
         unitSize: item.product.unitSize || null,
+        brandName,
         variants: [],
       });
     }
-    productMap.get(pid)!.variants.push({
+    productBrandMap.get(key)!.variants.push({
       inventoryId: item.inventoryId,
       variantId: item.variantId,
       availableQty: item.availableQty,
@@ -128,7 +135,7 @@ function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
     });
   }
   const catMap = new Map<string, GroupedProduct[]>();
-  for (const prod of productMap.values()) {
+  for (const prod of productBrandMap.values()) {
     const cat = prod.categoryName;
     if (!catMap.has(cat)) catMap.set(cat, []);
     catMap.get(cat)!.push(prod);
@@ -136,7 +143,7 @@ function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
   return catMap;
 }
 
-/* ─── Product Card (grid card) ─── */
+/* ─── Product Card (grid card) — one per product×brand ─── */
 function ProductCard({
   product,
   cartQty,
@@ -149,7 +156,7 @@ function ProductCard({
   const totalCartons = product.variants.reduce((s, v) => s + (v.variant.totalCartonCount || 0), 0);
   const lowestPrice = Math.min(...product.variants.map((v) => Number(v.price) || 0));
   const variantCount = product.variants.length;
-  const brandName = product.variants[0]?.variant.brandName;
+  const brandName = product.brandName || product.variants[0]?.variant.brandName;
 
   return (
     <button
@@ -204,10 +211,10 @@ function ProductCard({
       </div>
       {/* Info */}
       <div className="p-3">
-        <h3 className="text-sm font-semibold text-gray-900 line-clamp-1">{product.name}</h3>
+        <h3 className="text-sm font-semibold text-gray-900 line-clamp-1">
+          {product.name}{brandName ? ` - ${brandName}` : ""}
+        </h3>
         <p className="text-[10px] text-gray-400 mt-0.5">
-          {brandName && <span className="text-blue-500 font-medium">{brandName}</span>}
-          {brandName && " • "}
           {variantCount} variant{variantCount > 1 ? "s" : ""} • 📦 {totalCartons} carton
         </p>
         <div className="flex items-baseline gap-1 mt-1.5">
@@ -854,7 +861,7 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                        {prods.map((prod) => (
                          <ProductCard
-                           key={prod.productId}
+                           key={`${prod.productId}_${prod.brandName || ''}`}
                            product={prod}
                            cartQty={getProductCartQty(prod)}
                            onClick={() => setSelectedProduct(prod)}
