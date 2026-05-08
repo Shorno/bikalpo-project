@@ -406,13 +406,6 @@ function ExpandedProductDetail({
                   MOQ: <span className="font-bold text-gray-800">1 Pack</span>
                 </p>
               </div>
-              {selectedVariant.retailPrice > 0 && (
-                <div className="pt-1">
-                  <p className="text-xs text-gray-500">
-                    Price: <span className="font-bold text-gray-800">৳{selectedVariant.retailPrice.toLocaleString()}</span>
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         )}
