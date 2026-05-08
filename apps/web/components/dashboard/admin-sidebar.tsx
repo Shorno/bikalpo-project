@@ -2,7 +2,6 @@
 
 import {
   ActivityIcon,
-  AlertTriangle,
   Boxes,
   ClipboardListIcon,
   ContactIcon,
@@ -21,7 +20,6 @@ import {
   TruckIcon,
   Undo2Icon,
   Users2Icon,
-  UserPlus,
   WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -60,7 +58,11 @@ const adminNavGroups: NavGroup[] = [
         icon: PackageIcon,
         items: [
           { title: "All Products", url: `${ADMIN_BASE}/products` },
-          { title: "Consumer Products", url: `${ADMIN_BASE}/consumer-products` },
+          {
+            title: "Consumer Products",
+            url: `${ADMIN_BASE}/consumer-products`,
+          },
+          { title: "Web View", url: `${ADMIN_BASE}/web-view` },
           { title: "Stock / Inventory", url: `${ADMIN_BASE}/stock` },
         ],
       },
@@ -72,6 +74,7 @@ const adminNavGroups: NavGroup[] = [
           { title: "Types", url: `${ADMIN_BASE}/types` },
           { title: "Categories", url: `${ADMIN_BASE}/categories` },
           { title: "Sub Categories", url: `${ADMIN_BASE}/subcategories` },
+          { title: "Setup Requests", url: `${ADMIN_BASE}/setup-requests` },
           { title: "Core Products", url: `${ADMIN_BASE}/core-products` },
           { title: "Variants", url: `${ADMIN_BASE}/variant-options` },
           { title: "Brands", url: `${ADMIN_BASE}/brands` },
@@ -191,8 +194,14 @@ const adminNavGroups: NavGroup[] = [
         url: `${ADMIN_BASE}/seller-applications`,
         icon: StoreIcon,
         items: [
-          { title: "Seller Applications", url: `${ADMIN_BASE}/seller-applications` },
-          { title: "Warehouse Applications", url: `${ADMIN_BASE}/warehouse-applications` },
+          {
+            title: "Seller Applications",
+            url: `${ADMIN_BASE}/seller-applications`,
+          },
+          {
+            title: "Warehouse Applications",
+            url: `${ADMIN_BASE}/warehouse-applications`,
+          },
         ],
       },
       {
@@ -200,8 +209,14 @@ const adminNavGroups: NavGroup[] = [
         url: `${ADMIN_BASE}/warehouse-assignments`,
         icon: WarehouseIcon,
         items: [
-          { title: "Warehouse Assignments", url: `${ADMIN_BASE}/warehouse-assignments` },
-          { title: "Shop Category Assignments", url: `${ADMIN_BASE}/shop-category-assignments` },
+          {
+            title: "Warehouse Assignments",
+            url: `${ADMIN_BASE}/warehouse-assignments`,
+          },
+          {
+            title: "Shop Category Assignments",
+            url: `${ADMIN_BASE}/shop-category-assignments`,
+          },
         ],
       },
       {
@@ -225,7 +240,10 @@ const adminNavGroups: NavGroup[] = [
         icon: ImageIcon,
         items: [
           { title: "Material Requests", url: `${ADMIN_BASE}/marketing` },
-          { title: "Materials & Designs", url: `${ADMIN_BASE}/marketing/materials` },
+          {
+            title: "Materials & Designs",
+            url: `${ADMIN_BASE}/marketing/materials`,
+          },
         ],
       },
     ],
@@ -305,7 +323,11 @@ export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <NavGrouped groups={adminNavGroups} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data as any} />}
+        {isPending || !data ? (
+          <UserNavSkeleton />
+        ) : (
+          <NavUser session={data as any} />
+        )}
       </SidebarFooter>
     </Sidebar>
   );

@@ -6,16 +6,24 @@ import {
   coreProductIdentity,
   productType,
   subCategory,
+  user,
   variantOption,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, desc, eq, isNull, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure, warehouseProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
 
 const requestTypeSchema = z.enum(["brand", "variant_option", "core_product"]);
 const requestStatusSchema = z.enum(["pending", "approved", "rejected"]);
+const requestDateRangeSchema = z.enum([
+  "all",
+  "today",
+  "last_7_days",
+  "last_30_days",
+  "this_month",
+]);
 
 const brandPayloadSchema = z.object({
   name: z.string().min(2).max(100).trim(),
@@ -93,6 +101,7 @@ const approveRequestInput = z.discriminatedUnion("requestType", [
 const requestListInput = z.object({
   requestType: requestTypeSchema.optional(),
   status: z.union([requestStatusSchema, z.literal("all")]).optional(),
+  dateRange: requestDateRangeSchema.optional(),
   search: z.string().optional(),
   limit: z.number().int().min(1).max(100).default(50),
 });
@@ -109,6 +118,28 @@ const UNITS = [
   "Pair",
   "Unit",
 ] as const;
+
+function getDateRangeStart(
+  dateRange?: z.infer<typeof requestDateRangeSchema>,
+) {
+  if (!dateRange || dateRange === "all") return null;
+
+  const start = new Date();
+  if (dateRange === "today") {
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  if (dateRange === "this_month") {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  start.setDate(start.getDate() - (dateRange === "last_7_days" ? 6 : 29));
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
 
 function parsePayload(
   type: z.infer<typeof requestTypeSchema>,
@@ -503,7 +534,14 @@ export const warehouseCatalogApprovalRouter = {
 
 export const adminCatalogApprovalRouter = {
   getRequestOptions: adminProcedure.handler(async () => {
-    const [types, categories, subCategories] = await Promise.all([
+    const [
+      types,
+      categories,
+      subCategories,
+      brands,
+      variantOptions,
+      coreProducts,
+    ] = await Promise.all([
       db.query.productType.findMany({
         where: eq(productType.isActive, true),
         orderBy: [asc(productType.displayOrder), asc(productType.name)],
@@ -519,9 +557,61 @@ export const adminCatalogApprovalRouter = {
         orderBy: [asc(subCategory.displayOrder), asc(subCategory.name)],
         columns: { id: true, name: true, slug: true, categoryId: true },
       }),
+      db.query.brand.findMany({
+        orderBy: [asc(brand.name)],
+        columns: { id: true, name: true, slug: true },
+      }),
+      db.query.variantOption.findMany({
+        orderBy: [asc(variantOption.sortOrder), asc(variantOption.name)],
+        columns: {
+          id: true,
+          name: true,
+          unit: true,
+          size: true,
+          variantType: true,
+          typeId: true,
+          categoryId: true,
+        },
+      }),
+      db.query.coreProductIdentity.findMany({
+        orderBy: [asc(coreProductIdentity.name)],
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          sku: true,
+          categoryId: true,
+          subCategoryId: true,
+        },
+      }),
     ]);
 
-    return { types, categories, subCategories, units: UNITS };
+    return {
+      types,
+      categories,
+      subCategories,
+      brands,
+      variantOptions,
+      coreProducts,
+      units: UNITS,
+    };
+  }),
+
+  getStats: adminProcedure.handler(async () => {
+    const rows = await db
+      .select({
+        status: catalogApprovalRequest.status,
+        count: count(),
+      })
+      .from(catalogApprovalRequest)
+      .groupBy(catalogApprovalRequest.status);
+
+    const stats = { total: 0, pending: 0, approved: 0, rejected: 0 };
+    for (const row of rows) {
+      stats[row.status] = row.count;
+      stats.total += row.count;
+    }
+    return stats;
   }),
 
   listRequests: adminProcedure
@@ -541,11 +631,28 @@ export const adminCatalogApprovalRouter = {
       if (filters.status && filters.status !== "all") {
         conditions.push(eq(catalogApprovalRequest.status, filters.status));
       }
+      const dateStart = getDateRangeStart(filters.dateRange);
+      if (dateStart) {
+        conditions.push(gte(catalogApprovalRequest.createdAt, dateStart));
+      }
       if (filters.search?.trim()) {
         const term = `%${filters.search.trim()}%`;
-        conditions.push(
+        const searchCondition = or(
           sql`${catalogApprovalRequest.payload}::text ILIKE ${term}`,
+          sql`EXISTS (
+            SELECT 1
+            FROM ${user}
+            WHERE ${user.id} = ${catalogApprovalRequest.requestedBy}
+              AND (
+                ${user.name} ILIKE ${term}
+                OR ${user.email} ILIKE ${term}
+                OR ${user.shopName} ILIKE ${term}
+                OR ${user.warehouseName} ILIKE ${term}
+                OR ${user.phoneNumber} ILIKE ${term}
+              )
+          )`,
         );
+        if (searchCondition) conditions.push(searchCondition);
       }
 
       const requests = await db.query.catalogApprovalRequest.findMany({
@@ -556,6 +663,8 @@ export const adminCatalogApprovalRouter = {
               id: true,
               name: true,
               email: true,
+              role: true,
+              shopName: true,
               warehouseName: true,
               phoneNumber: true,
             },

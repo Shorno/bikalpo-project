@@ -25,6 +25,7 @@ import {
   comboOffer,
   customerHomeTab,
   customerHomeTabProduct,
+  coreProductIdentity,
   order,
   orderItem,
   payment,
@@ -55,7 +56,6 @@ import {
   inArray,
   isNull,
   lte,
-  min,
   or,
   sql,
   sum,
@@ -64,6 +64,7 @@ import {
 import { z } from "zod";
 
 import {
+  adminProcedure,
   consumerProcedure,
   protectedProcedure,
   publicProcedure,
@@ -99,6 +100,15 @@ const productFiltersSchema = z.object({
   page: z.string().optional().default("1"),
   limit: z.string().optional().default("12"),
 });
+
+const webViewProductDetailSchema = z
+  .object({
+    id: z.number().int().optional(),
+    slug: z.string().optional(),
+  })
+  .refine((input) => input.id != null || !!input.slug?.trim(), {
+    message: "Product id or slug is required",
+  });
 
 const shippingInfoSchema = z.object({
   name: z.string().min(1),
@@ -193,12 +203,754 @@ async function calculateDeliveryCost(
   return 0;
 }
 
+function asNumber(value: unknown): number {
+  const parsed =
+    typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isConsumerVisibleVariant(variant: any): boolean {
+  const isRetailType =
+    variant.variantType === "retail" || variant.variantType == null;
+  const isConsumerRole =
+    variant.visibilityRole === "consumer" ||
+    variant.visibilityRole === "all" ||
+    variant.visibilityRole == null;
+
+  return variant.isActive !== false && isRetailType && isConsumerRole;
+}
+
+function getVariantOptionLabel(option: any): string {
+  if (!option) return "Variant";
+  return (
+    option.name ||
+    [option.size, option.unit].filter(Boolean).join(" ") ||
+    "Variant"
+  );
+}
+
+function getVariantUnitLabel(option: any): string {
+  if (!option) return "";
+  if (option.size && option.unit) return `${option.size}${option.unit}`;
+  return option.unit || option.name || "";
+}
+
+function getActiveReferencePrices(productRow: any) {
+  const activeConsumerVariants = (productRow.variants ?? []).filter(
+    isConsumerVisibleVariant,
+  );
+  const variantPriceIds = new Set(
+    activeConsumerVariants
+      .map((variant: any) => variant.sourceVariantPriceId)
+      .filter((id: number | null | undefined): id is number => id != null),
+  );
+
+  return (productRow.variantPrices ?? []).filter((priceRow: any) => {
+    if (priceRow.isActive === false) return false;
+    if (variantPriceIds.size === 0) return true;
+    return variantPriceIds.has(priceRow.id);
+  });
+}
+
+function getWebViewProductConditions() {
+  const scheduledCondition = or(
+    isNull(product.scheduledAt),
+    lte(product.scheduledAt, new Date()),
+  );
+
+  return [
+    eq(product.status, "active"),
+    eq(product.visibility, "public"),
+    scheduledCondition,
+  ].filter(Boolean) as SQL[];
+}
+
+type ReferencePriceEntry = {
+  productRow: any;
+  row: any;
+  price: number;
+};
+
+function getProductReferencePriceEntries(
+  productRows: any[],
+): ReferencePriceEntry[] {
+  return productRows.flatMap((productRow) =>
+    getActiveReferencePrices(productRow).map((row: any) => ({
+      productRow,
+      row,
+      price: asNumber(row.consumerPrice),
+    })),
+  );
+}
+
+function getLowestReferencePriceFromRows(productRows: any[]) {
+  const priced = getProductReferencePriceEntries(productRows)
+    .filter((entry) => entry.price > 0)
+    .sort((a, b) => a.price - b.price);
+
+  if (priced[0]) return priced[0];
+
+  return (
+    productRows
+      .map((productRow) => ({
+        productRow,
+        row: null,
+        price: asNumber(productRow.price),
+      }))
+      .filter((entry) => entry.price > 0)
+      .sort((a, b) => a.price - b.price)[0] ?? null
+  );
+}
+
+function getPrimaryWebViewProduct(productRows: any[]) {
+  return (
+    productRows.find((productRow) => productRow.createdByWarehouseId == null) ??
+    productRows[0] ??
+    null
+  );
+}
+
+function getScopedWebViewProductRows(productRows: any[]) {
+  const adminRows = productRows.filter(
+    (productRow) => productRow.createdByWarehouseId == null,
+  );
+
+  return adminRows.length > 0 ? adminRows : productRows;
+}
+
+function serializeWebViewCoreProduct(
+  coreProduct: any,
+  productRows: any[],
+  reviewStatsMap: Record<
+    number,
+    { averageRating: number; totalReviews: number }
+  >,
+  sellerCountMap: Record<number, number>,
+) {
+  const primaryProduct = getPrimaryWebViewProduct(productRows);
+  const lowest = getLowestReferencePriceFromRows(productRows);
+  const fallbackPrice = asNumber(primaryProduct?.price);
+  const displayPrice = lowest?.price ?? fallbackPrice;
+  const referenceRow = lowest?.row;
+  const identityDescription =
+    coreProduct.description ||
+    primaryProduct?.shortDescription ||
+    primaryProduct?.description ||
+    "";
+
+  return {
+    id: coreProduct.id,
+    name: coreProduct.name,
+    slug: coreProduct.slug,
+    shortDescription:
+      primaryProduct?.shortDescription ?? coreProduct.description ?? null,
+    coreIdentity: {
+      id: coreProduct.id,
+      name: coreProduct.name,
+      sku: coreProduct.sku ?? primaryProduct?.sku ?? null,
+      description: identityDescription,
+    },
+    image: coreProduct.image || primaryProduct?.image || null,
+    price: displayPrice,
+    unitLabel: referenceRow
+      ? getVariantUnitLabel(referenceRow.variantOption)
+      : primaryProduct?.size,
+    variantLabel: referenceRow
+      ? getVariantOptionLabel(referenceRow.variantOption)
+      : primaryProduct?.size,
+    inStock: productRows.some((productRow) => productRow.inStock),
+    category: coreProduct.category,
+    subCategory: coreProduct.subCategory,
+    reviewStats: reviewStatsMap[coreProduct.id] ?? {
+      averageRating: 0,
+      totalReviews: 0,
+    },
+    sellerCount: sellerCountMap[coreProduct.id] ?? 0,
+  };
+}
+
+function isBetterReferencePriceEntry(
+  next: ReferencePriceEntry,
+  current: ReferencePriceEntry,
+) {
+  const nextPrice = asNumber(next.row.consumerPrice);
+  const currentPrice = asNumber(current.row.consumerPrice);
+
+  if (nextPrice > 0 && currentPrice <= 0) return true;
+  if (nextPrice <= 0 && currentPrice > 0) return false;
+  if (nextPrice !== currentPrice) return nextPrice < currentPrice;
+  return (next.row.sortOrder ?? 0) < (current.row.sortOrder ?? 0);
+}
+
+function getUniqueReferencePriceEntries(productRows: any[]) {
+  const selected = new Map<string, ReferencePriceEntry>();
+
+  for (const entry of getProductReferencePriceEntries(productRows)) {
+    const key = `${entry.row.brandId ?? "default"}:${entry.row.variantOptionId}`;
+    const current = selected.get(key);
+    if (!current || isBetterReferencePriceEntry(entry, current)) {
+      selected.set(key, entry);
+    }
+  }
+
+  return Array.from(selected.values()).sort((a, b) => {
+    if (a.price > 0 && b.price <= 0) return -1;
+    if (a.price <= 0 && b.price > 0) return 1;
+    const priceDiff = a.price - b.price;
+    if (priceDiff !== 0) return priceDiff;
+    return getVariantOptionLabel(a.row.variantOption).localeCompare(
+      getVariantOptionLabel(b.row.variantOption),
+    );
+  });
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(values.filter((value): value is string => !!value?.trim())),
+  );
+}
+
+function productRowsMatchBrandFilter(productRows: any[], brandIds: number[]) {
+  if (brandIds.length === 0) return true;
+
+  return productRows.some(
+    (productRow) =>
+      (productRow.productBrands ?? []).some((link: any) =>
+        brandIds.includes(link.brandId),
+      ) ||
+      (productRow.variantPrices ?? []).some(
+        (priceRow: any) =>
+          priceRow.isActive !== false &&
+          priceRow.brandId != null &&
+          brandIds.includes(priceRow.brandId),
+      ),
+  );
+}
+
+async function getCoreReviewStatsMap(coreProductIds: number[]) {
+  const reviewStatsMap: Record<
+    number,
+    { averageRating: number; totalReviews: number }
+  > = {};
+
+  if (coreProductIds.length === 0) return reviewStatsMap;
+
+  const reviewRows = await db
+    .select({
+      coreProductId: product.coreProductId,
+      averageRating: avg(productReview.rating),
+      totalReviews: count(productReview.id),
+    })
+    .from(productReview)
+    .innerJoin(product, eq(productReview.productId, product.id))
+    .where(
+      and(
+        inArray(product.coreProductId, coreProductIds),
+        ...getWebViewProductConditions(),
+      ),
+    )
+    .groupBy(product.coreProductId);
+
+  for (const row of reviewRows) {
+    if (row.coreProductId == null) continue;
+    reviewStatsMap[row.coreProductId] = {
+      averageRating: row.averageRating
+        ? Number.parseFloat(row.averageRating)
+        : 0,
+      totalReviews: row.totalReviews || 0,
+    };
+  }
+
+  return reviewStatsMap;
+}
+
+async function getCoreSellerCountMap(coreProductIds: number[]) {
+  const sellerCountMap: Record<number, number> = {};
+
+  if (coreProductIds.length === 0) return sellerCountMap;
+
+  const sellerRows = await db
+    .select({
+      coreProductId: product.coreProductId,
+      sellerCount: sql<number>`COUNT(DISTINCT ${inventory.ownerId})`.mapWith(
+        Number,
+      ),
+    })
+    .from(inventory)
+    .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+    .innerJoin(product, eq(productVariant.productId, product.id))
+    .innerJoin(user, eq(inventory.ownerId, user.id))
+    .where(
+      and(
+        eq(inventory.ownerType, "shop"),
+        inArray(product.coreProductId, coreProductIds),
+        ...getWebViewProductConditions(),
+        eq(productVariant.isActive, true),
+        sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+        eq(user.role, "shop_owner"),
+        eq(user.sellerStatus, "approved"),
+      ),
+    )
+    .groupBy(product.coreProductId);
+
+  for (const row of sellerRows) {
+    if (row.coreProductId == null) continue;
+    sellerCountMap[row.coreProductId] = row.sellerCount || 0;
+  }
+
+  return sellerCountMap;
+}
+
 // ════════════════════════════════════════════════════════════════
 // QUERIES (read-only, customer-facing)
 // ════════════════════════════════════════════════════════════════
 
 const queries = {
   // ── Products ─────────────────────────────────────────────────
+
+  /** Get admin core products for the web-view reference marketplace */
+  getWebViewProducts: adminProcedure
+    .route({
+      method: "GET",
+      path: "/customer/web-view-products",
+      tags: ["Customer"],
+      summary: "Get public web view reference products",
+    })
+    .input(productFiltersSchema)
+    .handler(async ({ input }) => {
+      const {
+        category: categorySlug,
+        subcategory,
+        brand: brandSlug,
+        minPrice,
+        maxPrice,
+        search,
+        sort = "newest",
+        page: pageStr = "1",
+        limit: limitStr = "12",
+      } = input;
+
+      const page = Math.max(1, Number.parseInt(pageStr, 10) || 1);
+      const limit = Math.max(
+        1,
+        Math.min(60, Number.parseInt(limitStr, 10) || 12),
+      );
+      const offset = (page - 1) * limit;
+      const conditions: SQL[] = [];
+      let brandFilterIds: number[] = [];
+
+      if (categorySlug) {
+        const slugs = categorySlug.split(",").filter(Boolean);
+        const cats = await db.query.category.findMany({
+          where: inArray(category.slug, slugs),
+        });
+        if (cats.length === 0) {
+          return {
+            products: [],
+            pagination: { page, limit, totalCount: 0, totalPages: 0 },
+          };
+        }
+        conditions.push(
+          inArray(
+            coreProductIdentity.categoryId,
+            cats.map((c) => c.id),
+          ),
+        );
+      }
+
+      if (subcategory) {
+        const slugs = subcategory.split(",").filter(Boolean);
+        const subs = await db.query.subCategory.findMany({
+          where: inArray(subCategory.slug, slugs),
+        });
+        if (subs.length > 0) {
+          conditions.push(
+            inArray(
+              coreProductIdentity.subCategoryId,
+              subs.map((s) => s.id),
+            ),
+          );
+        }
+      }
+
+      if (brandSlug) {
+        const slugs = brandSlug.split(",").filter(Boolean);
+        const brands = await db.query.brand.findMany({
+          where: inArray(brand.slug, slugs),
+        });
+        if (brands.length === 0) {
+          return {
+            products: [],
+            pagination: { page, limit, totalCount: 0, totalPages: 0 },
+          };
+        }
+
+        brandFilterIds = brands.map((b) => b.id);
+      }
+
+      if (search?.trim()) {
+        const q = `%${search.trim()}%`;
+        const searchCondition = or(
+          ilike(coreProductIdentity.name, q),
+          ilike(coreProductIdentity.description, q),
+          ilike(coreProductIdentity.sku, q),
+        );
+        if (searchCondition) conditions.push(searchCondition);
+      }
+
+      const coreRows = await db.query.coreProductIdentity.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        with: {
+          category: { columns: { name: true, slug: true } },
+          subCategory: { columns: { name: true, slug: true } },
+        },
+        orderBy: [desc(coreProductIdentity.createdAt)],
+      });
+
+      const coreProductIds = coreRows.map((coreProduct) => coreProduct.id);
+      const productRows =
+        coreProductIds.length > 0
+          ? await db.query.product.findMany({
+              where: and(
+                ...getWebViewProductConditions(),
+                inArray(product.coreProductId, coreProductIds),
+              ),
+              with: {
+                category: { columns: { name: true, slug: true } },
+                subCategory: { columns: { name: true, slug: true } },
+                coreProduct: true,
+                images: true,
+                productBrands: { with: { brand: true } },
+                variantPrices: {
+                  with: {
+                    brand: true,
+                    variantOption: true,
+                  },
+                },
+                variants: {
+                  with: {
+                    brand: true,
+                    sourceVariantOption: true,
+                  },
+                },
+              },
+              orderBy: [desc(product.createdAt)],
+            })
+          : [];
+
+      const productRowsByCoreId = new Map<number, any[]>();
+      for (const productRow of productRows) {
+        if (productRow.coreProductId == null) continue;
+        const rows = productRowsByCoreId.get(productRow.coreProductId) ?? [];
+        rows.push(productRow);
+        productRowsByCoreId.set(productRow.coreProductId, rows);
+      }
+
+      const [reviewStatsMap, sellerCountMap] = await Promise.all([
+        getCoreReviewStatsMap(coreProductIds),
+        getCoreSellerCountMap(coreProductIds),
+      ]);
+
+      let serialized = coreRows
+        .map((coreProduct) => {
+          const scopedRows = getScopedWebViewProductRows(
+            productRowsByCoreId.get(coreProduct.id) ?? [],
+          );
+
+          return { coreProduct, scopedRows };
+        })
+        .filter(({ scopedRows }) =>
+          productRowsMatchBrandFilter(scopedRows, brandFilterIds),
+        )
+        .map(({ coreProduct, scopedRows }) =>
+          serializeWebViewCoreProduct(
+            coreProduct,
+            scopedRows,
+            reviewStatsMap,
+            sellerCountMap,
+          ),
+        );
+
+      if (minPrice) {
+        const minValue = asNumber(minPrice);
+        serialized = serialized.filter((p) => asNumber(p.price) >= minValue);
+      }
+      if (maxPrice) {
+        const maxValue = asNumber(maxPrice);
+        serialized = serialized.filter((p) => asNumber(p.price) <= maxValue);
+      }
+
+      serialized = serialized.sort((a, b) => {
+        switch (sort) {
+          case "price-asc":
+          case "price_asc":
+            return asNumber(a.price) - asNumber(b.price);
+          case "price-desc":
+          case "price_desc":
+            return asNumber(b.price) - asNumber(a.price);
+          case "name-asc":
+          case "name_asc":
+            return a.name.localeCompare(b.name);
+          case "name-desc":
+          case "name_desc":
+            return b.name.localeCompare(a.name);
+          default:
+            return 0;
+        }
+      });
+
+      const totalCount = serialized.length;
+      const products = serialized.slice(offset, offset + limit);
+
+      return {
+        products,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+        },
+      };
+    }),
+
+  /** Get one core product reference detail for the web-view modal */
+  getWebViewProductDetail: adminProcedure
+    .route({
+      method: "GET",
+      path: "/customer/web-view-products/detail",
+      tags: ["Customer"],
+      summary: "Get public web view reference product detail",
+    })
+    .input(webViewProductDetailSchema)
+    .handler(async ({ input }) => {
+      const identityCondition = input.id
+        ? eq(coreProductIdentity.id, input.id)
+        : eq(coreProductIdentity.slug, input.slug?.trim() ?? "");
+
+      let found = await db.query.coreProductIdentity.findFirst({
+        where: identityCondition,
+        with: {
+          category: { columns: { name: true, slug: true } },
+          subCategory: { columns: { name: true, slug: true } },
+        },
+      });
+
+      if (!found) {
+        const productIdentityCondition = input.id
+          ? eq(product.id, input.id)
+          : eq(product.slug, input.slug?.trim() ?? "");
+        const foundProduct = await db.query.product.findFirst({
+          where: and(
+            ...getWebViewProductConditions(),
+            productIdentityCondition,
+          ),
+          columns: { coreProductId: true },
+        });
+
+        if (foundProduct?.coreProductId) {
+          found = await db.query.coreProductIdentity.findFirst({
+            where: eq(coreProductIdentity.id, foundProduct.coreProductId),
+            with: {
+              category: { columns: { name: true, slug: true } },
+              subCategory: { columns: { name: true, slug: true } },
+            },
+          });
+        }
+      }
+
+      if (!found) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+
+      const allProductRows = await db.query.product.findMany({
+        where: and(
+          ...getWebViewProductConditions(),
+          eq(product.coreProductId, found.id),
+        ),
+        with: {
+          images: true,
+          productBrands: { with: { brand: true } },
+          variantPrices: {
+            with: {
+              brand: true,
+              variantOption: true,
+            },
+          },
+          variants: {
+            with: {
+              brand: true,
+              sourceVariantOption: true,
+            },
+          },
+        },
+        orderBy: [desc(product.createdAt)],
+      });
+      const productRows = getScopedWebViewProductRows(allProductRows);
+
+      const primaryProduct = getPrimaryWebViewProduct(productRows);
+      const [reviewStatsMap, sellerCountMap] = await Promise.all([
+        getCoreReviewStatsMap([found.id]),
+        getCoreSellerCountMap([found.id]),
+      ]);
+      const summary = serializeWebViewCoreProduct(
+        found,
+        productRows,
+        reviewStatsMap,
+        sellerCountMap,
+      );
+      const activeConsumerVariants = productRows.flatMap((productRow) =>
+        (productRow.variants ?? []).filter(isConsumerVisibleVariant),
+      );
+      const variantByPriceId = new Map<number, any>();
+      for (const variant of activeConsumerVariants) {
+        if (variant.sourceVariantPriceId != null) {
+          variantByPriceId.set(variant.sourceVariantPriceId, variant);
+        }
+      }
+
+      const brandMap = new Map<
+        number,
+        { id: number; name: string; slug: string | null; logo: string | null }
+      >();
+
+      for (const productRow of productRows) {
+        for (const link of productRow.productBrands ?? []) {
+          if (link.brand) {
+            brandMap.set(link.brand.id, {
+              id: link.brand.id,
+              name: link.brand.name,
+              slug: link.brand.slug,
+              logo: link.brand.logo,
+            });
+          }
+        }
+      }
+
+      const variantMap = new Map<
+        number,
+        {
+          id: number;
+          label: string;
+          unitLabel: string;
+          unit: string | null;
+          size: string | null;
+          variantType: string | null;
+        }
+      >();
+
+      for (const variant of activeConsumerVariants) {
+        if (variant.brand) {
+          brandMap.set(variant.brand.id, {
+            id: variant.brand.id,
+            name: variant.brand.name,
+            slug: variant.brand.slug,
+            logo: variant.brand.logo,
+          });
+        }
+
+        const variantOption = variant.sourceVariantOption;
+        if (variantOption) {
+          variantMap.set(variantOption.id, {
+            id: variantOption.id,
+            label: variant.unitLabel || getVariantOptionLabel(variantOption),
+            unitLabel: getVariantUnitLabel(variantOption),
+            unit: variantOption.unit,
+            size: variantOption.size,
+            variantType: variantOption.variantType,
+          });
+        }
+      }
+
+      const referencePrices = getUniqueReferencePriceEntries(productRows).map(
+        ({ row: priceRow }) => {
+          if (priceRow.brand) {
+            brandMap.set(priceRow.brand.id, {
+              id: priceRow.brand.id,
+              name: priceRow.brand.name,
+              slug: priceRow.brand.slug,
+              logo: priceRow.brand.logo,
+            });
+          }
+
+          const generatedVariant = variantByPriceId.get(priceRow.id);
+          const variantOption = priceRow.variantOption;
+          if (variantOption) {
+            variantMap.set(variantOption.id, {
+              id: variantOption.id,
+              label:
+                generatedVariant?.unitLabel ||
+                getVariantOptionLabel(variantOption),
+              unitLabel: getVariantUnitLabel(variantOption),
+              unit: variantOption.unit,
+              size: variantOption.size,
+              variantType: variantOption.variantType,
+            });
+          }
+
+          return {
+            id: priceRow.id,
+            brandId: priceRow.brandId,
+            brandName: priceRow.brand?.name ?? null,
+            variantOptionId: priceRow.variantOptionId,
+            variantId: generatedVariant?.id ?? null,
+            variantLabel:
+              generatedVariant?.unitLabel ||
+              getVariantOptionLabel(variantOption),
+            unitLabel: getVariantUnitLabel(variantOption),
+            consumerPrice: asNumber(priceRow.consumerPrice),
+            color: generatedVariant?.color ?? null,
+            size: generatedVariant?.size ?? variantOption?.size ?? null,
+            packType: generatedVariant?.packType ?? null,
+          };
+        },
+      );
+
+      const brands = Array.from(brandMap.values());
+      const returnableProducts = productRows.filter(
+        (productRow) => productRow.isReturnablePack,
+      );
+      const packDepositAmount =
+        returnableProducts
+          .map((productRow) => asNumber(productRow.defaultPackDepositAmount))
+          .find((value) => value > 0) ?? 0;
+
+      return {
+        product: {
+          ...summary,
+          description: primaryProduct?.description ?? found.description,
+          videoUrl: primaryProduct?.videoUrl ?? null,
+          images: uniqueStrings([
+            found.image,
+            ...productRows.flatMap((productRow) => [
+              productRow.image,
+              ...((productRow.images ?? []).map(
+                (image: any) => image.imageUrl,
+              ) ?? []),
+            ]),
+          ]),
+          brands:
+            brands.length > 0
+              ? brands
+              : [{ id: null, name: "Default", slug: null, logo: null }],
+          variants: Array.from(variantMap.values()),
+          referencePrices,
+          emptyPackReturn: {
+            enabled: returnableProducts.length > 0,
+            depositAmount: packDepositAmount,
+            companies: uniqueStrings(
+              returnableProducts.flatMap(
+                (productRow) => productRow.allowedPackBrands ?? [],
+              ),
+            ),
+            packSizes: uniqueStrings(
+              returnableProducts.flatMap(
+                (productRow) => productRow.allowedPackSizes ?? [],
+              ),
+            ),
+          },
+        },
+      };
+    }),
 
   /** Get customer products with full-featured filtering & pagination */
   getCustomerProducts: publicProcedure
@@ -339,7 +1091,10 @@ const queries = {
 
       // Batch-fetch review stats for all returned products
       const productIds = products.map((p) => p.id);
-      let reviewStatsMap: Record<number, { averageRating: number; totalReviews: number }> = {};
+      let reviewStatsMap: Record<
+        number,
+        { averageRating: number; totalReviews: number }
+      > = {};
       if (productIds.length > 0) {
         const reviewRows = await db
           .select({
@@ -353,7 +1108,9 @@ const queries = {
 
         for (const row of reviewRows) {
           reviewStatsMap[row.productId] = {
-            averageRating: row.averageRating ? parseFloat(row.averageRating) : 0,
+            averageRating: row.averageRating
+              ? parseFloat(row.averageRating)
+              : 0,
             totalReviews: row.totalReviews || 0,
           };
         }
@@ -385,13 +1142,17 @@ const queries = {
       // Serialize products with proper price conversion + enrichments
       const serializedProducts = products.map((p) => {
         // Compute lowest variant price from the included variants
-        const activeVariants = (p.variants || []).filter((v) => v.isActive !== false);
+        const activeVariants = (p.variants || []).filter(
+          (v) => v.isActive !== false,
+        );
         const variantPrices = activeVariants
           .map((v) => parseFloat(v.price) || 0)
           .filter((price) => price > 0);
-        const lowestVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : 0;
+        const lowestVariantPrice =
+          variantPrices.length > 0 ? Math.min(...variantPrices) : 0;
         const basePrice = parseFloat(p.price) || 0;
-        const effectivePrice = lowestVariantPrice > 0 ? lowestVariantPrice : basePrice;
+        const effectivePrice =
+          lowestVariantPrice > 0 ? lowestVariantPrice : basePrice;
 
         // Destructure to exclude variants from the response
         const { variants: _variants, ...productData } = p;
@@ -399,8 +1160,13 @@ const queries = {
         return {
           ...productData,
           price: effectivePrice,
-          reviewStats: reviewStatsMap[p.id] || { averageRating: 0, totalReviews: 0 },
-          sellerCount: p.coreProductId ? (sellerCountMap[p.coreProductId] || 0) : 0,
+          reviewStats: reviewStatsMap[p.id] || {
+            averageRating: 0,
+            totalReviews: 0,
+          },
+          sellerCount: p.coreProductId
+            ? sellerCountMap[p.coreProductId] || 0
+            : 0,
         };
       });
 
@@ -613,7 +1379,10 @@ const queries = {
 
           // Batch-fetch review stats
           const pIds = products.map((p) => p.id);
-          let reviewStatsMap: Record<number, { averageRating: number; totalReviews: number }> = {};
+          let reviewStatsMap: Record<
+            number,
+            { averageRating: number; totalReviews: number }
+          > = {};
           if (pIds.length > 0) {
             const reviewRows = await db
               .select({
@@ -626,7 +1395,9 @@ const queries = {
               .groupBy(productReview.productId);
             for (const row of reviewRows) {
               reviewStatsMap[row.productId] = {
-                averageRating: row.averageRating ? parseFloat(row.averageRating) : 0,
+                averageRating: row.averageRating
+                  ? parseFloat(row.averageRating)
+                  : 0,
                 totalReviews: row.totalReviews || 0,
               };
             }
@@ -656,20 +1427,29 @@ const queries = {
 
           // Serialize products with enrichments (compute min variant price in JS)
           const serializedProducts = products.map((p) => {
-            const activeVariants = (p.variants || []).filter((v) => v.isActive !== false);
+            const activeVariants = (p.variants || []).filter(
+              (v) => v.isActive !== false,
+            );
             const variantPrices = activeVariants
               .map((v) => parseFloat(v.price) || 0)
               .filter((price) => price > 0);
-            const lowestVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : 0;
+            const lowestVariantPrice =
+              variantPrices.length > 0 ? Math.min(...variantPrices) : 0;
             const basePrice = parseFloat(p.price) || 0;
-            const effectivePrice = lowestVariantPrice > 0 ? lowestVariantPrice : basePrice;
+            const effectivePrice =
+              lowestVariantPrice > 0 ? lowestVariantPrice : basePrice;
 
             const { variants: _variants, ...productData } = p;
             return {
               ...productData,
               price: effectivePrice,
-              reviewStats: reviewStatsMap[p.id] || { averageRating: 0, totalReviews: 0 },
-              sellerCount: p.coreProductId ? (sellerCountMap[p.coreProductId] || 0) : 0,
+              reviewStats: reviewStatsMap[p.id] || {
+                averageRating: 0,
+                totalReviews: 0,
+              },
+              sellerCount: p.coreProductId
+                ? sellerCountMap[p.coreProductId] || 0
+                : 0,
             };
           });
           return {
@@ -2548,9 +3328,7 @@ const mutations = {
               : null;
           stockQty = shopInv ? Number(shopInv.availableQty) : 0;
         } else {
-          stockQty = item.variant
-            ? item.variant.stockQuantity
-            : 999; // product-level stockQuantity removed; skip product-level check
+          stockQty = item.variant ? item.variant.stockQuantity : 999; // product-level stockQuantity removed; skip product-level check
         }
 
         if (stockQty < item.quantity) {
@@ -2587,8 +3365,12 @@ const mutations = {
       const total = subtotal + shippingCost;
 
       // Compute area fields from consumer location
-      const consumerLat = input.shippingInfo.lat ? parseFloat(input.shippingInfo.lat) : null;
-      const consumerLng = input.shippingInfo.lng ? parseFloat(input.shippingInfo.lng) : null;
+      const consumerLat = input.shippingInfo.lat
+        ? parseFloat(input.shippingInfo.lat)
+        : null;
+      const consumerLng = input.shippingInfo.lng
+        ? parseFloat(input.shippingInfo.lng)
+        : null;
       const areaFields = await computeOrderAreaFields(consumerLat, consumerLng);
 
       // Transaction: create order, deduct stock, clear cart
@@ -2628,10 +3410,18 @@ const mutations = {
             shippingPostalCode: input.shippingInfo.postalCode,
             customerNote: input.shippingInfo.customerNote,
             // Populate area fields from consumer location
-            ...(areaFields.consumerAreaId && { consumerAreaId: areaFields.consumerAreaId }),
-            ...(areaFields.matchedAreaId && { matchedAreaId: areaFields.matchedAreaId }),
-            ...(areaFields.locationLat && { locationLat: areaFields.locationLat }),
-            ...(areaFields.locationLng && { locationLng: areaFields.locationLng }),
+            ...(areaFields.consumerAreaId && {
+              consumerAreaId: areaFields.consumerAreaId,
+            }),
+            ...(areaFields.matchedAreaId && {
+              matchedAreaId: areaFields.matchedAreaId,
+            }),
+            ...(areaFields.locationLat && {
+              locationLat: areaFields.locationLat,
+            }),
+            ...(areaFields.locationLng && {
+              locationLng: areaFields.locationLng,
+            }),
           })
           .returning();
 
@@ -3459,8 +4249,6 @@ const mutations = {
 // OPEN ORDER ENDPOINTS
 // ════════════════════════════════════════════════════════════════
 
-
-
 const openOrderEndpoints = {
   /** Place an open order: auto-split + broadcast to sellers */
   placeOpenOrder: protectedProcedure
@@ -3590,10 +4378,18 @@ const openOrderEndpoints = {
             shippingPostalCode: input.shippingInfo.postalCode,
             customerNote: input.shippingInfo.customerNote,
             broadcastExpiresAt,
-            ...(areaFields.consumerAreaId && { consumerAreaId: areaFields.consumerAreaId }),
-            ...(areaFields.matchedAreaId && { matchedAreaId: areaFields.matchedAreaId }),
-            ...(areaFields.locationLat && { locationLat: areaFields.locationLat }),
-            ...(areaFields.locationLng && { locationLng: areaFields.locationLng }),
+            ...(areaFields.consumerAreaId && {
+              consumerAreaId: areaFields.consumerAreaId,
+            }),
+            ...(areaFields.matchedAreaId && {
+              matchedAreaId: areaFields.matchedAreaId,
+            }),
+            ...(areaFields.locationLat && {
+              locationLat: areaFields.locationLat,
+            }),
+            ...(areaFields.locationLng && {
+              locationLng: areaFields.locationLng,
+            }),
           })
           .returning();
 
@@ -3669,9 +4465,15 @@ const openOrderEndpoints = {
                 shippingCity: input.shippingInfo.city,
                 shippingArea: input.shippingInfo.area,
                 broadcastExpiresAt,
-                ...(areaFields.consumerAreaId && { consumerAreaId: areaFields.consumerAreaId }),
-                ...(areaFields.locationLat && { locationLat: areaFields.locationLat }),
-                ...(areaFields.locationLng && { locationLng: areaFields.locationLng }),
+                ...(areaFields.consumerAreaId && {
+                  consumerAreaId: areaFields.consumerAreaId,
+                }),
+                ...(areaFields.locationLat && {
+                  locationLat: areaFields.locationLat,
+                }),
+                ...(areaFields.locationLng && {
+                  locationLng: areaFields.locationLng,
+                }),
               })
               .returning();
 
@@ -3783,7 +4585,7 @@ const openOrderEndpoints = {
       }
 
       // Get sub-orders (or use parent if no children)
-      let subOrders: typeof parentOrder[];
+      let subOrders: (typeof parentOrder)[];
       const children = await db.query.order.findMany({
         where: and(
           eq(order.parentOrderId, parentOrder.id),
@@ -3826,7 +4628,9 @@ const openOrderEndpoints = {
             .from(openOrderBid)
             .leftJoin(user, eq(user.id, openOrderBid.shopId))
             .where(eq(openOrderBid.subOrderId, sub.id))
-            .orderBy(sql`CAST(${openOrderBid.totalBid} AS numeric) ASC NULLS LAST`);
+            .orderBy(
+              sql`CAST(${openOrderBid.totalBid} AS numeric) ASC NULLS LAST`,
+            );
 
           // Get bid items for submitted bids
           const submittedBidIds = bids
@@ -3879,7 +4683,13 @@ const openOrderEndpoints = {
 
       // Determine overall progress stage
       const allStatuses = subOrderData.map((s) => s.status);
-      let stage: "splitting" | "broadcasting" | "negotiating" | "finalizing" | "confirmed" | "cancelled";
+      let stage:
+        | "splitting"
+        | "broadcasting"
+        | "negotiating"
+        | "finalizing"
+        | "confirmed"
+        | "cancelled";
 
       if (allStatuses.every((s) => s === "confirmed")) {
         stage = "confirmed";
@@ -3897,7 +4707,8 @@ const openOrderEndpoints = {
         orderId: parentOrder.id,
         orderNumber: parentOrder.orderNumber,
         stage,
-        broadcastExpiresAt: parentOrder.broadcastExpiresAt?.toISOString() ?? null,
+        broadcastExpiresAt:
+          parentOrder.broadcastExpiresAt?.toISOString() ?? null,
         subOrders: subOrderData,
       };
     }),
