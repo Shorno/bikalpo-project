@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { orpc } from "@/utils/orpc";
 
@@ -74,26 +74,58 @@ type GroupedProduct = {
   image: string | null;
   categoryName: string;
   unitSize: string | null;
+  brandName?: string;
   variants: VariantItem[];
 };
 
-/* ─── Group flat API data → category → product → variants ─── */
+/* ─── Compute per-carton price for a variant ─── */
+function getCartonPriceForVariant(v: VariantItem): number {
+  const rawPrice = Number(v.price) || 0;
+  const isLoose = (v.variant.packType || "").toLowerCase() === "loose";
+  const weightKg = Number(v.variant.weightKg) || 0;
+  const opts = v.variant.cartonOptions || [];
+  const firstCarton = opts[0];
+
+  // 1. Use actual carton price from DB
+  const dbPrice = Number(firstCarton?.cartonPrice || 0);
+  if (dbPrice > 0) return dbPrice;
+
+  // 2. Fallback: calculate
+  if (firstCarton) {
+    if (isLoose) {
+      const perKg = weightKg > 0 ? rawPrice / weightKg : rawPrice;
+      return perKg * firstCarton.weightKg;
+    }
+    if (firstCarton.packsPerCarton > 0) {
+      return rawPrice * firstCarton.packsPerCarton;
+    }
+  }
+  return rawPrice;
+}
+
+/* ─── Group flat API data → category → product×brand → variants ─── */
 function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
-  const productMap = new Map<number, GroupedProduct>();
+  // Group by product+brand combination (each brand gets its own card)
+  const productBrandMap = new Map<string, GroupedProduct>();
   for (const item of products) {
     const pid = item.product?.id;
     if (!pid) continue;
-    if (!productMap.has(pid)) {
-      productMap.set(pid, {
+    const brandName = item.variant?.brandName || "Unbranded";
+    const brandId = item.variant?.brandId || 0;
+    const key = `${pid}_${brandId}`;
+    
+    if (!productBrandMap.has(key)) {
+      productBrandMap.set(key, {
         productId: pid,
         name: item.product.name,
         image: item.product.image,
         categoryName: item.product.categoryName || "Uncategorized",
         unitSize: item.product.unitSize || null,
+        brandName,
         variants: [],
       });
     }
-    productMap.get(pid)!.variants.push({
+    productBrandMap.get(key)!.variants.push({
       inventoryId: item.inventoryId,
       variantId: item.variantId,
       availableQty: item.availableQty,
@@ -103,7 +135,7 @@ function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
     });
   }
   const catMap = new Map<string, GroupedProduct[]>();
-  for (const prod of productMap.values()) {
+  for (const prod of productBrandMap.values()) {
     const cat = prod.categoryName;
     if (!catMap.has(cat)) catMap.set(cat, []);
     catMap.get(cat)!.push(prod);
@@ -111,7 +143,7 @@ function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
   return catMap;
 }
 
-/* ─── Product Card (grid card) ─── */
+/* ─── Product Card (grid card) — one per product×brand ─── */
 function ProductCard({
   product,
   cartQty,
@@ -124,7 +156,7 @@ function ProductCard({
   const totalCartons = product.variants.reduce((s, v) => s + (v.variant.totalCartonCount || 0), 0);
   const lowestPrice = Math.min(...product.variants.map((v) => Number(v.price) || 0));
   const variantCount = product.variants.length;
-  const brandName = product.variants[0]?.variant.brandName;
+  const brandName = product.brandName || product.variants[0]?.variant.brandName;
 
   return (
     <button
@@ -179,10 +211,10 @@ function ProductCard({
       </div>
       {/* Info */}
       <div className="p-3">
-        <h3 className="text-sm font-semibold text-gray-900 line-clamp-1">{product.name}</h3>
+        <h3 className="text-sm font-semibold text-gray-900 line-clamp-1">
+          {product.name}{brandName ? ` - ${brandName}` : ""}
+        </h3>
         <p className="text-[10px] text-gray-400 mt-0.5">
-          {brandName && <span className="text-blue-500 font-medium">{brandName}</span>}
-          {brandName && " • "}
           {variantCount} variant{variantCount > 1 ? "s" : ""} • 📦 {totalCartons} carton
         </p>
         <div className="flex items-baseline gap-1 mt-1.5">
@@ -208,7 +240,8 @@ function VariantModal({
   updateQty: (variantId: number, delta: number) => void;
   onClose: () => void;
 }) {
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const defaultIdx = product.variants.findIndex(v => (v.variant.totalCartonCount || 0) > 0);
+  const [selectedIdx, setSelectedIdx] = useState(defaultIdx >= 0 ? defaultIdx : 0);
   const [qty, setQty] = useState(1);
   const [selectedCartonSizeIdx, setSelectedCartonSizeIdx] = useState(0);
 
@@ -240,16 +273,22 @@ function VariantModal({
   const variantWeightKg = Number(selected.variant.weightKg) || 0;
   const rawPrice = Number(selected.price) || 0;
   const perCartonPrice = (() => {
+    // Use actual carton price from carton table if available
+    const cartonPriceFromDB = Number(selectedCarton?.cartonPrice || 0);
+    if (cartonPriceFromDB > 0) return cartonPriceFromDB;
+
+    // Fallback: calculate from pack/unit price
     if (isLooseVariant && selectedCarton) {
       if (variantWeightKg > 0) {
-        // Loose with weight: stored price = per_kg × variantWeight
         const perKg = rawPrice / variantWeightKg;
         return perKg * selectedCarton.weightKg;
       }
-      // Loose without weight: stored price IS per-KG directly
       return rawPrice * selectedCarton.weightKg;
     }
-    // Pack: price is per pack unit
+    // Pack: multiply per-pack price by packs per carton
+    if (selectedCarton && selectedCarton.packsPerCarton > 0) {
+      return rawPrice * selectedCarton.packsPerCarton;
+    }
     return rawPrice;
   })();
 
@@ -295,9 +334,15 @@ function VariantModal({
               </h3>
               <div className="grid grid-cols-2 gap-2">
                 {brandGroups.map((bg) => {
-                  const prices = bg.variants.map(v => Number(v.price) || 0);
-                  const minPrice = Math.min(...prices);
-                  const maxPrice = Math.max(...prices);
+                  const orderableVariants = bg.variants.filter(v => {
+                    const isLoose = (v.variant.packType || "").toLowerCase() === "loose";
+                    return !isLoose || (v.variant.totalCartonCount || 0) > 0;
+                  });
+                  const cartonPrices = orderableVariants
+                    .map(v => getCartonPriceForVariant(v))
+                    .filter(p => p > 0);
+                  const minPrice = cartonPrices.length > 0 ? Math.min(...cartonPrices) : 0;
+                  const maxPrice = cartonPrices.length > 0 ? Math.max(...cartonPrices) : 0;
                   const isActive = bg.brandName === selectedBrandKey;
                   const brandCartCount = bg.variants.reduce((sum, v) => {
                     const ci = cart.find(c => c.variantId === v.variantId);
@@ -309,7 +354,10 @@ function VariantModal({
                     <button
                       key={bg.brandName}
                       onClick={() => {
-                        setSelectedIdx(bg.variants[0]!.idx);
+                        // Prefer first variant with cartons
+                        const withCartons = bg.variants.find(v => (v.variant.totalCartonCount || 0) > 0);
+                        setSelectedIdx((withCartons || bg.variants[0])!.idx);
+                        setSelectedCartonSizeIdx(0);
                         setQty(1);
                       }}
                       className={`relative p-3 rounded-xl border-2 text-left transition-all ${
@@ -334,7 +382,12 @@ function VariantModal({
                       </div>
                       {/* Variant size tags */}
                       <div className="flex flex-wrap gap-1 mt-1.5">
-                        {bg.variants.map((v) => {
+                        {bg.variants
+                          .filter(v => {
+                            const isLooseV = (v.variant.packType || "").toLowerCase() === "loose";
+                            return !isLooseV || (v.variant.totalCartonCount || 0) > 0;
+                          })
+                          .map((v) => {
                           const vw = Number(v.variant.weightKg) || 0;
                           const isLooseV = (v.variant.packType || "").toLowerCase() === "loose";
                           const looseW = vw > 0 ? vw : (Number(v.variant.unitLabel) || 0);
@@ -372,7 +425,7 @@ function VariantModal({
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-800">
                 {selectedCarton
-                  ? <>{selectedCarton.weightKg} KG – Carton</>
+                  ? <>{selectedCarton.weightKg} KG{selectedCarton.packsPerCarton > 0 && variantWeightKg > 0 ? ` (${variantWeightKg} KG × ${selectedCarton.packsPerCarton} pcs)` : " – Carton"}</>
                   : "Select a carton size"
                 }
               </div>
@@ -424,6 +477,7 @@ function VariantModal({
                         const isSelected = v.idx === selectedIdx;
                         const vInCart = cart.find((c) => c.variantId === v.variantId);
                         const vTotalCartons = v.variant.totalCartonCount || 0;
+                        const vCartonPrice = getCartonPriceForVariant(v);
 
                         return (
                           <button
@@ -437,7 +491,7 @@ function VariantModal({
                           >
                             <div className="font-semibold">{vWeight > 0 ? `${vWeight} KG` : v.variant.unitLabel || "Pack"}</div>
                             <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}>
-                              ৳{Number(v.price).toLocaleString()}
+                              ৳{vCartonPrice.toLocaleString()}
                             </div>
                             {vTotalCartons > 0 && (
                               <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
@@ -456,8 +510,10 @@ function VariantModal({
                   </div>
                 )}
 
-                {/* Loose dropdown */}
-                {looseVars.length > 0 && (
+                {/* Loose dropdown — only show loose variants that have cartons */}
+                {(() => {
+                  const looseWithCartons = looseVars.filter(v => (v.variant.totalCartonCount || 0) > 0);
+                  return looseWithCartons.length > 0 && (
                   <div>
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                       Loose
@@ -480,26 +536,27 @@ function VariantModal({
                       style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")` }}
                     >
                       <option value="">— Select loose variant —</option>
-                      {looseVars.map((v) => {
+                      {looseWithCartons.map((v) => {
                         const opts = v.variant.cartonOptions || [];
                         const sizeLabel = opts.length > 0
                           ? opts.map(o => `${o.weightKg} KG × ${o.count}`).join(", ")
                           : `${v.variant.totalCartonCount || 0} carton`;
                         return (
                           <option key={v.variantId} value={String(v.idx)}>
-                            {v.variant.brandName || "Loose"} — {sizeLabel} — ৳{Number(v.price).toLocaleString()}
+                            {v.variant.brandName || "Loose"} — {sizeLabel} — ৳{getCartonPriceForVariant(v).toLocaleString()}
                           </option>
                         );
                       })}
                     </select>
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })()}
 
           {/* ─── Select Carton Size ─── */}
-          {cartonOptions.length > 1 && (
+          {cartonOptions.length >= 1 && (
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                 Select Carton Size
@@ -632,10 +689,11 @@ function VariantModal({
 /* ═══════════════════════════════════════════════════════════
    MAIN PAGE
    ═══════════════════════════════════════════════════════════ */
-export default function OrderFromWarehousePage({ params }: { params: { slug: string } }) {
+export default function OrderFromWarehousePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
   const queryClient = useQueryClient();
   const [step, setStep] = useState<"browse" | "checkout" | "success">("browse");
-  const selectedSlug = params.slug;
+  const selectedSlug = slug;
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<GroupedProduct | null>(null);
@@ -803,7 +861,7 @@ export default function OrderFromWarehousePage({ params }: { params: { slug: str
                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                        {prods.map((prod) => (
                          <ProductCard
-                           key={prod.productId}
+                           key={`${prod.productId}_${prod.brandName || ''}`}
                            product={prod}
                            cartQty={getProductCartQty(prod)}
                            onClick={() => setSelectedProduct(prod)}

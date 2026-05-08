@@ -46,6 +46,7 @@ import {
     purchase,
     invoice,
     carton,
+    cartonConfig,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -568,6 +569,7 @@ const managementQueries = {
                 weightKg: string;
                 unitLabel: string;
                 packType: string | null;
+                pcsPerPack: number;
                 availableQty: number;
                 inCartonQty: number;
                 looseQty: number;
@@ -634,6 +636,7 @@ const managementQueries = {
                     weightKg: inv.variant.weightKg,
                     unitLabel: isLoose ? "KG" : inv.variant.unitLabel,
                     packType: inv.variant.packagingType,
+                    pcsPerPack: Number(inv.variant.packCountInside || 0),
                     availableQty: qty,
                     inCartonQty: cartonQty,
                     looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),
@@ -3209,32 +3212,63 @@ const warehouseOrderQueries = {
                 const vp = Number(inv.variant?.price || 0);
                 let unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
 
-                // For loose variants: price is per-KG, need to multiply by carton weight
+                // Resolve per-carton price for ALL variant types
                 const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
-                console.log(`[ORDER-PRICE] variantId=${item.variantId}, packType="${inv.variant?.packType}", isLoose=${isLooseVariant}, weightKg=${inv.variant?.weightKg}, unitPrice=${unitPrice}`);
-                if (isLooseVariant) {
+                
+                // Look up carton and config for carton pricing
+                const activeCarton = await db.query.carton.findFirst({
+                    where: and(
+                        eq(carton.warehouseId, warehouseId),
+                        eq(carton.variantId, item.variantId),
+                        eq(carton.status, "active"),
+                    ),
+                    with: {
+                        config: {
+                            columns: { cartonPrice: true, deliveryCostPerCarton: true },
+                        },
+                    },
+                });
+
+                // Also look up cartonConfig directly as fallback
+                const variantConfig = await db.query.cartonConfig.findFirst({
+                    where: and(
+                        eq(cartonConfig.variantId, item.variantId),
+                        eq(cartonConfig.isActive, true),
+                    ),
+                    orderBy: [desc(cartonConfig.isDefault)],
+                });
+
+                // Price resolution: carton.cartonPrice → carton.config.cartonPrice → cartonConfig.cartonPrice → calculated
+                const cartonRecordPrice = Number(activeCarton?.cartonPrice || 0);
+                const linkedConfigPrice = Number((activeCarton as any)?.config?.cartonPrice || 0);
+                const directConfigPrice = Number(variantConfig?.cartonPrice || 0);
+
+                if (cartonRecordPrice > 0) {
+                    unitPrice = activeCarton!.cartonPrice!;
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using carton record price: ${unitPrice}`);
+                } else if (linkedConfigPrice > 0) {
+                    unitPrice = (activeCarton as any).config.cartonPrice;
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using linked config price: ${unitPrice}`);
+                } else if (directConfigPrice > 0) {
+                    unitPrice = variantConfig!.cartonPrice;
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using direct config price: ${unitPrice}`);
+                } else if (isLooseVariant && activeCarton) {
+                    // Loose fallback: calculate from per-KG price × carton weight
                     const variantWeightKg = Number(inv.variant?.weightKg || 0);
                     const rawUnitPrice = Number(unitPrice);
-
-                    // Get carton weight from active cartons
-                    const activeCarton = await db.query.carton.findFirst({
-                        where: and(
-                            eq(carton.warehouseId, warehouseId),
-                            eq(carton.variantId, item.variantId),
-                            eq(carton.status, "active"),
-                        ),
-                        columns: { totalWeightKg: true },
-                    });
-
-                    console.log(`[ORDER-PRICE] activeCarton=`, activeCarton, `cartonWeightKg=${Number(activeCarton?.totalWeightKg || 0)}`);
-                    if (activeCarton) {
-                        const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
-                        const perKg = variantWeightKg > 0
-                            ? rawUnitPrice / variantWeightKg
-                            : rawUnitPrice; // if weightKg=0, price IS per-KG
-                        unitPrice = (perKg * cartonWeightKg).toFixed(2);
-                        console.log(`[ORDER-PRICE] FIXED: perKg=${perKg}, cartonKg=${cartonWeightKg}, newUnitPrice=${unitPrice}`);
+                    const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
+                    const perKg = variantWeightKg > 0 ? rawUnitPrice / variantWeightKg : rawUnitPrice;
+                    unitPrice = (perKg * cartonWeightKg).toFixed(2);
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose calc: perKg=${perKg}, cartonKg=${cartonWeightKg}, price=${unitPrice}`);
+                } else if (!isLooseVariant && activeCarton) {
+                    // Pack fallback: multiply per-pack price by packs per carton
+                    const packsPerCarton = activeCarton.totalPacks || 0;
+                    if (packsPerCarton > 0) {
+                        unitPrice = (Number(unitPrice) * packsPerCarton).toFixed(2);
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Pack calc: packPrice=${inv.retailPrice || inv.variant?.price} × ${packsPerCarton} = ${unitPrice}`);
                     }
+                } else {
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: No carton found, using raw pack price: ${unitPrice}`);
                 }
 
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
@@ -4290,7 +4324,7 @@ const warehouseConnectionEndpoints = {
                 const vp = Number(item.variantPrice || 0);
                 const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
 
-                // Deduct carton-committed qty from available
+                // Track both total pack stock and loose (non-carton) stock
                 const rawQty = Number(item.availableQty || 0);
                 const inCarton = Number(item.inCartonQty || 0);
                 const effectiveQty = Math.max(0, rawQty - inCarton);
@@ -4299,6 +4333,7 @@ const warehouseConnectionEndpoints = {
                     inventoryId: item.inventoryId,
                     variantId: item.variantId,
                     availableQty: effectiveQty.toFixed(2),
+                    totalPackStock: rawQty.toFixed(2),
                     price,
                     canOrder,
                     product: {
@@ -4323,9 +4358,10 @@ const warehouseConnectionEndpoints = {
                 };
             });
 
-            // Enrich with carton data per variant
+            // Enrich with carton data per variant (single query)
             const allVariantIds = products.map((p) => p.variantId);
             let cartonMap = new Map<number, { cartonCount: number; totalWeightKg: number }>();
+            const cartonOptionsByVariant = new Map<number, { weightKg: number; count: number; totalKg: number; packsPerCarton: number }[]>();
 
             if (allVariantIds.length > 0) {
                 const activeCartons = await db.query.carton.findMany({
@@ -4334,31 +4370,41 @@ const warehouseConnectionEndpoints = {
                         eq(carton.status, "active"),
                         inArray(carton.variantId, allVariantIds),
                     ),
+                    with: {
+                        config: {
+                            columns: { cartonPrice: true, deliveryCostPerCarton: true },
+                        },
+                    },
                 });
 
+                // Also query cartonConfig directly for variants without linked config
+                const configs = await db.query.cartonConfig.findMany({
+                    where: and(
+                        inArray(cartonConfig.variantId, allVariantIds),
+                        eq(cartonConfig.isActive, true),
+                    ),
+                });
+                const configPriceMap = new Map<number, string>();
+                const configDeliveryCostMap = new Map<number, string>();
+                for (const cfg of configs) {
+                    if (!configPriceMap.has(cfg.variantId) || cfg.isDefault) {
+                        configPriceMap.set(cfg.variantId, cfg.cartonPrice);
+                        if (cfg.deliveryCostPerCarton) {
+                            configDeliveryCostMap.set(cfg.variantId, cfg.deliveryCostPerCarton);
+                        }
+                    }
+                }
+
                 for (const c of activeCartons) {
+                    // Build cartonMap (totals per variant)
                     if (!cartonMap.has(c.variantId)) {
                         cartonMap.set(c.variantId, { cartonCount: 0, totalWeightKg: 0 });
                     }
                     const entry = cartonMap.get(c.variantId)!;
                     entry.cartonCount += 1;
                     entry.totalWeightKg += parseFloat(c.totalWeightKg);
-                }
-            }
 
-            // Attach carton data to each product
-            // Build cartonOptions: group active cartons by totalWeightKg for each variant
-            const cartonOptionsByVariant = new Map<number, { weightKg: number; count: number; totalKg: number; packsPerCarton: number }[]>();
-            if (allVariantIds.length > 0) {
-                const activeCartons = await db.query.carton.findMany({
-                    where: and(
-                        eq(carton.warehouseId, warehouseId),
-                        eq(carton.status, "active"),
-                        inArray(carton.variantId, allVariantIds),
-                    ),
-                    columns: { variantId: true, totalWeightKg: true, totalPacks: true },
-                });
-                for (const c of activeCartons) {
+                    // Build cartonOptions (grouped by weight per variant)
                     if (!cartonOptionsByVariant.has(c.variantId)) {
                         cartonOptionsByVariant.set(c.variantId, []);
                     }
@@ -4368,11 +4414,21 @@ const warehouseConnectionEndpoints = {
                     if (existing) {
                         existing.count += 1;
                     } else {
+                        // Price priority: carton record → linked config → config by variantId → null
+                        const linkedConfigPrice = (c as any).config?.cartonPrice || null;
+                        const linkedConfigDelivery = (c as any).config?.deliveryCostPerCarton || null;
+                        const resolvedPrice = c.cartonPrice || linkedConfigPrice || configPriceMap.get(c.variantId) || null;
+                        const resolvedDelivery = c.deliveryCostPerUnit || linkedConfigDelivery || configDeliveryCostMap.get(c.variantId) || null;
+
+                        console.log(`[CARTON PRICE DEBUG] variant=${c.variantId} carton.cartonPrice=${c.cartonPrice} linkedConfig=${linkedConfigPrice} configMap=${configPriceMap.get(c.variantId)} → resolved=${resolvedPrice}`);
+
                         list.push({
-                            weightKg: wt,      // per-carton weight
-                            totalKg: wt,        // same as weightKg (per-carton)
-                            count: 1,           // how many cartons of this size
+                            weightKg: wt,
+                            totalKg: wt,
+                            count: 1,
                             packsPerCarton: c.totalPacks || 0,
+                            cartonPrice: resolvedPrice,
+                            deliveryCost: resolvedDelivery,
                         });
                     }
                 }

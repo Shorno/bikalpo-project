@@ -58,7 +58,6 @@ const shopOwnerNavGroups: NavGroup[] = [
       { title: "Products", url: `${D}/products`, icon: PackageIcon },
       { title: "Create Product", url: `${D}/products/create`, icon: ClipboardListIcon },
       { title: "My Store", url: `${D}/stores`, icon: StoreIcon },
-      { title: "Pricing", url: `${D}/pricing`, icon: DollarSignIcon },
     ],
   },
   {
@@ -80,6 +79,16 @@ const shopOwnerNavGroups: NavGroup[] = [
       { title: "Add Stock", url: `${D}/stock/add`, icon: PlusCircleIcon },
       { title: "Stock Adjustment", url: `${D}/stock-adjustment`, icon: ArrowRightLeftIcon },
       { title: "Damage", url: `${D}/damage`, icon: AlertTriangleIcon },
+      {
+        title: "Setup",
+        url: `${D}/pricing`,
+        icon: SettingsIcon,
+        items: [
+          { title: "Price", url: `${D}/pricing` },
+          { title: "Brands", url: `${D}/products/brands` },
+          { title: "Variant Attributes", url: `${D}/products/variant-attributes` },
+        ],
+      },
       { title: "Warehouses", url: `${D}/warehouses`, icon: WarehouseIcon },
       {
         title: "Purchase Management",

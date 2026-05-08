@@ -4,21 +4,62 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
   AlertCircle, Check, DollarSign, Package, Pencil, X,
-  Search, Plus, Download, Loader2,
+  Search, Plus, Download, Upload, Loader2, Eye, EyeOff,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   useMyRetailProducts,
   useUpdateRetailPrice,
 } from "@/hooks/use-shop-owner-api";
+
+// ─── Helpers ───────────────────────────────────────────────────
+
+function formatRelativeDate(dateStr: string | Date): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return `${d.getDate()} ${months[d.getMonth()]}`;
+}
+
+function resolveBrand(item: any) {
+  const v = item.variant;
+  if (v?.brand?.name) return v.brand;
+  const p = v?.product;
+  if (p?.brand?.name) return p.brand;
+  const pb = p?.productBrands?.[0]?.brand;
+  if (pb?.name) return pb;
+  return null;
+}
+
+// ─── Status Config ─────────────────────────────────────────────
+
+const STOCK_STATUS = {
+  in_stock: { dot: "bg-emerald-500" },
+  low: { dot: "bg-amber-500" },
+  out: { dot: "bg-red-500" },
+} as const;
+
+function getStockStatus(qty: number) {
+  if (qty <= 0) return STOCK_STATUS.out;
+  if (qty <= 5) return STOCK_STATUS.low;
+  return STOCK_STATUS.in_stock;
+}
+
+// ─── Main Page ─────────────────────────────────────────────────
 
 export default function PricingPage() {
   const { data, isLoading, isError } = useMyRetailProducts({ limit: 200 });
@@ -26,42 +67,37 @@ export default function PricingPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [brandFilter, setBrandFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [brandFilter, setBrandFilter] = useState("all");
 
-  const items = data?.items ?? [];
+  const items: any[] = data?.items ?? [];
 
-  // ─── Derive categories and brands from data ─────────────────
+  // ─── Derive categories, brands, grouped data ──────────────────
 
-  // Resolve brand: variant.brand → product.brand → product.productBrands[0].brand
-  const resolveBrand = (item: any) => {
-    const v = item.variant;
-    if (v?.brand?.name) return v.brand;
-    const p = v?.product;
-    if (p?.brand?.name) return p.brand;
-    const pb = p?.productBrands?.[0]?.brand;
-    if (pb?.name) return pb;
-    return null;
-  };
-
-  const { categories, brands, grouped } = useMemo(() => {
+  const { categories, brands, grouped, lastUpdated } = useMemo(() => {
     const catSet = new Map<string, string>();
     const brandSet = new Map<string, string>();
+    let latestDate: Date | null = null;
 
     for (const item of items) {
-      const cat = (item as any).variant?.product?.category;
+      const cat = item.variant?.product?.category;
       if (cat?.name) catSet.set(cat.slug || cat.name, cat.name);
       const brand = resolveBrand(item);
       if (brand?.name) brandSet.set(String(brand.id), brand.name);
+      // Track latest update
+      if (item.updatedAt) {
+        const d = new Date(item.updatedAt);
+        if (!latestDate || d > latestDate) latestDate = d;
+      }
     }
 
-    // Filter items
+    // Apply filters
     let filtered = items;
     if (search.trim()) {
       const s = search.toLowerCase();
       filtered = filtered.filter((item: any) => {
         const prod = item.variant?.product;
-        const brand = item.variant?.brand;
+        const brand = resolveBrand(item);
         return (
           prod?.name?.toLowerCase().includes(s) ||
           brand?.name?.toLowerCase().includes(s) ||
@@ -77,12 +113,12 @@ export default function PricingPage() {
     }
     if (brandFilter !== "all") {
       filtered = filtered.filter((item: any) => {
-        const brand = item.variant?.brand;
+        const brand = resolveBrand(item);
         return String(brand?.id) === brandFilter;
       });
     }
 
-    // Group by category → product
+    // Group: category → product → variants
     const grouped = new Map<string, {
       categoryName: string;
       products: Map<number, {
@@ -93,7 +129,7 @@ export default function PricingPage() {
     }>();
 
     for (const item of filtered) {
-      const prod = (item as any).variant?.product;
+      const prod = item.variant?.product;
       if (!prod) continue;
       const cat = prod.category;
       const catKey = cat?.name || "Uncategorized";
@@ -102,18 +138,12 @@ export default function PricingPage() {
       if (!grouped.has(catSlug)) {
         grouped.set(catSlug, { categoryName: catKey, products: new Map() });
       }
-
       const catGroup = grouped.get(catSlug)!;
       const prodId = prod.id;
       if (!catGroup.products.has(prodId)) {
         const img = prod.images?.[0]?.url || prod.image || null;
-        catGroup.products.set(prodId, {
-          productName: prod.name,
-          productImage: img,
-          rows: [],
-        });
+        catGroup.products.set(prodId, { productName: prod.name, productImage: img, rows: [] });
       }
-
       catGroup.products.get(prodId)!.rows.push(item);
     }
 
@@ -121,10 +151,11 @@ export default function PricingPage() {
       categories: Array.from(catSet.entries()).map(([slug, name]) => ({ slug, name })),
       brands: Array.from(brandSet.entries()).map(([id, name]) => ({ id, name })),
       grouped,
+      lastUpdated: latestDate ? formatRelativeDate(latestDate) : "—",
     };
   }, [items, search, categoryFilter, brandFilter]);
 
-  // ─── Inline edit handlers ───────────────────────────────────
+  // ─── Inline edit handlers ───────────────────────────────────────
 
   const startEdit = (inventoryId: number, currentPrice: string) => {
     setEditingId(inventoryId);
@@ -154,203 +185,181 @@ export default function PricingPage() {
     );
   };
 
-  // ─── Quick Insights ─────────────────────────────────────────
+  // ─── Quick Insights ─────────────────────────────────────────────
 
   const totalProducts = new Set(items.map((i: any) => i.variant?.product?.id)).size;
   const totalVariants = items.length;
 
-  // ─── Render ─────────────────────────────────────────────────
+  // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
+    <div className="space-y-5 max-w-5xl">
+      {/* ════════════════════════════════════════════════════════
+          HEADER
+          ════════════════════════════════════════════════════════ */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">My Selling Price</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Set your retail selling prices. Click the edit icon to update.
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-100 rounded-xl">
+              <DollarSign className="text-emerald-600" size={20} />
+            </div>
+            💰 My Selling Price
+          </h1>
+          <p className="text-xs text-gray-500 mt-1 ml-11">
+            My Store Selling Price (Final Customer Price)
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled>
-            <Download className="h-3.5 w-3.5 mr-1.5" /> Export
+      </div>
+
+      {/* ════════════════════════════════════════════════════════
+          SEARCH & FILTER
+          ════════════════════════════════════════════════════════ */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">
+          🔍 Search & Filter
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Product / Brand..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 h-9 text-sm"
+            />
+          </div>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-[160px] h-9 text-xs">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((c) => (
+                <SelectItem key={c.slug} value={c.slug}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={brandFilter} onValueChange={setBrandFilter}>
+            <SelectTrigger className="w-[140px] h-9 text-xs">
+              <SelectValue placeholder="Brand" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Brands</SelectItem>
+              {brands.map((b) => (
+                <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════
+          LOADING / ERROR / EMPTY
+          ════════════════════════════════════════════════════════ */}
+      {isLoading && (
+        <div className="flex flex-col items-center justify-center py-20 bg-white border rounded-xl">
+          <Loader2 className="h-6 w-6 animate-spin text-emerald-500 mb-3" />
+          <p className="text-sm text-gray-500">Loading price list...</p>
+        </div>
+      )}
+
+      {isError && (
+        <div className="flex flex-col items-center justify-center py-20 bg-white border rounded-xl">
+          <AlertCircle className="w-12 h-12 text-red-300 mb-3" />
+          <p className="text-gray-500 font-medium">Failed to load pricing data</p>
+        </div>
+      )}
+
+      {!isLoading && !isError && items.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 bg-white border border-dashed rounded-xl">
+          <DollarSign className="w-12 h-12 text-gray-300 mb-3" />
+          <p className="text-gray-500 text-lg font-medium">No product added</p>
+          <p className="text-sm text-gray-400 mt-1 mb-4">
+            Add products from the Product Catalog first.
+          </p>
+          <Button asChild size="sm">
+            <Link href="/dashboard/product-catalog">
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Product to Store
+            </Link>
           </Button>
         </div>
-      </div>
-
-      {/* Quick Insights */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="py-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
-              <Package className="h-4 w-4 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold">{totalProducts}</p>
-              <p className="text-xs text-muted-foreground">Products</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
-              <DollarSign className="h-4 w-4 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold">{totalVariants}</p>
-              <p className="text-xs text-muted-foreground">Variants</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="hidden sm:block">
-          <CardContent className="py-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center">
-              <AlertCircle className="h-4 w-4 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold">
-                {items.filter((i: any) => !i.retailPrice || Number(i.retailPrice) <= 0).length}
-              </p>
-              <p className="text-xs text-muted-foreground">Unpriced</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search + Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search product or brand..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-[140px]"
-        >
-          <option value="all">All Categories</option>
-          {categories.map((c) => (
-            <option key={c.slug} value={c.slug}>{c.name}</option>
-          ))}
-        </select>
-        <select
-          value={brandFilter}
-          onChange={(e) => setBrandFilter(e.target.value)}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-[120px]"
-        >
-          <option value="all">All Brands</option>
-          {brands.map((b) => (
-            <option key={b.id} value={b.id}>{b.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Loading */}
-      {isLoading && (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
       )}
 
-      {/* Error */}
-      {isError && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <AlertCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
-            <p className="text-muted-foreground font-medium">Failed to load pricing data</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Empty State */}
-      {!isLoading && !isError && items.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-muted-foreground font-medium">No products to price yet</p>
-            <p className="text-sm text-muted-foreground mt-1 mb-4">
-              Add products from the Product Catalog first.
-            </p>
-            <Button asChild>
-              <Link href="/dashboard/product-catalog">
-                <Plus className="h-4 w-4 mr-1.5" /> Add Product to Store
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Grouped Price Table */}
+      {/* ════════════════════════════════════════════════════════
+          PRODUCT PRICE LIST
+          ════════════════════════════════════════════════════════ */}
       {!isLoading && !isError && grouped.size > 0 && (
         <div className="space-y-6">
           {Array.from(grouped.entries()).map(([catSlug, catGroup]) => (
             <div key={catSlug}>
               {/* Category Header */}
               <div className="flex items-center gap-2 mb-3">
-                <Badge variant="outline" className="text-xs font-semibold uppercase tracking-wide">
+                <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest bg-gray-50 border-gray-200 text-gray-600">
                   📂 {catGroup.categoryName}
                 </Badge>
               </div>
 
+              {/* Products */}
               <div className="space-y-4">
                 {Array.from(catGroup.products.entries()).map(([prodId, prodGroup]) => (
-                  <Card key={prodId} className="overflow-hidden">
+                  <div key={prodId} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                     {/* Product Header */}
-                    <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50/50 border-b">
+                    <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50/70 border-b border-gray-100">
                       {prodGroup.productImage ? (
-                        <img
-                          src={prodGroup.productImage}
-                          alt={prodGroup.productName}
-                          className="w-8 h-8 rounded object-cover border"
-                        />
+                        <img src={prodGroup.productImage} alt={prodGroup.productName} className="w-7 h-7 rounded-lg object-cover border" />
                       ) : (
-                        <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center">
-                          <Package className="h-4 w-4 text-gray-300" />
+                        <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center">
+                          <Package className="h-3.5 w-3.5 text-gray-300" />
                         </div>
                       )}
-                      <span className="text-sm font-semibold">{prodGroup.productName}</span>
+                      <span className="text-sm font-bold text-gray-800">🧾 {prodGroup.productName}</span>
                       <Badge variant="secondary" className="text-[10px] ml-auto">
                         {prodGroup.rows.length} variant{prodGroup.rows.length > 1 ? "s" : ""}
                       </Badge>
                     </div>
 
                     {/* Variant Table */}
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="text-xs">
-                          <TableHead className="py-2">Brand</TableHead>
-                          <TableHead className="py-2">Variant</TableHead>
-                          <TableHead className="py-2">Unit</TableHead>
-                          <TableHead className="text-right py-2">Price</TableHead>
-                          <TableHead className="text-right py-2">Stock</TableHead>
-                          <TableHead className="text-right py-2 w-[60px]">Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                    <div className="overflow-x-auto">
+                      {/* Table Header */}
+                      <div className="grid grid-cols-[minmax(80px,1fr)_minmax(100px,1.5fr)_60px_90px_100px_60px_50px] text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50/40 border-b border-gray-100 px-4 py-2">
+                        <div>Brand</div>
+                        <div>Variant</div>
+                        <div>Unit</div>
+                        <div className="text-right">Price</div>
+                        <div className="text-center">Last Update</div>
+                        <div className="text-center">Stock</div>
+                        <div className="text-center">Action</div>
+                      </div>
+
+                      {/* Variant Rows */}
+                      <div className="divide-y divide-gray-50">
                         {prodGroup.rows.map((item: any) => {
                           const variant = item.variant;
                           const brand = resolveBrand(item);
                           const retailPrice = item.retailPrice ? Number(item.retailPrice) : null;
                           const isEditing = editingId === item.id;
                           const qty = Number(item.availableQty ?? 0);
+                          const ss = getStockStatus(qty);
 
                           return (
-                            <TableRow key={item.id}>
-                              <TableCell className="text-sm py-2">
+                            <div key={item.id} className="grid grid-cols-[minmax(80px,1fr)_minmax(100px,1.5fr)_60px_90px_100px_60px_50px] items-center px-4 py-2.5 hover:bg-gray-50/50 transition-colors">
+                              {/* Brand */}
+                              <div className="text-sm text-gray-700 font-medium truncate">
                                 {brand?.name || "—"}
-                              </TableCell>
-                              <TableCell className="text-sm py-2">
+                              </div>
+
+                              {/* Variant */}
+                              <div className="text-sm text-gray-600 truncate">
                                 {variant?.quantitySelectorLabel || variant?.unitLabel || variant?.sku || "—"}
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground py-2">
+                              </div>
+
+                              {/* Unit */}
+                              <div className="text-xs text-gray-400">
                                 {variant?.weightKg ? `${variant.weightKg} KG` : variant?.unitLabel || "—"}
-                              </TableCell>
-                              <TableCell className="text-right py-2">
+                              </div>
+
+                              {/* Price */}
+                              <div className="text-right">
                                 {isEditing ? (
                                   <div className="flex items-center justify-end gap-1">
                                     <Input
@@ -358,57 +367,65 @@ export default function PricingPage() {
                                       inputMode="decimal"
                                       value={editValue}
                                       onChange={(e) => setEditValue(e.target.value)}
-                                      className="w-24 h-7 text-right text-sm"
+                                      className="w-20 h-7 text-right text-sm"
                                       autoFocus
                                       onKeyDown={(e) => {
                                         if (e.key === "Enter") savePrice(item.id);
                                         if (e.key === "Escape") cancelEdit();
                                       }}
                                     />
-                                    <Button
-                                      variant="ghost" size="icon" className="h-6 w-6"
+                                    <button
+                                      className="p-1 rounded hover:bg-emerald-50 transition-colors"
                                       onClick={() => savePrice(item.id)}
                                       disabled={updatePrice.isPending}
                                     >
-                                      <Check className="h-3 w-3 text-emerald-600" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={cancelEdit}>
-                                      <X className="h-3 w-3 text-gray-400" />
-                                    </Button>
+                                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                    </button>
+                                    <button
+                                      className="p-1 rounded hover:bg-red-50 transition-colors"
+                                      onClick={cancelEdit}
+                                    >
+                                      <X className="h-3.5 w-3.5 text-gray-400" />
+                                    </button>
                                   </div>
                                 ) : (
-                                  <span className="text-sm font-medium">
+                                  <span className="text-sm font-bold text-gray-900">
                                     {retailPrice ? `৳ ${retailPrice.toLocaleString()}` : (
-                                      <span className="text-amber-500 text-xs">Not set</span>
+                                      <span className="text-amber-500 text-xs font-medium">Not set</span>
                                     )}
                                   </span>
                                 )}
-                              </TableCell>
-                              <TableCell className="text-right py-2">
-                                <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${
-                                  qty > 10 ? "bg-emerald-500" : qty > 0 ? "bg-amber-500" : "bg-red-500"
-                                }`} />
-                                <span className="text-xs text-muted-foreground">{qty}</span>
-                              </TableCell>
-                              <TableCell className="text-right py-2">
+                              </div>
+
+                              {/* Last Update */}
+                              <div className="text-center">
+                                <span className="text-[11px] text-gray-400">
+                                  {item.updatedAt ? formatRelativeDate(item.updatedAt) : "—"}
+                                </span>
+                              </div>
+
+                              {/* Stock */}
+                              <div className="flex items-center justify-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${ss.dot}`} />
+                              </div>
+
+                              {/* Action */}
+                              <div className="flex justify-center">
                                 {!isEditing && (
-                                  <Button
-                                    variant="ghost" size="icon" className="h-6 w-6"
-                                    onClick={() => startEdit(
-                                      item.id,
-                                      retailPrice?.toString() || "",
-                                    )}
+                                  <button
+                                    className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                                    onClick={() => startEdit(item.id, retailPrice?.toString() || "")}
                                   >
-                                    <Pencil className="h-3 w-3 text-gray-400" />
-                                  </Button>
+                                    <Pencil className="h-3.5 w-3.5 text-gray-400" />
+                                  </button>
                                 )}
-                              </TableCell>
-                            </TableRow>
+                              </div>
+                            </div>
                           );
                         })}
-                      </TableBody>
-                    </Table>
-                  </Card>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -416,16 +433,65 @@ export default function PricingPage() {
         </div>
       )}
 
-      {/* System Rules */}
-      <Card>
-        <CardContent className="py-3">
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-            <span>✔ Retailer sets final selling price</span>
-            <span>✔ Only one price (Customer Price)</span>
-            <span>✔ Cannot modify Brand / Variant / Core Product</span>
+      {/* ════════════════════════════════════════════════════════
+          BULK ACTIONS
+          ════════════════════════════════════════════════════════ */}
+      {!isLoading && !isError && items.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">
+            ⚙ Bulk Action
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" disabled>
+              <Upload size={12} /> Upload Price (Excel)
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" disabled>
+              <Download size={12} /> Export Price List
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          QUICK INSIGHT
+          ════════════════════════════════════════════════════════ */}
+      {!isLoading && !isError && items.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+            📊 Quick Insight
+          </p>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs text-gray-400">Total Products</p>
+              <p className="text-lg font-bold text-gray-900">→ {totalProducts}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Total Variants</p>
+              <p className="text-lg font-bold text-gray-900">→ {totalVariants}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Last Updated</p>
+              <p className="text-lg font-bold text-gray-900">→ {lastUpdated}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          SYSTEM RULES
+          ════════════════════════════════════════════════════════ */}
+      <div className="bg-amber-50/50 border border-amber-200 rounded-xl px-4 py-3">
+        <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-1.5">
+          ⚠ System Rules
+        </p>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-amber-700">
+          <span>✔ Retailer sets final selling price</span>
+          <span>✔ Only one price is used (Customer Price)</span>
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500 mt-1">
+          <span>✔ Cannot modify: Brand / Variant / Core Product</span>
+        </div>
+      </div>
     </div>
   );
 }
