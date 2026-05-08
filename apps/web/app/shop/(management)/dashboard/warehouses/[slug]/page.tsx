@@ -367,7 +367,12 @@ function VariantModal({
                       </div>
                       {/* Variant size tags */}
                       <div className="flex flex-wrap gap-1 mt-1.5">
-                        {bg.variants.map((v) => {
+                        {bg.variants
+                          .filter(v => {
+                            const isLooseV = (v.variant.packType || "").toLowerCase() === "loose";
+                            return !isLooseV || (v.variant.totalCartonCount || 0) > 0;
+                          })
+                          .map((v) => {
                           const vw = Number(v.variant.weightKg) || 0;
                           const isLooseV = (v.variant.packType || "").toLowerCase() === "loose";
                           const looseW = vw > 0 ? vw : (Number(v.variant.unitLabel) || 0);
@@ -490,8 +495,10 @@ function VariantModal({
                   </div>
                 )}
 
-                {/* Loose dropdown */}
-                {looseVars.length > 0 && (
+                {/* Loose dropdown — only show loose variants that have cartons */}
+                {(() => {
+                  const looseWithCartons = looseVars.filter(v => (v.variant.totalCartonCount || 0) > 0);
+                  return looseWithCartons.length > 0 && (
                   <div>
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                       Loose
@@ -514,20 +521,21 @@ function VariantModal({
                       style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")` }}
                     >
                       <option value="">— Select loose variant —</option>
-                      {looseVars.map((v) => {
+                      {looseWithCartons.map((v) => {
                         const opts = v.variant.cartonOptions || [];
                         const sizeLabel = opts.length > 0
                           ? opts.map(o => `${o.weightKg} KG × ${o.count}`).join(", ")
                           : `${v.variant.totalCartonCount || 0} carton`;
                         return (
                           <option key={v.variantId} value={String(v.idx)}>
-                            {v.variant.brandName || "Loose"} — {sizeLabel} — ৳{Number(v.price).toLocaleString()}
+                            {v.variant.brandName || "Loose"} — {sizeLabel} — ৳{getCartonPriceForVariant(v).toLocaleString()}
                           </option>
                         );
                       })}
                     </select>
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })()}
