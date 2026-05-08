@@ -181,6 +181,8 @@ async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
             coreProductName: coreProductIdentity.name,
             coreProductSku: coreProductIdentity.sku,
             primaryBrandName: brandTable.name,
+            variantPriceBrandId: productVariantPrice.brandId,
+            variantPriceBrandName: sql<string | null>`(SELECT b2.name FROM brand b2 WHERE b2.id = ${productVariantPrice.brandId})`.as("variant_price_brand_name"),
         })
         .from(productVariantPrice)
         .innerJoin(product, eq(productVariantPrice.productId, product.id))
@@ -219,6 +221,7 @@ async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
 
     const items = rows.map((r) => {
         const brandDisplay =
+            (r.variantPriceBrandName && r.variantPriceBrandName.trim()) ||
             (r.primaryBrandName && r.primaryBrandName.trim()) ||
             brandsByProduct.get(r.productId) ||
             "—";
