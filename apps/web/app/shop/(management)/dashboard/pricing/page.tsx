@@ -20,6 +20,18 @@ import {
   useUpdateRetailPrice,
 } from "@/hooks/use-shop-owner-api";
 
+function formatRelativeDate(dateStr: string | Date): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return `${d.getDate()} ${months[d.getMonth()]}`;
+}
 export default function PricingPage() {
   const { data, isLoading, isError } = useMyRetailProducts({ limit: 200 });
   const updatePrice = useUpdateRetailPrice();
@@ -327,6 +339,7 @@ export default function PricingPage() {
                           <TableHead className="py-2">Variant</TableHead>
                           <TableHead className="py-2">Unit</TableHead>
                           <TableHead className="text-right py-2">Price</TableHead>
+                          <TableHead className="py-2">Last Update</TableHead>
                           <TableHead className="text-right py-2">Stock</TableHead>
                           <TableHead className="text-right py-2 w-[60px]">Action</TableHead>
                         </TableRow>
@@ -383,6 +396,11 @@ export default function PricingPage() {
                                     )}
                                   </span>
                                 )}
+                              </TableCell>
+                              <TableCell className="py-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {(item as any).updatedAt ? formatRelativeDate((item as any).updatedAt) : "—"}
+                                </span>
                               </TableCell>
                               <TableCell className="text-right py-2">
                                 <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${
