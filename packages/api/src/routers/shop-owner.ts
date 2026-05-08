@@ -3212,32 +3212,63 @@ const warehouseOrderQueries = {
                 const vp = Number(inv.variant?.price || 0);
                 let unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
 
-                // For loose variants: price is per-KG, need to multiply by carton weight
+                // Resolve per-carton price for ALL variant types
                 const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
-                console.log(`[ORDER-PRICE] variantId=${item.variantId}, packType="${inv.variant?.packType}", isLoose=${isLooseVariant}, weightKg=${inv.variant?.weightKg}, unitPrice=${unitPrice}`);
-                if (isLooseVariant) {
+                
+                // Look up carton and config for carton pricing
+                const activeCarton = await db.query.carton.findFirst({
+                    where: and(
+                        eq(carton.warehouseId, warehouseId),
+                        eq(carton.variantId, item.variantId),
+                        eq(carton.status, "active"),
+                    ),
+                    with: {
+                        config: {
+                            columns: { cartonPrice: true, deliveryCostPerCarton: true },
+                        },
+                    },
+                });
+
+                // Also look up cartonConfig directly as fallback
+                const variantConfig = await db.query.cartonConfig.findFirst({
+                    where: and(
+                        eq(cartonConfig.variantId, item.variantId),
+                        eq(cartonConfig.isActive, true),
+                    ),
+                    orderBy: [desc(cartonConfig.isDefault)],
+                });
+
+                // Price resolution: carton.cartonPrice → carton.config.cartonPrice → cartonConfig.cartonPrice → calculated
+                const cartonRecordPrice = Number(activeCarton?.cartonPrice || 0);
+                const linkedConfigPrice = Number((activeCarton as any)?.config?.cartonPrice || 0);
+                const directConfigPrice = Number(variantConfig?.cartonPrice || 0);
+
+                if (cartonRecordPrice > 0) {
+                    unitPrice = activeCarton!.cartonPrice!;
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using carton record price: ${unitPrice}`);
+                } else if (linkedConfigPrice > 0) {
+                    unitPrice = (activeCarton as any).config.cartonPrice;
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using linked config price: ${unitPrice}`);
+                } else if (directConfigPrice > 0) {
+                    unitPrice = variantConfig!.cartonPrice;
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using direct config price: ${unitPrice}`);
+                } else if (isLooseVariant && activeCarton) {
+                    // Loose fallback: calculate from per-KG price × carton weight
                     const variantWeightKg = Number(inv.variant?.weightKg || 0);
                     const rawUnitPrice = Number(unitPrice);
-
-                    // Get carton weight from active cartons
-                    const activeCarton = await db.query.carton.findFirst({
-                        where: and(
-                            eq(carton.warehouseId, warehouseId),
-                            eq(carton.variantId, item.variantId),
-                            eq(carton.status, "active"),
-                        ),
-                        columns: { totalWeightKg: true },
-                    });
-
-                    console.log(`[ORDER-PRICE] activeCarton=`, activeCarton, `cartonWeightKg=${Number(activeCarton?.totalWeightKg || 0)}`);
-                    if (activeCarton) {
-                        const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
-                        const perKg = variantWeightKg > 0
-                            ? rawUnitPrice / variantWeightKg
-                            : rawUnitPrice; // if weightKg=0, price IS per-KG
-                        unitPrice = (perKg * cartonWeightKg).toFixed(2);
-                        console.log(`[ORDER-PRICE] FIXED: perKg=${perKg}, cartonKg=${cartonWeightKg}, newUnitPrice=${unitPrice}`);
+                    const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
+                    const perKg = variantWeightKg > 0 ? rawUnitPrice / variantWeightKg : rawUnitPrice;
+                    unitPrice = (perKg * cartonWeightKg).toFixed(2);
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose calc: perKg=${perKg}, cartonKg=${cartonWeightKg}, price=${unitPrice}`);
+                } else if (!isLooseVariant && activeCarton) {
+                    // Pack fallback: multiply per-pack price by packs per carton
+                    const packsPerCarton = activeCarton.totalPacks || 0;
+                    if (packsPerCarton > 0) {
+                        unitPrice = (Number(unitPrice) * packsPerCarton).toFixed(2);
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Pack calc: packPrice=${inv.retailPrice || inv.variant?.price} × ${packsPerCarton} = ${unitPrice}`);
                     }
+                } else {
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: No carton found, using raw pack price: ${unitPrice}`);
                 }
 
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
@@ -4339,20 +4370,23 @@ const warehouseConnectionEndpoints = {
                         eq(carton.status, "active"),
                         inArray(carton.variantId, allVariantIds),
                     ),
+                    with: {
+                        config: {
+                            columns: { cartonPrice: true, deliveryCostPerCarton: true },
+                        },
+                    },
                 });
 
-                // Query cartonConfig for fallback pricing (warehouse sets price here)
+                // Also query cartonConfig directly for variants without linked config
                 const configs = await db.query.cartonConfig.findMany({
                     where: and(
                         inArray(cartonConfig.variantId, allVariantIds),
                         eq(cartonConfig.isActive, true),
                     ),
                 });
-                // Build map: variantId → default config price
                 const configPriceMap = new Map<number, string>();
                 const configDeliveryCostMap = new Map<number, string>();
                 for (const cfg of configs) {
-                    // Use the first (or default) config's price per variant
                     if (!configPriceMap.has(cfg.variantId) || cfg.isDefault) {
                         configPriceMap.set(cfg.variantId, cfg.cartonPrice);
                         if (cfg.deliveryCostPerCarton) {
@@ -4380,9 +4414,14 @@ const warehouseConnectionEndpoints = {
                     if (existing) {
                         existing.count += 1;
                     } else {
-                        // Use carton price → cartonConfig price → null
-                        const resolvedPrice = c.cartonPrice || configPriceMap.get(c.variantId) || null;
-                        const resolvedDelivery = c.deliveryCostPerUnit || configDeliveryCostMap.get(c.variantId) || null;
+                        // Price priority: carton record → linked config → config by variantId → null
+                        const linkedConfigPrice = (c as any).config?.cartonPrice || null;
+                        const linkedConfigDelivery = (c as any).config?.deliveryCostPerCarton || null;
+                        const resolvedPrice = c.cartonPrice || linkedConfigPrice || configPriceMap.get(c.variantId) || null;
+                        const resolvedDelivery = c.deliveryCostPerUnit || linkedConfigDelivery || configDeliveryCostMap.get(c.variantId) || null;
+
+                        console.log(`[CARTON PRICE DEBUG] variant=${c.variantId} carton.cartonPrice=${c.cartonPrice} linkedConfig=${linkedConfigPrice} configMap=${configPriceMap.get(c.variantId)} → resolved=${resolvedPrice}`);
+
                         list.push({
                             weightKg: wt,
                             totalKg: wt,
