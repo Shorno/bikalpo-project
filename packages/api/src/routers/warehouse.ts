@@ -9,11 +9,14 @@
 
 import { db } from "@bikalpo-project/db";
 import {
+    deliveryGroup,
+    deliveryGroupInvoice,
     inventory,
+    invoice,
     order,
     orderItem,
-    user,
     shopWarehouseConnection,
+    user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { localDateStamp } from "../utils/date";
@@ -22,7 +25,11 @@ import {
     count,
     desc,
     eq,
+    gte,
+    ilike,
     inArray,
+    lte,
+    or,
     sql,
     sum,
     type SQL,
@@ -836,7 +843,735 @@ const managementQueries = {
 // Order Queries (warehouse role only)
 // ────────────────────────────────────────────────────────────────
 
+const orderSourceInput = z
+    .enum(["direct", "salesman", "estimate", "pre_order"])
+    .default("direct");
+
+const orderOverviewStatusInput = z
+    .enum(["all", "pending", "accepted", "processing", "rejected"])
+    .default("all");
+
+const orderPaymentFilterInput = z
+    .enum(["all", "paid", "due", "partial"])
+    .default("all");
+
+const orderDateFilterInput = z
+    .enum(["today", "this_month", "custom", "all"])
+    .default("today");
+
+function getOrderStatusCondition(status: z.infer<typeof orderOverviewStatusInput>) {
+    switch (status) {
+        case "pending":
+            return eq(order.status, "pending");
+        case "accepted":
+            return eq(order.status, "confirmed");
+        case "processing":
+            return eq(order.status, "processing");
+        case "rejected":
+            return eq(order.status, "cancelled");
+        default:
+            return null;
+    }
+}
+
+function getDateFilterRange(input: {
+    dateRange: z.infer<typeof orderDateFilterInput>;
+    dateFrom?: string;
+    dateTo?: string;
+}) {
+    if (input.dateRange === "all") return null;
+
+    const now = new Date();
+    let start: Date | null = null;
+    let end: Date | null = null;
+
+    if (input.dateRange === "today") {
+        start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+        end = new Date(now);
+        end.setHours(23, 59, 59, 999);
+    }
+
+    if (input.dateRange === "this_month") {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        end.setHours(23, 59, 59, 999);
+    }
+
+    if (input.dateRange === "custom") {
+        start = input.dateFrom ? new Date(input.dateFrom) : null;
+        end = input.dateTo ? new Date(input.dateTo) : null;
+        if (start) start.setHours(0, 0, 0, 0);
+        if (end) end.setHours(23, 59, 59, 999);
+    }
+
+    return { start, end };
+}
+
+function getEffectiveItemQty(item: { quantity: number; modifiedQty: number | null }) {
+    return item.modifiedQty ?? item.quantity;
+}
+
+function getEffectiveItemPrice(item: {
+    unitPrice: string;
+    modifiedUnitPrice: string | null;
+}) {
+    return item.modifiedUnitPrice ?? item.unitPrice;
+}
+
 const orderQueries = {
+    /**
+     * Direct order overview for warehouse order management.
+     */
+    getOrderOverview: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/order-management",
+            tags: ["Warehouse"],
+            summary: "Get order management overview",
+        })
+        .input(
+            z.object({
+                source: orderSourceInput,
+                status: orderOverviewStatusInput,
+                payment: orderPaymentFilterInput,
+                dateRange: orderDateFilterInput,
+                dateFrom: z.string().optional(),
+                dateTo: z.string().optional(),
+                search: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(20),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const page = Math.max(1, input.page);
+            const limit = Math.min(100, Math.max(1, input.limit));
+            const offset = (page - 1) * limit;
+
+            const warehouseUser = await db.query.user.findFirst({
+                where: eq(user.id, userId),
+                columns: { name: true, warehouseName: true },
+            });
+
+            const baseConditions: SQL[] = [
+                eq(order.warehouseId, userId),
+                eq(order.orderType, "b2b"),
+            ];
+
+            const sourceSummary = await db
+                .select({
+                    direct: sql<number>`COUNT(*) FILTER (WHERE ${order.orderSource} = 'direct')`.mapWith(Number),
+                    salesman: sql<number>`COUNT(*) FILTER (WHERE ${order.orderSource} = 'salesman')`.mapWith(Number),
+                    estimate: sql<number>`COUNT(*) FILTER (WHERE ${order.orderSource} = 'estimate')`.mapWith(Number),
+                    preOrder: sql<number>`COUNT(*) FILTER (WHERE ${order.orderSource} = 'pre_order')`.mapWith(Number),
+                })
+                .from(order)
+                .where(and(...baseConditions));
+
+            const conditions: SQL[] = [
+                ...baseConditions,
+                eq(order.orderSource, input.source),
+            ];
+
+            const statusCondition = getOrderStatusCondition(input.status);
+            if (statusCondition) conditions.push(statusCondition);
+
+            if (input.payment === "paid") {
+                conditions.push(eq(order.paymentStatus, "paid"));
+            } else if (input.payment === "due") {
+                conditions.push(eq(order.paymentStatus, "pending"));
+            } else if (input.payment === "partial") {
+                conditions.push(sql`false`);
+            }
+
+            const dateRange = getDateFilterRange(input);
+            if (dateRange?.start) conditions.push(gte(order.createdAt, dateRange.start));
+            if (dateRange?.end) conditions.push(lte(order.createdAt, dateRange.end));
+
+            if (input.search?.trim()) {
+                const term = `%${input.search.trim()}%`;
+                conditions.push(
+                    or(
+                        ilike(order.orderNumber, term),
+                        ilike(order.shippingName, term),
+                        ilike(order.shippingPhone, term),
+                        ilike(user.name, term),
+                        ilike(user.shopName, term),
+                    )!,
+                );
+            }
+
+            const where = and(...conditions);
+
+            const [orders, countResult] = await Promise.all([
+                db
+                    .select({
+                        id: order.id,
+                        orderNumber: order.orderNumber,
+                        orderSource: order.orderSource,
+                        status: order.status,
+                        total: order.total,
+                        subtotal: order.subtotal,
+                        paymentMethod: order.paymentMethod,
+                        paymentStatus: order.paymentStatus,
+                        shippingName: order.shippingName,
+                        shippingPhone: order.shippingPhone,
+                        shippingCity: order.shippingCity,
+                        shippingArea: order.shippingArea,
+                        createdAt: order.createdAt,
+                        confirmedAt: order.confirmedAt,
+                        modifiedByWarehouseAt: order.modifiedByWarehouseAt,
+                        modificationAcceptedAt: order.modificationAcceptedAt,
+                        buyerId: order.userId,
+                        buyerName: user.name,
+                        buyerShopName: user.shopName,
+                    })
+                    .from(order)
+                    .leftJoin(user, eq(order.userId, user.id))
+                    .where(where)
+                    .orderBy(desc(order.createdAt))
+                    .limit(limit)
+                    .offset(offset),
+                db
+                    .select({ count: count() })
+                    .from(order)
+                    .leftJoin(user, eq(order.userId, user.id))
+                    .where(where),
+            ]);
+
+            const orderIds = orders.map((o) => o.id);
+            const items = orderIds.length
+                ? await db
+                    .select({
+                        orderId: orderItem.orderId,
+                        id: orderItem.id,
+                        productName: orderItem.productName,
+                    })
+                    .from(orderItem)
+                    .where(inArray(orderItem.orderId, orderIds))
+                : [];
+
+            const itemCounts = new Map<number, number>();
+            const firstItems = new Map<number, string>();
+            for (const item of items) {
+                itemCounts.set(item.orderId, (itemCounts.get(item.orderId) ?? 0) + 1);
+                if (!firstItems.has(item.orderId)) firstItems.set(item.orderId, item.productName);
+            }
+
+            const totalCount = Number(countResult[0]?.count) || 0;
+            const summary = sourceSummary[0] ?? {
+                direct: 0,
+                salesman: 0,
+                estimate: 0,
+                preOrder: 0,
+            };
+
+            return {
+                warehouse: {
+                    label: warehouseUser?.warehouseName || warehouseUser?.name || "Warehouse",
+                },
+                summary,
+                orders: orders.map((o) => ({
+                    ...o,
+                    customerName: o.buyerShopName || o.buyerName || o.shippingName,
+                    itemCount: itemCounts.get(o.id) ?? 0,
+                    firstItemName: firstItems.get(o.id) ?? null,
+                    requiresBuyerAcceptance:
+                        !!o.modifiedByWarehouseAt
+                        && !o.modificationAcceptedAt
+                        && o.status !== "cancelled",
+                })),
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    /**
+     * Direct order detail for warehouse approval and dispatch preparation.
+     */
+    getOrderDetail: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/order-management/{orderId}",
+            tags: ["Warehouse"],
+            summary: "Get order management detail",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const orderData = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.warehouseId, userId),
+                    eq(order.orderType, "b2b"),
+                ),
+                with: {
+                    user: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            shopName: true,
+                            shopAddress: true,
+                        },
+                    },
+                    items: {
+                        with: {
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                },
+                            },
+                            variant: {
+                                columns: {
+                                    id: true,
+                                    sku: true,
+                                    unitLabel: true,
+                                    weightKg: true,
+                                    packType: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            if (!orderData) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            const variantIds = orderData.items
+                .map((item) => item.variantId)
+                .filter((id): id is number => id !== null);
+
+            const inventoryRows = variantIds.length
+                ? await db
+                    .select({
+                        id: inventory.id,
+                        variantId: inventory.variantId,
+                        availableQty: inventory.availableQty,
+                        reservedQty: inventory.reservedQty,
+                    })
+                    .from(inventory)
+                    .where(
+                        and(
+                            eq(inventory.ownerType, "warehouse"),
+                            eq(inventory.ownerId, userId),
+                            inArray(inventory.variantId, variantIds),
+                        ),
+                    )
+                : [];
+
+            const inventoryByVariant = new Map(
+                inventoryRows.map((row) => [row.variantId, row]),
+            );
+
+            const invoices = await db.query.invoice.findMany({
+                where: eq(invoice.orderId, orderData.id),
+                with: {
+                    items: true,
+                    deliveryman: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                        },
+                    },
+                },
+                orderBy: [desc(invoice.createdAt)],
+            });
+
+            const invoiceIds = invoices.map((item) => item.id);
+            const deliveryLinks = invoiceIds.length
+                ? await db
+                    .select({
+                        invoiceId: deliveryGroupInvoice.invoiceId,
+                        groupId: deliveryGroup.id,
+                        groupName: deliveryGroup.groupName,
+                        groupStatus: deliveryGroup.status,
+                        deliverymanId: deliveryGroup.deliverymanId,
+                        deliverymanName: user.name,
+                        deliverymanPhone: user.phoneNumber,
+                    })
+                    .from(deliveryGroupInvoice)
+                    .innerJoin(
+                        deliveryGroup,
+                        eq(deliveryGroupInvoice.groupId, deliveryGroup.id),
+                    )
+                    .leftJoin(user, eq(deliveryGroup.deliverymanId, user.id))
+                    .where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
+                : [];
+
+            const currentInvoice = invoices[0] ?? null;
+            const currentDelivery = currentInvoice
+                ? deliveryLinks.find((row) => row.invoiceId === currentInvoice.id) ?? null
+                : null;
+
+            const items = orderData.items.map((item) => {
+                const stock = item.variantId
+                    ? inventoryByVariant.get(item.variantId)
+                    : undefined;
+                const approvedQty = getEffectiveItemQty(item);
+                const effectivePrice = Number(getEffectiveItemPrice(item));
+
+                return {
+                    ...item,
+                    approvedQty,
+                    approvedTotal: (approvedQty * effectivePrice).toFixed(2),
+                    stock: {
+                        availableQty: stock?.availableQty ?? "0",
+                        reservedQty: stock?.reservedQty ?? "0",
+                    },
+                };
+            });
+
+            const finalApprovedTotal = items.reduce(
+                (sumValue, item) => sumValue + Number(item.approvedTotal),
+                0,
+            );
+
+            const requiresBuyerAcceptance =
+                !!orderData.modifiedByWarehouseAt
+                && !orderData.modificationAcceptedAt
+                && !orderData.modificationRejectedAt
+                && orderData.status !== "cancelled";
+
+            const canPrepareDispatch =
+                orderData.status === "confirmed"
+                && !requiresBuyerAcceptance
+                && !currentInvoice;
+
+            return {
+                order: {
+                    ...orderData,
+                    customerName:
+                        orderData.user?.shopName
+                        || orderData.user?.name
+                        || orderData.shippingName,
+                    customerPhone:
+                        orderData.user?.phoneNumber || orderData.shippingPhone,
+                    items,
+                    finalApprovedTotal: finalApprovedTotal.toFixed(2),
+                    requiresBuyerAcceptance,
+                    canPrepareDispatch,
+                },
+                invoice: currentInvoice
+                    ? {
+                        id: currentInvoice.id,
+                        invoiceNumber: currentInvoice.invoiceNumber,
+                        deliveryStatus: currentInvoice.deliveryStatus,
+                        paymentStatus: currentInvoice.paymentStatus,
+                        deliveryman: currentInvoice.deliveryman,
+                    }
+                    : null,
+                delivery: currentDelivery,
+                flow: [
+                    { key: "placed", label: "Order Placed", completed: true, date: orderData.createdAt },
+                    {
+                        key: "review",
+                        label: orderData.status === "pending" ? "Review" : "Reviewed",
+                        completed: orderData.status !== "pending",
+                        date: orderData.confirmedAt || orderData.cancelledAt,
+                    },
+                    {
+                        key: "approved",
+                        label: orderData.status === "cancelled" ? "Rejected" : "Approved",
+                        completed: ["confirmed", "processing", "delivered", "cancelled"].includes(orderData.status),
+                        date: orderData.confirmedAt || orderData.cancelledAt,
+                    },
+                    {
+                        key: "ready",
+                        label: "Packing / Ready",
+                        completed: !!orderData.packingStartedAt || !!orderData.readyAt,
+                        date: orderData.readyAt || orderData.packingStartedAt,
+                    },
+                    {
+                        key: "invoice",
+                        label: "Invoice Prepared",
+                        completed: !!currentInvoice,
+                        date: currentInvoice?.createdAt ?? null,
+                    },
+                    {
+                        key: "dispatch",
+                        label: "Dispatch Group",
+                        completed: !!currentDelivery,
+                        date: null,
+                    },
+                    {
+                        key: "deliveryman",
+                        label: "Deliveryman Assigned",
+                        completed: !!currentDelivery?.deliverymanId || !!currentInvoice?.deliverymanId,
+                        date: null,
+                    },
+                ],
+            };
+        }),
+
+    /**
+     * Accept/modify or reject a pending direct order.
+     */
+    reviewOrder: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/order-management/review",
+            tags: ["Warehouse"],
+            summary: "Review direct order",
+        })
+        .input(
+            z.object({
+                orderId: z.number(),
+                decision: z.enum(["accept", "reject"]),
+                items: z
+                    .array(
+                        z.object({
+                            itemId: z.number(),
+                            approvedQty: z.number().int().min(0),
+                        }),
+                    )
+                    .optional(),
+                approvalNote: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.warehouseId, userId),
+                    eq(order.orderSource, "direct"),
+                ),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Direct order not found" });
+            }
+
+            if (existingOrder.status !== "pending") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Only pending direct orders can be reviewed",
+                });
+            }
+
+            if (input.decision === "reject") {
+                await db
+                    .update(order)
+                    .set({
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                        adminNote: input.approvalNote || existingOrder.adminNote,
+                    })
+                    .where(eq(order.id, existingOrder.id));
+
+                return {
+                    success: true,
+                    message: `Order ${existingOrder.orderNumber} rejected`,
+                };
+            }
+
+            const approvedQtyByItem = new Map(
+                (input.items ?? []).map((item) => [item.itemId, item.approvedQty]),
+            );
+
+            const reviewItems = existingOrder.items.map((item) => {
+                const approvedQty = approvedQtyByItem.get(item.id) ?? item.quantity;
+                if (approvedQty > item.quantity) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Approved quantity cannot exceed ordered quantity for ${item.productName}`,
+                    });
+                }
+                return { item, approvedQty };
+            });
+
+            const approvedTotalQty = reviewItems.reduce(
+                (sumValue, item) => sumValue + item.approvedQty,
+                0,
+            );
+
+            if (approvedTotalQty <= 0) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "At least one item quantity must be approved",
+                });
+            }
+
+            const variantIds = reviewItems
+                .map(({ item }) => item.variantId)
+                .filter((id): id is number => id !== null);
+
+            const inventoryRows = variantIds.length
+                ? await db
+                    .select()
+                    .from(inventory)
+                    .where(
+                        and(
+                            eq(inventory.ownerType, "warehouse"),
+                            eq(inventory.ownerId, userId),
+                            inArray(inventory.variantId, variantIds),
+                        ),
+                    )
+                : [];
+
+            const inventoryByVariant = new Map(
+                inventoryRows.map((row) => [row.variantId, row]),
+            );
+
+            for (const { item, approvedQty } of reviewItems) {
+                if (approvedQty <= 0) continue;
+                if (!item.variantId) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `${item.productName} has no variant for stock reservation`,
+                    });
+                }
+                const stock = inventoryByVariant.get(item.variantId);
+                if (!stock || Number(stock.availableQty) < approvedQty) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Insufficient stock for ${item.productName}. Available: ${stock?.availableQty ?? 0}`,
+                    });
+                }
+            }
+
+            const hasModifications = reviewItems.some(
+                ({ item, approvedQty }) => approvedQty !== item.quantity,
+            );
+            const approvedSubtotal = reviewItems.reduce(
+                (sumValue, { item, approvedQty }) =>
+                    sumValue + approvedQty * Number(getEffectiveItemPrice(item)),
+                0,
+            );
+
+            await db.transaction(async (tx) => {
+                for (const { item, approvedQty } of reviewItems) {
+                    await tx
+                        .update(orderItem)
+                        .set({
+                            modifiedQty: approvedQty !== item.quantity ? approvedQty : null,
+                            modifiedUnitPrice: null,
+                        })
+                        .where(eq(orderItem.id, item.id));
+
+                    if (approvedQty > 0 && item.variantId) {
+                        await tx
+                            .update(inventory)
+                            .set({
+                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) - ${approvedQty}`,
+                                reservedQty: sql`CAST(${inventory.reservedQty} AS numeric) + ${approvedQty}`,
+                            })
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, userId),
+                                    eq(inventory.variantId, item.variantId),
+                                ),
+                            );
+                    }
+                }
+
+                await tx
+                    .update(order)
+                    .set({
+                        status: "confirmed",
+                        subtotal: approvedSubtotal.toFixed(2),
+                        total: approvedSubtotal.toFixed(2),
+                        confirmedSubtotal: approvedSubtotal.toFixed(2),
+                        confirmedTotal: approvedSubtotal.toFixed(2),
+                        confirmedAt: new Date(),
+                        modifiedByWarehouseAt: hasModifications ? new Date() : null,
+                        modificationAcceptedAt: null,
+                        modificationRejectedAt: null,
+                        adminNote: input.approvalNote || existingOrder.adminNote,
+                    })
+                    .where(eq(order.id, existingOrder.id));
+            });
+
+            return {
+                success: true,
+                modified: hasModifications,
+                message: hasModifications
+                    ? `Order ${existingOrder.orderNumber} accepted with quantity changes`
+                    : `Order ${existingOrder.orderNumber} accepted`,
+            };
+        }),
+
+    /**
+     * Prepare an approved order for dispatch by generating its invoice.
+     */
+    prepareOrderForDispatch: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/order-management/prepare-dispatch",
+            tags: ["Warehouse"],
+            summary: "Prepare direct order for dispatch",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.warehouseId, userId),
+                    eq(order.orderSource, "direct"),
+                ),
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Direct order not found" });
+            }
+
+            if (existingOrder.status !== "confirmed") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Only accepted orders can be prepared for dispatch",
+                });
+            }
+
+            if (
+                existingOrder.modifiedByWarehouseAt
+                && !existingOrder.modificationAcceptedAt
+                && !existingOrder.modificationRejectedAt
+            ) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Retailer must accept the modified quantities before dispatch",
+                });
+            }
+
+            const existingInvoice = await db.query.invoice.findFirst({
+                where: and(eq(invoice.orderId, input.orderId), eq(invoice.invoiceType, "main")),
+            });
+
+            if (existingInvoice) {
+                return {
+                    success: true,
+                    invoice: existingInvoice,
+                    message: "Invoice already prepared",
+                };
+            }
+
+            const { generateInvoiceFromOrder } = await import("./helpers/generate-invoice");
+            const newInvoice = await generateInvoiceFromOrder(input.orderId);
+
+            await db
+                .update(order)
+                .set({
+                    readyAt: existingOrder.readyAt || new Date(),
+                })
+                .where(eq(order.id, input.orderId));
+
+            return {
+                success: true,
+                invoice: newInvoice,
+                message: `Invoice ${newInvoice.invoiceNumber} prepared for dispatch`,
+            };
+        }),
+
     /**
      * Get incoming orders (shop owners / warehouses buying from this warehouse).
      */
@@ -985,19 +1720,6 @@ const orderQueries = {
                     await convertB2bOrderToRetailInventory(tx, input.orderId);
                 }
             });
-
-            // Auto-generate invoice when order is confirmed (no admin approval needed)
-            if (input.status === "confirmed") {
-                try {
-                    const { generateInvoiceFromOrder } = await import("./helpers/generate-invoice");
-                    await generateInvoiceFromOrder(input.orderId);
-                } catch (err: any) {
-                    // Ignore "already exists" error (idempotent), re-throw others
-                    if (!err.message?.includes("already exists")) {
-                        console.error("Invoice generation failed:", err);
-                    }
-                }
-            }
 
             return {
                 success: true,

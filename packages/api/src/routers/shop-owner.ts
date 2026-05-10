@@ -1767,14 +1767,16 @@ const mutations = {
             }
 
             await db.transaction(async (tx) => {
-                // Restore warehouse inventory for each item
-                if (existingOrder.warehouseId) {
+                // Release approved reservation for confirmed orders.
+                if (existingOrder.warehouseId && existingOrder.status === "confirmed") {
                     for (const item of existingOrder.items) {
                         if (!item.variantId) continue;
+                        const qty = item.modifiedQty ?? item.quantity;
                         await tx
                             .update(inventory)
                             .set({
-                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${item.quantity}`,
+                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${qty}`,
+                                reservedQty: sql`GREATEST(CAST(${inventory.reservedQty} AS numeric) - ${qty}, 0)`,
                             })
                             .where(
                                 and(
@@ -2399,7 +2401,7 @@ const orderQueries = {
             }
 
             await db.transaction(async (tx) => {
-                // Restore warehouse inventory
+                // Release the approved reservation created by warehouse review.
                 if (existingOrder.warehouseId) {
                     for (const item of existingOrder.items) {
                         if (!item.variantId) continue;
@@ -2408,6 +2410,7 @@ const orderQueries = {
                             .update(inventory)
                             .set({
                                 availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${qty}`,
+                                reservedQty: sql`GREATEST(CAST(${inventory.reservedQty} AS numeric) - ${qty}, 0)`,
                             })
                             .where(
                                 and(
@@ -3101,7 +3104,7 @@ const incomingOrderQueries = {
 const warehouseOrderQueries = {
     /**
      * Place an order to a warehouse.
-     * Creates order + items, deducts warehouse inventory.
+     * Creates order + items. Warehouse inventory is reserved during approval.
      */
     placeWarehouseOrder: shopOwnerProcedure
         .input(
@@ -3321,6 +3324,7 @@ const warehouseOrderQueries = {
                         orderNumber,
                         userId,
                         orderType: "b2b",
+                        orderSource: "direct",
                         warehouseId,
                         subtotal: subtotal.toFixed(2),
                         total: total.toFixed(2),
@@ -3352,15 +3356,6 @@ const warehouseOrderQueries = {
                         targetVariantId: item.targetVariantId,
                         conversionStatus: "pending",
                     });
-                }
-
-                // Deduct inventory
-                for (const item of validatedItems) {
-                    const newQty = (Number(item.currentQty) - item.quantity).toFixed(2);
-                    await tx
-                        .update(inventory)
-                        .set({ availableQty: newQty })
-                        .where(eq(inventory.id, item.inventoryId));
                 }
 
                 return newOrder!;

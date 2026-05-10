@@ -89,8 +89,12 @@ export async function convertB2bOrderToRetailInventory(
 
         if (!tradeVariant) continue;
 
-        const orderedQty = Number(item.quantity);
-        const purchaseUnitPrice = item.unitPrice ? String(item.unitPrice) : null;
+        const orderedQty = Number(item.modifiedQty ?? item.quantity);
+        const purchaseUnitPrice = item.modifiedUnitPrice
+            ? String(item.modifiedUnitPrice)
+            : item.unitPrice
+                ? String(item.unitPrice)
+                : null;
 
         // Load product to get unitSize (carton/sack total size)
         const productData = await tx.query.product.findFirst({
@@ -254,7 +258,6 @@ export async function convertB2bOrderToRetailInventory(
             orderedQty * conversionRatio * (1 - lossPercent / 100);
 
         // Calculate per-pack price when doing pack breakdown
-        const packCount = Number(tradeVariant.packCountInside || 0);
         let effectiveRetailPrice = purchaseUnitPrice;
         if (isPackBreakdown && purchaseUnitPrice && conversionRatio > 1) {
             effectiveRetailPrice = (Number(purchaseUnitPrice) / conversionRatio).toFixed(2);
@@ -276,15 +279,18 @@ export async function convertB2bOrderToRetailInventory(
             // For loose cartons: deduct in KG (retailQty), not carton count
             const isLooseDeduction = conversionSource === "loose_carton_weight" || conversionSource === "shop_loose_choice";
             const deductQty = isLooseDeduction ? retailQty : orderedQty;
-            const newSourceQty = Math.max(
-                0,
-                Number(sourceInv.availableQty) - deductQty,
-            );
+            const reservedQty = Number(sourceInv.reservedQty || 0);
+            const availableQty = Number(sourceInv.availableQty || 0);
+            const newReservedQty = Math.max(0, reservedQty - deductQty);
+            const newSourceQty = reservedQty >= deductQty
+                ? availableQty
+                : Math.max(0, availableQty - (deductQty - reservedQty));
 
             await tx
                 .update(inventory)
                 .set({
                     availableQty: newSourceQty.toFixed(2),
+                    reservedQty: newReservedQty.toFixed(2),
                     updatedAt: new Date(),
                 })
                 .where(eq(inventory.id, sourceInv.id));

@@ -1123,6 +1123,7 @@ export const salesmanRouter = {
                     .values({
                         orderNumber,
                         userId: estimateData.customerId,
+                        orderSource: "estimate",
                         subtotal: estimateData.subtotal,
                         discount: estimateData.discount,
                         total: estimateData.total,

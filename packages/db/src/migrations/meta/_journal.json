@@ -57,6 +57,13 @@
       "when": 1777993386609,
       "tag": "0007_huge_lizard",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778437014150,
+      "tag": "0008_magical_red_ghost",
+      "breakpoints": true
     }
   ]
 }

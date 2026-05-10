@@ -7,13 +7,12 @@ import {
     deliveryRule,
     emptyPack,
     invoice,
-    invoiceItem,
     user,
     order,
     orderReturn,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, desc, eq, inArray, sql, sum, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, deliverymanProcedure, protectedProcedure, warehouseOrAdminProcedure } from "../index";
@@ -710,9 +709,20 @@ export const deliverymanRouter = {
             tags: ["Delivery Management"],
             summary: "Get unassigned invoices",
         })
-        .handler(async () => {
+        .handler(async ({ context }) => {
+            const conditions: SQL[] = [eq(invoice.deliveryStatus, "not_assigned")];
+            if (context.session.user.role === "warehouse") {
+                conditions.push(
+                    sql`EXISTS (
+                        SELECT 1 FROM "order" scoped_order
+                        WHERE scoped_order."id" = ${invoice.orderId}
+                          AND scoped_order."warehouse_id" = ${context.session.user.id}
+                    )`,
+                );
+            }
+
             const invoices = await db.query.invoice.findMany({
-                where: eq(invoice.deliveryStatus, "not_assigned"),
+                where: and(...conditions),
                 with: {
                     customer: {
                         columns: {
@@ -752,15 +762,25 @@ export const deliverymanRouter = {
             summary: "Get deliverymen for assignment",
         })
         .input(z.object({ orderShippingArea: z.string().nullable().optional() }).optional())
-        .handler(async ({ input }) => {
+        .handler(async ({ input, context }) => {
             const activeGroups = await db
                 .select({ deliverymanId: deliveryGroup.deliverymanId })
                 .from(deliveryGroup)
-                .where(sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`);
+                .where(
+                    context.session.user.role === "warehouse"
+                        ? and(
+                            eq(deliveryGroup.warehouseId, context.session.user.id),
+                            sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`,
+                        )
+                        : sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`,
+                );
             const busyDeliverymen = [...new Set(activeGroups.map((g) => g.deliverymanId))];
 
             const area = input?.orderShippingArea?.trim();
             const conditions: SQL[] = [eq(user.role, "deliveryman")];
+            if (context.session.user.role === "warehouse") {
+                conditions.push(eq(user.warehouseId, context.session.user.id));
+            }
 
             if (area && area.length > 0) {
                 conditions.push(
@@ -806,9 +826,15 @@ export const deliverymanRouter = {
             vehicleType: z.enum(["bike", "car", "van", "truck"]).optional(),
             expectedDeliveryAt: z.string().optional(),
         }))
-        .handler(async ({ input }) => {
+        .handler(async ({ input, context }) => {
             const deliveryman = await db.query.user.findFirst({
-                where: and(eq(user.id, input.deliverymanId), eq(user.role, "deliveryman")),
+                where: and(
+                    eq(user.id, input.deliverymanId),
+                    eq(user.role, "deliveryman"),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(user.warehouseId, context.session.user.id)]
+                        : []),
+                ),
                 columns: { id: true },
             });
             if (!deliveryman) {
@@ -816,7 +842,18 @@ export const deliverymanRouter = {
             }
 
             const selectedInvoices = await db.query.invoice.findMany({
-                where: inArray(invoice.id, input.invoiceIds),
+                where: and(
+                    inArray(invoice.id, input.invoiceIds),
+                    ...(context.session.user.role === "warehouse"
+                        ? [
+                            sql`EXISTS (
+                                SELECT 1 FROM "order" scoped_order
+                                WHERE scoped_order."id" = ${invoice.orderId}
+                                  AND scoped_order."warehouse_id" = ${context.session.user.id}
+                            )`,
+                        ]
+                        : []),
+                ),
                 columns: { id: true, deliveryStatus: true },
             });
             if (selectedInvoices.length !== input.invoiceIds.length) {
@@ -842,6 +879,9 @@ export const deliverymanRouter = {
                     .values({
                         groupName: input.groupName,
                         deliverymanId: input.deliverymanId,
+                        warehouseId: context.session.user.role === "warehouse"
+                            ? context.session.user.id
+                            : null,
                         status: "assigned",
                         totalInvoices: input.invoiceIds.length,
                         completedInvoices: 0,
@@ -890,13 +930,17 @@ export const deliverymanRouter = {
             summary: "Get delivery groups",
         })
         .input(z.object({ status: z.string().optional() }).optional())
-        .handler(async ({ input }) => {
-            const conditions = input?.status
-                ? eq(deliveryGroup.status, input.status as typeof deliveryGroup.$inferSelect.status)
-                : undefined;
+        .handler(async ({ input, context }) => {
+            const conditions: SQL[] = [];
+            if (input?.status) {
+                conditions.push(eq(deliveryGroup.status, input.status as typeof deliveryGroup.$inferSelect.status));
+            }
+            if (context.session.user.role === "warehouse") {
+                conditions.push(eq(deliveryGroup.warehouseId, context.session.user.id));
+            }
 
             const groups = await db.query.deliveryGroup.findMany({
-                where: conditions,
+                where: conditions.length > 0 ? and(...conditions) : undefined,
                 with: {
                     deliveryman: {
                         columns: {
@@ -944,13 +988,17 @@ export const deliverymanRouter = {
             summary: "Get all delivery groups",
         })
         .input(z.object({ status: z.string().optional() }).optional())
-        .handler(async ({ input }) => {
-            const conditions = input?.status
-                ? eq(deliveryGroup.status, input.status as typeof deliveryGroup.$inferSelect.status)
-                : undefined;
+        .handler(async ({ input, context }) => {
+            const conditions: SQL[] = [];
+            if (input?.status) {
+                conditions.push(eq(deliveryGroup.status, input.status as typeof deliveryGroup.$inferSelect.status));
+            }
+            if (context.session.user.role === "warehouse") {
+                conditions.push(eq(deliveryGroup.warehouseId, context.session.user.id));
+            }
 
             const groups = await db.query.deliveryGroup.findMany({
-                where: conditions,
+                where: conditions.length > 0 ? and(...conditions) : undefined,
                 with: {
                     deliveryman: {
                         columns: {
@@ -996,9 +1044,14 @@ export const deliverymanRouter = {
             summary: "Get delivery group by ID",
         })
         .input(z.object({ id: z.number() }))
-        .handler(async ({ input }) => {
+        .handler(async ({ input, context }) => {
             const group = await db.query.deliveryGroup.findFirst({
-                where: eq(deliveryGroup.id, input.id),
+                where: and(
+                    eq(deliveryGroup.id, input.id),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
+                        : []),
+                ),
                 with: {
                     deliveryman: {
                         columns: {
@@ -1053,10 +1106,28 @@ export const deliverymanRouter = {
             vehicleType: z.string().optional(),
             expectedDeliveryAt: z.string().optional(),
         }))
-        .handler(async ({ input }) => {
+        .handler(async ({ input, context }) => {
+            const existingGroup = await db.query.deliveryGroup.findFirst({
+                where: and(
+                    eq(deliveryGroup.id, input.groupId),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
+                        : []),
+                ),
+                columns: { id: true },
+            });
+            if (!existingGroup) {
+                throw new ORPCError("NOT_FOUND", { message: "Delivery group not found" });
+            }
+
             // Verify deliveryman exists and has correct role
             const deliveryman = await db.query.user.findFirst({
-                where: eq(user.id, input.deliverymanId),
+                where: and(
+                    eq(user.id, input.deliverymanId),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(user.warehouseId, context.session.user.id)]
+                        : []),
+                ),
             });
 
             if (!deliveryman) {
@@ -1071,6 +1142,9 @@ export const deliverymanRouter = {
                 where: and(
                     eq(deliveryGroup.deliverymanId, input.deliverymanId),
                     sql`${deliveryGroup.id} != ${input.groupId}`,
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
+                        : []),
                     sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`
                 ),
                 columns: { id: true },
@@ -1110,19 +1184,29 @@ export const deliverymanRouter = {
             summary: "Get deliverymen available for assignment",
         })
         .input(z.object({ orderShippingArea: z.string().nullable().optional() }).optional())
-        .handler(async ({ input }) => {
+        .handler(async ({ input, context }) => {
             // Get deliverymen who already have active groups
 
             const activeGroups = await db
                 .select({ deliverymanId: deliveryGroup.deliverymanId })
                 .from(deliveryGroup)
-                .where(sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`);
+                .where(
+                    context.session.user.role === "warehouse"
+                        ? and(
+                            eq(deliveryGroup.warehouseId, context.session.user.id),
+                            sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`,
+                        )
+                        : sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`,
+                );
             const busyDeliverymen = [...new Set(activeGroups.map((g) => g.deliverymanId))];
 
             const area = input?.orderShippingArea?.trim();
 
             // Build conditions: role + area filter
             const conditions: SQL[] = [eq(user.role, "deliveryman")];
+            if (context.session.user.role === "warehouse") {
+                conditions.push(eq(user.warehouseId, context.session.user.id));
+            }
 
             if (area && area.length > 0) {
                 conditions.push(
@@ -1163,9 +1247,14 @@ export const deliverymanRouter = {
             summary: "Delete delivery group",
         })
         .input(z.object({ id: z.number() }))
-        .handler(async ({ input }) => {
+        .handler(async ({ input, context }) => {
             const group = await db.query.deliveryGroup.findFirst({
-                where: eq(deliveryGroup.id, input.id),
+                where: and(
+                    eq(deliveryGroup.id, input.id),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
+                        : []),
+                ),
             });
 
             if (!group) {
@@ -1176,7 +1265,14 @@ export const deliverymanRouter = {
                 throw new ORPCError("BAD_REQUEST", { message: "Cannot delete completed delivery groups" });
             }
 
-            await db.delete(deliveryGroup).where(eq(deliveryGroup.id, input.id));
+            await db.delete(deliveryGroup).where(
+                and(
+                    eq(deliveryGroup.id, input.id),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
+                        : []),
+                ),
+            );
 
             return { success: true };
         }),
@@ -1540,12 +1636,17 @@ export const deliverymanRouter = {
             tags: ["Delivery Management"],
             summary: "Get groups pending supervisor approval",
         })
-        .handler(async () => {
+        .handler(async ({ context }) => {
+            const conditions: SQL[] = [
+                sql`${deliveryGroup.status} IN ('completed', 'partial')`,
+                eq(deliveryGroup.supervisorApproval, "pending"),
+            ];
+            if (context.session.user.role === "warehouse") {
+                conditions.push(eq(deliveryGroup.warehouseId, context.session.user.id));
+            }
+
             const groups = await db.query.deliveryGroup.findMany({
-                where: and(
-                    sql`${deliveryGroup.status} IN ('completed', 'partial')`,
-                    eq(deliveryGroup.supervisorApproval, "pending"),
-                ),
+                where: and(...conditions),
                 with: {
                     deliveryman: {
                         columns: { id: true, name: true, phoneNumber: true },
@@ -1596,7 +1697,12 @@ export const deliverymanRouter = {
         }))
         .handler(async ({ input, context }) => {
             const group = await db.query.deliveryGroup.findFirst({
-                where: eq(deliveryGroup.id, input.groupId),
+                where: and(
+                    eq(deliveryGroup.id, input.groupId),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
+                        : []),
+                ),
                 with: { invoices: { with: { invoice: true } } },
             });
 
@@ -1688,7 +1794,14 @@ export const deliverymanRouter = {
                 supervisorNote: input.supervisorNote,
                 approvedBy: context.session.user.id,
                 approvedAt: new Date(),
-            }).where(eq(deliveryGroup.id, input.groupId));
+            }).where(
+                and(
+                    eq(deliveryGroup.id, input.groupId),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
+                        : []),
+                ),
+            );
 
             return { success: true };
         }),

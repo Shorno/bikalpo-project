@@ -105,7 +105,11 @@ const warehouseNavGroups: NavGroup[] = [
   {
     label: "Supply Management",
     items: [
-      { title: "Supply Orders", url: `${WH}/supply-orders`, icon: InboxIcon },
+      {
+        title: "Order Management",
+        url: `${WH}/order-management`,
+        icon: InboxIcon,
+      },
       {
         title: "Dispatch Orders",
         url: `${WH}/dispatch-orders`,
