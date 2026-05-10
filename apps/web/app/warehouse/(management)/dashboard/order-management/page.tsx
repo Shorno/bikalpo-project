@@ -7,17 +7,25 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
-  Filter,
   Inbox,
   PackageCheck,
   Search,
   ShoppingCart,
+  SlidersHorizontal,
   Truck,
   User,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 
 type Source = "direct" | "salesman" | "estimate" | "pre_order";
@@ -28,32 +36,47 @@ type DateFilter = "today" | "this_month" | "custom" | "all";
 const sourceCards: Array<{
   key: Source;
   label: string;
-  tone: string;
+  description: string;
   enabled: boolean;
+  accentClassName: string;
+  activeClassName: string;
+  countClassName: string;
 }> = [
   {
     key: "direct",
     label: "Direct",
-    tone: "border-red-200 bg-red-50 text-red-700",
+    description: "Retailer checkout",
     enabled: true,
+    accentClassName: "bg-rose-500",
+    activeClassName: "border-rose-300 bg-rose-50/80 text-rose-950",
+    countClassName: "text-rose-700",
   },
   {
     key: "salesman",
     label: "Salesman",
-    tone: "border-sky-200 bg-sky-50 text-sky-700",
+    description: "Field sales flow",
     enabled: false,
+    accentClassName: "bg-sky-500",
+    activeClassName: "border-sky-300 bg-sky-50/80 text-sky-950",
+    countClassName: "text-sky-700",
   },
   {
     key: "estimate",
     label: "Estimate",
-    tone: "border-violet-200 bg-violet-50 text-violet-700",
+    description: "Quote conversions",
     enabled: false,
+    accentClassName: "bg-violet-500",
+    activeClassName: "border-violet-300 bg-violet-50/80 text-violet-950",
+    countClassName: "text-violet-700",
   },
   {
     key: "pre_order",
-    label: "Pre-Order",
-    tone: "border-amber-200 bg-amber-50 text-amber-700",
+    label: "Pre-order",
+    description: "Reserved demand",
     enabled: false,
+    accentClassName: "bg-amber-500",
+    activeClassName: "border-amber-300 bg-amber-50/80 text-amber-950",
+    countClassName: "text-amber-700",
   },
 ];
 
@@ -76,6 +99,24 @@ const paymentOptions: Array<{
   { value: "partial", label: "Partial", disabled: true },
 ];
 
+const controlClassName =
+  "h-10 w-full rounded-md border border-slate-200 bg-[oklch(0.99_0.004_100)] px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-[oklch(0.998_0.002_110)] focus:ring-3 focus:ring-slate-400/15 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500";
+
+const searchControlClassName =
+  "h-10 w-full rounded-md border border-slate-200 bg-[oklch(0.99_0.004_100)] px-3 text-sm text-slate-900 outline-none transition focus-within:border-slate-400 focus-within:bg-[oklch(0.998_0.002_110)] focus-within:ring-3 focus-within:ring-slate-400/15";
+
+const selectTriggerClassName =
+  "h-10 w-full justify-between rounded-md border-slate-200 bg-[oklch(0.99_0.004_100)] px-3 text-sm text-slate-900 shadow-none hover:bg-[oklch(0.985_0.004_100)] focus-visible:border-slate-400 focus-visible:ring-3 focus-visible:ring-slate-400/15 data-[placeholder]:text-slate-400 [&_svg]:text-slate-500";
+
+const selectContentClassName =
+  "border border-slate-800 bg-slate-950/95 text-slate-100 shadow-xl ring-slate-950/10 before:backdrop-blur-none";
+
+const selectItemClassName =
+  "text-slate-200 focus:bg-slate-800 focus:text-slate-50 data-disabled:text-slate-500";
+
+const labelClassName =
+  "mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500";
+
 function formatMoney(value: unknown) {
   return `Tk ${Number(value || 0).toLocaleString("en-BD")}`;
 }
@@ -88,17 +129,30 @@ function formatDate(value: string | Date) {
   });
 }
 
+function dateRangeLabel(value: DateFilter) {
+  if (value === "today") {
+    return "Today";
+  }
+  if (value === "this_month") {
+    return "This month";
+  }
+  if (value === "custom") {
+    return "Custom range";
+  }
+  return "All dates";
+}
+
 function statusBadge(status: string, requiresBuyerAcceptance?: boolean) {
   if (status === "cancelled") {
     return {
       label: "Rejected",
-      className: "border-red-200 bg-red-50 text-red-700",
+      className: "border-rose-200 bg-rose-50 text-rose-700",
       icon: XCircle,
     };
   }
   if (requiresBuyerAcceptance) {
     return {
-      label: "Accepted (Modify)",
+      label: "Accepted, buyer review",
       className: "border-orange-200 bg-orange-50 text-orange-700",
       icon: AlertCircle,
     };
@@ -180,6 +234,12 @@ export default function WarehouseOrderManagementPage() {
     pre_order: summary.preOrder,
   };
 
+  const selectedSource =
+    sourceCards.find((card) => card.key === source) ?? sourceCards[0];
+  const activeCount = counts[source];
+  const totalOrders =
+    counts.direct + counts.salesman + counts.estimate + counts.pre_order;
+
   const applyFilters = () => {
     setFilters({
       search: draftSearch,
@@ -193,234 +253,361 @@ export default function WarehouseOrderManagementPage() {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <PackageCheck className="h-4 w-4" />
-            Sales Management / Order Management
+    <div className="space-y-4 text-slate-950">
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-[oklch(0.995_0.003_105)] shadow-[0_18px_45px_-32px_rgba(15,23,42,0.45)]">
+        <div className="grid lg:grid-cols-[1fr_340px]">
+          <div className="border-b border-slate-200 p-5 md:p-6 lg:border-r lg:border-b-0">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <PackageCheck className="h-4 w-4 text-slate-500" />
+              Sales management / Order management
+            </div>
+            <div className="mt-3 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <h1 className="text-[1.65rem] font-semibold tracking-tight text-slate-950">
+                  Order management
+                </h1>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                  Review direct retailer orders, filter the queue, and move
+                  accepted work toward dispatch.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-medium text-slate-700">
+                  <CalendarDays className="h-3.5 w-3.5 text-slate-500" />
+                  {dateRangeLabel(filters.dateRange)}
+                </span>
+                <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-medium text-slate-700">
+                  {data?.warehouse.label ?? "Loading warehouse"}
+                </span>
+              </div>
+            </div>
           </div>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-950">
-            Order Overview
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Warehouse: {data?.warehouse.label ?? "Loading warehouse..."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm text-muted-foreground">
-          <CalendarDays className="h-4 w-4" />
-          Showing{" "}
-          {filters.dateRange === "today"
-            ? "Today"
-            : filters.dateRange === "this_month"
-              ? "This Month"
-              : filters.dateRange === "custom"
-                ? "Custom"
-                : "All"}
-        </div>
-      </div>
 
-      <section className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
-          <Filter className="h-4 w-4" />
-          Search & Filter
+          <div className="bg-slate-950 p-5 text-slate-100 md:p-6">
+            <div className="flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <span>Queue in view</span>
+              <span>{selectedSource.label}</span>
+            </div>
+            <div className="mt-5 flex items-end gap-3">
+              <span className="text-4xl font-semibold tracking-tight text-slate-50">
+                {activeCount}
+              </span>
+              <span className="pb-1 text-sm text-slate-300">
+                orders currently matching filters
+              </span>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-md border border-slate-50/10 bg-slate-50/5 p-3">
+                <div className="text-slate-400">All sources</div>
+                <div className="mt-1 text-base font-semibold text-slate-100">
+                  {totalOrders}
+                </div>
+              </div>
+              <div className="rounded-md border border-slate-50/10 bg-slate-50/5 p-3">
+                <div className="text-slate-400">Date scope</div>
+                <div className="mt-1 text-base font-semibold text-slate-100">
+                  {dateRangeLabel(filters.dateRange)}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <label className="xl:col-span-2">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Search
-            </span>
-            <div className="flex items-center gap-2 rounded-lg border bg-white px-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
+      </section>
+
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-100 text-slate-600">
+              <SlidersHorizontal className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-950">
+                Queue controls
+              </h2>
+              <p className="text-xs text-slate-500">
+                Search by order, customer, or phone.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={applyFilters}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-slate-50 shadow-sm transition hover:bg-slate-800 focus-visible:ring-3 focus-visible:ring-slate-400/30"
+          >
+            Apply filters
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[minmax(260px,2fr)_repeat(3,minmax(150px,1fr))]">
+          <label>
+            <span className={labelClassName}>Search</span>
+            <div
+              className={cn(
+                searchControlClassName,
+                "flex items-center gap-2 px-3",
+              )}
+            >
+              <Search className="h-4 w-4 text-slate-400" />
               <input
                 value={draftSearch}
                 onChange={(event) => setDraftSearch(event.target.value)}
-                placeholder="Order ID / Customer / Phone"
-                className="h-10 w-full bg-transparent text-sm outline-none"
+                placeholder="Order ID, customer, or phone"
+                className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
               />
             </div>
           </label>
 
           <label>
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Status
-            </span>
-            <select
+            <span className={labelClassName}>Status</span>
+            <Select
               value={draftStatus}
-              onChange={(event) =>
-                setDraftStatus(event.target.value as StatusFilter)
-              }
-              className="h-10 w-full rounded-lg border bg-white px-3 text-sm outline-none"
+              onValueChange={(value) => setDraftStatus(value as StatusFilter)}
             >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className={selectTriggerClassName}>
+                <SelectValue placeholder="All status" />
+              </SelectTrigger>
+              <SelectContent className={selectContentClassName}>
+                {statusOptions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    className={selectItemClassName}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
 
           <label>
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Payment
-            </span>
-            <select
+            <span className={labelClassName}>Payment</span>
+            <Select
               value={draftPayment}
-              onChange={(event) =>
-                setDraftPayment(event.target.value as PaymentFilter)
-              }
-              className="h-10 w-full rounded-lg border bg-white px-3 text-sm outline-none"
+              onValueChange={(value) => setDraftPayment(value as PaymentFilter)}
             >
-              {paymentOptions.map((option) => (
-                <option
-                  key={option.value}
-                  value={option.value}
-                  disabled={option.disabled}
-                >
-                  {option.label}
-                  {option.disabled ? " - static" : ""}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className={selectTriggerClassName}>
+                <SelectValue placeholder="All payment" />
+              </SelectTrigger>
+              <SelectContent className={selectContentClassName}>
+                {paymentOptions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.disabled}
+                    className={selectItemClassName}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
 
           <label>
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Priority
-            </span>
-            <select
-              disabled
-              className="h-10 w-full rounded-lg border bg-gray-50 px-3 text-sm text-muted-foreground outline-none"
-            >
-              <option>Normal / Urgent - static</option>
-            </select>
-          </label>
-
-          <label>
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Date
-            </span>
-            <select
+            <span className={labelClassName}>Date</span>
+            <Select
               value={draftDateRange}
-              onChange={(event) =>
-                setDraftDateRange(event.target.value as DateFilter)
-              }
-              className="h-10 w-full rounded-lg border bg-white px-3 text-sm outline-none"
+              onValueChange={(value) => setDraftDateRange(value as DateFilter)}
             >
-              <option value="today">Today</option>
-              <option value="this_month">This Month</option>
-              <option value="custom">Custom</option>
-              <option value="all">All</option>
-            </select>
+              <SelectTrigger className={selectTriggerClassName}>
+                <SelectValue placeholder="Today" />
+              </SelectTrigger>
+              <SelectContent className={selectContentClassName}>
+                <SelectItem value="today" className={selectItemClassName}>
+                  Today
+                </SelectItem>
+                <SelectItem value="this_month" className={selectItemClassName}>
+                  This month
+                </SelectItem>
+                <SelectItem value="custom" className={selectItemClassName}>
+                  Custom range
+                </SelectItem>
+                <SelectItem value="all" className={selectItemClassName}>
+                  All dates
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </label>
         </div>
 
         {draftDateRange === "custom" && (
-          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:w-1/2">
-            <input
-              type="date"
-              value={draftDateFrom}
-              onChange={(event) => setDraftDateFrom(event.target.value)}
-              className="h-10 rounded-lg border px-3 text-sm outline-none"
-            />
-            <input
-              type="date"
-              value={draftDateTo}
-              onChange={(event) => setDraftDateTo(event.target.value)}
-              className="h-10 rounded-lg border px-3 text-sm outline-none"
-            />
+          <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:w-1/2">
+              <label>
+                <span className={labelClassName}>From</span>
+                <input
+                  type="date"
+                  value={draftDateFrom}
+                  onChange={(event) => setDraftDateFrom(event.target.value)}
+                  className={controlClassName}
+                />
+              </label>
+              <label>
+                <span className={labelClassName}>To</span>
+                <input
+                  type="date"
+                  value={draftDateTo}
+                  onChange={(event) => setDraftDateTo(event.target.value)}
+                  className={controlClassName}
+                />
+              </label>
+            </div>
           </div>
         )}
-
-        <button
-          type="button"
-          onClick={applyFilters}
-          className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-gray-950 px-4 text-sm font-medium text-white hover:bg-gray-800"
-        >
-          Apply Filters
-          <ArrowRight className="h-4 w-4" />
-        </button>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-4">
-        {sourceCards.map((card) => {
-          const isActive = source === card.key;
-          return (
-            <button
-              key={card.key}
-              type="button"
-              disabled={!card.enabled}
-              onClick={() => {
-                setSource(card.key);
-                setPage(1);
-              }}
-              className={`rounded-lg border p-4 text-left shadow-sm transition ${card.tone} ${
-                isActive ? "ring-2 ring-gray-950/80" : ""
-              } ${card.enabled ? "hover:-translate-y-0.5" : "cursor-not-allowed opacity-55"}`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">{card.label}</span>
-                <ShoppingCart className="h-4 w-4" />
-              </div>
-              <div className="mt-3 text-3xl font-bold">{counts[card.key]}</div>
-              {!card.enabled && (
-                <div className="mt-2 text-xs opacity-80">
-                  Static in Direct v1
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] shadow-sm">
+        <div className="flex flex-col gap-1 border-b border-slate-200 bg-[oklch(0.985_0.004_100)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-950">
+              Order sources
+            </h2>
+            <p className="text-xs text-slate-500">
+              Direct is live now. Additional queues are prepared for rollout.
+            </p>
+          </div>
+          <span className="text-xs font-medium text-slate-500">
+            Direct v1 active
+          </span>
+        </div>
+        <div className="grid divide-y divide-slate-200 md:grid-cols-4 md:divide-x md:divide-y-0">
+          {sourceCards.map((card) => {
+            const isActive = source === card.key;
+            return (
+              <button
+                key={card.key}
+                type="button"
+                disabled={!card.enabled}
+                onClick={() => {
+                  setSource(card.key);
+                  setPage(1);
+                }}
+                className={cn(
+                  "min-h-[112px] border-transparent bg-[oklch(0.998_0.002_110)] p-4 text-left transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-slate-400/15",
+                  isActive && card.activeClassName,
+                  card.enabled && !isActive && "hover:bg-slate-50",
+                  !card.enabled &&
+                    "cursor-not-allowed bg-slate-50/70 text-slate-400 hover:bg-slate-50/70",
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "h-2.5 w-2.5 rounded-full",
+                        card.enabled ? card.accentClassName : "bg-slate-300",
+                      )}
+                    />
+                    <span className="text-sm font-semibold">{card.label}</span>
+                  </div>
+                  <ShoppingCart className="h-4 w-4 opacity-60" />
                 </div>
-              )}
-            </button>
-          );
-        })}
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div
+                    className={cn(
+                      "text-3xl font-semibold tracking-tight",
+                      card.enabled ? card.countClassName : "text-slate-400",
+                    )}
+                  >
+                    {counts[card.key]}
+                  </div>
+                  <span className="rounded-md border border-current/10 bg-slate-50/70 px-2 py-1 text-[11px] font-medium">
+                    {card.enabled ? "Live queue" : "Coming later"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-current/70">
+                  {card.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
       </section>
 
-      <section className="rounded-lg border bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-2 border-b p-3">
-          {sourceCards.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              disabled={!tab.enabled}
-              onClick={() => tab.enabled && setSource(tab.key)}
-              className={`rounded-md px-3 py-2 text-sm font-medium ${
-                source === tab.key
-                  ? "bg-gray-950 text-white"
-                  : tab.enabled
-                    ? "text-gray-700 hover:bg-gray-100"
-                    : "cursor-not-allowed text-muted-foreground opacity-60"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <span
+              className={cn(
+                "h-2.5 w-2.5 rounded-full",
+                selectedSource.accentClassName,
+              )}
+            />
+            <div>
+              <h2 className="text-sm font-semibold text-slate-950">
+                {selectedSource.label} queue
+              </h2>
+              <p className="text-xs text-slate-500">
+                {activeCount} orders, {dateRangeLabel(filters.dateRange)} view
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/warehouse/dashboard/dispatch-orders"
+            className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          >
+            <Truck className="h-3.5 w-3.5" />
+            Dispatch board
+          </Link>
         </div>
 
         {isLoading ? (
-          <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
-            Loading direct orders...
+          <div className="p-4">
+            <div className="overflow-hidden rounded-md border border-slate-200">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="grid gap-4 border-b border-slate-100 p-4 last:border-0 md:grid-cols-[1.2fr_1.4fr_0.8fr_0.8fr_1fr_0.8fr]"
+                >
+                  <div className="h-4 animate-pulse rounded bg-slate-200" />
+                  <div className="h-4 animate-pulse rounded bg-slate-200" />
+                  <div className="h-4 animate-pulse rounded bg-slate-200" />
+                  <div className="h-4 animate-pulse rounded bg-slate-200" />
+                  <div className="h-4 animate-pulse rounded bg-slate-200" />
+                  <div className="h-4 animate-pulse rounded bg-slate-200" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : isError ? (
-          <div className="flex h-64 flex-col items-center justify-center text-center">
-            <AlertCircle className="mb-2 h-10 w-10 text-red-300" />
-            <p className="font-medium text-red-600">Failed to load orders</p>
+          <div className="grid min-h-[280px] place-items-center px-6 py-12 text-center">
+            <div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-500">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <h2 className="mt-4 text-base font-semibold text-slate-950">
+                Failed to load orders
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Refresh the queue or try a different filter set.
+              </p>
+            </div>
           </div>
         ) : orders.length === 0 ? (
-          <div className="flex h-72 flex-col items-center justify-center text-center">
-            <Inbox className="mb-3 h-12 w-12 text-muted-foreground/40" />
-            <h2 className="text-lg font-semibold text-gray-900">
-              No orders available
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Direct retailer orders will appear here.
-            </p>
+          <div className="grid min-h-[280px] place-items-center px-6 py-12 text-center">
+            <div className="max-w-md">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-400">
+                <Inbox className="h-6 w-6" />
+              </div>
+              <h2 className="mt-4 text-base font-semibold text-slate-950">
+                No direct orders match this view
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                New retailer orders and filtered results will appear here when
+                the queue has matching work.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px]">
+            <table className="w-full min-w-[840px] text-sm">
               <thead>
-                <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase text-muted-foreground">
-                  <th className="px-4 py-3">Order ID</th>
+                <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  <th className="px-4 py-3">Order</th>
                   <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Created</th>
                   <th className="px-4 py-3 text-right">Amount</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Action</th>
@@ -436,53 +623,61 @@ export default function WarehouseOrderManagementPage() {
                   return (
                     <tr
                       key={item.id}
-                      className="border-b last:border-0 hover:bg-gray-50/70"
+                      className="border-b border-slate-100 transition last:border-0 hover:bg-[oklch(0.985_0.005_145)]"
                     >
-                      <td className="px-4 py-3">
-                        <div className="font-mono text-sm font-semibold text-gray-950">
+                      <td className="px-4 py-3.5">
+                        <div className="font-mono text-[13px] font-semibold tracking-tight text-slate-950">
                           {item.orderNumber}
                         </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">
+                        <div className="mt-1 max-w-[260px] truncate text-xs text-slate-500">
                           {item.itemCount} item{item.itemCount === 1 ? "" : "s"}
                           {item.firstItemName ? ` / ${item.firstItemName}` : ""}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gray-100">
-                            <User className="h-4 w-4 text-gray-500" />
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50">
+                            <User className="h-4 w-4 text-slate-500" />
                           </div>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-slate-900">
                               {item.customerName}
                             </div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-slate-500">
                               {item.shippingPhone}
                             </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
+                      <td className="px-4 py-3.5 text-sm text-slate-600">
                         {formatDate(item.createdAt)}
                       </td>
-                      <td className="px-4 py-3 text-right text-sm font-semibold text-gray-950">
-                        {formatMoney(item.total)}
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="font-semibold text-slate-950">
+                          {formatMoney(item.total)}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Order total
+                        </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3.5">
                         <span
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${badge.className}`}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold",
+                            badge.className,
+                          )}
                         >
                           <BadgeIcon className="h-3.5 w-3.5" />
                           {badge.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3.5 text-right">
                         <Link
                           href={`/warehouse/dashboard/order-management/${item.id}`}
-                          className="inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium hover:bg-gray-50"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
                         >
-                          View Details
-                          <ArrowRight className="h-4 w-4" />
+                          Review order
+                          <ArrowRight className="h-3.5 w-3.5" />
                         </Link>
                       </td>
                     </tr>
@@ -494,17 +689,17 @@ export default function WarehouseOrderManagementPage() {
         )}
 
         {pagination && pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between border-t px-4 py-3 text-sm">
-            <span className="text-muted-foreground">
-              Page {pagination.page} of {pagination.totalPages} /{" "}
-              {pagination.totalCount} orders
+          <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-slate-500">
+              Page {pagination.page} of {pagination.totalPages}.{" "}
+              {pagination.totalCount} orders total.
             </span>
             <div className="flex gap-2">
               <button
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((value) => value - 1)}
-                className="rounded-md border px-3 py-1.5 disabled:opacity-50"
+                className="h-8 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Previous
               </button>
@@ -512,42 +707,13 @@ export default function WarehouseOrderManagementPage() {
                 type="button"
                 disabled={page >= pagination.totalPages}
                 onClick={() => setPage((value) => value + 1)}
-                className="rounded-md border px-3 py-1.5 disabled:opacity-50"
+                className="h-8 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
               </button>
             </div>
           </div>
         )}
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-4">
-        <Link
-          href="/warehouse/dashboard/order-management"
-          className="rounded-lg border bg-white p-3 text-sm font-medium hover:bg-gray-50"
-        >
-          View Details
-        </Link>
-        <Link
-          href="/warehouse/dashboard/dispatch-orders"
-          className="rounded-lg border bg-white p-3 text-sm font-medium hover:bg-gray-50"
-        >
-          Go to Dispatch
-        </Link>
-        <button
-          type="button"
-          disabled
-          className="rounded-lg border bg-gray-50 p-3 text-left text-sm font-medium text-muted-foreground"
-        >
-          View Customer - static
-        </button>
-        <button
-          type="button"
-          disabled
-          className="rounded-lg border bg-gray-50 p-3 text-left text-sm font-medium text-muted-foreground"
-        >
-          View Salesman - static
-        </button>
       </section>
     </div>
   );
