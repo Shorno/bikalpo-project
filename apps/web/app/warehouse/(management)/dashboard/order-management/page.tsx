@@ -142,33 +142,83 @@ function dateRangeLabel(value: DateFilter) {
   return "All dates";
 }
 
-function statusBadge(status: string, requiresBuyerAcceptance?: boolean) {
-  if (status === "cancelled") {
+type OrderStatusRow = {
+  status: string;
+  requiresBuyerAcceptance?: boolean;
+  invoicePrepared?: boolean;
+  invoiceDeliveryStatus?: string | null;
+  deliveryGroupStatus?: string | null;
+  deliverymanId?: string | null;
+  readyAt?: string | Date | null;
+  packingStartedAt?: string | Date | null;
+};
+
+function statusBadge(order: OrderStatusRow) {
+  if (order.status === "cancelled") {
     return {
       label: "Rejected",
       className: "border-rose-200 bg-rose-50 text-rose-700",
       icon: XCircle,
     };
   }
-  if (requiresBuyerAcceptance) {
+  if (order.requiresBuyerAcceptance) {
     return {
       label: "Accepted, buyer review",
       className: "border-orange-200 bg-orange-50 text-orange-700",
       icon: AlertCircle,
     };
   }
-  if (status === "confirmed") {
+  if (
+    order.status === "delivered" ||
+    order.invoiceDeliveryStatus === "delivered" ||
+    order.deliveryGroupStatus === "completed"
+  ) {
     return {
-      label: "Accepted",
+      label: "Delivered",
       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
       icon: CheckCircle2,
     };
   }
-  if (status === "processing") {
+  if (order.deliveryGroupStatus === "partial") {
+    return {
+      label: "Partial delivery",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+      icon: AlertCircle,
+    };
+  }
+  if (order.deliveryGroupStatus === "out_for_delivery") {
+    return {
+      label: "Out for delivery",
+      className: "border-blue-200 bg-blue-50 text-blue-700",
+      icon: Truck,
+    };
+  }
+  if (order.deliveryGroupStatus === "assigned" || order.deliverymanId) {
+    return {
+      label: "Delivery assigned",
+      className: "border-sky-200 bg-sky-50 text-sky-700",
+      icon: Truck,
+    };
+  }
+  if (order.invoicePrepared || order.readyAt || order.packingStartedAt) {
+    return {
+      label: "Ready for dispatch",
+      className: "border-violet-200 bg-violet-50 text-violet-700",
+      icon: PackageCheck,
+    };
+  }
+  if (order.status === "processing") {
     return {
       label: "Processing",
       className: "border-blue-200 bg-blue-50 text-blue-700",
       icon: Truck,
+    };
+  }
+  if (order.status === "confirmed") {
+    return {
+      label: "Accepted",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      icon: CheckCircle2,
     };
   }
   return {
@@ -185,7 +235,7 @@ export default function WarehouseOrderManagementPage() {
   const [draftSearch, setDraftSearch] = useState("");
   const [draftStatus, setDraftStatus] = useState<StatusFilter>("all");
   const [draftPayment, setDraftPayment] = useState<PaymentFilter>("all");
-  const [draftDateRange, setDraftDateRange] = useState<DateFilter>("today");
+  const [draftDateRange, setDraftDateRange] = useState<DateFilter>("all");
   const [draftDateFrom, setDraftDateFrom] = useState("");
   const [draftDateTo, setDraftDateTo] = useState("");
 
@@ -193,7 +243,7 @@ export default function WarehouseOrderManagementPage() {
     search: "",
     status: "all" as StatusFilter,
     payment: "all" as PaymentFilter,
-    dateRange: "today" as DateFilter,
+    dateRange: "all" as DateFilter,
     dateFrom: "",
     dateTo: "",
   });
@@ -412,7 +462,7 @@ export default function WarehouseOrderManagementPage() {
               onValueChange={(value) => setDraftDateRange(value as DateFilter)}
             >
               <SelectTrigger className={selectTriggerClassName}>
-                <SelectValue placeholder="Today" />
+                <SelectValue placeholder="All dates" />
               </SelectTrigger>
               <SelectContent className={selectContentClassName}>
                 <SelectItem value="today" className={selectItemClassName}>
@@ -615,10 +665,7 @@ export default function WarehouseOrderManagementPage() {
               </thead>
               <tbody>
                 {orders.map((item: any) => {
-                  const badge = statusBadge(
-                    item.status,
-                    item.requiresBuyerAcceptance,
-                  );
+                  const badge = statusBadge(item);
                   const BadgeIcon = badge.icon;
                   return (
                     <tr

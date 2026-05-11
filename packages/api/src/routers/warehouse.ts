@@ -857,7 +857,7 @@ const orderPaymentFilterInput = z
 
 const orderDateFilterInput = z
     .enum(["today", "this_month", "custom", "all"])
-    .default("today");
+    .default("all");
 
 function getOrderStatusCondition(status: z.infer<typeof orderOverviewStatusInput>) {
     switch (status) {
@@ -1021,6 +1021,10 @@ const orderQueries = {
                         shippingArea: order.shippingArea,
                         createdAt: order.createdAt,
                         confirmedAt: order.confirmedAt,
+                        processingStartedAt: order.processingStartedAt,
+                        packingStartedAt: order.packingStartedAt,
+                        readyAt: order.readyAt,
+                        deliveredAt: order.deliveredAt,
                         modifiedByWarehouseAt: order.modifiedByWarehouseAt,
                         modificationAcceptedAt: order.modificationAcceptedAt,
                         buyerId: order.userId,
@@ -1041,15 +1045,52 @@ const orderQueries = {
             ]);
 
             const orderIds = orders.map((o) => o.id);
-            const items = orderIds.length
-                ? await db
+            const [items, orderInvoices] = orderIds.length
+                ? await Promise.all([
+                    db
                     .select({
                         orderId: orderItem.orderId,
                         id: orderItem.id,
                         productName: orderItem.productName,
                     })
                     .from(orderItem)
-                    .where(inArray(orderItem.orderId, orderIds))
+                    .where(inArray(orderItem.orderId, orderIds)),
+                    db
+                    .select({
+                        id: invoice.id,
+                        orderId: invoice.orderId,
+                        invoiceNumber: invoice.invoiceNumber,
+                        deliveryStatus: invoice.deliveryStatus,
+                        paymentStatus: invoice.paymentStatus,
+                        deliverymanId: invoice.deliverymanId,
+                        createdAt: invoice.createdAt,
+                    })
+                    .from(invoice)
+                    .where(
+                        and(
+                            inArray(invoice.orderId, orderIds),
+                            eq(invoice.invoiceType, "main"),
+                        ),
+                    ),
+                ])
+                : [[], []];
+
+            const invoiceIds = orderInvoices.map((item) => item.id);
+            const deliveryLinks = invoiceIds.length
+                ? await db
+                    .select({
+                        invoiceId: deliveryGroupInvoice.invoiceId,
+                        groupId: deliveryGroup.id,
+                        groupName: deliveryGroup.groupName,
+                        groupStatus: deliveryGroup.status,
+                        deliverymanId: deliveryGroup.deliverymanId,
+                    })
+                    .from(deliveryGroupInvoice)
+                    .innerJoin(
+                        deliveryGroup,
+                        eq(deliveryGroupInvoice.groupId, deliveryGroup.id),
+                    )
+                    .where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
                 : [];
 
             const itemCounts = new Map<number, number>();
@@ -1058,6 +1099,13 @@ const orderQueries = {
                 itemCounts.set(item.orderId, (itemCounts.get(item.orderId) ?? 0) + 1);
                 if (!firstItems.has(item.orderId)) firstItems.set(item.orderId, item.productName);
             }
+
+            const invoiceByOrderId = new Map(
+                orderInvoices.map((item) => [item.orderId, item]),
+            );
+            const deliveryByInvoiceId = new Map(
+                deliveryLinks.map((item) => [item.invoiceId, item]),
+            );
 
             const totalCount = Number(countResult[0]?.count) || 0;
             const summary = sourceSummary[0] ?? {
@@ -1072,16 +1120,34 @@ const orderQueries = {
                     label: warehouseUser?.warehouseName || warehouseUser?.name || "Warehouse",
                 },
                 summary,
-                orders: orders.map((o) => ({
-                    ...o,
-                    customerName: o.buyerShopName || o.buyerName || o.shippingName,
-                    itemCount: itemCounts.get(o.id) ?? 0,
-                    firstItemName: firstItems.get(o.id) ?? null,
-                    requiresBuyerAcceptance:
-                        !!o.modifiedByWarehouseAt
-                        && !o.modificationAcceptedAt
-                        && o.status !== "cancelled",
-                })),
+                orders: orders.map((o) => {
+                    const rowInvoice = invoiceByOrderId.get(o.id);
+                    const rowDelivery = rowInvoice
+                        ? deliveryByInvoiceId.get(rowInvoice.id)
+                        : null;
+
+                    return {
+                        ...o,
+                        customerName: o.buyerShopName || o.buyerName || o.shippingName,
+                        itemCount: itemCounts.get(o.id) ?? 0,
+                        firstItemName: firstItems.get(o.id) ?? null,
+                        requiresBuyerAcceptance:
+                            !!o.modifiedByWarehouseAt
+                            && !o.modificationAcceptedAt
+                            && o.status !== "cancelled",
+                        invoicePrepared: !!rowInvoice,
+                        invoiceNumber: rowInvoice?.invoiceNumber ?? null,
+                        invoiceDeliveryStatus: rowInvoice?.deliveryStatus ?? null,
+                        invoicePaymentStatus: rowInvoice?.paymentStatus ?? null,
+                        deliveryGroupId: rowDelivery?.groupId ?? null,
+                        deliveryGroupName: rowDelivery?.groupName ?? null,
+                        deliveryGroupStatus: rowDelivery?.groupStatus ?? null,
+                        deliverymanId:
+                            rowDelivery?.deliverymanId
+                            ?? rowInvoice?.deliverymanId
+                            ?? null,
+                    };
+                }),
                 pagination: {
                     page,
                     limit,

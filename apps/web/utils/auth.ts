@@ -20,17 +20,12 @@ function getAuthBaseUrl(): string {
 }
 
 export async function getSession() {
-  console.log("getSession invoked during build?", {
-    nodeEnv: process.env.NODE_ENV,
-    authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
-  });
   // During build/pre-render, the auth backend may not be running (e.g. local port 3000),
   // so avoid throwing a fetch error and treat as unauthenticated.
   if (
     process.env.NODE_ENV === "production" &&
     process.env.NEXT_PUBLIC_AUTH_URL?.includes("localhost")
   ) {
-    console.log("Skipping backend auth fetch in getSession for local test env");
     return null;
   }
 
