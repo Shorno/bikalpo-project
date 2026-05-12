@@ -54,8 +54,8 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Inventory Management",
     items: [
+      { title: "Inventory", url: `${D}/products`, icon: BoxesIcon },
       { title: "Product Catalog", url: `${D}/product-catalog`, icon: BookOpenIcon },
-      { title: "Products", url: `${D}/products`, icon: PackageIcon },
       { title: "Create Product", url: `${D}/products/create`, icon: ClipboardListIcon },
       { title: "My Store", url: `${D}/stores`, icon: StoreIcon },
     ],

@@ -4,10 +4,17 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  BarChart3,
   Box,
+  Boxes,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Edit,
+  Eye,
   Package,
   PackageOpen,
+  PackagePlus,
   Plus,
   Search,
   ShoppingBag,
@@ -36,7 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useShopProducts, useShopProductKPIs } from "@/hooks/use-shop-products-api";
+import { useShopProducts, useShopProductKPIs, useShopProductDetail } from "@/hooks/use-shop-products-api";
 import { useFilterOptions } from "@/hooks/use-catalog-api";
 
 // ────────────────────────────────────────────────────────────────
@@ -119,13 +126,16 @@ function StockBadge({ status }: { status: string }) {
 export default function ShopProductsPage() {
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<number | undefined>();
+  const [brandId, setBrandId] = useState<number | undefined>();
   const [stockStatus, setStockStatus] = useState<"all" | "in_stock" | "low" | "out_of_stock">("all");
   const [page, setPage] = useState(1);
+  const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
 
   const { data: kpis, isLoading: kpisLoading } = useShopProductKPIs();
   const { data, isLoading, isError } = useShopProducts({
     search: search || undefined,
     categoryId,
+    brandId,
     stockStatus,
     page,
     limit: 20,
@@ -135,6 +145,7 @@ export default function ShopProductsPage() {
   const items = data?.items ?? [];
   const pagination = data?.pagination;
   const categories = filterData?.categories ?? [];
+  const brands = filterData?.brands ?? [];
 
   // Clicking a KPI card sets the stock filter
   const handleKPIClick = (status: "all" | "in_stock" | "low" | "out_of_stock") => {
@@ -148,11 +159,11 @@ export default function ShopProductsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ShoppingBag className="h-6 w-6 text-primary" />
-            Products
+            <Boxes className="h-6 w-6 text-primary" />
+            Inventory / Products
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage your retail product inventory and pricing
+            Retail Control Panel — Manage your product inventory, stock levels, and pricing
           </p>
         </div>
         <Link href="/dashboard/products/create">
@@ -264,6 +275,25 @@ export default function ShopProductsPage() {
             <SelectItem value="out_of_stock">Out of Stock</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={brandId?.toString() ?? "all"}
+          onValueChange={(v) => {
+            setBrandId(v === "all" ? undefined : Number(v));
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="All Brands" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Brands</SelectItem>
+            {brands.map((b: any) => (
+              <SelectItem key={b.id} value={b.id.toString()}>
+                {b.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Product Table */}
@@ -309,63 +339,83 @@ export default function ShopProductsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item, idx) => (
-                  <TableRow
-                    key={item.productId}
-                    className="cursor-pointer hover:bg-gray-50/80 transition-colors"
-                  >
-                    <TableCell className="text-muted-foreground font-mono text-sm">
-                      {(page - 1) * 20 + idx + 1}
-                    </TableCell>
-                    <TableCell>
-                      {item.image ? (
-                        <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 border">
-                          <Image
-                            src={item.image}
-                            alt={item.name}
-                            width={40}
-                            height={40}
-                            className="object-cover w-full h-full"
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 rounded-md bg-gray-100 border flex items-center justify-center">
-                          <Box className="w-4 h-4 text-gray-400" />
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/dashboard/products/${item.productId}`}
-                        className="font-medium text-gray-900 hover:text-primary hover:underline"
+                {items.map((item, idx) => {
+                  const isExpanded = expandedProductId === item.productId;
+                  return (
+                    <>
+                      <TableRow
+                        key={item.productId}
+                        className={`cursor-pointer hover:bg-gray-50/80 transition-colors ${isExpanded ? "bg-blue-50/30" : ""}`}
+                        onClick={() => setExpandedProductId(isExpanded ? null : item.productId)}
                       >
-                        {item.name}
-                      </Link>
-                      {item.coreProduct && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Core: {item.coreProduct.name}
-                        </p>
+                        <TableCell className="text-muted-foreground font-mono text-sm">
+                          {(page - 1) * 20 + idx + 1}
+                        </TableCell>
+                        <TableCell>
+                          {item.image ? (
+                            <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 border">
+                              <Image
+                                src={item.image}
+                                alt={item.name}
+                                width={40}
+                                height={40}
+                                className="object-cover w-full h-full"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-md bg-gray-100 border flex items-center justify-center">
+                              <Box className="w-4 h-4 text-gray-400" />
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            {isExpanded ? (
+                              <ChevronDown className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            ) : (
+                              <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                            )}
+                            <div>
+                              <span className="font-medium text-gray-900">
+                                {item.name}
+                              </span>
+                              {item.coreProduct && (
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Core: {item.coreProduct.name}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="font-normal">
+                            {item.category?.name ?? "—"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                            <Package className="w-3.5 h-3.5" />
+                            {item.variantCount}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {item.totalStock.toFixed(0)} {item.unit}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <StockBadge status={item.stockStatus} />
+                        </TableCell>
+                      </TableRow>
+                      {/* Expandable Product Detail */}
+                      {isExpanded && (
+                        <TableRow key={`${item.productId}-detail`}>
+                          <TableCell colSpan={7} className="p-0 bg-gray-50/60">
+                            <ExpandedProductDetail productId={item.productId} productName={item.name} />
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="font-normal">
-                        {item.category?.name ?? "—"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                        <Package className="w-3.5 h-3.5" />
-                        {item.variantCount}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {item.totalStock.toFixed(0)} {item.unit}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <StockBadge status={item.stockStatus} />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -471,6 +521,149 @@ function ProductsTableSkeleton() {
           ))}
         </TableBody>
       </Table>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Expanded Product Detail (Variant Stock Breakdown)
+// ────────────────────────────────────────────────────────────────
+
+function VariantStockBadge({ status }: { status: string }) {
+  switch (status) {
+    case "in_stock":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+          <CheckCircle2 className="w-3 h-3" /> OK
+        </span>
+      );
+    case "low":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+          <AlertTriangle className="w-3 h-3" /> Low
+        </span>
+      );
+    case "out_of_stock":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
+          <XCircle className="w-3 h-3" /> Out
+        </span>
+      );
+    default:
+      return null;
+  }
+}
+
+function ExpandedProductDetail({ productId, productName }: { productId: number; productName: string }) {
+  const { data, isLoading } = useShopProductDetail(productId);
+
+  if (isLoading) {
+    return (
+      <div className="p-4 space-y-2">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Could not load product details.
+      </div>
+    );
+  }
+
+  const { product, variants, totalStock } = data;
+
+  return (
+    <div className="border-t border-gray-200">
+      {/* Product Overview Header */}
+      <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              📦 Product Overview
+            </p>
+            <p className="text-sm text-gray-700 mt-0.5">
+              Category: <span className="font-medium">{product.category?.name ?? "—"}</span>
+              {" · "}Total Variants: <span className="font-medium">{variants.length}</span>
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-500">Total Stock</p>
+            <p className="text-lg font-bold text-gray-900">{totalStock}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Variant Stock List */}
+      <div className="px-5 py-2">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+          📊 Variant Stock
+        </p>
+        <div className="space-y-1">
+          {variants.map((v) => (
+            <div
+              key={v.variantId}
+              className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-white transition-colors"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm font-medium text-gray-800">
+                  {v.brandName ? `${v.brandName}` : "—"}
+                  {v.unitLabel ? ` + ${v.unitLabel}` : ""}
+                </span>
+                {v.sku && (
+                  <code className="text-[10px] text-gray-400 font-mono hidden sm:inline">
+                    {v.sku}
+                  </code>
+                )}
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-sm font-mono text-gray-700">
+                  {v.availableQty} {v.weightKg && v.weightKg !== "0" ? "pcs" : "units"}
+                </span>
+                <VariantStockBadge status={v.stockStatus} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Stock Summary */}
+      <div className="px-5 py-2 border-t border-gray-100">
+        <div className="flex items-center justify-between py-1">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            📦 Stock Summary
+          </span>
+          <span className="text-sm font-bold text-gray-900">
+            Total Stock → {totalStock} units
+          </span>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-2">
+        <Link href={`/dashboard/stock/add`}>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
+            <PackagePlus className="h-3.5 w-3.5" />
+            Add Stock
+          </Button>
+        </Link>
+        <Link href={`/dashboard/products/${productId}`}>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
+            <Edit className="h-3.5 w-3.5" />
+            Edit Product
+          </Button>
+        </Link>
+        <Link href={`/dashboard/products/${productId}`}>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
+            <BarChart3 className="h-3.5 w-3.5" />
+            View Stock Details
+          </Button>
+        </Link>
+      </div>
     </div>
   );
 }

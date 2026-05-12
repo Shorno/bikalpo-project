@@ -5034,7 +5034,7 @@ const publicCatalogEndpoints = {
      */
     getPublicFilterOptions: publicProcedure
         .handler(async () => {
-            const [types, categories, subCategories] = await Promise.all([
+            const [types, categories, subCategories, brands] = await Promise.all([
                 db.query.productType.findMany({
                     where: eq(productType.isActive, true),
                     orderBy: [productType.displayOrder, productType.name],
@@ -5050,9 +5050,13 @@ const publicCatalogEndpoints = {
                     orderBy: [subCategory.displayOrder, subCategory.name],
                     columns: { id: true, name: true, slug: true, categoryId: true },
                 }),
+                db.query.brand.findMany({
+                    orderBy: [brand.name],
+                    columns: { id: true, name: true },
+                }),
             ]);
 
-            return { types, categories, subCategories };
+            return { types, categories, subCategories, brands };
         }),
 
     /**
