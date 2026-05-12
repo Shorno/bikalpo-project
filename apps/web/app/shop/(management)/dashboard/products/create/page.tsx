@@ -115,7 +115,7 @@ export default function CreateProductPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto pb-12">
+    <div className="w-full pb-12">
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-8 sticky top-0 z-10 bg-background/95 backdrop-blur-sm py-4 -mx-2 px-2 border-b">
         <div className="flex items-center gap-3">
