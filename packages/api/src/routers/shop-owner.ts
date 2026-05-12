@@ -5591,6 +5591,7 @@ const shopProductEndpoints = {
                 isReturnablePack: z.boolean().default(false),
                 expiryEnabled: z.boolean().default(false),
                 damageControlEnabled: z.boolean().default(false),
+                stockTrackingEnabled: z.boolean().default(true),
                 trackingType: z.enum(["none", "batch", "serial"]).default("none"),
 
                 // Step 6: Opening stock per brand×variant
@@ -5608,6 +5609,7 @@ const shopProductEndpoints = {
 
                 // Step 8: Visibility
                 status: z.enum(["active", "inactive", "draft"]).default("active"),
+                availableForSale: z.boolean().default(true),
             }),
         )
         .handler(async ({ input, context }) => {
@@ -5639,7 +5641,9 @@ const shopProductEndpoints = {
                     isReturnablePack: input.isReturnablePack,
                     expiryEnabled: input.expiryEnabled,
                     damageControlEnabled: input.damageControlEnabled,
+                    stockTrackingEnabled: input.stockTrackingEnabled,
                     trackingType: input.trackingType,
+                    availableForSale: input.availableForSale,
                 })
                 .returning({ id: product.id });
 

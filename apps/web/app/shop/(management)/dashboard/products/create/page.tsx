@@ -30,6 +30,7 @@ export type CreateProductFormState = {
   isReturnablePack: boolean;
   expiryEnabled: boolean;
   damageControlEnabled: boolean;
+  stockTrackingEnabled: boolean;
   trackingType: "none" | "batch" | "serial";
   // Step 6
   openingStock: Array<{ variantOptionId: number; brandId: number; quantity: number }>;
@@ -37,6 +38,7 @@ export type CreateProductFormState = {
   displayName: string;
   shortNote: string;
   status: "active" | "inactive" | "draft";
+  availableForSale: boolean;
 };
 
 const INITIAL_STATE: CreateProductFormState = {
@@ -46,11 +48,13 @@ const INITIAL_STATE: CreateProductFormState = {
   isReturnablePack: false,
   expiryEnabled: false,
   damageControlEnabled: false,
+  stockTrackingEnabled: true,
   trackingType: "none",
   openingStock: [],
   displayName: "",
   shortNote: "",
   status: "active",
+  availableForSale: true,
 };
 
 const STEPS = [
@@ -104,11 +108,13 @@ export default function CreateProductPage() {
         isReturnablePack: form.isReturnablePack,
         expiryEnabled: form.expiryEnabled,
         damageControlEnabled: form.damageControlEnabled,
+        stockTrackingEnabled: form.stockTrackingEnabled,
         trackingType: form.trackingType,
         openingStock: form.openingStock,
         displayName: form.displayName || undefined,
         shortNote: form.shortNote || undefined,
         status: form.status,
+        availableForSale: form.availableForSale,
       });
       router.push("/dashboard/products");
     } catch { /* error handled by mutation hook */ }
