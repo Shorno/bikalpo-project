@@ -3,25 +3,26 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
-  ArrowRight,
   Banknote,
-  CalendarDays,
-  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Download,
   FileText,
+  Filter,
   Inbox,
   Loader2,
-  PackageCheck,
   Printer,
-  Receipt,
   RotateCcw,
   Search,
   ShoppingCart,
-  SlidersHorizontal,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -36,213 +37,152 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
+import type { SaleRow } from "./_components/sales-columns";
 
-type SaleType = "all" | "pos" | "order" | "salesman" | "pre_order";
+type SaleType = "all" | "pos" | "order" | "salesman";
 type SaleStatus = "all" | "completed" | "due" | "cancelled";
-type PaymentFilter = "all" | "cash" | "bkash" | "nagad" | "bank" | "due";
+type PaymentFilter = "all" | "cash" | "bkash" | "bank" | "due";
 type DateFilter = "today" | "this_week" | "this_month" | "custom" | "all";
-
-type SaleRow = {
-  key: string;
-  kind: "pos" | "invoice";
-  id: number;
-  invoiceNumber: string;
-  date: string | Date;
-  customerName: string;
-  customerPhone: string | null;
-  type: Exclude<SaleType, "all">;
-  typeLabel: string;
-  typeDetail: string | null;
-  total: number;
-  paid: number;
-  due: number;
-  paymentMethodLabel: string;
-  status: Exclude<SaleStatus, "all">;
-  statusLabel: string;
-  orderNumber: string | null;
-  estimateRef: string | null;
-  salesmanName: string | null;
-  itemCount: number;
-  firstItemName: string | null;
-};
 
 const WH = "/warehouse/dashboard";
 
-const saleTypeCards: Array<{
+const saleTypeCards: {
   key: Exclude<SaleType, "all">;
   label: string;
+  color: string;
+  activeColor: string;
+  dotColor: string;
   description: string;
-  accentClassName: string;
-  activeClassName: string;
-  countClassName: string;
-}> = [
+}[] = [
   {
     key: "pos",
     label: "POS",
+    color: "text-emerald-600",
+    activeColor: "border-emerald-200 bg-emerald-50 ring-emerald-100",
+    dotColor: "bg-emerald-500",
     description: "Counter sales",
-    accentClassName: "bg-emerald-500",
-    activeClassName: "border-emerald-300 bg-emerald-50/80 text-emerald-950",
-    countClassName: "text-emerald-700",
   },
   {
     key: "order",
-    label: "Order invoices",
-    description: "Generated from orders",
-    accentClassName: "bg-rose-500",
-    activeClassName: "border-rose-300 bg-rose-50/80 text-rose-950",
-    countClassName: "text-rose-700",
+    label: "Order",
+    color: "text-red-600",
+    activeColor: "border-red-200 bg-red-50 ring-red-100",
+    dotColor: "bg-red-500",
+    description: "Order invoices",
   },
   {
     key: "salesman",
     label: "Salesman",
-    description: "Field sales",
-    accentClassName: "bg-sky-500",
-    activeClassName: "border-sky-300 bg-sky-50/80 text-sky-950",
-    countClassName: "text-sky-700",
-  },
-  {
-    key: "pre_order",
-    label: "Pre-order",
-    description: "Reserved demand",
-    accentClassName: "bg-amber-500",
-    activeClassName: "border-amber-300 bg-amber-50/80 text-amber-950",
-    countClassName: "text-amber-700",
+    color: "text-blue-600",
+    activeColor: "border-blue-200 bg-blue-50 ring-blue-100",
+    dotColor: "bg-blue-500",
+    description: "Field sales flow",
   },
 ];
 
-const statusOptions: Array<{ value: SaleStatus; label: string }> = [
-  { value: "all", label: "All status" },
+const salesDescriptions: Record<SaleType, { title: string; subtitle: string }> =
+  {
+    all: {
+      title: "All Transactions",
+      subtitle: "POS sales, generated order invoices, and salesman sales",
+    },
+    pos: {
+      title: "POS Sales",
+      subtitle: "Counter sales created from the warehouse POS",
+    },
+    order: {
+      title: "Order Invoices",
+      subtitle: "Invoices generated from customer orders",
+    },
+    salesman: {
+      title: "Salesman Transactions",
+      subtitle: "Orders created or converted through field sales",
+    },
+  };
+
+const dateOptions: { value: DateFilter; label: string }[] = [
+  { value: "all", label: "All Dates" },
+  { value: "today", label: "Today" },
+  { value: "this_week", label: "This Week" },
+  { value: "this_month", label: "This Month" },
+  { value: "custom", label: "Custom" },
+];
+
+const statusOptions: { value: SaleStatus; label: string }[] = [
+  { value: "all", label: "All Status" },
   { value: "completed", label: "Completed" },
   { value: "due", label: "Due" },
   { value: "cancelled", label: "Cancelled" },
 ];
 
-const paymentOptions: Array<{ value: PaymentFilter; label: string }> = [
-  { value: "all", label: "All payment" },
+const paymentOptions: { value: PaymentFilter; label: string }[] = [
+  { value: "all", label: "All Payment" },
   { value: "cash", label: "Cash" },
   { value: "bkash", label: "bKash" },
-  { value: "nagad", label: "Nagad" },
   { value: "bank", label: "Bank" },
   { value: "due", label: "Due" },
 ];
 
-const controlClassName =
-  "h-10 w-full rounded-md border border-slate-200 bg-[oklch(0.99_0.004_100)] px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-[oklch(0.998_0.002_110)] focus:ring-3 focus:ring-slate-400/15 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500";
-
-const searchControlClassName =
-  "h-10 w-full rounded-md border border-slate-200 bg-[oklch(0.99_0.004_100)] px-3 text-sm text-slate-900 outline-none transition focus-within:border-slate-400 focus-within:bg-[oklch(0.998_0.002_110)] focus-within:ring-3 focus-within:ring-slate-400/15";
-
-const selectTriggerClassName =
-  "h-10 w-full justify-between rounded-md border-slate-200 bg-[oklch(0.99_0.004_100)] px-3 text-sm text-slate-900 shadow-none hover:bg-[oklch(0.985_0.004_100)] focus-visible:border-slate-400 focus-visible:ring-3 focus-visible:ring-slate-400/15 data-[placeholder]:text-slate-400 [&_svg]:text-slate-500";
-
-const selectContentClassName =
-  "border border-slate-800 bg-slate-950/95 text-slate-100 shadow-xl ring-slate-950/10 before:backdrop-blur-none";
-
-const selectItemClassName =
-  "text-slate-200 focus:bg-slate-800 focus:text-slate-50 data-disabled:text-slate-500";
-
-const labelClassName =
-  "mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500";
-
-function money(value: string | number | null | undefined) {
-  const parsed = typeof value === "number" ? value : Number(value || 0);
-  return `\u09F3${(Number.isFinite(parsed) ? parsed : 0).toLocaleString(
-    "en-BD",
-    {
-      maximumFractionDigits: 2,
-    },
-  )}`;
-}
-
-function formatDateTime(value: string | Date) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not available";
-  const dateLabel = date.toLocaleDateString("en-BD", {
-    day: "numeric",
-    month: "short",
-  });
-  const timeLabel = date.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${dateLabel} ${timeLabel}`;
-}
-
-function dateRangeLabel(value: DateFilter) {
-  if (value === "today") return "Today";
-  if (value === "this_week") return "This week";
-  if (value === "this_month") return "This month";
-  if (value === "custom") return "Custom range";
-  return "All dates";
-}
-
-function statusClassName(status: SaleRow["status"]) {
-  if (status === "completed") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  }
-  if (status === "cancelled") {
-    return "border-rose-200 bg-rose-50 text-rose-700";
-  }
-  return "border-amber-200 bg-amber-50 text-amber-700";
-}
-
-function typeClassName(type: SaleRow["type"]) {
-  const card = saleTypeCards.find((item) => item.key === type);
-  return card?.activeClassName ?? "border-slate-200 bg-slate-50 text-slate-700";
-}
-
-function csvEscape(value: unknown) {
-  const text = String(value ?? "");
-  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
-}
-
 export default function WarehouseSalesPage() {
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateFilter>("all");
+  const [saleType, setSaleType] = useState<SaleType>("all");
+  const [status, setStatus] = useState<SaleStatus>("all");
+  const [payment, setPayment] = useState<PaymentFilter>("all");
+  const [salesmanId, setSalesmanId] = useState("all");
+  const [appliedFilters, setAppliedFilters] = useState({
+    dateRange: "all" as DateFilter,
+    saleType: "all" as SaleType,
+    status: "all" as SaleStatus,
+    payment: "all" as PaymentFilter,
+    salesmanId: "all",
+  });
   const [selectedSale, setSelectedSale] = useState<{
     kind: "pos" | "invoice";
     id: number;
   } | null>(null);
 
-  const [draftSearch, setDraftSearch] = useState("");
-  const [draftType, setDraftType] = useState<SaleType>("all");
-  const [draftStatus, setDraftStatus] = useState<SaleStatus>("all");
-  const [draftPayment, setDraftPayment] = useState<PaymentFilter>("all");
-  const [draftSalesman, setDraftSalesman] = useState("all");
-  const [draftDateRange, setDraftDateRange] = useState<DateFilter>("all");
-  const [draftDateFrom, setDraftDateFrom] = useState("");
-  const [draftDateTo, setDraftDateTo] = useState("");
-
-  const [filters, setFilters] = useState({
-    search: "",
-    type: "all" as SaleType,
-    status: "all" as SaleStatus,
-    payment: "all" as PaymentFilter,
-    salesmanId: "all",
-    dateRange: "all" as DateFilter,
-    dateFrom: "",
-    dateTo: "",
-  });
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 350);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [search]);
 
   const queryInput = useMemo(
     () => ({
-      search: filters.search || undefined,
-      type: filters.type,
-      status: filters.status,
-      payment: filters.payment,
-      salesmanId: filters.salesmanId === "all" ? undefined : filters.salesmanId,
-      dateRange: filters.dateRange,
-      dateFrom: filters.dateFrom || undefined,
-      dateTo: filters.dateTo || undefined,
+      search: debouncedSearch || undefined,
+      dateRange: appliedFilters.dateRange,
+      type: appliedFilters.saleType,
+      status: appliedFilters.status,
+      payment: appliedFilters.payment,
+      salesmanId:
+        appliedFilters.salesmanId === "all"
+          ? undefined
+          : appliedFilters.salesmanId,
       page,
       limit: 20,
     }),
-    [filters, page],
+    [appliedFilters, debouncedSearch, page],
   );
 
-  const { data, isError, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["warehouseSales", "listSales", queryInput],
     queryFn: () => orpc.warehouseSales.listSales.call(queryInput),
   });
@@ -258,662 +198,319 @@ export default function WarehouseSalesPage() {
   });
 
   const rows = (data?.rows ?? []) as SaleRow[];
-  const exportRows = (data?.exportRows ?? []) as SaleRow[];
+  const salesmen = data?.filterOptions?.salesmen ?? [];
   const pagination = data?.pagination;
+  const totalPages = pagination?.totalPages ?? 1;
+  const totalCount = pagination?.totalCount ?? 0;
+  const showFrom = totalCount > 0 ? (page - 1) * 20 + 1 : 0;
+  const showTo = Math.min(page * 20, totalCount);
   const counts = data?.summary?.counts ?? {
     pos: 0,
     order: 0,
     salesman: 0,
     pre_order: 0,
   };
-  const totalTransactions = pagination?.totalCount ?? rows.length;
+  const showingLabel =
+    dateOptions.find((option) => option.value === appliedFilters.dateRange)
+      ?.label ?? "Today";
+  const currentDescription = salesDescriptions[appliedFilters.saleType];
 
-  const applyFilters = () => {
-    setFilters({
-      search: draftSearch,
-      type: draftType,
-      status: draftStatus,
-      payment: draftPayment,
-      salesmanId: draftSalesman,
-      dateRange: draftDateRange,
-      dateFrom: draftDateFrom,
-      dateTo: draftDateTo,
-    });
+  const applyFilters = useCallback(() => {
     setPage(1);
-  };
+    setAppliedFilters({ dateRange, saleType, status, payment, salesmanId });
+  }, [dateRange, payment, saleType, salesmanId, status]);
 
-  const selectType = (type: SaleType) => {
-    setDraftType(type);
-    setFilters((current) => ({ ...current, type }));
-    setPage(1);
-  };
+  const selectSaleType = useCallback(
+    (type: SaleType) => {
+      setSaleType(type);
+      setPage(1);
+      setAppliedFilters({
+        dateRange,
+        saleType: type,
+        status,
+        payment,
+        salesmanId,
+      });
+    },
+    [dateRange, payment, salesmanId, status],
+  );
 
-  const exportReport = () => {
-    const headers = [
-      "Invoice",
-      "Date",
-      "Customer",
-      "Phone",
-      "Type",
-      "Total",
-      "Paid",
-      "Due",
-      "Payment",
-      "Status",
-      "Order",
-      "Estimate",
-      "Salesman",
-    ];
-    const body = exportRows.map((row) => [
-      row.invoiceNumber,
-      formatDateTime(row.date),
-      row.customerName,
-      row.customerPhone,
-      row.typeLabel,
-      row.total,
-      row.paid,
-      row.due,
-      row.paymentMethodLabel,
-      row.statusLabel,
-      row.orderNumber,
-      row.estimateRef,
-      row.salesmanName,
-    ]);
-    const csv = [headers, ...body]
-      .map((line) => line.map(csvEscape).join(","))
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const exportReport = useCallback(() => {
+    const exportRows = ((data?.exportRows ?? rows) as SaleRow[]).map((row) => ({
+      Invoice: row.invoiceNumber,
+      "Date & Time": formatDateTime(row.date),
+      Customer: row.customerName,
+      Phone: row.customerPhone ?? "",
+      Type: row.typeLabel,
+      Total: row.total,
+      Paid: row.paid,
+      Due: row.due,
+      Status: row.statusLabel,
+    }));
+
+    if (exportRows.length === 0) return;
+
+    const headers = Object.keys(exportRows[0]);
+    const csv = [
+      headers.join(","),
+      ...exportRows.map((row) =>
+        headers
+          .map(
+            (header) =>
+              `"${String(row[header as keyof typeof row]).replace(/"/g, '""')}"`,
+          )
+          .join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `warehouse-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `warehouse-sales-${appliedFilters.dateRange}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  };
+  }, [appliedFilters.dateRange, data?.exportRows, rows]);
+
+  const handleTableClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>(
+        "[data-kind][data-id]",
+      );
+      if (!btn) return;
+      setSelectedSale({
+        kind: btn.dataset.kind as "pos" | "invoice",
+        id: Number(btn.dataset.id),
+      });
+    },
+    [],
+  );
 
   return (
-    <div className="space-y-4 text-slate-950">
-      <section className="overflow-hidden rounded-lg border border-slate-200 bg-[oklch(0.995_0.003_105)] shadow-[0_18px_45px_-32px_rgba(15,23,42,0.45)]">
-        <div className="grid lg:grid-cols-[1fr_360px]">
-          <div className="border-b border-slate-200 p-5 md:p-6 lg:border-r lg:border-b-0">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <Receipt className="h-4 w-4 text-slate-500" />
-              Sales management / Sales history
-            </div>
-            <div className="mt-3 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <h1 className="text-[1.65rem] font-semibold tracking-tight text-slate-950">
-                  Sales
-                </h1>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-                  Invoice-based sales across POS, generated order invoices,
-                  salesman work, and pre-orders.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <span className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-medium text-slate-700">
-                  <CalendarDays className="h-3.5 w-3.5 text-slate-500" />
-                  {dateRangeLabel(filters.dateRange)}
-                </span>
-                <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-medium text-slate-700">
-                  {data?.warehouse.label ?? "Loading warehouse"}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-950 p-5 text-slate-100 md:p-6">
-            <div className="flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-              <span>Sales in view</span>
-              <span>{dateRangeLabel(filters.dateRange)}</span>
-            </div>
-            <div className="mt-5 flex items-end gap-3">
-              <span className="text-4xl font-semibold tracking-tight text-slate-50">
-                {totalTransactions}
-              </span>
-              <span className="pb-1 text-sm text-slate-300">
-                matching invoices and POS sales
-              </span>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-md border border-slate-50/10 bg-slate-50/5 p-3">
-                <div className="text-slate-400">Collection</div>
-                <div className="mt-1 text-base font-semibold text-slate-100">
-                  {money(data?.summary?.totalPaid ?? 0)}
-                </div>
-              </div>
-              <div className="rounded-md border border-slate-50/10 bg-slate-50/5 p-3">
-                <div className="text-slate-400">Due</div>
-                <div className="mt-1 text-base font-semibold text-amber-200">
-                  {money(data?.summary?.totalDue ?? 0)}
-                </div>
-              </div>
-            </div>
-          </div>
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Sales History
+          </h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {data?.warehouse?.label ?? "Rahim Distribution Hub"} · Showing{" "}
+            {showingLabel}
+          </p>
         </div>
-      </section>
-
-      <section className="overflow-hidden rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-100 text-slate-600">
-              <SlidersHorizontal className="h-4 w-4" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-slate-950">
-                Search & filter
-              </h2>
-              <p className="text-xs text-slate-500">
-                Search invoice, customer, phone, order, or salesman.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={exportReport}
-              disabled={exportRows.length === 0}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" />
-              Export report
-            </button>
-            <button
-              type="button"
-              onClick={applyFilters}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-slate-50 shadow-sm transition hover:bg-slate-800 focus-visible:ring-3 focus-visible:ring-slate-400/30"
-            >
-              Apply filters
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[minmax(250px,1.5fr)_repeat(5,minmax(140px,1fr))]">
-          <label>
-            <span className={labelClassName}>Search</span>
-            <div
-              className={cn(
-                searchControlClassName,
-                "flex items-center gap-2 px-3",
-              )}
-            >
-              <Search className="h-4 w-4 text-slate-400" />
-              <input
-                value={draftSearch}
-                onChange={(event) => setDraftSearch(event.target.value)}
-                placeholder="Invoice ID, customer, or phone"
-                className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
-              />
-            </div>
-          </label>
-
-          <label>
-            <span className={labelClassName}>Date</span>
-            <Select
-              value={draftDateRange}
-              onValueChange={(value) => setDraftDateRange(value as DateFilter)}
-            >
-              <SelectTrigger className={selectTriggerClassName}>
-                <SelectValue placeholder="All dates" />
-              </SelectTrigger>
-              <SelectContent className={selectContentClassName}>
-                <SelectItem value="today" className={selectItemClassName}>
-                  Today
-                </SelectItem>
-                <SelectItem value="this_week" className={selectItemClassName}>
-                  This week
-                </SelectItem>
-                <SelectItem value="this_month" className={selectItemClassName}>
-                  This month
-                </SelectItem>
-                <SelectItem value="custom" className={selectItemClassName}>
-                  Custom
-                </SelectItem>
-                <SelectItem value="all" className={selectItemClassName}>
-                  All dates
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-
-          <label>
-            <span className={labelClassName}>Type</span>
-            <Select
-              value={draftType}
-              onValueChange={(value) => setDraftType(value as SaleType)}
-            >
-              <SelectTrigger className={selectTriggerClassName}>
-                <SelectValue placeholder="All types" />
-              </SelectTrigger>
-              <SelectContent className={selectContentClassName}>
-                <SelectItem value="all" className={selectItemClassName}>
-                  All types
-                </SelectItem>
-                {saleTypeCards.map((item) => (
-                  <SelectItem
-                    key={item.key}
-                    value={item.key}
-                    className={selectItemClassName}
-                  >
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-
-          <label>
-            <span className={labelClassName}>Status</span>
-            <Select
-              value={draftStatus}
-              onValueChange={(value) => setDraftStatus(value as SaleStatus)}
-            >
-              <SelectTrigger className={selectTriggerClassName}>
-                <SelectValue placeholder="All status" />
-              </SelectTrigger>
-              <SelectContent className={selectContentClassName}>
-                {statusOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value}
-                    className={selectItemClassName}
-                  >
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-
-          <label>
-            <span className={labelClassName}>Payment</span>
-            <Select
-              value={draftPayment}
-              onValueChange={(value) => setDraftPayment(value as PaymentFilter)}
-            >
-              <SelectTrigger className={selectTriggerClassName}>
-                <SelectValue placeholder="All payment" />
-              </SelectTrigger>
-              <SelectContent className={selectContentClassName}>
-                {paymentOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value}
-                    className={selectItemClassName}
-                  >
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-
-          <label>
-            <span className={labelClassName}>Salesman</span>
-            <Select value={draftSalesman} onValueChange={setDraftSalesman}>
-              <SelectTrigger className={selectTriggerClassName}>
-                <SelectValue placeholder="All salesmen" />
-              </SelectTrigger>
-              <SelectContent className={selectContentClassName}>
-                <SelectItem value="all" className={selectItemClassName}>
-                  All salesmen
-                </SelectItem>
-                {data?.filterOptions.salesmen.map((salesman: any) => (
-                  <SelectItem
-                    key={salesman.id}
-                    value={salesman.id}
-                    className={selectItemClassName}
-                  >
-                    {salesman.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-        </div>
-
-        {draftDateRange === "custom" && (
-          <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-3">
-            <div className="grid gap-3 md:grid-cols-2 xl:w-1/2">
-              <label>
-                <span className={labelClassName}>From</span>
-                <input
-                  type="date"
-                  value={draftDateFrom}
-                  onChange={(event) => setDraftDateFrom(event.target.value)}
-                  className={controlClassName}
-                />
-              </label>
-              <label>
-                <span className={labelClassName}>To</span>
-                <input
-                  type="date"
-                  value={draftDateTo}
-                  onChange={(event) => setDraftDateTo(event.target.value)}
-                  className={controlClassName}
-                />
-              </label>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="overflow-hidden rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] shadow-sm">
-        <div className="flex flex-col gap-1 border-b border-slate-200 bg-[oklch(0.985_0.004_100)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-950">
-              Sales records
-            </h2>
-            <p className="text-xs text-slate-500">
-              Counts POS sales and generated order invoices, not every raw
-              order. Type counts stay visible while the table filters.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => selectType("all")}
-            className={cn(
-              "h-8 rounded-md border px-3 text-xs font-semibold transition",
-              filters.type === "all"
-                ? "border-slate-950 bg-slate-950 text-slate-50"
-                : "border-slate-200 bg-[oklch(0.998_0.002_110)] text-slate-600 hover:bg-slate-50",
-            )}
-          >
-            All types
-          </button>
-        </div>
-        <div className="grid divide-y divide-slate-200 md:grid-cols-4 md:divide-x md:divide-y-0">
-          {saleTypeCards.map((card) => {
-            const isActive = filters.type === card.key;
-            return (
-              <button
-                key={card.key}
-                type="button"
-                onClick={() => selectType(card.key)}
-                className={cn(
-                  "min-h-[108px] border-transparent bg-[oklch(0.998_0.002_110)] p-4 text-left transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-slate-400/15",
-                  isActive && card.activeClassName,
-                  !isActive && "hover:bg-slate-50",
-                )}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "h-2.5 w-2.5 rounded-full",
-                        card.accentClassName,
-                      )}
-                    />
-                    <span className="text-sm font-semibold">{card.label}</span>
-                  </div>
-                  <ShoppingCart className="h-4 w-4 opacity-60" />
-                </div>
-                <div
-                  className={cn(
-                    "mt-4 text-3xl font-semibold tracking-tight",
-                    card.countClassName,
-                  )}
-                >
-                  {counts[card.key] ?? 0}
-                </div>
-                <p className="mt-2 text-xs text-current/70">
-                  {card.description}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <InsightCard
-          icon={Banknote}
-          label="Highest sale"
-          value={
-            data?.insights.highestSale
-              ? money(data.insights.highestSale.amount)
-              : money(0)
-          }
-          helper={data?.insights.highestSale?.invoiceNumber ?? "No sale yet"}
-        />
-        <InsightCard
-          icon={PackageCheck}
-          label="Most sales via"
-          value={data?.insights.mostCommonType ?? "No sales"}
-          helper="Current filters"
-        />
-        <InsightCard
-          icon={AlertCircle}
-          label="Due transactions"
-          value={String(data?.insights.dueTransactions ?? 0)}
-          helper={`${money(data?.summary?.totalDue ?? 0)} outstanding`}
-        />
-        <InsightCard
-          icon={CalendarDays}
-          label="Peak sales time"
-          value={data?.insights.peakSalesTime ?? "No sales"}
-          helper={dateRangeLabel(filters.dateRange)}
-        />
-      </section>
-
-      <section className="overflow-hidden rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-950">
-              Sales table
-            </h2>
-            <p className="text-xs text-slate-500">
-              {pagination?.totalCount ?? 0} transactions,{" "}
-              {dateRangeLabel(filters.dateRange)}
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href={`${WH}/pos`}
-            className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
           >
-            <Receipt className="h-3.5 w-3.5" />
-            Create sale
+            <ShoppingCart className="h-4 w-4" />
+            POS Sale
           </Link>
+          <Button
+            variant="outline"
+            onClick={exportReport}
+            disabled={rows.length === 0}
+            className="h-9 gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Export Report
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <SalesTypeCard
+          active={appliedFilters.saleType === "all"}
+          count={counts.pos + counts.order + counts.salesman}
+          dotColor="bg-slate-500"
+          label="All"
+          description="All sales history"
+          onClick={() => selectSaleType("all")}
+        />
+        {saleTypeCards.map((cfg) => (
+          <SalesTypeCard
+            key={cfg.key}
+            active={appliedFilters.saleType === cfg.key}
+            activeColor={cfg.activeColor}
+            count={counts[cfg.key]}
+            countColor={cfg.color}
+            description={cfg.description}
+            dotColor={cfg.dotColor}
+            label={cfg.label}
+            onClick={() => selectSaleType(cfg.key)}
+          />
+        ))}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Invoice ID / Customer / Phone..."
+              className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          <CompactSelect
+            value={dateRange}
+            onChange={(value) => setDateRange(value as DateFilter)}
+            options={dateOptions}
+          />
+          <CompactSelect
+            value={status}
+            onChange={(value) => setStatus(value as SaleStatus)}
+            options={statusOptions}
+          />
+          <CompactSelect
+            value={payment}
+            onChange={(value) => setPayment(value as PaymentFilter)}
+            options={paymentOptions}
+          />
+          <Select value={salesmanId} onValueChange={setSalesmanId}>
+            <SelectTrigger className="h-9 w-[150px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Salesman</SelectItem>
+              {salesmen.map((salesman: { id: string; name: string | null }) => (
+                <SelectItem key={salesman.id} value={salesman.id}>
+                  {salesman.name ?? "Unnamed salesman"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={applyFilters} className="h-9 gap-2">
+            <Filter className="h-4 w-4" />
+            Apply Filters
+          </Button>
+          {isFetching && (
+            <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Refreshing
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 overflow-x-auto border-b px-4 py-2">
+          <SaleTypeTab
+            active={appliedFilters.saleType === "all"}
+            count={counts.pos + counts.order + counts.salesman}
+            label="All"
+            onClick={() => selectSaleType("all")}
+          />
+          {saleTypeCards.map((tab) => (
+            <SaleTypeTab
+              key={tab.key}
+              active={appliedFilters.saleType === tab.key}
+              count={counts[tab.key]}
+              dotColor={tab.dotColor}
+              label={tab.label}
+              onClick={() => selectSaleType(tab.key)}
+            />
+          ))}
+        </div>
+
+        <div className="border-b bg-muted/20 px-4 py-2.5">
+          <span className="text-sm font-semibold">
+            {currentDescription.title}
+          </span>
+          <span className="ml-2 text-xs text-muted-foreground">
+            {currentDescription.subtitle}
+          </span>
+        </div>
+
+        <div className="border-b px-4 py-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Sales Table (Main Data View)
+          </h2>
         </div>
 
         {isLoading ? (
-          <div className="p-4">
-            <div className="overflow-hidden rounded-md border border-slate-200">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="grid gap-4 border-b border-slate-100 p-4 last:border-0 md:grid-cols-[1fr_1fr_1.2fr_0.7fr_0.8fr_0.8fr_0.8fr_0.7fr]"
-                >
-                  {Array.from({ length: 8 }).map((__, innerIndex) => (
-                    <div
-                      key={`${index}-${innerIndex}`}
-                      className="h-4 animate-pulse rounded bg-slate-200"
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
+          <TableSkeleton />
         ) : isError ? (
-          <div className="grid min-h-[280px] place-items-center px-6 py-12 text-center">
-            <div>
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-500">
-                <AlertCircle className="h-6 w-6" />
-              </div>
-              <h2 className="mt-4 text-base font-semibold text-slate-950">
-                Failed to load sales
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Refresh the page or try a smaller filter set.
-              </p>
-            </div>
-          </div>
+          <EmptyState
+            icon={AlertCircle}
+            title="Failed to load sales"
+            description="Try refreshing or adjusting your filters."
+            action={<Button onClick={() => refetch()}>Retry</Button>}
+          />
         ) : rows.length === 0 ? (
-          <div className="grid min-h-[280px] place-items-center px-6 py-12 text-center">
-            <div className="max-w-md">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-400">
-                <Inbox className="h-6 w-6" />
-              </div>
-              <h2 className="mt-4 text-base font-semibold text-slate-950">
-                No sales found
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Completed POS sales and prepared order invoices will appear
-                here.
-              </p>
-              <Link
-                href={`${WH}/pos`}
-                className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-slate-50"
-              >
-                <Receipt className="h-4 w-4" />
-                Create Sale
-              </Link>
-            </div>
-          </div>
+          <EmptyState
+            icon={Inbox}
+            title="No sales found"
+            description="POS sales, order invoices, and salesman transactions will appear here."
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  <th className="px-4 py-3">Invoice</th>
-                  <th className="px-4 py-3">Date & time</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3 text-right">Paid</th>
-                  <th className="px-4 py-3 text-right">Due</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.key}
-                    className="border-b border-slate-100 transition last:border-0 hover:bg-[oklch(0.985_0.005_145)]"
-                  >
-                    <td className="px-4 py-3.5">
-                      <div className="font-mono text-[13px] font-semibold tracking-tight text-slate-950">
-                        {row.invoiceNumber}
-                      </div>
-                      <div className="mt-1 max-w-[240px] truncate text-xs text-slate-500">
-                        {row.itemCount} item{row.itemCount === 1 ? "" : "s"}
-                        {row.firstItemName ? ` / ${row.firstItemName}` : ""}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 text-sm text-slate-600">
-                      {formatDateTime(row.date)}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50">
-                          <UserRound className="h-4 w-4 text-slate-500" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-slate-900">
-                            {row.customerName}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {row.customerPhone || "No phone"}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold",
-                          typeClassName(row.type),
-                        )}
-                      >
-                        {row.typeLabel}
-                      </span>
-                      {row.salesmanName && (
-                        <div className="mt-1 text-xs text-slate-500">
-                          {row.salesmanName}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5 text-right font-semibold text-slate-950">
-                      {money(row.total)}
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-slate-700">
-                      {money(row.paid)}
-                      <div className="text-xs text-slate-500">
-                        {row.paymentMethodLabel}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 text-right font-semibold">
-                      <span
-                        className={
-                          row.due > 0 ? "text-amber-700" : "text-slate-500"
-                        }
-                      >
-                        {money(row.due)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold",
-                          statusClassName(row.status),
-                        )}
-                      >
-                        {row.status === "completed" ? (
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        ) : (
-                          <AlertCircle className="h-3.5 w-3.5" />
-                        )}
-                        {row.statusLabel}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSelectedSale({ kind: row.kind, id: row.id })
-                        }
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                      >
-                        View
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SalesTable rows={rows} onClick={handleTableClick} />
         )}
 
-        {pagination && pagination.totalPages > 1 && (
-          <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-slate-500">
-              Page {pagination.page} of {pagination.totalPages}.{" "}
-              {pagination.totalCount} sales total.
+        {!isLoading && !isError && totalCount > 0 && (
+          <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm text-muted-foreground">
+              Showing {showFrom}-{showTo} of {totalCount} sales
             </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
                 disabled={page <= 1}
-                onClick={() => setPage((value) => value - 1)}
-                className="h-8 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => setPage(1)}
               >
-                Previous
-              </button>
-              <button
-                type="button"
-                disabled={page >= pagination.totalPages}
-                onClick={() => setPage((value) => value + 1)}
-                className="h-8 rounded-md border border-slate-200 bg-[oklch(0.998_0.002_110)] px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
               >
-                Next
-              </button>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {generatePageNumbers(page, totalPages).map((p, i) =>
+                p === "..." ? (
+                  <span
+                    key={`dot-${i}`}
+                    className="px-1 text-xs text-muted-foreground"
+                  >
+                    ...
+                  </span>
+                ) : (
+                  <Button
+                    key={p}
+                    variant={p === page ? "default" : "outline"}
+                    size="icon"
+                    className="h-8 w-8 text-xs"
+                    onClick={() => setPage(p as number)}
+                  >
+                    {p}
+                  </Button>
+                ),
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page >= totalPages}
+                onClick={() => setPage(totalPages)}
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         )}
-      </section>
+      </div>
 
       <Sheet
         open={!!selectedSale}
@@ -921,30 +518,30 @@ export default function WarehouseSalesPage() {
           if (!open) setSelectedSale(null);
         }}
       >
-        <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-xl lg:max-w-2xl">
-          <SheetHeader className="border-b border-slate-200 bg-slate-50/80 px-5 py-4">
-            <SheetTitle>Sales detail</SheetTitle>
+        <SheetContent className="flex w-full flex-col overflow-hidden p-0 sm:max-w-md lg:max-w-lg">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Sales Detail</SheetTitle>
             <SheetDescription>
-              {detailQuery.data?.basic.invoiceNumber ?? "Loading invoice"}
+              {(detailQuery.data as any)?.basic?.invoiceNumber ?? "Loading..."}
             </SheetDescription>
           </SheetHeader>
 
           {detailQuery.isLoading ? (
-            <div className="flex min-h-[360px] items-center justify-center text-sm text-slate-500">
+            <div className="flex min-h-[360px] flex-1 items-center justify-center text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               Loading sale details...
             </div>
           ) : detailQuery.isError || !detailQuery.data ? (
-            <div className="grid min-h-[360px] place-items-center px-6 text-center">
+            <div className="grid min-h-[360px] flex-1 place-items-center px-6 text-center">
               <div>
-                <AlertCircle className="mx-auto h-10 w-10 text-rose-500" />
-                <h3 className="mt-3 text-sm font-semibold text-slate-950">
+                <AlertCircle className="mx-auto h-10 w-10 text-red-500" />
+                <h3 className="mt-3 text-sm font-semibold">
                   Detail unavailable
                 </h3>
               </div>
             </div>
           ) : (
-            <SalesDetailPanel detail={detailQuery.data as any} />
+            <SalesDetailPanel detail={detailQuery.data} />
           )}
         </SheetContent>
       </Sheet>
@@ -952,252 +549,568 @@ export default function WarehouseSalesPage() {
   );
 }
 
-function InsightCard({
-  icon: Icon,
+function SalesTypeCard({
+  active,
+  activeColor,
+  count,
+  countColor,
+  description,
+  dotColor,
   label,
+  onClick,
+}: {
+  active: boolean;
+  activeColor?: string;
+  count: number;
+  countColor?: string;
+  description: string;
+  dotColor: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group relative overflow-hidden rounded-xl border p-4 text-left transition-all",
+        active
+          ? cn(
+              activeColor ?? "border-slate-200 bg-slate-50 ring-slate-100",
+              "ring-2 shadow-sm",
+            )
+          : "bg-background hover:bg-muted/50 hover:shadow-sm",
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <span className={cn("h-2.5 w-2.5 rounded-full", dotColor)} />
+        <ShoppingCart className="h-4 w-4 text-muted-foreground/60" />
+      </div>
+      <div className="mt-3">
+        <div
+          className={cn(
+            "text-3xl font-bold tabular-nums tracking-tight",
+            active ? (countColor ?? "text-foreground") : "text-foreground",
+          )}
+        >
+          {count}
+        </div>
+        <div className="mt-1 text-sm font-medium text-foreground">{label}</div>
+        <div className="text-xs text-muted-foreground">{description}</div>
+      </div>
+    </button>
+  );
+}
+
+function CompactSelect({
   value,
-  helper,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-9 w-[130px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function SaleTypeTab({
+  active,
+  count,
+  dotColor,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  count: number;
+  dotColor?: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
+        active
+          ? "bg-foreground text-background shadow-sm"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      {dotColor && <span className={cn("h-2 w-2 rounded-full", dotColor)} />}
+      {label}
+      <Badge
+        variant={active ? "secondary" : "outline"}
+        className="h-5 min-w-5 justify-center px-1.5 text-[10px]"
+      >
+        {count}
+      </Badge>
+    </button>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="divide-y">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+          <div className="h-4 w-36 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-28 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+          <div className="ml-auto h-4 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
+          <div className="h-7 w-20 animate-pulse rounded bg-muted" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SalesTable({
+  rows,
+  onClick,
+}: {
+  rows: SaleRow[];
+  onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div className="overflow-x-auto" onClick={onClick}>
+      <Table className="min-w-[760px]">
+        <TableHeader>
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
+              Invoice
+            </TableHead>
+            <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
+              Date & Time
+            </TableHead>
+            <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
+              Customer
+            </TableHead>
+            <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
+              Type
+            </TableHead>
+            <TableHead className="px-4 text-right text-xs font-semibold uppercase tracking-wider">
+              Total
+            </TableHead>
+            <TableHead className="px-4 text-right text-xs font-semibold uppercase tracking-wider">
+              Paid
+            </TableHead>
+            <TableHead className="px-4 text-right text-xs font-semibold uppercase tracking-wider">
+              Action
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.key}>
+              <TableCell className="px-4 py-3">
+                <span className="font-mono text-[13px] font-semibold tracking-tight text-foreground">
+                  {row.invoiceNumber}
+                </span>
+              </TableCell>
+              <TableCell className="px-4 py-3 text-muted-foreground tabular-nums">
+                {formatDateTime(row.date)}
+              </TableCell>
+              <TableCell className="px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">
+                      {row.customerName}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.customerPhone || "No phone"}
+                    </div>
+                  </div>
+                </div>
+              </TableCell>
+              <TableCell className="px-4 py-3">
+                <Badge
+                  variant="outline"
+                  className={cn("font-semibold", typeBadgeClass(row.type))}
+                >
+                  {row.typeLabel}
+                </Badge>
+                {row.salesmanName && (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {row.salesmanName}
+                  </div>
+                )}
+              </TableCell>
+              <TableCell className="px-4 py-3 text-right text-sm font-semibold tabular-nums">
+                <span className={row.due > 0 ? "text-amber-700" : undefined}>
+                  {money(row.total)}
+                  {row.due > 0 ? " \u26A0" : ""}
+                </span>
+              </TableCell>
+              <TableCell className="px-4 py-3 text-right tabular-nums">
+                <span className="text-sm">{money(row.paid)}</span>
+                <div className="text-xs text-muted-foreground">
+                  {row.paymentMethodLabel}
+                </div>
+              </TableCell>
+              <TableCell className="px-4 py-3 text-right">
+                <button
+                  type="button"
+                  data-kind={row.kind}
+                  data-id={row.id}
+                  className="inline-flex h-8 items-center rounded-md border bg-background px-2.5 text-xs font-medium transition-colors hover:bg-muted"
+                >
+                  View
+                </button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
 }: {
   icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  helper: string;
+  title: string;
+  description: string;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
-          {label}
+    <div className="grid min-h-[320px] place-items-center px-6 text-center">
+      <div>
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <Icon className="h-6 w-6 text-muted-foreground" />
         </div>
-        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500">
-          <Icon className="h-4 w-4" />
-        </div>
+        <h3 className="mt-3 font-semibold">{title}</h3>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+          {description}
+        </p>
+        {action && <div className="mt-4">{action}</div>}
       </div>
-      <div className="mt-3 truncate text-xl font-semibold tracking-tight text-slate-950">
-        {value}
-      </div>
-      <div className="mt-1 truncate text-xs text-slate-500">{helper}</div>
     </div>
   );
 }
+
+function generatePageNumbers(
+  current: number,
+  total: number,
+): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (current > 3) pages.push("...");
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (current < total - 2) pages.push("...");
+  pages.push(total);
+  return pages;
+}
+
+function money(value: string | number | null | undefined) {
+  const parsed = typeof value === "number" ? value : Number(value || 0);
+  return `\u09F3${(Number.isFinite(parsed) ? parsed : 0).toLocaleString("en-BD", { maximumFractionDigits: 2 })}`;
+}
+
+function formatDateTime(value: string | Date) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not available";
+  const now = new Date();
+  const startToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+  const startYesterday = startToday - 24 * 60 * 60 * 1000;
+  const saleDay = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  ).getTime();
+  const timeLabel = date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  if (saleDay === startToday) return `Today ${timeLabel}`;
+  if (saleDay === startYesterday) return "Yesterday";
+  return date.toLocaleDateString("en-BD", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function typeBadgeClass(type: string) {
+  if (type === "pos")
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (type === "salesman") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (type === "pre_order")
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-rose-200 bg-rose-50 text-rose-700";
+}
+
 
 function SalesDetailPanel({ detail }: { detail: any }) {
-  const status = detail.statusKey as SaleRow["status"];
+  const status = detail.statusKey ?? detail.status ?? "pending";
+  const due = Number(detail.payment?.due ?? 0);
+  const invoiceNum =
+    detail.basic?.invoiceNumber ?? detail.basic?.orderNumber ?? "-";
 
   return (
-    <div className="space-y-4 p-5">
-      <section className="rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
-            Basic info
-          </h3>
-          <span
-            className={cn(
-              "inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold",
-              statusClassName(status),
-            )}
-          >
-            {detail.status}
-          </span>
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      <header className="flex items-start justify-between border-b px-6 pb-5 pt-6">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-muted-foreground">
+            Sales Detail
+          </p>
+          <h2 className="mt-1 font-mono text-lg font-semibold tracking-tight">
+            {invoiceNum}
+          </h2>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <DetailLine label="Invoice ID" value={detail.basic.invoiceNumber} />
-          <DetailLine label="Date" value={formatDateTime(detail.basic.date)} />
-          <DetailLine label="Customer" value={detail.basic.customerName} />
-          <DetailLine label="Phone" value={detail.basic.phone || "No phone"} />
-          <DetailLine label="Sales Type" value={detail.basic.salesType} />
-          <DetailLine
-            label="Salesman"
-            value={detail.basic.salesman || "Not assigned"}
+        <span
+          className={cn(
+            "mt-1 inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+            statusPillClass(status),
+          )}
+        >
+          {detail.status ?? status}
+        </span>
+      </header>
+
+      <div className="flex-1 overflow-y-auto">
+        <section className="grid grid-cols-2 gap-x-6 gap-y-4 border-b px-6 py-5">
+          <DetailField
+            label="Date"
+            value={detail.basic?.date ? formatDateTime(detail.basic.date) : "-"}
           />
-        </div>
-      </section>
+          <DetailField
+            label="Customer"
+            value={detail.basic?.customerName ?? "-"}
+          />
+          <DetailField
+            label="Phone"
+            value={detail.basic?.phone || "No phone"}
+          />
+          <DetailField
+            label="Sales Type"
+            value={detail.basic?.salesType ?? "-"}
+          />
+          <DetailField
+            label="Salesman"
+            value={detail.basic?.salesman || "Not assigned"}
+          />
+          <DetailField
+            label="Source Ref"
+            value={
+              detail.source?.sourceId ??
+              detail.source?.orderId ??
+              "Not available"
+            }
+          />
+        </section>
 
-      <section className="rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)]">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
-            Items
-          </h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <th className="px-4 py-3">Product</th>
-                <th className="px-4 py-3">Variant</th>
-                <th className="px-4 py-3 text-right">Qty</th>
-                <th className="px-4 py-3 text-right">Price</th>
-                <th className="px-4 py-3 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.items.map((item: any, index: number) => (
-                <tr
-                  key={`${item.product}-${index}`}
-                  className="border-b border-slate-100 last:border-0"
-                >
-                  <td className="px-4 py-3 font-medium text-slate-950">
-                    {item.product}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{item.variant}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">
-                    {item.quantity}
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-600">
-                    {money(item.price)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950">
-                    {money(item.total)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] p-4">
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
-            Payment summary
-          </h3>
-          <div className="space-y-2 text-sm">
-            <SummaryLine
-              label="Subtotal"
-              value={money(detail.payment.subtotal)}
-            />
-            <SummaryLine
-              label="Discount"
-              value={money(detail.payment.discount)}
-            />
-            <SummaryLine
-              label="Total"
-              value={money(detail.payment.total)}
-              strong
-            />
-            <SummaryLine label="Paid" value={money(detail.payment.paid)} />
-            <SummaryLine
-              label="Due"
-              value={money(detail.payment.due)}
-              strong
-              danger={Number(detail.payment.due) > 0}
-            />
+        <section className="border-b px-6 py-5">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h3 className="text-[13px] font-semibold">Line Items</h3>
+            <span className="text-xs text-muted-foreground">
+              {detail.items?.length ?? 0} item
+              {detail.items?.length === 1 ? "" : "s"}
+            </span>
           </div>
-        </div>
-
-        <div className="rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)] p-4">
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
-            Source info
-          </h3>
-          <div className="space-y-2 text-sm">
-            <SummaryLine label="Source" value={detail.source.source} />
-            <SummaryLine
-              label="Source ID"
-              value={detail.source.sourceId || "N/A"}
-            />
-            <SummaryLine
-              label="Order ID"
-              value={detail.source.orderId || "N/A"}
-            />
-            <SummaryLine
-              label="Estimate Ref"
-              value={detail.source.estimateRef || "N/A"}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-[oklch(0.998_0.002_110)]">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
-            Payment history
-          </h3>
-        </div>
-        {detail.paymentHistory.length === 0 ? (
-          <div className="px-4 py-5 text-sm text-slate-500">
-            No payment has been recorded yet.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Method</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.paymentHistory.map((payment: any, index: number) => (
-                  <tr
-                    key={`${payment.date}-${index}`}
-                    className="border-b border-slate-100 last:border-0"
-                  >
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDateTime(payment.date)}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-950">
-                      {payment.method}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-950">
-                      {money(payment.amount)}
-                    </td>
+          {detail.items?.length > 0 ? (
+            <div className="-mx-6 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-y text-left text-[11px] font-medium text-muted-foreground">
+                    <th className="px-6 py-2 font-medium">Product</th>
+                    <th className="py-2 pr-4 font-medium">Variant</th>
+                    <th className="py-2 pr-4 text-right font-medium">Qty</th>
+                    <th className="py-2 pr-4 text-right font-medium">Price</th>
+                    <th className="py-2 pr-6 text-right font-medium">Total</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {detail.items.map((item: any, index: number) => (
+                    <tr
+                      key={`${item.product}-${index}`}
+                      className="border-b last:border-0"
+                    >
+                      <td className="px-6 py-2.5 font-medium">
+                        {item.product}
+                      </td>
+                      <td className="py-2.5 pr-4 text-muted-foreground">
+                        {item.variant}
+                      </td>
+                      <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
+                        {item.quantity}
+                      </td>
+                      <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
+                        {money(item.price)}
+                      </td>
+                      <td className="py-2.5 pr-6 text-right tabular-nums font-medium">
+                        {money(item.total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No items found.</p>
+          )}
+        </section>
+
+        <section className="border-b px-6 py-5">
+          <h3 className="mb-3 text-[13px] font-semibold">Payment</h3>
+          <div className="space-y-1.5 text-sm">
+            <PaymentRow label="Subtotal" value={money(detail.payment?.subtotal)} />
+            <PaymentRow label="Discount" value={money(detail.payment?.discount)} />
+            <div className="!mt-2 border-t pt-2">
+              <PaymentRow
+                label="Total"
+                value={money(detail.payment?.total)}
+                bold
+              />
+            </div>
+            <PaymentRow label="Paid" value={money(detail.payment?.paid)} />
+            <PaymentRow
+              label="Due"
+              value={money(detail.payment?.due)}
+              bold
+              className={due > 0 ? "text-red-600" : undefined}
+            />
           </div>
-        )}
-      </section>
+          {due > 0 && (
+            <p className="mt-3 text-xs text-red-600/80">
+              Outstanding balance requires collection.
+            </p>
+          )}
+        </section>
 
-      <section className="grid gap-2 sm:grid-cols-2">
-        <ActionShell icon={Printer} label="Print Invoice" />
-        <ActionShell icon={Banknote} label="Collect Due" />
-        <ActionShell icon={FileText} label="Edit Sale" />
-        <ActionShell icon={RotateCcw} label="Process Return" />
-      </section>
-    </div>
-  );
-}
+        <section className="border-b px-6 py-5">
+          <h3 className="mb-3 text-[13px] font-semibold">Source</h3>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <DetailField
+              label="Source"
+              value={detail.source?.source ?? "-"}
+            />
+            <DetailField
+              label="Source ID"
+              value={detail.source?.sourceId || "N/A"}
+            />
+            <DetailField
+              label="Order ID"
+              value={detail.source?.orderId || "N/A"}
+            />
+            <DetailField
+              label="Estimate Ref"
+              value={detail.source?.estimateRef || "N/A"}
+            />
+          </div>
+        </section>
 
-function DetailLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-        {label}
+        <section className="px-6 py-5">
+          <h3 className="mb-3 text-[13px] font-semibold">Payment History</h3>
+          {detail.paymentHistory?.length > 0 ? (
+            <div className="-mx-6 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-y text-left text-[11px] font-medium text-muted-foreground">
+                    <th className="px-6 py-2 font-medium">Date</th>
+                    <th className="py-2 pr-4 font-medium">Method</th>
+                    <th className="py-2 pr-6 text-right font-medium">
+                      Amount
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.paymentHistory.map((p: any, i: number) => (
+                    <tr
+                      key={`${p.date}-${i}`}
+                      className="border-b last:border-0"
+                    >
+                      <td className="px-6 py-2.5 text-muted-foreground">
+                        {formatDateTime(p.date)}
+                      </td>
+                      <td className="py-2.5 pr-4 font-medium">{p.method}</td>
+                      <td className="py-2.5 pr-6 text-right tabular-nums font-medium">
+                        {money(p.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No payment has been recorded yet.
+            </p>
+          )}
+        </section>
       </div>
-      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
+
+      <footer className="flex shrink-0 items-center gap-2 border-t bg-muted/30 px-6 py-3">
+        <DrawerAction icon={Printer} label="Print Invoice" />
+        <DrawerAction icon={Banknote} label="Collect Due" />
+        <DrawerAction icon={FileText} label="Edit Sale" />
+        <DrawerAction icon={RotateCcw} label="Process Return" />
+      </footer>
     </div>
   );
 }
 
-function SummaryLine({
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate text-sm" title={value}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function PaymentRow({
   label,
   value,
-  strong,
-  danger,
+  bold,
+  className,
 }: {
   label: string;
   value: string;
-  strong?: boolean;
-  danger?: boolean;
+  bold?: boolean;
+  className?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-      <span className="text-slate-500">{label}</span>
-      <span
-        className={cn(
-          strong ? "font-semibold text-slate-950" : "text-slate-700",
-          danger && "text-amber-700",
-        )}
-      >
+    <div className={cn("flex items-center justify-between", className)}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("tabular-nums", bold && "font-semibold")}>
         {value}
       </span>
     </div>
   );
 }
 
-function ActionShell({
+function DrawerAction({
   icon: Icon,
   label,
 }: {
@@ -1208,10 +1121,17 @@ function ActionShell({
     <button
       type="button"
       disabled
-      className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-400"
+      className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-3.5 w-3.5" />
       {label}
     </button>
   );
+}
+
+function statusPillClass(status: string) {
+  if (status === "completed") return "bg-emerald-50 text-emerald-700";
+  if (status === "cancelled" || status === "rejected")
+    return "bg-red-50 text-red-700";
+  return "bg-amber-50 text-amber-700";
 }
