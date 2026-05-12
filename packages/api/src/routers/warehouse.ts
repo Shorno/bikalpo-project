@@ -1171,6 +1171,11 @@ const orderQueries = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
+            const warehouseUser = await db.query.user.findFirst({
+                where: eq(user.id, userId),
+                columns: { name: true, warehouseName: true },
+            });
+
             const orderData = await db.query.order.findFirst({
                 where: and(
                     eq(order.id, input.orderId),
@@ -1316,6 +1321,9 @@ const orderQueries = {
                 && !currentInvoice;
 
             return {
+                warehouse: {
+                    label: warehouseUser?.warehouseName || warehouseUser?.name || "Warehouse",
+                },
                 order: {
                     ...orderData,
                     customerName:

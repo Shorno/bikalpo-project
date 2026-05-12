@@ -15,6 +15,7 @@ import {
   Truck,
   User,
   XCircle,
+  Warehouse,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -22,55 +23,59 @@ import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { OrderFlowStepper } from "./_components/order-flow-stepper";
+import { OrderSourceBadge } from "./_components/order-source-badge";
+
+/* ── Helpers ─────────────────────────────────────────────── */
 
 function formatMoney(value: unknown) {
-  return `Tk ${Number(value || 0).toLocaleString("en-BD")}`;
+  return `৳ ${Number(value || 0).toLocaleString("en-BD")}`;
 }
 
 function formatDate(value?: string | Date | null) {
-  if (!value) return "Not available";
+  if (!value) return "—";
   return new Date(value).toLocaleDateString("en-BD", {
-    day: "numeric",
+    day: "2-digit",
     month: "short",
     year: "numeric",
   });
 }
 
 function getStatus(status: string, requiresBuyerAcceptance?: boolean) {
-  if (status === "cancelled") {
+  if (status === "cancelled")
     return {
       label: "Rejected",
       icon: XCircle,
       className: "border-red-200 bg-red-50 text-red-700",
     };
-  }
-  if (requiresBuyerAcceptance) {
+  if (requiresBuyerAcceptance)
     return {
-      label: "Accepted (Modify)",
+      label: "Accepted (Modified)",
       icon: AlertCircle,
       className: "border-orange-200 bg-orange-50 text-orange-700",
     };
-  }
-  if (status === "confirmed") {
+  if (status === "confirmed")
     return {
       label: "Accepted",
       icon: CheckCircle2,
       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
     };
-  }
-  if (status === "processing") {
+  if (status === "processing")
     return {
       label: "Processing",
       icon: Truck,
       className: "border-blue-200 bg-blue-50 text-blue-700",
     };
-  }
   return {
     label: "Pending Approval",
     icon: Clock,
     className: "border-amber-200 bg-amber-50 text-amber-700",
   };
 }
+
+/* ── Page ────────────────────────────────────────────────── */
 
 export default function OrderManagementDetailPage() {
   const params = useParams();
@@ -161,6 +166,8 @@ export default function OrderManagementDetailPage() {
     });
   };
 
+  /* ── Loading / Error ──────────────────────────────────── */
+
   if (isLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground">
@@ -186,32 +193,42 @@ export default function OrderManagementDetailPage() {
   }
 
   const StatusIcon = status?.icon ?? Clock;
+  const subtotal = order.items.reduce(
+    (s: number, i: any) => s + Number(i.totalPrice ?? 0),
+    0,
+  );
+
+  /* ── Render ───────────────────────────────────────────── */
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <div className="mx-auto max-w-6xl space-y-6 pb-10">
+      {/* ─── Header ─── */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
           <Link
             href="/warehouse/dashboard/order-management"
-            className="mt-1 flex h-9 w-9 items-center justify-center rounded-lg border bg-white hover:bg-gray-50"
+            className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors hover:bg-gray-50"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="font-mono text-2xl font-bold tracking-tight text-gray-950">
                 {order.orderNumber}
               </h1>
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${status?.className}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${status?.className}`}
               >
                 <StatusIcon className="h-3.5 w-3.5" />
                 {status?.label}
               </span>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Direct retailer order review
-            </p>
+            <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+              <Warehouse className="h-3.5 w-3.5" />
+              <span>{data.warehouse?.label ?? "Warehouse"}</span>
+              <span className="text-gray-300">·</span>
+              <span>Order Review</span>
+            </div>
           </div>
         </div>
 
@@ -221,7 +238,7 @@ export default function OrderManagementDetailPage() {
               type="button"
               onClick={() => prepareMutation.mutate()}
               disabled={prepareMutation.isPending}
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-gray-950 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-gray-950 px-5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-60"
             >
               {prepareMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -234,7 +251,7 @@ export default function OrderManagementDetailPage() {
           {data.invoice && (
             <Link
               href="/warehouse/dashboard/dispatch-orders"
-              className="inline-flex h-10 items-center gap-2 rounded-lg border bg-white px-4 text-sm font-medium hover:bg-gray-50"
+              className="inline-flex h-10 items-center gap-2 rounded-lg border bg-white px-5 text-sm font-medium transition-colors hover:bg-gray-50"
             >
               <Truck className="h-4 w-4" />
               Go to Dispatch
@@ -243,118 +260,113 @@ export default function OrderManagementDetailPage() {
         </div>
       </div>
 
+      {/* ─── Buyer acceptance banner ─── */}
       {order.requiresBuyerAcceptance && (
-        <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+        <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           Retailer acceptance is required before dispatch because approved
           quantities were modified.
         </div>
       )}
 
+      {/* ─── Flow Stepper ─── */}
+      <OrderFlowStepper steps={data.flow} />
+
+      {/* ─── Order Info + Payment ─── */}
       <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-lg border bg-white p-4 shadow-sm lg:col-span-2">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Order Info
-          </h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            <InfoRow
-              icon={FileText}
-              label="Order ID"
-              value={order.orderNumber}
-            />
-            <InfoRow
-              icon={Clock}
-              label="Order Date"
-              value={formatDate(order.createdAt)}
-            />
-            <InfoRow
-              icon={User}
-              label="Customer"
-              value={order.customerName || "Not available"}
-            />
-            <InfoRow
-              icon={Phone}
-              label="Phone"
-              value={order.customerPhone || "Not available"}
-            />
-            <InfoRow
-              icon={MapPin}
-              label="Area"
-              value={
-                order.shippingArea || order.shippingCity || "Not available"
-              }
-            />
-            <InfoRow
-              icon={ShoppingSourceIcon}
-              label="Order Source"
-              value="Direct retailer order"
-            />
+        {/* Order Info */}
+        <div className="rounded-xl border bg-white shadow-sm lg:col-span-2">
+          <div className="border-b px-5 py-3.5">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Order Information
+            </h2>
+          </div>
+          <div className="grid gap-px bg-gray-100 md:grid-cols-2">
+            <InfoCell icon={FileText} label="Order ID" value={order.orderNumber} />
+            <InfoCell icon={Clock} label="Order Date" value={formatDate(order.createdAt)} />
+            <InfoCell icon={User} label="Customer" value={order.customerName || "—"} />
+            <InfoCell icon={Phone} label="Phone" value={order.customerPhone || "—"} />
+            <InfoCell icon={MapPin} label="Area" value={order.shippingArea || order.shippingCity || "—"} />
+            <div className="flex items-center gap-3 bg-white px-5 py-3.5">
+              <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <div className="text-[11px] font-medium uppercase text-muted-foreground">
+                  Order Source
+                </div>
+                <div className="mt-1">
+                  <OrderSourceBadge source={order.orderSource ?? "direct"} />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="rounded-lg border bg-white p-4 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Payment / Pre-Order
-          </h2>
-          <div className="space-y-3 text-sm">
-            <StaticLine
+        {/* Payment */}
+        <div className="rounded-xl border bg-white shadow-sm">
+          <div className="border-b px-5 py-3.5">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Payment Details
+            </h2>
+          </div>
+          <div className="space-y-0 divide-y">
+            <PaymentRow
               label="Payment Status"
               value={order.paymentStatus === "paid" ? "Paid" : "Due"}
+              highlight={order.paymentStatus === "paid"}
             />
-            <StaticLine
+            <PaymentRow
               label="Payment Method"
-              value={String(order.paymentMethod).replace(/_/g, " ")}
+              value={String(order.paymentMethod ?? "—").replace(/_/g, " ")}
             />
-            <StaticLine
-              label="Advance Payment"
-              value="Not available in Direct v1"
-              muted
-            />
-            <StaticLine label="Priority" value="Static - Normal" muted />
+            <PaymentRow label="Priority" value="Normal" muted />
           </div>
         </div>
       </section>
 
-      <section className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      {/* ─── Order Item List ─── */}
+      <section className="overflow-hidden rounded-xl border bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b px-5 py-3.5">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Order Item List
           </h2>
-          <span className="text-sm font-semibold">
-            {formatMoney(order.total)}
-          </span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px]">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
-              <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase text-muted-foreground">
-                <th className="px-3 py-3">SKU</th>
-                <th className="px-3 py-3">Product</th>
-                <th className="px-3 py-3 text-right">Ordered Qty</th>
-                <th className="px-3 py-3 text-right">Unit Price</th>
-                <th className="px-3 py-3 text-right">Total</th>
+              <tr className="border-b bg-gray-50/80 text-left text-xs font-semibold uppercase text-muted-foreground">
+                <th className="px-5 py-3">SKU</th>
+                <th className="px-5 py-3">Product</th>
+                <th className="px-5 py-3 text-right">Ordered Qty</th>
+                <th className="px-5 py-3 text-right">Unit Price</th>
+                <th className="px-5 py-3 text-right">Total</th>
               </tr>
             </thead>
             <tbody>
               {order.items.map((item: any) => (
-                <tr key={item.id} className="border-b last:border-0">
-                  <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
+                <tr
+                  key={item.id}
+                  className="border-b last:border-0 transition-colors hover:bg-gray-50/50"
+                >
+                  <td className="px-5 py-3 font-mono text-xs text-muted-foreground">
                     {item.variant?.sku || `SKU-${item.id}`}
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-5 py-3">
                     <div className="font-medium text-gray-900">
                       {item.productName}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {item.productSize}
-                    </div>
+                    {item.productSize && (
+                      <div className="text-xs text-muted-foreground">
+                        {item.productSize}
+                      </div>
+                    )}
                   </td>
-                  <td className="px-3 py-3 text-right text-sm">
-                    {item.quantity}
+                  <td className="px-5 py-3 text-right tabular-nums">
+                    {item.quantity} {item.variant?.unitLabel || ""}
                   </td>
-                  <td className="px-3 py-3 text-right text-sm">
+                  <td className="px-5 py-3 text-right tabular-nums">
                     {formatMoney(item.unitPrice)}
                   </td>
-                  <td className="px-3 py-3 text-right text-sm font-semibold">
+                  <td className="px-5 py-3 text-right font-semibold tabular-nums">
                     {formatMoney(item.totalPrice)}
                   </td>
                 </tr>
@@ -362,28 +374,46 @@ export default function OrderManagementDetailPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Summary */}
+        <div className="border-t bg-gray-50/60 px-5 py-4">
+          <div className="ml-auto w-full max-w-xs space-y-1.5 text-sm">
+            <SummaryRow label="Subtotal" value={formatMoney(subtotal)} />
+            <SummaryRow label="Discount" value={formatMoney(0)} muted />
+            <SummaryRow label="Est. Delivery Charge" value={formatMoney(0)} muted />
+            <Separator className="my-2" />
+            <div className="flex items-center justify-between text-base font-bold text-gray-950">
+              <span>Estimated Total</span>
+              <span>{formatMoney(subtotal)}</span>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <section className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Stock & Approval Status
+      {/* ─── Stock & Approval ─── */}
+      <section className="overflow-hidden rounded-xl border bg-white shadow-sm">
+        <div className="flex flex-col gap-2 border-b px-5 py-3.5 md:flex-row md:items-center md:justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Stock &amp; Approval Status
           </h2>
-          <span className="rounded-full border bg-gray-50 px-3 py-1 text-sm font-semibold">
-            Final Approved Total: {formatMoney(finalApprovedTotal)}
-          </span>
+          <div className="inline-flex items-center gap-2 rounded-lg border bg-gray-50 px-3 py-1.5 text-sm font-semibold tabular-nums">
+            Final Approved Total:
+            <span className="text-emerald-700">
+              {formatMoney(finalApprovedTotal)}
+            </span>
+          </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px]">
+          <table className="w-full min-w-[820px] text-sm">
             <thead>
-              <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase text-muted-foreground">
-                <th className="px-3 py-3">SKU</th>
-                <th className="px-3 py-3">Product</th>
-                <th className="px-3 py-3 text-right">Ordered</th>
-                <th className="px-3 py-3 text-right">Available Stock</th>
-                <th className="px-3 py-3 text-right">Approved Qty</th>
-                <th className="px-3 py-3 text-right">Price</th>
-                <th className="px-3 py-3 text-right">Total</th>
+              <tr className="border-b bg-gray-50/80 text-left text-xs font-semibold uppercase text-muted-foreground">
+                <th className="px-5 py-3">SKU</th>
+                <th className="px-5 py-3">Product</th>
+                <th className="px-5 py-3 text-right">Ordered</th>
+                <th className="px-5 py-3 text-right">Available Stock</th>
+                <th className="px-5 py-3 text-right">Approved Qty</th>
+                <th className="px-5 py-3 text-right">Price</th>
+                <th className="px-5 py-3 text-right">Total</th>
               </tr>
             </thead>
             <tbody>
@@ -393,40 +423,49 @@ export default function OrderManagementDetailPage() {
                 const price = Number(
                   item.modifiedUnitPrice ?? item.unitPrice ?? 0,
                 );
+                const available = Number(item.stock.availableQty);
+                const isLow = available < item.quantity;
+
                 return (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
+                  <tr
+                    key={item.id}
+                    className="border-b last:border-0 transition-colors hover:bg-gray-50/50"
+                  >
+                    <td className="px-5 py-3 font-mono text-xs text-muted-foreground">
                       {item.variant?.sku || `SKU-${item.id}`}
                     </td>
-                    <td className="px-3 py-3 text-sm font-medium">
+                    <td className="px-5 py-3 font-medium text-gray-900">
                       {item.productName}
                     </td>
-                    <td className="px-3 py-3 text-right text-sm">
-                      {item.quantity}
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      {item.quantity} {item.variant?.unitLabel || ""}
                     </td>
-                    <td className="px-3 py-3 text-right text-sm">
-                      {Number(item.stock.availableQty).toLocaleString("en-BD")}
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      <span className={isLow ? "font-semibold text-red-600" : ""}>
+                        {available.toLocaleString("en-BD")}{" "}
+                        {item.variant?.unitLabel || ""}
+                      </span>
                     </td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-5 py-3 text-right">
                       <input
                         type="number"
                         min={0}
                         max={item.quantity}
                         value={qty}
                         disabled={!isPending || reviewMutation.isPending}
-                        onChange={(event) =>
-                          setApprovedQty((current) => ({
-                            ...current,
-                            [item.id]: Math.max(0, Number(event.target.value)),
+                        onChange={(e) =>
+                          setApprovedQty((c) => ({
+                            ...c,
+                            [item.id]: Math.max(0, Number(e.target.value)),
                           }))
                         }
-                        className="h-9 w-24 rounded-lg border px-2 text-right text-sm disabled:bg-gray-50"
+                        className="h-9 w-24 rounded-lg border bg-white px-2 text-right text-sm tabular-nums transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-50 disabled:text-muted-foreground"
                       />
                     </td>
-                    <td className="px-3 py-3 text-right text-sm">
+                    <td className="px-5 py-3 text-right tabular-nums">
                       {formatMoney(price)}
                     </td>
-                    <td className="px-3 py-3 text-right text-sm font-semibold">
+                    <td className="px-5 py-3 text-right font-semibold tabular-nums">
                       {formatMoney(qty * price)}
                     </td>
                   </tr>
@@ -436,115 +475,62 @@ export default function OrderManagementDetailPage() {
           </table>
         </div>
 
-        <label className="mt-4 block">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">
-            Reason / Approval Note (Optional)
-          </span>
-          <textarea
-            value={approvalNote}
-            onChange={(event) => setApprovalNote(event.target.value)}
-            disabled={!isPending || reviewMutation.isPending}
-            placeholder="Stock shortage for an item, delivery note, or approval reason"
-            className="min-h-24 w-full rounded-lg border p-3 text-sm outline-none disabled:bg-gray-50"
-          />
-        </label>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {isPending ? (
-            <>
-              <button
-                type="button"
-                onClick={acceptOrder}
-                disabled={reviewMutation.isPending}
-                className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-              >
-                {reviewMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-4 w-4" />
-                )}
-                Accept Order
-              </button>
-              <button
-                type="button"
-                onClick={rejectOrder}
-                disabled={reviewMutation.isPending}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
-              >
-                <XCircle className="h-4 w-4" />
-                Reject Order
-              </button>
-            </>
-          ) : (
-            <span className="inline-flex h-10 items-center rounded-lg border bg-gray-50 px-4 text-sm text-muted-foreground">
-              Approval actions are available only for pending orders.
+        {/* Approval note + actions */}
+        <div className="border-t bg-gray-50/40 px-5 py-5">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Reason / Approval Note (Optional)
             </span>
-          )}
-        </div>
-      </section>
+            <textarea
+              value={approvalNote}
+              onChange={(e) => setApprovalNote(e.target.value)}
+              disabled={!isPending || reviewMutation.isPending}
+              placeholder="e.g. Stock shortage for Soybean Oil"
+              className="min-h-20 w-full rounded-lg border bg-white p-3 text-sm outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100 disabled:text-muted-foreground"
+            />
+          </label>
 
-      <section className="rounded-lg border bg-white p-4 shadow-sm">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Delivery Assignment Flow
-        </h2>
-        <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
-          {data.flow.map((step: any, index: number) => (
-            <div key={step.key} className="relative rounded-lg border p-3">
-              <div
-                className={`mb-3 flex h-9 w-9 items-center justify-center rounded-full ${
-                  step.completed
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-gray-100 text-gray-400"
-                }`}
-              >
-                {step.completed ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : (
-                  <Clock className="h-4 w-4" />
-                )}
-              </div>
-              <div className="text-sm font-semibold text-gray-900">
-                {step.label}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {step.completed ? formatDate(step.date) : "Not available yet"}
-              </div>
-              <div className="mt-2 text-[11px] font-medium uppercase text-muted-foreground">
-                Step {index + 1}
-              </div>
-            </div>
-          ))}
+          <div className="mt-4 flex flex-wrap gap-2.5">
+            {isPending ? (
+              <>
+                <button
+                  type="button"
+                  onClick={acceptOrder}
+                  disabled={reviewMutation.isPending}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {reviewMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                  Accept Order
+                </button>
+                <button
+                  type="button"
+                  onClick={rejectOrder}
+                  disabled={reviewMutation.isPending}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 bg-white px-5 text-sm font-semibold text-red-700 shadow-sm transition-colors hover:bg-red-50 disabled:opacity-60"
+                >
+                  <XCircle className="h-4 w-4" />
+                  Reject Order
+                </button>
+              </>
+            ) : (
+              <span className="inline-flex h-10 items-center rounded-lg border bg-gray-100 px-4 text-sm text-muted-foreground">
+                Approval actions are available only for pending orders.
+              </span>
+            )}
+          </div>
         </div>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-3">
-        <button
-          type="button"
-          disabled
-          className="rounded-lg border bg-gray-50 p-3 text-left text-sm font-medium text-muted-foreground"
-        >
-          View Customer - static until customer detail is wired
-        </button>
-        <button
-          type="button"
-          disabled
-          className="rounded-lg border bg-gray-50 p-3 text-left text-sm font-medium text-muted-foreground"
-        >
-          View Salesman - not applicable to Direct order
-        </button>
-        <button
-          type="button"
-          onClick={() => router.push("/warehouse/dashboard/dispatch-orders")}
-          className="rounded-lg border bg-white p-3 text-left text-sm font-medium hover:bg-gray-50"
-        >
-          Dispatch / Ready Orders
-        </button>
       </section>
     </div>
   );
 }
 
-function InfoRow({
+/* ── Sub-components ──────────────────────────────────────── */
+
+function InfoCell({
   icon: Icon,
   label,
   value,
@@ -554,19 +540,50 @@ function InfoRow({
   value: string;
 }) {
   return (
-    <div className="flex gap-3 rounded-lg border bg-gray-50/70 p-3">
-      <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" />
+    <div className="flex items-center gap-3 bg-white px-5 py-3.5">
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <div>
-        <div className="text-xs font-medium uppercase text-muted-foreground">
+        <div className="text-[11px] font-medium uppercase text-muted-foreground">
           {label}
         </div>
-        <div className="mt-1 text-sm font-semibold text-gray-950">{value}</div>
+        <div className="mt-0.5 text-sm font-semibold text-gray-950">
+          {value}
+        </div>
       </div>
     </div>
   );
 }
 
-function StaticLine({
+function PaymentRow({
+  label,
+  value,
+  muted,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-5 py-3">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span
+        className={
+          highlight
+            ? "rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"
+            : muted
+              ? "text-sm text-muted-foreground"
+              : "text-sm font-semibold text-gray-950"
+        }
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SummaryRow({
   label,
   value,
   muted,
@@ -576,19 +593,13 @@ function StaticLine({
   muted?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b pb-2 last:border-0 last:pb-0">
+    <div className="flex items-center justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>
       <span
-        className={
-          muted ? "text-muted-foreground" : "font-semibold text-gray-950"
-        }
+        className={muted ? "text-muted-foreground" : "font-semibold text-gray-950"}
       >
         {value}
       </span>
     </div>
   );
-}
-
-function ShoppingSourceIcon({ className }: { className?: string }) {
-  return <ShieldCheck className={className} />;
 }
