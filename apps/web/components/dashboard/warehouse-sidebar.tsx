@@ -33,6 +33,7 @@ import {
   WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
 import { NavUser } from "@/components/dashboard/nav-user";
 import UserNavSkeleton from "@/components/dashboard/user-nav-skeleton";
@@ -86,17 +87,9 @@ const warehouseNavGroups: NavGroup[] = [
           { title: "Stock", url: `${WH}/stock/list` },
           { title: "Brands", url: `${WH}/stock/brands` },
           { title: "Carton Tracking", url: `${WH}/carton-tracking` },
-          {
-            title: "Variant Attributes",
-            url: `${WH}/stock/variant-attributes`,
-          },
-          { title: "Low Stocks", url: `${WH}/stock/low-stocks` },
           { title: "Expired Products", url: `${WH}/stock/expired` },
-          { title: "Empty Pack", url: `${WH}/stock/empty-pack` },
           { title: "Stock Adjustment", url: `${WH}/stock-adjustment` },
-          { title: "Stock Transfer", url: `${WH}/stock/transfer` },
           { title: "Unit/Carton Inventory", url: `${WH}/stock/unit-carton` },
-          { title: "Damage", url: `${WH}/stock/damage` },
           { title: "Add Stock", url: `${WH}/stock/add` },
         ],
       },
@@ -105,7 +98,11 @@ const warehouseNavGroups: NavGroup[] = [
   {
     label: "Supply Management",
     items: [
-      { title: "Supply Orders", url: `${WH}/supply-orders`, icon: InboxIcon },
+      {
+        title: "Order Management",
+        url: `${WH}/order-management`,
+        icon: InboxIcon,
+      },
       {
         title: "Dispatch Orders",
         url: `${WH}/dispatch-orders`,
@@ -274,6 +271,11 @@ const warehouseNavGroups: NavGroup[] = [
 
 export function WarehouseSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { data, isPending } = authClient.useSession();
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -287,7 +289,9 @@ export function WarehouseSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <Link href="/" className="flex items-center gap-2">
                 <WarehouseIcon className="w-5 h-5 text-amber-600" />
                 <p className="text-lg font-bold">
-                  {(data?.user as any)?.warehouseName || "My Warehouse"}
+                  {hasMounted
+                    ? (data?.user as any)?.warehouseName || "My Warehouse"
+                    : "My Warehouse"}
                 </p>
               </Link>
             </SidebarMenuButton>
@@ -298,7 +302,7 @@ export function WarehouseSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <NavGrouped groups={warehouseNavGroups} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? (
+        {!hasMounted || isPending || !data ? (
           <UserNavSkeleton />
         ) : (
           <NavUser session={data as any} />

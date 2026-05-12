@@ -4148,9 +4148,10 @@ const mutations = {
         const [newOrder] = await tx
           .insert(order)
           .values({
-            orderNumber,
-            userId: estimateData.customerId,
-            subtotal: estimateData.subtotal,
+                        orderNumber,
+                        userId: estimateData.customerId,
+                        orderSource: "estimate",
+                        subtotal: estimateData.subtotal,
             discount: estimateData.discount,
             total: estimateData.total,
             shippingCost: "0",

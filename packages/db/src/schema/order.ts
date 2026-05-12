@@ -38,6 +38,14 @@ export const paymentStatusEnum = pgEnum("payment_status", [
 // B2B order type enum (B2B = shop buying from admin, B2C = consumer buying from shop)
 export const b2bOrderTypeEnum = pgEnum("b2b_order_type", ["b2b", "b2c"]);
 
+// Operational source used by order management queues
+export const orderSourceEnum = pgEnum("order_source", [
+    "direct",
+    "salesman",
+    "estimate",
+    "pre_order",
+]);
+
 // Payment method enum
 export const paymentMethodEnum = pgEnum("payment_method", [
     "cash_on_delivery",
@@ -58,6 +66,9 @@ export const order = pgTable(
 
         // Order type: b2b (shop→admin wholesale) or b2c (consumer→shop retail)
         orderType: b2bOrderTypeEnum("order_type").default("b2c").notNull(),
+        orderSource: orderSourceEnum("order_source")
+            .default("direct")
+            .notNull(),
 
         // For B2C orders: which shop this order is placed with (null = B2B/admin)
         shopId: text("shop_id").references(() => user.id, { onDelete: "set null" }),
@@ -168,6 +179,7 @@ export const order = pgTable(
         index("order_status_idx").on(table.status),
         index("order_orderNumber_idx").on(table.orderNumber),
         index("order_orderType_idx").on(table.orderType),
+        index("order_orderSource_idx").on(table.orderSource),
         index("order_shopId_idx").on(table.shopId),
     ],
 );
@@ -262,6 +274,7 @@ export type OrderStatus = (typeof orderStatusEnum.enumValues)[number];
 export type PaymentStatus = (typeof paymentStatusEnum.enumValues)[number];
 export type PaymentMethod = (typeof paymentMethodEnum.enumValues)[number];
 export type OrderType = (typeof b2bOrderTypeEnum.enumValues)[number];
+export type OrderSource = (typeof orderSourceEnum.enumValues)[number];
 
 export interface OrderWithItems extends Order {
     items: OrderItem[];

@@ -69,6 +69,7 @@ import { warehouseApplicationRouter } from "./warehouse-application";
 import { warehouseDeliveryRouter } from "./warehouse-delivery";
 import { warehouseEmployeeRouter } from "./warehouse-employee";
 import { warehousePosRouter } from "./warehouse-pos";
+import { warehouseSalesRouter } from "./warehouse-sales";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -147,6 +148,7 @@ export const appRouter = {
   warehouseDelivery: warehouseDeliveryRouter,
   stockAdjustment: stockAdjustmentRouter,
   warehousePos: warehousePosRouter,
+  warehouseSales: warehouseSalesRouter,
   warehouseCatalogApproval: warehouseCatalogApprovalRouter,
   adminCatalogApproval: adminCatalogApprovalRouter,
 };

@@ -63,19 +63,34 @@ export async function generateInvoiceFromOrder(orderId: number) {
 
     const newInvoice = result[0]!;
 
-    if (orderData.items.length > 0) {
+    const invoiceItems = orderData.items
+        .map((item) => {
+            const quantity = item.modifiedQty ?? item.quantity;
+            const unitPrice = item.modifiedUnitPrice ?? item.unitPrice;
+            const lineTotal = (Number(unitPrice) * quantity).toFixed(2);
+
+            return {
+                item,
+                quantity,
+                unitPrice,
+                lineTotal,
+            };
+        })
+        .filter((item) => item.quantity > 0);
+
+    if (invoiceItems.length > 0) {
         await db.insert(invoiceItem).values(
-            orderData.items.map(
-                (item) =>
+            invoiceItems.map(
+                ({ item, quantity, unitPrice, lineTotal }) =>
                     ({
                         invoiceId: newInvoice.id,
                         productId: item.productId,
                         productName: item.productName,
                         productSku: item.productSize,
                         productImage: item.productImage,
-                        quantity: item.quantity,
-                        unitPrice: item.unitPrice,
-                        lineTotal: item.totalPrice,
+                        quantity,
+                        unitPrice,
+                        lineTotal,
                     }) satisfies NewInvoiceItem,
             ),
         );
