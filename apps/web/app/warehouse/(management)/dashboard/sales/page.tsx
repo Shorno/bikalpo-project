@@ -1,9 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Banknote,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -21,8 +22,19 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -541,7 +553,7 @@ export default function WarehouseSalesPage() {
               </div>
             </div>
           ) : (
-            <SalesDetailPanel detail={detailQuery.data} />
+            <SalesDetailPanel detail={detailQuery.data} selectedSale={selectedSale} />
           )}
         </SheetContent>
       </Sheet>
@@ -869,11 +881,43 @@ function typeBadgeClass(type: string) {
 }
 
 
-function SalesDetailPanel({ detail }: { detail: any }) {
+function SalesDetailPanel({
+  detail,
+  selectedSale,
+}: {
+  detail: any;
+  selectedSale: { kind: "pos" | "invoice"; id: number } | null;
+}) {
   const status = detail.statusKey ?? detail.status ?? "pending";
   const due = Number(detail.payment?.due ?? 0);
   const invoiceNum =
     detail.basic?.invoiceNumber ?? detail.basic?.orderNumber ?? "-";
+  const [collectDueOpen, setCollectDueOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  const collectDueMutation = useMutation({
+    mutationFn: (data: {
+      amount: number;
+      paymentMethod: "cash" | "bkash" | "nagad" | "bank";
+      transactionRef?: string;
+      note?: string;
+    }) =>
+      orpc.warehouseSales.collectDue.call({
+        kind: selectedSale!.kind,
+        id: selectedSale!.id,
+        ...data,
+      }),
+    onSuccess: () => {
+      toast.success("Payment collected successfully");
+      setCollectDueOpen(false);
+      queryClient.invalidateQueries({
+        queryKey: ["warehouseSales"],
+      });
+    },
+    onError: (error: any) => {
+      toast.error(error?.message ?? "Failed to collect payment");
+    },
+  });
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
@@ -1070,10 +1114,24 @@ function SalesDetailPanel({ detail }: { detail: any }) {
 
       <footer className="flex shrink-0 items-center gap-2 border-t bg-muted/30 px-6 py-3">
         <DrawerAction icon={Printer} label="Print Invoice" />
-        <DrawerAction icon={Banknote} label="Collect Due" />
+        <DrawerAction
+          icon={Banknote}
+          label="Collect Due"
+          onClick={due > 0 ? () => setCollectDueOpen(true) : undefined}
+          disabled={due <= 0}
+        />
         <DrawerAction icon={FileText} label="Edit Sale" />
         <DrawerAction icon={RotateCcw} label="Process Return" />
       </footer>
+
+      <CollectDueDialog
+        open={collectDueOpen}
+        onOpenChange={setCollectDueOpen}
+        dueAmount={due}
+        invoiceNumber={invoiceNum}
+        onCollect={(data) => collectDueMutation.mutate(data)}
+        isPending={collectDueMutation.isPending}
+      />
     </div>
   );
 }
@@ -1113,19 +1171,239 @@ function PaymentRow({
 function DrawerAction({
   icon: Icon,
   label,
+  onClick,
+  disabled,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
+  onClick?: () => void;
+  disabled?: boolean;
 }) {
+  const isDisabled = disabled ?? !onClick;
   return (
     <button
       type="button"
-      disabled
+      disabled={isDisabled}
+      onClick={onClick}
       className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
     </button>
+  );
+}
+
+const paymentMethodOptions: {
+  value: "cash" | "bkash" | "nagad" | "bank";
+  label: string;
+}[] = [
+  { value: "cash", label: "Cash" },
+  { value: "bkash", label: "bKash" },
+  { value: "nagad", label: "Nagad" },
+  { value: "bank", label: "Bank Transfer" },
+];
+
+function CollectDueDialog({
+  open,
+  onOpenChange,
+  dueAmount,
+  invoiceNumber,
+  onCollect,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  dueAmount: number;
+  invoiceNumber: string;
+  onCollect: (data: {
+    amount: number;
+    paymentMethod: "cash" | "bkash" | "nagad" | "bank";
+    transactionRef?: string;
+    note?: string;
+  }) => void;
+  isPending: boolean;
+}) {
+  const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash" | "bkash" | "nagad" | "bank"
+  >("cash");
+  const [transactionRef, setTransactionRef] = useState("");
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setAmount("");
+      setPaymentMethod("cash");
+      setTransactionRef("");
+      setNote("");
+    }
+  }, [open]);
+
+  const parsedAmount = Number(amount);
+  const isValidAmount =
+    amount !== "" &&
+    Number.isFinite(parsedAmount) &&
+    parsedAmount > 0 &&
+    parsedAmount <= dueAmount;
+  const showRefField = paymentMethod !== "cash";
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValidAmount) return;
+    onCollect({
+      amount: parsedAmount,
+      paymentMethod,
+      transactionRef: transactionRef.trim() || undefined,
+      note: note.trim() || undefined,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Banknote className="h-5 w-5 text-emerald-600" />
+            Collect Due Payment
+          </DialogTitle>
+          <DialogDescription>
+            Collect outstanding balance for{" "}
+            <span className="font-semibold text-foreground">
+              {invoiceNumber}
+            </span>
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="rounded-lg border bg-muted/30 px-4 py-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Outstanding Due</span>
+              <span className="font-mono text-lg font-bold text-red-600">
+                {money(dueAmount)}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="collect-method">Payment Method</Label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {paymentMethodOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPaymentMethod(opt.value)}
+                  className={cn(
+                    "rounded-md border px-2 py-2 text-xs font-medium transition-all",
+                    paymentMethod === opt.value
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                      : "bg-background text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="collect-amount">Amount</Label>
+              <button
+                type="button"
+                onClick={() => setAmount(String(dueAmount))}
+                className="text-[11px] font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
+              >
+                Collect Full Amount
+              </button>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                ৳
+              </span>
+              <Input
+                id="collect-amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                max={dueAmount}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="pl-7 font-mono tabular-nums"
+                autoFocus
+              />
+            </div>
+            {amount !== "" && !isValidAmount && (
+              <p className="text-xs text-red-500">
+                {parsedAmount > dueAmount
+                  ? `Cannot exceed due amount of ${money(dueAmount)}`
+                  : "Enter a valid amount"}
+              </p>
+            )}
+          </div>
+
+          {showRefField && (
+            <div className="space-y-2">
+              <Label htmlFor="collect-ref">
+                Transaction Reference
+                <span className="ml-1 text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="collect-ref"
+                value={transactionRef}
+                onChange={(e) => setTransactionRef(e.target.value)}
+                placeholder={
+                  paymentMethod === "bkash" || paymentMethod === "nagad"
+                    ? "Transaction ID"
+                    : "Reference number"
+                }
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="collect-note">
+              Note
+              <span className="ml-1 text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id="collect-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Add a note..."
+            />
+          </div>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!isValidAmount || isPending}
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Collecting...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Collect {amount ? money(parsedAmount) : "Payment"}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
