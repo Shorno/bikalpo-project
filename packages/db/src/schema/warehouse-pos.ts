@@ -328,3 +328,45 @@ export type WarehousePosSaleItem = typeof warehousePosSaleItem.$inferSelect;
 export type NewWarehousePosSaleItem = typeof warehousePosSaleItem.$inferInsert;
 export type WarehousePosPayment = typeof warehousePosPayment.$inferSelect;
 export type NewWarehousePosPayment = typeof warehousePosPayment.$inferInsert;
+
+// ── Due Collection for Invoice-based Sales ──────────────────────────
+export const warehouseDueCollection = pgTable(
+    "warehouse_due_collection",
+    {
+        id: serial("id").primaryKey(),
+        warehouseId: text("warehouse_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
+        invoiceId: integer("invoice_id")
+            .notNull(),
+        paymentMethod: warehousePosPaymentMethodEnum("payment_method").notNull(),
+        amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+        transactionRef: varchar("transaction_ref", { length: 100 }),
+        note: text("note"),
+        collectedAt: timestamp("collected_at").defaultNow().notNull(),
+        collectedById: text("collected_by_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
+        createdAt: timestamp("created_at").defaultNow().notNull(),
+    },
+    (table) => [
+        index("warehouseDueCollection_warehouseId_idx").on(table.warehouseId),
+        index("warehouseDueCollection_invoiceId_idx").on(table.invoiceId),
+    ],
+);
+
+export const warehouseDueCollectionRelations = relations(warehouseDueCollection, ({ one }) => ({
+    warehouse: one(user, {
+        fields: [warehouseDueCollection.warehouseId],
+        references: [user.id],
+        relationName: "warehouseDueCollectionWarehouse",
+    }),
+    collectedBy: one(user, {
+        fields: [warehouseDueCollection.collectedById],
+        references: [user.id],
+        relationName: "warehouseDueCollectionCollectedBy",
+    }),
+}));
+
+export type WarehouseDueCollection = typeof warehouseDueCollection.$inferSelect;
+export type NewWarehouseDueCollection = typeof warehouseDueCollection.$inferInsert;
