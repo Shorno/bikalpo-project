@@ -18,6 +18,7 @@ import {
   Receipt,
   RotateCcw,
   Search,
+  Share2,
   ShoppingCart,
   UserRound,
 } from "lucide-react";
@@ -1554,10 +1555,12 @@ function PrintInvoiceDialog({
   detail: any;
   warehouseLabel: string;
 }) {
+  const [isSharing, setIsSharing] = useState(false);
+
   const invoiceNum =
     detail.basic?.invoiceNumber ?? detail.basic?.orderNumber ?? "-";
 
-  const handlePrint = () => {
+  const buildInvoiceHtml = () => {
     const itemRows = (detail.items ?? [])
       .map(
         (item: any) => `
@@ -1583,7 +1586,7 @@ function PrintInvoiceDialog({
 
     const dueVal = Number(detail.payment?.due ?? 0);
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${invoiceNum}</title><style>${buildPrintStyles()}</style></head><body>
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${invoiceNum}</title><style>${buildPrintStyles()}</style></head><body>
       <div class="header">
         <h1>${warehouseLabel}</h1>
       </div>
@@ -1607,11 +1610,77 @@ function PrintInvoiceDialog({
       ${paymentRows ? `<hr class="divider"><div class="payment-history"><h3>Payment History</h3>${paymentRows}</div>` : ""}
       <div class="footer">
         <p>Thank you for your purchase!</p>
-        <p style="margin-top:4px">Printed: ${formatPrintDate(new Date())} ${formatPrintTime(new Date())}</p>
+        <p style="margin-top:4px">${formatPrintDate(new Date())} ${formatPrintTime(new Date())}</p>
       </div>
     </body></html>`;
+  };
 
-    printContent(html);
+  const handlePrint = () => {
+    printContent(buildInvoiceHtml());
+  };
+
+  const handleShare = async () => {
+    setIsSharing(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas-pro");
+
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.top = "-10000px";
+      iframe.style.left = "-10000px";
+      iframe.style.width = "380px";
+      iframe.style.height = "auto";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) throw new Error("Could not access iframe document");
+
+      iframeDoc.open();
+      iframeDoc.write(buildInvoiceHtml());
+      iframeDoc.close();
+
+      await new Promise<void>((resolve) => {
+        iframe.onload = () => resolve();
+        setTimeout(resolve, 500);
+      });
+
+      const canvas = await html2canvas(iframeDoc.body, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        width: 380,
+      });
+      document.body.removeChild(iframe);
+
+      const dataUrl = canvas.toDataURL("image/png");
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+
+      const fileName = `Invoice-${invoiceNum}-${new Date().toISOString().slice(0, 10)}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: `Sales Invoice - ${invoiceNum}`,
+          text: `Invoice ${invoiceNum} for ${detail.basic?.customerName ?? "customer"}. Total: ${money(detail.payment?.total)}.`,
+          files: [file],
+        });
+        toast.success("Invoice shared successfully");
+      } else {
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = fileName;
+        link.click();
+        toast.success("Invoice image downloaded");
+      }
+    } catch (error: any) {
+      if (error?.name === "AbortError") return;
+      console.error("Share failed:", error);
+      toast.error("Failed to share invoice");
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   return (
@@ -1620,10 +1689,10 @@ function PrintInvoiceDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Printer className="h-5 w-5" />
-            Print Sales Invoice
+            Sales Invoice
           </DialogTitle>
           <DialogDescription>
-            Print the full invoice for{" "}
+            Print or share the full invoice for{" "}
             <span className="font-semibold text-foreground">{invoiceNum}</span>{" "}
             including line items, payment summary, and payment history.
           </DialogDescription>
@@ -1663,13 +1732,27 @@ function PrintInvoiceDialog({
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
               Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleShare}
+              disabled={isSharing}
+              className="gap-2"
+            >
+              {isSharing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Share2 className="h-4 w-4" />
+              )}
+              {isSharing ? "Sharing..." : "Share"}
             </Button>
             <Button
               type="button"
@@ -1680,7 +1763,7 @@ function PrintInvoiceDialog({
               className="gap-2"
             >
               <Printer className="h-4 w-4" />
-              Print Invoice
+              Print
             </Button>
           </DialogFooter>
         </div>
@@ -1714,6 +1797,8 @@ function PrintReceiptDialog({
   totalPaid: number;
   totalDue: number;
 }) {
+  const [isSharing, setIsSharing] = useState(false);
+
   if (!payment) return null;
 
   const methodLabel =
@@ -1725,8 +1810,7 @@ function PrintReceiptDialog({
           ? "Bank Transfer"
           : "Cash";
 
-  const handlePrint = () => {
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Payment Receipt</title><style>${buildPrintStyles()}</style></head><body>
+  const buildReceiptHtml = () => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Payment Receipt</title><style>${buildPrintStyles()}</style></head><body>
       <div class="header">
         <h1>${warehouseLabel}</h1>
       </div>
@@ -1746,11 +1830,84 @@ function PrintReceiptDialog({
       <div class="summary-row due"><span>Remaining Due</span><span>${money(Math.max(0, totalDue - payment.amount))}</span></div>
       <div class="footer">
         <p>This is a computer-generated receipt.</p>
-        <p style="margin-top:4px">Printed: ${formatPrintDate(new Date())} ${formatPrintTime(new Date())}</p>
+        <p style="margin-top:4px">${formatPrintDate(new Date())} ${formatPrintTime(new Date())}</p>
       </div>
     </body></html>`;
 
-    printContent(html);
+  const handlePrint = () => {
+    printContent(buildReceiptHtml());
+  };
+
+  const handleShare = async () => {
+    setIsSharing(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas-pro");
+
+      // Use an iframe for proper HTML rendering (same approach as print)
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.top = "-10000px";
+      iframe.style.left = "-10000px";
+      iframe.style.width = "380px";
+      iframe.style.height = "auto";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) throw new Error("Could not access iframe document");
+
+      iframeDoc.open();
+      iframeDoc.write(buildReceiptHtml());
+      iframeDoc.close();
+
+      // Wait for iframe content to render
+      await new Promise<void>((resolve) => {
+        iframe.onload = () => resolve();
+        // Fallback timeout in case onload doesn't fire
+        setTimeout(resolve, 500);
+      });
+
+      // Capture the iframe body as canvas
+      const canvas = await html2canvas(iframeDoc.body, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        width: 380,
+      });
+      document.body.removeChild(iframe);
+
+      // Convert canvas to blob via dataURL (more reliable than toBlob)
+      const dataUrl = canvas.toDataURL("image/png");
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+
+      const fileName = `Receipt-${invoiceNumber}-${new Date().toISOString().slice(0, 10)}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      // Try native Web Share API first (works on mobile + modern desktop)
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: `Payment Receipt - ${invoiceNumber}`,
+          text: `Payment receipt for ${invoiceNumber}. Amount collected: ${money(payment.amount)} via ${methodLabel}.`,
+          files: [file],
+        });
+        toast.success("Receipt shared successfully");
+      } else {
+        // Fallback: download the image
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = fileName;
+        link.click();
+        toast.success("Receipt image downloaded");
+      }
+    } catch (error: any) {
+      // User cancelled the share dialog — not an error
+      if (error?.name === "AbortError") return;
+      console.error("Share failed:", error);
+      toast.error("Failed to share receipt");
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   return (
@@ -1762,7 +1919,7 @@ function PrintReceiptDialog({
             Payment Collected
           </DialogTitle>
           <DialogDescription>
-            Due payment has been recorded. Would you like to print a receipt?
+            Due payment has been recorded. Would you like to print or share the receipt?
           </DialogDescription>
         </DialogHeader>
 
@@ -1809,13 +1966,27 @@ function PrintReceiptDialog({
             )}
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
               Close
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleShare}
+              disabled={isSharing}
+              className="gap-2"
+            >
+              {isSharing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Share2 className="h-4 w-4" />
+              )}
+              {isSharing ? "Sharing..." : "Share"}
             </Button>
             <Button
               type="button"
@@ -1826,7 +1997,7 @@ function PrintReceiptDialog({
               className="gap-2 bg-emerald-600 hover:bg-emerald-700"
             >
               <Printer className="h-4 w-4" />
-              Print Receipt
+              Print
             </Button>
           </DialogFooter>
         </div>
