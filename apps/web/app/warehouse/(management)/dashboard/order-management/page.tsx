@@ -46,7 +46,7 @@ import { type OrderRow, getColumnsForSource } from "./_components/order-columns"
 
 /* ── Constants ───────────────────────────────────────────── */
 
-type Source = "direct" | "salesman" | "estimate" | "pre_order";
+type Source = "all" | "direct" | "salesman" | "estimate" | "pre_order";
 type StatusFilter = "all" | "pending" | "accepted" | "processing" | "rejected";
 type PaymentFilter = "all" | "paid" | "due" | "partial";
 type DateFilter = "today" | "this_month" | "custom" | "all";
@@ -60,6 +60,15 @@ const sourceConfig: {
   activeColor: string;
   description: string;
 }[] = [
+  {
+    key: "all",
+    label: "All",
+    emoji: "📦",
+    enabled: true,
+    color: "text-foreground",
+    activeColor: "border-gray-200 bg-gray-50 ring-gray-100",
+    description: "All order types",
+  },
   {
     key: "direct",
     label: "Direct",
@@ -99,6 +108,10 @@ const sourceConfig: {
 ];
 
 const sourceDescriptions: Record<Source, { title: string; subtitle: string }> = {
+  all: {
+    title: "All Orders",
+    subtitle: "Showing all order types · Direct, Salesman, Estimate, Pre-Order",
+  },
   direct: {
     title: "Direct Orders",
     subtitle: "Customer directly placed order · No salesman assigned",
@@ -140,7 +153,7 @@ const dateOptions = [
 /* ── Page ────────────────────────────────────────────────── */
 
 export default function WarehouseOrderManagementPage() {
-  const [source, setSource] = useState<Source>("direct");
+  const [source, setSource] = useState<Source>("all");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -186,6 +199,7 @@ export default function WarehouseOrderManagementPage() {
   const pagination = data?.pagination;
   const summary = data?.summary ?? { direct: 0, salesman: 0, estimate: 0, preOrder: 0 };
   const counts: Record<Source, number> = {
+    all: summary.direct + summary.salesman + summary.estimate + summary.preOrder,
     direct: summary.direct,
     salesman: summary.salesman,
     estimate: summary.estimate,
