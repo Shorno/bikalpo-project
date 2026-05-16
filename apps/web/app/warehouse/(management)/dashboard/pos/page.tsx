@@ -14,7 +14,9 @@ import {
   Receipt,
   Search,
   ShoppingCart,
+  Store,
   Trash2,
+  User,
   UserPlus,
   X,
   XCircle,
@@ -52,6 +54,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { orpc, queryClient } from "@/utils/orpc";
 import { cn } from "@/lib/utils";
+import { useConnectedStores } from "@/hooks/use-warehouse-connections";
 
 type CatalogOption = { id: number; name: string };
 type CatalogVariant = {
@@ -83,6 +86,15 @@ type PosCustomer = {
   address: string | null;
   customerType: "walk_in" | "retail" | "wholesale";
   isDefault: boolean;
+};
+
+type ConnectedStoreCustomer = {
+  connectionId: number;
+  shopId: string;
+  shopName: string | null;
+  name: string | null;
+  phone: string | null;
+  address: string | null;
 };
 
 type CartItem = {
@@ -151,6 +163,8 @@ export default function WarehousePosPage() {
   const [discountInput, setDiscountInput] = useState("0");
   const [taxInput, setTaxInput] = useState("0");
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | undefined>(undefined);
+  const [selectedConnectedStore, setSelectedConnectedStore] = useState<ConnectedStoreCustomer | undefined>(undefined);
+  const [customerTab, setCustomerTab] = useState<"walk_in" | "connected">("walk_in");
   const [customerSearch, setCustomerSearch] = useState("");
   const [debouncedCustomerSearch, setDebouncedCustomerSearch] = useState("");
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -223,6 +237,11 @@ export default function WarehousePosPage() {
       }),
   });
 
+  const connectedStoresQuery = useConnectedStores({
+    search: debouncedCustomerSearch || undefined,
+    limit: 50,
+  });
+
   const heldCartsQuery = useQuery({
     queryKey: ["warehousePos", "heldCarts"],
     queryFn: () => orpc.warehousePos.listHeldCarts.call({}),
@@ -288,6 +307,9 @@ export default function WarehousePosPage() {
     mutationFn: (payload: {
       saleType: "retail" | "wholesale";
       customerId?: number;
+      customerName?: string;
+      customerPhone?: string;
+      customerAddress?: string;
       paymentMethod: "cash" | "bkash" | "nagad" | "bank" | "due";
       paidAmount?: number;
       discount?: number;
@@ -319,7 +341,14 @@ export default function WarehousePosPage() {
   const options = catalogQuery.data?.options;
   const variants = (catalogQuery.data?.variants ?? []) as CatalogVariant[];
   const customers = (customersQuery.data?.customers ?? []) as PosCustomer[];
+  const walkInCustomers = customers.filter((c) => !c.isDefault);
+  const connectedStores = (connectedStoresQuery.data?.items ?? []) as ConnectedStoreCustomer[];
   const heldCarts = heldCartsQuery.data?.carts ?? [];
+
+  // Derive the effective customerId for the sale
+  const effectiveCustomerId = customerTab === "connected" && selectedConnectedStore
+    ? undefined // connected stores don't have a POS customer ID
+    : selectedCustomerId;
 
 
 
@@ -417,9 +446,15 @@ export default function WarehousePosPage() {
       toast.error("Add products before completing sale");
       return;
     }
+
+    const isConnectedStore = customerTab === "connected" && selectedConnectedStore;
+
     completeSaleMutation.mutate({
       saleType,
-      customerId: selectedCustomerId,
+      customerId: isConnectedStore ? undefined : selectedCustomerId,
+      customerName: isConnectedStore ? (selectedConnectedStore.shopName || selectedConnectedStore.name || "Connected Store") : undefined,
+      customerPhone: isConnectedStore ? (selectedConnectedStore.phone || undefined) : undefined,
+      customerAddress: isConnectedStore ? (selectedConnectedStore.address || undefined) : undefined,
       paymentMethod,
       paidAmount: paid,
       discount,
@@ -1137,48 +1172,243 @@ export default function WarehousePosPage() {
             <div className="px-4 py-2.5 border-b space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-[11px] text-muted-foreground">Customer</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAddCustomer(true)}
-                  className="h-6 text-[11px] text-primary hover:text-primary/80"
-                >
-                  <UserPlus className="h-3 w-3 mr-1" />
-                  New
-                </Button>
+                {customerTab === "walk_in" && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAddCustomer(true)}
+                    className="h-6 text-[11px] text-primary hover:text-primary/80"
+                  >
+                    <UserPlus className="h-3 w-3 mr-1" />
+                    New
+                  </Button>
+                )}
               </div>
-              <Select
-                value={selectedCustomerId ? String(selectedCustomerId) : "none"}
-                onValueChange={(v) => setSelectedCustomerId(v === "none" ? undefined : Number(v))}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Walk-in Customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  <div className="px-2 pb-1.5">
+
+              {/* Customer type tabs */}
+              <div className="flex rounded-md border overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomerTab("walk_in");
+                    setSelectedConnectedStore(undefined);
+                    if (paymentMethod === "due") setPaymentMethod("cash");
+                  }}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium transition-colors",
+                    customerTab === "walk_in"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-white text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  <User className="h-3 w-3" />
+                  Walk-in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomerTab("connected");
+                    setSelectedCustomerId(bootstrapQuery.data?.defaultCustomer?.id);
+                  }}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium transition-colors border-l",
+                    customerTab === "connected"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-white text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  <Store className="h-3 w-3" />
+                  Connected Store
+                  {connectedStores.length > 0 && (
+                    <span className={cn(
+                      "text-[9px] px-1 py-0.5 rounded-full font-bold leading-none",
+                      customerTab === "connected" ? "bg-white/20 text-white" : "bg-muted text-muted-foreground",
+                    )}>
+                      {connectedStores.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Walk-in customer list */}
+              {customerTab === "walk_in" && (
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground h-3 w-3" />
                     <Input
                       value={customerSearch}
                       onChange={(e) => setCustomerSearch(e.target.value)}
-                      placeholder="Search customer..."
-                      className="h-7 text-xs"
+                      placeholder="Search walk-in customers..."
+                      className="h-7 text-xs pl-7"
                     />
                   </div>
-                  <SelectItem value="none">Walk-in Customer</SelectItem>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name} {c.phone ? `(${c.phone})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <div className="max-h-[140px] overflow-y-auto rounded-md border bg-white divide-y">
+                    {customersQuery.isLoading ? (
+                      <div className="flex items-center justify-center py-4 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                        Loading customers...
+                      </div>
+                    ) : walkInCustomers.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-4 text-xs text-muted-foreground">
+                        <User className="h-4 w-4 mb-1 opacity-30" />
+                        <span>No walk-in customers found</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddCustomer(true)}
+                          className="text-primary text-[10px] mt-1 hover:underline"
+                        >
+                          + Create one
+                        </button>
+                      </div>
+                    ) : (
+                      walkInCustomers.map((c) => {
+                        const isSelected = selectedCustomerId === c.id;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setSelectedCustomerId(isSelected ? undefined : c.id)}
+                            className={cn(
+                              "w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors",
+                              isSelected
+                                ? "bg-primary/5 border-l-2 border-l-primary"
+                                : "hover:bg-gray-50",
+                            )}
+                          >
+                            <div className={cn(
+                              "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
+                              isSelected ? "bg-primary/10" : "bg-blue-50",
+                            )}>
+                              <User className={cn(
+                                "h-3.5 w-3.5",
+                                isSelected ? "text-primary" : "text-blue-600",
+                              )} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium truncate">{c.name}</p>
+                              <p className="text-[10px] text-muted-foreground truncate">
+                                {c.phone || "No phone"}{c.address ? ` • ${c.address}` : ""}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0">
+                              {c.customerType === "wholesale" ? "Wholesale" : "Retail"}
+                            </Badge>
+                            {isSelected && (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  {selectedCustomerId && selectedCustomerId !== bootstrapQuery.data?.defaultCustomer?.id && (
+                    <div className="flex items-center gap-2 px-2 py-1.5 bg-blue-50/50 rounded-md border border-blue-100">
+                      <User className="h-3 w-3 text-blue-600 shrink-0" />
+                      <span className="text-[11px] font-medium text-blue-800 truncate">
+                        {walkInCustomers.find((c) => c.id === selectedCustomerId)?.name || "Selected Customer"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCustomerId(bootstrapQuery.data?.defaultCustomer?.id)}
+                        className="ml-auto text-blue-600 hover:text-blue-800"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Connected store select */}
+              {customerTab === "connected" && (
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground h-3 w-3" />
+                    <Input
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                      placeholder="Search connected stores..."
+                      className="h-7 text-xs pl-7"
+                    />
+                  </div>
+                  <div className="max-h-[140px] overflow-y-auto rounded-md border bg-white divide-y">
+                    {connectedStoresQuery.isLoading ? (
+                      <div className="flex items-center justify-center py-4 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                        Loading stores...
+                      </div>
+                    ) : connectedStores.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-4 text-xs text-muted-foreground">
+                        <Store className="h-4 w-4 mb-1 opacity-30" />
+                        <span>No connected stores found</span>
+                      </div>
+                    ) : (
+                      connectedStores.map((store) => {
+                        const isSelected = selectedConnectedStore?.connectionId === store.connectionId;
+                        return (
+                          <button
+                            key={store.connectionId}
+                            type="button"
+                            onClick={() => setSelectedConnectedStore(isSelected ? undefined : store)}
+                            className={cn(
+                              "w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors",
+                              isSelected
+                                ? "bg-primary/5 border-l-2 border-l-primary"
+                                : "hover:bg-gray-50",
+                            )}
+                          >
+                            <div className={cn(
+                              "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
+                              isSelected ? "bg-primary/10" : "bg-emerald-50",
+                            )}>
+                              <Store className={cn(
+                                "h-3.5 w-3.5",
+                                isSelected ? "text-primary" : "text-emerald-600",
+                              )} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium truncate">
+                                {store.shopName || "Unnamed Store"}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground truncate">
+                                {store.name || ""}{store.phone ? ` • ${store.phone}` : ""}
+                              </p>
+                            </div>
+                            {isSelected && (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  {selectedConnectedStore && (
+                    <div className="flex items-center gap-2 px-2 py-1.5 bg-emerald-50/50 rounded-md border border-emerald-100">
+                      <Store className="h-3 w-3 text-emerald-600 shrink-0" />
+                      <span className="text-[11px] font-medium text-emerald-800 truncate">
+                        {selectedConnectedStore.shopName || selectedConnectedStore.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedConnectedStore(undefined)}
+                        className="ml-auto text-emerald-600 hover:text-emerald-800"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Payment method */}
             <div className="px-4 py-2.5 border-b space-y-2">
               <Label className="text-[11px] text-muted-foreground">Payment Method</Label>
-              <div className="grid grid-cols-5 gap-1.5">
-                {paymentMethods.map((m) => (
+              <div className={cn("grid gap-1.5", customerTab === "walk_in" ? "grid-cols-4" : "grid-cols-5")}>
+                {paymentMethods
+                  .filter((m) => customerTab !== "walk_in" || m.key !== "due")
+                  .map((m) => (
                   <button
                     key={m.key}
                     type="button"
