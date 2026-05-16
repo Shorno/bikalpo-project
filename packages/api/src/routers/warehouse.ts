@@ -844,8 +844,8 @@ const managementQueries = {
 // ────────────────────────────────────────────────────────────────
 
 const orderSourceInput = z
-    .enum(["direct", "salesman", "estimate", "pre_order"])
-    .default("direct");
+    .enum(["all", "direct", "salesman", "estimate", "pre_order"])
+    .default("all");
 
 const orderOverviewStatusInput = z
     .enum(["all", "pending", "accepted", "processing", "rejected"])
@@ -971,8 +971,11 @@ const orderQueries = {
 
             const conditions: SQL[] = [
                 ...baseConditions,
-                eq(order.orderSource, input.source),
             ];
+
+            if (input.source !== "all") {
+                conditions.push(eq(order.orderSource, input.source));
+            }
 
             const statusCondition = getOrderStatusCondition(input.status);
             if (statusCondition) conditions.push(statusCondition);
