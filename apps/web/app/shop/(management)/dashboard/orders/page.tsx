@@ -180,25 +180,23 @@ export default function PurchaseOrdersPage() {
   const kpi = data?.kpi;
 
   return (
-    <div className="space-y-6">
-      {/* ── Header ─────────────────────────────────────────── */}
+    <div className="space-y-4">
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Track and manage your wholesale purchase orders
-          </p>
-        </div>
-        <Button asChild>
+        <h1 className="text-lg font-bold tracking-tight flex items-center gap-2">
+          🧾 Purchase Orders
+          <span className="text-[10px] text-muted-foreground font-normal">Track & manage wholesale orders</span>
+        </h1>
+        <Button asChild size="sm" className="h-8 text-xs">
           <Link href="/dashboard/order-from-warehouse">
-            <ShoppingCart className="mr-2 h-4 w-4" />
-            New Order
+            <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
+            ➕ Create Purchase Order
           </Link>
         </Button>
       </div>
 
-      {/* ── KPI Cards ──────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* ── KPI Cards ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard
           title="Total Orders"
           value={kpi?.totalOrders ?? 0}
@@ -235,23 +233,20 @@ export default function PurchaseOrdersPage() {
         />
       </div>
 
-      {/* ── Filters ────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Search */}
+      {/* ── Filters ── */}
+      <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Search by PO number, product..."
+            placeholder="Wholesaler / Product / PO ID..."
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-9"
+            className="pl-8 h-8 text-xs"
           />
         </div>
-
-        {/* Date filter */}
         <Select value={dateRange} onValueChange={(v) => { setDateRange(v); setPage(1); }}>
-          <SelectTrigger className="w-[150px]">
-            <CalendarIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+          <SelectTrigger className="w-[130px] h-8 text-xs">
+            <CalendarIcon className="mr-1.5 h-3 w-3 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -263,7 +258,7 @@ export default function PurchaseOrdersPage() {
       </div>
 
       {/* ── Status Tabs ────────────────────────────────────── */}
-      <div className="flex gap-1 overflow-x-auto pb-1 -mx-1 px-1">
+      <div className="flex gap-1 overflow-x-auto pb-0.5 -mx-1 px-1">
         {statusTabs.map((tab) => {
           const isActive = statusFilter === tab.value;
           const count = tab.value === "all"
@@ -282,7 +277,7 @@ export default function PurchaseOrdersPage() {
               key={tab.value}
               onClick={() => { setStatusFilter(tab.value); setPage(1); }}
               className={`
-                flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all cursor-pointer
+                flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all cursor-pointer
                 ${isActive
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -292,7 +287,7 @@ export default function PurchaseOrdersPage() {
               {tab.label}
               {count !== undefined && count > 0 && (
                 <span className={`
-                  text-[10px] px-1.5 py-0.5 rounded-full font-semibold
+                  text-[9px] px-1.5 py-0.5 rounded-full font-semibold
                   ${isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted-foreground/10 text-muted-foreground"}
                 `}>
                   {count}
@@ -524,25 +519,25 @@ function KpiCard({
 }) {
   return (
     <Card className="border shadow-sm">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+      <CardContent className="p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
             {title}
           </span>
-          <div className={`p-1.5 rounded-lg ${iconBg} ${iconColor}`}>
+          <div className={`p-1 rounded-md ${iconBg} ${iconColor}`}>
             {icon}
           </div>
         </div>
         {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-7 w-16" />
-            <Skeleton className="h-3 w-24" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-6 w-14" />
+            <Skeleton className="h-3 w-20" />
           </div>
         ) : (
           <>
-            <p className="text-2xl font-bold tracking-tight">{value}</p>
+            <p className="text-xl font-bold tracking-tight">{value}</p>
             {subtitle && (
-              <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{subtitle}</p>
             )}
           </>
         )}
