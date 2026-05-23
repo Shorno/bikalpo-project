@@ -217,86 +217,99 @@ export default function PurchaseOrderDetailPage() {
           </Card>
 
           {/* Products */}
+          {/* 📊 Item Breakdown (Table) 🔥 */}
           <Card>
-            <CardHeader className="pb-4">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">
-                  Ordered Items ({po.items?.length || 0})
+                <CardTitle className="text-sm">
+                  📊 Item Breakdown ({po.items?.length || 0})
                 </CardTitle>
                 {hasModifications && (
-                  <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200">
-                    Supplier modified some quantities
+                  <Badge variant="outline" className="text-[9px] text-orange-600 border-orange-200 bg-orange-50">
+                    ⚠ Supplier modified quantities
                   </Badge>
                 )}
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {po.items?.map((item: any) => {
-                const wasModified = item.modifiedQty !== null || item.modifiedUnitPrice !== null;
-                const displayQty = item.modifiedQty ?? item.quantity;
-                const displayPrice = item.modifiedUnitPrice ?? item.unitPrice;
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-muted/40 text-[10px] font-bold text-muted-foreground">
+                      <th className="text-left p-2 pl-4">Product</th>
+                      <th className="text-center p-2">Requested Qty</th>
+                      <th className="text-center p-2">Approved Qty</th>
+                      <th className="text-right p-2">Price</th>
+                      <th className="text-right p-2 pr-4">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {po.items?.map((item: any) => {
+                      const wasModified = item.modifiedQty !== null || item.modifiedUnitPrice !== null;
+                      const approvedQty = item.modifiedQty ?? item.quantity;
+                      const approvedPrice = item.modifiedUnitPrice ?? item.unitPrice;
+                      const lineTotal = Number(approvedPrice) * approvedQty;
 
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${
-                      wasModified
-                        ? "border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/20"
-                        : "border-border bg-muted/20"
-                    }`}
-                  >
-                    {/* Product Image */}
-                    {item.productImage ? (
-                      <Image
-                        src={item.productImage}
-                        alt={item.productName}
-                        width={56}
-                        height={56}
-                        className="w-14 h-14 rounded-lg object-cover border shrink-0"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center border shrink-0">
-                        <Package className="w-6 h-6 text-muted-foreground" />
-                      </div>
-                    )}
-
-                    {/* Product Info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{item.productName}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {item.productSize}
-                        {item.variant?.sku && (
-                          <span className="ml-2 font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded">
-                            {item.variant.sku}
-                          </span>
-                        )}
-                      </p>
-
-                      {/* Modification diff */}
-                      {wasModified && (
-                        <div className="mt-2 flex items-center gap-2 text-xs">
-                          <span className="text-muted-foreground line-through">
-                            Ordered: {item.quantity} × ৳{Number(item.unitPrice).toFixed(0)}
-                          </span>
-                          <span className="text-orange-600 dark:text-orange-400 font-medium">
-                            → Updated: {displayQty} × ৳{Number(displayPrice).toFixed(0)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Qty & Price */}
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold tabular-nums">
-                        ৳ {(Number(displayPrice) * displayQty).toLocaleString("en-BD")}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {displayQty} × ৳{Number(displayPrice).toFixed(0)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`border-t ${
+                            wasModified
+                              ? "bg-orange-50/50 dark:bg-orange-950/10"
+                              : ""
+                          }`}
+                        >
+                          <td className="p-2 pl-4">
+                            <div className="flex items-center gap-2">
+                              {item.productImage ? (
+                                <Image
+                                  src={item.productImage}
+                                  alt={item.productName}
+                                  width={28}
+                                  height={28}
+                                  className="w-7 h-7 rounded border object-cover shrink-0"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded border bg-muted flex items-center justify-center shrink-0">
+                                  <Package className="w-3 h-3 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-medium text-xs truncate max-w-[180px]">{item.productName}</p>
+                                <p className="text-[10px] text-muted-foreground">{item.productSize}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="text-center p-2 tabular-nums">
+                            {item.quantity}
+                          </td>
+                          <td className="text-center p-2 tabular-nums">
+                            {wasModified ? (
+                              <span className="text-orange-600 font-semibold">{approvedQty} ↓</span>
+                            ) : (
+                              <span>{approvedQty}</span>
+                            )}
+                          </td>
+                          <td className="text-right p-2 tabular-nums">
+                            ৳{Number(approvedPrice).toFixed(0)}
+                          </td>
+                          <td className="text-right p-2 pr-4 tabular-nums font-semibold">
+                            ৳ {lineTotal.toLocaleString("en-BD")}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {/* Modification reason */}
+              {hasModifications && (
+                <div className="px-4 py-2 border-t bg-orange-50/30 dark:bg-orange-950/10">
+                  <p className="text-[10px] text-orange-600 dark:text-orange-400">
+                    ✔ Reason: Stock shortage — partial order accepted
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
