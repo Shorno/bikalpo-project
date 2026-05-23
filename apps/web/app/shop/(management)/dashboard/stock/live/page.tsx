@@ -296,91 +296,77 @@ function ExpandedProductDetail({
           </Badge>
         </div>
 
-        {/* ── Variant Stock Table (Pack Level) ── */}
-        {packVariants.length > 0 && (
-          <div>
-            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-              <BarChart3 size={11} /> Variant Stock (Pack Level)
-            </h4>
-            <div className="bg-white border rounded-lg overflow-hidden divide-y divide-gray-50">
-              {packVariants.map((v: any) => {
-                const vStatus = v.availableQty <= 0 ? "out_of_stock" : v.availableQty <= 5 ? "low" : "in_stock";
-                const vs = STATUS_CONFIG[vStatus];
-                const isSelected = selectedVariantId === v.variantId;
+        {/* ── Variant Stock + Loose Stock side by side ── */}
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
+          {/* Pack variants (compact list) */}
+          {packVariants.length > 0 && (
+            <div>
+              <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                <BarChart3 size={10} /> Variant Stock (Pack)
+              </h4>
+              <div className="bg-white border rounded-lg overflow-hidden divide-y divide-gray-50">
+                {packVariants.map((v: any) => {
+                  const vStatus = v.availableQty <= 0 ? "out_of_stock" : v.availableQty <= 5 ? "low" : "in_stock";
+                  const vs = STATUS_CONFIG[vStatus];
+                  const isSelected = selectedVariantId === v.variantId;
 
-                return (
-                  <div
-                    key={v.variantId}
-                    className={`flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${isSelected ? "bg-blue-50/60 border-l-2 border-l-blue-500" : "hover:bg-gray-50/50 border-l-2 border-l-transparent"}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectVariant(isSelected ? null : v.variantId);
-                    }}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-sm font-medium text-gray-800">
+                  return (
+                    <div
+                      key={v.variantId}
+                      className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors ${isSelected ? "bg-blue-50/60 border-l-2 border-l-blue-500" : "hover:bg-gray-50/50 border-l-2 border-l-transparent"}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectVariant(isSelected ? null : v.variantId);
+                      }}
+                    >
+                      <span className="text-xs font-medium text-gray-800">
                         {v.brandName || "No Brand"} + {v.weightKg}KG
                       </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-bold text-gray-900 tabular-nums">
+                          → {v.availableQty} Pack
+                        </span>
+                        <span className={`w-1.5 h-1.5 rounded-full ring-1 ${vs.dot} ${vs.dotRing}`} />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-4 shrink-0">
-                      <span className="text-sm font-bold text-gray-900 tabular-nums">
-                        → {v.availableQty} Pack
-                      </span>
-                      <span className={`w-2 h-2 rounded-full ring-2 ${vs.dot} ${vs.dotRing}`} />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ── Loose Stock ── */}
-        <div>
-          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-            <Tag size={11} /> Loose Stock
-          </h4>
-          <div className="bg-white border rounded-lg px-4 py-3 flex items-center justify-between">
-            <span className="text-sm text-gray-600">Available Loose</span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-gray-900 tabular-nums">
-                → {Math.round(totalLooseKg * 100) / 100} KG
-              </span>
-              <span className={`w-2 h-2 rounded-full ring-2 ${totalLooseKg > 0 ? "bg-emerald-500 ring-emerald-200" : "bg-red-500 ring-red-200"}`} />
+          {/* Loose stock (compact) */}
+          <div className="min-w-[160px]">
+            <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+              <Tag size={10} /> Loose Stock
+            </h4>
+            <div className="bg-white border rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+              <span className="text-xs text-gray-600">Available</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-gray-900 tabular-nums">
+                  {Math.round(totalLooseKg * 100) / 100} KG
+                </span>
+                <span className={`w-1.5 h-1.5 rounded-full ring-1 ${totalLooseKg > 0 ? "bg-emerald-500 ring-emerald-200" : "bg-red-500 ring-red-200"}`} />
+              </div>
             </div>
           </div>
         </div>
 
-        {/* ── Selected Variant ── */}
+        {/* ── Selected Variant (inline compact) ── */}
         {selectedVariant && (
-          <div>
-            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-              <BarChart3 size={11} /> Selected Variant
-            </h4>
-            <div className="bg-white border border-blue-200 rounded-lg px-4 py-3 space-y-2">
-              <p className="text-sm font-bold text-blue-900">
-                Selected: {selectedVariant.brandName || "No Brand"} + {selectedVariant.weightKg}KG
-                {(selectedVariant.packType || "").toLowerCase() === "loose" ? " / Loose" : ""}
-              </p>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-blue-50/50 rounded-lg px-3 py-2">
-                  <p className="text-[10px] text-blue-400 font-medium uppercase">Available</p>
-                  <p className="font-bold text-blue-900 mt-0.5">
-                    → {selectedVariant.availableQty} {(selectedVariant.packType || "").toLowerCase() === "loose" ? "KG" : "Pack"}
-                  </p>
-                </div>
-                <div className="bg-blue-50/50 rounded-lg px-3 py-2">
-                  <p className="text-[10px] text-blue-400 font-medium uppercase">Loose Available</p>
-                  <p className="font-bold text-blue-900 mt-0.5">
-                    → +{Math.round(totalLooseKg * 100) / 100} KG
-                  </p>
-                </div>
-              </div>
-              <div className="pt-1 border-t border-blue-100 mt-2">
-                <p className="text-xs text-gray-500">
-                  MOQ: <span className="font-bold text-gray-800">1 Pack</span>
-                </p>
-              </div>
+          <div className="bg-white border border-blue-200 rounded-lg px-3 py-2 flex items-center gap-4 text-xs">
+            <span className="font-bold text-blue-900">
+              ▸ {selectedVariant.brandName || "No Brand"} + {selectedVariant.weightKg}KG
+              {(selectedVariant.packType || "").toLowerCase() === "loose" ? " / Loose" : ""}
+            </span>
+            <div className="flex items-center gap-3 ml-auto text-[11px]">
+              <span className="text-blue-700">
+                Available: <strong>{selectedVariant.availableQty} {(selectedVariant.packType || "").toLowerCase() === "loose" ? "KG" : "Pack"}</strong>
+              </span>
+              <span className="text-blue-600">
+                Loose: <strong>+{Math.round(totalLooseKg * 100) / 100} KG</strong>
+              </span>
+              <span className="text-gray-400">MOQ: <strong className="text-gray-700">1 Pack</strong></span>
             </div>
           </div>
         )}
