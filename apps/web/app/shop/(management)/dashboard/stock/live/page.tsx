@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle,
   BarChart3,
   BoxesIcon,
   ChevronDown,
@@ -51,25 +50,19 @@ export default function StockLivePage() {
   const categories: any[] = (data as any)?.categories ?? [];
 
   return (
-    <div className="space-y-5 max-w-5xl">
-      {/* ════════════════════════════════════════════════════════
-          HEADER
-          ════════════════════════════════════════════════════════ */}
+    <div className="space-y-3 max-w-5xl">
+      {/* ── HEADER ── */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2.5">
-            <div className="p-2 bg-emerald-100 rounded-xl">
-              <BoxesIcon className="text-emerald-600" size={20} />
-            </div>
-            📦 Stock (Real-time)
-          </h1>
-          <p className="text-xs text-gray-500 mt-1 ml-11">
-            Live inventory by product — pack & loose breakdown
-          </p>
-        </div>
-        <Button asChild size="sm">
+        <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+          <div className="p-1.5 bg-emerald-100 rounded-lg">
+            <BoxesIcon className="text-emerald-600" size={16} />
+          </div>
+          📦 Stock (Real-time)
+          <span className="text-[10px] text-gray-400 font-normal ml-1">Live inventory</span>
+        </h1>
+        <Button asChild size="sm" className="h-7 text-xs">
           <Link href="/dashboard/stock/add">
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            <Plus className="mr-1 h-3 w-3" />
             Add Stock
           </Link>
         </Button>
