@@ -371,29 +371,25 @@ function ExpandedProductDetail({
           </div>
         )}
 
-        {/* ── Quick Actions ── */}
-        <div>
-          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-            ⚙ Quick Actions
-          </h4>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" asChild>
-              <Link href={`/dashboard/sales?product=${p.productId}`}>
-                <ShoppingCart size={12} /> Sell Now
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" asChild>
-              <Link href={`/dashboard/stock/add?product=${p.productId}`}>
-                <Plus size={12} /> Add Stock
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 text-gray-400" disabled>
-              <Printer size={12} /> Generate Label
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 text-gray-400" disabled>
-              <ArrowRightLeft size={12} /> Convert Loose → Pack
-            </Button>
-          </div>
+        {/* ── Quick Actions (inline) ── */}
+        <div className="flex items-center gap-1.5 pt-0.5">
+          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mr-1">⚙ Actions</span>
+          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2" asChild>
+            <Link href={`/dashboard/sales?product=${p.productId}`}>
+              <ShoppingCart size={10} /> Sell Now
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2" asChild>
+            <Link href={`/dashboard/stock/add?product=${p.productId}`}>
+              <Plus size={10} /> Add Stock
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2 text-gray-400" disabled>
+            <Printer size={10} /> Label
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2 text-gray-400" disabled>
+            <ArrowRightLeft size={10} /> Loose→Pack
+          </Button>
         </div>
       </div>
     </div>
