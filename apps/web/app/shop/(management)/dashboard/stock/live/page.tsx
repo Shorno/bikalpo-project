@@ -68,54 +68,47 @@ export default function StockLivePage() {
         </Button>
       </div>
 
-      {/* ════════════════════════════════════════════════════════
-          SEARCH / FILTERS
-          ════════════════════════════════════════════════════════ */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">
-          🔍 Search / Filter
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="SKU / Product Name / Brand..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 text-sm"
-            />
-          </div>
-          <Select
-            value={categoryId?.toString() ?? "all"}
-            onValueChange={(v) => setCategoryId(v === "all" ? undefined : Number(v))}
-          >
-            <SelectTrigger className="w-[160px] h-9 text-xs">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((c: any) => (
-                <SelectItem key={c.id} value={c.id.toString()}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={statusFilter}
-            onValueChange={(v: any) => setStatusFilter(v)}
-          >
-            <SelectTrigger className="w-[150px] h-9 text-xs">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="in_stock">🟢 In Stock</SelectItem>
-              <SelectItem value="low">🟡 Low Stock</SelectItem>
-              <SelectItem value="out_of_stock">🔴 Out of Stock</SelectItem>
-            </SelectContent>
-          </Select>
+      {/* ── SEARCH / FILTERS (inline, compact) ── */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <Input
+            placeholder="SKU / Product Name / Brand..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 h-8 text-xs"
+          />
         </div>
+        <Select
+          value={categoryId?.toString() ?? "all"}
+          onValueChange={(v) => setCategoryId(v === "all" ? undefined : Number(v))}
+        >
+          <SelectTrigger className="w-[140px] h-8 text-xs">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {categories.map((c: any) => (
+              <SelectItem key={c.id} value={c.id.toString()}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={statusFilter}
+          onValueChange={(v: any) => setStatusFilter(v)}
+        >
+          <SelectTrigger className="w-[130px] h-8 text-xs">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="in_stock">🟢 In Stock</SelectItem>
+            <SelectItem value="low">🟡 Low Stock</SelectItem>
+            <SelectItem value="out_of_stock">🔴 Out of Stock</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* ════════════════════════════════════════════════════════
