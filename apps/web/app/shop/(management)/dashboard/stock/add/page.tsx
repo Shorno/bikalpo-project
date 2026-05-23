@@ -6,7 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Check, ChevronRight, Loader, Package, Plus,
-  Search, Tag, Box, CalendarIcon, CreditCard, User, FileText,
+  Search, Tag, Box, CreditCard, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
