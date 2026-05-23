@@ -233,7 +233,94 @@ export default function PurchaseOrdersPage() {
         />
       </div>
 
-      {/* ── Filters ── */}
+      {/* ── 📊 Last Order Status 🔥 ── */}
+      {!isLoading && orders.length > 0 && (() => {
+        const latest = orders[0] as any;
+        const hasModifications = latest.items?.some((item: any) => item.modifiedQty !== null);
+        const statusSteps = [
+          { key: "submitted", label: "Submitted", icon: "🟢", done: true },
+          { key: "confirmed", label: hasModifications ? "Accepted (Edited)" : "Accepted", icon: hasModifications ? "🔁" : "✔", done: ["confirmed", "processing", "delivered"].includes(latest.status) },
+          { key: "waiting", label: "Waiting", icon: "⏳", done: ["processing", "delivered"].includes(latest.status) },
+          { key: "picked", label: "Picked", icon: "🚚", done: ["processing", "delivered"].includes(latest.status) },
+          { key: "delivery", label: "Delivery", icon: "📍", done: latest.status === "delivered" },
+          { key: "done", label: "Done", icon: "✅", done: latest.status === "delivered" },
+        ];
+        const currentIdx = latest.status === "cancelled"
+          ? -1
+          : latest.status === "delivered"
+            ? 5
+            : latest.status === "processing"
+              ? 3
+              : latest.status === "confirmed"
+                ? 1
+                : 0;
+
+        return (
+          <Card className="border shadow-sm overflow-hidden">
+            <CardContent className="p-3">
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-xs font-semibold flex items-center gap-1.5">
+                  📊 Last Order Status
+                  <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0">{latest.orderNumber}</Badge>
+                </p>
+                <span className="text-[10px] text-muted-foreground tabular-nums">
+                  ৳ {Number(latest.total).toLocaleString("en-BD")}
+                </span>
+              </div>
+
+              {latest.status === "cancelled" ? (
+                <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <XCircle className="w-4 h-4 text-red-500" />
+                  <span className="text-xs font-medium text-red-700 dark:text-red-300">This order was cancelled</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-0 overflow-x-auto">
+                  {statusSteps.map((step, i) => {
+                    const isCurrent = i === currentIdx;
+                    const isLast = i === statusSteps.length - 1;
+                    return (
+                      <div key={step.key} className="flex items-center">
+                        <div className="flex flex-col items-center min-w-[56px]">
+                          <div
+                            className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-all ${
+                              step.done
+                                ? "bg-emerald-500 text-white shadow-sm"
+                                : isCurrent
+                                  ? "bg-primary text-primary-foreground ring-2 ring-primary/30 shadow-sm"
+                                  : "bg-muted border border-muted-foreground/20"
+                            }`}
+                          >
+                            {step.done ? "✓" : step.icon}
+                          </div>
+                          <p className={`text-[9px] mt-1 font-medium text-center leading-tight ${
+                            step.done ? "text-emerald-700 dark:text-emerald-400"
+                              : isCurrent ? "text-primary font-bold"
+                              : "text-muted-foreground"
+                          }`}>
+                            {step.label}
+                          </p>
+                        </div>
+                        {!isLast && (
+                          <div className={`w-5 h-0.5 -mt-3 ${
+                            statusSteps[i + 1]?.done ? "bg-emerald-400" : "bg-muted"
+                          }`} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {currentIdx >= 0 && currentIdx < 5 && (
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Current: {statusSteps[currentIdx]?.icon} <span className="font-medium">{statusSteps[currentIdx]?.label}</span>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
