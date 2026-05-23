@@ -313,7 +313,109 @@ export default function PurchaseOrderDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Delivery Info */}
+          {/* 📊 Final Summary + Change Highlight */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Final Summary */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">📊 Final Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(() => {
+                  const totalRequested = po.items?.reduce((s: number, i: any) => s + i.quantity, 0) || 0;
+                  const totalApproved = po.items?.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0) || 0;
+                  return (
+                    <>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Total Requested Qty</span>
+                        <span className="font-medium tabular-nums">{totalRequested} Units</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Total Approved Qty</span>
+                        <span className={`font-medium tabular-nums ${totalApproved < totalRequested ? "text-orange-600" : ""}`}>
+                          {totalApproved} Units
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between text-sm">
+                        <span className="font-bold">Final Order Value</span>
+                        <span className="font-bold tabular-nums">→ ৳ {Number(po.total).toLocaleString("en-BD")}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            {/* Change Highlight (only if modified) */}
+            {hasModifications ? (
+              <Card className="border-orange-200 dark:border-orange-800">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">📊 Change Highlight</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1.5">
+                  {po.items?.filter((i: any) => i.modifiedQty !== null && i.modifiedQty !== i.quantity).map((item: any) => (
+                    <p key={item.id} className="text-[10px] flex items-start gap-1.5">
+                      <span className="text-orange-500 shrink-0">⚠</span>
+                      <span className="text-muted-foreground">
+                        Quantity reduced ({item.productName}: <span className="font-semibold text-orange-600">{item.modifiedQty - item.quantity}</span>)
+                      </span>
+                    </p>
+                  ))}
+                  <p className="text-[10px] flex items-start gap-1.5">
+                    <span className="text-emerald-500 shrink-0">✔</span>
+                    <span className="text-muted-foreground">Partial order accepted</span>
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">📊 Change Highlight</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                    <span className="text-emerald-500">✔</span> No modifications — full order accepted
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* 💳 Payment Info */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">💳 Payment Info</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-2.5 rounded-lg border bg-muted/20">
+                  <p className="text-[10px] text-muted-foreground mb-1">Payment Status</p>
+                  <p className="text-xs font-medium">
+                    {po.status === "delivered" || po.receivedAt ? (
+                      <span className="text-emerald-600">→ ✅ Paid</span>
+                    ) : (
+                      <span className="text-amber-600">→ ⏳ Pending</span>
+                    )}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-lg border bg-muted/20">
+                  <p className="text-[10px] text-muted-foreground mb-1">Payment Method</p>
+                  <p className="text-xs font-medium capitalize">
+                    → {po.paymentMethod?.replace(/_/g, " ") || "Cash"}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-lg border bg-muted/20">
+                  <p className="text-[10px] text-muted-foreground mb-1">Transaction ID</p>
+                  <p className="text-xs font-mono font-medium">
+                    → {po.orderNumber}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+
           {(delivery.trackingId || delivery.riderName) && (
             <Card>
               <CardHeader className="pb-4">
