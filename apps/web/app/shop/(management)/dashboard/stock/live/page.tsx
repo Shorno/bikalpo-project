@@ -115,27 +115,27 @@ export default function StockLivePage() {
           PRODUCT TABLE
           ════════════════════════════════════════════════════════ */}
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white border rounded-xl">
-          <div className="w-8 h-8 border-3 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mb-4" />
-          <p className="text-sm text-gray-500">Loading real-time stock...</p>
+        <div className="flex flex-col items-center justify-center py-16 bg-white border rounded-xl">
+          <div className="w-7 h-7 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mb-3" />
+          <p className="text-xs text-gray-500">Loading real-time stock...</p>
         </div>
       ) : products.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white border border-dashed rounded-xl">
-          <BoxesIcon className="text-gray-300 mb-4" size={48} />
-          <p className="text-gray-500 text-lg font-medium">No products found</p>
-          <p className="text-sm text-gray-400 mt-1">
+        <div className="flex flex-col items-center justify-center py-16 bg-white border border-dashed rounded-xl">
+          <BoxesIcon className="text-gray-300 mb-3" size={40} />
+          <p className="text-gray-500 text-base font-medium">No products found</p>
+          <p className="text-xs text-gray-400 mt-0.5">
             {search ? "Try adjusting your search or filters." : "Add products to start tracking stock."}
           </p>
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           {/* Table Header */}
-          <div className="grid grid-cols-[40px_minmax(100px,1fr)_minmax(200px,2fr)_minmax(140px,1.2fr)_80px] bg-gradient-to-r from-gray-50 to-white border-b text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-            <div className="py-3 px-2" />
-            <div className="py-3 px-3">SKU</div>
-            <div className="py-3 px-3">Product Name</div>
-            <div className="py-3 px-3">Stock Breakdown</div>
-            <div className="py-3 px-3 text-center">Action</div>
+          <div className="grid grid-cols-[32px_minmax(80px,0.8fr)_minmax(160px,2fr)_minmax(120px,1fr)_60px] bg-gray-50 border-b text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+            <div className="py-2 px-1" />
+            <div className="py-2 px-2">SKU</div>
+            <div className="py-2 px-2">Product Name</div>
+            <div className="py-2 px-2">Stock Breakdown</div>
+            <div className="py-2 px-2 text-center">Action</div>
           </div>
 
           {/* Product Rows */}
@@ -154,62 +154,62 @@ export default function StockLivePage() {
                 <div key={p.productId}>
                   {/* ── Product Row ── */}
                   <div
-                    className={`grid grid-cols-[40px_minmax(100px,1fr)_minmax(200px,2fr)_minmax(140px,1.2fr)_80px] items-center cursor-pointer transition-colors hover:bg-gray-50/80 ${isExpanded ? "bg-gray-50" : ""}`}
+                    className={`grid grid-cols-[32px_minmax(80px,0.8fr)_minmax(160px,2fr)_minmax(120px,1fr)_60px] items-center cursor-pointer transition-colors hover:bg-gray-50/80 ${isExpanded ? "bg-gray-50" : ""}`}
                     onClick={() => {
                       setExpandedId(isExpanded ? null : p.productId);
                       setSelectedVariantId(null);
                     }}
                   >
                     {/* Chevron */}
-                    <div className="flex items-center justify-center py-3.5">
+                    <div className="flex items-center justify-center py-2.5">
                       {isExpanded ? (
-                        <ChevronDown size={14} className="text-gray-400" />
+                        <ChevronDown size={13} className="text-gray-400" />
                       ) : (
-                        <ChevronRight size={14} className="text-gray-400" />
+                        <ChevronRight size={13} className="text-gray-400" />
                       )}
                     </div>
 
                     {/* SKU */}
-                    <div className="py-3.5 px-3">
-                      <span className="text-[11px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                    <div className="py-2.5 px-2">
+                      <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
                         {p.sku || "—"}
                       </span>
                     </div>
 
                     {/* Product Name */}
-                    <div className="py-3.5 px-3 flex items-center gap-2.5">
+                    <div className="py-2.5 px-2 flex items-center gap-2">
                       {p.productImage ? (
                         <img
                           src={p.productImage}
                           alt={p.productName}
-                          className="w-8 h-8 rounded-lg object-cover border flex-shrink-0"
+                          className="w-7 h-7 rounded-md object-cover border flex-shrink-0"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                          <Package className="h-4 w-4 text-gray-300" />
+                        <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                          <Package className="h-3.5 w-3.5 text-gray-300" />
                         </div>
                       )}
-                      <span className="text-sm font-semibold text-gray-800 truncate">
+                      <span className="text-xs font-semibold text-gray-800 truncate">
                         {p.productName}
                       </span>
                     </div>
 
                     {/* Stock Breakdown */}
-                    <div className="py-3.5 px-3">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-bold text-gray-900 tabular-nums">
+                    <div className="py-2.5 px-2">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-xs font-bold text-gray-900 tabular-nums">
                           {Math.round(p.totalPackQty)} Pack
                         </span>
-                        <span className="text-gray-300 text-xs">+</span>
-                        <span className="text-sm font-bold text-gray-900 tabular-nums">
+                        <span className="text-gray-300 text-[10px]">·</span>
+                        <span className="text-xs font-bold text-gray-900 tabular-nums">
                           {Math.round(p.totalLooseQty * 100) / 100} KG Loose
                         </span>
                       </div>
                     </div>
 
                     {/* Action */}
-                    <div className="py-3.5 px-3 flex justify-center">
-                      <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-full border ${sc.color}`}>
+                    <div className="py-2.5 px-2 flex justify-center">
+                      <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${sc.color}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
                         View
                       </span>
@@ -230,7 +230,7 @@ export default function StockLivePage() {
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-3 border-t bg-gray-50/50 text-xs text-gray-500 flex items-center justify-between">
+          <div className="px-3 py-2 border-t bg-gray-50/50 text-[10px] text-gray-500 flex items-center justify-between">
             <span>{(data as any)?.totalCount ?? 0} products</span>
             <span className="text-gray-400">Updates every 30s</span>
           </div>
