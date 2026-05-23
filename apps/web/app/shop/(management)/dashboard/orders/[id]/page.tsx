@@ -154,28 +154,23 @@ export default function PurchaseOrderDetailPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="mt-0.5 shrink-0"
-          >
+    <div className="space-y-4 max-w-4xl mx-auto">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
             <Link href="/dashboard/orders">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold tracking-tight font-mono">
-                {po.orderNumber}
+            <div className="flex items-center gap-2 mb-0.5">
+              <h1 className="text-lg font-bold tracking-tight font-mono">
+                📄 {po.orderNumber}
               </h1>
               <Badge
                 variant="outline"
-                className={`gap-1.5 px-2.5 py-1 text-xs font-medium ${config.className}`}
+                className={`gap-1 px-2 py-0.5 text-[10px] font-medium ${config.className}`}
               >
                 {config.icon}
                 {config.label}
@@ -183,41 +178,34 @@ export default function PurchaseOrderDetailPage() {
               {hasModifications && (
                 <Badge
                   variant="outline"
-                  className="gap-1 text-xs text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30 dark:border-orange-800"
+                  className="gap-1 text-[10px] text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30"
                 >
-                  <AlertTriangle className="w-3 h-3" />
-                  Modified by Supplier
+                  <AlertTriangle className="w-2.5 h-2.5" />
+                  Modified
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              From <span className="font-medium text-foreground">{po.warehouseName}</span>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{po.warehouseName}</span>
               {" · "}
-              {new Date(po.createdAt).toLocaleDateString("en-BD", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
+              {new Date(po.createdAt).toLocaleDateString("en-BD", { day: "numeric", month: "short" })}
+              {" · "}
+              {po.items?.length || 0} item{(po.items?.length || 0) !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {po.warehousePhone && (
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" size="sm" className="h-7 text-[10px]" asChild>
               <a href={`tel:${po.warehousePhone}`}>
-                <Phone className="mr-1.5 h-3.5 w-3.5" />
-                Contact
+                <Phone className="mr-1 h-3 w-3" /> Contact
               </a>
             </Button>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ── Main Content ─────────────────────────────────── */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="space-y-4">
           {/* Status Timeline */}
           <Card>
             <CardHeader className="pb-4">
@@ -351,120 +339,114 @@ export default function PurchaseOrderDetailPage() {
               </CardContent>
             </Card>
           )}
-        </div>
-
-        {/* ── Sidebar ──────────────────────────────────────── */}
-        <div className="space-y-6">
-          {/* Pricing Summary */}
-          <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">Price Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="tabular-nums">৳ {Number(po.subtotal).toLocaleString("en-BD")}</span>
-              </div>
-              {Number(po.shippingCost) > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Shipping</span>
-                  <span className="tabular-nums">৳ {Number(po.shippingCost).toLocaleString("en-BD")}</span>
+        {/* ── Price Summary (inline) ── */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">💰 Price Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex justify-end">
+              <div className="w-64 space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="tabular-nums">৳ {Number(po.subtotal).toLocaleString("en-BD")}</span>
                 </div>
-              )}
-              {Number(po.discount) > 0 && (
+                {Number(po.shippingCost) > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Shipping</span>
+                    <span className="tabular-nums">৳ {Number(po.shippingCost).toLocaleString("en-BD")}</span>
+                  </div>
+                )}
+                {Number(po.discount) > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Discount</span>
+                    <span className="text-emerald-600 tabular-nums">−৳ {Number(po.discount).toLocaleString("en-BD")}</span>
+                  </div>
+                )}
+                <Separator />
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Discount</span>
-                  <span className="text-emerald-600 tabular-nums">−৳ {Number(po.discount).toLocaleString("en-BD")}</span>
+                  <span className="font-bold">Total</span>
+                  <span className="font-bold text-lg tabular-nums">৳ {Number(po.total).toLocaleString("en-BD")}</span>
                 </div>
-              )}
-              <Separator />
-              <div className="flex justify-between">
-                <span className="font-semibold">Total</span>
-                <span className="text-lg font-bold text-primary tabular-nums">
-                  ৳ {Number(po.total).toLocaleString("en-BD")}
-                </span>
               </div>
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Payment</span>
-                <span className="capitalize">{po.paymentMethod?.replace(/_/g, " ")}</span>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
 
-          {/* Shipping Address */}
+        {/* ── Delivery Address + Wholesaler (side by side) ── */}
+        <div className="grid grid-cols-2 gap-3">
           <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                Delivery Address
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-1.5">
+                <MapPin className="h-3 w-3 text-muted-foreground" /> Delivery Address
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="text-sm font-medium">{po.shippingName}</p>
-              <p className="text-sm text-muted-foreground">{po.shippingAddress}</p>
-              <p className="text-sm text-muted-foreground">
+            <CardContent className="space-y-1">
+              <p className="text-xs font-medium">{po.shippingName}</p>
+              <p className="text-[10px] text-muted-foreground">{po.shippingAddress}</p>
+              <p className="text-[10px] text-muted-foreground">
                 {po.shippingArea && `${po.shippingArea}, `}{po.shippingCity}
               </p>
-              <a
-                href={`tel:${po.shippingPhone}`}
-                className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-              >
-                <Phone className="w-3 h-3" />
-                {po.shippingPhone}
+              <a href={`tel:${po.shippingPhone}`} className="text-[10px] text-primary hover:underline inline-flex items-center gap-1">
+                <Phone className="w-2.5 h-2.5" /> {po.shippingPhone}
               </a>
             </CardContent>
           </Card>
-
-          {/* Wholesaler Info */}
           <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">Wholesaler</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">🏢 Wholesaler</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="text-sm font-medium">{po.warehouseName}</p>
+            <CardContent className="space-y-1">
+              <p className="text-xs font-medium">{po.warehouseName}</p>
               {po.warehousePhone && (
-                <a
-                  href={`tel:${po.warehousePhone}`}
-                  className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  <Phone className="w-3 h-3" />
-                  {po.warehousePhone}
+                <a href={`tel:${po.warehousePhone}`} className="text-[10px] text-primary hover:underline inline-flex items-center gap-1">
+                  <Phone className="w-2.5 h-2.5" /> {po.warehousePhone}
                 </a>
               )}
             </CardContent>
           </Card>
+        </div>
 
-          {/* Notes */}
-          {po.customerNote && (
-            <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base">Order Note</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">{po.customerNote}</p>
-              </CardContent>
-            </Card>
+        {/* ── Notes ── */}
+        {po.customerNote && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">💬 Message from Supplier</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <blockquote className="border-l-2 border-amber-300 pl-3 py-1 text-xs text-muted-foreground italic bg-amber-50/50 dark:bg-amber-950/10 rounded-r">
+                "{po.customerNote}"
+              </blockquote>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Actions ── */}
+        <div className="flex items-center justify-end gap-2">
+          {isReceivable && (
+            <Button size="sm" className="h-8 text-xs" onClick={initReceiveItems}>
+              <PackageCheck className="mr-1.5 h-3.5 w-3.5" />
+              ✅ Mark as Received
+            </Button>
           )}
-
-          {/* Actions */}
-          <div className="space-y-2">
-            {isReceivable && (
-              <Button className="w-full" size="lg" onClick={initReceiveItems}>
-                <PackageCheck className="mr-2 h-4 w-4" />
-                Mark as Received
-              </Button>
-            )}
-            {isCancellable && (
-              <Button
-                variant="outline"
-                className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20"
-                onClick={() => setShowCancelDialog(true)}
-              >
-                <Ban className="mr-2 h-4 w-4" />
-                Cancel Order
-              </Button>
-            )}
-          </div>
+          {isCancellable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={() => setShowCancelDialog(true)}
+            >
+              <Ban className="mr-1.5 h-3.5 w-3.5" />
+              ❌ Cancel Order
+            </Button>
+          )}
+          {po.warehousePhone && (
+            <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+              <a href={`tel:${po.warehousePhone}`}>
+                <Phone className="mr-1 h-3 w-3" /> 📞 Contact
+              </a>
+            </Button>
+          )}
         </div>
       </div>
 
