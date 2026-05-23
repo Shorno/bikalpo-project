@@ -208,15 +208,14 @@ export default function PurchaseOrderDetailPage() {
       <div className="space-y-4">
           {/* Status Timeline */}
           <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">Order Status</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">⚙ Order Status</CardTitle>
             </CardHeader>
             <CardContent>
               <StatusTimeline steps={timeline} currentStatus={po.status} />
             </CardContent>
           </Card>
 
-          {/* Products */}
           {/* 📊 Item Breakdown (Table) 🔥 */}
           <Card>
             <CardHeader className="pb-2">
@@ -826,23 +825,24 @@ function StatusTimeline({
 
 function DetailSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="flex items-start gap-3">
-        <Skeleton className="h-9 w-9 rounded-md" />
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="h-4 w-64" />
+    <div className="space-y-4 max-w-4xl mx-auto">
+      <div className="flex items-center gap-2.5">
+        <Skeleton className="h-8 w-8 rounded-md" />
+        <div className="space-y-1.5">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3 w-56" />
         </div>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <Skeleton className="h-64 w-full rounded-xl" />
+      <div className="space-y-4">
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
         </div>
-        <div className="space-y-6">
-          <Skeleton className="h-48 w-full rounded-xl" />
-          <Skeleton className="h-36 w-full rounded-xl" />
-        </div>
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-32 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
       </div>
     </div>
   );
