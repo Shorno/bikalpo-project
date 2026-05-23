@@ -395,19 +395,19 @@ export default function PurchaseOrdersPage() {
           <p className="text-sm text-muted-foreground mt-1">Please try again later</p>
         </div>
       ) : orders.length === 0 ? (
-        <div className="bg-card rounded-xl border shadow-sm p-12 text-center">
-          <ShoppingBag className="w-14 h-14 text-muted-foreground/20 mx-auto mb-4" />
-          <p className="text-lg font-semibold text-foreground">No purchase orders found</p>
-          <p className="text-sm text-muted-foreground mt-1 mb-6">
+        <div className="bg-card rounded-xl border shadow-sm p-8 text-center">
+          <ShoppingBag className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-foreground">No purchase orders found</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">
             {searchDebounced || statusFilter !== "all"
               ? "Try adjusting your search or filter criteria"
               : "Place your first wholesale order to get started"}
           </p>
           {!searchDebounced && statusFilter === "all" && (
-            <Button asChild>
+            <Button asChild size="sm" className="h-8 text-xs">
               <Link href="/dashboard/order-from-warehouse">
-                <ShoppingCart className="mr-2 h-4 w-4" />
-                Create Purchase Order
+                <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
+                ➕ Create Purchase Order
               </Link>
             </Button>
           )}
@@ -417,15 +417,15 @@ export default function PurchaseOrdersPage() {
           <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead className="font-semibold">Order #</TableHead>
-                  <TableHead className="font-semibold">Wholesaler</TableHead>
-                  <TableHead className="font-semibold">Products</TableHead>
-                  <TableHead className="text-right font-semibold">Amount</TableHead>
-                  <TableHead className="font-semibold">Status</TableHead>
-                  <TableHead className="font-semibold">OTP</TableHead>
-                  <TableHead className="font-semibold">Date</TableHead>
-                  <TableHead className="text-right font-semibold">Action</TableHead>
+                <TableRow className="bg-muted/30 text-[10px]">
+                  <TableHead className="font-bold py-2">PO ID</TableHead>
+                  <TableHead className="font-bold py-2">Wholesaler</TableHead>
+                  <TableHead className="font-bold py-2">Product</TableHead>
+                  <TableHead className="text-center font-bold py-2">Qty</TableHead>
+                  <TableHead className="text-right font-bold py-2">Amount</TableHead>
+                  <TableHead className="font-bold py-2">Status</TableHead>
+                  <TableHead className="font-bold py-2">OTP</TableHead>
+                  <TableHead className="text-right font-bold py-2">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -440,14 +440,14 @@ export default function PurchaseOrdersPage() {
                       key={o.id}
                       className="group hover:bg-muted/30 transition-colors"
                     >
-                      {/* Order Number */}
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-foreground">
+                      {/* PO ID */}
+                      <TableCell className="py-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs font-semibold text-foreground">
                             {o.orderNumber}
                           </span>
                           {hasModifications && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30">
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30">
                               Modified
                             </Badge>
                           )}
@@ -455,60 +455,66 @@ export default function PurchaseOrdersPage() {
                       </TableCell>
 
                       {/* Wholesaler */}
-                      <TableCell>
-                        <span className="text-sm font-medium">{o.warehouseName}</span>
+                      <TableCell className="py-2">
+                        <span className="text-xs font-medium">{o.warehouseName}</span>
                       </TableCell>
 
-                      {/* Products */}
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {/* Stacked product images */}
-                          <div className="flex -space-x-2 shrink-0">
-                            {o.items?.slice(0, 3).map((item: any, i: number) => (
+                      {/* Product */}
+                      <TableCell className="py-2">
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex -space-x-1.5 shrink-0">
+                            {o.items?.slice(0, 2).map((item: any, i: number) => (
                               item.productImage ? (
                                 <Image
                                   key={i}
                                   src={item.productImage}
                                   alt={item.productName}
-                                  width={28}
-                                  height={28}
-                                  className="w-7 h-7 rounded-md border-2 border-background object-cover"
+                                  width={24}
+                                  height={24}
+                                  className="w-6 h-6 rounded border-2 border-background object-cover"
                                 />
                               ) : (
                                 <div
                                   key={i}
-                                  className="w-7 h-7 rounded-md border-2 border-background bg-muted flex items-center justify-center"
+                                  className="w-6 h-6 rounded border-2 border-background bg-muted flex items-center justify-center"
                                 >
-                                  <Package className="w-3 h-3 text-muted-foreground" />
+                                  <Package className="w-2.5 h-2.5 text-muted-foreground" />
                                 </div>
                               )
                             ))}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm truncate max-w-[160px]">
+                            <p className="text-xs truncate max-w-[120px]">
                               {o.items?.[0]?.productName || "—"}
                             </p>
                             {(o.items?.length || 0) > 1 && (
-                              <p className="text-[11px] text-muted-foreground">
-                                +{o.items.length - 1} more item{o.items.length - 1 > 1 ? "s" : ""}
+                              <p className="text-[10px] text-muted-foreground">
+                                +{o.items.length - 1} more
                               </p>
                             )}
                           </div>
                         </div>
                       </TableCell>
 
+                      {/* Qty */}
+                      <TableCell className="text-center py-2">
+                        <span className="text-xs tabular-nums font-medium">
+                          {o.items?.reduce((sum: number, item: any) => sum + (item.modifiedQty ?? item.quantity), 0) || 0} pcs
+                        </span>
+                      </TableCell>
+
                       {/* Amount */}
-                      <TableCell className="text-right">
-                        <span className="text-sm font-semibold tabular-nums">
+                      <TableCell className="text-right py-2">
+                        <span className="text-xs font-semibold tabular-nums">
                           ৳ {Number(o.total).toLocaleString("en-BD")}
                         </span>
                       </TableCell>
 
                       {/* Status */}
-                      <TableCell>
+                      <TableCell className="py-2">
                         <Badge
                           variant="outline"
-                          className={`gap-1 text-[11px] font-medium ${config.className}`}
+                          className={`gap-1 text-[10px] font-medium ${config.className}`}
                         >
                           {config.icon}
                           {config.label}
@@ -516,27 +522,17 @@ export default function PurchaseOrdersPage() {
                       </TableCell>
 
                       {/* OTP */}
-                      <TableCell>
+                      <TableCell className="py-2">
                         <DeliveryOtpBadge orderId={o.id} status={o.status} />
                       </TableCell>
 
-                      {/* Date */}
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground tabular-nums">
-                          {new Date(o.createdAt).toLocaleDateString("en-BD", {
-                            day: "numeric",
-                            month: "short",
-                          })}
-                        </span>
-                      </TableCell>
-
                       {/* Action */}
-                      <TableCell className="text-right">
+                      <TableCell className="text-right py-2">
                         <Button
                           asChild
                           variant="ghost"
                           size="sm"
-                          className="text-xs opacity-60 group-hover:opacity-100 transition-opacity"
+                          className="text-[10px] h-7 px-2 opacity-60 group-hover:opacity-100 transition-opacity"
                         >
                           <Link href={`/dashboard/orders/${o.id}`}>
                             View →
@@ -553,28 +549,28 @@ export default function PurchaseOrdersPage() {
           {/* Pagination */}
           {pagination && pagination.totalPages > 1 && (
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Page {pagination.page} of {pagination.totalPages}
                 <span className="hidden sm:inline"> · {pagination.totalCount} orders</span>
               </p>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1">
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-7 w-7"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => p - 1)}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-7 w-7"
                   disabled={page >= pagination.totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </div>
@@ -640,33 +636,33 @@ function OrdersTableSkeleton() {
     <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow className="bg-muted/30">
-            <TableHead>Order #</TableHead>
+          <TableRow className="bg-muted/30 text-[10px]">
+            <TableHead>PO ID</TableHead>
             <TableHead>Wholesaler</TableHead>
-            <TableHead>Products</TableHead>
+            <TableHead>Product</TableHead>
+            <TableHead className="text-center">Qty</TableHead>
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>OTP</TableHead>
-            <TableHead>Date</TableHead>
             <TableHead className="text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {Array.from({ length: 6 }).map((_, i) => (
             <TableRow key={i}>
-              <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-28" /></TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <Skeleton className="h-7 w-7 rounded-md" />
-                  <Skeleton className="h-4 w-32" />
+              <TableCell className="py-2"><Skeleton className="h-3.5 w-20" /></TableCell>
+              <TableCell className="py-2"><Skeleton className="h-3.5 w-24" /></TableCell>
+              <TableCell className="py-2">
+                <div className="flex items-center gap-1.5">
+                  <Skeleton className="h-6 w-6 rounded" />
+                  <Skeleton className="h-3.5 w-28" />
                 </div>
               </TableCell>
-              <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
-              <TableCell><Skeleton className="h-5 w-20" /></TableCell>
-              <TableCell><Skeleton className="h-5 w-14" /></TableCell>
-              <TableCell><Skeleton className="h-4 w-14" /></TableCell>
-              <TableCell><Skeleton className="h-7 w-12 ml-auto" /></TableCell>
+              <TableCell className="py-2"><Skeleton className="h-3.5 w-10 mx-auto" /></TableCell>
+              <TableCell className="py-2"><Skeleton className="h-3.5 w-14 ml-auto" /></TableCell>
+              <TableCell className="py-2"><Skeleton className="h-4 w-18" /></TableCell>
+              <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
+              <TableCell className="py-2"><Skeleton className="h-6 w-10 ml-auto" /></TableCell>
             </TableRow>
           ))}
         </TableBody>
