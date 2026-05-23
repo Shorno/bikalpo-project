@@ -6,12 +6,13 @@ import {
 	invoiceItem,
 	order,
 	user,
+	warehouseDueCollection,
 	warehousePosPayment,
 	warehousePosSale,
 	warehousePosSaleItem,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, gte, inArray, lte, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { warehouseProcedure } from "../index";
 
@@ -377,7 +378,7 @@ export const warehouseSalesRouter = {
 			const invoiceIds = invoiceRows.map((row) => row.id);
 			const orderIds = invoiceRows.map((row) => row.orderId);
 
-			const [invoiceItems, invoicePayments, estimateRows] = await Promise.all([
+			const [invoiceItems, invoicePayments, estimateRows, dueCollectionRows] = await Promise.all([
 				invoiceIds.length
 					? db
 							.select({
@@ -412,6 +413,15 @@ export const warehouseSalesRouter = {
 							.leftJoin(user, eq(estimate.salesmanId, user.id))
 							.where(inArray(estimate.convertedOrderId, orderIds))
 					: Promise.resolve([]),
+				invoiceIds.length
+					? db
+							.select({
+								invoiceId: warehouseDueCollection.invoiceId,
+								amount: warehouseDueCollection.amount,
+							})
+							.from(warehouseDueCollection)
+							.where(inArray(warehouseDueCollection.invoiceId, invoiceIds))
+					: Promise.resolve([]),
 			]);
 
 			const itemCounts = new Map<number, number>();
@@ -438,6 +448,18 @@ export const warehouseSalesRouter = {
 					reference: payment.transactionId,
 				});
 				invoicePaymentsById.set(payment.invoiceId, rows);
+			}
+
+			// Aggregate due-collection amounts per invoice
+			const dueCollectionsByInvoice = new Map<number, number>();
+			for (const dc of dueCollectionRows) {
+				const amount = toNumber(dc.amount);
+				if (amount > 0) {
+					dueCollectionsByInvoice.set(
+						dc.invoiceId,
+						(dueCollectionsByInvoice.get(dc.invoiceId) ?? 0) + amount,
+					);
+				}
 			}
 
 			const estimateByOrderId = new Map(
@@ -490,6 +512,8 @@ export const warehouseSalesRouter = {
 					(sumValue, payment) => sumValue + payment.amount,
 					0,
 				);
+				// Add due-collection amounts
+				paid += dueCollectionsByInvoice.get(row.id) ?? 0;
 				if (paid <= 0 && ["collected", "settled"].includes(row.paymentStatus)) {
 					paid = total;
 				}
@@ -694,7 +718,7 @@ export const warehouseSalesRouter = {
 
 			const orderData = invoiceData.order;
 
-			const [payments, estimateData] = await Promise.all([
+			const [payments, estimateData, dueCollections] = await Promise.all([
 				db
 					.select({
 						method: deliveryGroupInvoice.paymentMethod,
@@ -714,6 +738,15 @@ export const warehouseSalesRouter = {
 					.leftJoin(user, eq(estimate.salesmanId, user.id))
 					.where(eq(estimate.convertedOrderId, invoiceData.orderId))
 					.limit(1),
+				db
+					.select({
+						amount: warehouseDueCollection.amount,
+						paymentMethod: warehouseDueCollection.paymentMethod,
+						transactionRef: warehouseDueCollection.transactionRef,
+						collectedAt: warehouseDueCollection.collectedAt,
+					})
+					.from(warehouseDueCollection)
+					.where(eq(warehouseDueCollection.invoiceId, invoiceData.id)),
 			]);
 
 			const paymentHistory = payments
@@ -724,6 +757,18 @@ export const warehouseSalesRouter = {
 					amount: toMoney(payment.amount),
 					reference: payment.transactionId,
 				}));
+
+			// Merge due-collection records into payment history
+			for (const collection of dueCollections) {
+				if (toNumber(collection.amount) > 0) {
+					paymentHistory.push({
+						date: collection.collectedAt,
+						method: formatMethod(collection.paymentMethod),
+						amount: toMoney(collection.amount),
+						reference: collection.transactionRef,
+					});
+				}
+			}
 
 			const total = toNumber(invoiceData.grandTotal);
 			let paid = paymentHistory.reduce(
@@ -787,6 +832,172 @@ export const warehouseSalesRouter = {
 				},
 				status: status.label,
 				statusKey: status.status,
+			};
+		}),
+
+	collectDue: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/sales/collect-due",
+			tags: ["Warehouse Sales"],
+			summary: "Collect due payment for a sale",
+		})
+		.input(
+			z.object({
+				kind: z.enum(["pos", "invoice"]),
+				id: z.number().int().positive(),
+				amount: z.number().positive(),
+				paymentMethod: z.enum(["cash", "bkash", "nagad", "bank"]),
+				transactionRef: z.string().optional(),
+				note: z.string().optional(),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const warehouseId = context.session.user.id;
+
+			if (input.kind === "pos") {
+				const sale = await db.query.warehousePosSale.findFirst({
+					where: and(
+						eq(warehousePosSale.id, input.id),
+						eq(warehousePosSale.warehouseId, warehouseId),
+					),
+				});
+
+				if (!sale) {
+					throw new ORPCError("NOT_FOUND", { message: "Sale not found" });
+				}
+
+				const currentDue = toNumber(sale.due);
+				if (currentDue <= 0) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "This sale has no outstanding due",
+					});
+				}
+
+				if (input.amount > currentDue) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: `Amount exceeds outstanding due of ${toMoney(currentDue)}`,
+					});
+				}
+
+				const newPaid = toNumber(sale.paid) + input.amount;
+				const newDue = Math.max(0, currentDue - input.amount);
+
+				await db.transaction(async (tx) => {
+					await tx.insert(warehousePosPayment).values({
+						saleId: sale.id,
+						paymentMethod: input.paymentMethod,
+						amount: toMoney(input.amount),
+						transactionRef: input.transactionRef || null,
+						note: input.note || null,
+						createdById: warehouseId,
+					});
+
+					await tx
+						.update(warehousePosSale)
+						.set({
+							paid: toMoney(newPaid),
+							due: toMoney(newDue),
+						})
+						.where(eq(warehousePosSale.id, sale.id));
+				});
+
+				return {
+					success: true,
+					paid: toMoney(newPaid),
+					due: toMoney(newDue),
+				};
+			}
+
+			// Invoice-based due collection
+			const invoiceData = await db.query.invoice.findFirst({
+				where: eq(invoice.id, input.id),
+				with: {
+					order: true,
+				},
+			});
+
+			if (
+				!invoiceData ||
+				!invoiceData.order ||
+				invoiceData.order.warehouseId !== warehouseId
+			) {
+				throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
+			}
+
+			// Calculate current paid/due from existing payments
+			const existingPayments = await db
+				.select({
+					amount: deliveryGroupInvoice.amountCollected,
+				})
+				.from(deliveryGroupInvoice)
+				.where(eq(deliveryGroupInvoice.invoiceId, invoiceData.id));
+
+			const existingDueCollections = await db
+				.select({
+					amount: warehouseDueCollection.amount,
+				})
+				.from(warehouseDueCollection)
+				.where(eq(warehouseDueCollection.invoiceId, invoiceData.id));
+
+			const total = toNumber(invoiceData.grandTotal);
+			let paid = existingPayments.reduce(
+				(sum, p) => sum + toNumber(p.amount),
+				0,
+			);
+			paid += existingDueCollections.reduce(
+				(sum, p) => sum + toNumber(p.amount),
+				0,
+			);
+
+			if (
+				paid <= 0 &&
+				["collected", "settled"].includes(invoiceData.paymentStatus)
+			) {
+				paid = total;
+			}
+
+			const currentDue = Math.max(0, total - paid);
+
+			if (currentDue <= 0) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "This invoice has no outstanding due",
+				});
+			}
+
+			if (input.amount > currentDue) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: `Amount exceeds outstanding due of ${toMoney(currentDue)}`,
+				});
+			}
+
+			const newPaid = paid + input.amount;
+			const newDue = Math.max(0, currentDue - input.amount);
+
+			await db.transaction(async (tx) => {
+				await tx.insert(warehouseDueCollection).values({
+					warehouseId,
+					invoiceId: invoiceData.id,
+					paymentMethod: input.paymentMethod,
+					amount: toMoney(input.amount),
+					transactionRef: input.transactionRef || null,
+					note: input.note || null,
+					collectedById: warehouseId,
+				});
+
+				// If fully paid, update invoice payment status
+				if (newDue <= 0) {
+					await tx
+						.update(invoice)
+						.set({ paymentStatus: "collected" })
+						.where(eq(invoice.id, invoiceData.id));
+				}
+			});
+
+			return {
+				success: true,
+				paid: toMoney(newPaid),
+				due: toMoney(newDue),
 			};
 		}),
 };

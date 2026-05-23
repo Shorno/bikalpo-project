@@ -1,9 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Banknote,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -14,15 +15,28 @@ import {
   Inbox,
   Loader2,
   Printer,
+  Receipt,
   RotateCcw,
   Search,
+  Share2,
   ShoppingCart,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -64,51 +78,51 @@ const saleTypeCards: {
   dotColor: string;
   description: string;
 }[] = [
-  {
-    key: "pos",
-    label: "POS",
-    color: "text-emerald-600",
-    activeColor: "border-emerald-200 bg-emerald-50 ring-emerald-100",
-    dotColor: "bg-emerald-500",
-    description: "Counter sales",
-  },
-  {
-    key: "order",
-    label: "Order",
-    color: "text-red-600",
-    activeColor: "border-red-200 bg-red-50 ring-red-100",
-    dotColor: "bg-red-500",
-    description: "Order invoices",
-  },
-  {
-    key: "salesman",
-    label: "Salesman",
-    color: "text-blue-600",
-    activeColor: "border-blue-200 bg-blue-50 ring-blue-100",
-    dotColor: "bg-blue-500",
-    description: "Field sales flow",
-  },
-];
+    {
+      key: "pos",
+      label: "POS",
+      color: "text-emerald-600",
+      activeColor: "border-emerald-200 bg-emerald-50 ring-emerald-100",
+      dotColor: "bg-emerald-500",
+      description: "Counter sales",
+    },
+    {
+      key: "order",
+      label: "Order",
+      color: "text-red-600",
+      activeColor: "border-red-200 bg-red-50 ring-red-100",
+      dotColor: "bg-red-500",
+      description: "Order invoices",
+    },
+    {
+      key: "salesman",
+      label: "Salesman",
+      color: "text-blue-600",
+      activeColor: "border-blue-200 bg-blue-50 ring-blue-100",
+      dotColor: "bg-blue-500",
+      description: "Field sales flow",
+    },
+  ];
 
 const salesDescriptions: Record<SaleType, { title: string; subtitle: string }> =
-  {
-    all: {
-      title: "All Transactions",
-      subtitle: "POS sales, generated order invoices, and salesman sales",
-    },
-    pos: {
-      title: "POS Sales",
-      subtitle: "Counter sales created from the warehouse POS",
-    },
-    order: {
-      title: "Order Invoices",
-      subtitle: "Invoices generated from customer orders",
-    },
-    salesman: {
-      title: "Salesman Transactions",
-      subtitle: "Orders created or converted through field sales",
-    },
-  };
+{
+  all: {
+    title: "All Transactions",
+    subtitle: "POS sales, generated order invoices, and salesman sales",
+  },
+  pos: {
+    title: "POS Sales",
+    subtitle: "Counter sales created from the warehouse POS",
+  },
+  order: {
+    title: "Order Invoices",
+    subtitle: "Invoices generated from customer orders",
+  },
+  salesman: {
+    title: "Salesman Transactions",
+    subtitle: "Orders created or converted through field sales",
+  },
+};
 
 const dateOptions: { value: DateFilter; label: string }[] = [
   { value: "all", label: "All Dates" },
@@ -518,7 +532,7 @@ export default function WarehouseSalesPage() {
           if (!open) setSelectedSale(null);
         }}
       >
-        <SheetContent className="flex w-full flex-col overflow-hidden p-0 sm:max-w-md lg:max-w-lg">
+        <SheetContent className="flex w-full flex-col overflow-hidden p-0 sm:max-w-lg lg:max-w-2xl!">
           <SheetHeader className="sr-only">
             <SheetTitle>Sales Detail</SheetTitle>
             <SheetDescription>
@@ -541,7 +555,7 @@ export default function WarehouseSalesPage() {
               </div>
             </div>
           ) : (
-            <SalesDetailPanel detail={detailQuery.data} />
+            <SalesDetailPanel detail={detailQuery.data} selectedSale={selectedSale} warehouseLabel={data?.warehouse?.label ?? "Warehouse"} />
           )}
         </SheetContent>
       </Sheet>
@@ -576,9 +590,9 @@ function SalesTypeCard({
         "group relative overflow-hidden rounded-xl border p-4 text-left transition-all",
         active
           ? cn(
-              activeColor ?? "border-slate-200 bg-slate-50 ring-slate-100",
-              "ring-2 shadow-sm",
-            )
+            activeColor ?? "border-slate-200 bg-slate-50 ring-slate-100",
+            "ring-2 shadow-sm",
+          )
           : "bg-background hover:bg-muted/50 hover:shadow-sm",
       )}
     >
@@ -869,11 +883,58 @@ function typeBadgeClass(type: string) {
 }
 
 
-function SalesDetailPanel({ detail }: { detail: any }) {
+function SalesDetailPanel({
+  detail,
+  selectedSale,
+  warehouseLabel,
+}: {
+  detail: any;
+  selectedSale: { kind: "pos" | "invoice"; id: number } | null;
+  warehouseLabel: string;
+}) {
   const status = detail.statusKey ?? detail.status ?? "pending";
   const due = Number(detail.payment?.due ?? 0);
   const invoiceNum =
     detail.basic?.invoiceNumber ?? detail.basic?.orderNumber ?? "-";
+  const [collectDueOpen, setCollectDueOpen] = useState(false);
+  const [printInvoiceOpen, setPrintInvoiceOpen] = useState(false);
+  const [printReceiptOpen, setPrintReceiptOpen] = useState(false);
+  const [lastCollectedPayment, setLastCollectedPayment] = useState<{
+    amount: number;
+    paymentMethod: string;
+    transactionRef?: string;
+  } | null>(null);
+  const queryClient = useQueryClient();
+
+  const collectDueMutation = useMutation({
+    mutationFn: (data: {
+      amount: number;
+      paymentMethod: "cash" | "bkash" | "nagad" | "bank";
+      transactionRef?: string;
+      note?: string;
+    }) =>
+      orpc.warehouseSales.collectDue.call({
+        kind: selectedSale!.kind,
+        id: selectedSale!.id,
+        ...data,
+      }),
+    onSuccess: (_result, variables) => {
+      toast.success("Payment collected successfully");
+      setCollectDueOpen(false);
+      setLastCollectedPayment({
+        amount: variables.amount,
+        paymentMethod: variables.paymentMethod,
+        transactionRef: variables.transactionRef,
+      });
+      setPrintReceiptOpen(true);
+      queryClient.invalidateQueries({
+        queryKey: ["warehouseSales"],
+      });
+    },
+    onError: (error: any) => {
+      toast.error(error?.message ?? "Failed to collect payment");
+    },
+  });
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
@@ -1068,12 +1129,59 @@ function SalesDetailPanel({ detail }: { detail: any }) {
         </section>
       </div>
 
-      <footer className="flex shrink-0 items-center gap-2 border-t bg-muted/30 px-6 py-3">
-        <DrawerAction icon={Printer} label="Print Invoice" />
-        <DrawerAction icon={Banknote} label="Collect Due" />
-        <DrawerAction icon={FileText} label="Edit Sale" />
-        <DrawerAction icon={RotateCcw} label="Process Return" />
+      <footer className="flex shrink-0 items-center gap-2.5 border-t bg-white px-6 py-4 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
+        <DrawerAction
+          icon={Printer}
+          label="Print Invoice"
+          onClick={() => setPrintInvoiceOpen(true)}
+          colorClass="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+        />
+        <DrawerAction
+          icon={Banknote}
+          label="Collect Due"
+          onClick={due > 0 ? () => setCollectDueOpen(true) : undefined}
+          disabled={due <= 0}
+          colorClass="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+        />
+        <DrawerAction
+          icon={FileText}
+          label="Edit Sale"
+          colorClass="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+        />
+        <DrawerAction
+          icon={RotateCcw}
+          label="Process Return"
+          colorClass="bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+        />
       </footer>
+
+      <CollectDueDialog
+        open={collectDueOpen}
+        onOpenChange={setCollectDueOpen}
+        dueAmount={due}
+        invoiceNumber={invoiceNum}
+        onCollect={(data) => collectDueMutation.mutate(data)}
+        isPending={collectDueMutation.isPending}
+      />
+
+      <PrintInvoiceDialog
+        open={printInvoiceOpen}
+        onOpenChange={setPrintInvoiceOpen}
+        detail={detail}
+        warehouseLabel={warehouseLabel}
+      />
+
+      <PrintReceiptDialog
+        open={printReceiptOpen}
+        onOpenChange={setPrintReceiptOpen}
+        invoiceNumber={invoiceNum}
+        customerName={detail.basic?.customerName ?? "-"}
+        warehouseLabel={warehouseLabel}
+        payment={lastCollectedPayment}
+        totalAmount={Number(detail.payment?.total ?? 0)}
+        totalPaid={Number(detail.payment?.paid ?? 0)}
+        totalDue={due}
+      />
     </div>
   );
 }
@@ -1113,19 +1221,788 @@ function PaymentRow({
 function DrawerAction({
   icon: Icon,
   label,
+  onClick,
+  disabled,
+  colorClass,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  colorClass?: string;
 }) {
+  const isDisabled = disabled ?? !onClick;
   return (
     <button
       type="button"
-      disabled
-      className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
+      disabled={isDisabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-9 items-center gap-2 rounded-lg border px-3.5 text-xs font-semibold transition-all",
+        "shadow-sm active:scale-[0.97]",
+        isDisabled
+          ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 opacity-60 shadow-none"
+          : colorClass ?? "bg-background text-foreground border-border hover:bg-muted",
+      )}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <Icon className="h-4 w-4" />
       {label}
     </button>
+  );
+}
+
+const paymentMethodOptions: {
+  value: "cash" | "bkash" | "nagad" | "bank";
+  label: string;
+}[] = [
+    { value: "cash", label: "Cash" },
+    { value: "bkash", label: "bKash" },
+    { value: "nagad", label: "Nagad" },
+    { value: "bank", label: "Bank Transfer" },
+  ];
+
+function CollectDueDialog({
+  open,
+  onOpenChange,
+  dueAmount,
+  invoiceNumber,
+  onCollect,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  dueAmount: number;
+  invoiceNumber: string;
+  onCollect: (data: {
+    amount: number;
+    paymentMethod: "cash" | "bkash" | "nagad" | "bank";
+    transactionRef?: string;
+    note?: string;
+  }) => void;
+  isPending: boolean;
+}) {
+  const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash" | "bkash" | "nagad" | "bank"
+  >("cash");
+  const [transactionRef, setTransactionRef] = useState("");
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setAmount("");
+      setPaymentMethod("cash");
+      setTransactionRef("");
+      setNote("");
+    }
+  }, [open]);
+
+  const parsedAmount = Number(amount);
+  const isValidAmount =
+    amount !== "" &&
+    Number.isFinite(parsedAmount) &&
+    parsedAmount > 0 &&
+    parsedAmount <= dueAmount;
+  const showRefField = paymentMethod !== "cash";
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValidAmount) return;
+    onCollect({
+      amount: parsedAmount,
+      paymentMethod,
+      transactionRef: transactionRef.trim() || undefined,
+      note: note.trim() || undefined,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Banknote className="h-5 w-5 text-emerald-600" />
+            Collect Due Payment
+          </DialogTitle>
+          <DialogDescription>
+            Collect outstanding balance for{" "}
+            <span className="font-semibold text-foreground">
+              {invoiceNumber}
+            </span>
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="rounded-lg border bg-muted/30 px-4 py-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Outstanding Due</span>
+              <span className="font-mono text-lg font-bold text-red-600">
+                {money(dueAmount)}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="collect-method">Payment Method</Label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {paymentMethodOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPaymentMethod(opt.value)}
+                  className={cn(
+                    "rounded-md border px-2 py-2 text-xs font-medium transition-all",
+                    paymentMethod === opt.value
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                      : "bg-background text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="collect-amount">Amount</Label>
+              <button
+                type="button"
+                onClick={() => setAmount(String(dueAmount))}
+                className="text-[11px] font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
+              >
+                Collect Full Amount
+              </button>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                ৳
+              </span>
+              <Input
+                id="collect-amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                max={dueAmount}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="pl-7 font-mono tabular-nums"
+                autoFocus
+              />
+            </div>
+            {amount !== "" && !isValidAmount && (
+              <p className="text-xs text-red-500">
+                {parsedAmount > dueAmount
+                  ? `Cannot exceed due amount of ${money(dueAmount)}`
+                  : "Enter a valid amount"}
+              </p>
+            )}
+          </div>
+
+          {showRefField && (
+            <div className="space-y-2">
+              <Label htmlFor="collect-ref">
+                Transaction Reference
+                <span className="ml-1 text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="collect-ref"
+                value={transactionRef}
+                onChange={(e) => setTransactionRef(e.target.value)}
+                placeholder={
+                  paymentMethod === "bkash" || paymentMethod === "nagad"
+                    ? "Transaction ID"
+                    : "Reference number"
+                }
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="collect-note">
+              Note
+              <span className="ml-1 text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id="collect-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Add a note..."
+            />
+          </div>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!isValidAmount || isPending}
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Collecting...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Collect {amount ? money(parsedAmount) : "Payment"}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function printContent(html: string) {
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.top = "-10000px";
+  iframe.style.left = "-10000px";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) return;
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  iframe.onload = () => {
+    setTimeout(() => {
+      iframe.contentWindow?.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
+    }, 250);
+  };
+}
+
+function formatPrintDate(value: string | Date | null | undefined) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("en-BD", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatPrintTime(value: string | Date | null | undefined) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function buildPrintStyles() {
+  return `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; padding: 16px; max-width: 380px; margin: 0 auto; }
+    .header { text-align: center; padding-bottom: 12px; border-bottom: 2px solid #333; margin-bottom: 12px; }
+    .header h1 { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+    .header p { font-size: 11px; color: #666; }
+    .doc-type { text-align: center; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin: 8px 0; padding: 4px 0; border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; }
+    .info-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; }
+    .info-row .label { color: #666; }
+    .info-row .value { font-weight: 600; }
+    .divider { border: none; border-top: 1px dashed #ccc; margin: 10px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { text-align: left; padding: 4px 0; border-bottom: 1px solid #ccc; font-weight: 600; font-size: 10px; color: #666; text-transform: uppercase; }
+    th.right, td.right { text-align: right; }
+    td { padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
+    .summary-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+    .summary-row.total { font-weight: 700; font-size: 14px; border-top: 1px solid #333; padding-top: 6px; margin-top: 4px; }
+    .summary-row.due { color: #dc2626; font-weight: 700; }
+    .summary-row.paid { color: #16a34a; }
+    .payment-history { margin-top: 6px; }
+    .payment-history h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #666; margin-bottom: 4px; }
+    .payment-entry { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; border-bottom: 1px solid #f5f5f5; }
+    .payment-entry .date { color: #666; min-width: 80px; }
+    .payment-entry .method { flex: 1; text-align: center; }
+    .payment-entry .amount { font-weight: 600; text-align: right; min-width: 70px; }
+    .footer { text-align: center; margin-top: 16px; padding-top: 10px; border-top: 1px dashed #ccc; font-size: 10px; color: #999; }
+    .highlight-box { border: 2px solid #333; border-radius: 4px; padding: 8px; margin: 8px 0; text-align: center; }
+    .highlight-box .big { font-size: 18px; font-weight: 700; }
+    .highlight-box .sub { font-size: 11px; color: #666; margin-top: 2px; }
+    @media print { body { padding: 0; } }
+  `;
+}
+
+function PrintInvoiceDialog({
+  open,
+  onOpenChange,
+  detail,
+  warehouseLabel,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  detail: any;
+  warehouseLabel: string;
+}) {
+  const [isSharing, setIsSharing] = useState(false);
+
+  const invoiceNum =
+    detail.basic?.invoiceNumber ?? detail.basic?.orderNumber ?? "-";
+
+  const buildInvoiceHtml = () => {
+    const itemRows = (detail.items ?? [])
+      .map(
+        (item: any) => `
+      <tr>
+        <td>${item.product}${item.variant ? ` <span style="color:#666">(${item.variant})</span>` : ""}</td>
+        <td class="right">${item.quantity}</td>
+        <td class="right">${money(item.price)}</td>
+        <td class="right">${money(item.total)}</td>
+      </tr>`,
+      )
+      .join("");
+
+    const paymentRows = (detail.paymentHistory ?? [])
+      .map(
+        (p: any) => `
+      <div class="payment-entry">
+        <span class="date">${formatPrintDate(p.date)}</span>
+        <span class="method">${p.method}</span>
+        <span class="amount">${money(p.amount)}</span>
+      </div>`,
+      )
+      .join("");
+
+    const dueVal = Number(detail.payment?.due ?? 0);
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${invoiceNum}</title><style>${buildPrintStyles()}</style></head><body>
+      <div class="header">
+        <h1>${warehouseLabel}</h1>
+      </div>
+      <div class="doc-type">Sales Invoice</div>
+      <div class="info-row"><span class="label">Invoice No</span><span class="value">${invoiceNum}</span></div>
+      <div class="info-row"><span class="label">Date</span><span class="value">${formatPrintDate(detail.basic?.date)} ${formatPrintTime(detail.basic?.date)}</span></div>
+      <div class="info-row"><span class="label">Customer</span><span class="value">${detail.basic?.customerName ?? "-"}</span></div>
+      ${detail.basic?.phone ? `<div class="info-row"><span class="label">Phone</span><span class="value">${detail.basic.phone}</span></div>` : ""}
+      ${detail.basic?.salesType ? `<div class="info-row"><span class="label">Type</span><span class="value">${detail.basic.salesType}</span></div>` : ""}
+      <hr class="divider">
+      <table>
+        <thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Price</th><th class="right">Total</th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      <hr class="divider">
+      <div class="summary-row"><span>Subtotal</span><span>${money(detail.payment?.subtotal)}</span></div>
+      ${Number(detail.payment?.discount ?? 0) > 0 ? `<div class="summary-row"><span>Discount</span><span>-${money(detail.payment?.discount)}</span></div>` : ""}
+      <div class="summary-row total"><span>Total</span><span>${money(detail.payment?.total)}</span></div>
+      <div class="summary-row paid"><span>Paid</span><span>${money(detail.payment?.paid)}</span></div>
+      ${dueVal > 0 ? `<div class="summary-row due"><span>Balance Due</span><span>${money(detail.payment?.due)}</span></div>` : ""}
+      ${paymentRows ? `<hr class="divider"><div class="payment-history"><h3>Payment History</h3>${paymentRows}</div>` : ""}
+      <div class="footer">
+        <p>Thank you for your purchase!</p>
+        <p style="margin-top:4px">${formatPrintDate(new Date())} ${formatPrintTime(new Date())}</p>
+      </div>
+    </body></html>`;
+  };
+
+  const handlePrint = () => {
+    printContent(buildInvoiceHtml());
+  };
+
+  const handleShare = async () => {
+    setIsSharing(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas-pro");
+
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.top = "-10000px";
+      iframe.style.left = "-10000px";
+      iframe.style.width = "380px";
+      iframe.style.height = "auto";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) throw new Error("Could not access iframe document");
+
+      iframeDoc.open();
+      iframeDoc.write(buildInvoiceHtml());
+      iframeDoc.close();
+
+      await new Promise<void>((resolve) => {
+        iframe.onload = () => resolve();
+        setTimeout(resolve, 500);
+      });
+
+      const canvas = await html2canvas(iframeDoc.body, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        width: 380,
+      });
+      document.body.removeChild(iframe);
+
+      const dataUrl = canvas.toDataURL("image/png");
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+
+      const fileName = `Invoice-${invoiceNum}-${new Date().toISOString().slice(0, 10)}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: `Sales Invoice - ${invoiceNum}`,
+          text: `Invoice ${invoiceNum} for ${detail.basic?.customerName ?? "customer"}. Total: ${money(detail.payment?.total)}.`,
+          files: [file],
+        });
+        toast.success("Invoice shared successfully");
+      } else {
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = fileName;
+        link.click();
+        toast.success("Invoice image downloaded");
+      }
+    } catch (error: any) {
+      if (error?.name === "AbortError") return;
+      console.error("Share failed:", error);
+      toast.error("Failed to share invoice");
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Printer className="h-5 w-5" />
+            Sales Invoice
+          </DialogTitle>
+          <DialogDescription>
+            Print or share the full invoice for{" "}
+            <span className="font-semibold text-foreground">{invoiceNum}</span>{" "}
+            including line items, payment summary, and payment history.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 pt-2">
+          <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Customer</span>
+              <span className="font-medium">
+                {detail.basic?.customerName ?? "-"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total</span>
+              <span className="font-semibold">
+                {money(detail.payment?.total)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Paid</span>
+              <span className="font-medium text-emerald-600">
+                {money(detail.payment?.paid)}
+              </span>
+            </div>
+            {Number(detail.payment?.due ?? 0) > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Due</span>
+                <span className="font-semibold text-red-600">
+                  {money(detail.payment?.due)}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Items</span>
+              <span>{detail.items?.length ?? 0} item(s)</span>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleShare}
+              disabled={isSharing}
+              className="gap-2"
+            >
+              {isSharing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Share2 className="h-4 w-4" />
+              )}
+              {isSharing ? "Sharing..." : "Share"}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                handlePrint();
+                onOpenChange(false);
+              }}
+              className="gap-2"
+            >
+              <Printer className="h-4 w-4" />
+              Print
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PrintReceiptDialog({
+  open,
+  onOpenChange,
+  invoiceNumber,
+  customerName,
+  warehouseLabel,
+  payment,
+  totalAmount,
+  totalPaid,
+  totalDue,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  invoiceNumber: string;
+  customerName: string;
+  warehouseLabel: string;
+  payment: {
+    amount: number;
+    paymentMethod: string;
+    transactionRef?: string;
+  } | null;
+  totalAmount: number;
+  totalPaid: number;
+  totalDue: number;
+}) {
+  const [isSharing, setIsSharing] = useState(false);
+
+  if (!payment) return null;
+
+  const methodLabel =
+    payment.paymentMethod === "bkash"
+      ? "bKash"
+      : payment.paymentMethod === "nagad"
+        ? "Nagad"
+        : payment.paymentMethod === "bank"
+          ? "Bank Transfer"
+          : "Cash";
+
+  const buildReceiptHtml = () => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Payment Receipt</title><style>${buildPrintStyles()}</style></head><body>
+      <div class="header">
+        <h1>${warehouseLabel}</h1>
+      </div>
+      <div class="doc-type">Payment Receipt</div>
+      <div class="info-row"><span class="label">Receipt Date</span><span class="value">${formatPrintDate(new Date())} ${formatPrintTime(new Date())}</span></div>
+      <div class="info-row"><span class="label">Invoice Ref</span><span class="value">${invoiceNumber}</span></div>
+      <div class="info-row"><span class="label">Customer</span><span class="value">${customerName}</span></div>
+      <hr class="divider">
+      <div class="highlight-box">
+        <div class="sub">Amount Collected</div>
+        <div class="big">${money(payment.amount)}</div>
+        <div class="sub">${methodLabel}${payment.transactionRef ? ` • Ref: ${payment.transactionRef}` : ""}</div>
+      </div>
+      <hr class="divider">
+      <div class="summary-row"><span>Invoice Total</span><span>${money(totalAmount)}</span></div>
+      <div class="summary-row paid"><span>Total Paid</span><span>${money(totalPaid + payment.amount)}</span></div>
+      <div class="summary-row due"><span>Remaining Due</span><span>${money(Math.max(0, totalDue - payment.amount))}</span></div>
+      <div class="footer">
+        <p>This is a computer-generated receipt.</p>
+        <p style="margin-top:4px">${formatPrintDate(new Date())} ${formatPrintTime(new Date())}</p>
+      </div>
+    </body></html>`;
+
+  const handlePrint = () => {
+    printContent(buildReceiptHtml());
+  };
+
+  const handleShare = async () => {
+    setIsSharing(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas-pro");
+
+      // Use an iframe for proper HTML rendering (same approach as print)
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.top = "-10000px";
+      iframe.style.left = "-10000px";
+      iframe.style.width = "380px";
+      iframe.style.height = "auto";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) throw new Error("Could not access iframe document");
+
+      iframeDoc.open();
+      iframeDoc.write(buildReceiptHtml());
+      iframeDoc.close();
+
+      // Wait for iframe content to render
+      await new Promise<void>((resolve) => {
+        iframe.onload = () => resolve();
+        // Fallback timeout in case onload doesn't fire
+        setTimeout(resolve, 500);
+      });
+
+      // Capture the iframe body as canvas
+      const canvas = await html2canvas(iframeDoc.body, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        width: 380,
+      });
+      document.body.removeChild(iframe);
+
+      // Convert canvas to blob via dataURL (more reliable than toBlob)
+      const dataUrl = canvas.toDataURL("image/png");
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+
+      const fileName = `Receipt-${invoiceNumber}-${new Date().toISOString().slice(0, 10)}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      // Try native Web Share API first (works on mobile + modern desktop)
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: `Payment Receipt - ${invoiceNumber}`,
+          text: `Payment receipt for ${invoiceNumber}. Amount collected: ${money(payment.amount)} via ${methodLabel}.`,
+          files: [file],
+        });
+        toast.success("Receipt shared successfully");
+      } else {
+        // Fallback: download the image
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = fileName;
+        link.click();
+        toast.success("Receipt image downloaded");
+      }
+    } catch (error: any) {
+      // User cancelled the share dialog — not an error
+      if (error?.name === "AbortError") return;
+      console.error("Share failed:", error);
+      toast.error("Failed to share receipt");
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[380px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5 text-emerald-600" />
+            Payment Collected
+          </DialogTitle>
+          <DialogDescription>
+            Due payment has been recorded. Would you like to print or share the receipt?
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 pt-2">
+          <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-4 text-center">
+            <p className="text-xs text-emerald-600 font-medium">
+              Amount Collected
+            </p>
+            <p className="text-2xl font-bold text-emerald-700 mt-1 font-mono tabular-nums">
+              {money(payment.amount)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {methodLabel}
+              {payment.transactionRef
+                ? ` • Ref: ${payment.transactionRef}`
+                : ""}
+            </p>
+          </div>
+
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Invoice</span>
+              <span className="font-mono text-xs font-semibold">
+                {invoiceNumber}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Invoice Total</span>
+              <span className="tabular-nums">{money(totalAmount)}</span>
+            </div>
+            <div className="flex justify-between text-emerald-600">
+              <span>Total Paid</span>
+              <span className="font-medium tabular-nums">
+                {money(totalPaid + payment.amount)}
+              </span>
+            </div>
+            {totalDue - payment.amount > 0 && (
+              <div className="flex justify-between text-red-600">
+                <span>Remaining Due</span>
+                <span className="font-semibold tabular-nums">
+                  {money(totalDue - payment.amount)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleShare}
+              disabled={isSharing}
+              className="gap-2"
+            >
+              {isSharing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Share2 className="h-4 w-4" />
+              )}
+              {isSharing ? "Sharing..." : "Share"}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                handlePrint();
+                onOpenChange(false);
+              }}
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+            >
+              <Printer className="h-4 w-4" />
+              Print
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
