@@ -76,6 +76,18 @@ export default function AddStockPage() {
   );
   const [referenceNo, setReferenceNo] = useState("");
 
+  // ── Entry Mode (frontend-only) ──
+  type EntryMode = "loose" | "pack" | "carton";
+  const [entryMode, setEntryMode] = useState<EntryMode>("loose");
+
+  // ── Cost & Total (frontend-only) ──
+  const [discount, setDiscount] = useState("0");
+  const [vatTax, setVatTax] = useState("0");
+
+  // ── Batch & Expiry (frontend-only) ──
+  const [batchNo, setBatchNo] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+
   // Mutation
   const addStock = useAddShopStock();
 
@@ -374,7 +386,59 @@ export default function AddStockPage() {
         </Card>
 
         {/* ══════════════════════════════════════════════════════════
-            📋 VARIANT STOCK ENTRY (Step 2)
+            🧱 ENTRY MODE
+            ══════════════════════════════════════════════════════════ */}
+        {selectedProduct && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <div className="p-1 bg-orange-100 rounded">
+                  <Box className="h-3.5 w-3.5 text-orange-600" />
+                </div>
+                🧱 Entry Mode
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
+                {([
+                  { value: "loose" as EntryMode, label: "Loose Entry", desc: "KG / Liter" },
+                  { value: "pack" as EntryMode, label: "Pack Entry", desc: "Per Pack" },
+                  { value: "carton" as EntryMode, label: "Carton Entry", desc: "Auto → Pack" },
+                ] as const).map(({ value, label, desc }) => (
+                  <label
+                    key={value}
+                    className={`flex-1 flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer transition-colors text-xs ${
+                      entryMode === value
+                        ? "bg-orange-50 border-orange-300 ring-1 ring-orange-200"
+                        : "hover:bg-muted/50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="entryMode"
+                      value={value}
+                      checked={entryMode === value}
+                      onChange={() => setEntryMode(value)}
+                      className="accent-orange-500"
+                    />
+                    <div>
+                      <p className="font-medium">{label}</p>
+                      <p className="text-[10px] text-muted-foreground">{desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              {entryMode === "carton" && (
+                <p className="text-[10px] text-amber-600 mt-2 bg-amber-50 px-2 py-1 rounded">
+                  📦 Carton → auto converted to packs. Enter carton quantity, system calculates pack count.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+            📋 ITEM ENTRY TABLE
             ══════════════════════════════════════════════════════════ */}
         {selectedProduct && (
           <Card>
@@ -383,7 +447,7 @@ export default function AddStockPage() {
                 <div className="p-1 bg-emerald-100 rounded">
                   <Box className="h-3.5 w-3.5 text-emerald-600" />
                 </div>
-                Variant Stock Entry
+                📋 Item Entry Table
               </CardTitle>
               <CardDescription className="text-xs">
                 Enter the quantity to add for each variant
@@ -501,7 +565,116 @@ export default function AddStockPage() {
         )}
 
         {/* ══════════════════════════════════════════════════════════
-            ⚙ STOCK TYPE & NOTE (Step 3)
+            💰 COST & TOTAL
+            ══════════════════════════════════════════════════════════ */}
+        {selectedProduct && hasEntries && (() => {
+          const subtotal = previews.reduce((sum, v) => {
+            const price = parseFloat(v.retailPrice || "0");
+            return sum + (v.addQty * price);
+          }, 0);
+          const disc = parseFloat(discount) || 0;
+          const vat = parseFloat(vatTax) || 0;
+          const total = subtotal - disc + vat;
+
+          return (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <div className="p-1 bg-rose-100 rounded">
+                    <CreditCard className="h-3.5 w-3.5 text-rose-600" />
+                  </div>
+                  💰 Cost & Total
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex justify-end">
+                  <div className="w-64 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Subtotal:</span>
+                      <span className="font-medium">৳ {subtotal.toFixed(0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <span className="text-muted-foreground">Discount:</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-muted-foreground">৳</span>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          value={discount}
+                          onChange={(e) => setDiscount(e.target.value)}
+                          className="h-6 w-16 text-right text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <span className="text-muted-foreground">VAT / Tax:</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-muted-foreground">৳</span>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          value={vatTax}
+                          onChange={(e) => setVatTax(e.target.value)}
+                          className="h-6 w-16 text-right text-xs"
+                        />
+                      </div>
+                    </div>
+                    <Separator />
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-bold">TOTAL:</span>
+                      <span className="font-bold text-lg">৳ {total.toFixed(0)}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
+        {/* ══════════════════════════════════════════════════════════
+            📦 BATCH & EXPIRY
+            ══════════════════════════════════════════════════════════ */}
+        {selectedProduct && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <div className="p-1 bg-cyan-100 rounded">
+                  <FileText className="h-3.5 w-3.5 text-cyan-600" />
+                </div>
+                📦 Batch & Expiry
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Batch No
+                  </label>
+                  <Input
+                    placeholder="B-1001"
+                    value={batchNo}
+                    onChange={(e) => setBatchNo(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Expiry Date
+                  </label>
+                  <Input
+                    type="date"
+                    value={expiryDate}
+                    onChange={(e) => setExpiryDate(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+            ⚙ STOCK TYPE & NOTE
             ══════════════════════════════════════════════════════════ */}
         {selectedProduct && (
           <Card>
