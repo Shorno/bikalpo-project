@@ -416,37 +416,76 @@ export default function PurchaseOrderDetailPage() {
           </Card>
 
 
+          {/* 📊 Live Order Tracking (Table) 🔥 */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">📊 Live Order Tracking</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-muted/40 text-[10px] font-bold text-muted-foreground">
+                    <th className="text-left p-2 pl-4">Time</th>
+                    <th className="text-left p-2">Action</th>
+                    <th className="text-left p-2 pr-4">By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timeline.map((step: any, i: number) => {
+                    const actor = step.step === "Placed" ? "Retailer"
+                      : step.step === "Modified" ? "Wholesaler"
+                      : step.step === "Confirmed" ? "Wholesaler"
+                      : step.step === "Dispatched" ? "Wholesaler"
+                      : step.step === "Delivered" ? "Delivery"
+                      : step.step === "Received" ? "Retailer"
+                      : "System";
+                    return (
+                      <tr key={i} className={`border-t ${step.isModification ? "bg-orange-50/30 dark:bg-orange-950/10" : ""}`}>
+                        <td className="p-2 pl-4 text-muted-foreground tabular-nums">
+                          {step.date ? new Date(step.date).toLocaleDateString("en-BD", { day: "numeric", month: "short" }) : "—"}
+                        </td>
+                        <td className="p-2">
+                          <span className={`font-medium ${step.isModification ? "text-orange-600" : step.completed ? "text-foreground" : "text-muted-foreground"}`}>
+                            {step.completed ? "✓" : "○"} {step.step}
+                            {step.isModification && " (Modified)"}
+                          </span>
+                        </td>
+                        <td className="p-2 pr-4 text-muted-foreground">{actor}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          {/* Delivery Info (compact) */}
           {(delivery.trackingId || delivery.riderName) && (
             <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Truck className="h-4 w-4 text-muted-foreground" />
-                  Delivery Information
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-1.5">
+                  <Truck className="h-3 w-3 text-muted-foreground" /> Delivery Info
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-3">
                   {delivery.trackingId && (
-                    <div className="p-3 rounded-lg border bg-muted/20">
-                      <p className="text-xs text-muted-foreground mb-1">Tracking ID</p>
-                      <p className="text-sm font-mono font-medium">{delivery.trackingId}</p>
+                    <div className="p-2 rounded-lg border bg-muted/20">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Tracking ID</p>
+                      <p className="text-xs font-mono font-medium">{delivery.trackingId}</p>
                     </div>
                   )}
                   {delivery.riderName && (
-                    <div className="p-3 rounded-lg border bg-muted/20">
-                      <p className="text-xs text-muted-foreground mb-1">Rider</p>
-                      <p className="text-sm font-medium">{delivery.riderName}</p>
+                    <div className="p-2 rounded-lg border bg-muted/20">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Rider</p>
+                      <p className="text-xs font-medium">{delivery.riderName}</p>
                     </div>
                   )}
                   {delivery.riderPhone && (
-                    <div className="p-3 rounded-lg border bg-muted/20">
-                      <p className="text-xs text-muted-foreground mb-1">Rider Phone</p>
-                      <a
-                        href={`tel:${delivery.riderPhone}`}
-                        className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
-                      >
-                        <Phone className="w-3 h-3" />
-                        {delivery.riderPhone}
+                    <div className="p-2 rounded-lg border bg-muted/20">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Rider Phone</p>
+                      <a href={`tel:${delivery.riderPhone}`} className="text-xs font-medium text-primary hover:underline flex items-center gap-1">
+                        <Phone className="w-2.5 h-2.5" /> {delivery.riderPhone}
                       </a>
                     </div>
                   )}
@@ -454,6 +493,7 @@ export default function PurchaseOrderDetailPage() {
               </CardContent>
             </Card>
           )}
+
         {/* ── Price Summary (inline) ── */}
         <Card>
           <CardHeader className="pb-2">
