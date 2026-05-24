@@ -182,41 +182,17 @@ export async function convertB2bOrderToRetailInventory(
             }
 
         } else if (shopSupplyMode === "loose") {
-            // ═══ LOOSE MODE: Shop wants KG added as loose stock ═══
-            // Find the loose RETAIL variant for this product
-            const looseVariant = await tx.query.productVariant.findFirst({
-                where: and(
-                    eq(productVariant.productId, tradeVariant.productId),
-                    eq(productVariant.packType, "loose"),
-                ),
-                columns: { id: true },
-            });
+            // ═══ LOOSE MODE: Direct KG transfer — no conversion ═══
+            // Add raw KG directly to shop's loose variant inventory.
+            // total_kg = variant_weight × quantity — no ratio math needed.
+            targetRetailVariantId = tradeVariant.id;
 
-            targetRetailVariantId = looseVariant?.id ?? tradeVariant.id;
+            const variantWeightKg = Number(tradeVariant.weightKg || 0);
+            // conversionRatio here means "KG per ordered unit"
+            conversionRatio = variantWeightKg > 0 ? variantWeightKg : 1;
 
-            // For loose: 1 carton = cartonWeightKg in KG
-            // Look up actual carton weight from active cartons
-            const looseCarton = await tx.query.carton.findFirst({
-                where: and(
-                    eq(carton.variantId, tradeVariant.id),
-                    eq(carton.status, "active"),
-                ),
-                columns: { totalWeightKg: true },
-                orderBy: [desc(carton.createdAt)],
-            });
-
-            const looseCartonWeightKg = Number(looseCarton?.totalWeightKg || 0);
-            const tradeWeightKg = Number(tradeVariant.weightKg || 0);
-            conversionRatio = looseCartonWeightKg > 0
-                ? looseCartonWeightKg
-                : tradeWeightKg > 0
-                    ? tradeWeightKg
-                    : productUnitSize > 0
-                        ? productUnitSize
-                        : 1;
-
-            conversionSource = "shop_loose_choice";
-            console.log(`[B2B-CONVERT] Loose mode: target=${targetRetailVariantId}, cartonKg=${looseCartonWeightKg}, tradeKg=${tradeWeightKg}, ratio=${conversionRatio} (KG per unit)`);
+            conversionSource = "loose_direct_kg";
+            console.log(`[B2B-CONVERT] Loose direct KG: target=${targetRetailVariantId}, variantKg=${variantWeightKg}, ratio=${conversionRatio} (KG per unit), totalKg=${orderedQty * conversionRatio}`);
 
         } else {
             // ═══ LEGACY MODE: No supplyMode set — use existing logic ═══
@@ -254,8 +230,11 @@ export async function convertB2bOrderToRetailInventory(
         }
 
         const lossPercent = Number(tradeVariant.conversionLossPercent || 0);
-        const retailQty =
-            orderedQty * conversionRatio * (1 - lossPercent / 100);
+        const isLooseDirect = conversionSource === "loose_direct_kg";
+        // Loose direct: no loss applied — raw KG transfer
+        const retailQty = isLooseDirect
+            ? orderedQty * conversionRatio
+            : orderedQty * conversionRatio * (1 - lossPercent / 100);
 
         // Calculate per-pack price when doing pack breakdown
         let effectiveRetailPrice = purchaseUnitPrice;
@@ -277,7 +256,7 @@ export async function convertB2bOrderToRetailInventory(
 
         if (sourceInv) {
             // For loose cartons: deduct in KG (retailQty), not carton count
-            const isLooseDeduction = conversionSource === "loose_carton_weight" || conversionSource === "shop_loose_choice";
+            const isLooseDeduction = conversionSource === "loose_carton_weight" || conversionSource === "shop_loose_choice" || conversionSource === "loose_direct_kg";
             const deductQty = isLooseDeduction ? retailQty : orderedQty;
             const reservedQty = Number(sourceInv.reservedQty || 0);
             const availableQty = Number(sourceInv.availableQty || 0);
