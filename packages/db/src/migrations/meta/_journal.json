@@ -64,6 +64,13 @@
       "when": 1778437014150,
       "tag": "0008_magical_red_ghost",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778604287602,
+      "tag": "0009_marvelous_shard",
+      "breakpoints": true
     }
   ]
 }

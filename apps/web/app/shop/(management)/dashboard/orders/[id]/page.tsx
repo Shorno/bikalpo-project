@@ -154,28 +154,23 @@ export default function PurchaseOrderDetailPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="mt-0.5 shrink-0"
-          >
+    <div className="space-y-4 max-w-4xl mx-auto">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
             <Link href="/dashboard/orders">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold tracking-tight font-mono">
-                {po.orderNumber}
+            <div className="flex items-center gap-2 mb-0.5">
+              <h1 className="text-lg font-bold tracking-tight font-mono">
+                📄 {po.orderNumber}
               </h1>
               <Badge
                 variant="outline"
-                className={`gap-1.5 px-2.5 py-1 text-xs font-medium ${config.className}`}
+                className={`gap-1 px-2 py-0.5 text-[10px] font-medium ${config.className}`}
               >
                 {config.icon}
                 {config.label}
@@ -183,167 +178,313 @@ export default function PurchaseOrderDetailPage() {
               {hasModifications && (
                 <Badge
                   variant="outline"
-                  className="gap-1 text-xs text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30 dark:border-orange-800"
+                  className="gap-1 text-[10px] text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30"
                 >
-                  <AlertTriangle className="w-3 h-3" />
-                  Modified by Supplier
+                  <AlertTriangle className="w-2.5 h-2.5" />
+                  Modified
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              From <span className="font-medium text-foreground">{po.warehouseName}</span>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{po.warehouseName}</span>
               {" · "}
-              {new Date(po.createdAt).toLocaleDateString("en-BD", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
+              {new Date(po.createdAt).toLocaleDateString("en-BD", { day: "numeric", month: "short" })}
+              {" · "}
+              {po.items?.length || 0} item{(po.items?.length || 0) !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {po.warehousePhone && (
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" size="sm" className="h-7 text-[10px]" asChild>
               <a href={`tel:${po.warehousePhone}`}>
-                <Phone className="mr-1.5 h-3.5 w-3.5" />
-                Contact
+                <Phone className="mr-1 h-3 w-3" /> Contact
               </a>
             </Button>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ── Main Content ─────────────────────────────────── */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="space-y-4">
           {/* Status Timeline */}
           <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">Order Status</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">⚙ Order Status</CardTitle>
             </CardHeader>
             <CardContent>
               <StatusTimeline steps={timeline} currentStatus={po.status} />
             </CardContent>
           </Card>
 
-          {/* Products */}
+          {/* 📊 Item Breakdown (Table) 🔥 */}
           <Card>
-            <CardHeader className="pb-4">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">
-                  Ordered Items ({po.items?.length || 0})
+                <CardTitle className="text-sm">
+                  📊 Item Breakdown ({po.items?.length || 0})
                 </CardTitle>
                 {hasModifications && (
-                  <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200">
-                    Supplier modified some quantities
+                  <Badge variant="outline" className="text-[9px] text-orange-600 border-orange-200 bg-orange-50">
+                    ⚠ Supplier modified quantities
                   </Badge>
                 )}
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {po.items?.map((item: any) => {
-                const wasModified = item.modifiedQty !== null || item.modifiedUnitPrice !== null;
-                const displayQty = item.modifiedQty ?? item.quantity;
-                const displayPrice = item.modifiedUnitPrice ?? item.unitPrice;
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-muted/40 text-[10px] font-bold text-muted-foreground">
+                      <th className="text-left p-2 pl-4">Product</th>
+                      <th className="text-center p-2">Requested Qty</th>
+                      <th className="text-center p-2">Approved Qty</th>
+                      <th className="text-right p-2">Price</th>
+                      <th className="text-right p-2 pr-4">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {po.items?.map((item: any) => {
+                      const wasModified = item.modifiedQty !== null || item.modifiedUnitPrice !== null;
+                      const approvedQty = item.modifiedQty ?? item.quantity;
+                      const approvedPrice = item.modifiedUnitPrice ?? item.unitPrice;
+                      const lineTotal = Number(approvedPrice) * approvedQty;
 
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${
-                      wasModified
-                        ? "border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/20"
-                        : "border-border bg-muted/20"
-                    }`}
-                  >
-                    {/* Product Image */}
-                    {item.productImage ? (
-                      <Image
-                        src={item.productImage}
-                        alt={item.productName}
-                        width={56}
-                        height={56}
-                        className="w-14 h-14 rounded-lg object-cover border shrink-0"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center border shrink-0">
-                        <Package className="w-6 h-6 text-muted-foreground" />
-                      </div>
-                    )}
-
-                    {/* Product Info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{item.productName}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {item.productSize}
-                        {item.variant?.sku && (
-                          <span className="ml-2 font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded">
-                            {item.variant.sku}
-                          </span>
-                        )}
-                      </p>
-
-                      {/* Modification diff */}
-                      {wasModified && (
-                        <div className="mt-2 flex items-center gap-2 text-xs">
-                          <span className="text-muted-foreground line-through">
-                            Ordered: {item.quantity} × ৳{Number(item.unitPrice).toFixed(0)}
-                          </span>
-                          <span className="text-orange-600 dark:text-orange-400 font-medium">
-                            → Updated: {displayQty} × ৳{Number(displayPrice).toFixed(0)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Qty & Price */}
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold tabular-nums">
-                        ৳ {(Number(displayPrice) * displayQty).toLocaleString("en-BD")}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {displayQty} × ৳{Number(displayPrice).toFixed(0)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`border-t ${
+                            wasModified
+                              ? "bg-orange-50/50 dark:bg-orange-950/10"
+                              : ""
+                          }`}
+                        >
+                          <td className="p-2 pl-4">
+                            <div className="flex items-center gap-2">
+                              {item.productImage ? (
+                                <Image
+                                  src={item.productImage}
+                                  alt={item.productName}
+                                  width={28}
+                                  height={28}
+                                  className="w-7 h-7 rounded border object-cover shrink-0"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded border bg-muted flex items-center justify-center shrink-0">
+                                  <Package className="w-3 h-3 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-medium text-xs truncate max-w-[180px]">{item.productName}</p>
+                                <p className="text-[10px] text-muted-foreground">{item.productSize}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="text-center p-2 tabular-nums">
+                            {item.quantity}
+                          </td>
+                          <td className="text-center p-2 tabular-nums">
+                            {wasModified ? (
+                              <span className="text-orange-600 font-semibold">{approvedQty} ↓</span>
+                            ) : (
+                              <span>{approvedQty}</span>
+                            )}
+                          </td>
+                          <td className="text-right p-2 tabular-nums">
+                            ৳{Number(approvedPrice).toFixed(0)}
+                          </td>
+                          <td className="text-right p-2 pr-4 tabular-nums font-semibold">
+                            ৳ {lineTotal.toLocaleString("en-BD")}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {/* Modification reason */}
+              {hasModifications && (
+                <div className="px-4 py-2 border-t bg-orange-50/30 dark:bg-orange-950/10">
+                  <p className="text-[10px] text-orange-600 dark:text-orange-400">
+                    ✔ Reason: Stock shortage — partial order accepted
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Delivery Info */}
+          {/* 📊 Final Summary + Change Highlight */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Final Summary */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">📊 Final Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(() => {
+                  const totalRequested = po.items?.reduce((s: number, i: any) => s + i.quantity, 0) || 0;
+                  const totalApproved = po.items?.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0) || 0;
+                  return (
+                    <>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Total Requested Qty</span>
+                        <span className="font-medium tabular-nums">{totalRequested} Units</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Total Approved Qty</span>
+                        <span className={`font-medium tabular-nums ${totalApproved < totalRequested ? "text-orange-600" : ""}`}>
+                          {totalApproved} Units
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between text-sm">
+                        <span className="font-bold">Final Order Value</span>
+                        <span className="font-bold tabular-nums">→ ৳ {Number(po.total).toLocaleString("en-BD")}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            {/* Change Highlight (only if modified) */}
+            {hasModifications ? (
+              <Card className="border-orange-200 dark:border-orange-800">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">📊 Change Highlight</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1.5">
+                  {po.items?.filter((i: any) => i.modifiedQty !== null && i.modifiedQty !== i.quantity).map((item: any) => (
+                    <p key={item.id} className="text-[10px] flex items-start gap-1.5">
+                      <span className="text-orange-500 shrink-0">⚠</span>
+                      <span className="text-muted-foreground">
+                        Quantity reduced ({item.productName}: <span className="font-semibold text-orange-600">{item.modifiedQty - item.quantity}</span>)
+                      </span>
+                    </p>
+                  ))}
+                  <p className="text-[10px] flex items-start gap-1.5">
+                    <span className="text-emerald-500 shrink-0">✔</span>
+                    <span className="text-muted-foreground">Partial order accepted</span>
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">📊 Change Highlight</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                    <span className="text-emerald-500">✔</span> No modifications — full order accepted
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* 💳 Payment Info */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">💳 Payment Info</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-2.5 rounded-lg border bg-muted/20">
+                  <p className="text-[10px] text-muted-foreground mb-1">Payment Status</p>
+                  <p className="text-xs font-medium">
+                    {po.status === "delivered" || po.receivedAt ? (
+                      <span className="text-emerald-600">→ ✅ Paid</span>
+                    ) : (
+                      <span className="text-amber-600">→ ⏳ Pending</span>
+                    )}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-lg border bg-muted/20">
+                  <p className="text-[10px] text-muted-foreground mb-1">Payment Method</p>
+                  <p className="text-xs font-medium capitalize">
+                    → {po.paymentMethod?.replace(/_/g, " ") || "Cash"}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-lg border bg-muted/20">
+                  <p className="text-[10px] text-muted-foreground mb-1">Transaction ID</p>
+                  <p className="text-xs font-mono font-medium">
+                    → {po.orderNumber}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+
+          {/* 📊 Live Order Tracking (Table) 🔥 */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">📊 Live Order Tracking</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-muted/40 text-[10px] font-bold text-muted-foreground">
+                    <th className="text-left p-2 pl-4">Time</th>
+                    <th className="text-left p-2">Action</th>
+                    <th className="text-left p-2 pr-4">By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timeline.map((step: any, i: number) => {
+                    const actor = step.step === "Placed" ? "Retailer"
+                      : step.step === "Modified" ? "Wholesaler"
+                      : step.step === "Confirmed" ? "Wholesaler"
+                      : step.step === "Dispatched" ? "Wholesaler"
+                      : step.step === "Delivered" ? "Delivery"
+                      : step.step === "Received" ? "Retailer"
+                      : "System";
+                    return (
+                      <tr key={i} className={`border-t ${step.isModification ? "bg-orange-50/30 dark:bg-orange-950/10" : ""}`}>
+                        <td className="p-2 pl-4 text-muted-foreground tabular-nums">
+                          {step.date ? new Date(step.date).toLocaleDateString("en-BD", { day: "numeric", month: "short" }) : "—"}
+                        </td>
+                        <td className="p-2">
+                          <span className={`font-medium ${step.isModification ? "text-orange-600" : step.completed ? "text-foreground" : "text-muted-foreground"}`}>
+                            {step.completed ? "✓" : "○"} {step.step}
+                            {step.isModification && " (Modified)"}
+                          </span>
+                        </td>
+                        <td className="p-2 pr-4 text-muted-foreground">{actor}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          {/* Delivery Info (compact) */}
           {(delivery.trackingId || delivery.riderName) && (
             <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Truck className="h-4 w-4 text-muted-foreground" />
-                  Delivery Information
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-1.5">
+                  <Truck className="h-3 w-3 text-muted-foreground" /> Delivery Info
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-3">
                   {delivery.trackingId && (
-                    <div className="p-3 rounded-lg border bg-muted/20">
-                      <p className="text-xs text-muted-foreground mb-1">Tracking ID</p>
-                      <p className="text-sm font-mono font-medium">{delivery.trackingId}</p>
+                    <div className="p-2 rounded-lg border bg-muted/20">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Tracking ID</p>
+                      <p className="text-xs font-mono font-medium">{delivery.trackingId}</p>
                     </div>
                   )}
                   {delivery.riderName && (
-                    <div className="p-3 rounded-lg border bg-muted/20">
-                      <p className="text-xs text-muted-foreground mb-1">Rider</p>
-                      <p className="text-sm font-medium">{delivery.riderName}</p>
+                    <div className="p-2 rounded-lg border bg-muted/20">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Rider</p>
+                      <p className="text-xs font-medium">{delivery.riderName}</p>
                     </div>
                   )}
                   {delivery.riderPhone && (
-                    <div className="p-3 rounded-lg border bg-muted/20">
-                      <p className="text-xs text-muted-foreground mb-1">Rider Phone</p>
-                      <a
-                        href={`tel:${delivery.riderPhone}`}
-                        className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
-                      >
-                        <Phone className="w-3 h-3" />
-                        {delivery.riderPhone}
+                    <div className="p-2 rounded-lg border bg-muted/20">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Rider Phone</p>
+                      <a href={`tel:${delivery.riderPhone}`} className="text-xs font-medium text-primary hover:underline flex items-center gap-1">
+                        <Phone className="w-2.5 h-2.5" /> {delivery.riderPhone}
                       </a>
                     </div>
                   )}
@@ -351,120 +492,115 @@ export default function PurchaseOrderDetailPage() {
               </CardContent>
             </Card>
           )}
-        </div>
 
-        {/* ── Sidebar ──────────────────────────────────────── */}
-        <div className="space-y-6">
-          {/* Pricing Summary */}
-          <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">Price Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="tabular-nums">৳ {Number(po.subtotal).toLocaleString("en-BD")}</span>
-              </div>
-              {Number(po.shippingCost) > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Shipping</span>
-                  <span className="tabular-nums">৳ {Number(po.shippingCost).toLocaleString("en-BD")}</span>
+        {/* ── Price Summary (inline) ── */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">💰 Price Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex justify-end">
+              <div className="w-64 space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="tabular-nums">৳ {Number(po.subtotal).toLocaleString("en-BD")}</span>
                 </div>
-              )}
-              {Number(po.discount) > 0 && (
+                {Number(po.shippingCost) > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Shipping</span>
+                    <span className="tabular-nums">৳ {Number(po.shippingCost).toLocaleString("en-BD")}</span>
+                  </div>
+                )}
+                {Number(po.discount) > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Discount</span>
+                    <span className="text-emerald-600 tabular-nums">−৳ {Number(po.discount).toLocaleString("en-BD")}</span>
+                  </div>
+                )}
+                <Separator />
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Discount</span>
-                  <span className="text-emerald-600 tabular-nums">−৳ {Number(po.discount).toLocaleString("en-BD")}</span>
+                  <span className="font-bold">Total</span>
+                  <span className="font-bold text-lg tabular-nums">৳ {Number(po.total).toLocaleString("en-BD")}</span>
                 </div>
-              )}
-              <Separator />
-              <div className="flex justify-between">
-                <span className="font-semibold">Total</span>
-                <span className="text-lg font-bold text-primary tabular-nums">
-                  ৳ {Number(po.total).toLocaleString("en-BD")}
-                </span>
               </div>
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Payment</span>
-                <span className="capitalize">{po.paymentMethod?.replace(/_/g, " ")}</span>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
 
-          {/* Shipping Address */}
+        {/* ── Delivery Address + Wholesaler (side by side) ── */}
+        <div className="grid grid-cols-2 gap-3">
           <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                Delivery Address
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-1.5">
+                <MapPin className="h-3 w-3 text-muted-foreground" /> Delivery Address
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="text-sm font-medium">{po.shippingName}</p>
-              <p className="text-sm text-muted-foreground">{po.shippingAddress}</p>
-              <p className="text-sm text-muted-foreground">
+            <CardContent className="space-y-1">
+              <p className="text-xs font-medium">{po.shippingName}</p>
+              <p className="text-[10px] text-muted-foreground">{po.shippingAddress}</p>
+              <p className="text-[10px] text-muted-foreground">
                 {po.shippingArea && `${po.shippingArea}, `}{po.shippingCity}
               </p>
-              <a
-                href={`tel:${po.shippingPhone}`}
-                className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-              >
-                <Phone className="w-3 h-3" />
-                {po.shippingPhone}
+              <a href={`tel:${po.shippingPhone}`} className="text-[10px] text-primary hover:underline inline-flex items-center gap-1">
+                <Phone className="w-2.5 h-2.5" /> {po.shippingPhone}
               </a>
             </CardContent>
           </Card>
-
-          {/* Wholesaler Info */}
           <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">Wholesaler</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">🏢 Wholesaler</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="text-sm font-medium">{po.warehouseName}</p>
+            <CardContent className="space-y-1">
+              <p className="text-xs font-medium">{po.warehouseName}</p>
               {po.warehousePhone && (
-                <a
-                  href={`tel:${po.warehousePhone}`}
-                  className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  <Phone className="w-3 h-3" />
-                  {po.warehousePhone}
+                <a href={`tel:${po.warehousePhone}`} className="text-[10px] text-primary hover:underline inline-flex items-center gap-1">
+                  <Phone className="w-2.5 h-2.5" /> {po.warehousePhone}
                 </a>
               )}
             </CardContent>
           </Card>
+        </div>
 
-          {/* Notes */}
-          {po.customerNote && (
-            <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base">Order Note</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">{po.customerNote}</p>
-              </CardContent>
-            </Card>
+        {/* ── Notes ── */}
+        {po.customerNote && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">💬 Message from Supplier</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <blockquote className="border-l-2 border-amber-300 pl-3 py-1 text-xs text-muted-foreground italic bg-amber-50/50 dark:bg-amber-950/10 rounded-r">
+                "{po.customerNote}"
+              </blockquote>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Actions ── */}
+        <div className="flex items-center justify-end gap-2">
+          {isReceivable && (
+            <Button size="sm" className="h-8 text-xs" onClick={initReceiveItems}>
+              <PackageCheck className="mr-1.5 h-3.5 w-3.5" />
+              ✅ Mark as Received
+            </Button>
           )}
-
-          {/* Actions */}
-          <div className="space-y-2">
-            {isReceivable && (
-              <Button className="w-full" size="lg" onClick={initReceiveItems}>
-                <PackageCheck className="mr-2 h-4 w-4" />
-                Mark as Received
-              </Button>
-            )}
-            {isCancellable && (
-              <Button
-                variant="outline"
-                className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20"
-                onClick={() => setShowCancelDialog(true)}
-              >
-                <Ban className="mr-2 h-4 w-4" />
-                Cancel Order
-              </Button>
-            )}
-          </div>
+          {isCancellable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={() => setShowCancelDialog(true)}
+            >
+              <Ban className="mr-1.5 h-3.5 w-3.5" />
+              ❌ Cancel Order
+            </Button>
+          )}
+          {po.warehousePhone && (
+            <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+              <a href={`tel:${po.warehousePhone}`}>
+                <Phone className="mr-1 h-3 w-3" /> 📞 Contact
+              </a>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -689,23 +825,24 @@ function StatusTimeline({
 
 function DetailSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="flex items-start gap-3">
-        <Skeleton className="h-9 w-9 rounded-md" />
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="h-4 w-64" />
+    <div className="space-y-4 max-w-4xl mx-auto">
+      <div className="flex items-center gap-2.5">
+        <Skeleton className="h-8 w-8 rounded-md" />
+        <div className="space-y-1.5">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3 w-56" />
         </div>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <Skeleton className="h-64 w-full rounded-xl" />
+      <div className="space-y-4">
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
         </div>
-        <div className="space-y-6">
-          <Skeleton className="h-48 w-full rounded-xl" />
-          <Skeleton className="h-36 w-full rounded-xl" />
-        </div>
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-32 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
       </div>
     </div>
   );

@@ -113,6 +113,13 @@ export const product = pgTable("product", {
     .default(false)
     .notNull(),
 
+  /** Whether stock tracking is enabled for this product */
+  stockTrackingEnabled: boolean("stock_tracking_enabled")
+    .default(true)
+    .notNull(),
+
+  /** Whether this product is available for sale */
+  availableForSale: boolean("available_for_sale").default(true).notNull(),
 
   /** Product visibility: public or private */
   visibility: visibilityEnum("visibility").default("public").notNull(),

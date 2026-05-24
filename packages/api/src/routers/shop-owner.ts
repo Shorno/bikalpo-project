@@ -3215,63 +3215,70 @@ const warehouseOrderQueries = {
                 const vp = Number(inv.variant?.price || 0);
                 let unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
 
-                // Resolve per-carton price for ALL variant types
                 const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
-                
-                // Look up carton and config for carton pricing
-                const activeCarton = await db.query.carton.findFirst({
-                    where: and(
-                        eq(carton.warehouseId, warehouseId),
-                        eq(carton.variantId, item.variantId),
-                        eq(carton.status, "active"),
-                    ),
-                    with: {
-                        config: {
-                            columns: { cartonPrice: true, deliveryCostPerCarton: true },
-                        },
-                    },
-                });
+                const isLooseOrder = item.supplyMode === "loose";
 
-                // Also look up cartonConfig directly as fallback
-                const variantConfig = await db.query.cartonConfig.findFirst({
-                    where: and(
-                        eq(cartonConfig.variantId, item.variantId),
-                        eq(cartonConfig.isActive, true),
-                    ),
-                    orderBy: [desc(cartonConfig.isDefault)],
-                });
-
-                // Price resolution: carton.cartonPrice → carton.config.cartonPrice → cartonConfig.cartonPrice → calculated
-                const cartonRecordPrice = Number(activeCarton?.cartonPrice || 0);
-                const linkedConfigPrice = Number((activeCarton as any)?.config?.cartonPrice || 0);
-                const directConfigPrice = Number(variantConfig?.cartonPrice || 0);
-
-                if (cartonRecordPrice > 0) {
-                    unitPrice = activeCarton!.cartonPrice!;
-                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using carton record price: ${unitPrice}`);
-                } else if (linkedConfigPrice > 0) {
-                    unitPrice = (activeCarton as any).config.cartonPrice;
-                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using linked config price: ${unitPrice}`);
-                } else if (directConfigPrice > 0) {
-                    unitPrice = variantConfig!.cartonPrice;
-                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Using direct config price: ${unitPrice}`);
-                } else if (isLooseVariant && activeCarton) {
-                    // Loose fallback: calculate from per-KG price × carton weight
-                    const variantWeightKg = Number(inv.variant?.weightKg || 0);
-                    const rawUnitPrice = Number(unitPrice);
-                    const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
-                    const perKg = variantWeightKg > 0 ? rawUnitPrice / variantWeightKg : rawUnitPrice;
-                    unitPrice = (perKg * cartonWeightKg).toFixed(2);
-                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose calc: perKg=${perKg}, cartonKg=${cartonWeightKg}, price=${unitPrice}`);
-                } else if (!isLooseVariant && activeCarton) {
-                    // Pack fallback: multiply per-pack price by packs per carton
-                    const packsPerCarton = activeCarton.totalPacks || 0;
-                    if (packsPerCarton > 0) {
-                        unitPrice = (Number(unitPrice) * packsPerCarton).toFixed(2);
-                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Pack calc: packPrice=${inv.retailPrice || inv.variant?.price} × ${packsPerCarton} = ${unitPrice}`);
-                    }
+                if (isLooseOrder) {
+                    // ═══ LOOSE ORDER: Use variant's base price directly — no carton calculation ═══
+                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose order — using base variant price: ${unitPrice}`);
                 } else {
-                    console.log(`[ORDER-PRICE] variant=${item.variantId}: No carton found, using raw pack price: ${unitPrice}`);
+                    // ═══ PACK/CARTON ORDER: Resolve per-carton price ═══
+
+                    // Look up carton and config for carton pricing
+                    const activeCarton = await db.query.carton.findFirst({
+                        where: and(
+                            eq(carton.warehouseId, warehouseId),
+                            eq(carton.variantId, item.variantId),
+                            eq(carton.status, "active"),
+                        ),
+                        with: {
+                            config: {
+                                columns: { cartonPrice: true, deliveryCostPerCarton: true },
+                            },
+                        },
+                    });
+
+                    // Also look up cartonConfig directly as fallback
+                    const variantConfig = await db.query.cartonConfig.findFirst({
+                        where: and(
+                            eq(cartonConfig.variantId, item.variantId),
+                            eq(cartonConfig.isActive, true),
+                        ),
+                        orderBy: [desc(cartonConfig.isDefault)],
+                    });
+
+                    // Price resolution: carton.cartonPrice → carton.config.cartonPrice → cartonConfig.cartonPrice → calculated
+                    const cartonRecordPrice = Number(activeCarton?.cartonPrice || 0);
+                    const linkedConfigPrice = Number((activeCarton as any)?.config?.cartonPrice || 0);
+                    const directConfigPrice = Number(variantConfig?.cartonPrice || 0);
+
+                    if (cartonRecordPrice > 0) {
+                        unitPrice = activeCarton!.cartonPrice!;
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using carton record price: ${unitPrice}`);
+                    } else if (linkedConfigPrice > 0) {
+                        unitPrice = (activeCarton as any).config.cartonPrice;
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using linked config price: ${unitPrice}`);
+                    } else if (directConfigPrice > 0) {
+                        unitPrice = variantConfig!.cartonPrice;
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using direct config price: ${unitPrice}`);
+                    } else if (isLooseVariant && activeCarton) {
+                        // Loose fallback: calculate from per-KG price × carton weight
+                        const variantWeightKg = Number(inv.variant?.weightKg || 0);
+                        const rawUnitPrice = Number(unitPrice);
+                        const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
+                        const perKg = variantWeightKg > 0 ? rawUnitPrice / variantWeightKg : rawUnitPrice;
+                        unitPrice = (perKg * cartonWeightKg).toFixed(2);
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose calc: perKg=${perKg}, cartonKg=${cartonWeightKg}, price=${unitPrice}`);
+                    } else if (!isLooseVariant && activeCarton) {
+                        // Pack fallback: multiply per-pack price by packs per carton
+                        const packsPerCarton = activeCarton.totalPacks || 0;
+                        if (packsPerCarton > 0) {
+                            unitPrice = (Number(unitPrice) * packsPerCarton).toFixed(2);
+                            console.log(`[ORDER-PRICE] variant=${item.variantId}: Pack calc: packPrice=${inv.retailPrice || inv.variant?.price} × ${packsPerCarton} = ${unitPrice}`);
+                        }
+                    } else {
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: No carton found, using raw pack price: ${unitPrice}`);
+                    }
                 }
 
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
@@ -5591,6 +5598,7 @@ const shopProductEndpoints = {
                 isReturnablePack: z.boolean().default(false),
                 expiryEnabled: z.boolean().default(false),
                 damageControlEnabled: z.boolean().default(false),
+                stockTrackingEnabled: z.boolean().default(true),
                 trackingType: z.enum(["none", "batch", "serial"]).default("none"),
 
                 // Step 6: Opening stock per brand×variant
@@ -5608,6 +5616,7 @@ const shopProductEndpoints = {
 
                 // Step 8: Visibility
                 status: z.enum(["active", "inactive", "draft"]).default("active"),
+                availableForSale: z.boolean().default(true),
             }),
         )
         .handler(async ({ input, context }) => {
@@ -5639,7 +5648,9 @@ const shopProductEndpoints = {
                     isReturnablePack: input.isReturnablePack,
                     expiryEnabled: input.expiryEnabled,
                     damageControlEnabled: input.damageControlEnabled,
+                    stockTrackingEnabled: input.stockTrackingEnabled,
                     trackingType: input.trackingType,
+                    availableForSale: input.availableForSale,
                 })
                 .returning({ id: product.id });
 

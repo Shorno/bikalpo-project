@@ -1,12 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Save, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useCreateProductOptions, useCreateShopProduct } from "@/hooks/use-shop-products-api";
 import { StepClassification } from "@/components/products/step-classification";
 import { StepBrandVariant } from "@/components/products/step-brand-variant";
@@ -30,6 +35,7 @@ export type CreateProductFormState = {
   isReturnablePack: boolean;
   expiryEnabled: boolean;
   damageControlEnabled: boolean;
+  stockTrackingEnabled: boolean;
   trackingType: "none" | "batch" | "serial";
   // Step 6
   openingStock: Array<{ variantOptionId: number; brandId: number; quantity: number }>;
@@ -37,6 +43,7 @@ export type CreateProductFormState = {
   displayName: string;
   shortNote: string;
   status: "active" | "inactive" | "draft";
+  availableForSale: boolean;
 };
 
 const INITIAL_STATE: CreateProductFormState = {
@@ -46,24 +53,17 @@ const INITIAL_STATE: CreateProductFormState = {
   isReturnablePack: false,
   expiryEnabled: false,
   damageControlEnabled: false,
+  stockTrackingEnabled: true,
   trackingType: "none",
   openingStock: [],
   displayName: "",
   shortNote: "",
   status: "active",
+  availableForSale: true,
 };
-
-const STEPS = [
-  { title: "Classification", desc: "Type → Category → SubCategory → Core Identity" },
-  { title: "Brand & Variants", desc: "Select brands and variant options" },
-  { title: "Pricing", desc: "Set retail price per brand × variant" },
-  { title: "Rules & Settings", desc: "Pack return, tracking, expiry" },
-  { title: "Stock & Visibility", desc: "Opening stock, display name, status" },
-];
 
 export default function CreateProductPage() {
   const router = useRouter();
-  const [step, setStep] = useState(0);
   const [form, setForm] = useState<CreateProductFormState>(INITIAL_STATE);
 
   const { data: options, isLoading: optionsLoading } = useCreateProductOptions({
@@ -77,18 +77,16 @@ export default function CreateProductPage() {
   const update = (patch: Partial<CreateProductFormState>) =>
     setForm((prev) => ({ ...prev, ...patch }));
 
-  const canNext = (): boolean => {
-    switch (step) {
-      case 0: return !!(form.typeId && form.categoryId && form.coreProductId);
-      case 1: return form.brandIds.length > 0 && form.variantSelections.length > 0;
-      case 2: return form.pricing.length > 0;
-      case 3: return true;
-      case 4: return true;
-      default: return false;
-    }
-  };
+  const canSubmit = !!(
+    form.typeId &&
+    form.categoryId &&
+    form.coreProductId &&
+    form.brandIds.length > 0 &&
+    form.variantSelections.length > 0 &&
+    form.pricing.length > 0
+  );
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (asDraft = false) => {
     if (!form.coreProductId || !form.categoryId) {
       toast.error("Missing required fields");
       return;
@@ -104,100 +102,95 @@ export default function CreateProductPage() {
         isReturnablePack: form.isReturnablePack,
         expiryEnabled: form.expiryEnabled,
         damageControlEnabled: form.damageControlEnabled,
+        stockTrackingEnabled: form.stockTrackingEnabled,
         trackingType: form.trackingType,
         openingStock: form.openingStock,
         displayName: form.displayName || undefined,
         shortNote: form.shortNote || undefined,
-        status: form.status,
+        status: asDraft ? "draft" : form.status,
+        availableForSale: form.availableForSale,
       });
       router.push("/dashboard/products");
     } catch { /* error handled by mutation hook */ }
   };
 
-  const handleSaveDraft = async () => {
-    update({ status: "draft" });
-    await handleSubmit();
-  };
-
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="w-full pb-12">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between mb-8 sticky top-0 z-10 bg-background/95 backdrop-blur-sm py-4 -mx-2 px-2 border-b">
         <div className="flex items-center gap-3">
           <Link href="/dashboard/products">
-            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" /> Back</Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
           </Link>
           <div>
-            <h1 className="text-xl font-bold">Create Product</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Add new product</h1>
             <p className="text-sm text-muted-foreground">Configure a new product for your store</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={handleSaveDraft} disabled={createMutation.isPending}>
-          <Save className="h-4 w-4 mr-1" /> Save Draft
-        </Button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button disabled={createMutation.isPending} className="gap-2">
+              {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Action
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => handleSubmit(false)} disabled={!canSubmit}>
+              ✅ Create Product
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleSubmit(true)}>
+              <Save className="h-4 w-4 mr-2" /> Save Draft
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {/* Step Indicator */}
-      <div className="flex items-center gap-1">
-        {STEPS.map((s, i) => (
-          <div key={i} className="flex items-center flex-1">
-            <div
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors w-full ${
-                i === step ? "bg-primary text-primary-foreground" :
-                i < step ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"
-              }`}
-              onClick={() => i < step && setStep(i)}
-              style={{ cursor: i < step ? "pointer" : "default" }}
-            >
-              <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border border-current shrink-0">
-                {i < step ? <Check className="h-3 w-3" /> : i + 1}
-              </span>
-              <span className="hidden md:inline truncate">{s.title}</span>
-            </div>
-            {i < STEPS.length - 1 && <div className="w-2 h-px bg-gray-300 shrink-0" />}
-          </div>
-        ))}
-      </div>
+      {/* ── All Sections on One Page ── */}
+      <div className="space-y-8">
+        {/* Section 1+2: Classification & Core Identity */}
+        <section className="border rounded-xl p-6 bg-card">
+          <StepClassification form={form} update={update} options={options} loading={optionsLoading} />
+        </section>
 
-      {/* Step Content */}
-      <Card>
-        <CardContent className="p-6">
-          <h2 className="text-lg font-semibold mb-1">{STEPS[step].title}</h2>
-          <p className="text-sm text-muted-foreground mb-6">{STEPS[step].desc}</p>
+        {/* Section 3: Brand & Variants */}
+        <section className="border rounded-xl p-6 bg-card">
+          <StepBrandVariant form={form} update={update} options={options} />
+        </section>
 
-          {step === 0 && (
-            <StepClassification form={form} update={update} options={options} loading={optionsLoading} />
-          )}
-          {step === 1 && (
-            <StepBrandVariant form={form} update={update} options={options} />
-          )}
-          {step === 2 && (
+        {/* Section 4: Pricing */}
+        {form.variantSelections.length > 0 && (
+          <section className="border rounded-xl p-6 bg-card">
             <StepPricing form={form} update={update} options={options} />
-          )}
-          {step === 3 && (
-            <StepRules form={form} update={update} />
-          )}
-          {step === 4 && (
-            <StepStockVisibility form={form} update={update} options={options} />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Navigation */}
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={() => setStep((s) => s - 1)} disabled={step === 0}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Previous
-        </Button>
-        {step < STEPS.length - 1 ? (
-          <Button onClick={() => setStep((s) => s + 1)} disabled={!canNext()}>
-            Next <ArrowRight className="h-4 w-4 ml-1" />
-          </Button>
-        ) : (
-          <Button onClick={handleSubmit} disabled={createMutation.isPending || !canNext()}>
-            {createMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-            Create Product
-          </Button>
+          </section>
         )}
+
+        {/* Section 5: Rules */}
+        <section className="border rounded-xl p-6 bg-card">
+          <StepRules form={form} update={update} />
+        </section>
+
+        {/* Section 6+7+8: Stock, Customization & Visibility */}
+        <section className="border rounded-xl p-6 bg-card">
+          <StepStockVisibility form={form} update={update} options={options} />
+        </section>
+
+        {/* ── Bottom Actions ── */}
+        <div className="flex items-center justify-end gap-3 pt-4 border-t">
+          <Link href="/dashboard/products">
+            <Button variant="outline">❌ Cancel</Button>
+          </Link>
+          <Button variant="outline" onClick={() => handleSubmit(true)} disabled={createMutation.isPending}>
+            <Save className="h-4 w-4 mr-1" /> Save Draft
+          </Button>
+          <Button onClick={() => handleSubmit(false)} disabled={createMutation.isPending || !canSubmit}>
+            {createMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+            ✅ Create Product
+          </Button>
+        </div>
       </div>
     </div>
   );
