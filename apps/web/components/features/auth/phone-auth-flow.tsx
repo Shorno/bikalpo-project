@@ -109,13 +109,26 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
 
       const user = result.data?.user as { name?: string; role?: string } | undefined;
 
+      // Fetch full session to get the role (verify response may not include custom fields)
+      let role = user?.role;
+      if (!role) {
+        try {
+          const session = await authClient.getSession();
+          const sessionUser = session.data?.user as { role?: string; name?: string } | undefined;
+          role = sessionUser?.role;
+          // Also use session name if verify didn't return it
+          if (!user?.name && sessionUser?.name) {
+            (user as any).name = sessionUser.name;
+          }
+        } catch { /* fallback: no role */ }
+      }
+
       // Set user-role cookie for proxy routing
-      if (user?.role) {
-        document.cookie = `user-role=${user.role};path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
+      if (role) {
+        document.cookie = `user-role=${role};path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
       }
 
       // Role-based redirect: send non-customer roles to their panels
-      const role = user?.role;
       if (role && role !== "customer") {
         setStep("done");
         const redirectUrl =
