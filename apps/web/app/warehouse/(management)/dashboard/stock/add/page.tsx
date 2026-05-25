@@ -571,6 +571,11 @@ export default function AddStockPage() {
           storageAreaId: storageAreaId || undefined,
           shelfRack: shelfRack || undefined,
           note: note || undefined,
+          ...(entryType === "loose"
+            ? {
+                looseWeightPerUnit: parseFloat(row.looseWeight) || undefined,
+              }
+            : {}),
           ...(entryType === "carton"
             ? {
                 cartonCount: getCartonCount(row),

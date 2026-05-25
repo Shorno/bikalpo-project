@@ -335,19 +335,59 @@ function ExpandedProductDetail({
             </div>
           )}
 
-          {/* Loose stock (compact) */}
+          {/* Loose stock (variant-wise breakdown) */}
           <div className="min-w-[160px]">
             <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
               <Tag size={10} /> Loose Stock
             </h4>
-            <div className="bg-white border rounded-lg px-3 py-2 flex items-center justify-between gap-3">
-              <span className="text-xs text-gray-600">Available</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold text-gray-900 tabular-nums">
-                  {Math.round(totalLooseKg * 100) / 100} KG
-                </span>
-                <span className={`w-1.5 h-1.5 rounded-full ring-1 ${totalLooseKg > 0 ? "bg-emerald-500 ring-emerald-200" : "bg-red-500 ring-red-200"}`} />
-              </div>
+            <div className="bg-white border rounded-lg overflow-hidden">
+              {looseVariants.length > 0 ? (
+                <>
+                  <div className="divide-y divide-gray-50">
+                    {looseVariants.map((v: any) => {
+                      const wt = parseFloat(v.weightKg || "0");
+                      const totalKg = v.availableQty;
+                      const unitCount = wt > 0 ? Math.round(totalKg / wt) : 0;
+                      return (
+                        <div
+                          key={v.variantId}
+                          className="flex items-center justify-between px-3 py-1.5 hover:bg-gray-50/50 transition-colors"
+                        >
+                          <span className="text-xs font-medium text-gray-700">
+                            {v.brandName ? `${v.brandName} · ` : ""}{wt > 0 ? `${wt} KG` : "Loose"}
+                          </span>
+                          <div className="flex items-center gap-1.5 text-xs tabular-nums">
+                            {wt > 0 && unitCount > 0 ? (
+                              <>
+                                <span className="text-gray-500">× {unitCount}</span>
+                                <span className="text-gray-300">=</span>
+                              </>
+                            ) : null}
+                            <span className="font-bold text-gray-900">
+                              {Math.round(totalKg * 100) / 100} KG
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Total summary */}
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-t border-gray-100">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase">Total</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-gray-900 tabular-nums">
+                        {Math.round(totalLooseKg * 100) / 100} KG
+                      </span>
+                      <span className={`w-1.5 h-1.5 rounded-full ring-1 ${totalLooseKg > 0 ? "bg-emerald-500 ring-emerald-200" : "bg-red-500 ring-red-200"}`} />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="px-3 py-2 flex items-center justify-between gap-3">
+                  <span className="text-xs text-gray-400">No loose stock</span>
+                  <span className="w-1.5 h-1.5 rounded-full ring-1 bg-gray-300 ring-gray-200" />
+                </div>
+              )}
             </div>
           </div>
         </div>

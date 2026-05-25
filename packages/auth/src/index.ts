@@ -158,8 +158,8 @@ export const auth = betterAuth({
     after: createAuthMiddleware(async (ctx) => {
       const domain = env.COOKIE_DOMAIN || ".localhost";
 
-      // Set role cookie after sign-in or sign-up
-      if (ctx.path.startsWith("/sign-in") || ctx.path.startsWith("/sign-up")) {
+      // Set role cookie after sign-in, sign-up, or phone verification
+      if (ctx.path.startsWith("/sign-in") || ctx.path.startsWith("/sign-up") || ctx.path.startsWith("/phone-number/verify")) {
         const newSession = ctx.context.newSession;
         if (newSession) {
           const user = newSession.user as { role?: string };

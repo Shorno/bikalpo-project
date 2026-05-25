@@ -4076,6 +4076,8 @@ const stockEntryQueries = {
                 cartonSource: z.enum(["packs", "loose"]).optional(),
                 // Whether to create physical carton records during stock entry
                 createCartonRecords: z.boolean().optional(),
+                // Loose entry: per-unit weight in KG (e.g. 20 for "20 KG × 10")
+                looseWeightPerUnit: z.number().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -4102,6 +4104,74 @@ const stockEntryQueries = {
                 });
             }
 
+            // 1b. For loose entries with a specific per-unit weight:
+            //     Find or create a weight-specific loose variant (e.g., "20 KG")
+            //     so each distinct weight gets its own variant for proper tracking.
+            let resolvedVariantId = input.variantId;
+            let resolvedWeightKg = parseFloat(variant.weightKg);
+
+            if (
+                input.entryType === "loose" &&
+                input.looseWeightPerUnit &&
+                input.looseWeightPerUnit > 0
+            ) {
+                const targetWeight = input.looseWeightPerUnit;
+                const productId = (variant.product as any)?.id;
+                const brandId = variant.brandId;
+
+                // Check if variant with this exact weight already exists
+                const existingVariant = await db.query.productVariant.findFirst({
+                    where: and(
+                        eq(productVariant.productId, productId),
+                        brandId ? eq(productVariant.brandId, brandId) : undefined,
+                        eq(productVariant.packagingType, "loose"),
+                        eq(productVariant.weightKg, String(targetWeight)),
+                        eq(productVariant.isActive, true),
+                    ),
+                });
+
+                if (existingVariant) {
+                    resolvedVariantId = existingVariant.id;
+                    resolvedWeightKg = targetWeight;
+                } else if (resolvedWeightKg !== targetWeight) {
+                    // Auto-create a new weight-specific loose variant
+                    const [newVariant] = await db
+                        .insert(productVariant)
+                        .values({
+                            productId,
+                            brandId: brandId,
+                            sku: `${variant.sku || "WH"}-L${targetWeight}KG`,
+                            unitLabel: `${targetWeight} KG`,
+                            quantitySelectorLabel: `${targetWeight} KG`,
+                            packagingType: "loose",
+                            weightKg: String(targetWeight),
+                            price: variant.price,
+                            orderUnit: variant.orderUnit || "piece",
+                            packType: "loose" as any,
+                            packWeightKg: String(targetWeight),
+                            sellUnit: `${targetWeight} KG`,
+                            sourceVariantPriceId: variant.sourceVariantPriceId,
+                            sourceVariantOptionId: variant.sourceVariantOptionId,
+                            stockQuantity: 0,
+                            reorderLevel: 0,
+                            sortOrder: variant.sortOrder + 1,
+                            isActive: true,
+                        })
+                        .returning();
+
+                    // Create warehouse inventory row for the new variant
+                    await db.insert(inventory).values({
+                        ownerType: "warehouse",
+                        ownerId: userId,
+                        variantId: newVariant!.id,
+                        availableQty: "0",
+                    });
+
+                    resolvedVariantId = newVariant!.id;
+                    resolvedWeightKg = targetWeight;
+                }
+            }
+
             // 2. Validate supplier belongs to this warehouse (only if provided)
             if (input.supplierId) {
                 const sup = await db.query.supplier.findFirst({
@@ -4116,8 +4186,8 @@ const stockEntryQueries = {
                 }
             }
 
-            // 3. Compute auto-conversions
-            const packWeightKg = parseFloat(variant.weightKg);
+            // 3. Compute auto-conversions (using resolved weight)
+            const packWeightKg = resolvedWeightKg;
             let convertedQtyKg: number;
             let convertedQtyPacks: number;
             const cartonCount = input.entryType === "carton"
@@ -4196,7 +4266,7 @@ const stockEntryQueries = {
                     .insert(stockEntry)
                     .values({
                         warehouseId: userId,
-                        variantId: input.variantId,
+                        variantId: resolvedVariantId,
                         entryType: input.entryType,
                         quantity: qty.toFixed(2),
                         quantityUnit: input.quantityUnit,
@@ -4235,7 +4305,7 @@ const stockEntryQueries = {
                     where: and(
                         eq(inventory.ownerType, "warehouse"),
                         eq(inventory.ownerId, userId),
-                        eq(inventory.variantId, input.variantId),
+                        eq(inventory.variantId, resolvedVariantId),
                     ),
                 });
 
@@ -4259,7 +4329,7 @@ const stockEntryQueries = {
                     await tx.insert(inventory).values({
                         ownerType: "warehouse",
                         ownerId: userId,
-                        variantId: input.variantId,
+                        variantId: resolvedVariantId,
                         availableQty: inventoryQty.toFixed(2),
                         ...(shouldCreateStockInCartons
                             ? {
@@ -4295,7 +4365,7 @@ const stockEntryQueries = {
                             cartonId: cartonIdStr,
                             warehouseId: userId,
                             cartonConfigId: null,
-                            variantId: input.variantId,
+                            variantId: resolvedVariantId,
                             totalPacks: packsPerSingleCarton,
                             totalWeightKg: weightPerCarton.toFixed(2),
                             status: "active",

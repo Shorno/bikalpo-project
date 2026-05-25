@@ -54,7 +54,15 @@ export const link = new RPCLink({
     }
   },
   headers: async () => {
-    // For now, always return empty headers to test if next/headers is crashing the client
+    // Forward cookies on the server so server-component orpc calls are authenticated
+    if (typeof window === "undefined") {
+      try {
+        const { headers: nextHeaders } = await import("next/headers");
+        const headerStore = await nextHeaders();
+        const cookie = headerStore.get("cookie");
+        if (cookie) return { cookie };
+      } catch { /* client-side or build-time */ }
+    }
     return {};
   },
 });
