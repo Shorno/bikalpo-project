@@ -51,9 +51,24 @@ export async function convertB2bOrderToRetailInventory(
     console.log(`[B2B-CONVERT] Order is B2B, buyer=${orderData.userId}, warehouse=${sourceOwnerId}`);
 
     // 2. Load order items
-    const items = await tx.query.orderItem.findMany({
+    const allItems = await tx.query.orderItem.findMany({
         where: eq(orderItem.orderId, orderId),
     });
+
+    // ─── IDEMPOTENCY GUARD ───
+    // This function is called from multiple places (deliveryman confirms delivery,
+    // shop owner marks received, warehouse marks delivered). Skip items that have
+    // already been converted to prevent double-counting inventory.
+    const items = allItems.filter(
+        (item: any) => item.conversionStatus !== "converted",
+    );
+
+    if (items.length === 0) {
+        console.log(`[B2B-CONVERT] All items already converted for order #${orderId}, skipping`);
+        return;
+    }
+
+    console.log(`[B2B-CONVERT] Converting ${items.length}/${allItems.length} items (${allItems.length - items.length} already converted)`);
 
     // 3. For each item, find the TRADE variant → convert → update inventory
     for (const item of items) {
