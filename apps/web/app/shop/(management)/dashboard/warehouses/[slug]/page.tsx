@@ -198,7 +198,7 @@ function ProductCard({
           )}
           {looseKg > 0 && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border text-emerald-600 bg-emerald-50 border-emerald-200">
-              🏷️ {Math.round(looseKg * 100) / 100} KG Loose
+              🏷️ Loose Available
             </span>
           )}
           {totalCartons === 0 && looseKg === 0 && (
@@ -230,7 +230,7 @@ function ProductCard({
           {product.name}{brandName ? ` - ${brandName}` : ""}
         </h3>
         <p className="text-[10px] text-gray-400 mt-0.5">
-          {variantCount} variant{variantCount > 1 ? "s" : ""}{totalCartons > 0 ? ` • 📦 ${totalCartons} carton` : ""}{looseKg > 0 ? ` • 🏷️ ${Math.round(looseKg * 100) / 100} KG` : ""}
+          {variantCount} variant{variantCount > 1 ? "s" : ""}{totalCartons > 0 ? ` • 📦 ${totalCartons} carton` : ""}{looseKg > 0 ? ` • 🏷️ Loose` : ""}
         </p>
         <div className="flex items-baseline gap-1 mt-1.5">
           <span className="text-base font-bold text-gray-900">৳{lowestPrice.toLocaleString()}</span>
@@ -436,7 +436,7 @@ function VariantModal({
                           <>
                             {totalBrandCartons > 0 && <span className="text-[10px] text-gray-300">•</span>}
                             <span className="text-[10px] text-emerald-500">
-                              🏷️ {Math.round(totalBrandLooseKg * 100) / 100} KG
+                              🏷️ Loose
                             </span>
                           </>
                         )}
@@ -482,11 +482,10 @@ function VariantModal({
             <div className="text-right">
               {isLooseWithoutCartons ? (
                 <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                  looseAvailableKg > 50 ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
-                  looseAvailableKg > 0 ? "text-amber-600 bg-amber-50 border-amber-200" :
+                  looseAvailableKg > 0 ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
                   "text-red-600 bg-red-50 border-red-200"
                 }`}>
-                  {looseAvailableKg > 0 ? `🏷️ ${Math.round(looseAvailableKg * 100) / 100} KG available` : "Out of stock"}
+                  {looseAvailableKg > 0 ? "🏷️ In Stock" : "Out of stock"}
                 </span>
               ) : (
                 <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
@@ -580,18 +579,19 @@ function VariantModal({
                       {looseVars.map((v) => {
                         const opts = v.variant.cartonOptions || [];
                         const hasCartons = (v.variant.totalCartonCount || 0) > 0;
-                        const vAvailKg = Number(v.availableQty || 0);
+                        const vWeightKg = Number(v.variant.weightKg) || 0;
                         const sizeLabel = hasCartons
                           ? (opts.length > 0
                               ? opts.map(o => `${o.weightKg} KG × ${o.count}`).join(", ")
                               : `${v.variant.totalCartonCount} carton`)
-                          : `${Math.round(vAvailKg * 100) / 100} KG available`;
+                          : (vWeightKg > 0 ? `${vWeightKg} KG` : "Loose");
+                        const vPrice = Number(v.price) || 0;
                         const priceLabel = hasCartons
                           ? `৳${getCartonPriceForVariant(v).toLocaleString()}`
-                          : `৳${(Number(v.price) || 0).toLocaleString()}/unit`;
+                          : (vPrice > 0 ? `৳${vPrice.toLocaleString()}/${vWeightKg > 0 ? `${vWeightKg}KG` : "unit"}` : "");
                         return (
                           <option key={v.variantId} value={String(v.idx)}>
-                            {v.variant.brandName || "Loose"} — {sizeLabel} — {priceLabel}
+                            {v.variant.brandName || "Loose"} — {sizeLabel}{priceLabel ? ` — ${priceLabel}` : ""}
                           </option>
                         );
                       })}
