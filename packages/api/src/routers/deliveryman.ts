@@ -355,9 +355,30 @@ export const deliverymanRouter = {
                     startedAt: new Date(),
                 }).where(eq(deliveryGroup.id, input.id));
 
+                // Collect unique order IDs to update their status
+                const orderIdsToUpdate = new Set<number>();
+
                 for (const groupInv of group.invoices) {
                     await tx.update(deliveryGroupInvoice).set({ deliveryOtp: generateOtp() }).where(eq(deliveryGroupInvoice.id, groupInv.id));
                     await tx.update(invoice).set({ deliveryStatus: "out_for_delivery" }).where(eq(invoice.id, groupInv.invoiceId));
+
+                    // Resolve orderId from the invoice
+                    const inv = await tx.query.invoice.findFirst({
+                        where: eq(invoice.id, groupInv.invoiceId),
+                        columns: { orderId: true },
+                    });
+                    if (inv?.orderId) orderIdsToUpdate.add(inv.orderId);
+                }
+
+                // Update linked orders to "processing" + set shippedAt
+                if (orderIdsToUpdate.size > 0) {
+                    await tx.update(order).set({
+                        status: "processing",
+                        shippedAt: new Date(),
+                    }).where(and(
+                        inArray(order.id, [...orderIdsToUpdate]),
+                        sql`${order.status} IN ('pending', 'confirmed')`,
+                    ));
                 }
 
                 // Record initial GPS ping
@@ -912,6 +933,22 @@ export const deliverymanRouter = {
                         expectedDeliveryAt: expectedDeliveryDate,
                     })
                     .where(inArray(invoice.id, input.invoiceIds));
+
+                // Update linked orders to "processing" + set shippedAt
+                const linkedInvoices = await tx.query.invoice.findMany({
+                    where: inArray(invoice.id, input.invoiceIds),
+                    columns: { orderId: true },
+                });
+                const orderIds = [...new Set(linkedInvoices.map(i => i.orderId).filter(Boolean))] as number[];
+                if (orderIds.length > 0) {
+                    await tx.update(order).set({
+                        status: "processing",
+                        shippedAt: new Date(),
+                    }).where(and(
+                        inArray(order.id, orderIds),
+                        sql`${order.status} IN ('pending', 'confirmed')`,
+                    ));
+                }
 
                 return group;
             });
