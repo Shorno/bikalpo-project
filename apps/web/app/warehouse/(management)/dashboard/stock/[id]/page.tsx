@@ -367,9 +367,10 @@ export default function StockDetailPage() {
               return (
                 <Fragment key={gi}>
                   {group.items.map((item: any, ii: number) => {
-                    // Build label matching doc format: "5KG Pack (ACI)" or "Loose (Sellable)"
+                    const weightKg = parseFloat(group.weightKg || "0");
+                    // Build label: "20 KG Loose (Fresh)" or "Loose (Sellable) (Fresh)"
                     let label = isLoose
-                      ? "Loose (Sellable)"
+                      ? (weightKg > 0 ? `${weightKg} KG Loose` : "Loose (Sellable)")
                       : group.unitLabel || "Pack";
                     if (item.brand?.name) {
                       label += ` (${item.brand.name})`;
@@ -377,6 +378,11 @@ export default function StockDetailPage() {
                     if (item.color || item.size) {
                       label = [item.color, item.size].filter(Boolean).join(" - ");
                     }
+
+                    // For loose with known weight: show "20 KG × 25 = 500 KG"
+                    const looseQtyCount = isLoose && weightKg > 0
+                      ? Math.round(item.availableQty / weightKg)
+                      : 0;
 
                     return (
                       <div
@@ -389,10 +395,21 @@ export default function StockDetailPage() {
                         <div className="flex items-center gap-6">
                           <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
                             →{" "}
-                            {item.availableQty.toLocaleString()}{" "}
-                            <span className="text-xs font-normal text-gray-500">
-                              {isLoose ? "KG" : "Pack"}
-                            </span>
+                            {isLoose && weightKg > 0 && looseQtyCount > 0 ? (
+                              <>
+                                {looseQtyCount.toLocaleString()}{" "}
+                                <span className="text-xs font-normal text-gray-500">
+                                  × {weightKg} KG = {item.availableQty.toLocaleString()} KG
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                {item.availableQty.toLocaleString()}{" "}
+                                <span className="text-xs font-normal text-gray-500">
+                                  {isLoose ? "KG" : "Pack"}
+                                </span>
+                              </>
+                            )}
                           </span>
                           <div className="min-w-[100px]">
                             <StatusIndicator qty={item.availableQty} />
