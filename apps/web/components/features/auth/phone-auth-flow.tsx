@@ -114,6 +114,22 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
         document.cookie = `user-role=${user.role};path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
       }
 
+      // Role-based redirect: send non-customer roles to their panels
+      const role = user?.role;
+      if (role && role !== "customer") {
+        setStep("done");
+        const redirectUrl =
+          role === "deliveryman" ? "/deliveryman"
+          : role === "warehouse" ? "http://warehouse.bikalpo.localhost:3001/dashboard"
+          : role === "shop_owner" ? "http://shop.bikalpo.localhost:3001/dashboard"
+          : role === "admin" || role === "salesman" ? "/dashboard"
+          : null;
+        if (redirectUrl) {
+          setTimeout(() => { window.location.href = redirectUrl; }, 1500);
+          return;
+        }
+      }
+
       if (user?.name && !user.name.startsWith("+")) {
         setStep("done");
         setTimeout(onComplete, 1500);
