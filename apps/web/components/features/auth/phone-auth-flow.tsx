@@ -137,7 +137,7 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
       if (role && role !== "customer" && role !== "consumer") {
         setStep("done");
         const redirectUrl =
-          role === "deliveryman" ? "/deliveryman"
+          role === "deliveryman" ? "/deliveryman/dashboard"
           : role === "warehouse" ? "http://warehouse.bikalpo.localhost:3001/dashboard"
           : role === "shop_owner" ? "http://shop.bikalpo.localhost:3001/dashboard"
           : role === "admin" || role === "salesman" ? "/dashboard"
