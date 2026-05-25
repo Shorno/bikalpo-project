@@ -109,27 +109,32 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
 
       const user = result.data?.user as { name?: string; role?: string } | undefined;
 
-      // Fetch full session to get the role (verify response may not include custom fields)
+      // Fetch full session to reliably get the user role
+      // (verify response may not include custom fields like role)
       let role = user?.role;
+      let userName = user?.name;
       if (!role) {
         try {
           const session = await authClient.getSession();
-          const sessionUser = session.data?.user as { role?: string; name?: string } | undefined;
+          const sessionUser = session.data?.user as any;
           role = sessionUser?.role;
-          // Also use session name if verify didn't return it
-          if (!user?.name && sessionUser?.name) {
-            (user as any).name = sessionUser.name;
-          }
-        } catch { /* fallback: no role */ }
+          if (!userName && sessionUser?.name) userName = sessionUser.name;
+        } catch { /* fallback */ }
       }
 
-      // Set user-role cookie for proxy routing
+      // Also try reading role from cookie (server sets it on sign-in hooks)
+      if (!role) {
+        const roleCookie = document.cookie.split("; ").find(c => c.startsWith("user-role="));
+        role = roleCookie?.split("=")[1];
+      }
+
+      // Set user-role cookie for proxy routing (client-side fallback)
       if (role) {
         document.cookie = `user-role=${role};path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
       }
 
       // Role-based redirect: send non-customer roles to their panels
-      if (role && role !== "customer") {
+      if (role && role !== "customer" && role !== "consumer") {
         setStep("done");
         const redirectUrl =
           role === "deliveryman" ? "/deliveryman"
@@ -143,7 +148,7 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
         }
       }
 
-      if (user?.name && !user.name.startsWith("+")) {
+      if (userName && !userName.startsWith("+")) {
         setStep("done");
         setTimeout(onComplete, 1500);
       } else {
