@@ -4076,6 +4076,8 @@ const stockEntryQueries = {
                 cartonSource: z.enum(["packs", "loose"]).optional(),
                 // Whether to create physical carton records during stock entry
                 createCartonRecords: z.boolean().optional(),
+                // Loose entry: per-unit weight in KG (e.g. 20 for "20 KG × 10")
+                looseWeightPerUnit: z.number().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -4310,6 +4312,19 @@ const stockEntryQueries = {
 
                 return entry;
             });
+
+            // After transaction: update variant weightKg if loose entry provided per-unit weight
+            if (
+                input.entryType === "loose" &&
+                input.looseWeightPerUnit &&
+                input.looseWeightPerUnit > 0 &&
+                packWeightKg === 0
+            ) {
+                await db
+                    .update(productVariant)
+                    .set({ weightKg: String(input.looseWeightPerUnit) })
+                    .where(eq(productVariant.id, input.variantId));
+            }
 
             return { entry: result, message: "Stock added successfully" };
         }),
