@@ -346,8 +346,8 @@ function ExpandedProductDetail({
                   <div className="divide-y divide-gray-50">
                     {looseVariants.map((v: any) => {
                       const wt = parseFloat(v.weightKg || "0");
-                      const qty = v.availableQty;
-                      const totalKg = wt > 0 ? wt * qty : qty;
+                      const totalKg = v.availableQty;
+                      const unitCount = wt > 0 ? Math.round(totalKg / wt) : 0;
                       return (
                         <div
                           key={v.variantId}
@@ -357,8 +357,12 @@ function ExpandedProductDetail({
                             {v.brandName ? `${v.brandName} · ` : ""}{wt > 0 ? `${wt} KG` : "Loose"}
                           </span>
                           <div className="flex items-center gap-1.5 text-xs tabular-nums">
-                            <span className="text-gray-500">× {qty}</span>
-                            <span className="text-gray-300">=</span>
+                            {wt > 0 && unitCount > 0 ? (
+                              <>
+                                <span className="text-gray-500">× {unitCount}</span>
+                                <span className="text-gray-300">=</span>
+                              </>
+                            ) : null}
                             <span className="font-bold text-gray-900">
                               {Math.round(totalKg * 100) / 100} KG
                             </span>
