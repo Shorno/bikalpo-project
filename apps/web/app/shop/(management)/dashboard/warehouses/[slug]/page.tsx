@@ -288,6 +288,10 @@ function VariantModal({
 
   // Calculate per-carton price
   const variantWeightKg = Number(selected.variant.weightKg) || 0;
+  // Derive loose variant display label from unitLabel or weightKg
+  const looseUnitLabel = isLooseWithoutCartons
+    ? (variantWeightKg > 0 ? `${variantWeightKg} KG` : (selected.variant.unitLabel || "KG"))
+    : "";
   const rawPrice = Number(selected.price) || 0;
   const perCartonPrice = (() => {
     // Use actual carton price from carton table if available
@@ -456,7 +460,7 @@ function VariantModal({
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-800">
                 {isLooseWithoutCartons
-                  ? <>{variantWeightKg > 0 ? `${variantWeightKg} KG` : "Loose"} — KG Ordering</>
+                  ? <>{looseUnitLabel} — Loose Ordering</>
                   : selectedCarton
                     ? <>{selectedCarton.weightKg} KG{selectedCarton.packsPerCarton > 0 && variantWeightKg > 0 ? ` (${variantWeightKg} KG × ${selectedCarton.packsPerCarton} pcs)` : " – Carton"}</>
                     : "Select a carton size"
@@ -477,7 +481,7 @@ function VariantModal({
           <div className="flex items-center justify-between">
             <div>
               <div className="text-xl font-bold text-gray-900">৳{isLooseWithoutCartons ? rawPrice.toLocaleString() : perCartonPrice.toLocaleString()}</div>
-              <div className="text-[10px] text-gray-400">{isLooseWithoutCartons ? (variantWeightKg > 0 ? `per ${variantWeightKg} KG` : "per KG") : "per Carton"}</div>
+              <div className="text-[10px] text-gray-400">{isLooseWithoutCartons ? `per ${looseUnitLabel}` : "per Carton"}</div>
             </div>
             <div className="text-right">
               {isLooseWithoutCartons ? (
@@ -580,11 +584,12 @@ function VariantModal({
                         const opts = v.variant.cartonOptions || [];
                         const hasCartons = (v.variant.totalCartonCount || 0) > 0;
                         const vWeightKg = Number(v.variant.weightKg) || 0;
+                        const vUnitLabel = v.variant.unitLabel || "Loose";
                         const sizeLabel = hasCartons
                           ? (opts.length > 0
                               ? opts.map(o => `${o.weightKg} KG × ${o.count}`).join(", ")
                               : `${v.variant.totalCartonCount} carton`)
-                          : (vWeightKg > 0 ? `${vWeightKg} KG` : "Loose");
+                          : (vWeightKg > 0 ? `${vWeightKg} KG` : vUnitLabel);
                         const vPrice = Number(v.price) || 0;
                         const priceLabel = hasCartons
                           ? `৳${getCartonPriceForVariant(v).toLocaleString()}`
@@ -658,10 +663,10 @@ function VariantModal({
                   </button>
                   <div className="flex-1 text-center">
                     <span className="text-2xl font-bold text-gray-900">{qty}</span>
-                    <span className="text-sm text-gray-500 ml-1.5">{variantWeightKg > 0 ? `× ${variantWeightKg} KG` : "KG"}</span>
+                    <span className="text-sm text-gray-500 ml-1.5">× {looseUnitLabel}</span>
                   </div>
                   <button
-                    onClick={() => setQty(Math.min(Math.floor(looseAvailableKg), qty + 1))}
+                    onClick={() => setQty(qty + 1)}
                     className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors"
                   >
                     <Plus size={16} />
@@ -670,8 +675,8 @@ function VariantModal({
 
                 {/* Total calculation */}
                 <div className="flex items-center justify-between mt-2 px-2 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-500">
-                  <span>Total: {qty} × ৳{rawPrice.toLocaleString()}</span>
-                  <span className="font-bold text-gray-900">= ৳{(qty * rawPrice).toLocaleString()}</span>
+                  <span>Total: {qty} × {looseUnitLabel}{rawPrice > 0 ? ` × ৳${rawPrice.toLocaleString()}` : ""}</span>
+                  {rawPrice > 0 && <span className="font-bold text-gray-900">= ৳{(qty * rawPrice).toLocaleString()}</span>}
                 </div>
 
                 {variantWeightKg > 0 && (
