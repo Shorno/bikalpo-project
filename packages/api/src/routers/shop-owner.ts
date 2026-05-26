@@ -602,9 +602,10 @@ const managementQueries = {
                 const isLoose = (inv.variant.packagingType || "").toLowerCase() === "loose";
                 const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
 
-                // Pack variants: all qty counts as packs
+                // Pack variants: subtract in-carton qty so packs in cartons aren't double-counted
                 // Loose variants: all qty counts as loose KG
-                const packQty = isLoose ? 0 : qty;
+                const uncartonedQty = Math.max(0, qty - cartonQty);
+                const packQty = isLoose ? 0 : uncartonedQty;
                 const looseQty = isLoose ? qty : 0;
 
                 if (!productMap.has(pid)) {
@@ -624,7 +625,7 @@ const managementQueries = {
                 }
 
                 const group = productMap.get(pid)!;
-                group.totalAvailableQty += qty;
+                group.totalAvailableQty += isLoose ? qty : uncartonedQty;
                 group.totalPackQty += packQty;
                 group.totalLooseQty += looseQty;
 
@@ -637,7 +638,7 @@ const managementQueries = {
                     unitLabel: isLoose ? "KG" : inv.variant.unitLabel,
                     packType: inv.variant.packagingType,
                     pcsPerPack: Number(inv.variant.packCountInside || 0),
-                    availableQty: qty,
+                    availableQty: isLoose ? qty : uncartonedQty,
                     inCartonQty: cartonQty,
                     looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),
                     retailPrice,
