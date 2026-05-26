@@ -3206,10 +3206,34 @@ const warehouseOrderQueries = {
                 }
 
                 const availableQty = Number(inv.availableQty);
-                if (availableQty < item.quantity) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: `Insufficient stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
-                    });
+
+                // Stock validation depends on supply mode:
+                // - Pack/carton orders: item.quantity = carton count, so verify active carton count
+                // - Loose orders: item.quantity = unit count (in KG units), so verify availableQty
+                if (item.supplyMode === "pack") {
+                    // Count active cartons for this variant in the warehouse
+                    const [cartonCountResult] = await db
+                        .select({ cnt: count() })
+                        .from(carton)
+                        .where(and(
+                            eq(carton.warehouseId, warehouseId),
+                            eq(carton.variantId, item.variantId),
+                            eq(carton.status, "active"),
+                        ));
+                    const activeCartonCount = cartonCountResult?.cnt ?? 0;
+
+                    if (activeCartonCount < item.quantity) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Not enough cartons for ${inv.variant?.product?.name || "product"}. Active cartons: ${activeCartonCount}, requested: ${item.quantity}`,
+                        });
+                    }
+                } else {
+                    // Loose orders: compare unit/KG count directly
+                    if (availableQty < item.quantity) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Insufficient stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
+                        });
+                    }
                 }
 
                 const rp = Number(inv.retailPrice || 0);
