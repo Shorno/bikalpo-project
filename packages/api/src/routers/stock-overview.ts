@@ -532,8 +532,8 @@ export const stockOverviewRouter = {
                     });
                 }
 
-                // For loose variants, subtract in-carton qty so display shows actual loose stock
-                const displayQty = isLoose ? Math.max(0, qty - inCartonQty) : qty;
+                // Subtract in-carton qty so display shows actual loose/uncartonned stock
+                const displayQty = Math.max(0, qty - inCartonQty);
 
                 variantGroupMap.get(groupKey)!.items.push({
                     variantId: row.variantId,
