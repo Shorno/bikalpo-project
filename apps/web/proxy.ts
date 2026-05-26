@@ -30,7 +30,7 @@ const AUTH_ROUTES = [
 ];
 
 // Dashboard routes that only internal staff can access
-const STAFF_ROUTES = ["/dashboard"];
+const STAFF_ROUTES = ["/dashboard", "/deliveryman"];
 
 export function proxy(request: NextRequest) {
   const hostname = request.headers.get("host") || "";
@@ -233,6 +233,10 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
     // Allow access for staff (admin, salesman, deliveryman) and shop_owner
+    // Deliverymen must only access /deliveryman/* routes
+    if (pathname.startsWith("/deliveryman") && role !== "deliveryman") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
     return NextResponse.next();
   }
 
