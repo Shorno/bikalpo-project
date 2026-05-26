@@ -184,16 +184,8 @@ function ProductCard({
         {/* Stock badge */}
         <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
           {totalCartons > 0 && (
-            <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                totalCartons > 10
-                  ? "text-blue-600 bg-blue-50 border-blue-200"
-                  : totalCartons > 3
-                    ? "text-amber-600 bg-amber-50 border-amber-200"
-                    : "text-red-600 bg-red-50 border-red-200"
-              }`}
-            >
-              📦 {totalCartons} Carton
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border text-emerald-600 bg-emerald-50 border-emerald-200">
+              📦 In Stock
             </span>
           )}
           {looseKg > 0 && (
@@ -230,7 +222,7 @@ function ProductCard({
           {product.name}{brandName ? ` - ${brandName}` : ""}
         </h3>
         <p className="text-[10px] text-gray-400 mt-0.5">
-          {variantCount} variant{variantCount > 1 ? "s" : ""}{totalCartons > 0 ? ` • 📦 ${totalCartons} carton` : ""}{looseKg > 0 ? ` • 🏷️ Loose` : ""}
+          {variantCount} variant{variantCount > 1 ? "s" : ""}{totalCartons > 0 ? ` • 📦 In Stock` : ""}{looseKg > 0 ? ` • 🏷️ Loose` : ""}
         </p>
         <div className="flex items-baseline gap-1 mt-1.5">
           <span className="text-base font-bold text-gray-900">৳{lowestPrice.toLocaleString()}</span>
@@ -432,8 +424,8 @@ function VariantModal({
                         <span className="text-[10px] text-gray-400">{bg.variants.length} variant{bg.variants.length > 1 ? "s" : ""}</span>
                         <span className="text-[10px] text-gray-300">•</span>
                         {totalBrandCartons > 0 && (
-                          <span className={`text-[10px] ${totalBrandCartons > 5 ? "text-blue-500" : "text-amber-500"}`}>
-                            📦 {totalBrandCartons} carton
+                          <span className="text-[10px] text-emerald-500">
+                            📦 In Stock
                           </span>
                         )}
                         {totalBrandLooseKg > 0 && (
@@ -493,11 +485,10 @@ function VariantModal({
                 </span>
               ) : (
                 <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                  stockQty > 10 ? "text-blue-600 bg-blue-50 border-blue-200" :
-                  stockQty > 0 ? "text-amber-600 bg-amber-50 border-amber-200" :
+                  stockQty > 0 ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
                   "text-red-600 bg-red-50 border-red-200"
                 }`}>
-                  {stockQty > 0 ? `📦 ${stockQty} Carton available` : "Out of stock"}
+                  {stockQty > 0 ? "📦 In Stock" : "Out of stock"}
                 </span>
               )}
             </div>
@@ -540,8 +531,8 @@ function VariantModal({
                               ৳{vCartonPrice.toLocaleString()}
                             </div>
                             {vTotalCartons > 0 && (
-                              <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
-                                📦 {vTotalCartons} carton
+                              <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-emerald-500"}`}>
+                                📦 In Stock
                               </div>
                             )}
                             {vInCart && (
@@ -593,7 +584,7 @@ function VariantModal({
                         const vPrice = Number(v.price) || 0;
                         const priceLabel = hasCartons
                           ? `৳${getCartonPriceForVariant(v).toLocaleString()}`
-                          : (vPrice > 0 ? `৳${vPrice.toLocaleString()}/${vWeightKg > 0 ? `${vWeightKg}KG` : "unit"}` : "");
+                          : (vPrice > 0 ? `৳${vPrice.toLocaleString()}` : "No price set");
                         return (
                           <option key={v.variantId} value={String(v.idx)}>
                             {v.variant.brandName || "Loose"} — {sizeLabel}{priceLabel ? ` — ${priceLabel}` : ""}
@@ -627,8 +618,8 @@ function VariantModal({
                       }`}
                     >
                       <div className="font-semibold">{opt.weightKg} KG</div>
-                      <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
-                        📦 {opt.count} carton ({opt.totalKg} KG)
+                      <div className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-emerald-500"}`}>
+                        {opt.count > 0 ? "📦 In Stock" : "Out of stock"}
                       </div>
                     </button>
                   );

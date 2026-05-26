@@ -602,9 +602,10 @@ const managementQueries = {
                 const isLoose = (inv.variant.packagingType || "").toLowerCase() === "loose";
                 const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
 
-                // Pack variants: all qty counts as packs
+                // Pack variants: subtract in-carton qty so packs in cartons aren't double-counted
                 // Loose variants: all qty counts as loose KG
-                const packQty = isLoose ? 0 : qty;
+                const uncartonedQty = Math.max(0, qty - cartonQty);
+                const packQty = isLoose ? 0 : uncartonedQty;
                 const looseQty = isLoose ? qty : 0;
 
                 if (!productMap.has(pid)) {
@@ -624,7 +625,7 @@ const managementQueries = {
                 }
 
                 const group = productMap.get(pid)!;
-                group.totalAvailableQty += qty;
+                group.totalAvailableQty += isLoose ? qty : uncartonedQty;
                 group.totalPackQty += packQty;
                 group.totalLooseQty += looseQty;
 
@@ -637,7 +638,7 @@ const managementQueries = {
                     unitLabel: isLoose ? "KG" : inv.variant.unitLabel,
                     packType: inv.variant.packagingType,
                     pcsPerPack: Number(inv.variant.packCountInside || 0),
-                    availableQty: qty,
+                    availableQty: isLoose ? qty : uncartonedQty,
                     inCartonQty: cartonQty,
                     looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),
                     retailPrice,
@@ -3205,10 +3206,34 @@ const warehouseOrderQueries = {
                 }
 
                 const availableQty = Number(inv.availableQty);
-                if (availableQty < item.quantity) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: `Insufficient stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
-                    });
+
+                // Stock validation depends on supply mode:
+                // - Pack/carton orders: item.quantity = carton count, so verify active carton count
+                // - Loose orders: item.quantity = unit count (in KG units), so verify availableQty
+                if (item.supplyMode === "pack") {
+                    // Count active cartons for this variant in the warehouse
+                    const [cartonCountResult] = await db
+                        .select({ cnt: count() })
+                        .from(carton)
+                        .where(and(
+                            eq(carton.warehouseId, warehouseId),
+                            eq(carton.variantId, item.variantId),
+                            eq(carton.status, "active"),
+                        ));
+                    const activeCartonCount = cartonCountResult?.cnt ?? 0;
+
+                    if (activeCartonCount < item.quantity) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Not enough cartons for ${inv.variant?.product?.name || "product"}. Active cartons: ${activeCartonCount}, requested: ${item.quantity}`,
+                        });
+                    }
+                } else {
+                    // Loose orders: compare unit/KG count directly
+                    if (availableQty < item.quantity) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Insufficient stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
+                        });
+                    }
                 }
 
                 const rp = Number(inv.retailPrice || 0);

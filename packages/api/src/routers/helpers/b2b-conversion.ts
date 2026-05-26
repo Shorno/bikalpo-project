@@ -270,9 +270,13 @@ export async function convertB2bOrderToRetailInventory(
         });
 
         if (sourceInv) {
-            // For loose cartons: deduct in KG (retailQty), not carton count
-            const isLooseDeduction = conversionSource === "loose_carton_weight" || conversionSource === "shop_loose_choice" || conversionSource === "loose_direct_kg";
-            const deductQty = isLooseDeduction ? retailQty : orderedQty;
+            // retailQty already accounts for all modes:
+            //   - pack carton:  orderedQty × packsPerCarton (e.g. 1 × 20 = 20 packs)
+            //   - loose carton: orderedQty × cartonWeightKg (e.g. 1 × 50 = 50 KG)
+            //   - loose direct:  orderedQty × variantWeightKg (e.g. 3 × 20 = 60 KG)
+            // Since availableQty stores pack count (for packs) or KG (for loose),
+            // retailQty is always the correct deduction amount.
+            const deductQty = retailQty;
             const reservedQty = Number(sourceInv.reservedQty || 0);
             const availableQty = Number(sourceInv.availableQty || 0);
             const newReservedQty = Math.max(0, reservedQty - deductQty);
@@ -280,14 +284,44 @@ export async function convertB2bOrderToRetailInventory(
                 ? availableQty
                 : Math.max(0, availableQty - (deductQty - reservedQty));
 
+            // Also decrement inCartonQty for carton orders (packs leaving warehouse inside a carton)
+            const isCartonOrder = conversionSource === "shop_pack_choice" || conversionSource === "loose_carton_weight";
+            const currentInCarton = Number(sourceInv.inCartonQty || 0);
+            const newInCarton = isCartonOrder
+                ? Math.max(0, currentInCarton - deductQty)
+                : currentInCarton;
+
+            console.log(`[B2B-CONVERT] Deducting: avail ${availableQty}→${newSourceQty}, inCarton ${currentInCarton}→${newInCarton}, deductQty=${deductQty}`);
+
             await tx
                 .update(inventory)
                 .set({
                     availableQty: newSourceQty.toFixed(2),
                     reservedQty: newReservedQty.toFixed(2),
+                    ...(isCartonOrder ? { inCartonQty: newInCarton.toFixed(2) } : {}),
                     updatedAt: new Date(),
                 })
                 .where(eq(inventory.id, sourceInv.id));
+
+            // Mark consumed carton records as "sold" (FIFO: oldest first)
+            if (isCartonOrder) {
+                const activeCartons = await tx.query.carton.findMany({
+                    where: and(
+                        eq(carton.warehouseId, sourceOwnerId),
+                        eq(carton.variantId, tradeVariant.id),
+                        eq(carton.status, "active"),
+                    ),
+                    orderBy: [carton.createdAt], // FIFO
+                });
+
+                let cartonsToConsume = orderedQty; // number of cartons ordered
+                for (const c of activeCartons) {
+                    if (cartonsToConsume <= 0) break;
+                    await tx.update(carton).set({ status: "sold" }).where(eq(carton.id, c.id));
+                    console.log(`[B2B-CONVERT] Marked carton ${c.cartonId} (id=${c.id}) as sold`);
+                    cartonsToConsume--;
+                }
+            }
         } else {
             console.warn(`[B2B-CONVERT] No warehouse inventory found for variant ${tradeVariant.id} owner ${sourceOwnerId}`);
         }
