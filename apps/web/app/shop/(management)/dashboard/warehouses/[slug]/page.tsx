@@ -593,7 +593,7 @@ function VariantModal({
                         const vPrice = Number(v.price) || 0;
                         const priceLabel = hasCartons
                           ? `৳${getCartonPriceForVariant(v).toLocaleString()}`
-                          : (vPrice > 0 ? `৳${vPrice.toLocaleString()}/${vWeightKg > 0 ? `${vWeightKg}KG` : "unit"}` : "");
+                          : (vPrice > 0 ? `৳${vPrice.toLocaleString()}` : "No price set");
                         return (
                           <option key={v.variantId} value={String(v.idx)}>
                             {v.variant.brandName || "Loose"} — {sizeLabel}{priceLabel ? ` — ${priceLabel}` : ""}
