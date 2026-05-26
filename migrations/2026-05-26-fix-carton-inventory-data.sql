@@ -1,0 +1,28 @@
+-- Phase 3: One-time data repair for carton lifecycle bug
+-- Applied: 2026-05-26
+-- 
+-- The old B2B conversion code (b2b-conversion.ts) had three bugs:
+-- 1. Deducted orderedQty (carton count, e.g. 1) instead of retailQty (pack count, e.g. 20) from availableQty
+-- 2. Never decremented inCartonQty when cartons were shipped out
+-- 3. Never marked carton records as "sold" after delivery
+--
+-- This repair script retroactively fixed all delivered B2B pack-mode orders:
+-- 
+-- CORRECTIONS APPLIED:
+-- V147 (Lotto 5KG): No change needed (conversion ratio was 1:1)
+-- V160 (Fresh loose): inCarton 100→0, 8 cartons marked sold
+-- V161 (Fresh 5KG Pack): avail 90→72, inCarton 100→72, 5 cartons marked sold  
+-- V176 (Fresh 2KG): avail 32→19, inCarton 31→15, 3 cartons marked sold
+-- V278 (Akij 5KG Pack): avail 99→80, inCarton 40→20, 1 carton marked sold
+-- V280 (Teer 2KG): avail 199→180, inCarton 20→0, 1 carton marked sold
+--
+-- ADDITIONAL CLEANUP (inCartonQty > availableQty):
+-- V163: inCarton 250→0 (avail=0)
+-- V157: inCarton 100→0 (avail=0)  
+-- V160: inCarton 72→0 (avail=0)
+-- V161: inCarton 77→72 (avail=72)
+-- V103: inCarton 5→0 (avail=0)
+-- V165: inCarton 50→0 (avail=0)
+-- V149: inCarton 50→0 (avail=0)
+--
+-- All display values (availableQty - inCartonQty) verified >= 0 after repair.
