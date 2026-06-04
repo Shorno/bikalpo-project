@@ -17,6 +17,7 @@ import {
     orderItem,
     shopWarehouseConnection,
     user,
+    warehouseWarehouseConnection,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { localDateStamp } from "../utils/date";
@@ -695,6 +696,507 @@ const storeConnectionQueries = {
                     totalPages: Math.ceil(totalCount / limit),
                 },
             };
+        }),
+};
+
+// ────────────────────────────────────────────────────────────────
+// Warehouse Supplier Connections (Warehouse ↔ Warehouse)
+// ────────────────────────────────────────────────────────────────
+
+const warehouseSupplierConnectionQueries = {
+    lookupWarehouseSupplier: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/supplier-network/lookup",
+            tags: ["Warehouse"],
+            summary: "Lookup a supplier warehouse by slug or id",
+        })
+        .input(z.object({ warehouseKey: z.string().min(1) }))
+        .handler(async ({ context, input }) => {
+            const currentWarehouseId = context.session.user.id;
+            const key = input.warehouseKey.trim();
+
+            const supplierWarehouse = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    warehouseName: user.warehouseName,
+                    warehouseSlug: user.warehouseSlug,
+                    warehouseAddress: user.warehouseAddress,
+                    warehouseLat: user.warehouseLat,
+                    warehouseLng: user.warehouseLng,
+                    phone: user.phoneNumber,
+                    image: user.image,
+                })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.role, "warehouse"),
+                        or(eq(user.warehouseSlug, key), eq(user.id, key))!,
+                    ),
+                )
+                .limit(1);
+
+            if (supplierWarehouse.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
+            }
+
+            const warehouse = supplierWarehouse[0]!;
+            if (warehouse.id === currentWarehouseId) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "You cannot request access to your own warehouse",
+                });
+            }
+
+            const [productCount] = await db
+                .select({ count: count() })
+                .from(inventory)
+                .where(
+                    and(
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, warehouse.id),
+                        sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                    ),
+                );
+
+            return {
+                warehouse: {
+                    ...warehouse,
+                    productCount: productCount?.count || 0,
+                },
+            };
+        }),
+
+    requestWarehouseSupplier: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/supplier-network/request",
+            tags: ["Warehouse"],
+            summary: "Request supplier access from another warehouse",
+        })
+        .input(z.object({ warehouseKey: z.string().min(1) }))
+        .handler(async ({ context, input }) => {
+            const buyerWarehouseId = context.session.user.id;
+            const key = input.warehouseKey.trim();
+
+            const supplierWarehouse = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    warehouseName: user.warehouseName,
+                    warehouseSlug: user.warehouseSlug,
+                    warehouseAddress: user.warehouseAddress,
+                })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.role, "warehouse"),
+                        or(eq(user.warehouseSlug, key), eq(user.id, key))!,
+                    ),
+                )
+                .limit(1);
+
+            if (supplierWarehouse.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
+            }
+
+            const supplierWarehouseId = supplierWarehouse[0]!.id;
+            if (supplierWarehouseId === buyerWarehouseId) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "You cannot request access to your own warehouse",
+                });
+            }
+
+            const existing = await db.query.warehouseWarehouseConnection.findFirst({
+                where: and(
+                    eq(warehouseWarehouseConnection.buyerWarehouseId, buyerWarehouseId),
+                    eq(warehouseWarehouseConnection.supplierWarehouseId, supplierWarehouseId),
+                ),
+            });
+
+            if (existing?.status === "active") {
+                return {
+                    status: "already_connected" as const,
+                    connectionId: existing.id,
+                    warehouse: supplierWarehouse[0]!,
+                    message: "You are already connected to this supplier warehouse.",
+                };
+            }
+
+            if (existing?.status === "pending") {
+                return {
+                    status: "already_pending" as const,
+                    connectionId: existing.id,
+                    warehouse: supplierWarehouse[0]!,
+                    message: "Your supplier request is already pending approval.",
+                };
+            }
+
+            if (existing) {
+                await db
+                    .update(warehouseWarehouseConnection)
+                    .set({
+                        status: "pending",
+                        connectedAt: null,
+                        lastOrderedAt: null,
+                    })
+                    .where(eq(warehouseWarehouseConnection.id, existing.id));
+
+                return {
+                    status: "pending" as const,
+                    connectionId: existing.id,
+                    warehouse: supplierWarehouse[0]!,
+                    message: "Supplier request sent successfully.",
+                };
+            }
+
+            const [created] = await db
+                .insert(warehouseWarehouseConnection)
+                .values({
+                    buyerWarehouseId,
+                    supplierWarehouseId,
+                    status: "pending",
+                })
+                .returning();
+
+            return {
+                status: "pending" as const,
+                connectionId: created!.id,
+                warehouse: supplierWarehouse[0]!,
+                message: "Supplier request sent successfully.",
+            };
+        }),
+
+    getMyWarehouseSuppliers: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/supplier-network/my-suppliers",
+            tags: ["Warehouse"],
+            summary: "Get supplier warehouse connections",
+        })
+        .input(
+            z.object({
+                status: z.enum(["all", "active", "pending", "disconnected"]).default("all"),
+                search: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(50),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const buyerWarehouseId = context.session.user.id;
+            const { status, search, page, limit } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [
+                eq(warehouseWarehouseConnection.buyerWarehouseId, buyerWarehouseId),
+            ];
+            if (status !== "all") {
+                conditions.push(eq(warehouseWarehouseConnection.status, status));
+            }
+
+            let whereClause = and(...conditions);
+            if (search?.trim()) {
+                const s = `%${search.trim().toLowerCase()}%`;
+                whereClause = and(
+                    ...conditions,
+                    sql`(LOWER(${user.warehouseName}) LIKE ${s} OR LOWER(${user.name}) LIKE ${s} OR ${user.phoneNumber} LIKE ${s} OR LOWER(${user.warehouseSlug}) LIKE ${s})`,
+                );
+            }
+
+            const [items, countResult] = await Promise.all([
+                db
+                    .select({
+                        connectionId: warehouseWarehouseConnection.id,
+                        status: warehouseWarehouseConnection.status,
+                        connectedAt: warehouseWarehouseConnection.connectedAt,
+                        createdAt: warehouseWarehouseConnection.createdAt,
+                        lastOrderedAt: warehouseWarehouseConnection.lastOrderedAt,
+                        warehouseId: user.id,
+                        warehouseName: user.warehouseName,
+                        warehouseSlug: user.warehouseSlug,
+                        warehouseAddress: user.warehouseAddress,
+                        phone: user.phoneNumber,
+                        name: user.name,
+                        image: user.image,
+                    })
+                    .from(warehouseWarehouseConnection)
+                    .innerJoin(user, eq(warehouseWarehouseConnection.supplierWarehouseId, user.id))
+                    .where(whereClause!)
+                    .orderBy(
+                        desc(warehouseWarehouseConnection.lastOrderedAt),
+                        desc(warehouseWarehouseConnection.connectedAt),
+                        desc(warehouseWarehouseConnection.createdAt),
+                    )
+                    .limit(limit)
+                    .offset(offset),
+                db
+                    .select({ count: count() })
+                    .from(warehouseWarehouseConnection)
+                    .innerJoin(user, eq(warehouseWarehouseConnection.supplierWarehouseId, user.id))
+                    .where(whereClause!),
+            ]);
+
+            const enriched = await Promise.all(
+                items.map(async (item) => {
+                    if (item.status !== "active") return { ...item, productCount: 0 };
+
+                    const [productCount] = await db
+                        .select({ count: count() })
+                        .from(inventory)
+                        .where(
+                            and(
+                                eq(inventory.ownerType, "warehouse"),
+                                eq(inventory.ownerId, item.warehouseId),
+                                sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                            ),
+                        );
+
+                    return {
+                        ...item,
+                        productCount: productCount?.count || 0,
+                    };
+                }),
+            );
+
+            const totalCount = Number(countResult[0]?.count || 0);
+
+            return {
+                items: enriched,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    cancelWarehouseSupplierRequest: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/supplier-network/{connectionId}/cancel",
+            tags: ["Warehouse"],
+            summary: "Cancel a pending supplier warehouse request",
+        })
+        .input(z.object({ connectionId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const buyerWarehouseId = context.session.user.id;
+
+            const existing = await db.query.warehouseWarehouseConnection.findFirst({
+                where: and(
+                    eq(warehouseWarehouseConnection.id, input.connectionId),
+                    eq(warehouseWarehouseConnection.buyerWarehouseId, buyerWarehouseId),
+                    eq(warehouseWarehouseConnection.status, "pending"),
+                ),
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Pending request not found" });
+            }
+
+            await db
+                .delete(warehouseWarehouseConnection)
+                .where(eq(warehouseWarehouseConnection.id, input.connectionId));
+
+            return { success: true, message: "Supplier request cancelled" };
+        }),
+
+    disconnectWarehouseSupplier: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/supplier-network/{connectionId}/disconnect",
+            tags: ["Warehouse"],
+            summary: "Disconnect from an active supplier warehouse",
+        })
+        .input(z.object({ connectionId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const buyerWarehouseId = context.session.user.id;
+
+            const existing = await db.query.warehouseWarehouseConnection.findFirst({
+                where: and(
+                    eq(warehouseWarehouseConnection.id, input.connectionId),
+                    eq(warehouseWarehouseConnection.buyerWarehouseId, buyerWarehouseId),
+                    eq(warehouseWarehouseConnection.status, "active"),
+                ),
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Active supplier not found" });
+            }
+
+            await db
+                .update(warehouseWarehouseConnection)
+                .set({ status: "disconnected" })
+                .where(eq(warehouseWarehouseConnection.id, input.connectionId));
+
+            return { success: true, message: "Supplier disconnected" };
+        }),
+
+    getWarehouseSupplierRequests: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/supplier-network/requests",
+            tags: ["Warehouse"],
+            summary: "Get incoming warehouse supplier requests",
+        })
+        .input(
+            z.object({
+                status: z.enum(["all", "pending", "active", "disconnected"]).default("all"),
+                search: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(50),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const supplierWarehouseId = context.session.user.id;
+            const { status, search, page, limit } = input;
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [
+                eq(warehouseWarehouseConnection.supplierWarehouseId, supplierWarehouseId),
+            ];
+            if (status !== "all") {
+                conditions.push(eq(warehouseWarehouseConnection.status, status));
+            }
+
+            let whereClause = and(...conditions);
+            if (search?.trim()) {
+                const s = `%${search.trim().toLowerCase()}%`;
+                whereClause = and(
+                    ...conditions,
+                    sql`(LOWER(${user.warehouseName}) LIKE ${s} OR LOWER(${user.name}) LIKE ${s} OR ${user.phoneNumber} LIKE ${s} OR LOWER(${user.warehouseSlug}) LIKE ${s})`,
+                );
+            }
+
+            const [items, countResult] = await Promise.all([
+                db
+                    .select({
+                        connectionId: warehouseWarehouseConnection.id,
+                        status: warehouseWarehouseConnection.status,
+                        connectedAt: warehouseWarehouseConnection.connectedAt,
+                        createdAt: warehouseWarehouseConnection.createdAt,
+                        buyerWarehouseId: user.id,
+                        buyerWarehouseName: user.warehouseName,
+                        buyerWarehouseSlug: user.warehouseSlug,
+                        buyerWarehouseAddress: user.warehouseAddress,
+                        buyerWarehouseLat: user.warehouseLat,
+                        buyerWarehouseLng: user.warehouseLng,
+                        buyerName: user.name,
+                        buyerPhone: user.phoneNumber,
+                        image: user.image,
+                    })
+                    .from(warehouseWarehouseConnection)
+                    .innerJoin(user, eq(warehouseWarehouseConnection.buyerWarehouseId, user.id))
+                    .where(whereClause!)
+                    .orderBy(desc(warehouseWarehouseConnection.createdAt))
+                    .limit(limit)
+                    .offset(offset),
+                db
+                    .select({ count: count() })
+                    .from(warehouseWarehouseConnection)
+                    .innerJoin(user, eq(warehouseWarehouseConnection.buyerWarehouseId, user.id))
+                    .where(whereClause!),
+            ]);
+
+            const totalCount = Number(countResult[0]?.count || 0);
+
+            return {
+                items,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    getWarehouseSupplierRequestStats: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/supplier-network/requests/stats",
+            tags: ["Warehouse"],
+            summary: "Get incoming warehouse supplier request stats",
+        })
+        .handler(async ({ context }) => {
+            const supplierWarehouseId = context.session.user.id;
+
+            const [stats] = await db
+                .select({
+                    total: count(),
+                    pending: sql<number>`COALESCE(SUM(CASE WHEN ${warehouseWarehouseConnection.status} = 'pending' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+                    approved: sql<number>`COALESCE(SUM(CASE WHEN ${warehouseWarehouseConnection.status} = 'active' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+                    rejected: sql<number>`COALESCE(SUM(CASE WHEN ${warehouseWarehouseConnection.status} = 'disconnected' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+                })
+                .from(warehouseWarehouseConnection)
+                .where(eq(warehouseWarehouseConnection.supplierWarehouseId, supplierWarehouseId));
+
+            return {
+                total: stats?.total ?? 0,
+                pending: stats?.pending ?? 0,
+                approved: stats?.approved ?? 0,
+                rejected: stats?.rejected ?? 0,
+            };
+        }),
+
+    approveWarehouseSupplierRequest: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/supplier-network/requests/{connectionId}/approve",
+            tags: ["Warehouse"],
+            summary: "Approve a warehouse supplier request",
+        })
+        .input(z.object({ connectionId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const supplierWarehouseId = context.session.user.id;
+
+            const existing = await db.query.warehouseWarehouseConnection.findFirst({
+                where: and(
+                    eq(warehouseWarehouseConnection.id, input.connectionId),
+                    eq(warehouseWarehouseConnection.supplierWarehouseId, supplierWarehouseId),
+                ),
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Request not found" });
+            }
+
+            await db
+                .update(warehouseWarehouseConnection)
+                .set({ status: "active", connectedAt: new Date() })
+                .where(eq(warehouseWarehouseConnection.id, input.connectionId));
+
+            return { success: true, message: "Warehouse supplier approved" };
+        }),
+
+    rejectWarehouseSupplierRequest: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/supplier-network/requests/{connectionId}/reject",
+            tags: ["Warehouse"],
+            summary: "Reject a warehouse supplier request",
+        })
+        .input(z.object({ connectionId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const supplierWarehouseId = context.session.user.id;
+
+            const existing = await db.query.warehouseWarehouseConnection.findFirst({
+                where: and(
+                    eq(warehouseWarehouseConnection.id, input.connectionId),
+                    eq(warehouseWarehouseConnection.supplierWarehouseId, supplierWarehouseId),
+                ),
+            });
+
+            if (!existing) {
+                throw new ORPCError("NOT_FOUND", { message: "Request not found" });
+            }
+
+            await db
+                .update(warehouseWarehouseConnection)
+                .set({ status: "disconnected" })
+                .where(eq(warehouseWarehouseConnection.id, input.connectionId));
+
+            return { success: true, message: "Warehouse supplier request rejected" };
         }),
 };
 
@@ -6481,6 +6983,7 @@ const expiryQueries = {
 export const warehouseRouter = {
     ...storefrontQueries,
     ...storeConnectionQueries,
+    ...warehouseSupplierConnectionQueries,
     ...managementQueries,
     ...orderQueries,
     ...variantQueries,

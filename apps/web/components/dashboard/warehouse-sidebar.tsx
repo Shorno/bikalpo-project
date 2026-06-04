@@ -177,6 +177,11 @@ const warehouseNavGroups: NavGroup[] = [
         icon: NetworkIcon,
       },
       { title: "Store Requests", url: `${WH}/store-requests`, icon: InboxIcon },
+      {
+        title: "Warehouse Requests",
+        url: `${WH}/supplier-requests`,
+        icon: WarehouseIcon,
+      },
     ],
   },
   {

@@ -64,3 +64,4 @@ export * from "./warehouse-application";
 export * from "./warehouse-category-assignment";
 export * from "./warehouse-pos";
 export * from "./warehouse-storage-area";
+export * from "./warehouse-warehouse-connection";
