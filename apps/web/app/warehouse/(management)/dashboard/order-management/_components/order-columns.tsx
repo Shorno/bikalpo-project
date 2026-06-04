@@ -69,6 +69,8 @@ function statusBadge(order: OrderRow) {
     return { label: "Delivered", className: "border-emerald-200 bg-emerald-50 text-emerald-700", icon: CheckCircle2 };
   if (order.invoiceFulfillmentMode === "self_pickup" && order.invoiceDeliveryStatus !== "delivered")
     return { label: "Self pickup pending", className: "border-amber-200 bg-amber-50 text-amber-700", icon: PackageCheck };
+  if (order.invoiceFulfillmentMode === "delivery" && order.invoiceDeliveryStatus === "not_assigned")
+    return { label: "Waiting for delivery management", className: "border-indigo-200 bg-indigo-50 text-indigo-700", icon: Truck };
   if (order.invoiceFulfillmentMode === "internal_delivery" && order.invoiceDeliveryStatus === "not_assigned")
     return { label: "Awaiting rider", className: "border-sky-200 bg-sky-50 text-sky-700", icon: Truck };
   if (order.deliveryGroupStatus === "partial")

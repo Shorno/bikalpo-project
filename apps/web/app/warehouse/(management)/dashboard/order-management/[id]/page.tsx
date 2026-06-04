@@ -422,7 +422,9 @@ export default function OrderManagementDetailPage() {
             <div className="mb-4 inline-flex items-center rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700">
               Fulfillment mode:{" "}
               <span className="ml-1 font-semibold capitalize">
-                {data.invoice.fulfillmentMode.replace(/_/g, " ")}
+                {data.invoice.fulfillmentMode === "delivery"
+                  ? "delivery management"
+                  : data.invoice.fulfillmentMode.replace(/_/g, " ")}
               </span>
             </div>
           )}
