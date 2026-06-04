@@ -1676,7 +1676,7 @@ const orderQueries = {
                   AND scoped_order."warehouse_id" = ${userId}
             )`;
 
-            const [readyInvoices, selfPickupInvoices, internalQueueCount] =
+            const [readyInvoices, selfPickupInvoices, deliveryQueueCount] =
                 await Promise.all([
                     db.query.invoice.findMany({
                         where: and(
@@ -1744,7 +1744,7 @@ const orderQueries = {
                         .where(
                             and(
                                 warehouseScope,
-                                eq(invoice.fulfillmentMode, "internal_delivery"),
+                                eq(invoice.fulfillmentMode, "delivery"),
                                 eq(invoice.deliveryStatus, "not_assigned"),
                             ),
                         ),
@@ -1753,7 +1753,7 @@ const orderQueries = {
             return {
                 readyInvoices,
                 selfPickupInvoices,
-                internalQueueCount: Number(internalQueueCount[0]?.count || 0),
+                deliveryQueueCount: Number(deliveryQueueCount[0]?.count || 0),
             };
         }),
 
@@ -1769,7 +1769,7 @@ const orderQueries = {
         })
         .input(z.object({
             invoiceId: z.number(),
-            fulfillmentMode: z.enum(["self_pickup", "internal_delivery"]),
+            fulfillmentMode: z.enum(["self_pickup", "delivery"]),
         }))
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
@@ -1852,7 +1852,119 @@ const orderQueries = {
                 message:
                     input.fulfillmentMode === "self_pickup"
                         ? "Self pickup is ready. Share the OTP at handover."
-                        : "Invoice moved to the internal delivery queue.",
+                        : "Invoice moved to delivery management.",
+            };
+        }),
+
+    /**
+     * Get invoices waiting in delivery management before final delivery type selection.
+     */
+    getDeliveryManagementDashboard: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/delivery-management/dashboard",
+            tags: ["Warehouse"],
+            summary: "Get delivery management dashboard queues",
+        })
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const warehouseScope = sql`EXISTS (
+                SELECT 1 FROM "order" scoped_order
+                WHERE scoped_order."id" = ${invoice.orderId}
+                  AND scoped_order."warehouse_id" = ${userId}
+            )`;
+
+            const pendingDeliveryInvoices = await db.query.invoice.findMany({
+                where: and(
+                    warehouseScope,
+                    eq(invoice.fulfillmentMode, "delivery"),
+                    eq(invoice.deliveryStatus, "not_assigned"),
+                ),
+                with: {
+                    customer: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            shopName: true,
+                        },
+                    },
+                    order: {
+                        columns: {
+                            id: true,
+                            orderNumber: true,
+                            shippingName: true,
+                            shippingPhone: true,
+                            shippingAddress: true,
+                            shippingCity: true,
+                            shippingArea: true,
+                        },
+                    },
+                    items: true,
+                },
+                orderBy: [desc(invoice.createdAt)],
+            });
+
+            return {
+                pendingDeliveryInvoices,
+                pendingDeliveryCount: pendingDeliveryInvoices.length,
+            };
+        }),
+
+    /**
+     * Select the final delivery type inside Delivery Management.
+     */
+    selectDeliveryManagementType: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/delivery-management/select-type",
+            tags: ["Warehouse"],
+            summary: "Select delivery type from delivery management",
+        })
+        .input(z.object({
+            invoiceIds: z.array(z.number()).min(1),
+            deliveryType: z.enum(["internal_delivery"]),
+        }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const scopedInvoices = await db.query.invoice.findMany({
+                where: and(
+                    inArray(invoice.id, input.invoiceIds),
+                    eq(invoice.fulfillmentMode, "delivery"),
+                    eq(invoice.deliveryStatus, "not_assigned"),
+                    sql`EXISTS (
+                        SELECT 1 FROM "order" scoped_order
+                        WHERE scoped_order."id" = ${invoice.orderId}
+                          AND scoped_order."warehouse_id" = ${userId}
+                    )`,
+                ),
+                columns: {
+                    id: true,
+                },
+            });
+
+            if (scopedInvoices.length !== input.invoiceIds.length) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Some selected invoices are not waiting in delivery management",
+                });
+            }
+
+            await db
+                .update(invoice)
+                .set({
+                    fulfillmentMode: input.deliveryType,
+                    deliverymanId: null,
+                    vehicleType: null,
+                    expectedDeliveryAt: null,
+                })
+                .where(inArray(invoice.id, input.invoiceIds));
+
+            return {
+                success: true,
+                movedCount: input.invoiceIds.length,
+                message: "Invoices moved to the internal delivery queue.",
             };
         }),
 

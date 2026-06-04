@@ -37,6 +37,7 @@ export const invoiceDeliveryStatusEnum = pgEnum("invoice_delivery_status", [
 // Fulfillment mode chosen at dispatch time
 export const invoiceFulfillmentModeEnum = pgEnum("invoice_fulfillment_mode", [
     "self_pickup",
+    "delivery",
     "internal_delivery",
     "third_party",
 ]);
