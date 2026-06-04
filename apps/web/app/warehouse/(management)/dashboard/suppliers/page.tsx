@@ -4,10 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Building2,
+  CheckCircle2,
+  Clock,
   CreditCard,
   Filter,
-  Mail,
+  Loader2,
   MapPin,
+  Package,
   Pencil,
   Phone,
   Plus,
@@ -15,10 +18,10 @@ import {
   Star,
   Trash2,
   TrendingUp,
-  User,
   Users,
   Wallet,
-  X,
+  Warehouse,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useState } from "react";
@@ -29,8 +32,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +55,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  useCancelWarehouseSupplierRequest,
+  useDisconnectWarehouseSupplier,
+  useLookupWarehouseSupplier,
+  useMyWarehouseSuppliers,
+  useRequestWarehouseSupplier,
+} from "@/hooks/use-warehouse-supplier-connections";
 import { orpc } from "@/utils/orpc";
 
 type SupplierForm = {
@@ -84,6 +96,365 @@ function formatMoney(value: number) {
 }
 
 export default function SuppliersPage() {
+  return (
+    <Tabs defaultValue="warehouse" className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Users className="w-6 h-6 text-emerald-600" />
+            Suppliers
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Manage connected warehouse suppliers and external vendor records.
+          </p>
+        </div>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="warehouse">Warehouse Suppliers</TabsTrigger>
+          <TabsTrigger value="external">External Suppliers</TabsTrigger>
+        </TabsList>
+      </div>
+
+      <TabsContent value="warehouse" className="mt-0">
+        <WarehouseSuppliersPanel />
+      </TabsContent>
+      <TabsContent value="external" className="mt-0">
+        <ExternalSuppliersPanel />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function WarehouseSuppliersPanel() {
+  const [statusTab, setStatusTab] = useState<"all" | "active" | "pending" | "disconnected">("all");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const { data, isLoading, isError } = useMyWarehouseSuppliers({
+    status: statusTab,
+    search: debouncedSearch,
+  });
+  const cancelMutation = useCancelWarehouseSupplierRequest();
+  const disconnectMutation = useDisconnectWarehouseSupplier();
+
+  const handleSearch = useCallback((v: string) => {
+    setSearch(v);
+    clearTimeout((window as any).__warehouseSupSearchTimer);
+    (window as any).__warehouseSupSearchTimer = setTimeout(
+      () => setDebouncedSearch(v),
+      400,
+    );
+  }, []);
+
+  const suppliers = data?.items ?? [];
+  const counts = suppliers.reduce(
+    (acc: Record<string, number>, item: any) => {
+      acc[item.status] = (acc[item.status] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search warehouse suppliers..."
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <ConnectWarehouseSupplierDialog />
+      </div>
+
+      <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as any)}>
+        <TabsList>
+          <TabsTrigger value="all">All</TabsTrigger>
+          <TabsTrigger value="active">
+            Connected
+            {counts.active ? <span className="ml-1 text-[10px] opacity-70">{counts.active}</span> : null}
+          </TabsTrigger>
+          <TabsTrigger value="pending">
+            Pending
+            {counts.pending ? <span className="ml-1 text-[10px] opacity-70">{counts.pending}</span> : null}
+          </TabsTrigger>
+          <TabsTrigger value="disconnected">Rejected</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {isLoading ? (
+        <Card>
+          <CardContent className="p-6 space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      ) : isError ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <AlertCircle className="w-10 h-10 mx-auto mb-3 text-red-400" />
+            <p className="font-medium text-red-600">Failed to load warehouse suppliers</p>
+          </CardContent>
+        </Card>
+      ) : suppliers.length === 0 ? (
+        <Card>
+          <CardContent className="py-16 text-center">
+            <Warehouse className="w-14 h-14 text-muted-foreground/25 mx-auto mb-4" />
+            <p className="text-lg font-semibold">No warehouse suppliers found</p>
+            <p className="text-sm text-muted-foreground mt-1 mb-6">
+              {debouncedSearch
+                ? "No connected warehouse suppliers match your search"
+                : "Request access by warehouse slug or id to build your supplier network"}
+            </p>
+            {!debouncedSearch && <ConnectWarehouseSupplierDialog />}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Warehouse</TableHead>
+                  <TableHead>Slug / Code</TableHead>
+                  <TableHead>Contact</TableHead>
+                  <TableHead>Products</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {suppliers.map((supplier: any) => (
+                  <TableRow key={supplier.connectionId}>
+                    <TableCell>
+                      <div className="font-medium">
+                        {supplier.warehouseName || supplier.name || "Unnamed Warehouse"}
+                      </div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3 h-3" />
+                        {supplier.warehouseAddress || "No address provided"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs">
+                        {supplier.warehouseSlug || supplier.warehouseId}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {supplier.phone ? (
+                        <span className="flex items-center gap-1 text-sm">
+                          <Phone className="w-3 h-3 text-muted-foreground" />
+                          {supplier.phone}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1 text-sm">
+                        <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                        {supplier.status === "active" ? supplier.productCount : 0}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <WarehouseSupplierStatus status={supplier.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {supplier.status === "pending" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700"
+                          disabled={cancelMutation.isPending}
+                          onClick={() =>
+                            cancelMutation.mutate({
+                              connectionId: supplier.connectionId,
+                            })
+                          }
+                        >
+                          {cancelMutation.isPending ? (
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          ) : null}
+                          Cancel
+                        </Button>
+                      ) : supplier.status === "active" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={disconnectMutation.isPending}
+                          onClick={() => {
+                            if (confirm("Disconnect this warehouse supplier?")) {
+                              disconnectMutation.mutate({
+                                connectionId: supplier.connectionId,
+                              });
+                            }
+                          }}
+                        >
+                          Disconnect
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" disabled>
+                          Request Denied
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function WarehouseSupplierStatus({ status }: { status: string }) {
+  if (status === "active") {
+    return (
+      <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50 gap-1">
+        <CheckCircle2 className="w-3 h-3" />
+        Connected
+      </Badge>
+    );
+  }
+  if (status === "pending") {
+    return (
+      <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50 gap-1">
+        <Clock className="w-3 h-3" />
+        Pending
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50 gap-1">
+      <XCircle className="w-3 h-3" />
+      Rejected
+    </Badge>
+  );
+}
+
+function ConnectWarehouseSupplierDialog() {
+  const [open, setOpen] = useState(false);
+  const [warehouseKey, setWarehouseKey] = useState("");
+  const [submittedKey, setSubmittedKey] = useState("");
+  const lookup = useLookupWarehouseSupplier(submittedKey);
+  const requestSupplier = useRequestWarehouseSupplier();
+
+  const handleSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const key = warehouseKey.trim();
+    if (!key) return;
+    setSubmittedKey(key);
+  };
+
+  const handleRequest = () => {
+    const key = lookup.data?.warehouse?.warehouseSlug || submittedKey;
+    if (!key) return;
+
+    requestSupplier.mutate(
+      { warehouseKey: key },
+      {
+        onSuccess: () => {
+          setOpen(false);
+          setWarehouseKey("");
+          setSubmittedKey("");
+        },
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button className="gap-1.5">
+          <Plus className="w-4 h-4" />
+          Add Warehouse Supplier
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Connect Warehouse Supplier</DialogTitle>
+          <DialogDescription>
+            Enter the warehouse slug or id provided by your supplier warehouse.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={warehouseKey}
+              onChange={(e) => setWarehouseKey(e.target.value)}
+              placeholder="e.g. mims-distribution"
+              className="pl-9"
+            />
+          </div>
+          <Button type="submit" variant="secondary" disabled={!warehouseKey.trim() || lookup.isLoading}>
+            {lookup.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
+          </Button>
+        </form>
+
+        <div className="min-h-[130px]">
+          {lookup.isLoading ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+              Searching...
+            </div>
+          ) : lookup.isError ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center text-amber-700">
+              <AlertCircle className="w-6 h-6 mx-auto mb-2" />
+              <p className="text-sm font-medium">Warehouse not found</p>
+              <p className="text-xs mt-1">Check the slug or id and try again.</p>
+            </div>
+          ) : lookup.data?.warehouse ? (
+            <div className="rounded-lg border bg-muted/30 p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                  <Warehouse className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold truncate">
+                    {lookup.data.warehouse.warehouseName || lookup.data.warehouse.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {lookup.data.warehouse.warehouseAddress || "No address provided"}
+                  </p>
+                  <p className="text-xs font-medium text-emerald-600 mt-1">
+                    {lookup.data.warehouse.productCount} products available
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+              Search for a warehouse supplier to preview it here.
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleRequest}
+            disabled={!lookup.data?.warehouse || requestSupplier.isPending}
+          >
+            {requestSupplier.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : null}
+            Request Access
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ExternalSuppliersPanel() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -200,17 +571,10 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-6">
-      {/* ── Header ── */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Users className="w-6 h-6 text-emerald-600" />
-            Suppliers Management
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {stats ? `${stats.activeCount} Active Suppliers` : "Loading..."}
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          {stats ? `${stats.activeCount} Active External Suppliers` : "Loading..."}
+        </p>
         <Button
           onClick={() => {
             resetForm();

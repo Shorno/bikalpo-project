@@ -71,6 +71,13 @@
       "when": 1778604287602,
       "tag": "0009_marvelous_shard",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780550699276,
+      "tag": "0010_bright_ricochet",
+      "breakpoints": true
     }
   ]
 }
