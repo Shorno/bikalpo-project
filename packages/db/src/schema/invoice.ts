@@ -34,6 +34,14 @@ export const invoiceDeliveryStatusEnum = pgEnum("invoice_delivery_status", [
     "returned",
 ]);
 
+// Fulfillment mode chosen at dispatch time
+export const invoiceFulfillmentModeEnum = pgEnum("invoice_fulfillment_mode", [
+    "self_pickup",
+    "delivery",
+    "internal_delivery",
+    "third_party",
+]);
+
 // Vehicle type for delivery assignment (optional)
 export const invoiceVehicleTypeEnum = pgEnum("invoice_vehicle_type", [
     "bike",
@@ -73,6 +81,13 @@ export const invoice = pgTable(
         deliveryStatus: invoiceDeliveryStatusEnum("delivery_status")
             .default("not_assigned")
             .notNull(),
+        fulfillmentMode: invoiceFulfillmentModeEnum("fulfillment_mode"),
+
+        // OTP used to complete pickup/delivery handoff
+        completionOtp: text("completion_otp"),
+        completionOtpGeneratedAt: timestamp("completion_otp_generated_at"),
+        completionOtpVerifiedAt: timestamp("completion_otp_verified_at"),
+        settledAt: timestamp("settled_at"),
 
         // Delivery assignment
         deliverymanId: text("deliveryman_id").references(() => user.id, {
@@ -197,6 +212,8 @@ export type InvoicePaymentStatus =
     (typeof invoicePaymentStatusEnum.enumValues)[number];
 export type InvoiceDeliveryStatus =
     (typeof invoiceDeliveryStatusEnum.enumValues)[number];
+export type InvoiceFulfillmentMode =
+    (typeof invoiceFulfillmentModeEnum.enumValues)[number];
 export type InvoiceVehicleType =
     (typeof invoiceVehicleTypeEnum.enumValues)[number];
 

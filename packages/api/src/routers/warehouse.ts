@@ -39,6 +39,7 @@ import { z } from "zod";
 
 import { publicProcedure, warehouseProcedure } from "../index";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -1567,6 +1568,8 @@ const orderQueries = {
                         invoiceNumber: invoice.invoiceNumber,
                         deliveryStatus: invoice.deliveryStatus,
                         paymentStatus: invoice.paymentStatus,
+                        fulfillmentMode: invoice.fulfillmentMode,
+                        completionOtpVerifiedAt: invoice.completionOtpVerifiedAt,
                         deliverymanId: invoice.deliverymanId,
                         createdAt: invoice.createdAt,
                     })
@@ -1644,6 +1647,7 @@ const orderQueries = {
                         invoiceNumber: rowInvoice?.invoiceNumber ?? null,
                         invoiceDeliveryStatus: rowInvoice?.deliveryStatus ?? null,
                         invoicePaymentStatus: rowInvoice?.paymentStatus ?? null,
+                        invoiceFulfillmentMode: rowInvoice?.fulfillmentMode ?? null,
                         deliveryGroupId: rowDelivery?.groupId ?? null,
                         deliveryGroupName: rowDelivery?.groupName ?? null,
                         deliveryGroupStatus: rowDelivery?.groupStatus ?? null,
@@ -1848,6 +1852,10 @@ const orderQueries = {
                         invoiceNumber: currentInvoice.invoiceNumber,
                         deliveryStatus: currentInvoice.deliveryStatus,
                         paymentStatus: currentInvoice.paymentStatus,
+                        fulfillmentMode: currentInvoice.fulfillmentMode,
+                        completionOtp: currentInvoice.completionOtp,
+                        completionOtpVerifiedAt: currentInvoice.completionOtpVerifiedAt,
+                        settledAt: currentInvoice.settledAt,
                         deliveryman: currentInvoice.deliveryman,
                     }
                     : null,
@@ -2148,6 +2156,390 @@ const orderQueries = {
                 success: true,
                 invoice: newInvoice,
                 message: `Invoice ${newInvoice.invoiceNumber} prepared for dispatch`,
+            };
+        }),
+
+    /**
+     * Get dispatch queues for fulfillment mode selection and self pickup.
+     */
+    getDispatchDashboard: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/dispatch/dashboard",
+            tags: ["Warehouse"],
+            summary: "Get dispatch dashboard queues",
+        })
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const warehouseScope = sql`EXISTS (
+                SELECT 1 FROM "order" scoped_order
+                WHERE scoped_order."id" = ${invoice.orderId}
+                  AND scoped_order."warehouse_id" = ${userId}
+            )`;
+
+            const [readyInvoices, selfPickupInvoices, deliveryQueueCount] =
+                await Promise.all([
+                    db.query.invoice.findMany({
+                        where: and(
+                            warehouseScope,
+                            sql`${invoice.fulfillmentMode} IS NULL`,
+                            eq(invoice.deliveryStatus, "not_assigned"),
+                        ),
+                        with: {
+                            customer: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    phoneNumber: true,
+                                    shopName: true,
+                                },
+                            },
+                            order: {
+                                columns: {
+                                    id: true,
+                                    orderNumber: true,
+                                    shippingName: true,
+                                    shippingPhone: true,
+                                    shippingAddress: true,
+                                    shippingCity: true,
+                                    shippingArea: true,
+                                },
+                            },
+                            items: true,
+                        },
+                        orderBy: [desc(invoice.createdAt)],
+                    }),
+                    db.query.invoice.findMany({
+                        where: and(
+                            warehouseScope,
+                            eq(invoice.fulfillmentMode, "self_pickup"),
+                            sql`${invoice.completionOtpVerifiedAt} IS NULL`,
+                        ),
+                        with: {
+                            customer: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    phoneNumber: true,
+                                    shopName: true,
+                                },
+                            },
+                            order: {
+                                columns: {
+                                    id: true,
+                                    orderNumber: true,
+                                    shippingName: true,
+                                    shippingPhone: true,
+                                    shippingAddress: true,
+                                    shippingCity: true,
+                                    shippingArea: true,
+                                },
+                            },
+                            items: true,
+                        },
+                        orderBy: [desc(invoice.createdAt)],
+                    }),
+                    db
+                        .select({ count: count() })
+                        .from(invoice)
+                        .where(
+                            and(
+                                warehouseScope,
+                                eq(invoice.fulfillmentMode, "delivery"),
+                                eq(invoice.deliveryStatus, "not_assigned"),
+                            ),
+                        ),
+                ]);
+
+            return {
+                readyInvoices,
+                selfPickupInvoices,
+                deliveryQueueCount: Number(deliveryQueueCount[0]?.count || 0),
+            };
+        }),
+
+    /**
+     * Select dispatch fulfillment mode for an invoice.
+     */
+    configureDispatchFulfillment: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/dispatch/configure",
+            tags: ["Warehouse"],
+            summary: "Select dispatch fulfillment mode",
+        })
+        .input(z.object({
+            invoiceId: z.number(),
+            fulfillmentMode: z.enum(["self_pickup", "delivery"]),
+        }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingInvoice = await db.query.invoice.findFirst({
+                where: and(
+                    eq(invoice.id, input.invoiceId),
+                    sql`EXISTS (
+                        SELECT 1 FROM "order" scoped_order
+                        WHERE scoped_order."id" = ${invoice.orderId}
+                          AND scoped_order."warehouse_id" = ${userId}
+                    )`,
+                ),
+                with: {
+                    order: {
+                        columns: {
+                            id: true,
+                            readyAt: true,
+                        },
+                    },
+                },
+            });
+
+            if (!existingInvoice?.order) {
+                throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
+            }
+
+            if (existingInvoice.deliveryStatus === "delivered") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "This invoice has already been completed",
+                });
+            }
+
+            if (
+                existingInvoice.fulfillmentMode
+                && existingInvoice.fulfillmentMode !== input.fulfillmentMode
+            ) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Fulfillment mode has already been selected",
+                });
+            }
+
+            const completionOtp =
+                input.fulfillmentMode === "self_pickup"
+                    ? Math.floor(1000 + Math.random() * 9000).toString()
+                    : null;
+
+            await db.transaction(async (tx) => {
+                await tx
+                    .update(invoice)
+                    .set({
+                        fulfillmentMode: input.fulfillmentMode,
+                        completionOtp,
+                        completionOtpGeneratedAt:
+                            input.fulfillmentMode === "self_pickup"
+                                ? new Date()
+                                : null,
+                        completionOtpVerifiedAt: null,
+                        deliveryStatus:
+                            input.fulfillmentMode === "self_pickup"
+                                ? "pending"
+                                : "not_assigned",
+                        deliverymanId: null,
+                        vehicleType: null,
+                        expectedDeliveryAt: null,
+                    })
+                    .where(eq(invoice.id, input.invoiceId));
+
+                if (!existingInvoice.order.readyAt) {
+                    await tx
+                        .update(order)
+                        .set({ readyAt: new Date() })
+                        .where(eq(order.id, existingInvoice.order.id));
+                }
+            });
+
+            return {
+                success: true,
+                completionOtp,
+                message:
+                    input.fulfillmentMode === "self_pickup"
+                        ? "Self pickup is ready. Share the OTP at handover."
+                        : "Invoice moved to delivery management.",
+            };
+        }),
+
+    /**
+     * Get invoices waiting in delivery management before final delivery type selection.
+     */
+    getDeliveryManagementDashboard: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/delivery-management/dashboard",
+            tags: ["Warehouse"],
+            summary: "Get delivery management dashboard queues",
+        })
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const warehouseScope = sql`EXISTS (
+                SELECT 1 FROM "order" scoped_order
+                WHERE scoped_order."id" = ${invoice.orderId}
+                  AND scoped_order."warehouse_id" = ${userId}
+            )`;
+
+            const pendingDeliveryInvoices = await db.query.invoice.findMany({
+                where: and(
+                    warehouseScope,
+                    eq(invoice.fulfillmentMode, "delivery"),
+                    eq(invoice.deliveryStatus, "not_assigned"),
+                ),
+                with: {
+                    customer: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            shopName: true,
+                        },
+                    },
+                    order: {
+                        columns: {
+                            id: true,
+                            orderNumber: true,
+                            shippingName: true,
+                            shippingPhone: true,
+                            shippingAddress: true,
+                            shippingCity: true,
+                            shippingArea: true,
+                        },
+                    },
+                    items: true,
+                },
+                orderBy: [desc(invoice.createdAt)],
+            });
+
+            return {
+                pendingDeliveryInvoices,
+                pendingDeliveryCount: pendingDeliveryInvoices.length,
+            };
+        }),
+
+    /**
+     * Select the final delivery type inside Delivery Management.
+     */
+    selectDeliveryManagementType: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/delivery-management/select-type",
+            tags: ["Warehouse"],
+            summary: "Select delivery type from delivery management",
+        })
+        .input(z.object({
+            invoiceIds: z.array(z.number()).min(1),
+            deliveryType: z.enum(["internal_delivery"]),
+        }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const scopedInvoices = await db.query.invoice.findMany({
+                where: and(
+                    inArray(invoice.id, input.invoiceIds),
+                    eq(invoice.fulfillmentMode, "delivery"),
+                    eq(invoice.deliveryStatus, "not_assigned"),
+                    sql`EXISTS (
+                        SELECT 1 FROM "order" scoped_order
+                        WHERE scoped_order."id" = ${invoice.orderId}
+                          AND scoped_order."warehouse_id" = ${userId}
+                    )`,
+                ),
+                columns: {
+                    id: true,
+                },
+            });
+
+            if (scopedInvoices.length !== input.invoiceIds.length) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Some selected invoices are not waiting in delivery management",
+                });
+            }
+
+            await db
+                .update(invoice)
+                .set({
+                    fulfillmentMode: input.deliveryType,
+                    deliverymanId: null,
+                    vehicleType: null,
+                    expectedDeliveryAt: null,
+                })
+                .where(inArray(invoice.id, input.invoiceIds));
+
+            return {
+                success: true,
+                movedCount: input.invoiceIds.length,
+                message: "Invoices moved to the internal delivery queue.",
+            };
+        }),
+
+    /**
+     * Complete a self pickup invoice by verifying the OTP at handover.
+     */
+    verifySelfPickupOtp: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/dispatch/self-pickup/verify",
+            tags: ["Warehouse"],
+            summary: "Verify self pickup OTP",
+        })
+        .input(z.object({
+            invoiceId: z.number(),
+            otp: z.string().length(4),
+        }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingInvoice = await db.query.invoice.findFirst({
+                where: and(
+                    eq(invoice.id, input.invoiceId),
+                    sql`EXISTS (
+                        SELECT 1 FROM "order" scoped_order
+                        WHERE scoped_order."id" = ${invoice.orderId}
+                          AND scoped_order."warehouse_id" = ${userId}
+                    )`,
+                ),
+            });
+
+            if (!existingInvoice) {
+                throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
+            }
+
+            if (existingInvoice.fulfillmentMode !== "self_pickup") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "This invoice is not in self pickup mode",
+                });
+            }
+
+            if (existingInvoice.completionOtpVerifiedAt) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Self pickup has already been completed",
+                });
+            }
+
+            if (existingInvoice.completionOtp !== input.otp) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Invalid pickup OTP",
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                await tx
+                    .update(invoice)
+                    .set({
+                        deliveryStatus: "delivered",
+                        paymentStatus: "settled",
+                        deliveredAt: new Date(),
+                        settledAt: new Date(),
+                        completionOtpVerifiedAt: new Date(),
+                    })
+                    .where(eq(invoice.id, input.invoiceId));
+
+                await syncOrderFromDeliveredInvoice(tx, input.invoiceId, {
+                    markReceived: true,
+                });
+            });
+
+            return {
+                success: true,
+                message: "Self pickup completed successfully",
             };
         }),
 

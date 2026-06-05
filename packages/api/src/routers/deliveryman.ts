@@ -16,7 +16,7 @@ import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, deliverymanProcedure, protectedProcedure, warehouseOrAdminProcedure } from "../index";
-import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
 
 // Validation schemas
 const deliverymanIdSchema = z.object({
@@ -449,16 +449,7 @@ export const deliverymanRouter = {
                     paymentStatus: input.amountCollected ? "collected" : "unpaid",
                 }).where(eq(invoice.id, deliveryInv.invoiceId));
 
-                // Update order status
-                if (deliveryInv.invoice?.orderId) {
-                    await tx.update(order).set({
-                        status: "delivered",
-                        deliveredAt: new Date(),
-                    }).where(eq(order.id, deliveryInv.invoice.orderId));
-
-                    // Auto-convert B2B order to retail inventory
-                    await convertB2bOrderToRetailInventory(tx, deliveryInv.invoice.orderId);
-                }
+                await syncOrderFromDeliveredInvoice(tx, deliveryInv.invoiceId);
 
                 // Update delivery group counters + running payment total
                 const cashAdd = input.paymentMethod === "cash" ? (input.amountCollected || 0) : 0;
@@ -731,7 +722,10 @@ export const deliverymanRouter = {
             summary: "Get unassigned invoices",
         })
         .handler(async ({ context }) => {
-            const conditions: SQL[] = [eq(invoice.deliveryStatus, "not_assigned")];
+            const conditions: SQL[] = [
+                eq(invoice.deliveryStatus, "not_assigned"),
+                eq(invoice.fulfillmentMode, "internal_delivery"),
+            ];
             if (context.session.user.role === "warehouse") {
                 conditions.push(
                     sql`EXISTS (
@@ -856,7 +850,7 @@ export const deliverymanRouter = {
                         ? [eq(user.warehouseId, context.session.user.id)]
                         : []),
                 ),
-                columns: { id: true },
+                columns: { id: true, name: true, phoneNumber: true },
             });
             if (!deliveryman) {
                 throw new ORPCError("NOT_FOUND", { message: "Deliveryman not found" });
@@ -875,18 +869,27 @@ export const deliverymanRouter = {
                         ]
                         : []),
                 ),
-                columns: { id: true, deliveryStatus: true },
+                columns: {
+                    id: true,
+                    deliveryStatus: true,
+                    fulfillmentMode: true,
+                },
             });
             if (selectedInvoices.length !== input.invoiceIds.length) {
                 throw new ORPCError("BAD_REQUEST", { message: "Some selected invoices were not found" });
             }
 
             const invalidInvoice = selectedInvoices.find(
-                (inv) => inv.deliveryStatus !== "not_assigned" && inv.deliveryStatus !== "pending",
+                (inv) =>
+                    inv.fulfillmentMode !== "internal_delivery"
+                    || (
+                        inv.deliveryStatus !== "not_assigned"
+                        && inv.deliveryStatus !== "pending"
+                    ),
             );
             if (invalidInvoice) {
                 throw new ORPCError("BAD_REQUEST", {
-                    message: "One or more invoices are already assigned or delivered",
+                    message: "One or more invoices are not ready for internal delivery assignment",
                 });
             }
 
@@ -943,7 +946,10 @@ export const deliverymanRouter = {
                 if (orderIds.length > 0) {
                     await tx.update(order).set({
                         status: "processing",
+                        processingStartedAt: new Date(),
                         shippedAt: new Date(),
+                        riderName: deliveryman.name,
+                        riderPhone: deliveryman.phoneNumber,
                     }).where(and(
                         inArray(order.id, orderIds),
                         sql`${order.status} IN ('pending', 'confirmed')`,
@@ -1347,11 +1353,31 @@ export const deliverymanRouter = {
             });
 
             if (orderInvoices.length === 0) {
-                return { otp: null, showOtp: false };
+                return { otp: null, showOtp: false, mode: null, label: null };
             }
 
             // Find delivery group invoice for any of these invoices
             const invoiceIds = orderInvoices.map((inv) => inv.id);
+            const selfPickupInvoice = await db.query.invoice.findFirst({
+                where: and(
+                    inArray(invoice.id, invoiceIds),
+                    eq(invoice.fulfillmentMode, "self_pickup"),
+                    sql`${invoice.completionOtp} IS NOT NULL`,
+                    sql`${invoice.completionOtpVerifiedAt} IS NULL`,
+                ),
+                orderBy: [desc(invoice.createdAt)],
+            });
+
+            if (selfPickupInvoice?.completionOtp) {
+                return {
+                    otp: selfPickupInvoice.completionOtp,
+                    showOtp: true,
+                    deliveryStatus: selfPickupInvoice.deliveryStatus,
+                    mode: "self_pickup" as const,
+                    label: "Pickup OTP",
+                };
+            }
+
             const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
                 where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
                     invoiceIds.map((id) => sql`${id}`),
@@ -1368,13 +1394,15 @@ export const deliverymanRouter = {
                 !deliveryInvoice.group ||
                 deliveryInvoice.group.status !== "out_for_delivery"
             ) {
-                return { otp: null, showOtp: false };
+                return { otp: null, showOtp: false, mode: null, label: null };
             }
 
             return {
                 otp: deliveryInvoice.deliveryOtp,
                 showOtp: true,
                 deliveryStatus: deliveryInvoice.status,
+                mode: "internal_delivery" as const,
+                label: "Delivery OTP",
             };
         }),
 
@@ -1781,6 +1809,7 @@ export const deliverymanRouter = {
                     if (inv.status === "delivered") {
                         await tx.update(invoice).set({
                             paymentStatus: "settled",
+                            settledAt: new Date(),
                         }).where(eq(invoice.id, inv.invoiceId));
                     }
                 }

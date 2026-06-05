@@ -14,18 +14,31 @@ import { logger } from "hono/logger";
 import { engine } from "./socket";
 
 const app = new Hono();
+const localFrontendOriginPattern = /^https?:\/\/(?:[a-z0-9-]+\.)?bikalpo\.localhost:3001$/i;
+
+function resolveCorsOrigin(origin?: string) {
+  if (!origin) {
+    return env.CORS_ORIGINS[0];
+  }
+
+  if (env.CORS_ORIGINS.includes(origin)) {
+    return origin;
+  }
+
+  // Keep local subdomains working even if a developer's .env.local is missing one.
+  if (env.NODE_ENV !== "production" && localFrontendOriginPattern.test(origin)) {
+    return origin;
+  }
+
+  return undefined;
+}
 
 app.use(logger());
 
 app.use(
   "/*",
   cors({
-    origin: (origin) => {
-      if (env.CORS_ORIGINS.includes(origin)) {
-        return origin;
-      }
-      return env.CORS_ORIGINS[0];
-    },
+    origin: resolveCorsOrigin,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     exposeHeaders: ["Content-Length"],

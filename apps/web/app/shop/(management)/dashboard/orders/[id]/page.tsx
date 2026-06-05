@@ -415,49 +415,6 @@ export default function PurchaseOrderDetailPage() {
           </Card>
 
 
-          {/* 📊 Live Order Tracking (Table) 🔥 */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">📊 Live Order Tracking</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-muted/40 text-[10px] font-bold text-muted-foreground">
-                    <th className="text-left p-2 pl-4">Time</th>
-                    <th className="text-left p-2">Action</th>
-                    <th className="text-left p-2 pr-4">By</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {timeline.map((step: any, i: number) => {
-                    const actor = step.step === "Placed" ? "Retailer"
-                      : step.step === "Modified" ? "Wholesaler"
-                      : step.step === "Confirmed" ? "Wholesaler"
-                      : step.step === "Dispatched" ? "Wholesaler"
-                      : step.step === "Delivered" ? "Delivery"
-                      : step.step === "Received" ? "Retailer"
-                      : "System";
-                    return (
-                      <tr key={i} className={`border-t ${step.isModification ? "bg-orange-50/30 dark:bg-orange-950/10" : ""}`}>
-                        <td className="p-2 pl-4 text-muted-foreground tabular-nums">
-                          {step.date ? new Date(step.date).toLocaleDateString("en-BD", { day: "numeric", month: "short" }) : "—"}
-                        </td>
-                        <td className="p-2">
-                          <span className={`font-medium ${step.isModification ? "text-orange-600" : step.completed ? "text-foreground" : "text-muted-foreground"}`}>
-                            {step.completed ? "✓" : "○"} {step.step}
-                            {step.isModification && " (Modified)"}
-                          </span>
-                        </td>
-                        <td className="p-2 pr-4 text-muted-foreground">{actor}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-
           {/* Delivery Info (compact) */}
           {(delivery.trackingId || delivery.riderName) && (
             <Card>

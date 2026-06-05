@@ -109,6 +109,11 @@ const warehouseNavGroups: NavGroup[] = [
         icon: TruckIcon,
       },
       {
+        title: "Delivery Management",
+        url: `${WH}/delivery-management`,
+        icon: PackageSearchIcon,
+      },
+      {
         title: "Delivery Tracking",
         url: `${WH}/delivery-tracking`,
         icon: PackageSearchIcon,
