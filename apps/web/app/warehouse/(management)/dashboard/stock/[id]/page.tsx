@@ -56,6 +56,16 @@ function NotAvailable() {
   );
 }
 
+function formatUnitQty(value: number, isLoose: boolean) {
+  if (isLoose) {
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: value % 1 === 0 ? 0 : 1,
+      maximumFractionDigits: 1,
+    });
+  }
+  return Math.round(value).toLocaleString();
+}
+
 // ─── Section Header ────────────────────────────────────────────
 
 function SectionHeader({ emoji, title }: { emoji: string; title: string }) {
@@ -368,6 +378,10 @@ export default function StockDetailPage() {
                 <Fragment key={gi}>
                   {group.items.map((item: any, ii: number) => {
                     const weightKg = parseFloat(group.weightKg || "0");
+                    const totalQty = item.totalQty ?? item.availableQty;
+                    const inCartonQty = item.inCartonQty ?? 0;
+                    const availableForCartonQty =
+                      item.availableForCartonQty ?? item.availableQty;
                     // Build label: "20 KG Loose (Fresh)" or "Loose (Fresh)"
                     let label = isLoose
                       ? (weightKg > 0 ? `${weightKg} KG Loose` : "Loose")
@@ -381,7 +395,7 @@ export default function StockDetailPage() {
 
                     // For loose with known weight: show qty count
                     const looseQtyCount = isLoose && weightKg > 0
-                      ? Math.round(item.availableQty / weightKg)
+                      ? Math.round(totalQty / weightKg)
                       : 0;
 
                     return (
@@ -393,20 +407,30 @@ export default function StockDetailPage() {
                           {label}
                         </span>
                         <div className="flex items-center gap-6">
-                          <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                            →{" "}
-                            {item.availableQty.toLocaleString()}{" "}
-                            <span className="text-xs font-normal text-gray-500">
-                              {isLoose ? "KG" : "Pack"}
-                            </span>
-                            {isLoose && weightKg > 0 && looseQtyCount > 0 && (
-                              <span className="text-xs font-normal text-gray-400 ml-1">
-                                ({looseQtyCount} × {weightKg} KG)
+                          <div className="text-right min-w-[220px]">
+                            <div className="text-sm font-bold text-gray-900 tabular-nums">
+                              {formatUnitQty(totalQty, isLoose)}{" "}
+                              <span className="text-xs font-normal text-gray-500">
+                                {isLoose ? "KG total" : "Pack total"}
                               </span>
-                            )}
-                          </span>
+                              {isLoose && weightKg > 0 && looseQtyCount > 0 && (
+                                <span className="text-xs font-normal text-gray-400 ml-1">
+                                  ({looseQtyCount} × {weightKg} KG)
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-blue-600 tabular-nums mt-1">
+                              {formatUnitQty(inCartonQty, isLoose)}{" "}
+                              {isLoose ? "KG" : "Pack"} inside cartons
+                            </div>
+                            <div className="text-xs text-amber-600 tabular-nums mt-0.5">
+                              {formatUnitQty(availableForCartonQty, isLoose)}{" "}
+                              {isLoose ? "KG" : "Pack"} available for carton
+                              generation
+                            </div>
+                          </div>
                           <div className="min-w-[100px]">
-                            <StatusIndicator qty={item.availableQty} />
+                            <StatusIndicator qty={totalQty} />
                           </div>
                         </div>
                       </div>

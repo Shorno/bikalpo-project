@@ -489,6 +489,9 @@ export const stockOverviewRouter = {
                     color: string | null;
                     size: string | null;
                     availableQty: number;
+                    totalQty: number;
+                    inCartonQty: number;
+                    availableForCartonQty: number;
                     reservedQty: number;
                     retailPrice: string | null;
                     sku: string | null;
@@ -541,10 +544,13 @@ export const stockOverviewRouter = {
                     color: row.color,
                     size: row.size,
                     availableQty: displayQty,
+                    totalQty: qty,
+                    inCartonQty,
+                    availableForCartonQty: displayQty,
                     reservedQty: parseFloat(row.reservedQty || "0"),
                     retailPrice: row.retailPrice,
                     sku: row.sku,
-                    status: getStockStatus(displayQty),
+                    status: getStockStatus(qty),
                 });
             }
 
