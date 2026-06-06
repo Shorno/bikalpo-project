@@ -37,7 +37,7 @@ export default function CartonListPage() {
   const variantId = Number(params.variantId);
 
   const [statusFilter, setStatusFilter] = useState<string | undefined>(
-    undefined,
+    "active",
   );
   const [page, setPage] = useState(1);
   const limit = 20;
@@ -83,11 +83,9 @@ export default function CartonListPage() {
   };
 
   const statusOptions = [
-    { label: "All", value: undefined },
     { label: "Active", value: "active" },
     { label: "Broken", value: "broken" },
     { label: "Dispatched", value: "dispatched" },
-    { label: "Sold", value: "sold" },
   ];
 
   return (

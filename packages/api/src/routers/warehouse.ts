@@ -30,6 +30,7 @@ import {
     ilike,
     inArray,
     lte,
+    ne,
     or,
     sql,
     sum,
@@ -6269,12 +6270,14 @@ const cartonQueries = {
             const userId = context.session.user.id;
             const offset = (input.page - 1) * input.limit;
 
-            const conditions: SQL[] = [eq(carton.warehouseId, userId)];
+            const scopeConditions: SQL[] = [eq(carton.warehouseId, userId)];
+            const conditions: SQL[] = [...scopeConditions];
 
             if (input.status) {
                 conditions.push(eq(carton.status, input.status));
             }
             if (input.variantId) {
+                scopeConditions.push(eq(carton.variantId, input.variantId));
                 conditions.push(eq(carton.variantId, input.variantId));
             }
 
@@ -6312,12 +6315,12 @@ const cartonQueries = {
             const [activeCount] = await db
                 .select({ count: count() })
                 .from(carton)
-                .where(and(eq(carton.warehouseId, userId), eq(carton.status, "active")));
+                .where(and(...scopeConditions, eq(carton.status, "active")));
 
             const [totalCartons] = await db
                 .select({ count: count() })
                 .from(carton)
-                .where(eq(carton.warehouseId, userId));
+                .where(and(...scopeConditions, ne(carton.status, "sold")));
 
             return {
                 cartons,
@@ -6388,7 +6391,10 @@ const cartonQueries = {
 
             // 1. Fetch all cartons for this warehouse with deep relations
             const allCartons = await db.query.carton.findMany({
-                where: eq(carton.warehouseId, userId),
+                where: and(
+                    eq(carton.warehouseId, userId),
+                    eq(carton.status, "active"),
+                ),
                 with: {
                     config: true,
                     variant: {
@@ -6443,11 +6449,9 @@ const cartonQueries = {
                     : v.unitLabel;
                 entry.variants.add(variantLabel);
                 entry.totalCartons += 1;
-                if (c.status === "active") {
-                    entry.activeCartons += 1;
-                    entry.totalPacks += c.totalPacks;
-                    entry.totalWeightKg += parseFloat(c.totalWeightKg);
-                }
+                entry.activeCartons += 1;
+                entry.totalPacks += c.totalPacks;
+                entry.totalWeightKg += parseFloat(c.totalWeightKg);
                 if (c.storageArea) {
                     entry.locations.add((c.storageArea as any).name);
                 }
@@ -6480,13 +6484,12 @@ const cartonQueries = {
             products.sort((a, b) => b.activeCartons - a.activeCartons);
 
             // 4. KPI stats
-            const allActiveCartons = allCartons.filter((c) => c.status === "active");
-            const allLocations = new Set(allActiveCartons.map((c) => (c.storageArea as any)?.name).filter(Boolean));
+            const allLocations = new Set(allCartons.map((c) => (c.storageArea as any)?.name).filter(Boolean));
 
             const kpi = {
                 totalProducts: productMap.size,
-                totalCartons: allActiveCartons.length,
-                totalUnits: allActiveCartons.reduce((s, c) => s + c.totalPacks, 0),
+                totalCartons: allCartons.length,
+                totalUnits: allCartons.reduce((s, c) => s + c.totalPacks, 0),
                 activeLocations: allLocations.size,
             };
 
@@ -6522,7 +6525,10 @@ const cartonQueries = {
 
             // Get all cartons for this warehouse with variant relations
             const allCartons = await db.query.carton.findMany({
-                where: eq(carton.warehouseId, userId),
+                where: and(
+                    eq(carton.warehouseId, userId),
+                    eq(carton.status, "active"),
+                ),
                 with: {
                     config: true,
                     variant: {
@@ -6583,10 +6589,8 @@ const cartonQueries = {
 
                 const entry = variantMap.get(v.id)!;
                 entry.totalCartons += 1;
-                if (c.status === "active") {
-                    entry.activeCartons += 1;
-                    entry.totalPacks += c.totalPacks;
-                }
+                entry.activeCartons += 1;
+                entry.totalPacks += c.totalPacks;
             }
 
             return {
