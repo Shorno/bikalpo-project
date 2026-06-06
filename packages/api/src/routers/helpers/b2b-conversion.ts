@@ -17,9 +17,16 @@
  * at the application level if needed in the future.
  */
 
-import {and, eq} from "drizzle-orm";
-import {carton, inventory, order, orderItem, product, productVariant, variantConversionMap,} from "@bikalpo-project/db/schema";
-import {desc} from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import {
+    carton,
+    inventory,
+    order,
+    orderItem,
+    product,
+    productVariant,
+    variantConversionMap,
+} from "@bikalpo-project/db/schema";
 
 /**
  * Convert B2B order items to retail inventory upon delivery.
@@ -290,8 +297,14 @@ export async function convertB2bOrderToRetailInventory(
             const newInCarton = isCartonOrder
                 ? Math.max(0, currentInCarton - deductQty)
                 : currentInCarton;
+            const currentActiveCartonCount = Number(sourceInv.activeCartonCount || 0);
+            const newActiveCartonCount = isCartonOrder
+                ? Math.max(0, currentActiveCartonCount - orderedQty)
+                : currentActiveCartonCount;
 
-            console.log(`[B2B-CONVERT] Deducting: avail ${availableQty}→${newSourceQty}, inCarton ${currentInCarton}→${newInCarton}, deductQty=${deductQty}`);
+            console.log(
+                `[B2B-CONVERT] Deducting: avail ${availableQty}→${newSourceQty}, inCarton ${currentInCarton}→${newInCarton}, cartons ${currentActiveCartonCount}→${newActiveCartonCount}, deductQty=${deductQty}`,
+            );
 
             await tx
                 .update(inventory)
@@ -299,6 +312,7 @@ export async function convertB2bOrderToRetailInventory(
                     availableQty: newSourceQty.toFixed(2),
                     reservedQty: newReservedQty.toFixed(2),
                     ...(isCartonOrder ? { inCartonQty: newInCarton.toFixed(2) } : {}),
+                    ...(isCartonOrder ? { activeCartonCount: newActiveCartonCount } : {}),
                     updatedAt: new Date(),
                 })
                 .where(eq(inventory.id, sourceInv.id));

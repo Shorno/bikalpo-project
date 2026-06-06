@@ -39,6 +39,7 @@ import { z } from "zod";
 
 import { publicProcedure, warehouseProcedure } from "../index";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { getCartonInventoryUnits } from "./helpers/carton-units";
 import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
 
 // ────────────────────────────────────────────────────────────────
@@ -6189,6 +6190,14 @@ const cartonQueries = {
                     eq(carton.warehouseId, userId),
                     eq(carton.status, "active"),
                 ),
+                with: {
+                    variant: {
+                        columns: {
+                            packType: true,
+                            packagingType: true,
+                        },
+                    },
+                },
             });
 
             if (!existingCarton) {
@@ -6212,6 +6221,11 @@ const cartonQueries = {
 
             // 3. Transaction: break carton + return stock
             await db.transaction(async (tx) => {
+                const cartonUnits = getCartonInventoryUnits(
+                    existingCarton,
+                    existingCarton.variant,
+                );
+
                 // Mark carton as broken
                 await tx
                     .update(carton)
@@ -6224,7 +6238,7 @@ const cartonQueries = {
 
                 // Move packs from in-carton → loose
                 const inCarton = parseFloat(inv.inCartonQty);
-                const newInCartonQty = Math.max(0, inCarton - existingCarton.totalPacks);
+                const newInCartonQty = Math.max(0, inCarton - cartonUnits);
                 const newActiveCount = Math.max(0, (inv.activeCartonCount || 0) - 1);
 
                 await tx
@@ -6644,6 +6658,14 @@ const cartonQueries = {
                     eq(carton.warehouseId, userId),
                     eq(carton.status, "active"),
                 ),
+                with: {
+                    variant: {
+                        columns: {
+                            packType: true,
+                            packagingType: true,
+                        },
+                    },
+                },
             });
 
             if (!existingCarton) {
@@ -6667,6 +6689,11 @@ const cartonQueries = {
 
             // Transaction: mark carton sold/empty + adjust inventory
             await db.transaction(async (tx) => {
+                const cartonUnits = getCartonInventoryUnits(
+                    existingCarton,
+                    existingCarton.variant,
+                );
+
                 await tx
                     .update(carton)
                     .set({ status: "sold" })
@@ -6674,12 +6701,12 @@ const cartonQueries = {
 
                 // Remove packs from in-carton count
                 const inCartonQty = parseFloat(inv.inCartonQty);
-                const newInCartonQty = Math.max(0, inCartonQty - existingCarton.totalPacks);
+                const newInCartonQty = Math.max(0, inCartonQty - cartonUnits);
                 const newActiveCount = Math.max(0, (inv.activeCartonCount || 0) - 1);
 
                 // Also reduce available qty since items are consumed
                 const availableQty = parseFloat(inv.availableQty);
-                const newAvailableQty = Math.max(0, availableQty - existingCarton.totalPacks);
+                const newAvailableQty = Math.max(0, availableQty - cartonUnits);
 
                 await tx
                     .update(inventory)
