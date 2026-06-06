@@ -258,6 +258,32 @@ export default function StockDetailPage() {
   // Calculate loose convertible
   const looseTotal = (loosePool?.openStock ?? 0) + (loosePool?.fullDrum ?? 0);
 
+  function getVariantDisplayInventory(item: any, isLoose: boolean) {
+    const summary = cartonByVariant.get(item.variantId);
+    const summaryInCartonQty = summary
+      ? parseFloat(
+          isLoose
+            ? summary.totalWeightKg || "0"
+            : String(summary.totalPacks || 0)
+        )
+      : 0;
+
+    const availableForCartonQty =
+      item.availableForCartonQty ?? item.availableQty ?? 0;
+    const inCartonQty = summary
+      ? summaryInCartonQty
+      : item.inCartonQty ?? 0;
+    const totalQty = summary
+      ? availableForCartonQty + summaryInCartonQty
+      : item.totalQty ?? availableForCartonQty;
+
+    return {
+      totalQty,
+      inCartonQty,
+      availableForCartonQty,
+    };
+  }
+
   // Compute actual carton counts from real carton table data (not deprecated cartonConfig)
   function getCartonInfo(group: any) {
     const weightKg = parseFloat(group.weightKg || "0");
@@ -378,10 +404,11 @@ export default function StockDetailPage() {
                 <Fragment key={gi}>
                   {group.items.map((item: any, ii: number) => {
                     const weightKg = parseFloat(group.weightKg || "0");
-                    const totalQty = item.totalQty ?? item.availableQty;
-                    const inCartonQty = item.inCartonQty ?? 0;
-                    const availableForCartonQty =
-                      item.availableForCartonQty ?? item.availableQty;
+                    const {
+                      totalQty,
+                      inCartonQty,
+                      availableForCartonQty,
+                    } = getVariantDisplayInventory(item, isLoose);
                     // Build label: "20 KG Loose (Fresh)" or "Loose (Fresh)"
                     let label = isLoose
                       ? (weightKg > 0 ? `${weightKg} KG Loose` : "Loose")
