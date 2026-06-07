@@ -704,6 +704,53 @@ const storeConnectionQueries = {
 // Warehouse Supplier Connections (Warehouse ↔ Warehouse)
 // ────────────────────────────────────────────────────────────────
 
+async function getActiveSupplierWarehouseForBuyer(
+    buyerWarehouseId: string,
+    warehouseKey: string,
+) {
+    const key = warehouseKey.trim();
+    const supplierWarehouse = await db
+        .select({
+            id: user.id,
+            name: user.name,
+            warehouseName: user.warehouseName,
+            warehouseSlug: user.warehouseSlug,
+            warehouseAddress: user.warehouseAddress,
+            phone: user.phoneNumber,
+            image: user.image,
+            connectionId: warehouseWarehouseConnection.id,
+        })
+        .from(user)
+        .innerJoin(
+            warehouseWarehouseConnection,
+            eq(warehouseWarehouseConnection.supplierWarehouseId, user.id),
+        )
+        .where(
+            and(
+                eq(user.role, "warehouse"),
+                or(eq(user.warehouseSlug, key), eq(user.id, key))!,
+                eq(warehouseWarehouseConnection.buyerWarehouseId, buyerWarehouseId),
+                eq(warehouseWarehouseConnection.status, "active"),
+            ),
+        )
+        .limit(1);
+
+    if (supplierWarehouse.length === 0) {
+        throw new ORPCError("FORBIDDEN", {
+            message: "You must be approved by this supplier warehouse first.",
+        });
+    }
+
+    const supplier = supplierWarehouse[0]!;
+    if (supplier.id === buyerWarehouseId) {
+        throw new ORPCError("BAD_REQUEST", {
+            message: "You cannot order from your own warehouse",
+        });
+    }
+
+    return supplier;
+}
+
 const warehouseSupplierConnectionQueries = {
     lookupWarehouseSupplier: warehouseProcedure
         .route({
@@ -969,6 +1016,286 @@ const warehouseSupplierConnectionQueries = {
                     totalCount,
                     totalPages: Math.ceil(totalCount / limit),
                 },
+            };
+        }),
+
+    getWarehouseSupplierProducts: warehouseProcedure
+        .route({
+            method: "GET",
+            path: "/warehouse/supplier-network/products",
+            tags: ["Warehouse"],
+            summary: "Browse approved supplier warehouse catalog",
+        })
+        .input(
+            z.object({
+                warehouseKey: z.string().min(1),
+                search: z.string().optional(),
+                page: z.number().default(1),
+                limit: z.number().default(100),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const buyerWarehouseId = context.session.user.id;
+            const supplier = await getActiveSupplierWarehouseForBuyer(
+                buyerWarehouseId,
+                input.warehouseKey,
+            );
+
+            const page = Math.max(1, input.page);
+            const limit = Math.min(100, Math.max(1, input.limit));
+            const offset = (page - 1) * limit;
+
+            const conditions: SQL[] = [
+                eq(inventory.ownerType, "warehouse"),
+                eq(inventory.ownerId, supplier.id),
+                sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+            ];
+
+            if (input.search?.trim()) {
+                const s = `%${input.search.trim()}%`;
+                conditions.push(
+                    or(
+                        ilike(productTable.name, s),
+                        sql`COALESCE(${productVariant.sku}, '') ILIKE ${s}`,
+                    )!,
+                );
+            }
+
+            const where = and(...conditions);
+
+            const [items, countResult] = await Promise.all([
+                db
+                    .select({
+                        inventoryId: inventory.id,
+                        variantId: inventory.variantId,
+                        availableQty: inventory.availableQty,
+                        inCartonQty: inventory.inCartonQty,
+                        retailPrice: inventory.retailPrice,
+                        productId: productTable.id,
+                        productName: productTable.name,
+                        productImage: productTable.image,
+                        productSize: productTable.size,
+                        categoryName: category.name,
+                        variantUnitLabel: productVariant.unitLabel,
+                        variantWeightKg: productVariant.weightKg,
+                        variantSku: productVariant.sku,
+                        variantPrice: productVariant.price,
+                        variantPackType: productVariant.packType,
+                    })
+                    .from(inventory)
+                    .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                    .innerJoin(productTable, eq(productVariant.productId, productTable.id))
+                    .leftJoin(category, eq(productTable.categoryId, category.id))
+                    .where(where)
+                    .orderBy(desc(inventory.updatedAt))
+                    .limit(limit)
+                    .offset(offset),
+                db
+                    .select({ count: count() })
+                    .from(inventory)
+                    .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                    .innerJoin(productTable, eq(productVariant.productId, productTable.id))
+                    .where(where),
+            ]);
+
+            const products = items.map((item) => {
+                const rp = Number(item.retailPrice || 0);
+                const vp = Number(item.variantPrice || 0);
+                const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
+
+                return {
+                    inventoryId: item.inventoryId,
+                    variantId: item.variantId,
+                    availableQty: item.availableQty,
+                    price,
+                    canOrder: true,
+                    product: {
+                        id: item.productId,
+                        name: item.productName,
+                        image: item.productImage,
+                        size: item.productSize,
+                        categoryName: item.categoryName || "Uncategorized",
+                    },
+                    variant: {
+                        unitLabel: item.variantUnitLabel,
+                        weightKg: item.variantWeightKg,
+                        sku: item.variantSku,
+                        price: item.variantPrice,
+                        packType: item.variantPackType,
+                    },
+                };
+            });
+
+            const totalCount = Number(countResult[0]?.count || 0);
+
+            return {
+                supplier,
+                products,
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
+            };
+        }),
+
+    placeWarehouseSupplierOrder: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/supplier-network/orders",
+            tags: ["Warehouse"],
+            summary: "Place a flat warehouse-to-warehouse supplier order",
+        })
+        .input(
+            z.object({
+                warehouseKey: z.string().min(1),
+                items: z
+                    .array(
+                        z.object({
+                            variantId: z.number().int(),
+                            quantity: z.number().int().min(1),
+                        }),
+                    )
+                    .min(1),
+                shippingName: z.string().min(1),
+                shippingPhone: z.string().min(1),
+                shippingAddress: z.string().min(1),
+                shippingCity: z.string().min(1),
+                shippingArea: z.string().optional(),
+                customerNote: z.string().optional(),
+                paymentMethod: z
+                    .enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
+                    .default("cash_on_delivery"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const buyerWarehouseId = context.session.user.id;
+            const supplier = await getActiveSupplierWarehouseForBuyer(
+                buyerWarehouseId,
+                input.warehouseKey,
+            );
+
+            const requestedQtyByVariant = new Map<number, number>();
+            for (const item of input.items) {
+                requestedQtyByVariant.set(
+                    item.variantId,
+                    (requestedQtyByVariant.get(item.variantId) ?? 0) + item.quantity,
+                );
+            }
+
+            const validatedItems: {
+                variantId: number;
+                quantity: number;
+                unitPrice: string;
+                totalPrice: string;
+                productName: string;
+                productImage: string;
+                productSize: string;
+                productId: number;
+            }[] = [];
+
+            for (const [variantId, quantity] of requestedQtyByVariant) {
+                const inv = await db.query.inventory.findFirst({
+                    where: and(
+                        eq(inventory.ownerType, "warehouse"),
+                        eq(inventory.ownerId, supplier.id),
+                        eq(inventory.variantId, variantId),
+                    ),
+                    with: {
+                        variant: {
+                            with: {
+                                product: {
+                                    columns: { id: true, name: true, image: true, size: true },
+                                },
+                            },
+                        },
+                    },
+                });
+
+                if (!inv) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: `Variant ${variantId} is not available in this supplier warehouse`,
+                    });
+                }
+
+                const availableQty = Number(inv.availableQty || 0);
+                if (availableQty < quantity) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Insufficient stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${quantity}`,
+                    });
+                }
+
+                const rp = Number(inv.retailPrice || 0);
+                const vp = Number(inv.variant?.price || 0);
+                const unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
+                const totalPrice = (Number(unitPrice) * quantity).toFixed(2);
+
+                validatedItems.push({
+                    variantId,
+                    quantity,
+                    unitPrice,
+                    totalPrice,
+                    productName: inv.variant?.product?.name || "Unknown",
+                    productImage: inv.variant?.product?.image || "",
+                    productSize: inv.variant?.unitLabel || inv.variant?.product?.size || "",
+                    productId: inv.variant?.product?.id || 0,
+                });
+            }
+
+            const subtotal = validatedItems.reduce((sum, item) => sum + Number(item.totalPrice), 0);
+            const orderNumber = `W2W-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+            const result = await db.transaction(async (tx) => {
+                const [newOrder] = await tx
+                    .insert(order)
+                    .values({
+                        orderNumber,
+                        userId: buyerWarehouseId,
+                        orderType: "b2b",
+                        orderSource: "direct",
+                        warehouseId: supplier.id,
+                        subtotal: subtotal.toFixed(2),
+                        total: subtotal.toFixed(2),
+                        status: "pending",
+                        paymentStatus: "pending",
+                        paymentMethod: input.paymentMethod,
+                        shippingName: input.shippingName,
+                        shippingPhone: input.shippingPhone,
+                        shippingAddress: input.shippingAddress,
+                        shippingCity: input.shippingCity,
+                        shippingArea: input.shippingArea || null,
+                        customerNote: input.customerNote || null,
+                    })
+                    .returning();
+
+                for (const item of validatedItems) {
+                    await tx.insert(orderItem).values({
+                        orderId: newOrder!.id,
+                        productId: item.productId,
+                        variantId: item.variantId,
+                        productName: item.productName,
+                        productImage: item.productImage,
+                        productSize: item.productSize,
+                        quantity: item.quantity,
+                        unitPrice: item.unitPrice,
+                        totalPrice: item.totalPrice,
+                        conversionStatus: "pending",
+                    });
+                }
+
+                await tx
+                    .update(warehouseWarehouseConnection)
+                    .set({ lastOrderedAt: new Date() })
+                    .where(eq(warehouseWarehouseConnection.id, supplier.connectionId));
+
+                return newOrder!;
+            });
+
+            return {
+                success: true,
+                order: result,
+                message: `Order ${orderNumber} placed successfully to ${supplier.warehouseName || supplier.name}`,
             };
         }),
 
@@ -1504,6 +1831,7 @@ const orderQueries = {
                         ilike(order.shippingPhone, term),
                         ilike(user.name, term),
                         ilike(user.shopName, term),
+                        ilike(user.warehouseName, term),
                     )!,
                 );
             }
@@ -1536,6 +1864,7 @@ const orderQueries = {
                         buyerId: order.userId,
                         buyerName: user.name,
                         buyerShopName: user.shopName,
+                        buyerWarehouseName: user.warehouseName,
                     })
                     .from(order)
                     .leftJoin(user, eq(order.userId, user.id))
@@ -1636,7 +1965,11 @@ const orderQueries = {
 
                     return {
                         ...o,
-                        customerName: o.buyerShopName || o.buyerName || o.shippingName,
+                        customerName:
+                            o.buyerWarehouseName
+                            || o.buyerShopName
+                            || o.buyerName
+                            || o.shippingName,
                         itemCount: itemCounts.get(o.id) ?? 0,
                         firstItemName: firstItems.get(o.id) ?? null,
                         requiresBuyerAcceptance:
@@ -1699,6 +2032,8 @@ const orderQueries = {
                             phoneNumber: true,
                             shopName: true,
                             shopAddress: true,
+                            warehouseName: true,
+                            warehouseAddress: true,
                         },
                     },
                     items: {
@@ -1836,7 +2171,8 @@ const orderQueries = {
                 order: {
                     ...orderData,
                     customerName:
-                        orderData.user?.shopName
+                        orderData.user?.warehouseName
+                        || orderData.user?.shopName
                         || orderData.user?.name
                         || orderData.shippingName,
                     customerPhone:
@@ -2126,7 +2462,7 @@ const orderQueries = {
                 && !existingOrder.modificationRejectedAt
             ) {
                 throw new ORPCError("BAD_REQUEST", {
-                    message: "Retailer must accept the modified quantities before dispatch",
+                    message: "Buyer must accept the modified quantities before dispatch",
                 });
             }
 
@@ -2966,7 +3302,11 @@ const orderQueries = {
             const limit = input.limit;
             const offset = (page - 1) * limit;
 
-            const conditions: SQL[] = [eq(order.userId, userId)];
+            const conditions: SQL[] = [
+                eq(order.userId, userId),
+                eq(order.orderType, "b2b"),
+                sql`${order.warehouseId} IS NOT NULL`,
+            ];
             if (input.status) conditions.push(eq(order.status, input.status));
 
             const where = and(...conditions);
@@ -2983,6 +3323,8 @@ const orderQueries = {
                                 quantity: true,
                                 unitPrice: true,
                                 totalPrice: true,
+                                modifiedQty: true,
+                                modifiedUnitPrice: true,
                             },
                         },
                     },
@@ -2997,15 +3339,451 @@ const orderQueries = {
             ]);
 
             const totalCount = countResult[0]?.count || 0;
+            const supplierIds = [
+                ...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean)),
+            ];
+            const supplierMap = new Map<string, { name: string; phone: string | null }>();
+
+            if (supplierIds.length > 0) {
+                const suppliers = await db
+                    .select({
+                        id: user.id,
+                        name: user.name,
+                        warehouseName: user.warehouseName,
+                        phone: user.phoneNumber,
+                    })
+                    .from(user)
+                    .where(inArray(user.id, supplierIds as string[]));
+
+                for (const supplier of suppliers) {
+                    supplierMap.set(supplier.id, {
+                        name: supplier.warehouseName || supplier.name || "Unknown Warehouse",
+                        phone: supplier.phone ?? null,
+                    });
+                }
+            }
 
             return {
-                orders,
+                orders: orders.map((o: any) => ({
+                    ...o,
+                    supplierWarehouseName:
+                        supplierMap.get(o.warehouseId)?.name || "Unknown Warehouse",
+                    supplierWarehousePhone:
+                        supplierMap.get(o.warehouseId)?.phone || null,
+                    requiresBuyerAcceptance:
+                        !!o.modifiedByWarehouseAt
+                        && !o.modificationAcceptedAt
+                        && !o.modificationRejectedAt
+                        && o.status !== "cancelled",
+                })),
                 pagination: {
                     page,
                     limit,
                     totalCount,
                     totalPages: Math.ceil(totalCount / limit),
                 },
+            };
+        }),
+
+    getMyOrderDetail: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/my-order-detail",
+            tags: ["Warehouse"],
+            summary: "Get warehouse buyer order detail",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const result = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.userId, userId),
+                    eq(order.orderType, "b2b"),
+                ),
+                with: {
+                    items: {
+                        with: {
+                            product: {
+                                columns: { id: true, name: true, image: true },
+                            },
+                            variant: {
+                                columns: {
+                                    id: true,
+                                    sku: true,
+                                    weightKg: true,
+                                    unitLabel: true,
+                                    packType: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            if (!result) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            let supplierInfo: {
+                name: string;
+                warehouseName: string | null;
+                phone: string | null;
+                address: string | null;
+            } | null = null;
+
+            if (result.warehouseId) {
+                const supplier = await db
+                    .select({
+                        name: user.name,
+                        warehouseName: user.warehouseName,
+                        phone: user.phoneNumber,
+                        address: user.warehouseAddress,
+                    })
+                    .from(user)
+                    .where(eq(user.id, result.warehouseId))
+                    .limit(1);
+
+                supplierInfo = supplier[0] ?? null;
+            }
+
+            const timeline = [
+                { step: "Placed", date: result.createdAt, completed: true },
+                {
+                    step: "Confirmed",
+                    date: result.confirmedAt,
+                    completed: !!result.confirmedAt,
+                },
+                {
+                    step: "Modified",
+                    date: result.modifiedByWarehouseAt,
+                    completed: !!result.modifiedByWarehouseAt,
+                    isModification: true,
+                },
+                {
+                    step: "Processing",
+                    date: result.processingStartedAt,
+                    completed:
+                        !!result.processingStartedAt
+                        || result.status === "processing"
+                        || result.status === "delivered",
+                },
+                {
+                    step: "Ready",
+                    date: result.readyAt,
+                    completed: !!result.readyAt,
+                },
+                {
+                    step: "Delivered",
+                    date: result.deliveredAt,
+                    completed: !!result.deliveredAt || result.status === "delivered",
+                },
+                {
+                    step: "Received",
+                    date: result.receivedAt,
+                    completed: !!result.receivedAt,
+                },
+            ].filter((t) => !t.isModification || t.completed);
+
+            const hasModifications = result.items.some(
+                (item: any) => item.modifiedQty !== null || item.modifiedUnitPrice !== null,
+            );
+
+            return {
+                order: {
+                    ...result,
+                    supplierWarehouseName:
+                        supplierInfo?.warehouseName || supplierInfo?.name || "Unknown Warehouse",
+                    supplierWarehousePhone: supplierInfo?.phone || null,
+                    supplierWarehouseAddress: supplierInfo?.address || null,
+                    requiresBuyerAcceptance:
+                        !!result.modifiedByWarehouseAt
+                        && !result.modificationAcceptedAt
+                        && !result.modificationRejectedAt
+                        && result.status !== "cancelled",
+                },
+                timeline,
+                hasModifications,
+                delivery: {
+                    trackingId: result.trackingId,
+                    riderName: result.riderName,
+                    riderPhone: result.riderPhone,
+                },
+            };
+        }),
+
+    receiveWarehouseSupplierOrder: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/my-orders/receive",
+            tags: ["Warehouse"],
+            summary: "Mark warehouse supplier order as received",
+        })
+        .input(
+            z.object({
+                orderId: z.number(),
+                receivedItems: z
+                    .array(
+                        z.object({
+                            itemId: z.number(),
+                            receivedQty: z.number().int().min(0),
+                        }),
+                    )
+                    .optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.userId, userId),
+                    eq(order.orderType, "b2b"),
+                ),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!["processing", "delivered"].includes(existingOrder.status)) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot receive an order with status '${existingOrder.status}'`,
+                });
+            }
+
+            if (existingOrder.receivedAt) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Order has already been received",
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                if (input.receivedItems && input.receivedItems.length > 0) {
+                    for (const receivedItem of input.receivedItems) {
+                        const existingItem = existingOrder.items.find(
+                            (item) => item.id === receivedItem.itemId,
+                        );
+                        if (!existingItem) continue;
+
+                        const effectiveQty =
+                            existingItem.modifiedQty ?? existingItem.quantity;
+                        if (receivedItem.receivedQty !== effectiveQty) {
+                            await tx
+                                .update(orderItem)
+                                .set({ modifiedQty: receivedItem.receivedQty })
+                                .where(eq(orderItem.id, receivedItem.itemId));
+                        }
+                    }
+                }
+
+                await tx
+                    .update(order)
+                    .set({
+                        status: "delivered",
+                        deliveredAt: existingOrder.deliveredAt || new Date(),
+                        receivedAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+
+                await convertB2bOrderToRetailInventory(tx, input.orderId);
+            });
+
+            return {
+                success: true,
+                message: `Order ${existingOrder.orderNumber} received successfully`,
+            };
+        }),
+
+    cancelWarehouseSupplierOrder: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/my-orders/cancel",
+            tags: ["Warehouse"],
+            summary: "Cancel a warehouse supplier order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.userId, userId),
+                    eq(order.orderType, "b2b"),
+                ),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!["pending", "confirmed"].includes(existingOrder.status)) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Cannot cancel an order with status '${existingOrder.status}'`,
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                if (existingOrder.warehouseId && existingOrder.status === "confirmed") {
+                    for (const item of existingOrder.items) {
+                        if (!item.variantId) continue;
+                        const qty = item.modifiedQty ?? item.quantity;
+                        await tx
+                            .update(inventory)
+                            .set({
+                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${qty}`,
+                                reservedQty: sql`GREATEST(CAST(${inventory.reservedQty} AS numeric) - ${qty}, 0)`,
+                            })
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, existingOrder.warehouseId!),
+                                    eq(inventory.variantId, item.variantId),
+                                ),
+                            );
+                    }
+                }
+
+                await tx
+                    .update(order)
+                    .set({
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+            });
+
+            return {
+                success: true,
+                message: `Order ${existingOrder.orderNumber} cancelled`,
+            };
+        }),
+
+    acceptWarehouseSupplierModification: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/my-orders/accept-modification",
+            tags: ["Warehouse"],
+            summary: "Accept supplier warehouse order modifications",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.userId, userId),
+                    eq(order.orderType, "b2b"),
+                ),
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!existingOrder.modifiedByWarehouseAt) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "This order has no modifications to accept",
+                });
+            }
+
+            if (existingOrder.modificationAcceptedAt || existingOrder.modificationRejectedAt) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Modification already resolved",
+                });
+            }
+
+            await db
+                .update(order)
+                .set({
+                    modificationAcceptedAt: new Date(),
+                    confirmedAt: existingOrder.confirmedAt || new Date(),
+                    status: "confirmed",
+                })
+                .where(eq(order.id, input.orderId));
+
+            return {
+                success: true,
+                message: `Modifications accepted for ${existingOrder.orderNumber}`,
+            };
+        }),
+
+    rejectWarehouseSupplierModification: warehouseProcedure
+        .route({
+            method: "POST",
+            path: "/warehouse/my-orders/reject-modification",
+            tags: ["Warehouse"],
+            summary: "Reject supplier warehouse order modifications",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const existingOrder = await db.query.order.findFirst({
+                where: and(
+                    eq(order.id, input.orderId),
+                    eq(order.userId, userId),
+                    eq(order.orderType, "b2b"),
+                ),
+                with: { items: true },
+            });
+
+            if (!existingOrder) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+            }
+
+            if (!existingOrder.modifiedByWarehouseAt) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "This order has no modifications to reject",
+                });
+            }
+
+            if (existingOrder.modificationAcceptedAt || existingOrder.modificationRejectedAt) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Modification already resolved",
+                });
+            }
+
+            await db.transaction(async (tx) => {
+                if (existingOrder.warehouseId) {
+                    for (const item of existingOrder.items) {
+                        if (!item.variantId) continue;
+                        const qty = item.modifiedQty ?? item.quantity;
+                        await tx
+                            .update(inventory)
+                            .set({
+                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${qty}`,
+                                reservedQty: sql`GREATEST(CAST(${inventory.reservedQty} AS numeric) - ${qty}, 0)`,
+                            })
+                            .where(
+                                and(
+                                    eq(inventory.ownerType, "warehouse"),
+                                    eq(inventory.ownerId, existingOrder.warehouseId!),
+                                    eq(inventory.variantId, item.variantId),
+                                ),
+                            );
+                    }
+                }
+
+                await tx
+                    .update(order)
+                    .set({
+                        modificationRejectedAt: new Date(),
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                    })
+                    .where(eq(order.id, input.orderId));
+            });
+
+            return {
+                success: true,
+                message: `Modifications rejected, order ${existingOrder.orderNumber} cancelled`,
             };
         }),
 };

@@ -17,9 +17,8 @@
  * at the application level if needed in the future.
  */
 
-import {and, eq} from "drizzle-orm";
-import {carton, inventory, order, orderItem, product, productVariant, variantConversionMap,} from "@bikalpo-project/db/schema";
-import {desc} from "drizzle-orm";
+import {carton, inventory, order, orderItem, product, productVariant, user, variantConversionMap,} from "@bikalpo-project/db/schema";
+import {and, desc, eq} from "drizzle-orm";
 
 /**
  * Convert B2B order items to retail inventory upon delivery.
@@ -69,6 +68,20 @@ export async function convertB2bOrderToRetailInventory(
     }
 
     console.log(`[B2B-CONVERT] Converting ${items.length}/${allItems.length} items (${allItems.length - items.length} already converted)`);
+
+    const buyer = await tx.query.user.findFirst({
+        where: eq(user.id, orderData.userId),
+        columns: { id: true, role: true },
+    });
+
+    if (buyer?.role === "warehouse") {
+        await transferB2bOrderToWarehouseInventory(tx, {
+            buyerWarehouseId: orderData.userId,
+            supplierWarehouseId: sourceOwnerId,
+            items,
+        });
+        return;
+    }
 
     // 3. For each item, find the TRADE variant → convert → update inventory
     for (const item of items) {
@@ -377,4 +390,116 @@ export async function convertB2bOrderToRetailInventory(
             console.warn(`[B2B-CONVERT] Could not update conversionStatus for item ${item.id}:`, e);
         }
     }
+}
+
+async function transferB2bOrderToWarehouseInventory(
+    tx: any,
+    input: {
+        buyerWarehouseId: string;
+        supplierWarehouseId: string;
+        items: any[];
+    },
+) {
+    console.log(
+        `[B2B-W2W] Starting flat warehouse transfer from ${input.supplierWarehouseId} to ${input.buyerWarehouseId}`,
+    );
+
+    for (const item of input.items) {
+        if (!item.variantId) {
+            await markItemTransferFailed(tx, item.id, "Missing variant for warehouse transfer");
+            continue;
+        }
+
+        const transferQty = Number(item.modifiedQty ?? item.quantity);
+        if (!Number.isFinite(transferQty) || transferQty <= 0) {
+            await markItemTransferFailed(tx, item.id, "Invalid transfer quantity");
+            continue;
+        }
+
+        const sourceInv = await tx.query.inventory.findFirst({
+            where: and(
+                eq(inventory.ownerType, "warehouse"),
+                eq(inventory.ownerId, input.supplierWarehouseId),
+                eq(inventory.variantId, item.variantId),
+            ),
+        });
+
+        if (!sourceInv) {
+            await markItemTransferFailed(tx, item.id, "Supplier warehouse inventory not found");
+            continue;
+        }
+
+        const reservedQty = Number(sourceInv.reservedQty || 0);
+        const availableQty = Number(sourceInv.availableQty || 0);
+        const newReservedQty = Math.max(0, reservedQty - transferQty);
+        const newSourceQty =
+            reservedQty >= transferQty
+                ? availableQty
+                : Math.max(0, availableQty - (transferQty - reservedQty));
+
+        await tx
+            .update(inventory)
+            .set({
+                availableQty: newSourceQty.toFixed(2),
+                reservedQty: newReservedQty.toFixed(2),
+                updatedAt: new Date(),
+            })
+            .where(eq(inventory.id, sourceInv.id));
+
+        const buyerInv = await tx.query.inventory.findFirst({
+            where: and(
+                eq(inventory.ownerType, "warehouse"),
+                eq(inventory.ownerId, input.buyerWarehouseId),
+                eq(inventory.variantId, item.variantId),
+            ),
+        });
+
+        if (buyerInv) {
+            await tx
+                .update(inventory)
+                .set({
+                    availableQty: (
+                        Number(buyerInv.availableQty || 0) + transferQty
+                    ).toFixed(2),
+                    updatedAt: new Date(),
+                })
+                .where(eq(inventory.id, buyerInv.id));
+        } else {
+            const initialPrice =
+                sourceInv.retailPrice
+                    ? String(sourceInv.retailPrice)
+                    : item.unitPrice
+                        ? String(item.unitPrice)
+                        : null;
+
+            await tx.insert(inventory).values({
+                ownerType: "warehouse" as const,
+                ownerId: input.buyerWarehouseId,
+                variantId: item.variantId,
+                availableQty: transferQty.toFixed(2),
+                reservedQty: "0",
+                ...(initialPrice ? { retailPrice: initialPrice } : {}),
+            });
+        }
+
+        await tx
+            .update(orderItem)
+            .set({
+                conversionStatus: "converted",
+                convertedQty: transferQty.toFixed(2),
+            })
+            .where(eq(orderItem.id, item.id));
+
+        console.log(
+            `[B2B-W2W] Transferred variant=${item.variantId}, qty=${transferQty}, item=${item.id}`,
+        );
+    }
+}
+
+async function markItemTransferFailed(tx: any, itemId: number, reason: string) {
+    console.warn(`[B2B-W2W] ${reason} for item ${itemId}`);
+    await tx
+        .update(orderItem)
+        .set({ conversionStatus: "failed" })
+        .where(eq(orderItem.id, itemId));
 }

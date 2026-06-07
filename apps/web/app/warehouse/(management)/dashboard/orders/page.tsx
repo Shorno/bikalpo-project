@@ -11,7 +11,9 @@ import {
   Truck,
   XCircle,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { orpc } from "@/utils/orpc";
 
 const statusConfig: Record<
@@ -73,26 +75,34 @@ export default function WarehouseMyOrdersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Orders</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Supplier Orders</h1>
           <p className="text-sm text-muted-foreground">
             Orders you&apos;ve placed with other warehouses
           </p>
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value as any);
-            setPage(1);
-          }}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="all">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="processing">Processing</option>
-          <option value="delivered">Delivered</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <Button asChild>
+            <Link href="/warehouse/dashboard/order-from-supplier">
+              <ShoppingCartIcon className="mr-2 h-4 w-4" />
+              New Order
+            </Link>
+          </Button>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as any);
+              setPage(1);
+            }}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="all">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="processing">Processing</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
       </div>
 
       {isLoading ? (
@@ -115,6 +125,12 @@ export default function WarehouseMyOrdersPage() {
               ? "Try changing the status filter"
               : "Orders you place from other warehouses will appear here."}
           </p>
+          <Button asChild className="mt-4">
+            <Link href="/warehouse/dashboard/order-from-supplier">
+              <ShoppingCartIcon className="mr-2 h-4 w-4" />
+              Create Supplier Order
+            </Link>
+          </Button>
         </div>
       ) : (
         <>
@@ -124,6 +140,9 @@ export default function WarehouseMyOrdersPage() {
                 <tr className="border-b bg-gray-50/50">
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                     Order #
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Supplier
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                     Items
@@ -137,6 +156,9 @@ export default function WarehouseMyOrdersPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                     Date
                   </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -149,6 +171,21 @@ export default function WarehouseMyOrdersPage() {
                     >
                       <td className="px-4 py-3 font-mono text-sm font-medium">
                         {o.orderNumber}
+                        {o.requiresBuyerAcceptance ? (
+                          <div className="mt-1 text-[10px] font-sans text-orange-600">
+                            Approval needed
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <p className="font-medium">
+                          {o.supplierWarehouseName || "Unknown Warehouse"}
+                        </p>
+                        {o.supplierWarehousePhone ? (
+                          <p className="text-xs text-gray-400">
+                            {o.supplierWarehousePhone}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -164,6 +201,7 @@ export default function WarehouseMyOrdersPage() {
                             className="text-xs text-gray-400 ml-6 truncate max-w-[200px]"
                           >
                             {item.productName} × {item.quantity}
+                            {item.modifiedQty !== null ? ` -> ${item.modifiedQty}` : ""}
                           </p>
                         ))}
                         {(o.items?.length || 0) > 2 && (
@@ -188,6 +226,13 @@ export default function WarehouseMyOrdersPage() {
                           month: "short",
                           year: "numeric",
                         })}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/warehouse/dashboard/orders/${o.id}`}>
+                            View
+                          </Link>
+                        </Button>
                       </td>
                     </tr>
                   );

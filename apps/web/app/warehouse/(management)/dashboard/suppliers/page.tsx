@@ -15,6 +15,7 @@ import {
   Phone,
   Plus,
   Search,
+  ShoppingCart,
   Star,
   Trash2,
   TrendingUp,
@@ -280,20 +281,32 @@ function WarehouseSuppliersPanel() {
                           Cancel
                         </Button>
                       ) : supplier.status === "active" ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={disconnectMutation.isPending}
-                          onClick={() => {
-                            if (confirm("Disconnect this warehouse supplier?")) {
-                              disconnectMutation.mutate({
-                                connectionId: supplier.connectionId,
-                              });
-                            }
-                          }}
-                        >
-                          Disconnect
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button asChild size="sm">
+                            <Link
+                              href={`/warehouse/dashboard/order-from-supplier?warehouse=${encodeURIComponent(
+                                supplier.warehouseSlug || supplier.warehouseId,
+                              )}`}
+                            >
+                              <ShoppingCart className="w-3.5 h-3.5 mr-1" />
+                              Order
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={disconnectMutation.isPending}
+                            onClick={() => {
+                              if (confirm("Disconnect this warehouse supplier?")) {
+                                disconnectMutation.mutate({
+                                  connectionId: supplier.connectionId,
+                                });
+                              }
+                            }}
+                          >
+                            Disconnect
+                          </Button>
+                        </div>
                       ) : (
                         <Button variant="outline" size="sm" disabled>
                           Request Denied
