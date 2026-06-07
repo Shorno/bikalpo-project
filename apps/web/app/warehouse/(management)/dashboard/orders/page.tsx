@@ -82,7 +82,7 @@ export default function WarehouseMyOrdersPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button asChild>
-            <Link href="/warehouse/dashboard/order-from-supplier">
+            <Link href="/warehouse/dashboard/suppliers">
               <ShoppingCartIcon className="mr-2 h-4 w-4" />
               New Order
             </Link>
@@ -126,7 +126,7 @@ export default function WarehouseMyOrdersPage() {
               : "Orders you place from other warehouses will appear here."}
           </p>
           <Button asChild className="mt-4">
-            <Link href="/warehouse/dashboard/order-from-supplier">
+            <Link href="/warehouse/dashboard/suppliers">
               <ShoppingCartIcon className="mr-2 h-4 w-4" />
               Create Supplier Order
             </Link>

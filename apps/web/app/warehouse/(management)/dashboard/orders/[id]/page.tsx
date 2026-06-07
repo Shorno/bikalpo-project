@@ -14,6 +14,7 @@ import {
   Truck,
   XCircle,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -298,8 +299,19 @@ export default function WarehouseSupplierOrderDetailPage() {
                         <tr key={item.id} className="border-b last:border-b-0">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted/30">
-                                <Package className="h-5 w-5 text-muted-foreground/50" />
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/30">
+                                {item.product?.image ? (
+                                  <Image
+                                    src={item.product.image}
+                                    alt={item.productName}
+                                    width={40}
+                                    height={40}
+                                    unoptimized
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <Package className="h-5 w-5 text-muted-foreground/50" />
+                                )}
                               </div>
                               <div>
                                 <p className="text-sm font-medium">{item.productName}</p>

@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
 
@@ -127,6 +128,14 @@ export default function WarehouseOrderFromSupplierPage() {
       supplier.warehouseSlug === selectedKey || supplier.warehouseId === selectedKey,
   );
 
+  useEffect(() => {
+    if (!selectedKey && suppliers.length > 0) {
+      const firstSupplier = suppliers[0];
+      const key = firstSupplier.warehouseSlug || firstSupplier.warehouseId;
+      setSelectedKey(key);
+    }
+  }, [suppliers, selectedKey]);
+
   const groupedProducts = useMemo(() => {
     const groups = new Map<string, SupplierProduct[]>();
     for (const item of products) {
@@ -200,10 +209,10 @@ export default function WarehouseOrderFromSupplierPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 tracking-tight">
             <Warehouse className="h-6 w-6 text-emerald-600" />
             Order from Supplier
           </h1>
@@ -211,7 +220,7 @@ export default function WarehouseOrderFromSupplierPage() {
             Place flat inventory orders from approved warehouse suppliers.
           </p>
         </div>
-        <Button asChild variant="outline">
+        <Button asChild variant="outline" className="shadow-xs">
           <Link href="/warehouse/dashboard/orders">
             <ShoppingCart className="mr-2 h-4 w-4" />
             Supplier Orders
@@ -219,195 +228,188 @@ export default function WarehouseOrderFromSupplierPage() {
         </Button>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[280px_1fr_360px]">
-        <Card>
-          <CardContent className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Suppliers</h2>
-              <Badge variant="outline">{suppliers.length}</Badge>
-            </div>
-            {suppliersQuery.isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <Skeleton key={index} className="h-14 w-full" />
-                ))}
-              </div>
-            ) : suppliers.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-5 text-center">
-                <Warehouse className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
-                <p className="text-sm font-medium">No approved suppliers</p>
-                <Button asChild variant="link" size="sm" className="mt-1">
-                  <Link href="/warehouse/dashboard/suppliers">Request access</Link>
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {suppliers.map((supplier: any) => {
-                  const key = supplier.warehouseSlug || supplier.warehouseId;
-                  const active = selectedKey === key || selectedKey === supplier.warehouseId;
-                  return (
-                    <button
-                      key={supplier.connectionId}
-                      type="button"
-                      onClick={() => selectSupplier(key)}
-                      className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                        active
-                          ? "border-emerald-300 bg-emerald-50"
-                          : "border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40"
-                      }`}
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        {/* Catalog Section */}
+        <div className="space-y-5">
+          {/* Header Panel without card wrapper borders to remove nested card feel */}
+          <div className="bg-white border border-gray-100/80 rounded-xl p-4 shadow-xs">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                {suppliers.length > 1 ? (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="supplier-select" className="text-sm font-semibold text-gray-700 shrink-0">
+                      Supplier:
+                    </Label>
+                    <select
+                      id="supplier-select"
+                      value={selectedKey}
+                      onChange={(e) => selectSupplier(e.target.value)}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring max-w-[200px]"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium">
-                          {supplier.warehouseName || supplier.name || "Unnamed Warehouse"}
-                        </span>
-                        {active ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : null}
-                      </div>
-                      <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                        {supplier.warehouseSlug || supplier.warehouseId}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {supplier.productCount} products
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold">
+                      {suppliers.map((supplier: any) => {
+                        const key = supplier.warehouseSlug || supplier.warehouseId;
+                        return (
+                          <option key={supplier.connectionId} value={key}>
+                            {supplier.warehouseName || supplier.name || "Unnamed Warehouse"}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                ) : (
+                  <h2 className="text-sm font-semibold text-gray-800 truncate">
                     {selectedSupplier
                       ? selectedSupplier.warehouseName || selectedSupplier.name
                       : productsQuery.data?.supplier?.warehouseName || "Supplier Catalog"}
                   </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Same variant and same quantity will transfer on delivery.
-                  </p>
-                </div>
-                <div className="relative w-full sm:w-72">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search products or SKU"
-                    className="pl-9"
-                    disabled={!selectedKey}
-                  />
-                </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Same variant and same quantity will transfer on delivery.
+                </p>
               </div>
-            </CardContent>
-          </Card>
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search products or SKU"
+                  className="pl-9 bg-gray-50/30"
+                  disabled={!selectedKey}
+                />
+              </div>
+            </div>
+          </div>
 
           {!selectedKey ? (
-            <div className="rounded-lg border border-dashed bg-muted/20 py-20 text-center">
-              <Warehouse className="mx-auto mb-3 h-12 w-12 text-muted-foreground/30" />
-              <p className="font-medium">Select an approved supplier</p>
+            <div className="rounded-xl border border-dashed border-gray-200 bg-muted/10 py-20 text-center shadow-2xs">
+              <Warehouse className="mx-auto mb-3 h-12 w-12 text-muted-foreground/25" />
+              <p className="font-medium text-gray-500">Select an approved supplier</p>
             </div>
           ) : productsQuery.isLoading ? (
             <div className="grid gap-3 md:grid-cols-2">
               {Array.from({ length: 8 }).map((_, index) => (
-                <Skeleton key={index} className="h-32 w-full" />
+                <Skeleton key={index} className="h-32 w-full rounded-xl" />
               ))}
             </div>
           ) : productsQuery.isError ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 py-16 text-center">
+            <div className="rounded-xl border border-red-100 bg-red-50/50 py-16 text-center">
               <AlertCircle className="mx-auto mb-2 h-9 w-9 text-red-400" />
               <p className="font-medium text-red-700">Failed to load supplier catalog</p>
             </div>
           ) : products.length === 0 ? (
-            <div className="rounded-lg border bg-white py-16 text-center">
-              <Package className="mx-auto mb-2 h-10 w-10 text-muted-foreground/30" />
-              <p className="font-medium">No products found</p>
+            <div className="rounded-xl border border-gray-100 bg-white py-16 text-center shadow-2xs">
+              <Package className="mx-auto mb-2 h-10 w-10 text-muted-foreground/25" />
+              <p className="font-medium text-gray-500">No products found</p>
             </div>
           ) : (
             groupedProducts.map(([categoryName, items]) => (
               <section key={categoryName} className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-gray-700">{categoryName}</h3>
-                  <div className="h-px flex-1 bg-gray-200" />
-                  <span className="text-xs text-muted-foreground">{items.length}</span>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">{categoryName}</h3>
+                  <div className="h-px flex-1 bg-gray-200/60" />
+                  <span className="text-xs font-semibold text-muted-foreground bg-gray-100 px-2 py-0.5 rounded-full">{items.length}</span>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2">
                   {items.map((item) => {
                     const inCart = cart.find(
                       (cartItem) => cartItem.variantId === item.variantId,
                     );
                     return (
-                      <Card key={item.variantId}>
-                        <CardContent className="flex gap-3 p-3">
-                          <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/30">
-                            {item.product.image ? (
-                              <Image
-                                src={item.product.image}
-                                alt={item.product.name}
-                                width={80}
-                                height={80}
-                                unoptimized
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <Package className="h-8 w-8 text-muted-foreground/35" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
+                      <div
+                        key={item.variantId}
+                        className="flex gap-3 p-3.5 rounded-xl border border-gray-100 bg-white shadow-2xs hover:shadow-xs hover:border-gray-200/80 transition-all duration-200"
+                      >
+                        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-muted/20">
+                          {item.product.image ? (
+                            <Image
+                              src={item.product.image}
+                              alt={item.product.name}
+                              width={80}
+                              height={80}
+                              unoptimized
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <Package className="h-8 w-8 text-muted-foreground/30" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 flex flex-col justify-between">
+                          <div className="min-w-0">
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold">
-                                  {item.product.name}
-                                </p>
-                                <p className="mt-0.5 text-xs text-muted-foreground">
-                                  {item.variant.unitLabel || item.product.size || "Unit"}
-                                  {item.variant.sku ? ` / ${item.variant.sku}` : ""}
-                                </p>
-                              </div>
-                              <Badge variant="outline" className="shrink-0">
+                              <p className="truncate text-sm font-semibold text-gray-800">
+                                {item.product.name}
+                              </p>
+                              <Badge variant="outline" className="shrink-0 font-medium text-gray-600 bg-gray-50/50">
                                 {Number(item.availableQty).toLocaleString("en-BD")}
                               </Badge>
                             </div>
-                            <div className="mt-3 flex items-center justify-between gap-2">
-                              <span className="text-sm font-bold">
-                                BDT {Number(item.price).toLocaleString("en-BD")}
-                              </span>
-                              {inCart ? (
-                                <div className="flex items-center gap-1">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => updateQuantity(item.variantId, -1)}
-                                  >
-                                    <Minus className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <span className="w-8 text-center text-sm font-semibold">
-                                    {inCart.quantity}
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => updateQuantity(item.variantId, 1)}
-                                  >
-                                    <Plus className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <Button type="button" size="sm" onClick={() => addToCart(item)}>
-                                  <Plus className="mr-1 h-3.5 w-3.5" />
-                                  Add
-                                </Button>
-                              )}
-                            </div>
+                            <p className="mt-0.5 text-xs text-muted-foreground truncate">
+                              {item.variant.unitLabel || item.product.size || "Unit"}
+                              {item.variant.sku ? ` / ${item.variant.sku}` : ""}
+                            </p>
                           </div>
-                        </CardContent>
-                      </Card>
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <span className="text-sm font-bold text-gray-900">
+                              BDT {Number(item.price).toLocaleString("en-BD")}
+                            </span>
+                            {inCart ? (
+                              <div className="flex items-center gap-1 bg-gray-50 border border-gray-200/60 rounded-lg p-0.5">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-md hover:bg-white hover:shadow-2xs text-gray-600"
+                                  onClick={() => updateQuantity(item.variantId, -1)}
+                                >
+                                  <Minus className="h-3.5 w-3.5" />
+                                </Button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={Number(item.availableQty || 0)}
+                                  defaultValue={inCart.quantity}
+                                  key={`${item.variantId}-${inCart.quantity}`}
+                                  onBlur={(event) => {
+                                    const parsed = parseInt(event.target.value, 10);
+                                    if (!isNaN(parsed)) {
+                                      const maxQty = Number(item.availableQty || 0);
+                                      const nextQty = Math.max(1, Math.min(maxQty, parsed));
+                                      updateQuantity(item.variantId, nextQty - inCart.quantity);
+                                    } else {
+                                      event.target.value = String(inCart.quantity);
+                                    }
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.currentTarget.blur();
+                                    }
+                                  }}
+                                  className="w-10 text-center text-sm font-semibold bg-transparent focus:outline-none focus:ring-0 border-none p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-md hover:bg-white hover:shadow-2xs text-gray-600"
+                                  onClick={() => updateQuantity(item.variantId, 1)}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => addToCart(item)}
+                                className="shadow-2xs h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white"
+                              >
+                                <Plus className="mr-1 h-3.5 w-3.5" />
+                                Add
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -416,26 +418,40 @@ export default function WarehouseOrderFromSupplierPage() {
           )}
         </div>
 
-        <Card className="h-fit">
-          <CardContent className="space-y-4 p-4">
+        {/* Cart Panel */}
+        <Card className="h-fit sticky top-6 shadow-xs border-gray-100/80 bg-white">
+          <CardContent className="space-y-5 p-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Order Cart</h2>
-              <Badge variant="outline">{cartCount} units</Badge>
+              <h2 className="text-sm font-semibold text-gray-700">Order Cart</h2>
+              <div className="flex items-center gap-2">
+                {cart.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCart([])}
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-red-600 hover:bg-red-50/50 rounded-md transition-colors"
+                  >
+                    Clear
+                  </Button>
+                )}
+                <Badge variant="outline" className="font-semibold">{cartCount} units</Badge>
+              </div>
             </div>
 
             {cart.length === 0 ? (
-              <div className="rounded-lg border border-dashed py-10 text-center">
-                <ShoppingCart className="mx-auto mb-2 h-8 w-8 text-muted-foreground/35" />
+              <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center bg-gray-50/30">
+                <ShoppingCart className="mx-auto mb-2 h-8 w-8 text-muted-foreground/30" />
                 <p className="text-sm text-muted-foreground">No products selected</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1 thin-scrollbar">
                 {cart.map((item) => (
-                  <div key={item.variantId} className="rounded-lg border p-3">
+                  <div key={item.variantId} className="rounded-lg border border-gray-100 p-3 bg-gray-50/30 hover:border-gray-200 transition-colors">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{item.product.name}</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="truncate text-sm font-medium text-gray-800">{item.product.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           {item.quantity} x BDT {Number(item.price).toLocaleString("en-BD")}
                         </p>
                       </div>
@@ -443,37 +459,57 @@ export default function WarehouseOrderFromSupplierPage() {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-red-600"
+                        className="h-7 w-7 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md"
                         onClick={() => removeFromCart(item.variantId)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                     <div className="mt-2 flex items-center justify-between">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 bg-white border border-gray-200/60 rounded-md p-0.5">
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="ghost"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-7 w-7 rounded-sm hover:bg-gray-50 text-gray-500"
                           onClick={() => updateQuantity(item.variantId, -1)}
                         >
                           <Minus className="h-3 w-3" />
                         </Button>
-                        <span className="w-8 text-center text-sm font-semibold">
-                          {item.quantity}
-                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={Number(item.availableQty || 0)}
+                          defaultValue={item.quantity}
+                          key={`${item.variantId}-${item.quantity}`}
+                          onBlur={(event) => {
+                            const parsed = parseInt(event.target.value, 10);
+                            if (!isNaN(parsed)) {
+                              const maxQty = Number(item.availableQty || 0);
+                              const nextQty = Math.max(1, Math.min(maxQty, parsed));
+                              updateQuantity(item.variantId, nextQty - item.quantity);
+                            } else {
+                              event.target.value = String(item.quantity);
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.currentTarget.blur();
+                            }
+                          }}
+                          className="w-10 text-center text-sm font-semibold bg-transparent focus:outline-none focus:ring-0 border-none p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="ghost"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-7 w-7 rounded-sm hover:bg-gray-50 text-gray-500"
                           onClick={() => updateQuantity(item.variantId, 1)}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
                       </div>
-                      <span className="text-sm font-semibold">
+                      <span className="text-sm font-semibold text-gray-900">
                         BDT {(Number(item.price) * item.quantity).toLocaleString("en-BD")}
                       </span>
                     </div>
@@ -482,64 +518,118 @@ export default function WarehouseOrderFromSupplierPage() {
               </div>
             )}
 
-            <div className="rounded-lg bg-gray-50 p-3">
+            <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-bold">BDT {cartTotal.toLocaleString("en-BD")}</span>
+                <span className="text-muted-foreground font-medium">Subtotal</span>
+                <span className="font-bold text-gray-900">BDT {cartTotal.toLocaleString("en-BD")}</span>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold">Receiving Details</h3>
-              <Input
-                value={shippingName}
-                onChange={(event) => setShippingName(event.target.value)}
-                placeholder="Receiving warehouse / contact name"
-              />
-              <Input
-                value={shippingPhone}
-                onChange={(event) => setShippingPhone(event.target.value)}
-                placeholder="Phone"
-              />
-              <Input
-                value={shippingAddress}
-                onChange={(event) => setShippingAddress(event.target.value)}
-                placeholder="Address"
-              />
-              <div className="grid grid-cols-2 gap-2">
+            {/* Receiving Details with Accessibility Labels */}
+            <div className="space-y-3.5 border-t pt-4">
+              <h3 className="text-sm font-semibold text-gray-800">Receiving Details</h3>
+              
+              <div className="space-y-1.5">
+                <Label htmlFor="shippingName" className="text-xs font-semibold text-gray-600">
+                  Receiving Warehouse / Contact Name
+                </Label>
                 <Input
-                  value={shippingCity}
-                  onChange={(event) => setShippingCity(event.target.value)}
-                  placeholder="City"
-                />
-                <Input
-                  value={shippingArea}
-                  onChange={(event) => setShippingArea(event.target.value)}
-                  placeholder="Area"
+                  id="shippingName"
+                  value={shippingName}
+                  onChange={(event) => setShippingName(event.target.value)}
+                  placeholder="Receiving warehouse name or contact"
+                  className="bg-gray-50/20"
                 />
               </div>
-              <select
-                value={paymentMethod}
-                onChange={(event) => setPaymentMethod(event.target.value as any)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="cash_on_delivery">Cash on delivery</option>
-                <option value="bkash">bKash</option>
-                <option value="nagad">Nagad</option>
-                <option value="bank_transfer">Bank transfer</option>
-                <option value="card">Card</option>
-              </select>
-              <textarea
-                value={customerNote}
-                onChange={(event) => setCustomerNote(event.target.value)}
-                placeholder="Order note"
-                className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
+
+              <div className="space-y-1.5">
+                <Label htmlFor="shippingPhone" className="text-xs font-semibold text-gray-600">
+                  Phone Number
+                </Label>
+                <Input
+                  id="shippingPhone"
+                  value={shippingPhone}
+                  onChange={(event) => setShippingPhone(event.target.value)}
+                  placeholder="Contact phone number"
+                  className="bg-gray-50/20"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="shippingAddress" className="text-xs font-semibold text-gray-600">
+                  Delivery Address
+                </Label>
+                <Input
+                  id="shippingAddress"
+                  value={shippingAddress}
+                  onChange={(event) => setShippingAddress(event.target.value)}
+                  placeholder="Street address, building, floor"
+                  className="bg-gray-50/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="shippingCity" className="text-xs font-semibold text-gray-600">
+                    City
+                  </Label>
+                  <Input
+                    id="shippingCity"
+                    value={shippingCity}
+                    onChange={(event) => setShippingCity(event.target.value)}
+                    placeholder="City name"
+                    className="bg-gray-50/20"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="shippingArea" className="text-xs font-semibold text-gray-600">
+                    Area
+                  </Label>
+                  <Input
+                    id="shippingArea"
+                    value={shippingArea}
+                    onChange={(event) => setShippingArea(event.target.value)}
+                    placeholder="Area name"
+                    className="bg-gray-50/20"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="paymentMethod" className="text-xs font-semibold text-gray-600">
+                  Payment Method
+                </Label>
+                <select
+                  id="paymentMethod"
+                  value={paymentMethod}
+                  onChange={(event) => setPaymentMethod(event.target.value as any)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring"
+                >
+                  <option value="cash_on_delivery">Cash on delivery</option>
+                  <option value="bkash">bKash</option>
+                  <option value="nagad">Nagad</option>
+                  <option value="bank_transfer">Bank transfer</option>
+                  <option value="card">Card</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="customerNote" className="text-xs font-semibold text-gray-600">
+                  Order Note (Optional)
+                </Label>
+                <textarea
+                  id="customerNote"
+                  value={customerNote}
+                  onChange={(event) => setCustomerNote(event.target.value)}
+                  placeholder="Add a note for the supplier..."
+                  className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring focus:border-ring"
+                />
+              </div>
             </div>
 
             <Button
               type="button"
-              className="w-full"
+              className="w-full shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors"
               disabled={orderMutation.isPending}
               onClick={submitOrder}
             >
