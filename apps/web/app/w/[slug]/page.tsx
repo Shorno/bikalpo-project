@@ -1,15 +1,48 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, MapPin, Package, Search, Warehouse } from "lucide-react";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertCircle,
+  MapPin,
+  Package,
+  Search,
+  Warehouse,
+  ShoppingCart,
+  Trash2,
+  Minus,
+  Plus,
+  Loader2,
+  ArrowRight,
+  ChevronRight,
+} from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, useMemo } from "react";
 import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import Link from "next/link";
+
+const CITIES = [
+  "Dhaka",
+  "Chittagong",
+  "Sylhet",
+  "Rajshahi",
+  "Khulna",
+  "Barisal",
+  "Rangpur",
+  "Mymensingh",
+  "Comilla",
+  "Gazipur",
+  "Narayanganj",
+];
 
 function ProductCardSkeleton() {
   return (
@@ -51,11 +84,191 @@ function ProductCardSkeleton() {
 
 export default function WarehouseStorefrontPage() {
   const { slug } = useParams<{ slug: string }>();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // Fetch warehouse info
+  // Buyer connection context
+  const { data: sessionData, isPending: sessionPending } = authClient.useSession();
+  const isWarehouseBuyer = sessionData?.user?.role === "warehouse";
+
+  // Check connection status
+  const { data: supplierConnections, isLoading: connectionsLoading } = useQuery({
+    ...orpc.warehouse.getMyWarehouseSuppliers.queryOptions({
+      input: { status: "active", search: slug, page: 1, limit: 10 },
+    }),
+    enabled: isWarehouseBuyer,
+  });
+
+  const activeConnection = supplierConnections?.items?.find(
+    (item: any) => item.warehouseSlug === slug || item.warehouseId === slug
+  );
+  const isConnectedSupplier = !!activeConnection;
+
+  // Grid mode evaluation
+  const gridMode: "default" | "w2w" | "view-only" = isWarehouseBuyer
+    ? (isConnectedSupplier ? "w2w" : "view-only")
+    : "default";
+
+  // Cart key in local storage
+  const cartKey = `warehouse-supplier-cart:${sessionData?.user?.id}:${slug}`;
+  const [cart, setCart] = useState<any[]>([]);
+
+  // Load cart state
+  useEffect(() => {
+    if (typeof window !== "undefined" && sessionData?.user?.id && gridMode === "w2w") {
+      const stored = localStorage.getItem(cartKey);
+      if (stored) {
+        try {
+          setCart(JSON.parse(stored));
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        setCart([]);
+      }
+    }
+  }, [cartKey, sessionData?.user?.id, gridMode]);
+
+  // Save cart state
+  const saveCart = (newCart: any[]) => {
+    setCart(newCart);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(cartKey, JSON.stringify(newCart));
+    }
+  };
+
+  // Cart mutators
+  const addToCart = (item: any) => {
+    const existing = cart.find((i) => i.variantId === item.selectedVariant?.variantId || i.variantId === item.id);
+    const availableQty = Number(item.availableQty || 0);
+    const moq = Number(item.moq || 1);
+    const variantId = item.selectedVariant?.variantId || item.id;
+    const inventoryId = item.inventoryId || item.id;
+
+    if (existing) {
+      const nextQty = Math.min(availableQty, existing.quantity + 1);
+      saveCart(
+        cart.map((i) =>
+          i.variantId === variantId ? { ...i, quantity: nextQty } : i
+        )
+      );
+      toast.success(`Updated ${item.name} quantity to ${nextQty}`);
+    } else {
+      const qty = Math.min(availableQty, moq);
+      const newItem = {
+        variantId,
+        inventoryId,
+        productName: item.name,
+        image: item.image || "",
+        sku: item.sku || "",
+        unitLabel: item.unit || "Unit",
+        price: item.pricePerUnit || "0",
+        availableQty,
+        quantity: qty,
+      };
+      saveCart([...cart, newItem]);
+      toast.success(`Added ${item.name} to cart`);
+    }
+  };
+
+  const updateQuantity = (variantId: number, delta: number) => {
+    saveCart(
+      cart
+        .map((i) => {
+          if (i.variantId !== variantId) return i;
+          const availableQty = Number(i.availableQty || 0);
+          const nextQty = Math.max(0, Math.min(availableQty, i.quantity + delta));
+          return { ...i, quantity: nextQty };
+        })
+        .filter((i) => i.quantity > 0)
+    );
+  };
+
+  const removeFromCart = (variantId: number) => {
+    saveCart(cart.filter((i) => i.variantId !== variantId));
+  };
+
+  const clearCart = () => {
+    saveCart([]);
+  };
+
+  // Shipping Form State
+  const [shippingName, setShippingName] = useState("");
+  const [shippingPhone, setShippingPhone] = useState("");
+  const [shippingAddress, setShippingAddress] = useState("");
+  const [shippingCity, setShippingCity] = useState("");
+  const [shippingArea, setShippingArea] = useState("");
+  const [customerNote, setCustomerNote] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card"
+  >("cash_on_delivery");
+
+  // Prefill details from session
+  useEffect(() => {
+    if (sessionData?.user) {
+      const u = sessionData.user as any;
+      setShippingName(u.warehouseName || u.name || "");
+      setShippingPhone(u.phoneNumber || u.phone || "");
+      setShippingAddress(u.warehouseAddress || "");
+    }
+  }, [sessionData]);
+
+  // Order mutation
+  const orderMutation = useMutation({
+    mutationFn: (input: {
+      warehouseKey: string;
+      items: { variantId: number; quantity: number }[];
+      shippingName: string;
+      shippingPhone: string;
+      shippingAddress: string;
+      shippingCity: string;
+      shippingArea?: string;
+      customerNote?: string;
+      paymentMethod: "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card";
+    }) => orpc.warehouse.placeWarehouseSupplierOrder.call(input),
+    onSuccess: (result) => {
+      toast.success(result.message || "Order placed successfully!");
+      clearCart();
+      setIsMobileCartOpen(false);
+      queryClient.invalidateQueries({ queryKey: orpc.warehouse.getMyWarehouseSuppliers.key() });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouse.getMyOrders.key() });
+      
+      const warehouseDashboardUrl = process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL || "http://warehouse.bikalpo.localhost:3001";
+      window.location.href = `${warehouseDashboardUrl}/warehouse/dashboard/orders`;
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to place supplier order");
+    },
+  });
+
+  const handlePlaceOrder = () => {
+    if (!shippingName.trim() || !shippingPhone.trim() || !shippingAddress.trim() || !shippingCity.trim()) {
+      toast.error("Please fill in all receiving contact and delivery address details");
+      return;
+    }
+    if (cart.length === 0) {
+      toast.error("Your cart is empty");
+      return;
+    }
+    orderMutation.mutate({
+      warehouseKey: slug,
+      items: cart.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      shippingName,
+      shippingPhone,
+      shippingAddress,
+      shippingCity,
+      shippingArea: shippingArea || undefined,
+      customerNote: customerNote || undefined,
+      paymentMethod,
+    });
+  };
+
+  // Fetch storefront details
   const {
     data: warehouse,
     isLoading: warehouseLoading,
@@ -86,10 +299,17 @@ export default function WarehouseStorefrontPage() {
     }),
   );
 
-  if (warehouseLoading) {
+  const cartTotal = useMemo(() => {
+    return cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+  }, [cart]);
+
+  const cartCount = useMemo(() => {
+    return cart.reduce((sum, item) => sum + item.quantity, 0);
+  }, [cart]);
+
+  if (warehouseLoading || sessionPending || (isWarehouseBuyer && connectionsLoading)) {
     return (
       <div className="min-h-screen bg-zinc-50/50">
-        {/* Warehouse Header Skeleton */}
         <div className="bg-white border-b border-zinc-200">
           <div className="container mx-auto px-4 py-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -112,7 +332,6 @@ export default function WarehouseStorefrontPage() {
           </div>
         </div>
 
-        {/* Search & Filter Bar Skeleton */}
         <div className="container mx-auto px-4 py-6">
           <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
             <Skeleton className="h-10 w-full" />
@@ -128,7 +347,6 @@ export default function WarehouseStorefrontPage() {
           </div>
         </div>
 
-        {/* Products Grid Skeleton */}
         <div className="container mx-auto px-4 pb-16">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {Array.from({ length: 12 }).map((_, i) => (
@@ -158,19 +376,239 @@ export default function WarehouseStorefrontPage() {
   const products = productsData?.products || [];
   const pagination = productsData?.pagination;
 
+  const renderCartItems = () => {
+    if (cart.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-10 text-center bg-zinc-50 border border-dashed rounded-xl p-4">
+          <ShoppingCart className="w-10 h-10 text-zinc-300 mb-2" />
+          <p className="text-sm font-semibold text-zinc-500">Cart is empty</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Add supplier variants to begin</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 thin-scrollbar">
+        {cart.map((item) => (
+          <div key={item.variantId} className="flex gap-3 p-3 rounded-lg border border-zinc-100 bg-white/50 hover:bg-white hover:shadow-sm transition-all duration-200">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-1">
+                <p className="text-xs font-semibold text-zinc-800 line-clamp-1">{item.productName}</p>
+                <button
+                  onClick={() => removeFromCart(item.variantId)}
+                  className="text-zinc-400 hover:text-red-500 p-0.5 shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="text-[10px] text-zinc-400 mt-0.5">
+                {item.unitLabel} {item.sku ? ` · ${item.sku}` : ""}
+              </p>
+              <div className="flex items-center justify-between mt-2.5 gap-2">
+                <div className="flex items-center border border-zinc-200 rounded-md bg-white p-0.5">
+                  <button
+                    onClick={() => updateQuantity(item.variantId, -1)}
+                    className="h-6 w-6 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 rounded"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <span className="w-7 text-center text-xs font-mono font-bold text-zinc-800">
+                    {item.quantity}
+                  </span>
+                  <button
+                    onClick={() => updateQuantity(item.variantId, 1)}
+                    className="h-6 w-6 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 rounded"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+                <span className="text-xs font-bold font-mono text-zinc-900">
+                  ৳ {(Number(item.price) * item.quantity).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderCheckoutForm = () => {
+    return (
+      <div className="space-y-4 pt-4 border-t border-zinc-200">
+        <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-widest flex items-center gap-1.5">
+          <MapPin className="w-4 h-4 text-emerald-600" />
+          Receiving Details
+        </h3>
+        
+        <div className="space-y-1.5">
+          <Label htmlFor="shippingName" className="text-xs font-bold text-zinc-600">
+            Receiving Warehouse / Contact Name *
+          </Label>
+          <Input
+            id="shippingName"
+            value={shippingName}
+            onChange={(e) => setShippingName(e.target.value)}
+            placeholder="Receiving warehouse name or contact"
+            className="h-9 text-xs bg-zinc-50/50"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="shippingPhone" className="text-xs font-bold text-zinc-600">
+            Phone Number *
+          </Label>
+          <Input
+            id="shippingPhone"
+            value={shippingPhone}
+            onChange={(e) => setShippingPhone(e.target.value)}
+            placeholder="Contact phone number"
+            className="h-9 text-xs bg-zinc-50/50"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="shippingAddress" className="text-xs font-bold text-zinc-600">
+            Delivery Address *
+          </Label>
+          <Textarea
+            id="shippingAddress"
+            value={shippingAddress}
+            onChange={(e) => setShippingAddress(e.target.value)}
+            placeholder="Street address, building, floor..."
+            className="text-xs bg-zinc-50/50 min-h-[60px] resize-none"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3.5">
+          <div className="space-y-1.5">
+            <Label htmlFor="shippingCity" className="text-xs font-bold text-zinc-600">
+              City *
+            </Label>
+            <select
+              id="shippingCity"
+              value={shippingCity}
+              onChange={(e) => setShippingCity(e.target.value)}
+              className="h-9 w-full rounded-md border border-zinc-200 bg-zinc-50/50 px-2.5 text-xs outline-none focus:ring-1 focus:ring-zinc-900"
+            >
+              <option value="">Select city</option>
+              {CITIES.map((city) => (
+                <option key={city} value={city}>{city}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="space-y-1.5">
+            <Label htmlFor="shippingArea" className="text-xs font-bold text-zinc-600">
+              Area (Optional)
+            </Label>
+            <Input
+              id="shippingArea"
+              value={shippingArea}
+              onChange={(e) => setShippingArea(e.target.value)}
+              placeholder="e.g. Dhanmondi"
+              className="h-9 text-xs bg-zinc-50/50"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="paymentMethod" className="text-xs font-bold text-zinc-600">
+            Payment Method *
+          </Label>
+          <select
+            id="paymentMethod"
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value as any)}
+            className="h-9 w-full rounded-md border border-zinc-200 bg-zinc-50/50 px-2.5 text-xs outline-none focus:ring-1 focus:ring-zinc-900"
+          >
+            <option value="cash_on_delivery">Cash on delivery</option>
+            <option value="bkash">bKash</option>
+            <option value="nagad">Nagad</option>
+            <option value="bank_transfer">Bank transfer</option>
+            <option value="card">Card</option>
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="customerNote" className="text-xs font-bold text-zinc-600">
+            Order Note (Optional)
+          </Label>
+          <Textarea
+            id="customerNote"
+            value={customerNote}
+            onChange={(e) => setCustomerNote(e.target.value)}
+            placeholder="Special instructions for the supplier..."
+            className="text-xs bg-zinc-50/50 min-h-[50px] resize-none"
+          />
+        </div>
+
+        <div className="bg-zinc-50 rounded-lg border p-3.5 space-y-2 mt-4">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-zinc-500 font-semibold">Subtotal</span>
+            <span className="font-bold text-zinc-900 font-mono">৳ {cartTotal.toLocaleString()}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs pt-1.5 border-t">
+            <span className="text-zinc-500 font-semibold">Order Total</span>
+            <span className="font-extrabold text-emerald-600 text-sm font-mono">৳ {cartTotal.toLocaleString()}</span>
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-5 gap-2 rounded-lg transition-colors border-none shadow-sm mt-3 h-10 text-xs"
+          disabled={cart.length === 0 || orderMutation.isPending}
+          onClick={handlePlaceOrder}
+        >
+          {orderMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <ArrowRight className="w-4 h-4" />
+          )}
+          Place Supplier Order
+        </Button>
+      </div>
+    );
+  };
+
+  const stickyCartPanel = (
+    <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-sm space-y-5 sticky top-6">
+      <div className="flex items-center justify-between border-b pb-3">
+        <h2 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
+          <ShoppingCart className="w-4 h-4 text-emerald-600" />
+          Supplier Cart
+        </h2>
+        {cart.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearCart}
+            className="h-7 px-2 text-[10px] text-zinc-400 hover:text-red-600 hover:bg-red-50"
+          >
+            Clear Cart
+          </Button>
+        )}
+      </div>
+
+      {renderCartItems()}
+
+      {cart.length > 0 && renderCheckoutForm()}
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-zinc-50/50">
       {/* Warehouse Header */}
       <div className="bg-white border-b border-zinc-200">
         <div className="container mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex items-start gap-5">
+            <div className="flex items-start gap-5 min-w-0">
               <div className="w-14 h-14 bg-zinc-900 rounded-lg flex items-center justify-center shrink-0 shadow-sm border border-zinc-800">
                 <Warehouse className="w-6 h-6 text-white" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-zinc-900">
+                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-zinc-900 truncate">
                     {warehouse.warehouseName || warehouse.name}
                   </h1>
                   <Badge
@@ -182,12 +620,12 @@ export default function WarehouseStorefrontPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-4 mt-2.5 text-xs font-medium text-zinc-500">
                   {warehouse.warehouseAddress && (
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>{warehouse.warehouseAddress}</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span className="truncate">{warehouse.warehouseAddress}</span>
                     </div>
                   )}
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <Package className="w-3.5 h-3.5 text-zinc-400" />
                     <span className="font-mono text-zinc-700 font-semibold tabular-nums">
                       {warehouse.productCount}
@@ -201,80 +639,151 @@ export default function WarehouseStorefrontPage() {
         </div>
       </div>
 
-      {/* Search & Filter Bar */}
+      {/* Access alert block */}
+      {isWarehouseBuyer && !isConnectedSupplier && (
+        <div className="container mx-auto px-4 pt-6">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <h4 className="font-bold text-amber-800 text-sm">Supplier connection required</h4>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  You must request access from this warehouse from your suppliers list before you can order.
+                </p>
+              </div>
+            </div>
+            <Button asChild size="sm" variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-100/50">
+              <Link href="/warehouse/dashboard/suppliers">
+                Go to Suppliers List
+              </Link>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Layout */}
       <div className="container mx-auto px-4 py-6">
-        <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-            <Input
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="pl-10 h-10 border-zinc-200 focus-visible:ring-zinc-900 rounded-md bg-zinc-50/30"
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left Side: Search & Filter and Product Grid */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Search & Filter Bar */}
+            <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                <Input
+                  placeholder="Search products..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  className="pl-10 h-10 border-zinc-200 focus-visible:ring-zinc-900 rounded-md bg-zinc-50/30 text-sm"
+                />
+              </div>
+
+              {/* Category Tabs */}
+              {categories.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
+                    Category Filters
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      variant={selectedCategory === null ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setSelectedCategory(null);
+                        setPage(1);
+                      }}
+                      className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
+                        selectedCategory === null
+                          ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
+                          : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      All
+                    </Button>
+                    {categories.map((cat) => (
+                      <Button
+                        key={cat.id}
+                        variant={
+                          selectedCategory === cat.slug ? "default" : "outline"
+                        }
+                        size="sm"
+                        onClick={() => {
+                          setSelectedCategory(cat.slug);
+                          setPage(1);
+                        }}
+                        className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
+                          selectedCategory === cat.slug
+                            ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
+                            : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
+                        }`}
+                      >
+                        {cat.name}
+                        <span className="ml-1 px-1 py-0.5 text-[9px] font-mono bg-zinc-100 text-zinc-500 rounded border border-zinc-200/50 group-hover:bg-zinc-200">
+                          {cat.productCount}
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <WarehouseProductGrid
+              products={products}
+              isLoading={productsLoading}
+              warehouseSlug={slug}
+              pagination={pagination}
+              onPageChange={setPage}
+              mode={gridMode}
+              cart={cart}
+              onAddToCart={addToCart}
+              onUpdateQuantity={updateQuantity}
             />
           </div>
 
-          {/* Category Tabs */}
-          {categories.length > 0 && (
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                Category Filters
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                <Button
-                  variant={selectedCategory === null ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setSelectedCategory(null);
-                    setPage(1);
-                  }}
-                  className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
-                    selectedCategory === null
-                      ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
-                      : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
-                  }`}
-                >
-                  All
-                </Button>
-                {categories.map((cat) => (
-                  <Button
-                    key={cat.id}
-                    variant={
-                      selectedCategory === cat.slug ? "default" : "outline"
-                    }
-                    size="sm"
-                    onClick={() => {
-                      setSelectedCategory(cat.slug);
-                      setPage(1);
-                    }}
-                    className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
-                      selectedCategory === cat.slug
-                        ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
-                        : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    {cat.name}
-                    <span className="ml-1 px-1 py-0.5 text-[9px] font-mono bg-zinc-100 text-zinc-500 rounded border border-zinc-200/50 group-hover:bg-zinc-200">
-                      {cat.productCount}
-                    </span>
-                  </Button>
-                ))}
-              </div>
+          {/* Right Side: Sticky cart on desktop (only when gridMode is "w2w") */}
+          {gridMode === "w2w" && (
+            <div className="hidden lg:block lg:col-span-1">
+              {stickyCartPanel}
             </div>
           )}
         </div>
       </div>
 
-      <WarehouseProductGrid
-        products={products}
-        isLoading={productsLoading}
-        warehouseSlug={slug}
-        pagination={pagination}
-        onPageChange={setPage}
-      />
+      {/* Floating Bottom Button & Sheet for mobile */}
+      {gridMode === "w2w" && cart.length > 0 && (
+        <div className="lg:hidden fixed bottom-6 left-0 right-0 z-40 px-4 flex justify-center">
+          <Sheet open={isMobileCartOpen} onOpenChange={setIsMobileCartOpen}>
+            <SheetTrigger asChild>
+              <Button className="w-full max-w-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-6 rounded-full shadow-lg flex items-center justify-between px-6 border-none">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5" />
+                  <span>View Cart ({cartCount})</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span>৳ {cartTotal.toLocaleString("en-BD")}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </div>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="h-[85vh] rounded-t-2xl p-0 flex flex-col">
+              <SheetHeader className="p-4 border-b border-zinc-100 flex-shrink-0">
+                <SheetTitle className="flex items-center justify-between">
+                  <span className="text-zinc-800">Supplier Cart</span>
+                  <Badge variant="outline" className="font-mono text-xs">{cartCount} units</Badge>
+                </SheetTitle>
+              </SheetHeader>
+              <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                {renderCartItems()}
+                {renderCheckoutForm()}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      )}
     </div>
   );
 }

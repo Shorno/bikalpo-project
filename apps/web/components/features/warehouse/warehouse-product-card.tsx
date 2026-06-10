@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, Package, ShoppingCart } from "lucide-react";
+import { Eye, Package, ShoppingCart, Minus, Plus } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,10 @@ interface WarehouseProductCardProps {
   product: WarehouseProduct;
   onViewDetails?: (product: WarehouseProduct) => void;
   onBuyNow?: (product: WarehouseProduct) => void;
+  mode?: "default" | "w2w" | "view-only";
+  cart?: any[];
+  onAddToCart?: (product: WarehouseProduct) => void;
+  onUpdateQuantity?: (variantId: number, delta: number) => void;
 }
 
 function getStockColor(status: "high" | "medium" | "low") {
@@ -71,6 +75,10 @@ export function WarehouseProductCard({
   product,
   onViewDetails,
   onBuyNow,
+  mode = "default",
+  cart = [],
+  onAddToCart,
+  onUpdateQuantity,
 }: WarehouseProductCardProps) {
   const [imageError, setImageError] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState(
@@ -96,6 +104,10 @@ export function WarehouseProductCard({
         selectedVariant,
       }
     : product;
+
+  const inCart = cart?.find(
+    (i) => i.variantId === (displayProduct.selectedVariant?.variantId || displayProduct.id)
+  );
 
   return (
     <div className="group bg-white rounded-lg border border-zinc-200 overflow-hidden hover:border-zinc-400 transition-colors duration-200 flex flex-col shadow-none">
@@ -195,24 +207,106 @@ export function WarehouseProductCard({
           </div>
 
           {/* Actions */}
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              className="flex-1 h-8 text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-white gap-1 rounded transition-colors"
-              onClick={() => onBuyNow?.(displayProduct)}
-            >
-              <ShoppingCart className="w-3.5 h-3.5" />
-              Buy Now
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 h-8 text-xs font-semibold border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1 rounded transition-colors"
-              onClick={() => onViewDetails?.(displayProduct)}
-            >
-              <Eye className="w-3.5 h-3.5" />
-              Details
-            </Button>
+          <div className="flex flex-col gap-2">
+            {mode === "view-only" ? (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs font-semibold border-zinc-200 text-zinc-400 gap-1 rounded cursor-not-allowed"
+                  disabled
+                >
+                  Access Required
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs font-semibold border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1 rounded transition-colors"
+                  onClick={() => onViewDetails?.(displayProduct)}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Details
+                </Button>
+              </div>
+            ) : mode === "w2w" ? (
+              <div className="flex flex-col gap-2">
+                {inCart ? (
+                  <div className="flex items-center justify-between border border-zinc-200 rounded-md h-8 bg-zinc-50 p-0.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateQuantity?.(displayProduct.selectedVariant?.variantId || displayProduct.id, -1);
+                      }}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                    <span className="text-xs font-mono font-bold text-zinc-900">
+                      {inCart.quantity}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateQuantity?.(displayProduct.selectedVariant?.variantId || displayProduct.id, 1);
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="w-full h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1 rounded transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddToCart?.(displayProduct);
+                    }}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add to Cart
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-8 text-xs font-semibold border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1 rounded transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewDetails?.(displayProduct);
+                  }}
+                >
+                  <Eye className="w-3.5 h-3.5 mr-1" />
+                  Details
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="flex-1 h-8 text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-white gap-1 rounded transition-colors"
+                  onClick={() => onBuyNow?.(displayProduct)}
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  Buy Now
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs font-semibold border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1 rounded transition-colors"
+                  onClick={() => onViewDetails?.(displayProduct)}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Details
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -32,11 +32,11 @@ export default function PurchasesPage() {
 
   // Queries
   const { data: purchases, isLoading } = useQuery(
-    orpc.purchase.list.queryOptions({}),
+    orpc.purchase.list.queryOptions({ input: {} }),
   );
 
   const { data: suppliers } = useQuery(
-    orpc.purchase.getSuppliers.queryOptions({}),
+    orpc.purchase.getSuppliers.queryOptions({ input: {} }),
   );
 
   const { data: products } = useQuery(

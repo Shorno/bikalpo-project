@@ -125,6 +125,17 @@ export default function SuppliersPage() {
   );
 }
 
+function getPublicStorefrontBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL;
+  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
+
+  if (typeof window !== "undefined") {
+    return window.location.origin.replace("//warehouse.", "//");
+  }
+
+  return "http://bikalpo.localhost:3001";
+}
+
 function WarehouseSuppliersPanel() {
   const [statusTab, setStatusTab] = useState<"all" | "active" | "pending" | "disconnected">("all");
   const [search, setSearch] = useState("");
@@ -213,90 +224,124 @@ function WarehouseSuppliersPanel() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Warehouse</TableHead>
-                  <TableHead>Slug / Code</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Products</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {suppliers.map((supplier: any) => (
-                  <TableRow key={supplier.connectionId}>
-                    <TableCell>
-                      <div className="font-medium">
-                        {supplier.warehouseName || supplier.name || "Unnamed Warehouse"}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {suppliers.map((supplier: any) => {
+            const isStorefrontAvailable = !!supplier.warehouseSlug;
+            const storefrontUrl = isStorefrontAvailable
+              ? `${getPublicStorefrontBaseUrl()}/w/${supplier.warehouseSlug}`
+              : "#";
+
+            const cardContent = (
+              <Card className={`relative flex flex-col h-full overflow-hidden border border-zinc-200/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 ${supplier.status === 'active' && isStorefrontAvailable ? 'hover:shadow-md cursor-pointer group' : ''}`}>
+                <CardContent className="p-5 flex-1 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    {/* Header: Name & Status */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-200/50">
+                          {supplier.image ? (
+                            <img
+                              src={supplier.image}
+                              alt={supplier.warehouseName || supplier.name}
+                              className="w-full h-full object-cover rounded-lg"
+                            />
+                          ) : (
+                            <Warehouse className="w-5 h-5 text-zinc-500" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className={`font-semibold text-zinc-900 dark:text-zinc-50 transition-colors truncate ${supplier.status === 'active' && isStorefrontAvailable ? 'group-hover:text-emerald-600' : ''}`}>
+                            {supplier.warehouseName || supplier.name || "Unnamed Warehouse"}
+                          </h3>
+                          <span className="font-mono text-[10px] text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-200/40">
+                            {supplier.warehouseSlug || supplier.warehouseId}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                        <MapPin className="w-3 h-3" />
-                        {supplier.warehouseAddress || "No address provided"}
+                      <div className="shrink-0">
+                        <WarehouseSupplierStatus status={supplier.status} />
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-mono text-xs">
-                        {supplier.warehouseSlug || supplier.warehouseId}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {supplier.phone ? (
-                        <span className="flex items-center gap-1 text-sm">
-                          <Phone className="w-3 h-3 text-muted-foreground" />
-                          {supplier.phone}
-                        </span>
+                    </div>
+
+                    {/* Logistics and Contact Details */}
+                    <div className="space-y-2.5 pt-2 text-sm text-zinc-600 dark:text-zinc-300">
+                      {supplier.warehouseAddress ? (
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-zinc-400 mt-0.5 shrink-0" />
+                          <span className="line-clamp-2 text-xs">{supplier.warehouseAddress}</span>
+                        </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-zinc-400 mt-0.5 shrink-0" />
+                          <span className="text-xs text-muted-foreground">No address provided</span>
+                        </div>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-1 text-sm">
-                        <Package className="w-3.5 h-3.5 text-muted-foreground" />
-                        {supplier.status === "active" ? supplier.productCount : 0}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <WarehouseSupplierStatus status={supplier.status} />
-                    </TableCell>
-                    <TableCell className="text-right">
+                      
+                      {supplier.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-zinc-400 shrink-0" />
+                          <span className="text-xs">{supplier.phone}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 text-zinc-400 shrink-0" />
+                        <span className="text-xs font-medium">
+                          {supplier.status === "active" ? supplier.productCount : 0} Products available
+                        </span>
+                      </div>
+
+                      {supplier.lastOrderedAt && (
+                        <div className="flex items-center gap-2 text-zinc-500">
+                          <Clock className="w-4 h-4 text-zinc-400 shrink-0" />
+                          <span className="text-[11px]">
+                            Last Ordered: {new Date(supplier.lastOrderedAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions Area */}
+                  <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-3" onClick={(e) => e.stopPropagation()}>
+                    <div>
+                      {supplier.status === "active" && !isStorefrontAvailable && (
+                        <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                          Storefront unavailable
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
                       {supplier.status === "pending" ? (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="text-red-600 hover:text-red-700"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs h-8"
                           disabled={cancelMutation.isPending}
-                          onClick={() =>
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             cancelMutation.mutate({
                               connectionId: supplier.connectionId,
-                            })
-                          }
+                            });
+                          }}
                         >
-                          {cancelMutation.isPending ? (
+                          {cancelMutation.isPending && (
                             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                          ) : null}
-                          Cancel
+                          )}
+                          Cancel Request
                         </Button>
                       ) : supplier.status === "active" ? (
-                        <div className="flex justify-end gap-2">
-                          <Button asChild size="sm">
-                            <Link
-                              href={`/warehouse/dashboard/order-from-supplier?warehouse=${encodeURIComponent(
-                                supplier.warehouseSlug || supplier.warehouseId,
-                              )}`}
-                            >
-                              <ShoppingCart className="w-3.5 h-3.5 mr-1" />
-                              Order
-                            </Link>
-                          </Button>
+                        <>
                           <Button
                             variant="outline"
                             size="sm"
+                            className="text-zinc-600 hover:text-red-600 hover:bg-red-50/50 text-xs h-8"
                             disabled={disconnectMutation.isPending}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
                               if (confirm("Disconnect this warehouse supplier?")) {
                                 disconnectMutation.mutate({
                                   connectionId: supplier.connectionId,
@@ -306,19 +351,36 @@ function WarehouseSuppliersPanel() {
                           >
                             Disconnect
                           </Button>
-                        </div>
+                          {isStorefrontAvailable && (
+                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs h-8" asChild>
+                              <Link href={storefrontUrl}>
+                                Visit Storefront
+                              </Link>
+                            </Button>
+                          )}
+                        </>
                       ) : (
-                        <Button variant="outline" size="sm" disabled>
+                        <Button variant="outline" size="sm" className="text-xs h-8" disabled>
                           Request Denied
                         </Button>
                       )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+
+            if (supplier.status === "active" && isStorefrontAvailable) {
+              return (
+                <Link key={supplier.connectionId} href={storefrontUrl} className="block h-full">
+                  {cardContent}
+                </Link>
+              );
+            }
+
+            return <div key={supplier.connectionId}>{cardContent}</div>;
+          })}
+        </div>
       )}
     </div>
   );

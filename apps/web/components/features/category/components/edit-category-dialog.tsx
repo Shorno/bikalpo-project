@@ -82,7 +82,7 @@ export default function EditCategoryDialog({
     },
 
     validators: {
-      onSubmit: updateCategorySchema,
+      onSubmit: updateCategorySchema as any,
     },
     onSubmit: async ({ value }) => {
       mutation.mutate(value);

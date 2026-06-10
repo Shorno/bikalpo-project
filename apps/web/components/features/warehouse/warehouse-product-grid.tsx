@@ -112,9 +112,13 @@ function getStockLabel(status: "high" | "medium" | "low") {
 function ProductDetailModal({
   product,
   onClose,
+  mode = "default",
+  onAddToCart,
 }: {
   product: WarehouseProduct;
   onClose: () => void;
+  mode?: "default" | "w2w" | "view-only";
+  onAddToCart?: (product: WarehouseProduct) => void;
 }) {
   const [imageError, setImageError] = useState(false);
   const stock = getStockLabel(product.stockStatus);
@@ -213,10 +217,31 @@ function ProductDetailModal({
           </div>
 
           <div className="flex gap-3">
-            <Button className="flex-1 h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold gap-2 rounded transition-colors shadow-none">
-              <ShoppingCart className="w-4 h-4" />
-              Add to Cart
-            </Button>
+            {mode === "view-only" ? (
+              <Button
+                variant="outline"
+                className="flex-1 h-11 border-zinc-200 text-zinc-400 font-semibold gap-2 rounded cursor-not-allowed shadow-none"
+                disabled
+              >
+                Access Required
+              </Button>
+            ) : mode === "w2w" ? (
+              <Button
+                className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-2 rounded transition-colors shadow-none"
+                onClick={() => {
+                  onAddToCart?.(product);
+                  onClose();
+                }}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                Add to Cart
+              </Button>
+            ) : (
+              <Button className="flex-1 h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold gap-2 rounded transition-colors shadow-none">
+                <ShoppingCart className="w-4 h-4" />
+                Add to Cart
+              </Button>
+            )}
             <Button
               variant="outline"
               className="h-11 px-6 border-zinc-200 text-zinc-600 hover:bg-zinc-50 font-semibold rounded transition-colors"
@@ -242,6 +267,10 @@ interface WarehouseProductGridProps {
     totalPages: number;
   };
   onPageChange?: (page: number) => void;
+  mode?: "default" | "w2w" | "view-only";
+  cart?: any[];
+  onAddToCart?: (product: any) => void;
+  onUpdateQuantity?: (variantId: number, delta: number) => void;
 }
 
 export function WarehouseProductGrid({
@@ -250,6 +279,10 @@ export function WarehouseProductGrid({
   warehouseSlug = "",
   pagination,
   onPageChange,
+  mode = "default",
+  cart = [],
+  onAddToCart,
+  onUpdateQuantity,
 }: WarehouseProductGridProps) {
   const [selectedProduct, setSelectedProduct] =
     useState<WarehouseProduct | null>(null);
@@ -322,6 +355,10 @@ export function WarehouseProductGrid({
               product={product}
               onViewDetails={setSelectedProduct}
               onBuyNow={handleBuyNow}
+              mode={mode}
+              cart={cart}
+              onAddToCart={onAddToCart}
+              onUpdateQuantity={onUpdateQuantity}
             />
           ))}
         </div>
@@ -365,6 +402,8 @@ export function WarehouseProductGrid({
         <ProductDetailModal
           product={selectedProduct}
           onClose={() => setSelectedProduct(null)}
+          mode={mode}
+          onAddToCart={onAddToCart}
         />
       )}
 

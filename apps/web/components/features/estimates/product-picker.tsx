@@ -117,7 +117,7 @@ export function ProductPicker({
                         </span>
                         <div className="flex items-center justify-between text-xs mt-0.5">
                           <span className="text-muted-foreground/80 font-medium">
-                            Stock: {product.stockQuantity}
+                            {product.inStock ? "In Stock" : "Out of Stock"}
                           </span>
                           <span className="font-bold text-primary group-hover:scale-110 transition-transform origin-right">
                             ৳{Number(product.price).toLocaleString()}
