@@ -187,7 +187,7 @@ export default function WarehouseStorefrontPage() {
                 const variant = item.variant;
                 if (!prod) return null;
 
-                const image = (prod as any).images?.[0]?.url || null;
+                const image = prod.images?.[0]?.imageUrl || prod.images?.[0]?.url || prod.image || null;
                 const price = variant?.price || item.retailPrice || "0";
 
                 return (

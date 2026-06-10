@@ -14,7 +14,7 @@ import { WarehouseOrderDialog } from "./warehouse-order-dialog";
 function mapApiProduct(item: any): WarehouseProduct {
   const variant = item.variant;
   const product = item.product || variant?.product;
-  const image = product?.images?.[0]?.url || "";
+  const image = product?.images?.[0]?.imageUrl || product?.images?.[0]?.url || product?.image || "";
   const unitLabel = variant?.unitLabel || variant?.packType || "Unit";
   const qty = Number(item.availableQty) || 0;
 

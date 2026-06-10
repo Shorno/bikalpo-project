@@ -138,7 +138,7 @@ export default function ShopStorePage({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {products.map((product: any) => {
-            const img = product.images?.[0]?.url || product.image;
+            const img = product.images?.[0]?.imageUrl || product.images?.[0]?.url || product.image;
             const firstVariant = product.variants?.[0];
             const price = firstVariant?.retailPrice || firstVariant?.basePrice;
 
