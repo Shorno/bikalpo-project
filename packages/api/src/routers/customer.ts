@@ -3906,11 +3906,7 @@ const mutations = {
           });
         }
 
-        if (currentProduct.stockQuantity < item.quantity) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: `Insufficient stock for ${currentProduct.name}. Available: ${currentProduct.stockQuantity}`,
-          });
-        }
+        // Skip product-level stock check since stockQuantity was removed from the product table
 
         const itemTotal = Number(currentProduct.price) * item.quantity;
         subtotal += itemTotal;

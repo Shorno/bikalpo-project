@@ -698,7 +698,7 @@ export default function OrderFromWarehousePage() {
   const connectMutation = useMutation({
     mutationFn: (slug: string) => orpc.shopOwner.connectToWarehouse.call({ warehouseSlug: slug }),
     onSuccess: (data) => {
-      if (data.status === "connected" || data.status === "already_connected") {
+      if ((data.status as string) === "connected" || data.status === "already_connected") {
         setSelectedSlug(data.warehouse.warehouseSlug);
         setStep("browse");
       }

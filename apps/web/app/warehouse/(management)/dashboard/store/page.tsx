@@ -28,7 +28,7 @@ function StockBadge({ qty }: { qty: number }) {
 }
 
 function getPublicStorefrontBaseUrl() {
-  const configuredUrl = process.env.NEXT_PUBLIC_AUTH_URL;
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL;
   if (configuredUrl) return configuredUrl.replace(/\/$/, "");
 
   if (typeof window !== "undefined") {
