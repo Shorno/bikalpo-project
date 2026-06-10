@@ -62,7 +62,7 @@ function MobileCategoryCard({
           {/* Image */}
           <div className="w-12 h-12 relative rounded-lg overflow-hidden border shadow-sm shrink-0">
             <Image
-              src={category.image}
+              src={category.image || "/placeholder-image.svg"}
               alt={category.name}
               fill
               className="object-cover"

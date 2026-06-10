@@ -15,7 +15,7 @@ interface Brand {
   id: number;
   name: string;
   slug: string;
-  logo: string;
+  logo: string | null;
 }
 
 interface BrandsCarouselProps {

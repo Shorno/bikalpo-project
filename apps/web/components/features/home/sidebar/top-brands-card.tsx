@@ -21,14 +21,20 @@ export function TopBrandsCard({ brands }: TopBrandsCardProps) {
             <Link
               key={brand.id}
               href={`/products?brand=${brand.slug}`}
-              className="h-10 relative border rounded-md p-1.5 hover:border-primary/50 transition-colors group"
+              className="h-10 relative border rounded-md p-1.5 hover:border-primary/50 transition-colors group flex items-center justify-center"
             >
-              <Image
-                src={brand.logo}
-                alt={brand.name}
-                fill
-                className="object-contain grayscale group-hover:grayscale-0 transition-all opacity-70 group-hover:opacity-100"
-              />
+              {brand.logo ? (
+                <Image
+                  src={brand.logo}
+                  alt={brand.name}
+                  fill
+                  className="object-contain grayscale group-hover:grayscale-0 transition-all opacity-70 group-hover:opacity-100"
+                />
+              ) : (
+                <span className="text-xs font-semibold text-muted-foreground truncate px-1">
+                  {brand.name}
+                </span>
+              )}
             </Link>
           ))}
         </div>

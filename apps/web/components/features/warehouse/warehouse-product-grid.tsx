@@ -1,22 +1,65 @@
 "use client";
 
-import { useState } from "react";
+import { Package, ShoppingCart, X } from "lucide-react";
 import Image from "next/image";
-import { Package, ShoppingCart, Star, X } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  WarehouseProductCard,
-  type WarehouseProduct,
-} from "./warehouse-product-card";
 import { WarehouseOrderDialog } from "./warehouse-order-dialog";
+import {
+  type WarehouseProduct,
+  WarehouseProductCard,
+  WarehouseProductCardSkeleton,
+  type WarehouseProductVariantOption,
+} from "./warehouse-product-card";
 
 /** Map API storefront product to the card-compatible shape */
 function mapApiProduct(item: any): WarehouseProduct {
-  const variant = item.variant;
+  const variantRows =
+    Array.isArray(item.variants) && item.variants.length > 0
+      ? item.variants
+      : [item];
+  const variant = item.variant || variantRows[0]?.variant;
   const product = item.product || variant?.product;
-  const image = product?.images?.[0]?.url || "";
+  const image =
+    product?.images?.[0]?.imageUrl ||
+    product?.images?.[0]?.url ||
+    product?.image ||
+    "";
+  const brand =
+    item.brand ||
+    variantRows.find((row: any) => row.variant?.brand)?.variant?.brand ||
+    variant?.brand ||
+    product?.brand;
   const unitLabel = variant?.unitLabel || variant?.packType || "Unit";
-  const qty = Number(item.availableQty) || 0;
+  const variants: WarehouseProductVariantOption[] = variantRows.map(
+    (row: any) => {
+      const rowVariant = row.variant;
+      const rowUnit = rowVariant?.unitLabel || rowVariant?.packType || "Unit";
+      const rowPrice = row.retailPrice || rowVariant?.price || "0";
+      const labelParts = [
+        rowVariant?.unitLabel || rowVariant?.packType,
+        rowVariant?.color,
+        rowVariant?.size,
+      ].filter(Boolean);
+
+      return {
+        inventoryId: row.inventoryId || rowVariant?.id || 0,
+        variantId: rowVariant?.id || row.inventoryId || 0,
+        sku: rowVariant?.sku,
+        label: labelParts.length > 0 ? labelParts.join(" · ") : rowUnit,
+        pricePerUnit: rowPrice,
+        unit: rowUnit,
+        availableQty: Number(row.availableQty) || 0,
+        moq: Number(rowVariant?.orderMin) || 1,
+        weightKg: Number(rowVariant?.weightKg) || 0,
+        innerPackSizeKg:
+          Number(rowVariant?.innerPackSizeKg || rowVariant?.pieceWeightKg) || 0,
+        packType: rowVariant?.packType || rowUnit,
+      };
+    },
+  );
+  const selectedVariant = variants[0];
+  const qty = variants.reduce((sum, row) => sum + row.availableQty, 0);
 
   let stockStatus: "high" | "medium" | "low" = "high";
   if (qty <= 10) stockStatus = "low";
@@ -25,58 +68,78 @@ function mapApiProduct(item: any): WarehouseProduct {
   return {
     id: item.inventoryId || variant?.id || 0,
     name: product?.name || "Unknown Product",
-    brand: (variant as any)?.brand?.name || product?.category?.name || "",
+    brand: brand?.name || "",
+    sku: selectedVariant?.sku,
     image,
-    pricePerUnit: item.retailPrice || variant?.price || "0",
-    unit: unitLabel,
-    moq: Number(variant?.orderMin) || 1,
-    moqUnit: unitLabel,
-    availableQty: qty,
+    pricePerUnit:
+      selectedVariant?.pricePerUnit ||
+      item.retailPrice ||
+      variant?.price ||
+      "0",
+    unit: selectedVariant?.unit || unitLabel,
+    moq: selectedVariant?.moq || Number(variant?.orderMin) || 1,
+    moqUnit: selectedVariant?.unit || unitLabel,
+    availableQty: selectedVariant?.availableQty ?? qty,
     availableUnit: `${unitLabel} Available`,
     rating: 0,
     reviewCount: 0,
     stockStatus,
+    variants,
+    selectedVariant,
   };
 }
 
 function getStockLabel(status: "high" | "medium" | "low") {
   switch (status) {
     case "high":
-      return { text: "In Stock", color: "text-emerald-600 bg-emerald-50 border-emerald-200" };
+      return {
+        text: "In Stock",
+        color: "text-emerald-700 bg-emerald-50 border-emerald-200",
+      };
     case "medium":
-      return { text: "Limited Stock", color: "text-amber-600 bg-amber-50 border-amber-200" };
+      return {
+        text: "Limited Stock",
+        color: "text-amber-700 bg-amber-50 border-amber-200",
+      };
     case "low":
-      return { text: "Low Stock", color: "text-red-600 bg-red-50 border-red-200" };
+      return {
+        text: "Low Stock",
+        color: "text-red-700 bg-red-50 border-red-200",
+      };
   }
 }
 
 function ProductDetailModal({
   product,
   onClose,
+  mode = "default",
+  onAddToCart,
 }: {
   product: WarehouseProduct;
   onClose: () => void;
+  mode?: "default" | "w2w" | "view-only";
+  onAddToCart?: (product: WarehouseProduct) => void;
 }) {
   const [imageError, setImageError] = useState(false);
   const stock = getStockLabel(product.stockStatus);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
       onClick={onClose}
     >
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm" />
       <div
-        className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
+        className="relative bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto border border-zinc-200 animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 z-10 p-1.5 rounded-full bg-white/80 hover:bg-gray-100 border border-gray-200 transition-colors"
+          className="absolute top-3.5 right-3.5 z-10 p-1.5 rounded-md bg-white/95 hover:bg-zinc-100 border border-zinc-200 transition-colors"
         >
-          <X className="w-4 h-4 text-gray-600" />
+          <X className="w-4 h-4 text-zinc-500" />
         </button>
-        <div className="relative aspect-[16/9] bg-gray-50 rounded-t-2xl overflow-hidden">
+        <div className="relative aspect-[16/9] bg-zinc-50 border-b border-zinc-100 overflow-hidden">
           {!imageError && product.image ? (
             <Image
               src={product.image}
@@ -87,49 +150,103 @@ function ProductDetailModal({
               unoptimized={product.image.startsWith("http")}
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-              <Package className="w-20 h-20 text-gray-300" />
+            <div className="w-full h-full flex items-center justify-center bg-zinc-50">
+              <Package className="w-16 h-16 text-zinc-300" />
             </div>
           )}
         </div>
-        <div className="p-5 md:p-6">
+        <div className="p-6">
           <div className="mb-4">
-            <h2 className="text-xl font-bold text-gray-900 mb-1">{product.name}</h2>
-            {product.brand && <p className="text-sm text-gray-500">{product.brand}</p>}
+            <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest block mb-1">
+              {product.brand || "Product Details"}
+            </span>
+            <h2 className="text-lg font-bold text-zinc-900 mb-1 leading-snug">
+              {product.name}
+            </h2>
           </div>
           <div className="flex items-center justify-between mb-5">
             <div>
-              <span className="text-2xl font-bold text-gray-900">৳ {product.pricePerUnit}</span>
-              <span className="text-sm text-gray-500 ml-1">/ {product.unit}</span>
+              <span className="text-2xl font-extrabold text-zinc-900 font-mono">
+                ৳ {product.pricePerUnit}
+              </span>
+              <span className="text-xs text-zinc-500 font-medium ml-1">
+                / {product.unit}
+              </span>
             </div>
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${stock.color}`}>
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-mono tracking-wider uppercase font-bold border ${stock.color}`}
+            >
               {stock.text}
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-3 mb-5">
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-0.5">Minimum Order Qty</p>
-              <p className="text-sm font-semibold text-gray-900">{product.moq} {product.moqUnit}</p>
+
+          {/* Logistics Grid Dividers */}
+          <div className="grid grid-cols-2 gap-px bg-zinc-200 border border-zinc-200 rounded-lg overflow-hidden mb-6">
+            <div className="bg-white p-3.5">
+              <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                Minimum Order Qty
+              </p>
+              <p className="text-sm font-mono text-zinc-900 font-bold">
+                {product.moq} {product.moqUnit}
+              </p>
             </div>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-0.5">Available</p>
-              <p className="text-sm font-semibold text-gray-900">{product.availableQty} {product.unit}</p>
+            <div className="bg-white p-3.5">
+              <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                Available Qty
+              </p>
+              <p className="text-sm font-mono text-zinc-900 font-bold">
+                {product.availableQty} {product.unit}
+              </p>
             </div>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-0.5">Unit Price</p>
-              <p className="text-sm font-semibold text-gray-900">৳ {product.pricePerUnit} / {product.unit}</p>
+            <div className="bg-white p-3.5">
+              <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                Unit Price
+              </p>
+              <p className="text-sm font-mono text-zinc-900 font-bold">
+                ৳ {product.pricePerUnit} / {product.unit}
+              </p>
             </div>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-0.5">Category</p>
-              <p className="text-sm font-semibold text-gray-900">{product.brand || "—"}</p>
+            <div className="bg-white p-3.5">
+              <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                Brand
+              </p>
+              <p className="text-sm font-mono text-zinc-900 font-bold">
+                {product.brand || "—"}
+              </p>
             </div>
           </div>
+
           <div className="flex gap-3">
-            <Button className="flex-1 h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium gap-2">
-              <ShoppingCart className="w-4 h-4" />
-              Add to Cart
-            </Button>
-            <Button variant="outline" className="h-11 px-6 border-gray-200 font-medium" onClick={onClose}>
+            {mode === "view-only" ? (
+              <Button
+                variant="outline"
+                className="flex-1 h-11 border-zinc-200 text-zinc-400 font-semibold gap-2 rounded cursor-not-allowed shadow-none"
+                disabled
+              >
+                Access Required
+              </Button>
+            ) : mode === "w2w" ? (
+              <Button
+                className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-2 rounded transition-colors shadow-none"
+                onClick={() => {
+                  onAddToCart?.(product);
+                  onClose();
+                }}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                Add to Cart
+              </Button>
+            ) : (
+              <Button className="flex-1 h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold gap-2 rounded transition-colors shadow-none">
+                <ShoppingCart className="w-4 h-4" />
+                Add to Cart
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="h-11 px-6 border-zinc-200 text-zinc-600 hover:bg-zinc-50 font-semibold rounded transition-colors"
+              onClick={onClose}
+            >
               Close
             </Button>
           </div>
@@ -143,14 +260,32 @@ interface WarehouseProductGridProps {
   products?: any[];
   isLoading?: boolean;
   warehouseSlug?: string;
+  pagination?: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    totalPages: number;
+  };
+  onPageChange?: (page: number) => void;
+  mode?: "default" | "w2w" | "view-only";
+  cart?: any[];
+  onAddToCart?: (product: any) => void;
+  onUpdateQuantity?: (variantId: number, delta: number) => void;
 }
 
 export function WarehouseProductGrid({
   products: rawProducts = [],
   isLoading = false,
   warehouseSlug = "",
+  pagination,
+  onPageChange,
+  mode = "default",
+  cart = [],
+  onAddToCart,
+  onUpdateQuantity,
 }: WarehouseProductGridProps) {
-  const [selectedProduct, setSelectedProduct] = useState<WarehouseProduct | null>(null);
+  const [selectedProduct, setSelectedProduct] =
+    useState<WarehouseProduct | null>(null);
   const [orderProduct, setOrderProduct] = useState<any>(null);
   const [orderOpen, setOrderOpen] = useState(false);
 
@@ -158,23 +293,20 @@ export function WarehouseProductGrid({
   const products: WarehouseProduct[] = rawProducts.map(mapApiProduct);
 
   const handleBuyNow = (cardProduct: WarehouseProduct) => {
-    // Find raw API item to get variant-level data for order
-    const raw = rawProducts.find(
-      (r: any) => (r.inventoryId || r.variant?.id) === cardProduct.id
-    );
-    if (!raw) return;
-    const variant = raw.variant;
+    const selectedVariant =
+      cardProduct.selectedVariant || cardProduct.variants[0];
+    if (!selectedVariant) return;
     setOrderProduct({
-      inventoryId: raw.inventoryId,
-      variantId: variant?.id,
+      inventoryId: selectedVariant.inventoryId,
+      variantId: selectedVariant.variantId,
       productName: cardProduct.name,
-      unit: cardProduct.unit,
-      pricePerUnit: cardProduct.pricePerUnit,
-      availableQty: cardProduct.availableQty,
-      moq: cardProduct.moq,
-      weightKg: Number(variant?.weightKg) || 0,
-      innerPackSizeKg: Number(variant?.innerPackSizeKg || variant?.pieceWeightKg) || 0,
-      packType: variant?.packType || cardProduct.unit,
+      unit: selectedVariant.unit,
+      pricePerUnit: selectedVariant.pricePerUnit,
+      availableQty: selectedVariant.availableQty,
+      moq: selectedVariant.moq,
+      weightKg: selectedVariant.weightKg || 0,
+      innerPackSizeKg: selectedVariant.innerPackSizeKg || 0,
+      packType: selectedVariant.packType || selectedVariant.unit,
     });
     setOrderOpen(true);
   };
@@ -182,16 +314,9 @@ export function WarehouseProductGrid({
   if (isLoading) {
     return (
       <section className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-100 overflow-hidden animate-pulse">
-              <div className="aspect-[4/3] bg-gray-100" />
-              <div className="p-4 space-y-3">
-                <div className="h-4 bg-gray-100 rounded w-3/4" />
-                <div className="h-3 bg-gray-100 rounded w-1/2" />
-                <div className="h-5 bg-gray-100 rounded w-1/3" />
-              </div>
-            </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <WarehouseProductCardSkeleton key={i} />
           ))}
         </div>
       </section>
@@ -203,8 +328,12 @@ export function WarehouseProductGrid({
       <section className="container mx-auto px-4 py-12">
         <div className="text-center">
           <Package className="w-16 h-16 text-gray-300 mx-auto mb-3" />
-          <p className="text-lg font-medium text-gray-600">No products available</p>
-          <p className="text-sm text-gray-400">This warehouse has no products in stock yet.</p>
+          <p className="text-lg font-medium text-gray-600">
+            No products available
+          </p>
+          <p className="text-sm text-gray-400">
+            This warehouse has no products in stock yet.
+          </p>
         </div>
       </section>
     );
@@ -215,24 +344,66 @@ export function WarehouseProductGrid({
       <section className="container mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900">Products</h2>
-          <span className="text-sm text-gray-500">{products.length} items available</span>
+          <span className="text-sm text-gray-500">
+            {products.length} items available
+          </span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {products.map((product) => (
             <WarehouseProductCard
               key={product.id}
               product={product}
               onViewDetails={setSelectedProduct}
               onBuyNow={handleBuyNow}
+              mode={mode}
+              cart={cart}
+              onAddToCart={onAddToCart}
+              onUpdateQuantity={onUpdateQuantity}
             />
           ))}
         </div>
+
+        {/* Pagination controls */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-10 border-t border-zinc-200 pt-6">
+            <p className="text-xs font-medium text-zinc-400 font-mono">
+              Showing page {pagination.page} of {pagination.totalPages} (
+              {pagination.totalCount} products)
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pagination.page <= 1}
+                onClick={() => onPageChange?.(Math.max(1, pagination.page - 1))}
+                className="h-8 px-3 text-xs font-semibold border-zinc-200 text-zinc-600 font-mono rounded bg-white hover:bg-zinc-50"
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pagination.page >= pagination.totalPages}
+                onClick={() =>
+                  onPageChange?.(
+                    Math.min(pagination.totalPages, pagination.page + 1),
+                  )
+                }
+                className="h-8 px-3 text-xs font-semibold border-zinc-200 text-zinc-600 font-mono rounded bg-white hover:bg-zinc-50"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </section>
 
       {selectedProduct && (
         <ProductDetailModal
           product={selectedProduct}
           onClose={() => setSelectedProduct(null)}
+          mode={mode}
+          onAddToCart={onAddToCart}
         />
       )}
 

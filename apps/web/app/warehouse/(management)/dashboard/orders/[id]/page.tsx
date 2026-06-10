@@ -163,6 +163,9 @@ export default function WarehouseSupplierOrderDetailPage() {
   const isCancellable = ["pending", "confirmed"].includes(order.status);
   const isReceivable =
     ["processing", "delivered"].includes(order.status) && !order.receivedAt;
+  const hasWarehouseReview =
+    !!order.confirmedAt ||
+    ["confirmed", "processing", "delivered"].includes(order.status);
 
   const initReceiveItems = () => {
     const nextItems: Record<number, number> = {};
@@ -285,7 +288,9 @@ export default function WarehouseSupplierOrderDetailPage() {
                     <tr>
                       <th className="px-4 py-3 text-left font-medium">Product</th>
                       <th className="px-4 py-3 text-right font-medium">Requested</th>
-                      <th className="px-4 py-3 text-right font-medium">Approved</th>
+                      <th className="px-4 py-3 text-right font-medium">
+                        {hasWarehouseReview ? "Approved" : "Approval"}
+                      </th>
                       <th className="px-4 py-3 text-right font-medium">Unit Price</th>
                       <th className="px-4 py-3 text-right font-medium">Total</th>
                     </tr>
@@ -295,6 +300,7 @@ export default function WarehouseSupplierOrderDetailPage() {
                       const approvedQty = item.modifiedQty ?? item.quantity;
                       const unitPrice = Number(item.modifiedUnitPrice ?? item.unitPrice);
                       const changed = item.modifiedQty !== null && item.modifiedQty !== item.quantity;
+                      const displayQty = hasWarehouseReview ? approvedQty : item.quantity;
                       return (
                         <tr key={item.id} className="border-b last:border-b-0">
                           <td className="px-4 py-3">
@@ -323,15 +329,19 @@ export default function WarehouseSupplierOrderDetailPage() {
                           </td>
                           <td className="px-4 py-3 text-right text-sm">{item.quantity}</td>
                           <td className="px-4 py-3 text-right text-sm">
-                            <span className={changed ? "font-semibold text-orange-600" : ""}>
-                              {approvedQty}
-                            </span>
+                            {hasWarehouseReview ? (
+                              <span className={changed ? "font-semibold text-orange-600" : ""}>
+                                {approvedQty}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">Pending</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-right text-sm">
                             BDT {unitPrice.toLocaleString("en-BD")}
                           </td>
                           <td className="px-4 py-3 text-right text-sm font-semibold">
-                            BDT {(approvedQty * unitPrice).toLocaleString("en-BD")}
+                            BDT {(displayQty * unitPrice).toLocaleString("en-BD")}
                           </td>
                         </tr>
                       );

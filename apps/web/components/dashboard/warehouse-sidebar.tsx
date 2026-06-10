@@ -148,11 +148,7 @@ const warehouseNavGroups: NavGroup[] = [
         url: `${WH}/quick-purchase`,
         icon: PackagePlusIcon,
       },
-      {
-        title: "Order from Supplier",
-        url: `${WH}/order-from-supplier`,
-        icon: ShoppingCartIcon,
-      },
+
       {
         title: "Supplier Orders",
         url: `${WH}/orders`,

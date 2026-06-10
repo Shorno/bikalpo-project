@@ -19,6 +19,8 @@ export interface CoreProductWithRelations {
   image: string;
   categoryId: number;
   subCategoryId: number | null;
+  supportsPack: boolean;
+  supportsLoose: boolean;
   createdAt: Date;
   updatedAt: Date;
   category: {

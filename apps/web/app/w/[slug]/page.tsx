@@ -1,28 +1,281 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
-  Loader2,
   MapPin,
   Package,
   Search,
   Warehouse,
+  ShoppingCart,
+  Trash2,
+  Minus,
+  Plus,
+  Loader2,
+  ArrowRight,
+  ChevronRight,
 } from "lucide-react";
-import Image from "next/image";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, useMemo } from "react";
+import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import Link from "next/link";
+
+const CITIES = [
+  "Dhaka",
+  "Chittagong",
+  "Sylhet",
+  "Rajshahi",
+  "Khulna",
+  "Barisal",
+  "Rangpur",
+  "Mymensingh",
+  "Comilla",
+  "Gazipur",
+  "Narayanganj",
+];
+
+function ProductCardSkeleton() {
+  return (
+    <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden flex flex-col h-full">
+      {/* Image Skeleton */}
+      <div className="aspect-[16/11] bg-zinc-50 relative border-b border-zinc-100 overflow-hidden flex-shrink-0">
+        <Skeleton className="w-full h-full rounded-none" />
+      </div>
+
+      {/* Info details */}
+      <div className="p-3.5 flex-1 flex flex-col justify-between">
+        <div>
+          {/* Category */}
+          <Skeleton className="h-3 w-16 mb-2" />
+          {/* Product Title */}
+          <Skeleton className="h-4 w-5/6 mb-1.5" />
+          <Skeleton className="h-4 w-2/3 mb-1" />
+        </div>
+
+        {/* Specifications */}
+        <div className="space-y-2 mt-4 pt-2 border-t border-zinc-100">
+          <div className="flex justify-between items-center">
+            <Skeleton className="h-3 w-8" />
+            <Skeleton className="h-3.5 w-16" />
+          </div>
+          <div className="flex justify-between items-center">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-3.5 w-12" />
+          </div>
+          <div className="flex justify-between items-baseline pt-1.5">
+            <Skeleton className="h-3 w-10" />
+            <Skeleton className="h-5 w-20" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function WarehouseStorefrontPage() {
   const { slug } = useParams<{ slug: string }>();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // Fetch warehouse info
+  // Buyer connection context
+  const { data: sessionData, isPending: sessionPending } = authClient.useSession();
+  const isWarehouseBuyer = sessionData?.user?.role === "warehouse";
+
+  // Check connection status
+  const { data: supplierConnections, isLoading: connectionsLoading } = useQuery({
+    ...orpc.warehouse.getMyWarehouseSuppliers.queryOptions({
+      input: { status: "active", search: slug, page: 1, limit: 10 },
+    }),
+    enabled: isWarehouseBuyer,
+  });
+
+  const activeConnection = supplierConnections?.items?.find(
+    (item: any) => item.warehouseSlug === slug || item.warehouseId === slug
+  );
+  const isConnectedSupplier = !!activeConnection;
+
+  // Grid mode evaluation
+  const gridMode: "default" | "w2w" | "view-only" = isWarehouseBuyer
+    ? (isConnectedSupplier ? "w2w" : "view-only")
+    : "default";
+
+  // Cart key in local storage
+  const cartKey = `warehouse-supplier-cart:${sessionData?.user?.id}:${slug}`;
+  const [cart, setCart] = useState<any[]>([]);
+
+  // Load cart state
+  useEffect(() => {
+    if (typeof window !== "undefined" && sessionData?.user?.id && gridMode === "w2w") {
+      const stored = localStorage.getItem(cartKey);
+      if (stored) {
+        try {
+          setCart(JSON.parse(stored));
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        setCart([]);
+      }
+    }
+  }, [cartKey, sessionData?.user?.id, gridMode]);
+
+  // Save cart state
+  const saveCart = (newCart: any[]) => {
+    setCart(newCart);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(cartKey, JSON.stringify(newCart));
+    }
+  };
+
+  // Cart mutators
+  const addToCart = (item: any) => {
+    const existing = cart.find((i) => i.variantId === item.selectedVariant?.variantId || i.variantId === item.id);
+    const availableQty = Number(item.availableQty || 0);
+    const moq = Number(item.moq || 1);
+    const variantId = item.selectedVariant?.variantId || item.id;
+    const inventoryId = item.inventoryId || item.id;
+
+    if (existing) {
+      const nextQty = Math.min(availableQty, existing.quantity + 1);
+      saveCart(
+        cart.map((i) =>
+          i.variantId === variantId ? { ...i, quantity: nextQty } : i
+        )
+      );
+      toast.success(`Updated ${item.name} quantity to ${nextQty}`);
+    } else {
+      const qty = Math.min(availableQty, moq);
+      const newItem = {
+        variantId,
+        inventoryId,
+        productName: item.name,
+        image: item.image || "",
+        sku: item.sku || "",
+        unitLabel: item.unit || "Unit",
+        price: item.pricePerUnit || "0",
+        availableQty,
+        quantity: qty,
+      };
+      saveCart([...cart, newItem]);
+      toast.success(`Added ${item.name} to cart`);
+    }
+  };
+
+  const updateQuantity = (variantId: number, delta: number) => {
+    saveCart(
+      cart
+        .map((i) => {
+          if (i.variantId !== variantId) return i;
+          const availableQty = Number(i.availableQty || 0);
+          const nextQty = Math.max(0, Math.min(availableQty, i.quantity + delta));
+          return { ...i, quantity: nextQty };
+        })
+        .filter((i) => i.quantity > 0)
+    );
+  };
+
+  const removeFromCart = (variantId: number) => {
+    saveCart(cart.filter((i) => i.variantId !== variantId));
+  };
+
+  const clearCart = () => {
+    saveCart([]);
+  };
+
+  // Shipping Form State
+  const [shippingName, setShippingName] = useState("");
+  const [shippingPhone, setShippingPhone] = useState("");
+  const [shippingAddress, setShippingAddress] = useState("");
+  const [shippingCity, setShippingCity] = useState("");
+  const [shippingArea, setShippingArea] = useState("");
+  const [customerNote, setCustomerNote] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card"
+  >("cash_on_delivery");
+
+  // Prefill details from session
+  useEffect(() => {
+    if (sessionData?.user) {
+      const u = sessionData.user as any;
+      setShippingName(u.warehouseName || u.name || "");
+      setShippingPhone(u.phoneNumber || u.phone || "");
+      setShippingAddress(u.warehouseAddress || "");
+    }
+  }, [sessionData]);
+
+  // Order mutation
+  const orderMutation = useMutation({
+    mutationFn: (input: {
+      warehouseKey: string;
+      items: { variantId: number; quantity: number }[];
+      shippingName: string;
+      shippingPhone: string;
+      shippingAddress: string;
+      shippingCity: string;
+      shippingArea?: string;
+      customerNote?: string;
+      paymentMethod: "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card";
+    }) => orpc.warehouse.placeWarehouseSupplierOrder.call(input),
+    onSuccess: (result) => {
+      toast.success(result.message || "Order placed successfully!");
+      clearCart();
+      setIsCartOpen(false);
+      queryClient.invalidateQueries({ queryKey: orpc.warehouse.getMyWarehouseSuppliers.key() });
+      queryClient.invalidateQueries({ queryKey: orpc.warehouse.getMyOrders.key() });
+      
+      const warehouseDashboardUrl = process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL || "http://warehouse.bikalpo.localhost:3001";
+      window.location.href = `${warehouseDashboardUrl}/warehouse/dashboard/orders`;
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to place supplier order");
+    },
+  });
+
+  const handlePlaceOrder = () => {
+    if (!shippingName.trim() || !shippingPhone.trim() || !shippingAddress.trim() || !shippingCity.trim()) {
+      toast.error("Please fill in all receiving contact and delivery address details");
+      return;
+    }
+    if (cart.length === 0) {
+      toast.error("Your cart is empty");
+      return;
+    }
+    orderMutation.mutate({
+      warehouseKey: slug,
+      items: cart.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      shippingName,
+      shippingPhone,
+      shippingAddress,
+      shippingCity,
+      shippingArea: shippingArea || undefined,
+      customerNote: customerNote || undefined,
+      paymentMethod,
+    });
+  };
+
+  // Fetch storefront details
   const {
     data: warehouse,
     isLoading: warehouseLoading,
@@ -47,14 +300,67 @@ export default function WarehouseStorefrontPage() {
         slug,
         category: selectedCategory || undefined,
         search: search || undefined,
+        page: String(page),
+        limit: "12",
       },
     }),
   );
 
-  if (warehouseLoading) {
+  const cartTotal = useMemo(() => {
+    return cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+  }, [cart]);
+
+  const cartCount = useMemo(() => {
+    return cart.reduce((sum, item) => sum + item.quantity, 0);
+  }, [cart]);
+
+  if (warehouseLoading || sessionPending || (isWarehouseBuyer && connectionsLoading)) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
+      <div className="min-h-screen bg-zinc-50/50">
+        <div className="bg-white border-b border-zinc-200">
+          <div className="container mx-auto px-4 py-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="flex items-start gap-5">
+                <div className="w-14 h-14 bg-zinc-100 rounded-lg flex items-center justify-center shrink-0 border border-zinc-200">
+                  <Skeleton className="w-6 h-6" />
+                </div>
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Skeleton className="h-8 w-48 md:w-64" />
+                    <Skeleton className="h-5 w-24" />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 mt-2.5">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-28" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="container mx-auto px-4 py-6">
+          <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
+            <Skeleton className="h-10 w-full" />
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-24" />
+              <div className="flex flex-wrap gap-1.5">
+                <Skeleton className="h-8 w-12" />
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-8 w-24" />
+                <Skeleton className="h-8 w-16" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="container mx-auto px-4 pb-16">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <ProductCardSkeleton key={i} />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -77,186 +383,399 @@ export default function WarehouseStorefrontPage() {
   const products = productsData?.products || [];
   const pagination = productsData?.pagination;
 
-  return (
-    <div>
-      {/* Warehouse Header */}
-      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
-              <Warehouse className="w-8 h-8 text-amber-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-                {warehouse.warehouseName || warehouse.name}
-              </h1>
-              <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-600">
-                {warehouse.warehouseAddress && (
-                  <div className="flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span>{warehouse.warehouseAddress}</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-1">
-                  <Package className="w-3.5 h-3.5" />
-                  <span>{warehouse.productCount} products available</span>
-                </div>
+  const renderCartItems = () => {
+    if (cart.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-10 text-center bg-zinc-50 border border-dashed rounded-xl p-4">
+          <ShoppingCart className="w-10 h-10 text-zinc-300 mb-2" />
+          <p className="text-sm font-semibold text-zinc-500">Cart is empty</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Add supplier variants to begin</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 thin-scrollbar">
+        {cart.map((item) => (
+          <div key={item.variantId} className="flex gap-3 p-3 rounded-lg border border-zinc-100 bg-white/50 hover:bg-white hover:shadow-sm transition-all duration-200">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-1">
+                <p className="text-xs font-semibold text-zinc-800 line-clamp-1">{item.productName}</p>
+                <button
+                  onClick={() => removeFromCart(item.variantId)}
+                  className="text-zinc-400 hover:text-red-500 p-0.5 shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <Badge
-                variant="secondary"
-                className="mt-2 bg-amber-100 text-amber-700 border-amber-200"
-              >
-                Verified Warehouse
-              </Badge>
+              <p className="text-[10px] text-zinc-400 mt-0.5">
+                {item.unitLabel} {item.sku ? ` · ${item.sku}` : ""}
+              </p>
+              <div className="flex items-center justify-between mt-2.5 gap-2">
+                <div className="flex items-center border border-zinc-200 rounded-md bg-white p-0.5">
+                  <button
+                    onClick={() => updateQuantity(item.variantId, -1)}
+                    className="h-6 w-6 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 rounded"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <span className="w-7 text-center text-xs font-mono font-bold text-zinc-800">
+                    {item.quantity}
+                  </span>
+                  <button
+                    onClick={() => updateQuantity(item.variantId, 1)}
+                    className="h-6 w-6 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 rounded"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+                <span className="text-xs font-bold font-mono text-zinc-900">
+                  ৳ {(Number(item.price) * item.quantity).toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        ))}
       </div>
+    );
+  };
 
-      {/* Search & Filter Bar */}
-      <div className="container mx-auto px-4 py-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+  const renderCheckoutForm = () => {
+    return (
+      <div className="space-y-4 pt-4 border-t border-zinc-200">
+        <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-widest flex items-center gap-1.5">
+          <MapPin className="w-4 h-4 text-emerald-600" />
+          Receiving Details
+        </h3>
+        
+        <div className="space-y-1.5">
+          <Label htmlFor="shippingName" className="text-xs font-bold text-zinc-600">
+            Receiving Warehouse / Contact Name *
+          </Label>
+          <Input
+            id="shippingName"
+            value={shippingName}
+            onChange={(e) => setShippingName(e.target.value)}
+            placeholder="Receiving warehouse name or contact"
+            className="h-9 text-xs bg-zinc-50/50"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="shippingPhone" className="text-xs font-bold text-zinc-600">
+            Phone Number *
+          </Label>
+          <Input
+            id="shippingPhone"
+            value={shippingPhone}
+            onChange={(e) => setShippingPhone(e.target.value)}
+            placeholder="Contact phone number"
+            className="h-9 text-xs bg-zinc-50/50"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="shippingAddress" className="text-xs font-bold text-zinc-600">
+            Delivery Address *
+          </Label>
+          <Textarea
+            id="shippingAddress"
+            value={shippingAddress}
+            onChange={(e) => setShippingAddress(e.target.value)}
+            placeholder="Street address, building, floor..."
+            className="text-xs bg-zinc-50/50 min-h-[60px] resize-none"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3.5">
+          <div className="space-y-1.5">
+            <Label htmlFor="shippingCity" className="text-xs font-bold text-zinc-600">
+              City *
+            </Label>
+            <Select value={shippingCity || undefined} onValueChange={setShippingCity}>
+              <SelectTrigger id="shippingCity" className="h-9 w-full bg-zinc-50/50 text-xs border-zinc-200 focus:ring-1 focus:ring-zinc-900">
+                <SelectValue placeholder="Select city" />
+              </SelectTrigger>
+              <SelectContent>
+                {CITIES.map((city) => (
+                  <SelectItem key={city} value={city} className="text-xs">
+                    {city}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div className="space-y-1.5">
+            <Label htmlFor="shippingArea" className="text-xs font-bold text-zinc-600">
+              Area (Optional)
+            </Label>
             <Input
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              id="shippingArea"
+              value={shippingArea}
+              onChange={(e) => setShippingArea(e.target.value)}
+              placeholder="e.g. Dhanmondi"
+              className="h-9 text-xs bg-zinc-50/50"
             />
           </div>
         </div>
 
-        {/* Category Tabs */}
-        {categories.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-3">
-            <Button
-              variant={selectedCategory === null ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedCategory(null)}
-              className={
-                selectedCategory === null
-                  ? "bg-amber-600 hover:bg-amber-700"
-                  : ""
-              }
-            >
-              All
-            </Button>
-            {categories.map((cat) => (
-              <Button
-                key={cat.id}
-                variant={selectedCategory === cat.slug ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCategory(cat.slug)}
-                className={
-                  selectedCategory === cat.slug
-                    ? "bg-amber-600 hover:bg-amber-700"
-                    : ""
-                }
-              >
-                {cat.name} ({cat.productCount})
-              </Button>
-            ))}
+        <div className="space-y-1.5">
+          <Label htmlFor="paymentMethod" className="text-xs font-bold text-zinc-600">
+            Payment Method *
+          </Label>
+          <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as any)}>
+            <SelectTrigger id="paymentMethod" className="h-9 w-full bg-zinc-50/50 text-xs border-zinc-200 focus:ring-1 focus:ring-zinc-900">
+              <SelectValue placeholder="Select payment method" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cash_on_delivery" className="text-xs">Cash on delivery</SelectItem>
+              <SelectItem value="bkash" className="text-xs">bKash</SelectItem>
+              <SelectItem value="nagad" className="text-xs">Nagad</SelectItem>
+              <SelectItem value="bank_transfer" className="text-xs">Bank transfer</SelectItem>
+              <SelectItem value="card" className="text-xs">Card</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="customerNote" className="text-xs font-bold text-zinc-600">
+            Order Note (Optional)
+          </Label>
+          <Textarea
+            id="customerNote"
+            value={customerNote}
+            onChange={(e) => setCustomerNote(e.target.value)}
+            placeholder="Special instructions for the supplier..."
+            className="text-xs bg-zinc-50/50 min-h-[50px] resize-none"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-zinc-50/50">
+      {/* Warehouse Header */}
+      <div className="bg-white border-b border-zinc-200">
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex items-start gap-5 min-w-0">
+              <div className="w-14 h-14 bg-zinc-900 rounded-lg flex items-center justify-center shrink-0 shadow-sm border border-zinc-800">
+                <Warehouse className="w-6 h-6 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-zinc-900 truncate">
+                    {warehouse.warehouseName || warehouse.name}
+                  </h1>
+                  <Badge
+                    variant="outline"
+                    className="bg-zinc-50 text-zinc-700 border-zinc-200 font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 font-bold"
+                  >
+                    Verified Store
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 mt-2.5 text-xs font-medium text-zinc-500">
+                  {warehouse.warehouseAddress && (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span className="truncate">{warehouse.warehouseAddress}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                     <Package className="w-3.5 h-3.5 text-zinc-400" />
+                     <span className="font-mono text-zinc-700 font-semibold tabular-nums">
+                       {warehouse.productCount}
+                     </span>
+                     <span>products available</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Products Grid */}
-      <div className="container mx-auto px-4 pb-12">
-        {productsLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-6 h-6 animate-spin text-amber-600" />
-          </div>
-        ) : products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Package className="w-12 h-12 text-gray-300 mb-3" />
-            <p className="text-gray-500 text-lg font-medium">
-              No products available
-            </p>
-            <p className="text-gray-400 text-sm mt-1">
-              {search
-                ? "No products match your search."
-                : "This warehouse hasn't added any products yet."}
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {products.map((item) => {
-                const prod = item.product;
-                const variant = item.variant;
-                if (!prod) return null;
-
-                const image = (prod as any).images?.[0]?.url || null;
-                const price = variant?.price || item.retailPrice || "0";
-
-                return (
-                  <div
-                    key={item.inventoryId}
-                    className="bg-white rounded-lg border shadow-sm overflow-hidden hover:shadow-md transition-shadow group"
-                  >
-                    <div className="aspect-square bg-gray-100 relative overflow-hidden">
-                      {image ? (
-                        <Image
-                          src={image}
-                          alt={prod.name}
-                          width={400}
-                          height={400}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package className="w-10 h-10 text-gray-300" />
-                        </div>
-                      )}
-                      {Number(item.availableQty) > 0 ? (
-                        <Badge className="absolute top-2 right-2 bg-green-100 text-green-700 border-green-200 text-xs">
-                          In Stock
-                        </Badge>
-                      ) : (
-                        <Badge className="absolute top-2 right-2 bg-red-100 text-red-700 border-red-200 text-xs">
-                          Out of Stock
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="p-3">
-                      <p className="text-xs text-gray-400 mb-1">
-                        {(prod as any).category?.name}
-                      </p>
-                      <h3 className="font-medium text-gray-900 text-sm line-clamp-2 mb-1">
-                        {prod.name}
-                      </h3>
-                      {variant?.sku && (
-                        <p className="text-xs text-gray-400 font-mono mb-1.5">
-                          SKU: {variant.sku}
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <p className="text-amber-700 font-bold">
-                          ৳{Number(price).toLocaleString("en-BD")}
-                        </p>
-                        <span className="text-xs text-gray-400">
-                          Qty: {item.availableQty}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Pagination info */}
-            {pagination && pagination.totalPages > 1 && (
-              <div className="flex justify-center mt-8">
-                <p className="text-sm text-gray-500">
-                  Showing page {pagination.page} of {pagination.totalPages} (
-                  {pagination.totalCount} products)
+      {/* Access alert block */}
+      {isWarehouseBuyer && !isConnectedSupplier && (
+        <div className="container mx-auto px-4 pt-6">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <h4 className="font-bold text-amber-800 text-sm">Supplier connection required</h4>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  You must request access from this warehouse from your suppliers list before you can order.
                 </p>
               </div>
+            </div>
+            <Button asChild size="sm" variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-100/50">
+              <Link href="/warehouse/dashboard/suppliers">
+                Go to Suppliers List
+              </Link>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Layout */}
+      <div className="container mx-auto px-4 py-6">
+        <div className="space-y-6">
+          {/* Search & Filter Bar */}
+          <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <Input
+                placeholder="Search products..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                className="pl-10 h-10 border-zinc-200 focus-visible:ring-zinc-900 rounded-md bg-zinc-50/30 text-sm"
+              />
+            </div>
+
+            {/* Category Tabs */}
+            {categories.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
+                  Category Filters
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    variant={selectedCategory === null ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setSelectedCategory(null);
+                      setPage(1);
+                    }}
+                    className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
+                      selectedCategory === null
+                        ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
+                        : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    All
+                  </Button>
+                  {categories.map((cat) => (
+                    <Button
+                      key={cat.id}
+                      variant={
+                        selectedCategory === cat.slug ? "default" : "outline"
+                      }
+                      size="sm"
+                      onClick={() => {
+                        setSelectedCategory(cat.slug);
+                        setPage(1);
+                      }}
+                      className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
+                        selectedCategory === cat.slug
+                          ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
+                          : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      {cat.name}
+                      <span className="ml-1 px-1 py-0.5 text-[9px] font-mono bg-zinc-100 text-zinc-500 rounded border border-zinc-200/50 group-hover:bg-zinc-200">
+                        {cat.productCount}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
             )}
-          </>
-        )}
+          </div>
+
+          <WarehouseProductGrid
+            products={products}
+            isLoading={productsLoading}
+            warehouseSlug={slug}
+            pagination={pagination}
+            onPageChange={setPage}
+            mode={gridMode}
+            cart={cart}
+            onAddToCart={addToCart}
+            onUpdateQuantity={updateQuantity}
+          />
+        </div>
       </div>
+
+      {/* Floating Cart Button & Drawer for all screen sizes */}
+      {gridMode === "w2w" && cart.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
+            <SheetTrigger asChild>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-6 px-5 rounded-full shadow-2xl flex items-center gap-3 border-none transition-all duration-300 hover:scale-105">
+                <div className="relative">
+                  <ShoppingCart className="w-5 h-5" />
+                  <span className="absolute -top-2.5 -right-2.5 bg-zinc-950 text-white font-mono text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-emerald-600">
+                    {cartCount}
+                  </span>
+                </div>
+                <span className="font-mono">৳ {cartTotal.toLocaleString("en-BD")}</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-full sm:max-w-md md:max-w-lg h-full p-0 flex flex-col">
+              <SheetHeader className="p-4 border-b border-zinc-100 flex-shrink-0">
+                <SheetTitle className="flex items-center justify-between">
+                  <span className="text-zinc-800 flex items-center gap-2">
+                    <ShoppingCart className="w-4 h-4 text-emerald-600" />
+                    Supplier Cart
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {cart.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearCart}
+                        className="h-7 px-2 text-[10px] text-zinc-400 hover:text-red-600 hover:bg-red-50"
+                      >
+                        Clear Cart
+                      </Button>
+                    )}
+                    <Badge variant="outline" className="font-mono text-xs">{cartCount} units</Badge>
+                  </div>
+                </SheetTitle>
+              </SheetHeader>
+              <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                {renderCartItems()}
+                {renderCheckoutForm()}
+              </div>
+
+              {/* Sticky Drawer Footer with Totals and Order Placement CTA */}
+              {cart.length > 0 && (
+                <div className="p-4 border-t border-zinc-200 bg-white flex-shrink-0 space-y-3 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-500 font-semibold">Subtotal</span>
+                      <span className="font-bold text-zinc-900 font-mono">৳ {cartTotal.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs pt-1.5 border-t">
+                      <span className="text-zinc-500 font-semibold">Order Total</span>
+                      <span className="font-extrabold text-emerald-600 text-sm font-mono">৳ {cartTotal.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-5 gap-2 rounded-lg transition-colors border-none shadow-sm h-10 text-xs"
+                    disabled={orderMutation.isPending}
+                    onClick={handlePlaceOrder}
+                  >
+                    {orderMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ArrowRight className="w-4 h-4" />
+                    )}
+                    Place Supplier Order
+                  </Button>
+                </div>
+              )}
+            </SheetContent>
+          </Sheet>
+        </div>
+      )}
     </div>
   );
 }

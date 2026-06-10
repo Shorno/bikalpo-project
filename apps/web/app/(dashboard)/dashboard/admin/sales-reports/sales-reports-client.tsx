@@ -433,8 +433,8 @@ export function SalesReportsClient() {
                     tickFormatter={(value) => `৳${(value / 1000).toFixed(0)}k`}
                   />
                   <Tooltip
-                    formatter={(value: number) => [
-                      `৳${value.toLocaleString()}`,
+                    formatter={(value: any) => [
+                      `৳${Number(value || 0).toLocaleString()}`,
                       "Sales",
                     ]}
                   />
@@ -517,8 +517,8 @@ export function SalesReportsClient() {
                     width={100}
                   />
                   <Tooltip
-                    formatter={(value: number) => [
-                      `৳${value.toLocaleString()}`,
+                    formatter={(value: any) => [
+                      `৳${Number(value || 0).toLocaleString()}`,
                       "Sales",
                     ]}
                   />

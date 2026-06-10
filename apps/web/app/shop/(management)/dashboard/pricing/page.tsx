@@ -141,7 +141,7 @@ export default function PricingPage() {
       const catGroup = grouped.get(catSlug)!;
       const prodId = prod.id;
       if (!catGroup.products.has(prodId)) {
-        const img = prod.images?.[0]?.url || prod.image || null;
+        const img = prod.images?.[0]?.imageUrl || prod.images?.[0]?.url || prod.image || null;
         catGroup.products.set(prodId, { productName: prod.name, productImage: img, rows: [] });
       }
       catGroup.products.get(prodId)!.rows.push(item);
