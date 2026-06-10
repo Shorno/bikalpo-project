@@ -27,6 +27,13 @@ import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 
@@ -90,7 +97,7 @@ export default function WarehouseStorefrontPage() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Buyer connection context
   const { data: sessionData, isPending: sessionPending } = authClient.useSession();
@@ -234,7 +241,7 @@ export default function WarehouseStorefrontPage() {
     onSuccess: (result) => {
       toast.success(result.message || "Order placed successfully!");
       clearCart();
-      setIsMobileCartOpen(false);
+      setIsCartOpen(false);
       queryClient.invalidateQueries({ queryKey: orpc.warehouse.getMyWarehouseSuppliers.key() });
       queryClient.invalidateQueries({ queryKey: orpc.warehouse.getMyOrders.key() });
       
@@ -485,17 +492,18 @@ export default function WarehouseStorefrontPage() {
             <Label htmlFor="shippingCity" className="text-xs font-bold text-zinc-600">
               City *
             </Label>
-            <select
-              id="shippingCity"
-              value={shippingCity}
-              onChange={(e) => setShippingCity(e.target.value)}
-              className="h-9 w-full rounded-md border border-zinc-200 bg-zinc-50/50 px-2.5 text-xs outline-none focus:ring-1 focus:ring-zinc-900"
-            >
-              <option value="">Select city</option>
-              {CITIES.map((city) => (
-                <option key={city} value={city}>{city}</option>
-              ))}
-            </select>
+            <Select value={shippingCity || undefined} onValueChange={setShippingCity}>
+              <SelectTrigger id="shippingCity" className="h-9 w-full bg-zinc-50/50 text-xs border-zinc-200 focus:ring-1 focus:ring-zinc-900">
+                <SelectValue placeholder="Select city" />
+              </SelectTrigger>
+              <SelectContent>
+                {CITIES.map((city) => (
+                  <SelectItem key={city} value={city} className="text-xs">
+                    {city}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           
           <div className="space-y-1.5">
@@ -516,18 +524,18 @@ export default function WarehouseStorefrontPage() {
           <Label htmlFor="paymentMethod" className="text-xs font-bold text-zinc-600">
             Payment Method *
           </Label>
-          <select
-            id="paymentMethod"
-            value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value as any)}
-            className="h-9 w-full rounded-md border border-zinc-200 bg-zinc-50/50 px-2.5 text-xs outline-none focus:ring-1 focus:ring-zinc-900"
-          >
-            <option value="cash_on_delivery">Cash on delivery</option>
-            <option value="bkash">bKash</option>
-            <option value="nagad">Nagad</option>
-            <option value="bank_transfer">Bank transfer</option>
-            <option value="card">Card</option>
-          </select>
+          <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as any)}>
+            <SelectTrigger id="paymentMethod" className="h-9 w-full bg-zinc-50/50 text-xs border-zinc-200 focus:ring-1 focus:ring-zinc-900">
+              <SelectValue placeholder="Select payment method" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cash_on_delivery" className="text-xs">Cash on delivery</SelectItem>
+              <SelectItem value="bkash" className="text-xs">bKash</SelectItem>
+              <SelectItem value="nagad" className="text-xs">Nagad</SelectItem>
+              <SelectItem value="bank_transfer" className="text-xs">Bank transfer</SelectItem>
+              <SelectItem value="card" className="text-xs">Card</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-1.5">
@@ -542,59 +550,9 @@ export default function WarehouseStorefrontPage() {
             className="text-xs bg-zinc-50/50 min-h-[50px] resize-none"
           />
         </div>
-
-        <div className="bg-zinc-50 rounded-lg border p-3.5 space-y-2 mt-4">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-zinc-500 font-semibold">Subtotal</span>
-            <span className="font-bold text-zinc-900 font-mono">৳ {cartTotal.toLocaleString()}</span>
-          </div>
-          <div className="flex items-center justify-between text-xs pt-1.5 border-t">
-            <span className="text-zinc-500 font-semibold">Order Total</span>
-            <span className="font-extrabold text-emerald-600 text-sm font-mono">৳ {cartTotal.toLocaleString()}</span>
-          </div>
-        </div>
-
-        <Button
-          type="button"
-          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-5 gap-2 rounded-lg transition-colors border-none shadow-sm mt-3 h-10 text-xs"
-          disabled={cart.length === 0 || orderMutation.isPending}
-          onClick={handlePlaceOrder}
-        >
-          {orderMutation.isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <ArrowRight className="w-4 h-4" />
-          )}
-          Place Supplier Order
-        </Button>
       </div>
     );
   };
-
-  const stickyCartPanel = (
-    <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-sm space-y-5 sticky top-6">
-      <div className="flex items-center justify-between border-b pb-3">
-        <h2 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
-          <ShoppingCart className="w-4 h-4 text-emerald-600" />
-          Supplier Cart
-        </h2>
-        {cart.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearCart}
-            className="h-7 px-2 text-[10px] text-zinc-400 hover:text-red-600 hover:bg-red-50"
-          >
-            Clear Cart
-          </Button>
-        )}
-      </div>
-
-      {renderCartItems()}
-
-      {cart.length > 0 && renderCheckoutForm()}
-    </div>
-  );
 
   return (
     <div className="min-h-screen bg-zinc-50/50">
@@ -626,11 +584,11 @@ export default function WarehouseStorefrontPage() {
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <Package className="w-3.5 h-3.5 text-zinc-400" />
-                    <span className="font-mono text-zinc-700 font-semibold tabular-nums">
-                      {warehouse.productCount}
-                    </span>
-                    <span>products available</span>
+                     <Package className="w-3.5 h-3.5 text-zinc-400" />
+                     <span className="font-mono text-zinc-700 font-semibold tabular-nums">
+                       {warehouse.productCount}
+                     </span>
+                     <span>products available</span>
                   </div>
                 </div>
               </div>
@@ -663,123 +621,157 @@ export default function WarehouseStorefrontPage() {
 
       {/* Main Content Layout */}
       <div className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left Side: Search & Filter and Product Grid */}
-          <div className="lg:col-span-3 space-y-6">
-            {/* Search & Filter Bar */}
-            <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
-              <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                <Input
-                  placeholder="Search products..."
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPage(1);
-                  }}
-                  className="pl-10 h-10 border-zinc-200 focus-visible:ring-zinc-900 rounded-md bg-zinc-50/30 text-sm"
-                />
-              </div>
+        <div className="space-y-6">
+          {/* Search & Filter Bar */}
+          <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <Input
+                placeholder="Search products..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                className="pl-10 h-10 border-zinc-200 focus-visible:ring-zinc-900 rounded-md bg-zinc-50/30 text-sm"
+              />
+            </div>
 
-              {/* Category Tabs */}
-              {categories.length > 0 && (
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                    Category Filters
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
+            {/* Category Tabs */}
+            {categories.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
+                  Category Filters
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    variant={selectedCategory === null ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setSelectedCategory(null);
+                      setPage(1);
+                    }}
+                    className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
+                      selectedCategory === null
+                        ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
+                        : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    All
+                  </Button>
+                  {categories.map((cat) => (
                     <Button
-                      variant={selectedCategory === null ? "default" : "outline"}
+                      key={cat.id}
+                      variant={
+                        selectedCategory === cat.slug ? "default" : "outline"
+                      }
                       size="sm"
                       onClick={() => {
-                        setSelectedCategory(null);
+                        setSelectedCategory(cat.slug);
                         setPage(1);
                       }}
                       className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
-                        selectedCategory === null
+                        selectedCategory === cat.slug
                           ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
                           : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
                       }`}
                     >
-                      All
+                      {cat.name}
+                      <span className="ml-1 px-1 py-0.5 text-[9px] font-mono bg-zinc-100 text-zinc-500 rounded border border-zinc-200/50 group-hover:bg-zinc-200">
+                        {cat.productCount}
+                      </span>
                     </Button>
-                    {categories.map((cat) => (
-                      <Button
-                        key={cat.id}
-                        variant={
-                          selectedCategory === cat.slug ? "default" : "outline"
-                        }
-                        size="sm"
-                        onClick={() => {
-                          setSelectedCategory(cat.slug);
-                          setPage(1);
-                        }}
-                        className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
-                          selectedCategory === cat.slug
-                            ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
-                            : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
-                        }`}
-                      >
-                        {cat.name}
-                        <span className="ml-1 px-1 py-0.5 text-[9px] font-mono bg-zinc-100 text-zinc-500 rounded border border-zinc-200/50 group-hover:bg-zinc-200">
-                          {cat.productCount}
-                        </span>
-                      </Button>
-                    ))}
-                  </div>
+                  ))}
                 </div>
-              )}
-            </div>
-
-            <WarehouseProductGrid
-              products={products}
-              isLoading={productsLoading}
-              warehouseSlug={slug}
-              pagination={pagination}
-              onPageChange={setPage}
-              mode={gridMode}
-              cart={cart}
-              onAddToCart={addToCart}
-              onUpdateQuantity={updateQuantity}
-            />
+              </div>
+            )}
           </div>
 
-          {/* Right Side: Sticky cart on desktop (only when gridMode is "w2w") */}
-          {gridMode === "w2w" && (
-            <div className="hidden lg:block lg:col-span-1">
-              {stickyCartPanel}
-            </div>
-          )}
+          <WarehouseProductGrid
+            products={products}
+            isLoading={productsLoading}
+            warehouseSlug={slug}
+            pagination={pagination}
+            onPageChange={setPage}
+            mode={gridMode}
+            cart={cart}
+            onAddToCart={addToCart}
+            onUpdateQuantity={updateQuantity}
+          />
         </div>
       </div>
 
-      {/* Floating Bottom Button & Sheet for mobile */}
+      {/* Floating Cart Button & Drawer for all screen sizes */}
       {gridMode === "w2w" && cart.length > 0 && (
-        <div className="lg:hidden fixed bottom-6 left-0 right-0 z-40 px-4 flex justify-center">
-          <Sheet open={isMobileCartOpen} onOpenChange={setIsMobileCartOpen}>
+        <div className="fixed bottom-6 right-6 z-50">
+          <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
             <SheetTrigger asChild>
-              <Button className="w-full max-w-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-6 rounded-full shadow-lg flex items-center justify-between px-6 border-none">
-                <div className="flex items-center gap-2">
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-6 px-5 rounded-full shadow-2xl flex items-center gap-3 border-none transition-all duration-300 hover:scale-105">
+                <div className="relative">
                   <ShoppingCart className="w-5 h-5" />
-                  <span>View Cart ({cartCount})</span>
+                  <span className="absolute -top-2.5 -right-2.5 bg-zinc-950 text-white font-mono text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-emerald-600">
+                    {cartCount}
+                  </span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span>৳ {cartTotal.toLocaleString("en-BD")}</span>
-                  <ChevronRight className="w-4 h-4" />
-                </div>
+                <span className="font-mono">৳ {cartTotal.toLocaleString("en-BD")}</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="h-[85vh] rounded-t-2xl p-0 flex flex-col">
+            <SheetContent side="right" className="w-full sm:max-w-md md:max-w-lg h-full p-0 flex flex-col">
               <SheetHeader className="p-4 border-b border-zinc-100 flex-shrink-0">
                 <SheetTitle className="flex items-center justify-between">
-                  <span className="text-zinc-800">Supplier Cart</span>
-                  <Badge variant="outline" className="font-mono text-xs">{cartCount} units</Badge>
+                  <span className="text-zinc-800 flex items-center gap-2">
+                    <ShoppingCart className="w-4 h-4 text-emerald-600" />
+                    Supplier Cart
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {cart.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearCart}
+                        className="h-7 px-2 text-[10px] text-zinc-400 hover:text-red-600 hover:bg-red-50"
+                      >
+                        Clear Cart
+                      </Button>
+                    )}
+                    <Badge variant="outline" className="font-mono text-xs">{cartCount} units</Badge>
+                  </div>
                 </SheetTitle>
               </SheetHeader>
               <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 {renderCartItems()}
                 {renderCheckoutForm()}
               </div>
+
+              {/* Sticky Drawer Footer with Totals and Order Placement CTA */}
+              {cart.length > 0 && (
+                <div className="p-4 border-t border-zinc-200 bg-white flex-shrink-0 space-y-3 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-500 font-semibold">Subtotal</span>
+                      <span className="font-bold text-zinc-900 font-mono">৳ {cartTotal.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs pt-1.5 border-t">
+                      <span className="text-zinc-500 font-semibold">Order Total</span>
+                      <span className="font-extrabold text-emerald-600 text-sm font-mono">৳ {cartTotal.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-5 gap-2 rounded-lg transition-colors border-none shadow-sm h-10 text-xs"
+                    disabled={orderMutation.isPending}
+                    onClick={handlePlaceOrder}
+                  >
+                    {orderMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ArrowRight className="w-4 h-4" />
+                    )}
+                    Place Supplier Order
+                  </Button>
+                </div>
+              )}
             </SheetContent>
           </Sheet>
         </div>
