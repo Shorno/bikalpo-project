@@ -94,7 +94,7 @@ export default function WarehouseSupplierOrderDetailPage() {
     onSuccess: (result) => {
       toast.success(result.message || "Order cancelled");
       queryClient.invalidateQueries({ queryKey: ["warehouse", "getMyOrders"] });
-      router.push("/warehouse/dashboard/orders");
+      router.push("/warehouse/dashboard/purchases");
     },
     onError: (error: any) => toast.error(error.message || "Failed to cancel order"),
   });
@@ -151,7 +151,7 @@ export default function WarehouseSupplierOrderDetailPage() {
           <Package className="mx-auto mb-3 h-14 w-14 text-muted-foreground/25" />
           <h2 className="text-lg font-semibold">Order not found</h2>
           <Button asChild variant="outline" className="mt-4">
-            <Link href="/warehouse/dashboard/orders">Back to Supplier Orders</Link>
+            <Link href="/warehouse/dashboard/purchases">Back to Supplier Purchases</Link>
           </Button>
         </div>
       </div>
@@ -181,7 +181,7 @@ export default function WarehouseSupplierOrderDetailPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button asChild variant="ghost" size="icon">
-            <Link href="/warehouse/dashboard/orders">
+            <Link href="/warehouse/dashboard/purchases">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>

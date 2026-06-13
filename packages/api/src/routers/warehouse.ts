@@ -3456,6 +3456,8 @@ const orderQueries = {
 					.optional(),
 				page: z.number().default(1),
 				limit: z.number().default(20),
+				supplierWarehouseId: z.string().optional(),
+				timeframe: z.enum(["today", "this_month", "all"]).default("all"),
 			}),
 		)
 		.handler(async ({ context, input }) => {
@@ -3470,6 +3472,14 @@ const orderQueries = {
 				sql`${order.warehouseId} IS NOT NULL`,
 			];
 			if (input.status) conditions.push(eq(order.status, input.status));
+			if (input.supplierWarehouseId) {
+				conditions.push(eq(order.warehouseId, input.supplierWarehouseId));
+			}
+			if (input.timeframe === "today") {
+				conditions.push(sql`${order.createdAt} >= CURRENT_DATE`);
+			} else if (input.timeframe === "this_month") {
+				conditions.push(sql`${order.createdAt} >= date_trunc('month', CURRENT_DATE)`);
+			}
 
 			const where = and(...conditions);
 
