@@ -150,12 +150,7 @@ const warehouseNavGroups: NavGroup[] = [
       },
 
       {
-        title: "Supplier Orders",
-        url: `${WH}/orders`,
-        icon: ClipboardListIcon,
-      },
-      {
-        title: "Purchase Orders",
+        title: "Supplier Purchases",
         url: `${WH}/purchases`,
         icon: ClipboardListIcon,
       },

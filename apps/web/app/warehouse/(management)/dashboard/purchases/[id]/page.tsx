@@ -36,8 +36,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { orpc } from "@/utils/orpc";
+import { PurchaseDetailPageSkeleton } from "../_components/purchases-skeletons";
 
 const statusConfig: Record<
   string,
@@ -45,30 +53,34 @@ const statusConfig: Record<
 > = {
   pending: {
     label: "Pending",
-    icon: <Clock className="h-4 w-4" />,
+    icon: <Clock className="h-3.5 w-3.5" />,
     className: "text-amber-700 bg-amber-50 border-amber-200",
   },
   confirmed: {
     label: "Confirmed",
-    icon: <CheckCircle2 className="h-4 w-4" />,
+    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
     className: "text-blue-700 bg-blue-50 border-blue-200",
   },
   processing: {
     label: "Processing",
-    icon: <Truck className="h-4 w-4" />,
+    icon: <Truck className="h-3.5 w-3.5" />,
     className: "text-indigo-700 bg-indigo-50 border-indigo-200",
   },
   delivered: {
     label: "Delivered",
-    icon: <PackageCheck className="h-4 w-4" />,
+    icon: <PackageCheck className="h-3.5 w-3.5" />,
     className: "text-emerald-700 bg-emerald-50 border-emerald-200",
   },
   cancelled: {
     label: "Cancelled",
-    icon: <XCircle className="h-4 w-4" />,
-    className: "text-red-700 bg-red-50 border-red-200",
+    icon: <XCircle className="h-3.5 w-3.5" />,
+    className: "text-rose-700 bg-rose-50 border-rose-200",
   },
 };
+
+function formatMoney(value: unknown) {
+  return `৳${Number(value || 0).toLocaleString("en-BD")}`;
+}
 
 export default function WarehouseSupplierOrderDetailPage() {
   const params = useParams();
@@ -94,7 +106,7 @@ export default function WarehouseSupplierOrderDetailPage() {
     onSuccess: (result) => {
       toast.success(result.message || "Order cancelled");
       queryClient.invalidateQueries({ queryKey: ["warehouse", "getMyOrders"] });
-      router.push("/warehouse/dashboard/orders");
+      router.push("/warehouse/dashboard/purchases");
     },
     onError: (error: any) => toast.error(error.message || "Failed to cancel order"),
   });
@@ -135,13 +147,7 @@ export default function WarehouseSupplierOrderDetailPage() {
   });
 
   if (detailQuery.isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-12 w-80" />
-        <Skeleton className="h-52 w-full" />
-        <Skeleton className="h-72 w-full" />
-      </div>
-    );
+    return <PurchaseDetailPageSkeleton />;
   }
 
   if (detailQuery.isError || !detailQuery.data) {
@@ -149,9 +155,12 @@ export default function WarehouseSupplierOrderDetailPage() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
           <Package className="mx-auto mb-3 h-14 w-14 text-muted-foreground/25" />
-          <h2 className="text-lg font-semibold">Order not found</h2>
+          <h2 className="text-lg font-semibold text-foreground">Order not found</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This purchase order may have been removed or you lack access.
+          </p>
           <Button asChild variant="outline" className="mt-4">
-            <Link href="/warehouse/dashboard/orders">Back to Supplier Orders</Link>
+            <Link href="/warehouse/dashboard/purchases">Back to Supplier Purchases</Link>
           </Button>
         </div>
       </div>
@@ -176,36 +185,58 @@ export default function WarehouseSupplierOrderDetailPage() {
     setShowReceiveDialog(true);
   };
 
+  const currentTimelineIdx = timeline.findIndex((step: any) => !step.completed);
+
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon">
-            <Link href="/warehouse/dashboard/orders">
+    <div className="mx-auto max-w-5xl space-y-6 pb-10">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Link href="/warehouse/dashboard" className="hover:text-foreground transition-colors">
+          Warehouse
+        </Link>
+        <span>/</span>
+        <Link href="/warehouse/dashboard/purchases" className="hover:text-foreground transition-colors">
+          Supplier Purchases
+        </Link>
+        <span>/</span>
+        <span className="text-foreground font-medium font-mono">{order.orderNumber}</span>
+      </div>
+
+      {/* Page header */}
+      <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <Button asChild variant="ghost" size="icon" className="shrink-0 mt-0.5">
+            <Link href="/warehouse/dashboard/purchases">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-mono text-xl font-bold">{order.orderNumber}</h1>
-              <Badge variant="outline" className={`gap-1 ${config.className}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-mono text-2xl font-semibold tracking-tight text-foreground tabular-nums">
+                {order.orderNumber}
+              </h1>
+              <Badge variant="outline" className={`gap-1 text-xs ${config.className}`}>
                 {config.icon}
                 {config.label}
               </Badge>
               {order.requiresBuyerAcceptance ? (
-                <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">
+                <Badge
+                  variant="outline"
+                  className="text-xs text-amber-700 bg-amber-50 border-amber-200"
+                >
                   Approval needed
                 </Badge>
               ) : null}
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Supplier: {order.supplierWarehouseName}
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Supplier:{" "}
+              <span className="font-medium text-foreground">{order.supplierWarehouseName}</span>
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           {order.supplierWarehousePhone ? (
-            <Button asChild variant="outline">
+            <Button asChild variant="outline" size="sm" className="h-9">
               <Link href={`tel:${order.supplierWarehousePhone}`}>
                 <Phone className="mr-2 h-4 w-4" />
                 Call Supplier
@@ -213,7 +244,11 @@ export default function WarehouseSupplierOrderDetailPage() {
             </Button>
           ) : null}
           {isReceivable ? (
-            <Button onClick={initReceiveItems}>
+            <Button
+              size="sm"
+              className="h-9 bg-amber-600 hover:bg-amber-500/90 text-white"
+              onClick={initReceiveItems}
+            >
               <PackageCheck className="mr-2 h-4 w-4" />
               Mark Received
             </Button>
@@ -221,7 +256,8 @@ export default function WarehouseSupplierOrderDetailPage() {
           {isCancellable ? (
             <Button
               variant="outline"
-              className="text-red-600 hover:text-red-700"
+              size="sm"
+              className="h-9 text-destructive hover:text-destructive hover:bg-destructive/10"
               disabled={cancelMutation.isPending}
               onClick={() => {
                 if (confirm("Cancel this supplier order?")) cancelMutation.mutate();
@@ -239,13 +275,13 @@ export default function WarehouseSupplierOrderDetailPage() {
       </div>
 
       {order.requiresBuyerAcceptance ? (
-        <Card className="border-orange-200 bg-orange-50/60">
+        <Card className="border-amber-200 bg-amber-50/50 ring-amber-100">
           <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 text-orange-600" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
               <div>
-                <p className="font-semibold text-orange-900">Supplier changed quantities</p>
-                <p className="text-sm text-orange-700">
+                <p className="text-sm font-semibold text-foreground">Supplier changed quantities</p>
+                <p className="text-sm text-muted-foreground">
                   Accept to continue dispatch, or reject to cancel and release reserved stock.
                 </p>
               </div>
@@ -253,13 +289,15 @@ export default function WarehouseSupplierOrderDetailPage() {
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                className="border-red-200 text-red-600 hover:text-red-700"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
                 disabled={rejectMutation.isPending || acceptMutation.isPending}
                 onClick={() => rejectMutation.mutate()}
               >
                 Reject
               </Button>
               <Button
+                size="sm"
                 disabled={rejectMutation.isPending || acceptMutation.isPending}
                 onClick={() => acceptMutation.mutate()}
               >
@@ -275,37 +313,48 @@ export default function WarehouseSupplierOrderDetailPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-5">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Items</CardTitle>
+      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+        <div className="space-y-6">
+          <Card className="ring-border/60">
+            <CardHeader className="border-b border-border pb-4">
+              <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Line Items
+              </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="border-y bg-gray-50 text-xs uppercase text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium">Product</th>
-                      <th className="px-4 py-3 text-right font-medium">Requested</th>
-                      <th className="px-4 py-3 text-right font-medium">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border">
+                      <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Product
+                      </TableHead>
+                      <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Requested
+                      </TableHead>
+                      <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         {hasWarehouseReview ? "Approved" : "Approval"}
-                      </th>
-                      <th className="px-4 py-3 text-right font-medium">Unit Price</th>
-                      <th className="px-4 py-3 text-right font-medium">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                      </TableHead>
+                      <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Unit Price
+                      </TableHead>
+                      <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Total
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {order.items?.map((item: any) => {
                       const approvedQty = item.modifiedQty ?? item.quantity;
                       const unitPrice = Number(item.modifiedUnitPrice ?? item.unitPrice);
-                      const changed = item.modifiedQty !== null && item.modifiedQty !== item.quantity;
+                      const changed =
+                        item.modifiedQty !== null && item.modifiedQty !== item.quantity;
                       const displayQty = hasWarehouseReview ? approvedQty : item.quantity;
                       return (
-                        <tr key={item.id} className="border-b last:border-b-0">
-                          <td className="px-4 py-3">
+                        <TableRow key={item.id} className="border-b border-border hover:bg-muted/30">
+                          <TableCell className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/30">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
                                 {item.product?.image ? (
                                   <Image
                                     src={item.product.image}
@@ -320,102 +369,138 @@ export default function WarehouseSupplierOrderDetailPage() {
                                 )}
                               </div>
                               <div>
-                                <p className="text-sm font-medium">{item.productName}</p>
+                                <p className="text-sm font-medium text-foreground">
+                                  {item.productName}
+                                </p>
                                 <p className="text-xs text-muted-foreground">
                                   {item.productSize || item.variant?.unitLabel || "Unit"}
                                 </p>
                               </div>
                             </div>
-                          </td>
-                          <td className="px-4 py-3 text-right text-sm">{item.quantity}</td>
-                          <td className="px-4 py-3 text-right text-sm">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-foreground">
+                            {item.quantity}
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums">
                             {hasWarehouseReview ? (
-                              <span className={changed ? "font-semibold text-orange-600" : ""}>
+                              <span className={changed ? "font-semibold text-amber-700" : "text-foreground"}>
                                 {approvedQty}
                               </span>
                             ) : (
                               <span className="text-muted-foreground">Pending</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-right text-sm">
-                            BDT {unitPrice.toLocaleString("en-BD")}
-                          </td>
-                          <td className="px-4 py-3 text-right text-sm font-semibold">
-                            BDT {(displayQty * unitPrice).toLocaleString("en-BD")}
-                          </td>
-                        </tr>
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-foreground">
+                            {formatMoney(unitPrice)}
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-right text-sm font-semibold font-mono tabular-nums text-foreground">
+                            {formatMoney(displayQty * unitPrice)}
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
 
           {delivery?.trackingId || delivery?.riderName || delivery?.riderPhone ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Delivery</CardTitle>
+            <Card className="ring-border/60">
+              <CardHeader className="border-b border-border pb-4">
+                <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Delivery
+                </CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-3 text-sm sm:grid-cols-3">
-                <Info label="Tracking ID" value={delivery.trackingId || "-"} />
-                <Info label="Rider" value={delivery.riderName || "-"} />
-                <Info label="Rider Phone" value={delivery.riderPhone || "-"} />
+              <CardContent className="grid gap-4 pt-4 text-sm sm:grid-cols-3">
+                <Info label="Tracking ID" value={delivery.trackingId || "—"} mono />
+                <Info label="Rider" value={delivery.riderName || "—"} />
+                <Info label="Rider Phone" value={delivery.riderPhone || "—"} mono />
               </CardContent>
             </Card>
           ) : null}
         </div>
 
-        <div className="space-y-5">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Summary</CardTitle>
+        <div className="space-y-6">
+          <Card className="ring-border/60">
+            <CardHeader className="border-b border-border pb-4">
+              <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Order Summary
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
+            <CardContent className="space-y-3 pt-4 text-sm">
               <Info label="Supplier" value={order.supplierWarehouseName} />
-              <Info label="Payment" value={String(order.paymentMethod).replaceAll("_", " ")} />
-              <Info label="Status" value={config.label} />
               <Info
-                label="Total"
-                value={`BDT ${Number(order.total).toLocaleString("en-BD")}`}
-                strong
+                label="Payment"
+                value={String(order.paymentMethod).replaceAll("_", " ")}
               />
+              <Info label="Status" value={config.label} />
+              <div className="border-t border-border pt-3">
+                <Info label="Total" value={formatMoney(order.total)} strong mono />
+              </div>
               {hasModifications ? (
-                <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-orange-700">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                   Some quantities were changed by the supplier.
                 </div>
               ) : null}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Timeline</CardTitle>
+          <Card className="ring-border/60">
+            <CardHeader className="border-b border-border pb-4">
+              <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Timeline
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {timeline.map((step: any) => (
-                <div key={step.step} className="flex gap-3">
-                  <div
-                    className={`mt-0.5 h-3 w-3 rounded-full border ${
-                      step.completed
-                        ? "border-emerald-500 bg-emerald-500"
-                        : "border-gray-300 bg-white"
-                    }`}
-                  />
-                  <div>
-                    <p className="text-sm font-medium">{step.step}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {step.date
-                        ? new Date(step.date).toLocaleDateString("en-BD", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })
-                        : "Pending"}
-                    </p>
+            <CardContent className="space-y-4 pt-4">
+              {timeline.map((step: any, idx: number) => {
+                const isDone = step.completed;
+                const isCurrent = !isDone && idx === currentTimelineIdx;
+                return (
+                  <div key={step.step} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div
+                        className={`flex h-3 w-3 shrink-0 rounded-full border-2 ${
+                          isDone
+                            ? "border-emerald-500 bg-emerald-500"
+                            : isCurrent
+                              ? "border-amber-500 bg-amber-500"
+                              : "border-border bg-card"
+                        }`}
+                      />
+                      {idx < timeline.length - 1 ? (
+                        <div
+                          className={`mt-1 w-px flex-1 min-h-4 ${
+                            isDone ? "bg-emerald-300" : "bg-border"
+                          }`}
+                        />
+                      ) : null}
+                    </div>
+                    <div className="pb-1">
+                      <p
+                        className={`text-sm font-medium ${
+                          isDone
+                            ? "text-foreground"
+                            : isCurrent
+                              ? "text-amber-700"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {step.step}
+                      </p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {step.date
+                          ? new Date(step.date).toLocaleDateString("en-BD", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "Pending"}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         </div>
@@ -435,14 +520,16 @@ export default function WarehouseSupplierOrderDetailPage() {
               return (
                 <div key={item.id} className="grid grid-cols-[1fr_110px] items-center gap-3">
                   <div>
-                    <p className="text-sm font-medium">{item.productName}</p>
+                    <p className="text-sm font-medium text-foreground">{item.productName}</p>
                     <p className="text-xs text-muted-foreground">
-                      Expected {expectedQty}
+                      Expected{" "}
+                      <span className="font-mono tabular-nums">{expectedQty}</span>
                     </p>
                   </div>
                   <Input
                     type="number"
                     min={0}
+                    className="font-mono tabular-nums"
                     value={receivedItems[item.id] ?? expectedQty}
                     onChange={(event) =>
                       setReceivedItems((current) => ({
@@ -464,6 +551,7 @@ export default function WarehouseSupplierOrderDetailPage() {
               Close
             </Button>
             <Button
+              className="bg-amber-600 hover:bg-amber-500/90 text-white"
               onClick={() => receiveMutation.mutate()}
               disabled={receiveMutation.isPending}
             >
@@ -485,15 +573,21 @@ function Info({
   label,
   value,
   strong,
+  mono,
 }: {
   label: string;
   value: string;
   strong?: boolean;
+  mono?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`text-right capitalize ${strong ? "font-bold" : "font-medium"}`}>
+      <span
+        className={`text-right capitalize ${
+          strong ? "text-base font-bold text-foreground" : "font-medium text-foreground"
+        } ${mono ? "font-mono tabular-nums" : ""}`}
+      >
         {value}
       </span>
     </div>
