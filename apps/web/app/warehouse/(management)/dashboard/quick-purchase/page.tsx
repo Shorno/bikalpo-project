@@ -24,6 +24,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -189,6 +190,7 @@ function mapPaymentMethodForSupplier(method: PurchasePaymentMethod) {
 
 export default function WarehouseQuickPurchasePage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const searchRef = useRef<HTMLInputElement>(null);
   const [selectionMode, setSelectionMode] = useState<"search" | "manual">(
     "manual",
@@ -235,6 +237,15 @@ export default function WarehouseQuickPurchasePage() {
     const timer = window.setTimeout(() => setDebouncedSearch(searchText), 250);
     return () => window.clearTimeout(timer);
   }, [searchText]);
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("supplierId");
+    if (!fromUrl) return;
+    const parsed = Number(fromUrl);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setSupplierId(parsed);
+    }
+  }, [searchParams]);
 
   const catalogQuery = useQuery({
     queryKey: [

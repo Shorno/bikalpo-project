@@ -4,32 +4,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Building2,
-  CheckCircle2,
-  Clock,
   CreditCard,
-  Filter,
+  DollarSign,
   Loader2,
   MapPin,
-  Package,
-  Pencil,
   Phone,
   Plus,
   Search,
-  ShoppingCart,
   Star,
-  Trash2,
-  TrendingUp,
   Users,
-  Wallet,
   Warehouse,
-  XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -47,7 +36,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -56,15 +44,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useDebounce } from "@/hooks/use-debounce";
 import {
-  useCancelWarehouseSupplierRequest,
-  useDisconnectWarehouseSupplier,
   useLookupWarehouseSupplier,
   useMyWarehouseSuppliers,
   useRequestWarehouseSupplier,
 } from "@/hooks/use-warehouse-supplier-connections";
+import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
+import {
+  MetricCardsGridSkeleton,
+  SuppliersTableBodySkeleton,
+} from "./_components/suppliers-skeletons";
+import { supplierDetailHref } from "./_lib/supplier-routes";
+
+const TOP_SUPPLIER_THRESHOLD = 500_000;
+const SUPPLIERS_TABLE_MIN_WIDTH = "min-w-[52rem]";
 
 type SupplierForm = {
   name: string;
@@ -92,326 +87,646 @@ const emptyForm: SupplierForm = {
   categoryId: null,
 };
 
+type StatusFilter = "all" | "active" | "inactive" | "top";
+
+type UnifiedSupplier = {
+  key: string;
+  kind: "external" | "warehouse";
+  linkId: number;
+  name: string;
+  category: string;
+  contact: string | null;
+  totalPurchase: number;
+  displayStatus: "top" | "active" | "inactive" | "pending";
+};
+
+const statusPillConfig: Record<
+  string,
+  { label: string; dotClass: string; pillClass: string }
+> = {
+  top: {
+    label: "Top Supplier",
+    dotClass: "bg-amber-500",
+    pillClass: "text-amber-700 bg-amber-50 border-amber-200",
+  },
+  active: {
+    label: "Active",
+    dotClass: "bg-emerald-500",
+    pillClass: "text-emerald-700 bg-emerald-50 border-emerald-200",
+  },
+  inactive: {
+    label: "Inactive",
+    dotClass: "bg-rose-500",
+    pillClass: "text-rose-700 bg-rose-50 border-rose-200",
+  },
+  pending: {
+    label: "Pending",
+    dotClass: "bg-amber-500",
+    pillClass: "text-amber-700 bg-amber-50 border-amber-200",
+  },
+};
+
 function formatMoney(value: number) {
-  return `৳ ${value.toLocaleString("en-BD")}`;
+  return `৳${value.toLocaleString("en-BD")}`;
 }
 
-export default function SuppliersPage() {
+function MetricCard({
+  title,
+  value,
+  icon: Icon,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
   return (
-    <Tabs defaultValue="warehouse" className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Users className="w-6 h-6 text-emerald-600" />
-            Suppliers
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Manage connected warehouse suppliers and external vendor records.
-          </p>
+    <div className="relative overflow-hidden rounded-lg border border-border bg-card p-2.5 transition-colors hover:border-border/80 sm:rounded-xl sm:p-4">
+      <div className="mb-1 flex items-center gap-2 sm:mb-2 sm:justify-between">
+        <span className="min-w-0 flex-1 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:flex-none sm:text-xs sm:tracking-wider">
+          {title}
+        </span>
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground sm:h-7 sm:w-7 sm:rounded-lg">
+          <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
         </div>
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="warehouse">Warehouse Suppliers</TabsTrigger>
-          <TabsTrigger value="external">External Suppliers</TabsTrigger>
-        </TabsList>
       </div>
-
-      <TabsContent value="warehouse" className="mt-0">
-        <WarehouseSuppliersPanel />
-      </TabsContent>
-      <TabsContent value="external" className="mt-0">
-        <ExternalSuppliersPanel />
-      </TabsContent>
-    </Tabs>
-  );
-}
-
-function getPublicStorefrontBaseUrl() {
-  const configuredUrl = process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL;
-  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
-
-  if (typeof window !== "undefined") {
-    return window.location.origin.replace("//warehouse.", "//");
-  }
-
-  return "http://bikalpo.localhost:3001";
-}
-
-function WarehouseSuppliersPanel() {
-  const [statusTab, setStatusTab] = useState<"all" | "active" | "pending" | "disconnected">("all");
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const { data, isLoading, isError } = useMyWarehouseSuppliers({
-    status: statusTab,
-    search: debouncedSearch,
-  });
-  const cancelMutation = useCancelWarehouseSupplierRequest();
-  const disconnectMutation = useDisconnectWarehouseSupplier();
-
-  const handleSearch = useCallback((v: string) => {
-    setSearch(v);
-    clearTimeout((window as any).__warehouseSupSearchTimer);
-    (window as any).__warehouseSupSearchTimer = setTimeout(
-      () => setDebouncedSearch(v),
-      400,
-    );
-  }, []);
-
-  const suppliers = data?.items ?? [];
-  const counts = suppliers.reduce(
-    (acc: Record<string, number>, item: any) => {
-      acc[item.status] = (acc[item.status] ?? 0) + 1;
-      return acc;
-    },
-    {},
-  );
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative max-w-md flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search warehouse suppliers..."
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <ConnectWarehouseSupplierDialog />
-      </div>
-
-      <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as any)}>
-        <TabsList>
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="active">
-            Connected
-            {counts.active ? <span className="ml-1 text-[10px] opacity-70">{counts.active}</span> : null}
-          </TabsTrigger>
-          <TabsTrigger value="pending">
-            Pending
-            {counts.pending ? <span className="ml-1 text-[10px] opacity-70">{counts.pending}</span> : null}
-          </TabsTrigger>
-          <TabsTrigger value="disconnected">Rejected</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      {isLoading ? (
-        <Card>
-          <CardContent className="p-6 space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full" />
-            ))}
-          </CardContent>
-        </Card>
-      ) : isError ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <AlertCircle className="w-10 h-10 mx-auto mb-3 text-red-400" />
-            <p className="font-medium text-red-600">Failed to load warehouse suppliers</p>
-          </CardContent>
-        </Card>
-      ) : suppliers.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <Warehouse className="w-14 h-14 text-muted-foreground/25 mx-auto mb-4" />
-            <p className="text-lg font-semibold">No warehouse suppliers found</p>
-            <p className="text-sm text-muted-foreground mt-1 mb-6">
-              {debouncedSearch
-                ? "No connected warehouse suppliers match your search"
-                : "Request access by warehouse slug or id to build your supplier network"}
-            </p>
-            {!debouncedSearch && <ConnectWarehouseSupplierDialog />}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {suppliers.map((supplier: any) => {
-            const isStorefrontAvailable = !!supplier.warehouseSlug;
-            const storefrontUrl = isStorefrontAvailable
-              ? `${getPublicStorefrontBaseUrl()}/w/${supplier.warehouseSlug}`
-              : "#";
-
-            const cardContent = (
-              <Card className={`relative flex flex-col h-full overflow-hidden border border-zinc-200/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 ${supplier.status === 'active' && isStorefrontAvailable ? 'hover:shadow-md cursor-pointer group' : ''}`}>
-                <CardContent className="p-5 flex-1 flex flex-col justify-between">
-                  <div className="space-y-4">
-                    {/* Header: Name & Status */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-200/50">
-                          {supplier.image ? (
-                            <img
-                              src={supplier.image}
-                              alt={supplier.warehouseName || supplier.name}
-                              className="w-full h-full object-cover rounded-lg"
-                            />
-                          ) : (
-                            <Warehouse className="w-5 h-5 text-zinc-500" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className={`font-semibold text-zinc-900 dark:text-zinc-50 transition-colors truncate ${supplier.status === 'active' && isStorefrontAvailable ? 'group-hover:text-emerald-600' : ''}`}>
-                            {supplier.warehouseName || supplier.name || "Unnamed Warehouse"}
-                          </h3>
-                          <span className="font-mono text-[10px] text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-200/40">
-                            {supplier.warehouseSlug || supplier.warehouseId}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="shrink-0">
-                        <WarehouseSupplierStatus status={supplier.status} />
-                      </div>
-                    </div>
-
-                    {/* Logistics and Contact Details */}
-                    <div className="space-y-2.5 pt-2 text-sm text-zinc-600 dark:text-zinc-300">
-                      {supplier.warehouseAddress ? (
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-zinc-400 mt-0.5 shrink-0" />
-                          <span className="line-clamp-2 text-xs">{supplier.warehouseAddress}</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-zinc-400 mt-0.5 shrink-0" />
-                          <span className="text-xs text-muted-foreground">No address provided</span>
-                        </div>
-                      )}
-                      
-                      {supplier.phone && (
-                        <div className="flex items-center gap-2">
-                          <Phone className="w-4 h-4 text-zinc-400 shrink-0" />
-                          <span className="text-xs">{supplier.phone}</span>
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
-                        <Package className="w-4 h-4 text-zinc-400 shrink-0" />
-                        <span className="text-xs font-medium">
-                          {supplier.status === "active" ? supplier.productCount : 0} Products available
-                        </span>
-                      </div>
-
-                      {supplier.lastOrderedAt && (
-                        <div className="flex items-center gap-2 text-zinc-500">
-                          <Clock className="w-4 h-4 text-zinc-400 shrink-0" />
-                          <span className="text-[11px]">
-                            Last Ordered: {new Date(supplier.lastOrderedAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions Area */}
-                  <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-3" onClick={(e) => e.stopPropagation()}>
-                    <div>
-                      {supplier.status === "active" && !isStorefrontAvailable && (
-                        <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                          Storefront unavailable
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {supplier.status === "pending" ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs h-8"
-                          disabled={cancelMutation.isPending}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            cancelMutation.mutate({
-                              connectionId: supplier.connectionId,
-                            });
-                          }}
-                        >
-                          {cancelMutation.isPending && (
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                          )}
-                          Cancel Request
-                        </Button>
-                      ) : supplier.status === "active" ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-zinc-600 hover:text-red-600 hover:bg-red-50/50 text-xs h-8"
-                            disabled={disconnectMutation.isPending}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (confirm("Disconnect this warehouse supplier?")) {
-                                disconnectMutation.mutate({
-                                  connectionId: supplier.connectionId,
-                                });
-                              }
-                            }}
-                          >
-                            Disconnect
-                          </Button>
-                          {isStorefrontAvailable && (
-                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs h-8" asChild>
-                              <Link href={storefrontUrl}>
-                                Visit Storefront
-                              </Link>
-                            </Button>
-                          )}
-                        </>
-                      ) : (
-                        <Button variant="outline" size="sm" className="text-xs h-8" disabled>
-                          Request Denied
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-
-            if (supplier.status === "active" && isStorefrontAvailable) {
-              return (
-                <Link key={supplier.connectionId} href={storefrontUrl} className="block h-full">
-                  {cardContent}
-                </Link>
-              );
-            }
-
-            return <div key={supplier.connectionId}>{cardContent}</div>;
-          })}
-        </div>
-      )}
+      <span className="block truncate text-base font-bold font-mono tabular-nums tracking-tight text-foreground sm:text-xl">
+        {value}
+      </span>
     </div>
   );
 }
 
-function WarehouseSupplierStatus({ status }: { status: string }) {
-  if (status === "active") {
-    return (
-      <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50 gap-1">
-        <CheckCircle2 className="w-3 h-3" />
-        Connected
-      </Badge>
-    );
-  }
-  if (status === "pending") {
-    return (
-      <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50 gap-1">
-        <Clock className="w-3 h-3" />
-        Pending
-      </Badge>
-    );
-  }
+function FilterPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50 gap-1">
-      <XCircle className="w-3 h-3" />
-      Rejected
-    </Badge>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-background text-foreground hover:bg-muted"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
-function ConnectWarehouseSupplierDialog() {
+function SupplierStatusPill({ status }: { status: UnifiedSupplier["displayStatus"] }) {
+  const config = statusPillConfig[status];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${config.pillClass}`}
+    >
+      {status === "top" ? (
+        <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+      ) : (
+        <span className={`h-1.5 w-1.5 rounded-full ${config.dotClass}`} />
+      )}
+      {config.label}
+    </span>
+  );
+}
+
+export default function SuppliersPage() {
+  const queryClient = useQueryClient();
+  const { data: sessionData } = authClient.useSession();
+  const warehouseName =
+    (sessionData?.user as { warehouseName?: string })?.warehouseName ||
+    "IFAD Distribution Hub";
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 300);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<number | undefined>();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState<SupplierForm>({ ...emptyForm });
+
+  const externalQuery = useQuery({
+    queryKey: [
+      "warehouse",
+      "suppliers",
+      debouncedSearch,
+      categoryFilter,
+    ],
+    queryFn: () =>
+      orpc.warehouse.getSuppliers.call({
+        search: debouncedSearch.trim() || undefined,
+        status: "all",
+        categoryId: categoryFilter,
+      }),
+  });
+
+  const warehouseQuery = useMyWarehouseSuppliers({
+    status: "all",
+    search: debouncedSearch,
+    limit: 100,
+  });
+
+  const statsQuery = useQuery({
+    queryKey: ["warehouse", "supplierStats"],
+    queryFn: () => orpc.warehouse.getSupplierStats.call({}),
+  });
+
+  const payableSummaryQuery = useQuery({
+    queryKey: ["supplierPayment", "getPayableSummary"],
+    queryFn: () => orpc.supplierPayment.getPayableSummary.call({}),
+  });
+
+  const orderTotalsQuery = useQuery({
+    queryKey: ["warehouse", "getMyOrders", "supplier-totals"],
+    queryFn: () =>
+      orpc.warehouse.getMyOrders.call({
+        timeframe: "all",
+        page: 1,
+        limit: 500,
+      }),
+  });
+
+  const { data: categoriesData } = useQuery({
+    queryKey: ["warehouse", "supplierCategories"],
+    queryFn: () => orpc.warehouse.getSupplierCategories.call({}),
+  });
+
+  const warehousePurchaseTotals = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const order of orderTotalsQuery.data?.orders ?? []) {
+      const supplierId = order.warehouseId as string;
+      if (!supplierId) continue;
+      map[supplierId] = (map[supplierId] ?? 0) + parseFloat(order.total || "0");
+    }
+    return map;
+  }, [orderTotalsQuery.data?.orders]);
+
+  const unifiedSuppliers = useMemo(() => {
+    const rows: UnifiedSupplier[] = [];
+
+    for (const s of externalQuery.data?.suppliers ?? []) {
+      const displayStatus: UnifiedSupplier["displayStatus"] =
+        s.totalPurchase > TOP_SUPPLIER_THRESHOLD
+          ? "top"
+          : s.status === "active"
+            ? "active"
+            : "inactive";
+
+      rows.push({
+        key: `ext-${s.id}`,
+        kind: "external",
+        linkId: s.id,
+        name: s.name,
+        category: s.categoryName ?? "External",
+        contact: s.phone ?? null,
+        totalPurchase: s.totalPurchase,
+        displayStatus,
+      });
+    }
+
+    for (const w of warehouseQuery.data?.items ?? []) {
+      const totalPurchase = warehousePurchaseTotals[w.warehouseId] ?? 0;
+      let displayStatus: UnifiedSupplier["displayStatus"] = "inactive";
+      if (w.status === "pending") displayStatus = "pending";
+      else if (w.status === "active") {
+        displayStatus =
+          totalPurchase > TOP_SUPPLIER_THRESHOLD ? "top" : "active";
+      }
+
+      rows.push({
+        key: `wh-${w.connectionId}`,
+        kind: "warehouse",
+        linkId: w.connectionId,
+        name: w.warehouseName || w.name || "Unnamed Warehouse",
+        category: "Warehouse",
+        contact: w.phone ?? null,
+        totalPurchase,
+        displayStatus,
+      });
+    }
+
+    return rows.sort((a, b) => {
+      if (b.totalPurchase !== a.totalPurchase) {
+        return b.totalPurchase - a.totalPurchase;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [
+    externalQuery.data?.suppliers,
+    warehouseQuery.data?.items,
+    warehousePurchaseTotals,
+  ]);
+
+  const filteredSuppliers = useMemo(() => {
+    return unifiedSuppliers.filter((s) => {
+      if (statusFilter === "active") {
+        return s.displayStatus === "active" || s.displayStatus === "top";
+      }
+      if (statusFilter === "inactive") {
+        return s.displayStatus === "inactive";
+      }
+      if (statusFilter === "top") {
+        return s.displayStatus === "top";
+      }
+      return true;
+    });
+  }, [unifiedSuppliers, statusFilter]);
+
+  const activeCount = unifiedSuppliers.filter(
+    (s) => s.displayStatus === "active" || s.displayStatus === "top",
+  ).length;
+
+  const stats = statsQuery.data;
+  const categories = categoriesData?.categories ?? [];
+  const overdueValue =
+    payableSummaryQuery.data?.suppliers?.reduce(
+      (sum: number, s: { currentPayable: string }) =>
+        sum + parseFloat(s.currentPayable),
+      0,
+    ) ?? 0;
+
+  const hasActiveFilters =
+    statusFilter !== "all" ||
+    categoryFilter !== undefined ||
+    searchQuery.trim() !== "";
+
+  const isLoading =
+    externalQuery.isLoading ||
+    warehouseQuery.isLoading ||
+    orderTotalsQuery.isLoading;
+  const isError = externalQuery.isError || warehouseQuery.isError;
+  const isSearchEmpty =
+    debouncedSearch.trim().length > 0 && filteredSuppliers.length === 0;
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["warehouse", "suppliers"] });
+    queryClient.invalidateQueries({ queryKey: ["warehouse", "supplierStats"] });
+    queryClient.invalidateQueries({
+      queryKey: orpc.warehouse.getMyWarehouseSuppliers.key(),
+    });
+    queryClient.invalidateQueries({ queryKey: ["warehouse", "getMyOrders"] });
+    queryClient.invalidateQueries({
+      queryKey: ["supplierPayment", "getPayableSummary"],
+    });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: (data: SupplierForm) =>
+      orpc.warehouse.createSupplier.call({
+        ...data,
+        categoryId: data.categoryId ?? undefined,
+      }),
+    onSuccess: () => {
+      invalidateAll();
+      resetForm();
+      toast.success("Supplier created");
+    },
+    onError: (e: Error) => toast.error(e.message || "Failed to create supplier"),
+  });
+
+  const resetForm = () => {
+    setForm({ ...emptyForm });
+    setDialogOpen(false);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    createMutation.mutate(form);
+  };
+
+  const handleReset = () => {
+    setStatusFilter("all");
+    setCategoryFilter(undefined);
+    setSearchQuery("");
+  };
+
+  return (
+    <div className="w-full space-y-4 pb-4 sm:space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground sm:mb-1.5">
+            <Link
+              href="/warehouse/dashboard"
+              className="transition-colors hover:text-foreground"
+            >
+              Warehouse
+            </Link>
+            <span>/</span>
+            <span className="truncate font-medium text-foreground">Suppliers</span>
+          </div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+            Suppliers Management
+          </h1>
+          <div className="mt-1.5 flex flex-col gap-1 text-xs text-muted-foreground sm:mt-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1.5 sm:text-sm">
+            <span className="inline-flex items-center gap-1 truncate">
+              <MapPin size={13} className="shrink-0" />
+              Warehouse:{" "}
+              <span className="font-medium text-foreground">{warehouseName}</span>
+            </span>
+            <span className="hidden text-border sm:inline">•</span>
+            <span className="inline-flex items-center gap-1">
+              <Users size={13} className="shrink-0" />
+              Total Suppliers:{" "}
+              <span className="font-medium text-foreground">
+                {isLoading ? "—" : `${activeCount} Active`}
+              </span>
+            </span>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+          <ConnectWarehouseSupplierDialog />
+          <Button
+            onClick={() => {
+              resetForm();
+              setDialogOpen(true);
+            }}
+            className="h-9 w-full bg-amber-600 text-xs font-semibold text-white hover:bg-amber-500/90 sm:w-auto"
+          >
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Add New Supplier
+          </Button>
+        </div>
+      </div>
+
+      {/* KPIs */}
+      {statsQuery.isLoading && !stats ? (
+        <MetricCardsGridSkeleton />
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
+          <MetricCard
+            title="Total Purchase"
+            value={formatMoney(stats?.totalPurchase ?? 0)}
+            icon={DollarSign}
+          />
+          <MetricCard
+            title="Total Paid"
+            value={formatMoney(stats?.totalPaid ?? 0)}
+            icon={CreditCard}
+          />
+          <MetricCard
+            title="Payable"
+            value={formatMoney(stats?.totalPayable ?? 0)}
+            icon={Building2}
+          />
+          <MetricCard
+            title="Overdue"
+            value={formatMoney(overdueValue)}
+            icon={AlertCircle}
+          />
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
+        <div className="space-y-3 border-b border-border p-4 sm:space-y-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                Supplier List
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                External vendors and connected warehouse suppliers — click any row
+                for details
+              </p>
+            </div>
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Supplier name, phone, product..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="-mx-4 flex flex-col gap-3 border-t border-border bg-muted/30 px-4 py-3 sm:-mx-5 sm:px-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:text-xs">
+                Filter:
+              </span>
+              {(
+                [
+                  ["all", "All"],
+                  ["active", "Active"],
+                  ["inactive", "Inactive"],
+                  ["top", "Top Supplier"],
+                ] as const
+              ).map(([value, label]) => (
+                <FilterPill
+                  key={value}
+                  active={statusFilter === value}
+                  onClick={() => setStatusFilter(value)}
+                >
+                  {label}
+                </FilterPill>
+              ))}
+            </div>
+            {categories.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:text-xs">
+                  Category:
+                </span>
+                {categories.map((c: { id: number; name: string }) => (
+                  <FilterPill
+                    key={c.id}
+                    active={categoryFilter === c.id}
+                    onClick={() =>
+                      setCategoryFilter(
+                        categoryFilter === c.id ? undefined : c.id,
+                      )
+                    }
+                  >
+                    {c.name}
+                  </FilterPill>
+                ))}
+              </div>
+            )}
+            {hasActiveFilters && (
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleReset}
+                  className="h-8 text-xs font-semibold"
+                >
+                  Reset filters
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex min-h-[360px] w-full flex-col">
+          {isLoading ? (
+            <SuppliersTableBodySkeleton />
+          ) : isError ? (
+            <div className="flex flex-1 flex-col items-center justify-center px-4 py-16 text-center">
+              <AlertCircle className="mb-2 size-10 text-red-300" />
+              <p className="font-medium text-red-600">Failed to load suppliers</p>
+            </div>
+          ) : filteredSuppliers.length === 0 ? (
+            <div className="flex min-h-[280px] flex-1 flex-col items-center justify-center px-4 py-16 text-center">
+              {isSearchEmpty ? (
+                <Search className="mb-3 size-10 text-muted-foreground/40" />
+              ) : (
+                <Users className="mb-3 size-10 text-muted-foreground/40" />
+              )}
+              <p className="font-medium text-foreground">
+                {isSearchEmpty ? "No matching suppliers" : "No suppliers found"}
+              </p>
+              <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                {isSearchEmpty
+                  ? `Nothing matched "${debouncedSearch.trim()}".`
+                  : hasActiveFilters
+                    ? "Try adjusting your filters."
+                    : "Add an external supplier or connect a warehouse supplier to get started."}
+              </p>
+              {hasActiveFilters ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReset}
+                  className="mt-4 h-8 text-xs"
+                >
+                  Reset filters
+                </Button>
+              ) : (
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    onClick={() => setDialogOpen(true)}
+                    className="h-8 bg-amber-600 text-xs text-white hover:bg-amber-500/90"
+                    size="sm"
+                  >
+                    <Plus className="mr-2 h-3.5 w-3.5" />
+                    Add Supplier
+                  </Button>
+                  <ConnectWarehouseSupplierDialog triggerVariant="outline" />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-full overflow-x-auto">
+              <Table className={`w-full ${SUPPLIERS_TABLE_MIN_WIDTH}`}>
+                <TableHeader>
+                  <TableRow className="border-b border-border bg-muted/30 hover:bg-transparent">
+                    {[
+                      "Supplier Name",
+                      "Type",
+                      "Category",
+                      "Contact",
+                      "Total Purchase",
+                      "Status",
+                      "Action",
+                    ].map((col) => (
+                      <TableHead
+                        key={col}
+                        className={`h-auto whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3 ${
+                          col === "Total Purchase" || col === "Action"
+                            ? "text-right"
+                            : ""
+                        }`}
+                      >
+                        {col}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredSuppliers.map((s) => (
+                    <TableRow
+                      key={s.key}
+                      className="border-b border-border transition-colors hover:bg-muted/30"
+                    >
+                      <TableCell className="px-3 py-3 align-middle sm:px-4 sm:py-3.5">
+                        <Link
+                          href={supplierDetailHref(s.kind, s.linkId)}
+                          className="block min-w-[9rem]"
+                        >
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {s.name}
+                          </p>
+                        </Link>
+                      </TableCell>
+                      <TableCell className="px-3 py-3 align-middle sm:px-4 sm:py-3.5">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                            s.kind === "warehouse"
+                              ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                              : "border-border bg-muted/50 text-muted-foreground"
+                          }`}
+                        >
+                          {s.kind === "warehouse" ? "Warehouse" : "External"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-3 py-3 align-middle sm:px-4 sm:py-3.5">
+                        <span className="inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium">
+                          {s.category}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-3 py-3 align-middle sm:px-4 sm:py-3.5">
+                        {s.contact ? (
+                          <span className="flex items-center gap-1 font-mono text-xs">
+                            <Phone className="h-3 w-3 text-muted-foreground" />
+                            {s.contact}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="px-3 py-3 text-right align-middle font-mono text-xs font-bold tabular-nums sm:px-4 sm:py-3.5">
+                        {formatMoney(s.totalPurchase)}
+                      </TableCell>
+                      <TableCell className="px-3 py-3 align-middle sm:px-4 sm:py-3.5">
+                        <SupplierStatusPill status={s.displayStatus} />
+                      </TableCell>
+                      <TableCell className="px-3 py-3 text-right align-middle sm:px-4 sm:py-3.5">
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs font-semibold text-primary hover:bg-muted"
+                        >
+                          <Link href={supplierDetailHref(s.kind, s.linkId)}>
+                            View &rarr;
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <SupplierFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        form={form}
+        setForm={setForm}
+        categories={categories}
+        onSubmit={handleSubmit}
+        onCancel={resetForm}
+        isPending={createMutation.isPending}
+      />
+    </div>
+  );
+}
+
+function ConnectWarehouseSupplierDialog({
+  triggerVariant = "default",
+}: {
+  triggerVariant?: "default" | "outline";
+}) {
   const [open, setOpen] = useState(false);
   const [warehouseKey, setWarehouseKey] = useState("");
   const [submittedKey, setSubmittedKey] = useState("");
@@ -428,7 +743,6 @@ function ConnectWarehouseSupplierDialog() {
   const handleRequest = () => {
     const key = lookup.data?.warehouse?.warehouseSlug || submittedKey;
     if (!key) return;
-
     requestSupplier.mutate(
       { warehouseKey: key },
       {
@@ -444,9 +758,16 @@ function ConnectWarehouseSupplierDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="gap-1.5">
-          <Plus className="w-4 h-4" />
-          Add Warehouse Supplier
+        <Button
+          variant={triggerVariant}
+          className={`h-9 w-full gap-1.5 text-xs font-semibold sm:w-auto ${
+            triggerVariant === "default"
+              ? "bg-background text-foreground hover:bg-muted"
+              : ""
+          }`}
+        >
+          <Warehouse className="h-3.5 w-3.5" />
+          Connect Warehouse
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
@@ -456,10 +777,9 @@ function ConnectWarehouseSupplierDialog() {
             Enter the warehouse slug or id provided by your supplier warehouse.
           </DialogDescription>
         </DialogHeader>
-
         <form onSubmit={handleSearch} className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={warehouseKey}
               onChange={(e) => setWarehouseKey(e.target.value)}
@@ -467,41 +787,38 @@ function ConnectWarehouseSupplierDialog() {
               className="pl-9"
             />
           </div>
-          <Button type="submit" variant="secondary" disabled={!warehouseKey.trim() || lookup.isLoading}>
-            {lookup.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={!warehouseKey.trim() || lookup.isLoading}
+          >
+            {lookup.isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "Search"
+            )}
           </Button>
         </form>
-
-        <div className="min-h-[130px]">
+        <div className="min-h-[120px]">
           {lookup.isLoading ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
-              <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+              <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
               Searching...
             </div>
           ) : lookup.isError ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center text-amber-700">
-              <AlertCircle className="w-6 h-6 mx-auto mb-2" />
+              <AlertCircle className="mx-auto mb-2 h-6 w-6" />
               <p className="text-sm font-medium">Warehouse not found</p>
-              <p className="text-xs mt-1">Check the slug or id and try again.</p>
             </div>
           ) : lookup.data?.warehouse ? (
             <div className="rounded-lg border bg-muted/30 p-4">
-              <div className="flex items-start gap-3">
-                <div className="w-11 h-11 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
-                  <Warehouse className="w-5 h-5 text-emerald-700" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold truncate">
-                    {lookup.data.warehouse.warehouseName || lookup.data.warehouse.name}
-                  </p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {lookup.data.warehouse.warehouseAddress || "No address provided"}
-                  </p>
-                  <p className="text-xs font-medium text-emerald-600 mt-1">
-                    {lookup.data.warehouse.productCount} products available
-                  </p>
-                </div>
-              </div>
+              <p className="font-semibold">
+                {lookup.data.warehouse.warehouseName ||
+                  lookup.data.warehouse.name}
+              </p>
+              <p className="mt-1 text-xs text-emerald-600">
+                {lookup.data.warehouse.productCount} products available
+              </p>
             </div>
           ) : (
             <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
@@ -509,7 +826,6 @@ function ConnectWarehouseSupplierDialog() {
             </div>
           )}
         </div>
-
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
@@ -519,7 +835,7 @@ function ConnectWarehouseSupplierDialog() {
             disabled={!lookup.data?.warehouse || requestSupplier.isPending}
           >
             {requestSupplier.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : null}
             Request Access
           </Button>
@@ -529,537 +845,103 @@ function ConnectWarehouseSupplierDialog() {
   );
 }
 
-function ExternalSuppliersPanel() {
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "suspended">("all");
-  const [categoryFilter, setCategoryFilter] = useState<number | undefined>(undefined);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<SupplierForm>({ ...emptyForm });
-
-  const handleSearch = useCallback((v: string) => {
-    setSearch(v);
-    clearTimeout((window as any).__supSearchTimer);
-    (window as any).__supSearchTimer = setTimeout(() => setDebouncedSearch(v), 400);
-  }, []);
-
-  // ── Queries ──
-  const { data: suppliersData, isLoading } = useQuery({
-    queryKey: ["warehouse", "suppliers", debouncedSearch, statusFilter, categoryFilter],
-    queryFn: () =>
-      orpc.warehouse.getSuppliers.call({
-        search: debouncedSearch || undefined,
-        status: statusFilter,
-        categoryId: categoryFilter,
-      }),
-  });
-
-  const { data: statsData } = useQuery({
-    queryKey: ["warehouse", "supplierStats"],
-    queryFn: () => orpc.warehouse.getSupplierStats.call({}),
-  });
-
-  const { data: categoriesData } = useQuery({
-    queryKey: ["warehouse", "supplierCategories"],
-    queryFn: () => orpc.warehouse.getSupplierCategories.call({}),
-  });
-
-  // ── Mutations ──
-  const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["warehouse", "suppliers"] });
-    queryClient.invalidateQueries({ queryKey: ["warehouse", "supplierStats"] });
-  };
-
-  const createMutation = useMutation({
-    mutationFn: (data: SupplierForm) =>
-      orpc.warehouse.createSupplier.call({
-        ...data,
-        categoryId: data.categoryId ?? undefined,
-      }),
-    onSuccess: () => {
-      invalidateAll();
-      resetForm();
-      toast.success("Supplier created");
-    },
-    onError: (e: any) => toast.error(e.message || "Failed to create supplier"),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (data: SupplierForm & { id: number }) =>
-      orpc.warehouse.updateSupplier.call({
-        ...data,
-        categoryId: data.categoryId,
-      }),
-    onSuccess: () => {
-      invalidateAll();
-      resetForm();
-      toast.success("Supplier updated");
-    },
-    onError: (e: any) => toast.error(e.message || "Failed to update supplier"),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => orpc.warehouse.deleteSupplier.call({ id }),
-    onSuccess: () => {
-      invalidateAll();
-      toast.success("Supplier deleted");
-    },
-  });
-
-  const resetForm = () => {
-    setForm({ ...emptyForm });
-    setEditingId(null);
-    setDialogOpen(false);
-  };
-
-  const handleEdit = (s: any) => {
-    setForm({
-      name: s.name,
-      company: s.company || "",
-      contactPerson: s.contactPerson || "",
-      phone: s.phone || "",
-      email: s.email || "",
-      address: s.address || "",
-      notes: s.notes || "",
-      creditLimit: s.creditLimit || "0",
-      returnPackAgreement: s.returnPackAgreement ?? false,
-      categoryId: s.categoryId ?? null,
-    });
-    setEditingId(s.id);
-    setDialogOpen(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingId) {
-      updateMutation.mutate({ ...form, id: editingId });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
-
-  const suppliers = suppliersData?.suppliers ?? [];
-  const stats = statsData;
-  const categories = categoriesData?.categories ?? [];
-
+function SupplierFormDialog({
+  open,
+  onOpenChange,
+  form,
+  setForm,
+  categories,
+  onSubmit,
+  onCancel,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  form: SupplierForm;
+  setForm: React.Dispatch<React.SetStateAction<SupplierForm>>;
+  categories: { id: number; name: string }[];
+  onSubmit: (e: React.FormEvent) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {stats ? `${stats.activeCount} Active External Suppliers` : "Loading..."}
-        </p>
-        <Button
-          onClick={() => {
-            resetForm();
-            setDialogOpen(true);
-          }}
-          className="gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          Add New Supplier
-        </Button>
-      </div>
-
-      {/* ── Search & Filter ── */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, phone..."
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-
-        <Tabs
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as any)}
-        >
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="suspended">Suspended</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <Select
-          value={categoryFilter ? String(categoryFilter) : "all"}
-          onValueChange={(v) =>
-            setCategoryFilter(v === "all" ? undefined : Number(v))
-          }
-        >
-          <SelectTrigger className="w-[180px]">
-            <Filter className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((c: any) => (
-              <SelectItem key={c.id} value={String(c.id)}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* ── Financial KPIs ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-              <TrendingUp className="w-5 h-5 text-blue-600" />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add New Supplier</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="mt-2 space-y-4">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Supplier Name *</Label>
+              <Input
+                required
+                placeholder="e.g. ACI Ltd."
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Purchase</p>
-              {stats ? (
-                <p className="text-lg font-bold tabular-nums">
-                  {formatMoney(stats.totalPurchase)}
-                </p>
-              ) : (
-                <Skeleton className="h-6 w-24" />
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/30 flex items-center justify-center shrink-0">
-              <Wallet className="w-5 h-5 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Paid</p>
-              {stats ? (
-                <p className="text-lg font-bold tabular-nums text-emerald-600">
-                  {formatMoney(stats.totalPaid)}
-                </p>
-              ) : (
-                <Skeleton className="h-6 w-24" />
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-950/30 flex items-center justify-center shrink-0">
-              <CreditCard className="w-5 h-5 text-orange-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Payable</p>
-              {stats ? (
-                <p
-                  className={`text-lg font-bold tabular-nums ${
-                    stats.totalPayable > 0
-                      ? "text-orange-600"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {formatMoney(stats.totalPayable)}
-                </p>
-              ) : (
-                <Skeleton className="h-6 w-24" />
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Supplier List ── */}
-      {isLoading ? (
-        <Card>
-          <CardContent className="p-6 space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </CardContent>
-        </Card>
-      ) : suppliers.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <Users className="w-14 h-14 text-muted-foreground/20 mx-auto mb-4" />
-            <p className="text-lg font-semibold">No suppliers found</p>
-            <p className="text-sm text-muted-foreground mt-1 mb-6">
-              {debouncedSearch
-                ? "No suppliers match your search"
-                : "Add your first supplier to start tracking purchases"}
-            </p>
-            {!debouncedSearch && (
-              <Button
-                onClick={() => {
-                  resetForm();
-                  setDialogOpen(true);
-                }}
+            <div className="space-y-1.5">
+              <Label>Category</Label>
+              <Select
+                value={form.categoryId ? String(form.categoryId) : "none"}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    categoryId: v === "none" ? null : Number(v),
+                  })
+                }
               >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Supplier
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Supplier Name</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead className="text-right">Total Purchase</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[80px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {suppliers.map((s: any) => (
-                  <TableRow
-                    key={s.id}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  >
-                    <TableCell>
-                      <Link
-                        href={`/warehouse/dashboard/suppliers/${s.id}`}
-                        className="block"
-                      >
-                        <div className="font-medium">{s.name}</div>
-                        {s.company && (
-                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                            <Building2 className="w-3 h-3" />
-                            {s.company}
-                          </div>
-                        )}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      {s.categoryName ? (
-                        <Badge variant="outline" className="text-xs">
-                          {s.categoryName}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {s.phone ? (
-                        <span className="flex items-center gap-1 text-sm">
-                          <Phone className="w-3 h-3 text-muted-foreground" />
-                          {s.phone}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      {formatMoney(s.totalPurchase)}
-                    </TableCell>
-                    <TableCell>
-                      {s.totalPurchase > 500000 ? (
-                        <Badge className="text-[10px] bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100 gap-0.5">
-                          <Star className="w-2.5 h-2.5" />
-                          Top Supplier
-                        </Badge>
-                      ) : s.status === "active" ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50"
-                        >
-                          ✅ Active
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] text-red-600 border-red-200 bg-red-50"
-                        >
-                          ⚠ Suspended
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdit(s);
-                          }}
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm("Delete this supplier?"))
-                              deleteMutation.mutate(s.id);
-                          }}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Add/Edit Dialog ── */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editingId ? "Edit Supplier" : "Add New Supplier"}
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className="space-y-1.5">
-                <Label>Supplier Name *</Label>
-                <Input
-                  required
-                  placeholder="e.g. ACI Ltd."
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Category</Label>
-                <Select
-                  value={form.categoryId ? String(form.categoryId) : "none"}
-                  onValueChange={(v) =>
-                    setForm({
-                      ...form,
-                      categoryId: v === "none" ? null : Number(v),
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No category</SelectItem>
-                    {categories.map((c: any) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Phone</Label>
-                <Input
-                  placeholder="e.g. 01711-223344"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Company</Label>
-                <Input
-                  placeholder="e.g. ACI Industries Ltd."
-                  value={form.company}
-                  onChange={(e) =>
-                    setForm({ ...form, company: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Contact Person</Label>
-                <Input
-                  placeholder="e.g. Mr. Karim"
-                  value={form.contactPerson}
-                  onChange={(e) =>
-                    setForm({ ...form, contactPerson: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  placeholder="supplier@company.com"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Credit Limit (৳)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0"
-                  value={form.creditLimit}
-                  onChange={(e) =>
-                    setForm({ ...form, creditLimit: e.target.value })
-                  }
-                />
-              </div>
-              <div className="sm:col-span-2 space-y-1.5">
-                <Label>Address</Label>
-                <Input
-                  placeholder="e.g. Tejgaon Industrial Area, Dhaka"
-                  value={form.address}
-                  onChange={(e) =>
-                    setForm({ ...form, address: e.target.value })
-                  }
-                />
-              </div>
-              <div className="sm:col-span-2 space-y-1.5">
-                <Label>Notes</Label>
-                <Input
-                  placeholder="Internal notes..."
-                  value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.returnPackAgreement}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        returnPackAgreement: e.target.checked,
-                      })
-                    }
-                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span className="text-sm text-foreground">
-                    Return Pack Agreement (accepts empty pack returns)
-                  </span>
-                </label>
-              </div>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No category</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={resetForm}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={createMutation.isPending || updateMutation.isPending}
-              >
-                {editingId ? "Update" : "Save"} Supplier
-              </Button>
+            <div className="space-y-1.5">
+              <Label>Phone</Label>
+              <Input
+                placeholder="e.g. 01711-223344"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              />
             </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+            <div className="space-y-1.5">
+              <Label>Company</Label>
+              <Input
+                value={form.company}
+                onChange={(e) =>
+                  setForm({ ...form, company: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Address</Label>
+              <Input
+                value={form.address}
+                onChange={(e) =>
+                  setForm({ ...form, address: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              Save Supplier
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
