@@ -138,17 +138,20 @@ const warehouseNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Sales Management",
+    label: "Sales",
     items: [
-      { title: "POS", url: `${WH}/pos`, icon: CalculatorIcon },
-      { title: "Sales", url: `${WH}/sales`, icon: ShoppingCartIcon },
-      { title: "Customer", url: `${WH}/customers`, icon: UsersIcon },
       {
-        title: "Sales History",
-        url: `${WH}/sales-history`,
-        icon: FileTextIcon,
+        title: "Sales Management",
+        url: `${WH}/sales`,
+        icon: ShoppingCartIcon,
+        items: [
+          { title: "Sales", url: `${WH}/sales` },
+          { title: "POS", url: `${WH}/pos` },
+          { title: "Customer", url: `${WH}/customers` },
+          { title: "Sales History", url: `${WH}/sales-history` },
+          { title: "Daybook", url: `${WH}/daybook` },
+        ],
       },
-      { title: "Daybook", url: `${WH}/daybook`, icon: BookOpenIcon },
     ],
   },
   {
@@ -164,10 +167,10 @@ const warehouseNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "",
+    label: "Network Stores",
     items: [
       {
-        title: "Network Stores",
+        title: "Connected Stores",
         url: `${WH}/connected-stores`,
         icon: NetworkIcon,
         items: [
