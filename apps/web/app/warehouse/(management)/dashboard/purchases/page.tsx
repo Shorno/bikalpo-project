@@ -137,8 +137,6 @@ const getColumnStyle = (columnId: string) => {
       return "min-w-[6rem] w-[6rem] whitespace-nowrap";
     case "status":
       return "min-w-[6.75rem] w-[6.75rem] whitespace-nowrap";
-    case "createdAt":
-      return "min-w-[6.25rem] w-[6.25rem] whitespace-nowrap";
     case "actions":
       return "min-w-[5.5rem] w-[5.5rem] whitespace-nowrap";
     default:
@@ -237,18 +235,7 @@ const columns = [
       );
     },
   }),
-  columnHelper.accessor("createdAt", {
-    header: "Date",
-    cell: (info) => (
-      <span className="text-xs font-medium text-muted-foreground tabular-nums">
-        {new Date(info.getValue()).toLocaleDateString("en-BD", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        })}
-      </span>
-    ),
-  }),
+
   columnHelper.display({
     id: "actions",
     header: () => <div className="text-right">Action</div>,
@@ -516,7 +503,6 @@ export default function SupplierPurchasesPage() {
           { id: "items", label: "Items", align: "" },
           { id: "total", label: "Total", align: "text-right" },
           { id: "status", label: "Status", align: "" },
-          { id: "createdAt", label: "Date", align: "" },
           { id: "actions", label: "Action", align: "text-right" },
         ].map((col) => (
           <TableHead

@@ -100,9 +100,6 @@ function PurchasesTableRowSkeleton() {
       <TableCell className="min-w-[6.75rem] w-[6.75rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="h-6 w-20 rounded-full" />
       </TableCell>
-      <TableCell className="min-w-[6.25rem] w-[6.25rem] px-2 py-3 sm:px-4 sm:py-3.5">
-        <Skeleton className="h-4 w-20" />
-      </TableCell>
       <TableCell className="min-w-[5.5rem] w-[5.5rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="ml-auto h-7 w-14" />
       </TableCell>
@@ -131,9 +128,6 @@ export function PurchasesTableBodySkeleton({ rows = TABLE_SKELETON_ROWS }: { row
             </TableHead>
             <TableHead className="h-auto min-w-[6.75rem] w-[6.75rem] px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Status
-            </TableHead>
-            <TableHead className="h-auto min-w-[6.25rem] w-[6.25rem] px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
-              Date
             </TableHead>
             <TableHead className="h-auto min-w-[5.5rem] w-[5.5rem] px-2 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Action

@@ -96,7 +96,7 @@ const warehouseNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Supply Management",
+    label: "Supply & Purchasing",
     items: [
       {
         title: "Order Management",
@@ -124,6 +124,17 @@ const warehouseNavGroups: NavGroup[] = [
         icon: MapPinIcon,
       },
       { title: "Returns", url: `${WH}/returns`, icon: RotateCcwIcon },
+      {
+        title: "Purchase Management",
+        url: `${WH}/purchases`,
+        icon: ClipboardListIcon,
+        items: [
+          { title: "Supplier Purchases", url: `${WH}/purchases` },
+          { title: "Quick Purchase", url: `${WH}/quick-purchase` },
+          { title: "Suppliers", url: `${WH}/suppliers` },
+          { title: "Purchase History", url: `${WH}/purchase-history` },
+        ],
+      },
     ],
   },
   {
@@ -138,28 +149,6 @@ const warehouseNavGroups: NavGroup[] = [
         icon: FileTextIcon,
       },
       { title: "Daybook", url: `${WH}/daybook`, icon: BookOpenIcon },
-    ],
-  },
-  {
-    label: "Purchase Management",
-    items: [
-      {
-        title: "Quick Purchase",
-        url: `${WH}/quick-purchase`,
-        icon: PackagePlusIcon,
-      },
-
-      {
-        title: "Supplier Purchases",
-        url: `${WH}/purchases`,
-        icon: ClipboardListIcon,
-      },
-      { title: "Suppliers", url: `${WH}/suppliers`, icon: UsersIcon },
-      {
-        title: "Purchase History",
-        url: `${WH}/purchase-history`,
-        icon: FileTextIcon,
-      },
     ],
   },
   {
