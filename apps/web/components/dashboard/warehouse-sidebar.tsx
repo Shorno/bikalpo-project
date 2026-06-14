@@ -164,7 +164,7 @@ const warehouseNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Network Stores",
+    label: "",
     items: [
       {
         title: "Network Stores",
@@ -173,7 +173,7 @@ const warehouseNavGroups: NavGroup[] = [
         items: [
           { title: "Connected Stores", url: `${WH}/connected-stores` },
           { title: "Store Requests", url: `${WH}/store-requests` },
-          { title: "Warehouse Requests", url: `${WH}/supplier-requests` },
+          { title: "Connected Suppliers", url: `${WH}/connected-suppliers` },
         ],
       },
     ],

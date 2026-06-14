@@ -1038,6 +1038,8 @@ const warehouseSupplierConnectionQueries = {
 						warehouseName: user.warehouseName,
 						warehouseSlug: user.warehouseSlug,
 						warehouseAddress: user.warehouseAddress,
+						warehouseLat: user.warehouseLat,
+						warehouseLng: user.warehouseLng,
 						phone: user.phoneNumber,
 						name: user.name,
 						image: user.image,

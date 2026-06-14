@@ -40,10 +40,12 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
   return (
     <>
       {groups.map((group) => (
-        <SidebarGroup key={group.label}>
-          <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-1">
-            {group.label}
-          </SidebarGroupLabel>
+        <SidebarGroup key={group.label || group.items[0]?.title}>
+          {group.label ? (
+            <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-1">
+              {group.label}
+            </SidebarGroupLabel>
+          ) : null}
           <SidebarMenu>
             {group.items.map((item) => {
               // Items with sub-items → collapsible
