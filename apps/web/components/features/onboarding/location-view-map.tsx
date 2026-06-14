@@ -4,12 +4,19 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+import { cn } from "@/lib/utils";
+
 interface LocationViewMapProps {
   latitude: number;
   longitude: number;
+  className?: string;
 }
 
-export function LocationViewMap({ latitude, longitude }: LocationViewMapProps) {
+export function LocationViewMap({
+  latitude,
+  longitude,
+  className,
+}: LocationViewMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
 
@@ -78,7 +85,7 @@ export function LocationViewMap({ latitude, longitude }: LocationViewMapProps) {
   return (
     <div
       ref={mapContainerRef}
-      className="w-full h-[250px]"
+      className={cn("h-[250px] w-full", className)}
       style={{ zIndex: 1 }}
     />
   );
