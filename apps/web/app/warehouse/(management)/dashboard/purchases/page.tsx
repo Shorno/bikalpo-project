@@ -16,7 +16,8 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useDebounce } from "@/hooks/use-debounce";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { orpc } from "@/utils/orpc";
@@ -103,17 +104,17 @@ function MetricCard({
   children,
 }: MetricCardProps) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-card p-4 transition-colors hover:border-border/80">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+    <div className="relative overflow-hidden rounded-lg border border-border bg-card p-2.5 transition-colors hover:border-border/80 sm:rounded-xl sm:p-4">
+      <div className="mb-1 flex items-center gap-2 sm:mb-2 sm:justify-between">
+        <span className="min-w-0 flex-1 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:flex-none sm:text-xs sm:tracking-wider">
           {title}
         </span>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <Icon className="w-3.5 h-3.5" />
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground sm:h-7 sm:w-7 sm:rounded-lg">
+          <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
         </div>
       </div>
       <div className="space-y-0.5">
-        <span className="text-xl font-bold font-mono tabular-nums tracking-tight text-foreground">
+        <span className="block truncate text-base font-bold font-mono tabular-nums tracking-tight text-foreground sm:text-xl">
           {value}
         </span>
         {children}
@@ -121,6 +122,29 @@ function MetricCard({
     </div>
   );
 }
+
+/** Fixed min-widths for horizontal scroll — do not use table-fixed on narrow viewports */
+const PURCHASES_TABLE_MIN_WIDTH = "min-w-[52rem]";
+const getColumnStyle = (columnId: string) => {
+  switch (columnId) {
+    case "orderNumber":
+      return "min-w-[7.5rem] w-[7.5rem] max-w-[7.5rem] truncate";
+    case "supplierWarehouseName":
+      return "min-w-[9.5rem] w-[9.5rem] max-w-[9.5rem] truncate";
+    case "items":
+      return "min-w-[9rem] w-[9rem] max-w-[9rem] truncate";
+    case "total":
+      return "min-w-[6rem] w-[6rem] whitespace-nowrap";
+    case "status":
+      return "min-w-[6.75rem] w-[6.75rem] whitespace-nowrap";
+    case "createdAt":
+      return "min-w-[6.25rem] w-[6.25rem] whitespace-nowrap";
+    case "actions":
+      return "min-w-[5.5rem] w-[5.5rem] whitespace-nowrap";
+    default:
+      return "";
+  }
+};
 
 /* ─── TanStack Table Column Definitions ─── */
 const columnHelper = createColumnHelper<any>();
@@ -257,16 +281,22 @@ export default function SupplierPurchasesPage() {
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [timeframe, setTimeframe] = useState<"today" | "this_month" | "all">("all");
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
-  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<"all" | "my_warehouse">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 300);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(15);
 
-  /* ─── Temporary values before Apply ─── */
-  const [tempStatus, setTempStatus] = useState<OrderStatus | "all">("all");
-  const [tempTimeframe, setTempTimeframe] = useState<"today" | "this_month" | "all">("all");
-  const [tempSupplier, setTempSupplier] = useState<string>("all");
-  const [tempLocation, setTempLocation] = useState<string>("all");
+  const hasActiveFilters =
+    statusFilter !== "all" ||
+    timeframe !== "all" ||
+    supplierFilter !== "all" ||
+    locationFilter !== "all" ||
+    searchQuery.trim() !== "";
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
 
   /* ─── Queries ─── */
   const suppliersQuery = useQuery({
@@ -281,6 +311,8 @@ export default function SupplierPurchasesPage() {
       statusFilter,
       supplierFilter,
       timeframe,
+      locationFilter,
+      debouncedSearch,
       page,
       perPage,
     ],
@@ -289,8 +321,32 @@ export default function SupplierPurchasesPage() {
         status: statusFilter === "all" ? undefined : statusFilter,
         supplierWarehouseId: supplierFilter === "all" ? undefined : supplierFilter,
         timeframe,
+        deliveryLocation: locationFilter,
+        search: debouncedSearch.trim() || undefined,
         page,
         limit: perPage,
+      }),
+  });
+
+  /** Trend is always last 7 days — independent of table filters */
+  const trendQuery = useQuery({
+    queryKey: ["warehouse", "getMyOrders", "trend-7d"],
+    queryFn: () =>
+      orpc.warehouse.getMyOrders.call({
+        timeframe: "all",
+        page: 1,
+        limit: 200,
+      }),
+  });
+
+  /** Most recent order for pipeline — independent of table filters/search */
+  const lastOrderQuery = useQuery({
+    queryKey: ["warehouse", "getMyOrders", "last-order"],
+    queryFn: () =>
+      orpc.warehouse.getMyOrders.call({
+        timeframe: "all",
+        page: 1,
+        limit: 1,
       }),
   });
 
@@ -310,23 +366,9 @@ export default function SupplierPurchasesPage() {
   const payable = payableSummaryQuery.data;
   const connectedSuppliers = suppliersQuery.data?.items ?? [];
 
-  // Client-side search filter on loaded orders
-  const filteredOrders = searchQuery.trim()
-    ? orders.filter((o: any) => {
-        const q = searchQuery.toLowerCase();
-        return (
-          o.orderNumber?.toLowerCase().includes(q) ||
-          o.supplierWarehouseName?.toLowerCase().includes(q) ||
-          o.items?.some((item: any) =>
-            item.productName?.toLowerCase().includes(q)
-          )
-        );
-      })
-    : orders;
-
   /* ─── TanStack Table Instance ─── */
   const table = useReactTable({
-    data: filteredOrders,
+    data: orders,
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
@@ -344,8 +386,8 @@ export default function SupplierPurchasesPage() {
     .reduce((sum, o: any) => sum + parseFloat(o.total), 0);
   const netPurchaseValue = Math.max(0, totalPurchasesValue - totalReturnsValue);
 
-  // Mapped Last Order
-  const lastOrder = orders && orders.length > 0 ? orders[0] : null;
+  // Most recent order overall (not affected by active table filters)
+  const lastOrder = lastOrderQuery.data?.orders?.[0] ?? null;
 
   // Calculate overdue values
   const overdueValue = payable?.suppliers?.reduce(
@@ -355,9 +397,9 @@ export default function SupplierPurchasesPage() {
 
   /* ─── Export CSV Handler ─── */
   const handleExportCSV = () => {
-    if (filteredOrders.length === 0) return;
+    if (orders.length === 0) return;
     const headers = ["Order Number", "Supplier", "Items Count", "Total Amount", "Status", "Date"];
-    const rows = filteredOrders.map((o: any) => [
+    const rows = orders.map((o: any) => [
       o.orderNumber,
       o.supplierWarehouseName || "Unknown",
       o.items?.length || 0,
@@ -379,19 +421,7 @@ export default function SupplierPurchasesPage() {
     document.body.removeChild(link);
   };
 
-  const handleApplyFilter = () => {
-    setStatusFilter(tempStatus);
-    setTimeframe(tempTimeframe);
-    setSupplierFilter(tempSupplier);
-    setLocationFilter(tempLocation);
-    setPage(1);
-  };
-
   const handleReset = () => {
-    setTempStatus("all");
-    setTempTimeframe("all");
-    setTempSupplier("all");
-    setTempLocation("all");
     setStatusFilter("all");
     setTimeframe("all");
     setSupplierFilter("all");
@@ -434,103 +464,95 @@ export default function SupplierPurchasesPage() {
   const progressPercent = getProgressPercent(lastOrder);
   const isCancelled = lastOrder?.status === "cancelled";
 
-  /* ─── Purchase Trend (Last 7 Days) Aggregator ─── */
-  const get7DaysTrend = () => {
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const trendMap: Record<string, { count: number; total: number }> = {};
-    
-    // Initialize last 7 days
+  /* ─── Purchase Trend (Last 7 Days) — calendar days, not filtered table rows ─── */
+  const get7DaysTrend = (sourceOrders: any[]) => {
+    const buckets: { day: string; total: number; count: number }[] = [];
+
     for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dayName = days[d.getDay()];
-      trendMap[dayName] = { count: 0, total: 0 };
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      dayStart.setDate(dayStart.getDate() - i);
+
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+
+      const dayOrders = sourceOrders.filter((o: any) => {
+        const created = new Date(o.createdAt);
+        return created >= dayStart && created < dayEnd;
+      });
+
+      buckets.push({
+        day: dayStart.toLocaleDateString("en-BD", { weekday: "short" }),
+        count: dayOrders.length,
+        total: dayOrders.reduce(
+          (sum: number, o: any) => sum + parseFloat(o.total || "0"),
+          0,
+        ),
+      });
     }
 
-    // Populate from orders list
-    orders.forEach((o: any) => {
-      const orderDate = new Date(o.createdAt);
-      const diffTime = Math.abs(new Date().getTime() - orderDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays <= 7) {
-        const dayName = days[orderDate.getDay()];
-        if (trendMap[dayName]) {
-          trendMap[dayName].count += 1;
-          trendMap[dayName].total += parseFloat(o.total || "0");
-        }
-      }
-    });
-
-    // Provide default mockup data if no actual recent transactions exist
-    const fallbackTrend = [
-      { day: "Mon", count: 12, total: 320000 },
-      { day: "Tue", count: 18, total: 450000 },
-      { day: "Wed", count: 20, total: 510000 },
-      { day: "Thu", count: 15, total: 380000 },
-      { day: "Fri", count: 25, total: 620000 },
-      { day: "Sat", count: 30, total: 750000 },
-      { day: "Sun", count: 22, total: 540000 },
-    ];
-
-    const hasData = Object.values(trendMap).some((t) => t.count > 0);
-
-    return hasData
-      ? Object.entries(trendMap).map(([day, val]) => ({
-          day,
-          count: val.count,
-          total: val.total,
-        }))
-      : fallbackTrend;
+    return buckets;
   };
 
-  const trendData = get7DaysTrend();
+  const trendOrders = trendQuery.data?.orders ?? [];
+  const trendData = get7DaysTrend(trendOrders);
+  const trendHasActivity = trendData.some((t) => t.count > 0);
   const maxTrendTotal = Math.max(...trendData.map((t) => t.total), 1);
 
   const isKpiLoading = supplierStatsQuery.isLoading && !stats;
   const isOrdersInitialLoading = ordersQuery.isLoading;
+  const isTableFetching =
+    ordersQuery.isFetching && (ordersQuery.isLoading || ordersQuery.isPlaceholderData);
+  const isPipelineLoading = lastOrderQuery.isLoading;
+  const isTrendLoading = trendQuery.isLoading;
+  const isSearchEmpty = debouncedSearch.trim().length > 0 && orders.length === 0;
 
-  const getColumnStyle = (columnId: string) => {
-    switch (columnId) {
-      case "orderNumber":
-        return "w-[18%] min-w-[125px] max-w-[150px] truncate";
-      case "supplierWarehouseName":
-        return "w-[22%] min-w-[150px] max-w-[190px] truncate";
-      case "items":
-        return "w-[20%] min-w-[140px] max-w-[170px] truncate";
-      case "total":
-        return "w-[12%] min-w-[85px]";
-      case "status":
-        return "w-[13%] min-w-[95px]";
-      case "createdAt":
-        return "w-[15%] min-w-[95px]";
-      case "actions":
-        return "w-[10%] min-w-[75px]";
-      default:
-        return "";
-    }
-  };
+  const purchasesTableHeaders = (
+    <TableHeader>
+      <TableRow className="bg-muted/30 hover:bg-transparent border-b border-border">
+        {[
+          { id: "orderNumber", label: "Order #", align: "" },
+          { id: "supplierWarehouseName", label: "Supplier", align: "" },
+          { id: "items", label: "Items", align: "" },
+          { id: "total", label: "Total", align: "text-right" },
+          { id: "status", label: "Status", align: "" },
+          { id: "createdAt", label: "Date", align: "" },
+          { id: "actions", label: "Action", align: "text-right" },
+        ].map((col) => (
+          <TableHead
+            key={col.id}
+            className={`px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground h-auto sm:px-4 sm:py-3 ${getColumnStyle(col.id)} ${col.align}`}
+          >
+            {col.label}
+          </TableHead>
+        ))}
+      </TableRow>
+    </TableHeader>
+  );
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
+    <div className="mx-auto max-w-[1600px] space-y-4 pb-8 sm:space-y-6 sm:pb-10">
       {/* ─── PAGE HEADER ─── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-5">
-        <div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+      <div className="flex flex-col gap-3 border-b border-border pb-4 sm:gap-4 sm:pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground sm:mb-1.5">
             <Link href="/warehouse/dashboard" className="hover:text-foreground transition-colors">Warehouse</Link>
             <span>/</span>
-            <span className="text-foreground font-medium">Supplier Purchases</span>
+            <span className="truncate text-foreground font-medium">Supplier Purchases</span>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
             Supplier Purchases
           </h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground mt-2">
-            <span className="inline-flex items-center gap-1">
-              <MapPin size={13} className="text-muted-foreground" />
-              Warehouse: <span className="text-foreground font-medium">{warehouseName}</span>
+          <div className="mt-1.5 flex flex-col gap-1 text-xs text-muted-foreground sm:mt-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1.5 sm:text-sm">
+            <span className="inline-flex items-center gap-1 truncate">
+              <MapPin size={13} className="shrink-0 text-muted-foreground" />
+              <span className="truncate">
+                Warehouse: <span className="text-foreground font-medium">{warehouseName}</span>
+              </span>
             </span>
-            <span className="text-border">•</span>
+            <span className="hidden text-border sm:inline">•</span>
             <span className="inline-flex items-center gap-1">
-              <Calendar size={13} className="text-muted-foreground" />
+              <Calendar size={13} className="shrink-0 text-muted-foreground" />
               Timeframe:{" "}
               <span className="text-foreground font-medium uppercase">
                 {timeframe === "all" ? "This Month / All" : timeframe.replace("_", " ")}
@@ -538,8 +560,8 @@ export default function SupplierPurchasesPage() {
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button asChild className="bg-amber-600 hover:bg-amber-500/90 text-white font-semibold text-xs">
+        <div className="flex shrink-0 items-center gap-2">
+          <Button asChild className="h-9 w-full bg-amber-600 text-xs font-semibold text-white hover:bg-amber-500/90 sm:w-auto">
             <Link href="/warehouse/dashboard/suppliers">
               <ShoppingCartIcon className="mr-2 h-3.5 w-3.5" />
               Create Purchase
@@ -552,14 +574,14 @@ export default function SupplierPurchasesPage() {
       {isKpiLoading ? (
         <MetricCardsGridSkeleton />
       ) : (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
         {/* Card 1: Purchases Volume */}
         <MetricCard
           title="Purchases Volume"
           value={`৳${Number(totalPurchasesValue).toLocaleString("en-BD")}`}
           icon={DollarSign}
         >
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border text-xs text-muted-foreground">
+          <div className="mt-1 flex flex-col gap-0.5 border-t border-border pt-1 text-[10px] text-muted-foreground sm:mt-1.5 sm:flex-row sm:items-center sm:justify-between sm:pt-1.5 sm:text-xs">
             <span>Net Purchases:</span>
             <span className="font-semibold font-mono tabular-nums text-foreground">৳{Number(netPurchaseValue).toLocaleString("en-BD")}</span>
           </div>
@@ -571,15 +593,19 @@ export default function SupplierPurchasesPage() {
           value={`৳${Number(stats?.totalPayable || 0).toLocaleString("en-BD")}`}
           icon={CreditCard}
         >
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5 pt-1.5 border-t border-border text-xs text-muted-foreground">
+          <div className="mt-1 flex flex-col gap-1 border-t border-border pt-1 text-[10px] text-muted-foreground sm:mt-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-0.5 sm:pt-1.5 sm:text-xs">
             <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-              Overdue: <span className="font-semibold font-mono tabular-nums text-rose-600">৳{Number(overdueValue).toLocaleString("en-BD")}</span>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />
+              <span className="truncate">
+                Overdue: <span className="font-semibold font-mono tabular-nums text-rose-600">৳{Number(overdueValue).toLocaleString("en-BD")}</span>
+              </span>
             </span>
-            <span className="text-border">•</span>
+            <span className="hidden text-border sm:inline">•</span>
             <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Advance: <span className="font-semibold font-mono tabular-nums text-emerald-600">৳50,000</span>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span className="truncate">
+                Advance: <span className="font-semibold font-mono tabular-nums text-emerald-600">৳50,000</span>
+              </span>
             </span>
           </div>
         </MetricCard>
@@ -590,7 +616,7 @@ export default function SupplierPurchasesPage() {
           value={stats ? `${stats.activeCount} Active` : "—"}
           icon={Users}
         >
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border text-xs text-muted-foreground min-w-0">
+          <div className="mt-1 flex items-center justify-between gap-1 border-t border-border pt-1 text-[10px] text-muted-foreground min-w-0 sm:mt-1.5 sm:pt-1.5 sm:text-xs">
             <span className="truncate">Top: <span className="font-semibold text-foreground">{topSupplier ? topSupplier.name : "—"}</span></span>
             {topSupplier && (
               <span className="shrink-0 font-mono tabular-nums text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground ml-1">
@@ -606,10 +632,10 @@ export default function SupplierPurchasesPage() {
           value={pagination ? String(pagination.totalCount) : "—"}
           icon={FileText}
         >
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border text-xs text-muted-foreground">
+          <div className="mt-1 flex items-center justify-between gap-1 border-t border-border pt-1 text-[10px] text-muted-foreground min-w-0 sm:mt-1.5 sm:pt-1.5 sm:text-xs">
             <span className="truncate">Last: <span className="font-semibold font-mono text-foreground">#{lastOrder?.orderNumber?.slice(-6) || "—"}</span></span>
             {lastOrder && (
-              <span className={`px-1.5 py-0.5 text-xs font-semibold rounded uppercase tracking-wider leading-none ${
+              <span className={`shrink-0 px-1 py-0.5 text-[9px] font-semibold rounded uppercase tracking-wider leading-none sm:px-1.5 sm:text-xs ${
                 lastOrder.status === 'delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
                 lastOrder.status === 'cancelled' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
                 'bg-amber-50 text-amber-700 border border-amber-100'
@@ -623,17 +649,17 @@ export default function SupplierPurchasesPage() {
       )}
 
       {/* ─── TWO-COLUMN DASHBOARD GRID ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3 lg:gap-6">
         
         {/* Left Column (2/3 width) */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-4 min-w-0 sm:space-y-6 lg:col-span-2 lg:min-h-[720px]">
           
           {/* Last Order Pipeline Tracker */}
-          {isOrdersInitialLoading ? (
+          {isPipelineLoading ? (
             <PipelineTrackerSkeleton />
           ) : lastOrder ? (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-b border-border pb-4">
+            <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
+              <div className="flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Last Order Pipeline
@@ -652,7 +678,8 @@ export default function SupplierPurchasesPage() {
               </div>
 
               {/* Progress Line and Nodes */}
-              <div className="relative mt-6 px-4">
+              <div className="-mx-1 overflow-x-auto pb-1 sm:mx-0">
+              <div className="relative mt-6 min-w-[34rem] px-4">
                 <div className="absolute top-[14px] left-4 right-4 h-[3px] bg-muted rounded-full z-0" />
                 <div
                   className={`absolute top-[14px] left-4 h-[3px] rounded-full transition-all duration-700 z-0 ${
@@ -705,8 +732,9 @@ export default function SupplierPurchasesPage() {
                   })}
                 </div>
               </div>
+              </div>
 
-              <div className="mt-5 pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+              <div className="mt-5 flex flex-col gap-2 border-t border-border pt-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                 <span className="flex items-center gap-1.5">
                   Status: 
                   <span className={`font-semibold uppercase tracking-wider ${isCancelled ? "text-rose-600" : lastOrder.status === "pending" ? "text-amber-700" : "text-foreground"}`}>
@@ -719,11 +747,11 @@ export default function SupplierPurchasesPage() {
           ) : null}
 
           {/* Orders Table Container */}
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div className="bg-card rounded-xl border border-border overflow-hidden min-w-0">
             
             {/* Unified Table Header with Filters */}
-            <div className="p-5 border-b border-border space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="space-y-3 border-b border-border p-4 sm:space-y-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-foreground">
                     Purchase Orders
@@ -747,14 +775,17 @@ export default function SupplierPurchasesPage() {
               </div>
 
               {/* Toolbar Dropdowns using Shadcn Select */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border bg-muted/30 -mx-5 px-5 py-3 mt-2">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="-mx-4 flex flex-col gap-3 border-t border-border bg-muted/30 px-4 py-3 sm:-mx-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-5">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
                   {/* Status */}
                   <Select
-                    value={tempStatus}
-                    onValueChange={(val) => setTempStatus(val as any)}
+                    value={statusFilter}
+                    onValueChange={(val) => {
+                      setStatusFilter(val as OrderStatus | "all");
+                      setPage(1);
+                    }}
                   >
-                    <SelectTrigger size="sm" className="min-w-[120px] bg-background border-border text-xs font-medium text-foreground h-8">
+                    <SelectTrigger size="sm" className="h-8 w-full min-w-0 bg-background border-border text-xs font-medium text-foreground sm:min-w-[120px] sm:w-auto">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -769,10 +800,13 @@ export default function SupplierPurchasesPage() {
 
                   {/* Timeframe */}
                   <Select
-                    value={tempTimeframe}
-                    onValueChange={(val) => setTempTimeframe(val as any)}
+                    value={timeframe}
+                    onValueChange={(val) => {
+                      setTimeframe(val as "today" | "this_month" | "all");
+                      setPage(1);
+                    }}
                   >
-                    <SelectTrigger size="sm" className="min-w-[110px] bg-background border-border text-xs font-medium text-foreground h-8">
+                    <SelectTrigger size="sm" className="h-8 w-full min-w-0 bg-background border-border text-xs font-medium text-foreground sm:min-w-[110px] sm:w-auto">
                       <SelectValue placeholder="Timeframe" />
                     </SelectTrigger>
                     <SelectContent>
@@ -784,10 +818,13 @@ export default function SupplierPurchasesPage() {
 
                   {/* Supplier */}
                   <Select
-                    value={tempSupplier}
-                    onValueChange={(val) => setTempSupplier(val)}
+                    value={supplierFilter}
+                    onValueChange={(val) => {
+                      setSupplierFilter(val);
+                      setPage(1);
+                    }}
                   >
-                    <SelectTrigger size="sm" className="min-w-[140px] max-w-[180px] bg-background border-border text-xs font-medium text-foreground h-8">
+                    <SelectTrigger size="sm" className="h-8 w-full min-w-0 bg-background border-border text-xs font-medium text-foreground sm:min-w-[140px] sm:max-w-[180px] sm:w-auto">
                       <SelectValue placeholder="Supplier" />
                     </SelectTrigger>
                     <SelectContent>
@@ -802,10 +839,13 @@ export default function SupplierPurchasesPage() {
 
                   {/* Delivery Location */}
                   <Select
-                    value={tempLocation}
-                    onValueChange={(val) => setTempLocation(val)}
+                    value={locationFilter}
+                    onValueChange={(val) => {
+                      setLocationFilter(val as "all" | "my_warehouse");
+                      setPage(1);
+                    }}
                   >
-                    <SelectTrigger size="sm" className="min-w-[130px] bg-background border-border text-xs font-medium text-foreground h-8">
+                    <SelectTrigger size="sm" className="h-8 w-full min-w-0 bg-background border-border text-xs font-medium text-foreground sm:min-w-[130px] sm:w-auto">
                       <SelectValue placeholder="Location" />
                     </SelectTrigger>
                     <SelectContent>
@@ -816,12 +856,8 @@ export default function SupplierPurchasesPage() {
                 </div>
 
                 {/* Filter Actions */}
-                <div className="flex items-center gap-1.5">
-                  {(tempStatus !== statusFilter ||
-                    tempTimeframe !== timeframe ||
-                    tempSupplier !== supplierFilter ||
-                    tempLocation !== locationFilter ||
-                    searchQuery !== "") && (
+                <div className="flex items-center justify-end gap-1.5 sm:justify-start">
+                  {hasActiveFilters && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -832,17 +868,10 @@ export default function SupplierPurchasesPage() {
                     </Button>
                   )}
                   <Button
-                    size="sm"
-                    onClick={handleApplyFilter}
-                    className="text-xs font-semibold h-8"
-                  >
-                    Apply
-                  </Button>
-                  <Button
                     variant="outline"
                     size="sm"
                     onClick={handleExportCSV}
-                    disabled={filteredOrders.length === 0}
+                    disabled={orders.length === 0}
                     className="text-xs font-semibold h-8 gap-1.5"
                   >
                     <Download size={13} />
@@ -853,32 +882,60 @@ export default function SupplierPurchasesPage() {
             </div>
 
             {/* Table Content using TanStack & Shadcn Table */}
-            {isOrdersInitialLoading ? (
+            <div className="flex min-h-[320px] min-w-0 flex-col sm:min-h-[520px]">
+            {isOrdersInitialLoading || isTableFetching ? (
               <PurchasesTableBodySkeleton rows={perPage} />
             ) : ordersQuery.isError ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="flex flex-1 flex-col items-center justify-center px-4 py-16 text-center">
                 <AlertCircle className="size-10 text-red-300 mb-2" />
                 <p className="text-red-600 font-medium">Failed to load orders</p>
               </div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                <Package className="size-10 text-muted-foreground/40 mb-3" />
-                <p className="text-muted-foreground font-medium">No orders found</p>
-                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                  {statusFilter !== "all" || searchQuery.trim()
-                    ? "Try adjusting your search query or reset active filters."
-                    : "Active orders placed from other warehouses will appear here."}
-                </p>
-                <Button asChild className="mt-4 bg-amber-600 hover:bg-amber-500/90 text-white text-xs h-8" size="sm">
-                  <Link href="/warehouse/dashboard/suppliers">
-                    <ShoppingCartIcon className="mr-2 h-3.5 w-3.5" />
-                    Create Order
-                  </Link>
-                </Button>
+            ) : orders.length === 0 ? (
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="min-w-0">
+                  <Table className={`w-full ${PURCHASES_TABLE_MIN_WIDTH}`}>
+                    {purchasesTableHeaders}
+                  </Table>
+                </div>
+                <div className="flex min-h-[240px] flex-1 flex-col items-center justify-center border-t border-border px-4 py-12 text-center sm:min-h-[400px] sm:py-16">
+                  {isSearchEmpty ? (
+                    <Search className="mb-3 size-10 text-muted-foreground/40" />
+                  ) : (
+                    <Package className="mb-3 size-10 text-muted-foreground/40" />
+                  )}
+                  <p className="font-medium text-foreground">
+                    {isSearchEmpty ? "No matching orders" : "No orders found"}
+                  </p>
+                  <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+                    {isSearchEmpty
+                      ? `Nothing matched "${debouncedSearch.trim()}". Try a different order number, supplier, or product name.`
+                      : hasActiveFilters
+                        ? "Try adjusting your filters or reset to see all purchases."
+                        : "Active orders placed from other warehouses will appear here."}
+                  </p>
+                  {hasActiveFilters ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleReset}
+                      className="mt-4 text-xs h-8"
+                    >
+                      Reset filters
+                    </Button>
+                  ) : (
+                    <Button asChild className="mt-4 bg-amber-600 hover:bg-amber-500/90 text-white text-xs h-8" size="sm">
+                      <Link href="/warehouse/dashboard/suppliers">
+                        <ShoppingCartIcon className="mr-2 h-3.5 w-3.5" />
+                        Create Order
+                      </Link>
+                    </Button>
+                  )}
+                </div>
               </div>
             ) : (
               <>
-                <Table className="w-full table-fixed">
+                <div className="min-w-0">
+                <Table className={`w-full ${PURCHASES_TABLE_MIN_WIDTH}`}>
                   <TableHeader>
                     {table.getHeaderGroups().map((headerGroup) => (
                       <TableRow key={headerGroup.id} className="bg-muted/30 hover:bg-transparent border-b border-border">
@@ -888,7 +945,7 @@ export default function SupplierPurchasesPage() {
                           return (
                             <TableHead
                               key={header.id}
-                              className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground h-auto ${headerStyle}`}
+                              className={`px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground h-auto sm:px-4 sm:py-3 ${headerStyle} ${columnId === "total" || columnId === "actions" ? "text-right" : ""}`}
                             >
                               {header.isPlaceholder
                                 ? null
@@ -914,7 +971,7 @@ export default function SupplierPurchasesPage() {
                           return (
                             <TableCell
                               key={cell.id}
-                              className={`px-4 py-3.5 align-middle ${cellStyle}`}
+                              className={`px-2 py-3 align-middle sm:px-4 sm:py-3.5 ${cellStyle} ${columnId === "total" ? "text-right" : ""}`}
                             >
                               {flexRender(
                                 cell.column.columnDef.cell,
@@ -927,10 +984,11 @@ export default function SupplierPurchasesPage() {
                     ))}
                   </TableBody>
                 </Table>
+                </div>
 
                 {/* Table Pagination */}
                 {pagination && pagination.totalPages > 0 && (
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-6 py-4 border-t border-border text-xs text-muted-foreground font-medium">
+                  <div className="flex flex-col gap-3 border-t border-border px-4 py-3 text-xs font-medium text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
                     <span>
                       Showing{" "}
                       {Math.min((page - 1) * perPage + 1, pagination.totalCount)} to{" "}
@@ -985,11 +1043,12 @@ export default function SupplierPurchasesPage() {
                 )}
               </>
             )}
+            </div>
           </div>
         </div>
 
         {/* Right Column (1/3 width) */}
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           
           {/* Quick Actions Panel */}
           <div className="rounded-xl border border-border bg-card p-5">
@@ -1038,7 +1097,7 @@ export default function SupplierPurchasesPage() {
           </div>
 
           {/* 7-Day Purchase Volume Trend */}
-          {isOrdersInitialLoading ? (
+          {isTrendLoading ? (
             <TrendChartSkeleton />
           ) : (
           <div className="rounded-xl border border-border bg-card p-5">
@@ -1048,10 +1107,16 @@ export default function SupplierPurchasesPage() {
                 Purchase Trend (7 Days)
               </h3>
             </div>
-            
+
+            {!trendHasActivity ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <TrendingUp className="mb-2 h-8 w-8 text-muted-foreground/30" />
+                <p className="text-sm text-muted-foreground">No purchases in the last 7 days</p>
+              </div>
+            ) : (
             <div className="space-y-4">
               {trendData.map((t, idx) => {
-                const ratio = (t.total / maxTrendTotal) * 100;
+                const ratio = t.total > 0 ? (t.total / maxTrendTotal) * 100 : 0;
                 return (
                   <div key={idx} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
@@ -1070,6 +1135,7 @@ export default function SupplierPurchasesPage() {
                 );
               })}
             </div>
+            )}
 
             <div className="mt-5 pt-3 border-t border-border text-xs text-muted-foreground text-center font-medium">
               Last synced: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

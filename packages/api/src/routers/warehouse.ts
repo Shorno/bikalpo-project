@@ -3458,6 +3458,8 @@ const orderQueries = {
 				limit: z.number().default(20),
 				supplierWarehouseId: z.string().optional(),
 				timeframe: z.enum(["today", "this_month", "all"]).default("all"),
+				search: z.string().optional(),
+				deliveryLocation: z.enum(["all", "my_warehouse"]).default("all"),
 			}),
 		)
 		.handler(async ({ context, input }) => {
@@ -3479,6 +3481,59 @@ const orderQueries = {
 				conditions.push(sql`${order.createdAt} >= CURRENT_DATE`);
 			} else if (input.timeframe === "this_month") {
 				conditions.push(sql`${order.createdAt} >= date_trunc('month', CURRENT_DATE)`);
+			}
+			if (input.deliveryLocation === "my_warehouse") {
+				const buyer = await db
+					.select({
+						warehouseAddress: user.warehouseAddress,
+						warehouseName: user.warehouseName,
+						name: user.name,
+					})
+					.from(user)
+					.where(eq(user.id, userId))
+					.limit(1);
+				const buyerRow = buyer[0];
+				if (buyerRow?.warehouseAddress) {
+					conditions.push(eq(order.shippingAddress, buyerRow.warehouseAddress));
+				} else if (buyerRow?.warehouseName) {
+					conditions.push(eq(order.shippingName, buyerRow.warehouseName));
+				} else if (buyerRow?.name) {
+					conditions.push(eq(order.shippingName, buyerRow.name));
+				}
+			}
+			if (input.search?.trim()) {
+				const q = `%${input.search.trim().toLowerCase()}%`;
+
+				const [supplierMatches, itemMatches] = await Promise.all([
+					db
+						.select({ id: user.id })
+						.from(user)
+						.where(
+							or(
+								sql`LOWER(${user.warehouseName}) LIKE ${q}`,
+								sql`LOWER(${user.name}) LIKE ${q}`,
+							),
+						),
+					db
+						.select({ orderId: orderItem.orderId })
+						.from(orderItem)
+						.where(sql`LOWER(${orderItem.productName}) LIKE ${q}`),
+				]);
+
+				const supplierIds = supplierMatches.map((s) => s.id);
+				const orderIdsFromItems = [
+					...new Set(itemMatches.map((i) => i.orderId)),
+				];
+
+				const searchConditions: SQL[] = [ilike(order.orderNumber, q)];
+				if (supplierIds.length > 0) {
+					searchConditions.push(inArray(order.warehouseId, supplierIds));
+				}
+				if (orderIdsFromItems.length > 0) {
+					searchConditions.push(inArray(order.id, orderIdsFromItems));
+				}
+
+				conditions.push(or(...searchConditions)!);
 			}
 
 			const where = and(...conditions);

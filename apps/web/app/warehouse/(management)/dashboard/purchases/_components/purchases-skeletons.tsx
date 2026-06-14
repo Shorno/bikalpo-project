@@ -17,15 +17,15 @@ const LINE_ITEM_SKELETON_ROWS = 4;
 
 export function MetricCardSkeleton() {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-7 w-7 rounded-lg" />
+    <div className="rounded-lg border border-border bg-card p-2.5 sm:rounded-xl sm:p-4">
+      <div className="mb-1 flex items-center gap-2 sm:mb-2 sm:justify-between">
+        <Skeleton className="h-3 w-16 sm:w-24" />
+        <Skeleton className="h-6 w-6 rounded-md sm:h-7 sm:w-7 sm:rounded-lg" />
       </div>
-      <Skeleton className="h-7 w-32" />
-      <div className="mt-1.5 flex items-center justify-between border-t border-border pt-1.5">
-        <Skeleton className="h-3 w-20" />
-        <Skeleton className="h-3 w-16" />
+      <Skeleton className="h-5 w-24 sm:h-7 sm:w-32" />
+      <div className="mt-1 flex items-center justify-between border-t border-border pt-1 sm:mt-1.5 sm:pt-1.5">
+        <Skeleton className="h-2.5 w-14 sm:h-3 sm:w-20" />
+        <Skeleton className="h-2.5 w-12 sm:h-3 sm:w-16" />
       </div>
     </div>
   );
@@ -33,7 +33,7 @@ export function MetricCardSkeleton() {
 
 export function MetricCardsGridSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
       {Array.from({ length: 4 }).map((_, i) => (
         <MetricCardSkeleton key={i} />
       ))}
@@ -58,7 +58,8 @@ export function PipelineTrackerSkeleton() {
         </div>
       </div>
 
-      <div className="relative mt-6 px-4">
+      <div className="-mx-1 overflow-x-auto pb-1 sm:mx-0">
+      <div className="relative mt-6 min-w-[34rem] px-4">
         <Skeleton className="absolute top-[14px] left-4 right-4 h-[3px] rounded-full" />
         <div className="relative z-10 grid grid-cols-6">
           {PIPELINE_STEPS.map((step) => (
@@ -68,6 +69,7 @@ export function PipelineTrackerSkeleton() {
             </div>
           ))}
         </div>
+      </div>
       </div>
 
       <div className="mt-5 flex items-center justify-between border-t border-border pt-3">
@@ -81,27 +83,27 @@ export function PipelineTrackerSkeleton() {
 function PurchasesTableRowSkeleton() {
   return (
     <TableRow className="border-b border-border hover:bg-transparent">
-      <TableCell className="w-[18%] min-w-[125px] max-w-[150px] px-4 py-3.5">
+      <TableCell className="min-w-[7.5rem] w-[7.5rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="h-4 w-24" />
       </TableCell>
-      <TableCell className="w-[22%] min-w-[150px] max-w-[190px] px-4 py-3.5">
+      <TableCell className="min-w-[9.5rem] w-[9.5rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="mt-1 h-3 w-20" />
       </TableCell>
-      <TableCell className="w-[20%] min-w-[140px] max-w-[170px] px-4 py-3.5">
+      <TableCell className="min-w-[9rem] w-[9rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="h-4 w-16" />
         <Skeleton className="mt-1 h-3 w-24" />
       </TableCell>
-      <TableCell className="w-[12%] min-w-[85px] px-4 py-3.5">
+      <TableCell className="min-w-[6rem] w-[6rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="ml-auto h-4 w-16" />
       </TableCell>
-      <TableCell className="w-[13%] min-w-[95px] px-4 py-3.5">
+      <TableCell className="min-w-[6.75rem] w-[6.75rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="h-6 w-20 rounded-full" />
       </TableCell>
-      <TableCell className="w-[15%] min-w-[95px] px-4 py-3.5">
+      <TableCell className="min-w-[6.25rem] w-[6.25rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="h-4 w-20" />
       </TableCell>
-      <TableCell className="w-[10%] min-w-[75px] px-4 py-3.5">
+      <TableCell className="min-w-[5.5rem] w-[5.5rem] px-2 py-3 sm:px-4 sm:py-3.5">
         <Skeleton className="ml-auto h-7 w-14" />
       </TableCell>
     </TableRow>
@@ -111,28 +113,29 @@ function PurchasesTableRowSkeleton() {
 export function PurchasesTableBodySkeleton({ rows = TABLE_SKELETON_ROWS }: { rows?: number }) {
   return (
     <>
-      <Table className="w-full table-fixed">
+      <div className="min-w-0">
+      <Table className="w-full min-w-[52rem]">
         <TableHeader>
           <TableRow className="border-b border-border bg-muted/30 hover:bg-muted/30">
-            <TableHead className="h-auto w-[18%] min-w-[125px] max-w-[150px] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <TableHead className="h-auto min-w-[7.5rem] w-[7.5rem] px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Order #
             </TableHead>
-            <TableHead className="h-auto w-[22%] min-w-[150px] max-w-[190px] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <TableHead className="h-auto min-w-[9.5rem] w-[9.5rem] px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Supplier
             </TableHead>
-            <TableHead className="h-auto w-[20%] min-w-[140px] max-w-[170px] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <TableHead className="h-auto min-w-[9rem] w-[9rem] px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Items
             </TableHead>
-            <TableHead className="h-auto w-[12%] min-w-[85px] px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <TableHead className="h-auto min-w-[6rem] w-[6rem] px-2 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Total
             </TableHead>
-            <TableHead className="h-auto w-[13%] min-w-[95px] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <TableHead className="h-auto min-w-[6.75rem] w-[6.75rem] px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Status
             </TableHead>
-            <TableHead className="h-auto w-[15%] min-w-[95px] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <TableHead className="h-auto min-w-[6.25rem] w-[6.25rem] px-2 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Date
             </TableHead>
-            <TableHead className="h-auto w-[10%] min-w-[75px] px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <TableHead className="h-auto min-w-[5.5rem] w-[5.5rem] px-2 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-4 sm:py-3">
               Action
             </TableHead>
           </TableRow>
@@ -143,8 +146,9 @@ export function PurchasesTableBodySkeleton({ rows = TABLE_SKELETON_ROWS }: { row
           ))}
         </TableBody>
       </Table>
+      </div>
 
-      <div className="flex flex-col gap-3 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
         <Skeleton className="h-4 w-48" />
         <div className="flex items-center gap-1">
           <Skeleton className="h-8 w-8 rounded-lg" />
