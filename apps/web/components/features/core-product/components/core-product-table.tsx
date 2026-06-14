@@ -48,16 +48,11 @@ export default function CoreProductTable({
     [],
   );
   const [globalFilter, setGlobalFilter] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState("all");
   const [categoryFilter, setCategoryFilter] = React.useState("all");
 
   // Filter data by status and category
   const filteredData = React.useMemo(() => {
     let result = data;
-
-    if (statusFilter !== "all") {
-      result = result.filter((item) => item.status === statusFilter);
-    }
 
     if (categoryFilter !== "all") {
       const catId = parseInt(categoryFilter, 10);
@@ -76,7 +71,7 @@ export default function CoreProductTable({
     }
 
     return result;
-  }, [data, statusFilter, categoryFilter, globalFilter]);
+  }, [data, categoryFilter, globalFilter]);
 
   const table = useReactTable({
     data: filteredData,
@@ -128,17 +123,7 @@ export default function CoreProductTable({
               ))}
             </SelectContent>
           </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
+
         </div>
         <NewCoreProductDialog />
       </div>

@@ -70,7 +70,7 @@ export default function NewCategoryDialog() {
     },
 
     validators: {
-      onSubmit: createCategorySchema,
+      onSubmit: createCategorySchema as any,
     },
     onSubmit: async ({ value }) => {
       mutation.mutate(value);

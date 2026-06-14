@@ -538,9 +538,9 @@ export default function StockPage() {
                         <TableRow key={item.id} className="hover:bg-gray-50/50">
                           <TableCell className="py-3">
                             <div className="flex items-center gap-2.5">
-                              {product?.images?.[0]?.url ? (
+                              {(product?.images?.[0]?.imageUrl || product?.images?.[0]?.url || product?.image) ? (
                                 <img
-                                  src={product.images[0].url}
+                                  src={product.images?.[0]?.imageUrl || product.images?.[0]?.url || product.image}
                                   alt={product?.name}
                                   className="w-8 h-8 rounded-lg object-cover border"
                                 />

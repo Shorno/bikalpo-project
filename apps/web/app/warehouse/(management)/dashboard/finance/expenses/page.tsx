@@ -33,7 +33,7 @@ export default function WarehouseExpensesPage() {
   );
 
   const { data: categories } = useQuery(
-    orpc.expense.getCategories.queryOptions({}),
+    orpc.expense.getCategories.queryOptions({ input: {} }),
   );
 
   const { data: payees } = useQuery(

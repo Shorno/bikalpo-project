@@ -52,7 +52,7 @@ export default function WarehouseSettingsPage() {
             <div className="flex justify-between py-2">
               <span className="text-gray-500">Storefront URL</span>
               <span className="font-medium text-amber-600">
-                {user?.warehouseSlug ? `/warehouse/${user.warehouseSlug}` : "—"}
+                {user?.warehouseSlug ? `/w/${user.warehouseSlug}` : "—"}
               </span>
             </div>
           </div>

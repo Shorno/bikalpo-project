@@ -34,7 +34,7 @@ export default function ExpensesPage() {
   );
 
   const { data: categories } = useQuery(
-    orpc.expense.getCategories.queryOptions(),
+    orpc.expense.getCategories.queryOptions({ input: {} }),
   );
 
   const { data: payees } = useQuery(

@@ -68,7 +68,7 @@ export default async function StockInventoryPage({
     slug: p.slug,
     sku: p.sku,
     price: p.price,
-    stockQuantity: p.stockQuantity,
+    stockQuantity: 0,
     inStock: p.inStock,
     reorderLevel: p.reorderLevel,
     supplier: p.supplier,

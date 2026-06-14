@@ -107,7 +107,7 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                   image: product.image,
                   size: product.size,
                   inStock: product.inStock,
-                  stockQuantity: product.stockQuantity,
+                  stockQuantity: 0,
                 }}
                 variants={normalizedVariants}
                 categoryName={product.category.name}

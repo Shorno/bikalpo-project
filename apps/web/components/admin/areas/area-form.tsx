@@ -193,7 +193,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                                             <p className="text-xs text-red-500">
                                                 {typeof field.state.meta.errors[0] === "string"
                                                     ? field.state.meta.errors[0]
-                                                    : field.state.meta.errors[0]?.message || "Invalid value"}
+                                                    : (field.state.meta.errors[0] as any)?.message || "Invalid value"}
                                             </p>
                                         )}
                                 </Field>
@@ -219,7 +219,7 @@ export function AreaForm({ area, open, onOpenChange }: AreaFormProps) {
                                             <p className="text-xs text-red-500">
                                                 {typeof field.state.meta.errors[0] === "string"
                                                     ? field.state.meta.errors[0]
-                                                    : field.state.meta.errors[0]?.message || "Invalid value"}
+                                                    : (field.state.meta.errors[0] as any)?.message || "Invalid value"}
                                             </p>
                                         )}
                                 </Field>

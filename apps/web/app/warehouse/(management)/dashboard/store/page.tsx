@@ -2,23 +2,50 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Package, StoreIcon } from "lucide-react";
-import { authClient } from "@/lib/auth-client";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/utils/orpc";
 
 function StockBadge({ qty }: { qty: number }) {
   if (qty <= 10)
-    return <Badge variant="destructive" className="text-[10px]">{qty} left</Badge>;
+    return (
+      <Badge variant="destructive" className="text-[10px]">
+        {qty} left
+      </Badge>
+    );
   if (qty <= 50)
-    return <Badge className="text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-100">{qty} in stock</Badge>;
-  return <Badge className="text-[10px] bg-emerald-100 text-emerald-700 hover:bg-emerald-100">{qty} in stock</Badge>;
+    return (
+      <Badge className="text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-100">
+        {qty} in stock
+      </Badge>
+    );
+  return (
+    <Badge className="text-[10px] bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+      {qty} in stock
+    </Badge>
+  );
+}
+
+function getPublicStorefrontBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL;
+  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
+
+  if (typeof window !== "undefined") {
+    return window.location.origin.replace("//warehouse.", "//");
+  }
+
+  return "http://bikalpo.localhost:3001";
 }
 
 export default function WarehouseStorePage() {
   const { data: session } = authClient.useSession();
   const user = session?.user as any;
   const slug = user?.warehouseSlug;
+  const storefrontPath = slug ? `/w/${slug}` : "";
+  const storefrontUrl = slug
+    ? `${getPublicStorefrontBaseUrl()}${storefrontPath}`
+    : "";
 
   const { data: warehouse } = useQuery({
     queryKey: ["warehouse-storefront", slug],
@@ -53,8 +80,8 @@ export default function WarehouseStorePage() {
           <h2 className="text-lg font-semibold">Your Warehouse Storefront</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
-          Your warehouse storefront is accessible via direct URL only. Share this
-          link or QR code with shop owners.
+          Your warehouse storefront is accessible via direct URL only. Share
+          this link or QR code with shop owners.
         </p>
 
         {slug ? (
@@ -64,10 +91,10 @@ export default function WarehouseStorePage() {
                 Storefront URL:
               </span>
               <code className="text-sm font-mono text-amber-700 bg-white rounded px-2 py-1">
-                /warehouse/{slug}
+                {storefrontPath}
               </code>
             </div>
-            <a href={`http://shop.bikalpo.localhost:3001/warehouse/${slug}`} target="_blank" rel="noopener noreferrer">
+            <a href={storefrontUrl} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" size="sm" className="gap-1.5 text-xs">
                 <ExternalLink className="w-3.5 h-3.5" />
                 Open Storefront
@@ -90,7 +117,9 @@ export default function WarehouseStorePage() {
           </div>
           <div className="bg-white rounded-lg border shadow-sm p-4">
             <p className="text-xs text-muted-foreground mb-1">Categories</p>
-            <p className="text-2xl font-bold text-gray-900">{categories.length}</p>
+            <p className="text-2xl font-bold text-gray-900">
+              {categories.length}
+            </p>
           </div>
           <div className="bg-white rounded-lg border shadow-sm p-4">
             <p className="text-xs text-muted-foreground mb-1">Warehouse</p>
@@ -121,7 +150,9 @@ export default function WarehouseStorePage() {
           ) : products.length === 0 ? (
             <div className="p-8 text-center">
               <Package className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm font-medium text-gray-600">No products in storefront</p>
+              <p className="text-sm font-medium text-gray-600">
+                No products in storefront
+              </p>
               <p className="text-xs text-gray-400 mt-1">
                 Add inventory to make products visible to shop owners.
               </p>
@@ -132,7 +163,8 @@ export default function WarehouseStorePage() {
                 const variant = item.variant;
                 const product = item.product || variant?.product;
                 const qty = Number(item.availableQty) || 0;
-                const unitLabel = variant?.unitLabel || variant?.packType || "Unit";
+                const unitLabel =
+                  variant?.unitLabel || variant?.packType || "Unit";
                 const price = item.retailPrice || variant?.price || "0";
                 const category = product?.category?.name;
 
@@ -153,17 +185,25 @@ export default function WarehouseStorePage() {
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
                         {category && (
-                          <span className="text-xs text-muted-foreground">{category}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {category}
+                          </span>
                         )}
                         <span className="text-xs text-muted-foreground">·</span>
-                        <span className="text-xs text-muted-foreground">{unitLabel}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {unitLabel}
+                        </span>
                       </div>
                     </div>
 
                     {/* Price */}
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold text-gray-900">৳ {price}</p>
-                      <p className="text-[10px] text-muted-foreground">/ {unitLabel}</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        ৳ {price}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        / {unitLabel}
+                      </p>
                     </div>
 
                     {/* Stock */}

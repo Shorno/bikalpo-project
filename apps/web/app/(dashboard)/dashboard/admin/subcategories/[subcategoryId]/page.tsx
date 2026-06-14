@@ -78,7 +78,7 @@ export default function SubcategoryDetailPage() {
       <div className="flex flex-col md:flex-row md:items-start gap-5">
         <div className="w-20 h-20 relative rounded-lg overflow-hidden border shadow-sm flex-shrink-0">
           <Image
-            src={sub.image}
+            src={sub.image || "/placeholder-image.svg"}
             alt={sub.name}
             fill
             className="object-cover"

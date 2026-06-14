@@ -131,7 +131,7 @@ export default function CategoryDetailClient({
                     <TableCell>
                       <div className="w-10 h-10 relative rounded-md overflow-hidden border">
                         <Image
-                          src={sub.image}
+                          src={sub.image || "/placeholder-image.svg"}
                           alt={sub.name}
                           fill
                           className="object-cover"

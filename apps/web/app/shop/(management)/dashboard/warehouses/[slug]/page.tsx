@@ -45,6 +45,7 @@ type CartonOption = {
   count: number;
   totalKg: number;
   packsPerCarton: number;
+  cartonPrice?: string | number | null;
 };
 
 type VariantItem = {
