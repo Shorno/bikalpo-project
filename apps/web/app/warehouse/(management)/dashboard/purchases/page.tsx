@@ -337,9 +337,26 @@ export default function SupplierPurchasesPage() {
       }),
   });
 
+  const supplierPurchasesSummaryQuery = useQuery({
+    queryKey: ["warehouse", "getPurchases", "summary"],
+    queryFn: () =>
+      orpc.warehouse.getPurchases.call({
+        page: 1,
+        limit: 1,
+      }),
+  });
+
   const supplierStatsQuery = useQuery({
     queryKey: ["warehouse", "getSupplierStats"],
     queryFn: () => orpc.warehouse.getSupplierStats.call({}),
+  });
+
+  const externalSuppliersQuery = useQuery({
+    queryKey: ["warehouse", "suppliers", "purchase-totals"],
+    queryFn: () =>
+      orpc.warehouse.getSuppliers.call({
+        status: "all",
+      }),
   });
 
   const payableSummaryQuery = useQuery({
@@ -360,10 +377,12 @@ export default function SupplierPurchasesPage() {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  const topSupplier =
-    payable?.suppliers && payable.suppliers.length > 0
-      ? payable.suppliers[0]
-      : null;
+  const topPurchaseSupplier =
+    externalSuppliersQuery.data?.suppliers?.reduce(
+      (top: any | null, supplier: any) =>
+        !top || supplier.totalPurchase > top.totalPurchase ? supplier : top,
+      null,
+    ) ?? null;
 
   /* ─── Calculations ─── */
   const totalPurchasesValue = stats?.totalPurchase || 0;
@@ -375,6 +394,13 @@ export default function SupplierPurchasesPage() {
 
   // Most recent order overall (not affected by active table filters)
   const lastOrder = lastOrderQuery.data?.orders?.[0] ?? null;
+  const lastSupplierPurchase =
+    supplierPurchasesSummaryQuery.data?.purchases?.[0] ?? null;
+  const lastWarehouseOrderStatus = lastSupplierPurchase
+    ? undefined
+    : lastOrder?.status;
+  const totalSupplierPurchaseOrders =
+    supplierPurchasesSummaryQuery.data?.pagination?.totalCount ?? 0;
 
   // Calculate overdue values
   const overdueValue = payable?.suppliers?.reduce(
@@ -603,10 +629,10 @@ export default function SupplierPurchasesPage() {
           icon={Users}
         >
           <div className="mt-1 flex items-center justify-between gap-1 border-t border-border pt-1 text-[10px] text-muted-foreground min-w-0 sm:mt-1.5 sm:pt-1.5 sm:text-xs">
-            <span className="truncate">Top: <span className="font-semibold text-foreground">{topSupplier ? topSupplier.name : "—"}</span></span>
-            {topSupplier && (
+            <span className="truncate">Top: <span className="font-semibold text-foreground">{topPurchaseSupplier ? topPurchaseSupplier.name : "—"}</span></span>
+            {topPurchaseSupplier && (
               <span className="shrink-0 font-mono tabular-nums text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground ml-1">
-                ৳{Number(topSupplier.currentPayable).toLocaleString("en-BD")}
+                ৳{Number(topPurchaseSupplier.totalPurchase).toLocaleString("en-BD")}
               </span>
             )}
           </div>
@@ -615,18 +641,22 @@ export default function SupplierPurchasesPage() {
         {/* Card 4: Total Orders */}
         <MetricCard
           title="Total Orders"
-          value={pagination ? String(pagination.totalCount) : "—"}
+          value={
+            supplierPurchasesSummaryQuery.isLoading
+              ? "—"
+              : String(totalSupplierPurchaseOrders)
+          }
           icon={FileText}
         >
           <div className="mt-1 flex items-center justify-between gap-1 border-t border-border pt-1 text-[10px] text-muted-foreground min-w-0 sm:mt-1.5 sm:pt-1.5 sm:text-xs">
-            <span className="truncate">Last: <span className="font-semibold font-mono text-foreground">#{lastOrder?.orderNumber?.slice(-6) || "—"}</span></span>
-            {lastOrder && (
+            <span className="truncate">Last: <span className="font-semibold font-mono text-foreground">#{lastSupplierPurchase?.purchaseNumber?.slice(-6) || lastOrder?.orderNumber?.slice(-6) || "—"}</span></span>
+            {lastWarehouseOrderStatus && (
               <span className={`shrink-0 px-1 py-0.5 text-[9px] font-semibold rounded uppercase tracking-wider leading-none sm:px-1.5 sm:text-xs ${
-                lastOrder.status === 'delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                lastOrder.status === 'cancelled' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
+                lastWarehouseOrderStatus === 'delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                lastWarehouseOrderStatus === 'cancelled' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
                 'bg-amber-50 text-amber-700 border border-amber-100'
               }`}>
-                {lastOrder.status}
+                {lastWarehouseOrderStatus}
               </span>
             )}
           </div>

@@ -167,15 +167,14 @@ const warehouseNavGroups: NavGroup[] = [
     label: "Network Stores",
     items: [
       {
-        title: "Connected Stores",
+        title: "Network Stores",
         url: `${WH}/connected-stores`,
         icon: NetworkIcon,
-      },
-      { title: "Store Requests", url: `${WH}/store-requests`, icon: InboxIcon },
-      {
-        title: "Warehouse Requests",
-        url: `${WH}/supplier-requests`,
-        icon: WarehouseIcon,
+        items: [
+          { title: "Connected Stores", url: `${WH}/connected-stores` },
+          { title: "Store Requests", url: `${WH}/store-requests` },
+          { title: "Warehouse Requests", url: `${WH}/supplier-requests` },
+        ],
       },
     ],
   },
