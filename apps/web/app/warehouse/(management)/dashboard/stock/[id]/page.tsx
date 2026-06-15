@@ -465,7 +465,7 @@ export default function StockDetailPage() {
                     const {
                       totalQty,
                       inCartonQty,
-                      availableForCartonQty,
+                      looseQty,
                     } = getVariantDisplayInventory(item, isLoose);
                     // Build label: "20 KG Loose (Fresh)" or "Loose (Fresh)"
                     let label = isLoose
@@ -508,10 +508,9 @@ export default function StockDetailPage() {
                               {formatUnitQty(inCartonQty, isLoose)}{" "}
                               {isLoose ? "KG" : "Pack"} inside cartons
                             </div>
-                            <div className="text-xs text-amber-600 tabular-nums mt-0.5">
-                              {formatUnitQty(availableForCartonQty, isLoose)}{" "}
-                              {isLoose ? "KG" : "Pack"} available for carton
-                              generation
+                            <div className="text-xs text-slate-500 tabular-nums mt-0.5">
+                              {formatUnitQty(looseQty, isLoose)}{" "}
+                              {isLoose ? "KG" : "Pack"} currently loose
                             </div>
                           </div>
                           <div className="min-w-[100px]">
