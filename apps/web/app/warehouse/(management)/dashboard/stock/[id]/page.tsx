@@ -517,31 +517,18 @@ export default function StockDetailPage() {
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
             {packVariantGroups.map((group: StockVariantGroup, gi: number) => {
-              const isLoose = group.packType === "loose";
               return (
                 <Fragment key={gi}>
-                  {group.items.map((item: any, ii: number) => {
-                    const weightKg = parseFloat(group.weightKg || "0");
+                  {group.items.map((item: StockVariantItem, ii: number) => {
                     const {
                       totalQty,
                       inCartonQty,
                       looseQty,
-                    } = getVariantDisplayInventory(item, isLoose);
-                    // Build label: "20 KG Loose (Fresh)" or "Loose (Fresh)"
-                    let label = isLoose
-                      ? (weightKg > 0 ? `${weightKg} KG Loose` : "Loose")
-                      : group.unitLabel || "Pack";
-                    if (item.brand?.name) {
-                      label += ` (${item.brand.name})`;
-                    }
-                    if (item.color || item.size) {
-                      label = [item.color, item.size].filter(Boolean).join(" - ");
-                    }
-
-                    // For loose with known weight: show qty count
-                    const looseQtyCount = isLoose && weightKg > 0
-                      ? Math.round(totalQty / weightKg)
-                      : 0;
+                    } = getVariantDisplayInventory(item, false);
+                    const label = buildVariantLabel(group, item, false);
+                    const isLoose = false;
+                    const weightKg = parseFloat(group.weightKg || "0");
+                    const looseQtyCount = 0;
 
                     return (
                       <div
@@ -554,9 +541,9 @@ export default function StockDetailPage() {
                         <div className="flex items-center gap-6">
                           <div className="text-right min-w-[220px]">
                             <div className="text-sm font-bold text-gray-900 tabular-nums">
-                              {formatUnitQty(totalQty, isLoose)}{" "}
+                              {formatUnitQty(totalQty, false)}{" "}
                               <span className="text-xs font-normal text-gray-500">
-                                {isLoose ? "KG total" : "Pack total"}
+                                Pack total
                               </span>
                               {isLoose && weightKg > 0 && looseQtyCount > 0 && (
                                 <span className="text-xs font-normal text-gray-400 ml-1">
@@ -565,12 +552,10 @@ export default function StockDetailPage() {
                               )}
                             </div>
                             <div className="text-xs text-blue-600 tabular-nums mt-1">
-                              {formatUnitQty(inCartonQty, isLoose)}{" "}
-                              {isLoose ? "KG" : "Pack"} inside cartons
+                              {formatUnitQty(inCartonQty, false)} Pack inside cartons
                             </div>
                             <div className="text-xs text-slate-500 tabular-nums mt-0.5">
-                              {formatUnitQty(looseQty, isLoose)}{" "}
-                              {isLoose ? "KG" : "Pack"} currently loose
+                              {formatUnitQty(looseQty, false)} Pack outside cartons
                             </div>
                           </div>
                           <div className="min-w-[100px]">
