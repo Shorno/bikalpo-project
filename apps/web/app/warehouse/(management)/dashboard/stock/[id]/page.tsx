@@ -66,6 +66,14 @@ function formatUnitQty(value: number, isLoose: boolean) {
   return Math.round(value).toLocaleString();
 }
 
+type VariantDisplayInventory = {
+  totalQty: number;
+  inCartonQty: number;
+  looseQty: number;
+  availableForCartonQty: number;
+  activeCartonCount: number;
+};
+
 type StockVariantBrand = {
   id: number | null;
   name: string;
@@ -303,7 +311,10 @@ export default function StockDetailPage() {
   // Calculate loose convertible
   const looseTotal = (loosePool?.openStock ?? 0) + (loosePool?.fullDrum ?? 0);
 
-  function getVariantDisplayInventory(item: any, isLoose: boolean) {
+  function getVariantDisplayInventory(
+    item: StockVariantItem,
+    isLoose: boolean,
+  ): VariantDisplayInventory {
     const summary = cartonByVariant.get(item.variantId);
     const summaryInCartonQty = summary
       ? parseFloat(
@@ -313,19 +324,21 @@ export default function StockDetailPage() {
         )
       : 0;
 
-    const availableForCartonQty =
+    const looseQty =
       item.availableForCartonQty ?? item.availableQty ?? 0;
     const inCartonQty = summary
       ? summaryInCartonQty
       : item.inCartonQty ?? 0;
     const totalQty = summary
-      ? availableForCartonQty + summaryInCartonQty
-      : item.totalQty ?? availableForCartonQty;
+      ? looseQty + summaryInCartonQty
+      : item.totalQty ?? looseQty;
 
     return {
       totalQty,
       inCartonQty,
-      availableForCartonQty,
+      looseQty,
+      availableForCartonQty: looseQty,
+      activeCartonCount: summary?.activeCartonCount ?? 0,
     };
   }
 
