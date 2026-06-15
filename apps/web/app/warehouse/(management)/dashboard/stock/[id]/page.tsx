@@ -215,6 +215,16 @@ export default function StockDetailPage() {
     return ids;
   }, [variantGroups]);
 
+  const packVariantGroups = useMemo(
+    () => variantGroups.filter((group) => group.packType !== "loose"),
+    [variantGroups],
+  );
+
+  const looseVariantGroups = useMemo(
+    () => variantGroups.filter((group) => group.packType === "loose"),
+    [variantGroups],
+  );
+
   // Fetch actual carton data for all variants (from the carton table, not deprecated cartonConfig)
   const { data: cartonSummaryData } = useQuery({
     queryKey: ["warehouse", "getCartonSummaryBatch", allVariantIds],
@@ -286,14 +296,9 @@ export default function StockDetailPage() {
     })
     .join(" + ");
 
-  // Pack type groups (non-loose — for SUPPLY LEVEL section)
-  const packTypeGroups = variantGroups.filter(
-    (g: any) => g.packType !== "loose"
-  );
-
   // Get the selected pack details
   const selectedPack =
-    selectedPackIndex !== null ? packTypeGroups[selectedPackIndex] : null;
+    selectedPackIndex !== null ? packVariantGroups[selectedPackIndex] : null;
 
   // Calculate loose convertible
   const looseTotal = (loosePool?.openStock ?? 0) + (loosePool?.fullDrum ?? 0);
@@ -513,11 +518,11 @@ export default function StockDetailPage() {
       {/* ══════════════════════════════════════════════════════════════
           📦 PACK TYPE STOCK (SUPPLY LEVEL)
           ══════════════════════════════════════════════════════════════ */}
-      {packTypeGroups.length > 0 && (
+      {packVariantGroups.length > 0 && (
         <div>
           <SectionHeader emoji="📦" title="Pack Type Stock (Supply Level)" />
           <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-            {packTypeGroups.map((group: any, gi: number) => {
+            {packVariantGroups.map((group: StockVariantGroup, gi: number) => {
               // Build per-brand carton info for this weight group
               const brandCartonRows: { brandName: string; cartonCount: number; totalKg: number; weightKg: number }[] = [];
               const weightKg = parseFloat(group.weightKg || "0");
@@ -603,9 +608,7 @@ export default function StockDetailPage() {
 
       {(() => {
         // Show cartons created from loose variants, grouped by brand
-        const looseGroups = variantGroups.filter(
-          (g: any) => g.packType === "loose"
-        );
+        const looseGroups = looseVariantGroups;
         if (looseGroups.length === 0) return null;
 
         // Build per-brand carton data from all loose items
