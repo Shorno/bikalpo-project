@@ -66,6 +66,46 @@ function formatUnitQty(value: number, isLoose: boolean) {
   return Math.round(value).toLocaleString();
 }
 
+type StockVariantBrand = {
+  id: number | null;
+  name: string;
+  logo: string | null;
+};
+
+type StockVariantItem = {
+  variantId: number;
+  brand: StockVariantBrand | null;
+  color: string | null;
+  size: string | null;
+  availableQty: number;
+  totalQty: number;
+  inCartonQty: number;
+  availableForCartonQty: number;
+  reservedQty: number;
+  retailPrice: string | null;
+  sku: string | null;
+};
+
+type StockVariantGroup = {
+  packType: string;
+  unitLabel: string;
+  weightKg: string;
+  innerPackSizeKg: string | null;
+  packCountInside: number | null;
+  items: StockVariantItem[];
+};
+
+type CartonSummary = {
+  variantId: number;
+  totalPacks: number;
+  totalWeightKg: string;
+  activeCartonCount: number;
+  cartonPrice: string | null;
+  deliveryCostPerUnit: string | null;
+  latestCartonId: string;
+  latestCartonDbId: number;
+};
+
 // ─── Section Header ────────────────────────────────────────────
 
 function SectionHeader({ emoji, title }: { emoji: string; title: string }) {
@@ -133,7 +173,7 @@ export default function StockDetailPage() {
   // Merge all breakdowns into a single view
   const breakdownData = useMemo(() => {
     if (!allBreakdowns || allBreakdowns.length === 0) return null;
-    const mergedGroups: any[] = [];
+    const mergedGroups: StockVariantGroup[] = [];
     let mergedLooseOpen = 0;
     let mergedLooseDrum = 0;
     let mergedTotal = 0;
@@ -164,7 +204,7 @@ export default function StockDetailPage() {
   }, [allBreakdowns, productIds]);
 
   // Collect all variant IDs from breakdown
-  const variantGroups = breakdownData?.variantGroups ?? [];
+  const variantGroups: StockVariantGroup[] = breakdownData?.variantGroups ?? [];
   const allVariantIds = useMemo(() => {
     const ids: number[] = [];
     for (const g of variantGroups) {
@@ -181,7 +221,7 @@ export default function StockDetailPage() {
     queryFn: () => (orpc.warehouse as any).getCartonSummaryBatch.call({ variantIds: allVariantIds }),
     enabled: allVariantIds.length > 0,
   });
-  const cartonSummaries: any[] = cartonSummaryData?.cartons ?? [];
+  const cartonSummaries: CartonSummary[] = cartonSummaryData?.cartons ?? [];
 
   // Build carton summary lookup: variantId → summary
   const cartonByVariant = useMemo(() => {
