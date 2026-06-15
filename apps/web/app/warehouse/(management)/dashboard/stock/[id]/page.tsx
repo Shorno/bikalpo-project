@@ -450,13 +450,13 @@ export default function StockDetailPage() {
           ══════════════════════════════════════════════════════════════ */}
       <div>
         <SectionHeader emoji="📊" title="Variant Stock (Pack Level)" />
-        {variantGroups.length === 0 ? (
+        {packVariantGroups.length === 0 ? (
           <div className="py-6 text-center text-sm text-gray-400 border border-dashed rounded-lg bg-gray-50/50">
-            No variant breakdown available
+            No pack variants available
           </div>
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-            {variantGroups.map((group: any, gi: number) => {
+            {packVariantGroups.map((group: StockVariantGroup, gi: number) => {
               const isLoose = group.packType === "loose";
               return (
                 <Fragment key={gi}>
