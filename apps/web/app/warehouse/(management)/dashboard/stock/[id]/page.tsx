@@ -663,6 +663,56 @@ export default function StockDetailPage() {
         </div>
       )}
 
+      {looseVariantRows.length > 0 && (
+        <div>
+          <SectionHeader emoji="💧" title="Loose Variant Availability" />
+          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+            {looseVariantRows.map((row) => {
+              const totalUnitCount = row.weightKg > 0
+                ? Math.round(row.totalQty / row.weightKg)
+                : 0;
+
+              return (
+                <div
+                  key={row.key}
+                  className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                >
+                  <span className="text-sm text-gray-800 font-medium">
+                    {row.label}
+                  </span>
+                  <div className="flex items-center gap-6">
+                    <div className="text-right min-w-[260px]">
+                      <div className="text-sm font-bold text-gray-900 tabular-nums">
+                        {formatUnitQty(row.totalQty, true)}{" "}
+                        <span className="text-xs font-normal text-gray-500">
+                          KG total
+                        </span>
+                        {row.weightKg > 0 && totalUnitCount > 0 && (
+                          <span className="text-xs font-normal text-gray-400 ml-1">
+                            ({totalUnitCount} × {row.weightKg} KG)
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-blue-600 tabular-nums mt-1">
+                        {row.activeCartonCount.toLocaleString()} carton generated
+                        {" • "}
+                        {formatUnitQty(row.inCartonQty, true)} KG packed into cartons
+                      </div>
+                      <div className="text-xs text-emerald-700 tabular-nums mt-0.5">
+                        {formatUnitQty(row.looseQty, true)} KG available in loose
+                      </div>
+                    </div>
+                    <div className="min-w-[100px]">
+                      <StatusIndicator qty={row.looseQty} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {(() => {
         // Show cartons created from loose variants, grouped by brand
         const looseGroups = looseVariantGroups;
