@@ -74,6 +74,16 @@ type VariantDisplayInventory = {
   activeCartonCount: number;
 };
 
+type LooseVariantRow = {
+  key: string;
+  label: string;
+  totalQty: number;
+  looseQty: number;
+  inCartonQty: number;
+  activeCartonCount: number;
+  weightKg: number;
+};
+
 type StockVariantBrand = {
   id: number | null;
   name: string;
@@ -311,6 +321,27 @@ export default function StockDetailPage() {
   // Calculate loose convertible
   const looseTotal = (loosePool?.openStock ?? 0) + (loosePool?.fullDrum ?? 0);
 
+  function buildVariantLabel(
+    group: StockVariantGroup,
+    item: StockVariantItem,
+    isLoose: boolean,
+  ) {
+    const weightKg = parseFloat(group.weightKg || "0");
+    let label = isLoose
+      ? (weightKg > 0 ? `${weightKg} KG Loose` : "Loose")
+      : group.unitLabel || "Pack";
+
+    if (item.brand?.name) {
+      label += ` (${item.brand.name})`;
+    }
+
+    if (item.color || item.size) {
+      label = [item.color, item.size].filter(Boolean).join(" - ");
+    }
+
+    return label;
+  }
+
   function getVariantDisplayInventory(
     item: StockVariantItem,
     isLoose: boolean,
@@ -368,6 +399,35 @@ export default function StockDetailPage() {
       hasCartons: totalActiveCartons > 0,
     };
   }
+
+  const looseVariantRows = useMemo<LooseVariantRow[]>(() => {
+    const rows: LooseVariantRow[] = [];
+
+    for (const group of looseVariantGroups) {
+      for (const item of group.items) {
+        const inventory = getVariantDisplayInventory(item, true);
+        if (
+          inventory.totalQty <= 0 &&
+          inventory.looseQty <= 0 &&
+          inventory.inCartonQty <= 0
+        ) {
+          continue;
+        }
+
+        rows.push({
+          key: `${group.weightKg}-${item.variantId}`,
+          label: buildVariantLabel(group, item, true),
+          totalQty: inventory.totalQty,
+          looseQty: inventory.looseQty,
+          inCartonQty: inventory.inCartonQty,
+          activeCartonCount: inventory.activeCartonCount,
+          weightKg: parseFloat(group.weightKg || "0"),
+        });
+      }
+    }
+
+    return rows.sort((a, b) => b.looseQty - a.looseQty || b.totalQty - a.totalQty);
+  }, [looseVariantGroups, cartonByVariant]);
 
   return (
     <div className="space-y-6 max-w-4xl">
