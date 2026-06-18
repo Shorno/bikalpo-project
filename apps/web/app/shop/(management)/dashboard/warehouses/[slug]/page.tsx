@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import Link from "next/link";
 import { orpc } from "@/utils/orpc";
@@ -770,8 +771,9 @@ function VariantModal({
    ═══════════════════════════════════════════════════════════ */
 export default function OrderFromWarehousePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const router = useRouter();
   const queryClient = useQueryClient();
-  const [step, setStep] = useState<"browse" | "checkout" | "success">("browse");
+  const [step, setStep] = useState<"browse" | "checkout">("browse");
   const selectedSlug = slug;
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -781,7 +783,6 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
   const [shippingAddress, setShippingAddress] = useState("");
   const [shippingCity, setShippingCity] = useState("");
   const [customerNote, setCustomerNote] = useState("");
-  const [orderResult, setOrderResult] = useState<any>(null);
 
   const { data: productsData, isLoading: loadingProducts, error: productsError } = useQuery({
     queryKey: ["shopOwner", "getWarehouseProductsFiltered", selectedSlug, search],
@@ -799,10 +800,11 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
   const orderMutation = useMutation({
     mutationFn: (data: any) => orpc.shopOwner.placeWarehouseOrder.call(data),
     onSuccess: (result) => {
-      setOrderResult(result);
-      setStep("success");
       setCart([]);
+      queryClient.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
       queryClient.invalidateQueries({ queryKey: ["shopOwner", "getMyWarehouses"] });
+      toast.success(result.message || "Order placed successfully");
+      router.push("/dashboard/orders");
     },
   });
 
@@ -871,12 +873,12 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
 
       {/* Steps */}
       <div className="flex items-center gap-2 text-xs">
-        {(["browse", "checkout", "success"] as const).map((s, i) => (
+        {(["browse", "checkout"] as const).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
-            <span className={`px-2.5 py-1 rounded-full font-medium ${step === s ? "bg-blue-100 text-blue-700" : ["browse", "checkout", "success"].indexOf(step) > i ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>
+            <span className={`px-2.5 py-1 rounded-full font-medium ${step === s ? "bg-blue-100 text-blue-700" : ["browse", "checkout"].indexOf(step) > i ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>
               {i + 1}. {s.charAt(0).toUpperCase() + s.slice(1)}
             </span>
-            {i < 2 && <ArrowRight size={12} className="text-gray-300" />}
+            {i < 1 && <ArrowRight size={12} className="text-gray-300" />}
           </div>
         ))}
       </div>
@@ -1032,20 +1034,6 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
                className="flex-1 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
                {orderMutation.isPending ? (<><Loader2 size={14} className="animate-spin" /> Placing Order...</>) : (<>Place Order — ৳{cartTotal.toLocaleString()}</>)}
              </button>
-           </div>
-         </div>
-       )}
- 
-       {/* ═══ STEP 3: SUCCESS ═══ */}
-       {step === "success" && orderResult && (
-         <div className="bg-white border border-emerald-200 rounded-xl p-8 text-center">
-           <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
-           <h2 className="text-xl font-bold text-gray-900 mb-2">Order Placed Successfully!</h2>
-           <p className="text-sm text-gray-500 mb-1">{orderResult.message}</p>
-           <p className="text-xs text-gray-400 font-mono mb-6">Order #{orderResult.order?.orderNumber}</p>
-           <div className="flex gap-3 justify-center">
-             <Link href="/dashboard/warehouses" className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Back to Warehouses</Link>
-             <Link href="/dashboard/orders" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">View My Orders</Link>
            </div>
          </div>
        )}
