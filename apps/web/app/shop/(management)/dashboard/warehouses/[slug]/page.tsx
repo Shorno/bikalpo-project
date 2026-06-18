@@ -22,8 +22,9 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
 
 /* ─── Types ─── */
@@ -143,6 +144,20 @@ function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
     catMap.get(cat)!.push(prod);
   }
   return catMap;
+}
+
+function getPrefillCity(user: any): string {
+  const serviceArea =
+    typeof user?.serviceArea === "string" ? user.serviceArea.trim() : "";
+  if (serviceArea) return serviceArea;
+
+  const address = typeof user?.shopAddress === "string" ? user.shopAddress : "";
+  const parts = address
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts.at(-1) || "";
 }
 
 /* ─── Product Card (grid card) — one per product×brand ─── */
@@ -773,6 +788,7 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
   const { slug } = use(params);
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { data: session } = authClient.useSession();
   const [step, setStep] = useState<"browse" | "checkout">("browse");
   const selectedSlug = slug;
   const [search, setSearch] = useState("");
@@ -783,6 +799,22 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
   const [shippingAddress, setShippingAddress] = useState("");
   const [shippingCity, setShippingCity] = useState("");
   const [customerNote, setCustomerNote] = useState("");
+  const user = session?.user as any;
+
+  useEffect(() => {
+    if (!user) return;
+
+    setShippingName((current) => current || user.ownerName || user.name || "");
+    setShippingPhone((current) => current || user.phoneNumber || "");
+    setShippingAddress((current) => current || user.shopAddress || "");
+    setShippingCity((current) => current || getPrefillCity(user));
+  }, [
+    user?.name,
+    user?.ownerName,
+    user?.phoneNumber,
+    user?.serviceArea,
+    user?.shopAddress,
+  ]);
 
   const { data: productsData, isLoading: loadingProducts, error: productsError } = useQuery({
     queryKey: ["shopOwner", "getWarehouseProductsFiltered", selectedSlug, search],
@@ -999,10 +1031,15 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
        )}
  
        {/* ═══ STEP 2: CHECKOUT ═══ */}
-       {step === "checkout" && (
-         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
-           <h2 className="text-sm font-semibold text-gray-800">Shipping Details</h2>
-           <div className="grid gap-4 md:grid-cols-2">
+      {step === "checkout" && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-gray-800">Shipping Details</h2>
+            <p className="text-xs text-gray-500">
+              We prefilled these details from your shop profile. You can update anything before placing the order.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
              <div><span className="text-xs text-gray-500 font-medium block mb-1">Full Name *</span><input value={shippingName} onChange={(e) => setShippingName(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Shop Owner Name" /></div>
              <div><span className="text-xs text-gray-500 font-medium block mb-1">Phone *</span><input value={shippingPhone} onChange={(e) => setShippingPhone(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" placeholder="01XXXXXXXXX" /></div>
            </div>
