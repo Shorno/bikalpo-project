@@ -274,11 +274,15 @@ export function usePurchaseOrders(params?: {
 }
 
 /** Full detail for a single purchase order */
-export function usePurchaseOrderDetail(orderId: number | null) {
+export function usePurchaseOrderDetail(
+  orderId: number | null,
+  options?: { refetchIntervalMs?: number },
+) {
   return useQuery(
     orpc.shopOwner.getPurchaseOrderDetail.queryOptions({
       input: { orderId: orderId! },
       enabled: !!orderId,
+      refetchInterval: options?.refetchIntervalMs,
       staleTime: 1000 * 30,
     }),
   );

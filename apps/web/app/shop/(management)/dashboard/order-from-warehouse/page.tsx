@@ -758,7 +758,12 @@ export default function OrderFromWarehousePage() {
       queryClient.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
       queryClient.invalidateQueries({ queryKey: ["shopOwner", "getConnectedWarehouses"] });
       toast.success(result.message || "Order placed successfully");
-      router.push("/dashboard/orders");
+      const orderId = result.order?.id;
+      router.push(
+        orderId
+          ? `/dashboard/orders?handoff=1&watchOrder=${orderId}`
+          : "/dashboard/orders",
+      );
     },
   });
 

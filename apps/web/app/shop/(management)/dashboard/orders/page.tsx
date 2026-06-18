@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,7 +47,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { usePurchaseOrders } from "@/hooks/use-shop-owner-api";
+import {
+  usePurchaseOrderDetail,
+  usePurchaseOrders,
+} from "@/hooks/use-shop-owner-api";
 import { useQuery } from "@tanstack/react-query";
 import { orpc } from "@/utils/orpc";
 
@@ -138,11 +142,19 @@ function DeliveryOtpBadge({ orderId, status }: { orderId: number; status: string
 // ─── Main Component ─────────────────────────────────────────
 
 export default function PurchaseOrdersPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
   const [page, setPage] = useState(1);
   const [dateRange, setDateRange] = useState<string>("all");
+  const watchOrderIdParam = searchParams.get("watchOrder");
+  const watchOrderId = watchOrderIdParam ? Number(watchOrderIdParam) : null;
+  const shouldWatchHandoff =
+    searchParams.get("handoff") === "1" &&
+    Number.isFinite(watchOrderId) &&
+    (watchOrderId ?? 0) > 0;
 
   // Debounce search
   const handleSearchChange = (value: string) => {
@@ -183,6 +195,22 @@ export default function PurchaseOrdersPage() {
   const orders = data?.orders ?? [];
   const pagination = data?.pagination;
   const kpi = data?.kpi;
+  const { data: watchedOrderDetail, isLoading: watchedOrderLoading } =
+    usePurchaseOrderDetail(
+      shouldWatchHandoff ? watchOrderId : null,
+      shouldWatchHandoff ? { refetchIntervalMs: 5000 } : undefined,
+    );
+  const watchedOrder = watchedOrderDetail?.order as
+    | { id: number; orderNumber: string; status: string }
+    | undefined;
+
+  useEffect(() => {
+    if (!shouldWatchHandoff || !watchedOrder) return;
+
+    if (["confirmed", "processing", "delivered"].includes(watchedOrder.status)) {
+      router.replace(`/dashboard/orders/tracking?orderId=${watchedOrder.id}`);
+    }
+  }, [router, shouldWatchHandoff, watchedOrder]);
 
   return (
     <div className="space-y-4">
@@ -199,6 +227,33 @@ export default function PurchaseOrdersPage() {
           </Link>
         </Button>
       </div>
+
+      {shouldWatchHandoff && (
+        <Card className="border-blue-200 bg-blue-50/70 shadow-none">
+          <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">
+                Waiting for wholesaler acceptance
+              </p>
+              <p className="text-xs text-blue-700">
+                {watchedOrderLoading
+                  ? "Checking your new order status..."
+                  : watchedOrder
+                    ? `${watchedOrder.orderNumber} is currently ${statusConfig[watchedOrder.status]?.label || watchedOrder.status}.`
+                    : "Loading your latest purchase order..."}
+              </p>
+            </div>
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              className="border-blue-200 bg-white text-blue-700 hover:bg-blue-100"
+            >
+              <Link href="/dashboard/orders/tracking">Open Tracking</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -317,9 +372,18 @@ export default function PurchaseOrdersPage() {
               )}
 
               {currentIdx >= 0 && currentIdx < 5 && (
-                <p className="text-[10px] text-muted-foreground mt-2">
-                  Current: {statusSteps[currentIdx]?.icon} <span className="font-medium">{statusSteps[currentIdx]?.label}</span>
-                </p>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[10px] text-muted-foreground">
+                    Current: {statusSteps[currentIdx]?.icon} <span className="font-medium">{statusSteps[currentIdx]?.label}</span>
+                  </p>
+                  {["confirmed", "processing", "delivered"].includes(latest.status) && (
+                    <Button asChild size="sm" variant="outline" className="h-7 text-[10px]">
+                      <Link href={`/dashboard/orders/tracking?orderId=${latest.id}`}>
+                        Continue to Tracking
+                      </Link>
+                    </Button>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

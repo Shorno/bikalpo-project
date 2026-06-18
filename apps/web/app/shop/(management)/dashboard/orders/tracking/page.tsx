@@ -22,7 +22,8 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -79,12 +80,17 @@ function exportCSV(orders: any[]) {
 // ─── Main Component ─────────────────────────────────────────
 
 export default function PurchaseTrackingPage() {
+  const searchParams = useSearchParams();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
   const [page, setPage] = useState(1);
   const [dateRange, setDateRange] = useState("all");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const highlightedOrderIdParam = searchParams.get("orderId");
+  const highlightedOrderId = highlightedOrderIdParam
+    ? Number(highlightedOrderIdParam)
+    : null;
 
   const handleSearch = useCallback((v: string) => {
     setSearch(v);
@@ -112,6 +118,21 @@ export default function PurchaseTrackingPage() {
   const alerts = data?.alerts;
   const acceptMut = useAcceptPurchaseModification();
   const rejectMut = useRejectPurchaseModification();
+
+  useEffect(() => {
+    if (
+      !Number.isFinite(highlightedOrderId) ||
+      !highlightedOrderId ||
+      orders.length === 0
+    ) {
+      return;
+    }
+
+    const hasMatch = orders.some((order: any) => order.id === highlightedOrderId);
+    if (hasMatch) {
+      setExpandedId(highlightedOrderId);
+    }
+  }, [highlightedOrderId, orders]);
 
   return (
     <div className="space-y-6">

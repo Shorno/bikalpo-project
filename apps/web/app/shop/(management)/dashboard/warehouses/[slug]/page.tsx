@@ -836,7 +836,12 @@ export default function OrderFromWarehousePage({ params }: { params: Promise<{ s
       queryClient.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
       queryClient.invalidateQueries({ queryKey: ["shopOwner", "getMyWarehouses"] });
       toast.success(result.message || "Order placed successfully");
-      router.push("/dashboard/orders");
+      const orderId = result.order?.id;
+      router.push(
+        orderId
+          ? `/dashboard/orders?handoff=1&watchOrder=${orderId}`
+          : "/dashboard/orders",
+      );
     },
   });
 
