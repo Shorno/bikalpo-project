@@ -10,6 +10,8 @@ import { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman, wa
 import { storeOtp } from "./otp-store";
 
 const isProduction = env.NODE_ENV === "production";
+const crossSubdomainCookieDomain =
+  env.COOKIE_DOMAIN || (isProduction ? undefined : ".bikalpo.localhost");
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -143,7 +145,7 @@ export const auth = betterAuth({
     useSecureCookies: isProduction,
     crossSubDomainCookies: {
       enabled: true,
-      domain: env.COOKIE_DOMAIN,
+      domain: crossSubdomainCookieDomain,
     },
   },
   trustedOrigins: [
@@ -156,8 +158,6 @@ export const auth = betterAuth({
   ].filter(Boolean) as string[],
   hooks: {
     after: createAuthMiddleware(async (ctx) => {
-      const domain = env.COOKIE_DOMAIN || ".localhost";
-
       // Set role cookie after sign-in, sign-up, or phone verification
       if (ctx.path.startsWith("/sign-in") || ctx.path.startsWith("/sign-up") || ctx.path.startsWith("/phone-number/verify")) {
         const newSession = ctx.context.newSession;
@@ -167,7 +167,9 @@ export const auth = betterAuth({
 
           ctx.setCookie("user-role", role, {
             path: "/",
-            domain: domain,
+            ...(crossSubdomainCookieDomain
+              ? { domain: crossSubdomainCookieDomain }
+              : {}),
             maxAge: 60 * 60 * 24 * 7, // 7 days
             sameSite: isProduction ? "none" : "lax",
             secure: isProduction,
@@ -179,7 +181,9 @@ export const auth = betterAuth({
       if (ctx.path.startsWith("/sign-out")) {
         ctx.setCookie("user-role", "", {
           path: "/",
-          domain: domain,
+          ...(crossSubdomainCookieDomain
+            ? { domain: crossSubdomainCookieDomain }
+            : {}),
           maxAge: 0,
           sameSite: isProduction ? "none" : "lax",
           secure: isProduction,

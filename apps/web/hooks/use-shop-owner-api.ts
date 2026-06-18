@@ -429,10 +429,11 @@ export function useSupplierDetail(warehouseId: string) {
 }
 
 /** Dashboard summary stats */
-export function useDashboardStats() {
+export function useDashboardStats(enabled = true) {
   return useQuery(
     orpc.shopOwner.getDashboardStats.queryOptions({
       input: undefined,
+      enabled,
       staleTime: 1000 * 60,
     }),
   );

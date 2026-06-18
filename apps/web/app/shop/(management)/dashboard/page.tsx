@@ -30,7 +30,9 @@ import { authClient } from "@/lib/auth-client";
 
 export default function ShopOwnerDashboardPage() {
   const { data: session, isPending: sessionLoading } = authClient.useSession();
-  const { data: stats, isLoading: statsLoading } = useDashboardStats();
+  const { data: stats, isLoading: statsLoading } = useDashboardStats(
+    !!session?.user,
+  );
 
   const user = session?.user as any;
   const loading = sessionLoading || statsLoading;

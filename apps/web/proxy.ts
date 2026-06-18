@@ -94,6 +94,8 @@ export function proxy(request: NextRequest) {
   const isShopSubdomain = hostname.startsWith("shop.");
   const isB2bSubdomain = hostname.startsWith("b2b.");
   const isWarehouseSubdomain = hostname.startsWith("warehouse.");
+  const allowDevShopRoleFallback =
+    process.env.NODE_ENV !== "production" && role === "shop_owner";
 
   // === B2B SUBDOMAIN (Public marketing/landing page) ===
   if (isB2bSubdomain) {
@@ -123,7 +125,7 @@ export function proxy(request: NextRequest) {
 
     // Auth routes - redirect logged-in users away from login/sign-up
     if (isAuthRoute) {
-      if (token) {
+      if (token || allowDevShopRoleFallback) {
         return NextResponse.redirect(new URL("/", request.url));
       }
       return NextResponse.next();
@@ -136,14 +138,14 @@ export function proxy(request: NextRequest) {
 
     // Allow apply-business and application-status routes (they live at root, not under /shop)
     if (pathname === "/apply-business" || pathname === "/application-status") {
-      if (!token) {
+      if (!token && !allowDevShopRoleFallback) {
         return NextResponse.redirect(new URL("/login", request.url));
       }
       return NextResponse.next();
     }
 
     // Redirect to main domain login if not authenticated
-    if (!token) {
+    if (!token && !allowDevShopRoleFallback) {
       // Use the frontend URL, not the auth/backend URL
       const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^(shop|b2b)\./, "")}`;
       return NextResponse.redirect(new URL("/login", mainDomain));
@@ -157,7 +159,9 @@ export function proxy(request: NextRequest) {
 
     // Logged-in shop owners hitting root → redirect to dashboard (like warehouse)
     if (pathname === "/") {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      const rewriteUrl = new URL("/shop/dashboard", request.url);
+      rewriteUrl.search = request.nextUrl.search;
+      return NextResponse.rewrite(rewriteUrl);
     }
 
     // Rewrite to shop folder for shop owners
