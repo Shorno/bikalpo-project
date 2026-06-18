@@ -136,12 +136,9 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
       // Role-based redirect: send non-customer roles to their panels
       if (role && role !== "customer" && role !== "consumer") {
         setStep("done");
-        const redirectUrl =
-          role === "deliveryman" ? "http://bikalpo.localhost:3001/deliveryman/dashboard"
-          : role === "warehouse" ? "http://warehouse.bikalpo.localhost:3001/dashboard"
-          : role === "shop_owner" ? "http://shop.bikalpo.localhost:3001/dashboard"
-          : role === "admin" || role === "salesman" ? "/dashboard"
-          : null;
+        // Always hand off to the main dashboard dispatcher first so it can
+        // verify the active session and handle any subdomain redirect.
+        const redirectUrl = "/dashboard";
         if (redirectUrl) {
           setTimeout(() => { window.location.href = redirectUrl; }, 1500);
           return;

@@ -9,9 +9,9 @@ export function LoginPageClient() {
     const roleCookie = document.cookie.split("; ").find(c => c.startsWith("user-role="));
     const role = roleCookie?.split("=")[1];
     
-    if (role === "shop_owner") {
-      window.location.href = "http://shop.bikalpo.localhost:3001/dashboard";
-    } else if (role === "admin" || role === "salesman" || role === "deliveryman") {
+    // Route all authenticated staff through the main dashboard dispatcher first.
+    // It resolves the live session and then forwards cross-subdomain roles safely.
+    if (role === "shop_owner" || role === "warehouse" || role === "admin" || role === "salesman" || role === "deliveryman") {
       window.location.href = "/dashboard";
     } else {
       window.location.href = "/";
