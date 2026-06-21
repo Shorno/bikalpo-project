@@ -9,7 +9,6 @@ import {
   CreditCard,
   FileText,
   Loader2,
-  MapPin,
   Package,
   Phone,
   ShoppingBag,
@@ -18,7 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
@@ -46,8 +45,16 @@ function getStatus(status: string, requiresBuyerAcceptance?: boolean) {
     return { label: "Rejected", icon: XCircle, className: "border-red-200 bg-red-50 text-red-700" };
   if (requiresBuyerAcceptance)
     return { label: "Accepted (Modified)", icon: AlertCircle, className: "border-orange-200 bg-orange-50 text-orange-700" };
+  if (status === "invoiced")
+    return { label: "Invoiced", icon: FileText, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+  if (status === "partially_invoiced")
+    return { label: "Partially Invoiced", icon: FileText, className: "border-amber-200 bg-amber-50 text-amber-700" };
+  if (status === "ready_for_dispatch")
+    return { label: "Ready for Dispatch", icon: Truck, className: "border-violet-200 bg-violet-50 text-violet-700" };
+  if (status === "approved")
+    return { label: "Approved", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
   if (status === "confirmed")
-    return { label: "Accepted", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+    return { label: "Approved", icon: CheckCircle2, className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
   if (status === "processing")
     return { label: "Processing", icon: Truck, className: "border-blue-200 bg-blue-50 text-blue-700" };
   return { label: "Pending Approval", icon: Clock, className: "border-amber-200 bg-amber-50 text-amber-700" };
@@ -57,7 +64,6 @@ function getStatus(status: string, requiresBuyerAcceptance?: boolean) {
 
 export default function OrderManagementDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const orderId = Number(params.id);
 
@@ -88,15 +94,6 @@ export default function OrderManagementDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["warehouse", "order-management-detail", orderId] });
     },
     onError: (error) => toast.error(error.message || "Failed to review order"),
-  });
-
-  const prepareMutation = useMutation({
-    mutationFn: () => orpc.warehouse.prepareOrderForDispatch.call({ orderId }),
-    onSuccess: (result) => {
-      toast.success(result.message);
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "order-management-detail", orderId] });
-    },
-    onError: (error) => toast.error(error.message || "Failed to prepare dispatch"),
   });
 
   const order = data?.order;
@@ -170,7 +167,6 @@ export default function OrderManagementDetailPage() {
   }
 
   const StatusIcon = status?.icon ?? Clock;
-  const subtotal = order.items.reduce((s: number, i: any) => s + Number(i.totalPrice ?? 0), 0);
   const hasQtyChange = order.items.some((item: any) => {
     const approved = approvedQty[item.id] ?? item.approvedQty ?? item.quantity;
     return approved !== item.quantity;
@@ -201,7 +197,7 @@ export default function OrderManagementDetailPage() {
               <OrderSourceBadge source={order.orderSource ?? "direct"} />
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {data.warehouse?.label ?? "Warehouse"} · Order Review
+              {data.warehouse?.label ?? "Warehouse"} · Approval and invoice readiness
             </p>
           </div>
         </div>
@@ -381,6 +377,18 @@ export default function OrderManagementDetailPage() {
                 {totalApprovedQty} Units
               </span>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Invoiced Qty</span>
+              <span className="font-semibold tabular-nums">
+                {order.invoiceProgress?.invoicedQty ?? 0} Units
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Remaining to Invoice</span>
+              <span className="font-semibold tabular-nums">
+                {order.invoiceProgress?.remainingQty ?? totalApprovedQty} Units
+              </span>
+            </div>
             <Separator className="my-2" />
             <div className="flex items-center justify-between text-base font-bold text-gray-950">
               <span>Final Order Value</span>
@@ -431,25 +439,14 @@ export default function OrderManagementDetailPage() {
 
           <div className="flex flex-wrap gap-2.5">
             {/* Top row actions */}
-            {data.invoice && (
+            {order.canOpenDispatch && (
               <Link
                 href="/warehouse/dashboard/dispatch-orders"
                 className="inline-flex h-10 items-center gap-2 rounded-lg border bg-white px-4 text-sm font-medium transition-colors hover:bg-gray-50"
               >
                 <Truck className="h-4 w-4" />
-                Go to Dispatch
+                Open Dispatch
               </Link>
-            )}
-            {order.canPrepareDispatch && (
-              <button
-                type="button"
-                onClick={() => prepareMutation.mutate()}
-                disabled={prepareMutation.isPending}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border bg-white px-4 text-sm font-medium transition-colors hover:bg-gray-50 disabled:opacity-60"
-              >
-                {prepareMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                Prepare Dispatch
-              </button>
             )}
             <Link
               href={`tel:${order.customerPhone}`}
@@ -481,7 +478,7 @@ export default function OrderManagementDetailPage() {
                   className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-6 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {reviewMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Accept Order
+                  Approve Order
                 </button>
               </div>
             </>

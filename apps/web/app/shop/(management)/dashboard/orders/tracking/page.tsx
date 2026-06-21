@@ -3,7 +3,6 @@
 import {
   AlertCircle,
   AlertTriangle,
-  Ban,
   CalendarIcon,
   CheckCircle2,
   ChevronDown,
@@ -25,13 +24,11 @@ import Link from "next/link";
 import { useState, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -44,8 +41,12 @@ import {
 // ─── Status Config ──────────────────────────────────────────
 
 const statusCfg: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
-  pending:    { label: "Placed",      icon: <Clock className="w-3 h-3" />,        cls: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30" },
-  confirmed:  { label: "Accepted",    icon: <CheckCircle2 className="w-3 h-3" />, cls: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30" },
+  pending:    { label: "Pending Approval", icon: <Clock className="w-3 h-3" />,        cls: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30" },
+  approved:   { label: "Approved",         icon: <CheckCircle2 className="w-3 h-3" />, cls: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30" },
+  ready_for_dispatch: { label: "Ready for Dispatch", icon: <Package className="w-3 h-3" />, cls: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30" },
+  partially_invoiced: { label: "Partially Invoiced", icon: <PackageCheck className="w-3 h-3" />, cls: "text-violet-700 bg-violet-50 border-violet-200 dark:text-violet-300 dark:bg-violet-950/30" },
+  invoiced:   { label: "Invoiced",         icon: <PackageCheck className="w-3 h-3" />, cls: "text-sky-700 bg-sky-50 border-sky-200 dark:text-sky-300 dark:bg-sky-950/30" },
+  confirmed:  { label: "Approved",         icon: <CheckCircle2 className="w-3 h-3" />, cls: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30" },
   processing: { label: "Processing",  icon: <Truck className="w-3 h-3" />,        cls: "text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/30" },
   delivered:  { label: "Delivered",   icon: <PackageCheck className="w-3 h-3" />, cls: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30" },
   cancelled:  { label: "Cancelled",   icon: <XCircle className="w-3 h-3" />,      cls: "text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950/30" },
@@ -165,8 +166,11 @@ export default function PurchaseTrackingPage() {
           <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="pending">Placed</SelectItem>
-            <SelectItem value="confirmed">Accepted</SelectItem>
+            <SelectItem value="pending">Pending Approval</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="ready_for_dispatch">Ready for Dispatch</SelectItem>
+            <SelectItem value="partially_invoiced">Partially Invoiced</SelectItem>
+            <SelectItem value="invoiced">Invoiced</SelectItem>
             <SelectItem value="processing">Processing</SelectItem>
             <SelectItem value="delivered">Delivered</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>

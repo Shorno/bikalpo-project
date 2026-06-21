@@ -67,7 +67,15 @@ import {
 /* ── Constants ───────────────────────────────────────────── */
 
 type Source = "all" | "direct" | "salesman" | "estimate" | "pre_order";
-type StatusFilter = "all" | "pending" | "accepted" | "processing" | "rejected";
+type StatusFilter =
+  | "all"
+  | "pending"
+  | "approved"
+  | "ready_for_dispatch"
+  | "partially_invoiced"
+  | "invoiced"
+  | "processing"
+  | "rejected";
 type PaymentFilter = "all" | "paid" | "due" | "partial";
 type DateFilter = "today" | "this_month" | "custom" | "all";
 type OrderTrendKey = "all" | "direct" | "salesman" | "estimate" | "preOrder";
@@ -161,8 +169,11 @@ const sourceDescriptions: Record<Source, { title: string; subtitle: string }> = 
 
 const statusOptions = [
   { value: "all", label: "All Status" },
-  { value: "pending", label: "Pending" },
-  { value: "accepted", label: "Accepted" },
+  { value: "pending", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "ready_for_dispatch", label: "Ready for Dispatch" },
+  { value: "partially_invoiced", label: "Partially Invoiced" },
+  { value: "invoiced", label: "Invoiced" },
   { value: "processing", label: "Processing" },
   { value: "rejected", label: "Rejected" },
 ];

@@ -26,8 +26,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -52,23 +50,55 @@ import { orpc } from "@/utils/orpc";
 
 // ─── Status Config ───────────────────────────────────────────
 
-type OrderStatus = "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+type OrderStatus =
+  | "pending"
+  | "approved"
+  | "ready_for_dispatch"
+  | "partially_invoiced"
+  | "invoiced"
+  | "processing"
+  | "delivered"
+  | "cancelled";
 
 const statusConfig: Record<
   string,
   { label: string; icon: React.ReactNode; className: string; dotColor: string }
 > = {
   pending: {
-    label: "Pending",
+    label: "Pending Approval",
     icon: <Clock className="w-3 h-3" />,
     className: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-800",
     dotColor: "bg-amber-500",
   },
-  confirmed: {
-    label: "Accepted",
+  approved: {
+    label: "Approved",
     icon: <CheckCircle2 className="w-3 h-3" />,
+    className: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
+    dotColor: "bg-emerald-500",
+  },
+  ready_for_dispatch: {
+    label: "Ready for Dispatch",
+    icon: <Package className="w-3 h-3" />,
     className: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30 dark:border-blue-800",
     dotColor: "bg-blue-500",
+  },
+  partially_invoiced: {
+    label: "Partially Invoiced",
+    icon: <Wallet className="w-3 h-3" />,
+    className: "text-violet-700 bg-violet-50 border-violet-200 dark:text-violet-300 dark:bg-violet-950/30 dark:border-violet-800",
+    dotColor: "bg-violet-500",
+  },
+  invoiced: {
+    label: "Invoiced",
+    icon: <Wallet className="w-3 h-3" />,
+    className: "text-sky-700 bg-sky-50 border-sky-200 dark:text-sky-300 dark:bg-sky-950/30 dark:border-sky-800",
+    dotColor: "bg-sky-500",
+  },
+  confirmed: {
+    label: "Approved",
+    icon: <CheckCircle2 className="w-3 h-3" />,
+    className: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
+    dotColor: "bg-emerald-500",
   },
   processing: {
     label: "In Delivery",
@@ -98,8 +128,11 @@ const statusConfig: Record<
 
 const statusTabs: { value: OrderStatus | "all"; label: string }[] = [
   { value: "all", label: "All Orders" },
-  { value: "pending", label: "Pending" },
-  { value: "confirmed", label: "Accepted" },
+  { value: "pending", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "ready_for_dispatch", label: "Ready for Dispatch" },
+  { value: "partially_invoiced", label: "Partially Invoiced" },
+  { value: "invoiced", label: "Invoiced" },
   { value: "processing", label: "In Delivery" },
   { value: "delivered", label: "Received" },
   { value: "cancelled", label: "Cancelled" },
@@ -212,8 +245,13 @@ export default function PurchaseOrdersPage() {
           loading={isLoading}
         />
         <KpiCard
-          title="Pending"
-          value={(kpi?.pendingCount ?? 0) + (kpi?.confirmedCount ?? 0)}
+          title="Active Flow"
+          value={
+            (kpi?.pendingCount ?? 0) +
+            (kpi?.approvedCount ?? kpi?.confirmedCount ?? 0) +
+            (kpi?.readyForDispatchCount ?? 0) +
+            (kpi?.partiallyInvoicedCount ?? 0)
+          }
           subtitle={`৳ ${Number(kpi?.pendingAmount || 0).toLocaleString("en-BD")}`}
           icon={<Clock className="h-4 w-4" />}
           iconBg="bg-amber-50 dark:bg-amber-950/30"
@@ -244,21 +282,25 @@ export default function PurchaseOrdersPage() {
         const hasModifications = latest.items?.some((item: any) => item.modifiedQty !== null);
         const statusSteps = [
           { key: "submitted", label: "Submitted", icon: "🟢", done: true },
-          { key: "confirmed", label: hasModifications ? "Accepted (Edited)" : "Accepted", icon: hasModifications ? "🔁" : "✔", done: ["confirmed", "processing", "delivered"].includes(latest.status) },
-          { key: "waiting", label: "Waiting", icon: "⏳", done: ["processing", "delivered"].includes(latest.status) },
-          { key: "picked", label: "Picked", icon: "🚚", done: ["processing", "delivered"].includes(latest.status) },
-          { key: "delivery", label: "Delivery", icon: "📍", done: latest.status === "delivered" },
-          { key: "done", label: "Done", icon: "✅", done: latest.status === "delivered" },
+          { key: "approved", label: hasModifications ? "Approved (Edited)" : "Approved", icon: hasModifications ? "🔁" : "✔", done: ["approved", "ready_for_dispatch", "partially_invoiced", "invoiced", "confirmed", "processing", "delivered"].includes(latest.status) },
+          { key: "ready", label: "Ready", icon: "📦", done: ["ready_for_dispatch", "partially_invoiced", "invoiced", "processing", "delivered"].includes(latest.status) },
+          { key: "invoice", label: latest.status === "partially_invoiced" ? "Part Invoice" : "Invoiced", icon: "🧾", done: ["partially_invoiced", "invoiced", "processing", "delivered"].includes(latest.status) },
+          { key: "delivery", label: "Delivery", icon: "🚚", done: ["processing", "delivered"].includes(latest.status) },
+          { key: "done", label: "Received", icon: "✅", done: latest.status === "delivered" },
         ];
         const currentIdx = latest.status === "cancelled"
           ? -1
           : latest.status === "delivered"
             ? 5
             : latest.status === "processing"
-              ? 3
-              : latest.status === "confirmed"
-                ? 1
-                : 0;
+              ? 4
+              : latest.status === "partially_invoiced" || latest.status === "invoiced"
+                ? 3
+                : latest.status === "ready_for_dispatch"
+                  ? 2
+                  : latest.status === "approved" || latest.status === "confirmed"
+                    ? 1
+                    : 0;
 
         return (
           <Card className="border shadow-sm overflow-hidden">
@@ -357,13 +399,19 @@ export default function PurchaseOrdersPage() {
             ? kpi?.totalOrders
             : tab.value === "pending"
               ? kpi?.pendingCount
-              : tab.value === "confirmed"
-                ? kpi?.confirmedCount
-                : tab.value === "processing"
-                  ? kpi?.processingCount
-                  : tab.value === "delivered"
-                    ? kpi?.deliveredCount
-                    : kpi?.cancelledCount;
+              : tab.value === "approved"
+                ? (kpi?.approvedCount ?? kpi?.confirmedCount)
+                : tab.value === "ready_for_dispatch"
+                  ? kpi?.readyForDispatchCount
+                  : tab.value === "partially_invoiced"
+                    ? kpi?.partiallyInvoicedCount
+                    : tab.value === "invoiced"
+                      ? kpi?.invoicedCount
+                      : tab.value === "processing"
+                        ? kpi?.processingCount
+                        : tab.value === "delivered"
+                          ? kpi?.deliveredCount
+                          : kpi?.cancelledCount;
           return (
             <button
               key={tab.value}

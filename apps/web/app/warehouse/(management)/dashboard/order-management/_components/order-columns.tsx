@@ -6,6 +6,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Clock,
+  FileText,
   PackageCheck,
   Truck,
   User,
@@ -67,6 +68,14 @@ function statusBadge(order: OrderRow) {
     return { label: "Buyer review", className: "border-orange-200 bg-orange-50 text-orange-700", icon: AlertCircle };
   if (order.status === "delivered" || order.invoiceDeliveryStatus === "delivered" || order.deliveryGroupStatus === "completed")
     return { label: "Delivered", className: "border-emerald-200 bg-emerald-50 text-emerald-700", icon: CheckCircle2 };
+  if (order.status === "invoiced")
+    return { label: "Invoiced", className: "border-emerald-200 bg-emerald-50 text-emerald-700", icon: FileText };
+  if (order.status === "partially_invoiced")
+    return { label: "Partially Invoiced", className: "border-amber-200 bg-amber-50 text-amber-700", icon: FileText };
+  if (order.status === "ready_for_dispatch")
+    return { label: "Ready for Dispatch", className: "border-violet-200 bg-violet-50 text-violet-700", icon: PackageCheck };
+  if (order.status === "approved")
+    return { label: "Approved", className: "border-emerald-200 bg-emerald-50 text-emerald-700", icon: CheckCircle2 };
   if (order.invoiceFulfillmentMode === "self_pickup" && order.invoiceDeliveryStatus !== "delivered")
     return { label: "Self pickup pending", className: "border-amber-200 bg-amber-50 text-amber-700", icon: PackageCheck };
   if (order.invoiceFulfillmentMode === "delivery" && order.invoiceDeliveryStatus === "not_assigned")
@@ -84,8 +93,8 @@ function statusBadge(order: OrderRow) {
   if (order.status === "processing")
     return { label: "Processing", className: "border-blue-200 bg-blue-50 text-blue-700", icon: Truck };
   if (order.status === "confirmed")
-    return { label: "Accepted", className: "border-emerald-200 bg-emerald-50 text-emerald-700", icon: CheckCircle2 };
-  return { label: "Pending", className: "border-amber-200 bg-amber-50 text-amber-700", icon: Clock };
+    return { label: "Approved", className: "border-emerald-200 bg-emerald-50 text-emerald-700", icon: CheckCircle2 };
+  return { label: "Pending Approval", className: "border-amber-200 bg-amber-50 text-amber-700", icon: Clock };
 }
 
 /* ── Shared cells ────────────────────────────────────────── */

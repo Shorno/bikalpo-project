@@ -79,6 +79,29 @@ import {
 } from "../services/open-order-matching";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 
+const purchaseOrderStatusValues = [
+    "pending",
+    "approved",
+    "ready_for_dispatch",
+    "partially_invoiced",
+    "invoiced",
+    "confirmed",
+    "processing",
+    "delivered",
+    "returned",
+    "cancelled",
+] as const;
+
+function getPurchaseOrderStatusCondition(
+    status: (typeof purchaseOrderStatusValues)[number],
+): SQL {
+    if (status === "approved") {
+        return inArray(order.status, ["approved", "confirmed"]);
+    }
+
+    return eq(order.status, status);
+}
+
 // ────────────────────────────────────────────────────────────────
 // Schemas
 // ────────────────────────────────────────────────────────────────
@@ -1824,14 +1847,7 @@ const orderQueries = {
         .input(
             z.object({
                 status: z
-                    .enum([
-                        "pending",
-                        "confirmed",
-                        "processing",
-                        "delivered",
-                        "returned",
-                        "cancelled",
-                    ])
+                    .enum(purchaseOrderStatusValues)
                     .optional(),
                 page: z.number().default(1),
                 limit: z.number().default(20),
@@ -1844,7 +1860,9 @@ const orderQueries = {
             const offset = (page - 1) * limit;
 
             const conditions: SQL[] = [eq(order.userId, userId)];
-            if (input.status) conditions.push(eq(order.status, input.status));
+            if (input.status) {
+                conditions.push(getPurchaseOrderStatusCondition(input.status));
+            }
 
             const where = and(...conditions);
 
@@ -1906,13 +1924,7 @@ const orderQueries = {
             z.object({
                 search: z.string().optional(),
                 status: z
-                    .enum([
-                        "pending",
-                        "confirmed",
-                        "processing",
-                        "delivered",
-                        "cancelled",
-                    ])
+                    .enum(purchaseOrderStatusValues)
                     .optional(),
                 dateFrom: z.string().optional(),
                 dateTo: z.string().optional(),
@@ -1927,7 +1939,9 @@ const orderQueries = {
 
             const conditions: SQL[] = [eq(order.userId, userId)];
 
-            if (status) conditions.push(eq(order.status, status));
+            if (status) {
+                conditions.push(getPurchaseOrderStatusCondition(status));
+            }
 
             if (dateFrom) {
                 conditions.push(gte(order.createdAt, new Date(dateFrom)));
@@ -1993,12 +2007,16 @@ const orderQueries = {
                     .select({
                         totalOrders: count(),
                         pendingCount: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pending_count"),
-                        confirmedCount: sql<number>`count(*) filter (where ${order.status} = 'confirmed')`.as("confirmed_count"),
+                        approvedCount: sql<number>`count(*) filter (where ${order.status} in ('approved', 'confirmed'))`.as("approved_count"),
+                        readyForDispatchCount: sql<number>`count(*) filter (where ${order.status} = 'ready_for_dispatch')`.as("ready_for_dispatch_count"),
+                        partiallyInvoicedCount: sql<number>`count(*) filter (where ${order.status} = 'partially_invoiced')`.as("partially_invoiced_count"),
+                        invoicedCount: sql<number>`count(*) filter (where ${order.status} = 'invoiced')`.as("invoiced_count"),
+                        confirmedCount: sql<number>`count(*) filter (where ${order.status} in ('approved', 'confirmed'))`.as("confirmed_count"),
                         processingCount: sql<number>`count(*) filter (where ${order.status} = 'processing')`.as("processing_count"),
                         deliveredCount: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("delivered_count"),
                         cancelledCount: sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as("cancelled_count"),
                         totalAmount: sql<string>`coalesce(sum(${order.total}), 0)`.as("total_amount"),
-                        pendingAmount: sql<string>`coalesce(sum(case when ${order.status} in ('pending','confirmed','processing') then ${order.total} else 0 end), 0)`.as("pending_amount"),
+                        pendingAmount: sql<string>`coalesce(sum(case when ${order.status} in ('pending','approved','ready_for_dispatch','partially_invoiced','invoiced','confirmed','processing') then ${order.total} else 0 end), 0)`.as("pending_amount"),
                     })
                     .from(order)
                     .where(eq(order.userId, userId)),
@@ -2009,7 +2027,7 @@ const orderQueries = {
 
             // Resolve warehouse names for orders that have warehouseId
             const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
-            let warehouseMap: Record<string, string> = {};
+            const warehouseMap: Record<string, string> = {};
             if (warehouseIds.length > 0) {
                 const warehouses = await db
                     .select({ id: user.id, name: user.name, shopName: user.shopName })
@@ -2036,6 +2054,10 @@ const orderQueries = {
                 kpi: {
                     totalOrders: kpi?.totalOrders || 0,
                     pendingCount: Number(kpi?.pendingCount) || 0,
+                    approvedCount: Number(kpi?.approvedCount) || 0,
+                    readyForDispatchCount: Number(kpi?.readyForDispatchCount) || 0,
+                    partiallyInvoicedCount: Number(kpi?.partiallyInvoicedCount) || 0,
+                    invoicedCount: Number(kpi?.invoicedCount) || 0,
                     confirmedCount: Number(kpi?.confirmedCount) || 0,
                     processingCount: Number(kpi?.processingCount) || 0,
                     deliveredCount: Number(kpi?.deliveredCount) || 0,
@@ -2101,14 +2123,26 @@ const orderQueries = {
                 if (wh[0]) warehouseInfo = wh[0];
             }
 
+            const approvedStatuses = [
+                "approved",
+                "ready_for_dispatch",
+                "partially_invoiced",
+                "invoiced",
+                "confirmed",
+                "processing",
+                "delivered",
+            ];
+            const readyStatuses = [
+                "ready_for_dispatch",
+                "partially_invoiced",
+                "invoiced",
+                "processing",
+                "delivered",
+            ];
+
             // Build status timeline
             const timeline = [
                 { step: "Placed", date: result.createdAt, completed: true },
-                {
-                    step: "Confirmed",
-                    date: result.confirmedAt,
-                    completed: !!result.confirmedAt,
-                },
                 {
                     step: "Modified",
                     date: result.modifiedByWarehouseAt,
@@ -2116,9 +2150,29 @@ const orderQueries = {
                     isModification: true,
                 },
                 {
-                    step: "Dispatched",
-                    date: result.shippedAt,
-                    completed: !!result.shippedAt,
+                    step: "Approved",
+                    date: result.modificationAcceptedAt || result.confirmedAt,
+                    completed:
+                        !!result.confirmedAt ||
+                        !!result.modificationAcceptedAt ||
+                        approvedStatuses.includes(result.status),
+                },
+                {
+                    step: "Ready",
+                    date: result.readyAt,
+                    completed: !!result.readyAt || readyStatuses.includes(result.status),
+                },
+                {
+                    step: "Partially Invoiced",
+                    date: null,
+                    completed:
+                        result.status === "partially_invoiced" ||
+                        result.status === "invoiced",
+                },
+                {
+                    step: "Invoiced",
+                    date: null,
+                    completed: result.status === "invoiced",
                 },
                 {
                     step: "Delivered",
@@ -2170,13 +2224,7 @@ const orderQueries = {
             z.object({
                 search: z.string().optional(),
                 status: z
-                    .enum([
-                        "pending",
-                        "confirmed",
-                        "processing",
-                        "delivered",
-                        "cancelled",
-                    ])
+                    .enum(purchaseOrderStatusValues)
                     .optional(),
                 dateFrom: z.string().optional(),
                 dateTo: z.string().optional(),
@@ -2191,7 +2239,9 @@ const orderQueries = {
 
             const conditions: SQL[] = [eq(order.userId, userId)];
 
-            if (status) conditions.push(eq(order.status, status));
+            if (status) {
+                conditions.push(getPurchaseOrderStatusCondition(status));
+            }
             if (dateFrom) conditions.push(gte(order.createdAt, new Date(dateFrom)));
             if (dateTo) {
                 const toDate = new Date(dateTo);
@@ -2247,7 +2297,7 @@ const orderQueries = {
 
             // Resolve warehouse names
             const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
-            let warehouseMap: Record<string, string> = {};
+            const warehouseMap: Record<string, string> = {};
             if (warehouseIds.length > 0) {
                 const warehouses = await db
                     .select({ id: user.id, name: user.name, shopName: user.shopName })
@@ -2265,14 +2315,32 @@ const orderQueries = {
                 const isModified = !!o.modifiedByWarehouseAt;
                 const needsApproval = isModified && !o.modificationAcceptedAt && !o.modificationRejectedAt && o.status !== "cancelled";
 
-                // Build 8-step timeline
+                const approvedStatuses = [
+                    "approved",
+                    "ready_for_dispatch",
+                    "partially_invoiced",
+                    "invoiced",
+                    "confirmed",
+                    "processing",
+                    "delivered",
+                ];
+                const readyStatuses = [
+                    "ready_for_dispatch",
+                    "partially_invoiced",
+                    "invoiced",
+                    "processing",
+                    "delivered",
+                ];
+
                 const timeline = [
                     { step: "Placed", date: o.createdAt, completed: true },
                     { step: "Modified", date: o.modifiedByWarehouseAt, completed: !!o.modifiedByWarehouseAt, isModification: true },
-                    { step: "Accepted", date: o.modificationAcceptedAt || o.confirmedAt, completed: !!o.confirmedAt || !!o.modificationAcceptedAt },
+                    { step: "Approved", date: o.modificationAcceptedAt || o.confirmedAt, completed: !!o.confirmedAt || !!o.modificationAcceptedAt || approvedStatuses.includes(o.status) },
+                    { step: "Ready", date: o.readyAt, completed: !!o.readyAt || readyStatuses.includes(o.status) },
+                    { step: "Partially Invoiced", date: null, completed: o.status === "partially_invoiced" || o.status === "invoiced" },
+                    { step: "Invoiced", date: null, completed: o.status === "invoiced" },
                     { step: "Processing", date: o.processingStartedAt, completed: !!o.processingStartedAt || o.status === "processing" || o.status === "delivered" },
                     { step: "Packing", date: o.packingStartedAt, completed: !!o.packingStartedAt },
-                    { step: "Ready", date: o.readyAt, completed: !!o.readyAt },
                     { step: "Delivered", date: o.deliveredAt, completed: !!o.deliveredAt || o.status === "delivered" },
                     { step: "Received", date: o.receivedAt, completed: !!o.receivedAt },
                 ].filter((t) => !t.isModification || t.completed);
@@ -2360,7 +2428,8 @@ const orderQueries = {
                 .set({
                     modificationAcceptedAt: new Date(),
                     confirmedAt: existingOrder.confirmedAt || new Date(),
-                    status: "confirmed",
+                    readyAt: existingOrder.readyAt || new Date(),
+                    status: "ready_for_dispatch",
                 })
                 .where(eq(order.id, input.orderId));
 
