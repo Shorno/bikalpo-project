@@ -1808,6 +1808,10 @@ const orderDateFilterInput = z
 	.enum(["today", "this_month", "custom", "all"])
 	.default("all");
 
+type OrderTrendSource = "direct" | "salesman" | "estimate" | "preOrder";
+
+type OrderTrendBucket = Record<OrderTrendSource, number> & { all: number };
+
 function getOrderStatusCondition(
 	status: z.infer<typeof orderOverviewStatusInput>,
 ) {
@@ -1857,6 +1861,26 @@ function getDateFilterRange(input: {
 	}
 
 	return { start, end };
+}
+
+function createOrderTrendBucket(): OrderTrendBucket {
+	return {
+		all: 0,
+		direct: 0,
+		salesman: 0,
+		estimate: 0,
+		preOrder: 0,
+	};
+}
+
+function normalizeOrderTrendSource(
+	source: string | null,
+): OrderTrendSource | null {
+	if (source === "direct") return "direct";
+	if (source === "salesman") return "salesman";
+	if (source === "estimate") return "estimate";
+	if (source === "pre_order") return "preOrder";
+	return null;
 }
 
 function getEffectiveItemQty(item: {
@@ -1912,6 +1936,10 @@ const orderQueries = {
 				eq(order.warehouseId, userId),
 				eq(order.orderType, "b2b"),
 			];
+			const trendToday = new Date();
+			trendToday.setHours(0, 0, 0, 0);
+			const trendStart = new Date(trendToday);
+			trendStart.setDate(trendToday.getDate() - 13);
 
 			const sourceSummary = await db
 				.select({
@@ -1973,7 +2001,7 @@ const orderQueries = {
 
 			const where = and(...conditions);
 
-			const [orders, countResult] = await Promise.all([
+			const [orders, countResult, trendOrders] = await Promise.all([
 				db
 					.select({
 						id: order.id,
@@ -2012,6 +2040,13 @@ const orderQueries = {
 					.from(order)
 					.leftJoin(user, eq(order.userId, user.id))
 					.where(where),
+				db
+					.select({
+						createdAt: order.createdAt,
+						orderSource: order.orderSource,
+					})
+					.from(order)
+					.where(and(...baseConditions, gte(order.createdAt, trendStart))),
 			]);
 
 			const orderIds = orders.map((o) => o.id);
@@ -2087,6 +2122,46 @@ const orderQueries = {
 				estimate: 0,
 				preOrder: 0,
 			};
+			const trendBuckets = new Map<string, OrderTrendBucket>();
+			const trendDays = Array.from({ length: 14 }, (_, index) => {
+				const date = new Date(trendStart);
+				date.setDate(trendStart.getDate() + index);
+				const key = localDateStamp(date);
+				trendBuckets.set(key, createOrderTrendBucket());
+				return {
+					key,
+					label: date.toLocaleDateString("en-US", {
+						month: "short",
+						day: "numeric",
+					}),
+				};
+			});
+
+			for (const trendOrder of trendOrders) {
+				const sourceKey = normalizeOrderTrendSource(trendOrder.orderSource);
+				if (!sourceKey) continue;
+				const dayKey = localDateStamp(trendOrder.createdAt);
+				const bucket = trendBuckets.get(dayKey);
+				if (!bucket) continue;
+				bucket.all += 1;
+				bucket[sourceKey] += 1;
+			}
+
+			const trendSummary = {
+				current: createOrderTrendBucket(),
+				previous: createOrderTrendBucket(),
+			};
+
+			for (const [index, day] of trendDays.entries()) {
+				const bucket = trendBuckets.get(day.key) ?? createOrderTrendBucket();
+				const target =
+					index < 7 ? trendSummary.previous : trendSummary.current;
+				target.all += bucket.all;
+				target.direct += bucket.direct;
+				target.salesman += bucket.salesman;
+				target.estimate += bucket.estimate;
+				target.preOrder += bucket.preOrder;
+			}
 
 			return {
 				warehouse: {
@@ -2094,6 +2169,12 @@ const orderQueries = {
 						warehouseUser?.warehouseName || warehouseUser?.name || "Warehouse",
 				},
 				summary,
+				trend: trendDays.slice(7).map((day) => ({
+					date: day.key,
+					label: day.label,
+					...(trendBuckets.get(day.key) ?? createOrderTrendBucket()),
+				})),
+				trendSummary,
 				orders: orders.map((o) => {
 					const rowInvoice = invoiceByOrderId.get(o.id);
 					const rowDelivery = rowInvoice
