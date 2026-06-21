@@ -2421,12 +2421,6 @@ const orderQueries = {
 						date: orderData.createdAt,
 					},
 					{
-						key: "review",
-						label: orderData.status === "pending" ? "Review" : "Reviewed",
-						completed: orderData.status !== "pending",
-						date: orderData.confirmedAt || orderData.cancelledAt,
-					},
-					{
 						key: "approved",
 						label: orderData.status === "cancelled" ? "Rejected" : "Approved",
 						completed: [
