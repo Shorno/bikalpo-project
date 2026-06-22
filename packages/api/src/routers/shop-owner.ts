@@ -176,6 +176,29 @@ function findNextDeliveryDate(
     };
 }
 
+const CONNECTED_SUPPLIER_ACTIVE_WINDOW_DAYS = 45;
+
+function getConnectedSupplierActivityStatus(
+    lastOrderDate: Date | null | undefined,
+    connectedAt: Date | null | undefined,
+    pendingOrders = 0,
+) {
+    if (pendingOrders > 0) {
+        return "active" as const;
+    }
+
+    const referenceDate = lastOrderDate || connectedAt;
+    if (!referenceDate) {
+        return "inactive" as const;
+    }
+
+    const diffMs = Date.now() - referenceDate.getTime();
+    const activeWindowMs =
+        CONNECTED_SUPPLIER_ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+    return diffMs <= activeWindowMs ? "active" as const : "inactive" as const;
+}
+
 // ────────────────────────────────────────────────────────────────
 // B2B Queries (Shop Owner as Buyer — TRADE variants)
 // ────────────────────────────────────────────────────────────────
@@ -2721,6 +2744,340 @@ const orderQueries = {
         }),
 
     // ── Supplier Management ──────────────────────────────────
+
+    /**
+     * List active platform-connected suppliers with network insights.
+     */
+    getConnectedSuppliers: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/connected-suppliers",
+            tags: ["Shop Owner"],
+            summary: "List connected suppliers from the platform network",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z.enum(["all", "active", "inactive"]).default("all"),
+                category: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            const connections = await db
+                .select({
+                    connectionId: shopWarehouseConnection.id,
+                    warehouseId: user.id,
+                    warehouseName: user.warehouseName,
+                    warehouseSlug: user.warehouseSlug,
+                    warehouseAddress: user.warehouseAddress,
+                    name: user.name,
+                    phone: user.phoneNumber,
+                    email: user.email,
+                    image: user.image,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                })
+                .from(shopWarehouseConnection)
+                .innerJoin(user, eq(shopWarehouseConnection.warehouseId, user.id))
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.shopId, shopId),
+                        eq(shopWarehouseConnection.status, "active"),
+                    ),
+                )
+                .orderBy(
+                    desc(shopWarehouseConnection.lastOrderedAt),
+                    desc(shopWarehouseConnection.connectedAt),
+                );
+
+            if (connections.length === 0) {
+                return {
+                    summary: {
+                        connectedSuppliers: 0,
+                        activeSuppliers: 0,
+                        totalPurchase: 0,
+                    },
+                    categories: [],
+                    suppliers: [],
+                };
+            }
+
+            const warehouseIds = connections.map((connection) => connection.warehouseId);
+
+            const orderRows = await db
+                .select({
+                    warehouseId: order.warehouseId,
+                    status: order.status,
+                    paymentStatus: order.paymentStatus,
+                    total: order.total,
+                    createdAt: order.createdAt,
+                    invoicePaymentStatus: invoice.paymentStatus,
+                })
+                .from(order)
+                .leftJoin(
+                    invoice,
+                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
+                )
+                .where(
+                    and(
+                        eq(order.userId, shopId),
+                        inArray(order.warehouseId, warehouseIds),
+                    ),
+                );
+
+            const supplierOrderMap = new Map<
+                string,
+                {
+                    totalOrders: number;
+                    totalPurchase: number;
+                    totalPaid: number;
+                    totalDue: number;
+                    pendingOrders: number;
+                    lastPurchaseDate: Date | null;
+                }
+            >();
+
+            for (const warehouseId of warehouseIds) {
+                supplierOrderMap.set(warehouseId, {
+                    totalOrders: 0,
+                    totalPurchase: 0,
+                    totalPaid: 0,
+                    totalDue: 0,
+                    pendingOrders: 0,
+                    lastPurchaseDate: null,
+                });
+            }
+
+            for (const row of orderRows) {
+                const warehouseId = row.warehouseId;
+                if (!warehouseId) continue;
+
+                const current = supplierOrderMap.get(warehouseId);
+                if (!current) continue;
+
+                const total = toSafeNumber(row.total);
+                current.totalOrders += 1;
+
+                if (
+                    !current.lastPurchaseDate
+                    || (row.createdAt && row.createdAt > current.lastPurchaseDate)
+                ) {
+                    current.lastPurchaseDate = row.createdAt;
+                }
+
+                if (["pending", "confirmed", "processing"].includes(row.status)) {
+                    current.pendingOrders += 1;
+                }
+
+                if (isPurchaseOrderStatus(row.status)) {
+                    current.totalPurchase += total;
+                }
+
+                if (isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)) {
+                    current.totalPaid += total;
+                }
+
+                if (
+                    isPayableOrder(
+                        row.status,
+                        row.paymentStatus,
+                        row.invoicePaymentStatus,
+                    )
+                ) {
+                    current.totalDue += total;
+                }
+            }
+
+            const inventoryCategoryRows = await db
+                .select({
+                    warehouseId: inventory.ownerId,
+                    categoryName: category.name,
+                    itemCount: count(),
+                })
+                .from(inventory)
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .innerJoin(category, eq(product.categoryId, category.id))
+                .where(
+                    and(
+                        eq(inventory.ownerType, "warehouse"),
+                        inArray(inventory.ownerId, warehouseIds),
+                        sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                    ),
+                )
+                .groupBy(inventory.ownerId, category.name);
+
+            const orderedCategoryRows = await db
+                .select({
+                    warehouseId: order.warehouseId,
+                    categoryName: category.name,
+                    itemCount: count(),
+                })
+                .from(orderItem)
+                .innerJoin(order, eq(orderItem.orderId, order.id))
+                .innerJoin(product, eq(orderItem.productId, product.id))
+                .innerJoin(category, eq(product.categoryId, category.id))
+                .where(
+                    and(
+                        eq(order.userId, shopId),
+                        inArray(order.warehouseId, warehouseIds),
+                    ),
+                )
+                .groupBy(order.warehouseId, category.name);
+
+            const inventoryCategoryMap = new Map<
+                string,
+                { categoryName: string; itemCount: number }
+            >();
+            for (const row of inventoryCategoryRows) {
+                const current = inventoryCategoryMap.get(row.warehouseId);
+                const nextCount = Number(row.itemCount || 0);
+                if (!current || nextCount > current.itemCount) {
+                    inventoryCategoryMap.set(row.warehouseId, {
+                        categoryName: row.categoryName,
+                        itemCount: nextCount,
+                    });
+                }
+            }
+
+            const orderedCategoryMap = new Map<
+                string,
+                { categoryName: string; itemCount: number }
+            >();
+            for (const row of orderedCategoryRows) {
+                if (!row.warehouseId) continue;
+
+                const current = orderedCategoryMap.get(row.warehouseId);
+                const nextCount = Number(row.itemCount || 0);
+                if (!current || nextCount > current.itemCount) {
+                    orderedCategoryMap.set(row.warehouseId, {
+                        categoryName: row.categoryName,
+                        itemCount: nextCount,
+                    });
+                }
+            }
+
+            const allSuppliers = connections.map((connection) => {
+                const orderSummary = supplierOrderMap.get(connection.warehouseId) ?? {
+                    totalOrders: 0,
+                    totalPurchase: 0,
+                    totalPaid: 0,
+                    totalDue: 0,
+                    pendingOrders: 0,
+                    lastPurchaseDate: null,
+                };
+                const primaryCategory = inventoryCategoryMap.get(connection.warehouseId)
+                    ?.categoryName
+                    || orderedCategoryMap.get(connection.warehouseId)?.categoryName
+                    || null;
+                const activityStatus = getConnectedSupplierActivityStatus(
+                    orderSummary.lastPurchaseDate,
+                    connection.connectedAt,
+                    orderSummary.pendingOrders,
+                );
+
+                return {
+                    connectionId: connection.connectionId,
+                    warehouseId: connection.warehouseId,
+                    warehouseSlug: connection.warehouseSlug,
+                    name:
+                        connection.warehouseName
+                        || connection.name
+                        || "Connected Supplier",
+                    phone: connection.phone,
+                    email: connection.email,
+                    address: connection.warehouseAddress,
+                    image: connection.image,
+                    primaryCategory,
+                    activityStatus,
+                    totalOrders: orderSummary.totalOrders,
+                    totalPurchase: orderSummary.totalPurchase,
+                    totalPaid: orderSummary.totalPaid,
+                    totalDue: orderSummary.totalDue,
+                    pendingOrders: orderSummary.pendingOrders,
+                    lastPurchaseDate: orderSummary.lastPurchaseDate,
+                    connectedAt: connection.connectedAt,
+                    lastOrderedAt: connection.lastOrderedAt,
+                };
+            });
+
+            const summary = {
+                connectedSuppliers: allSuppliers.length,
+                activeSuppliers: allSuppliers.filter(
+                    (supplier) => supplier.activityStatus === "active",
+                ).length,
+                totalPurchase: allSuppliers.reduce(
+                    (total, supplier) => total + supplier.totalPurchase,
+                    0,
+                ),
+            };
+
+            const categories = [...new Set(
+                allSuppliers
+                    .map((supplier) => supplier.primaryCategory)
+                    .filter((value): value is string => Boolean(value)),
+            )].sort((a, b) => a.localeCompare(b));
+
+            let suppliers = allSuppliers;
+
+            if (input.search?.trim()) {
+                const search = input.search.trim().toLowerCase();
+                suppliers = suppliers.filter((supplier) =>
+                    [
+                        supplier.name,
+                        supplier.phone,
+                        supplier.email,
+                        supplier.address,
+                        supplier.primaryCategory,
+                    ]
+                        .filter(Boolean)
+                        .some((value) => value!.toLowerCase().includes(search)),
+                );
+            }
+
+            if (input.status !== "all") {
+                suppliers = suppliers.filter(
+                    (supplier) => supplier.activityStatus === input.status,
+                );
+            }
+
+            if (input.category?.trim()) {
+                const categoryFilter = input.category.trim().toLowerCase();
+                suppliers = suppliers.filter(
+                    (supplier) =>
+                        supplier.primaryCategory?.toLowerCase() === categoryFilter,
+                );
+            }
+
+            suppliers = suppliers.sort((a, b) => {
+                if (a.activityStatus !== b.activityStatus) {
+                    return a.activityStatus === "active" ? -1 : 1;
+                }
+
+                if (b.totalPurchase !== a.totalPurchase) {
+                    return b.totalPurchase - a.totalPurchase;
+                }
+
+                return (
+                    (b.lastPurchaseDate?.getTime()
+                        || b.lastOrderedAt?.getTime()
+                        || b.connectedAt?.getTime()
+                        || 0)
+                    - (a.lastPurchaseDate?.getTime()
+                        || a.lastOrderedAt?.getTime()
+                        || a.connectedAt?.getTime()
+                        || 0)
+                );
+            });
+
+            return {
+                summary,
+                categories,
+                suppliers,
+            };
+        }),
 
     /**
      * List all warehouses this shop has ordered from (= suppliers).
