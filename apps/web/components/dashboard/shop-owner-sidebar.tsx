@@ -9,13 +9,13 @@ import {
   ClipboardListIcon,
   CreditCardIcon,
   DollarSignIcon,
+  ExternalLinkIcon,
   FileTextIcon,
   GiftIcon,
   HeadphonesIcon,
   LayoutDashboardIcon,
   MegaphoneIcon,
   PackageIcon,
-  PercentIcon,
   PlusCircleIcon,
   ReceiptIcon,
   SettingsIcon,
@@ -27,7 +27,6 @@ import {
   TrendingUpIcon,
   UsersIcon,
   WalletIcon,
-  ExternalLinkIcon,
   Warehouse as WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -47,16 +46,22 @@ const D = "/dashboard";
 const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Overview",
-    items: [
-      { title: "Dashboard", url: D, icon: LayoutDashboardIcon },
-    ],
+    items: [{ title: "Dashboard", url: D, icon: LayoutDashboardIcon }],
   },
   {
     label: "Inventory Management",
     items: [
       { title: "Inventory", url: `${D}/products`, icon: BoxesIcon },
-      { title: "Product Catalog", url: `${D}/product-catalog`, icon: BookOpenIcon },
-      { title: "Create Product", url: `${D}/products/create`, icon: ClipboardListIcon },
+      {
+        title: "Product Catalog",
+        url: `${D}/product-catalog`,
+        icon: BookOpenIcon,
+      },
+      {
+        title: "Create Product",
+        url: `${D}/products/create`,
+        icon: ClipboardListIcon,
+      },
       { title: "My Store", url: `${D}/stores`, icon: StoreIcon },
     ],
   },
@@ -77,7 +82,11 @@ const shopOwnerNavGroups: NavGroup[] = [
         ],
       },
       { title: "Add Stock", url: `${D}/stock/add`, icon: PlusCircleIcon },
-      { title: "Stock Adjustment", url: `${D}/stock-adjustment`, icon: ArrowRightLeftIcon },
+      {
+        title: "Stock Adjustment",
+        url: `${D}/stock-adjustment`,
+        icon: ArrowRightLeftIcon,
+      },
       { title: "Damage", url: `${D}/damage`, icon: AlertTriangleIcon },
       {
         title: "Setup",
@@ -86,7 +95,10 @@ const shopOwnerNavGroups: NavGroup[] = [
         items: [
           { title: "Price", url: `${D}/pricing` },
           { title: "Brands", url: `${D}/products/brands` },
-          { title: "Variant Attributes", url: `${D}/products/variant-attributes` },
+          {
+            title: "Variant Attributes",
+            url: `${D}/products/variant-attributes`,
+          },
         ],
       },
       { title: "Warehouses", url: `${D}/warehouses`, icon: WarehouseIcon },
@@ -115,11 +127,23 @@ const shopOwnerNavGroups: NavGroup[] = [
     label: "Finance & Accounts",
     items: [
       { title: "Income", url: `${D}/finance/income`, icon: TrendingUpIcon },
-      { title: "Expenses", url: `${D}/finance/expenses`, icon: TrendingDownIcon },
-      { title: "Receivable", url: `${D}/finance/receivable`, icon: DollarSignIcon },
+      {
+        title: "Expenses",
+        url: `${D}/finance/expenses`,
+        icon: TrendingDownIcon,
+      },
+      {
+        title: "Receivable",
+        url: `${D}/finance/receivable`,
+        icon: DollarSignIcon,
+      },
       { title: "Payable", url: `${D}/finance/payable`, icon: WalletIcon },
       { title: "Ledger", url: `${D}/finance/ledger`, icon: FileTextIcon },
-      { title: "Profit & Loss", url: `${D}/finance/profit-loss`, icon: BarChart3Icon },
+      {
+        title: "Profit & Loss",
+        url: `${D}/finance/profit-loss`,
+        icon: BarChart3Icon,
+      },
     ],
   },
   {
@@ -133,45 +157,75 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Network",
     items: [
-      { title: "Connected Suppliers", url: `${D}/connected-suppliers`, icon: UsersIcon },
+      {
+        title: "Connected Suppliers",
+        url: `${D}/connected-suppliers`,
+        icon: UsersIcon,
+      },
     ],
   },
   {
     label: "E-Commerce Store",
     items: [
       { title: "Product Sync", url: `${D}/product-sync`, icon: PackageIcon },
-      { title: "Order Management", url: `${D}/incoming-orders`, icon: ShoppingCartIcon },
+      {
+        title: "Order Management",
+        url: `${D}/incoming-orders`,
+        icon: ShoppingCartIcon,
+      },
     ],
   },
   {
     label: "Marketing",
     items: [
-      { title: "SMS Marketing", url: `${D}/sms-marketing`, icon: SmartphoneIcon },
+      {
+        title: "SMS Marketing",
+        url: `${D}/sms-marketing`,
+        icon: SmartphoneIcon,
+      },
       { title: "Promotions", url: `${D}/promotions`, icon: MegaphoneIcon },
-      { title: "Marketing Materials", url: `${D}/marketing-materials`, icon: PackageIcon },
+      {
+        title: "Marketing Materials",
+        url: `${D}/marketing-materials`,
+        icon: PackageIcon,
+      },
     ],
   },
   {
     label: "Reports",
     items: [
       { title: "Sales Report", url: `${D}/reports/sales`, icon: BarChart3Icon },
-      { title: "Purchase Report", url: `${D}/reports/purchase`, icon: FileTextIcon },
-      { title: "Stock Movement", url: `${D}/reports/stock-movement`, icon: BoxesIcon },
+      {
+        title: "Purchase Report",
+        url: `${D}/reports/purchase`,
+        icon: FileTextIcon,
+      },
+      {
+        title: "Stock Movement",
+        url: `${D}/reports/stock-movement`,
+        icon: BoxesIcon,
+      },
     ],
   },
   {
     label: "Referral",
-    items: [
-      { title: "Refer & Earn", url: `${D}/referral`, icon: GiftIcon },
-    ],
+    items: [{ title: "Refer & Earn", url: `${D}/referral`, icon: GiftIcon }],
   },
   {
     label: "Settings",
     items: [
       { title: "Business Profile", url: `${D}/settings`, icon: SettingsIcon },
-      { title: "Payment Accounts", url: `${D}/payment-accounts`, icon: CreditCardIcon },
+      {
+        title: "Payment Accounts",
+        url: `${D}/payment-accounts`,
+        icon: CreditCardIcon,
+      },
       { title: "User Roles", url: `${D}/user-roles`, icon: ShieldIcon },
-      { title: "Invoice Settings", url: `${D}/invoice-settings`, icon: FileTextIcon },
+      {
+        title: "Invoice Settings",
+        url: `${D}/invoice-settings`,
+        icon: FileTextIcon,
+      },
       { title: "Support", url: `${D}/support`, icon: HeadphonesIcon },
     ],
   },
@@ -206,7 +260,11 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <NavGrouped groups={shopOwnerNavGroups} />
       </SidebarContent>
       <SidebarFooter>
-        {isPending || !data ? <UserNavSkeleton /> : <NavUser session={data as any} />}
+        {isPending || !data ? (
+          <UserNavSkeleton />
+        ) : (
+          <NavUser session={data as any} />
+        )}
       </SidebarFooter>
     </Sidebar>
   );

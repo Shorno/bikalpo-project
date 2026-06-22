@@ -11,6 +11,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -162,7 +163,13 @@ function EmptyState({
         </p>
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
           <Button asChild>
-            <Link href={hasConnections ? "/dashboard/order-from-warehouse" : "/dashboard/warehouses"}>
+            <Link
+              href={
+                hasConnections
+                  ? "/dashboard/order-from-warehouse"
+                  : "/dashboard/warehouses"
+              }
+            >
               {hasConnections ? (
                 <>
                   <ShoppingCart className="mr-2 h-4 w-4" />
@@ -182,7 +189,11 @@ function EmptyState({
   );
 }
 
-function StatusBadge({ status }: { status: ConnectedSupplierRow["activityStatus"] }) {
+function StatusBadge({
+  status,
+}: {
+  status: ConnectedSupplierRow["activityStatus"];
+}) {
   if (status === "active") {
     return (
       <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
@@ -192,18 +203,27 @@ function StatusBadge({ status }: { status: ConnectedSupplierRow["activityStatus"
   }
 
   return (
-    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+    <Badge
+      variant="outline"
+      className="border-amber-200 bg-amber-50 text-amber-700"
+    >
       Inactive
     </Badge>
   );
 }
 
 export default function ConnectedSuppliersPage() {
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
   const [statusFilter, setStatusFilter] =
-    useState<ConnectedSupplierStatusFilter>("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
+    useState<ConnectedSupplierStatusFilter>(() => {
+      const status = searchParams.get("status");
+      return status === "active" || status === "inactive" ? status : "all";
+    });
+  const [categoryFilter, setCategoryFilter] = useState(
+    () => searchParams.get("category") || "all",
+  );
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -378,12 +398,18 @@ export default function ConnectedSuppliersPage() {
                         <div className="space-y-1">
                           <p className="font-medium">{supplier.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {supplier.phone || supplier.email || "No contact info"}
+                            {supplier.phone ||
+                              supplier.email ||
+                              "No contact info"}
                           </p>
                         </div>
                       </TableCell>
-                      <TableCell>{supplier.primaryCategory || "General"}</TableCell>
-                      <TableCell>{formatDate(supplier.lastPurchaseDate)}</TableCell>
+                      <TableCell>
+                        {supplier.primaryCategory || "General"}
+                      </TableCell>
+                      <TableCell>
+                        {formatDate(supplier.lastPurchaseDate)}
+                      </TableCell>
                       <TableCell className="font-medium">
                         {formatCurrency(supplier.totalPurchase)}
                       </TableCell>
@@ -392,7 +418,9 @@ export default function ConnectedSuppliersPage() {
                       </TableCell>
                       <TableCell className="px-5 text-right">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={`/dashboard/connected-suppliers/${supplier.warehouseId}`}>
+                          <Link
+                            href={`/dashboard/connected-suppliers/${supplier.warehouseId}`}
+                          >
                             View
                             <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                           </Link>
@@ -453,7 +481,9 @@ export default function ConnectedSuppliersPage() {
                   </div>
 
                   <Button asChild className="w-full" variant="outline">
-                    <Link href={`/dashboard/connected-suppliers/${supplier.warehouseId}`}>
+                    <Link
+                      href={`/dashboard/connected-suppliers/${supplier.warehouseId}`}
+                    >
                       View Supplier Detail
                       <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                     </Link>

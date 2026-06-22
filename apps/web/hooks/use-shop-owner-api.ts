@@ -51,7 +51,9 @@ export function useShopOwnerProductDetails(slug: string) {
 // ────────────────────────────────────────────────────────────────
 
 /** Get all warehouse connections for this shop */
-export function useMyWarehouses(status?: "all" | "active" | "pending" | "disconnected") {
+export function useMyWarehouses(
+  status?: "all" | "active" | "pending" | "disconnected",
+) {
   return useQuery(
     orpc.shopOwner.getMyWarehouses.queryOptions({
       input: { status: status ?? "all" },
@@ -86,7 +88,6 @@ export function useConnectToWarehouse() {
         toast.success(data.message || "Connection request sent");
       }
       qc.invalidateQueries({ queryKey: orpc.shopOwner.getMyWarehouses.key() });
-
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to connect to warehouse");
@@ -119,7 +120,6 @@ export function useDisconnectWarehouse() {
     onSuccess: (data) => {
       toast.success(data.message || "Disconnected successfully");
       qc.invalidateQueries({ queryKey: orpc.shopOwner.getMyWarehouses.key() });
-
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to disconnect");
@@ -233,7 +233,13 @@ export function useMyInventory() {
 
 /** Shop owner's B2B purchase orders */
 export function useMyOrders(params?: {
-  status?: "pending" | "confirmed" | "processing" | "delivered" | "returned" | "cancelled";
+  status?:
+    | "pending"
+    | "confirmed"
+    | "processing"
+    | "delivered"
+    | "returned"
+    | "cancelled";
   page?: number;
   limit?: number;
 }) {
@@ -295,7 +301,9 @@ export function useMarkPurchaseReceived() {
     onSuccess: (data) => {
       toast.success(data.message || "Order received successfully");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
-      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getPurchaseOrderDetail"],
+      });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
     },
     onError: (err: any) => {
@@ -313,7 +321,9 @@ export function useCancelPurchaseOrder() {
     onSuccess: (data) => {
       toast.success(data.message || "Order cancelled");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
-      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getPurchaseOrderDetail"],
+      });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
     },
     onError: (err: any) => {
@@ -356,7 +366,9 @@ export function useAcceptPurchaseModification() {
       toast.success(data.message || "Modifications accepted");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseTracking"] });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
-      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getPurchaseOrderDetail"],
+      });
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to accept modifications");
@@ -374,7 +386,9 @@ export function useRejectPurchaseModification() {
       toast.success(data.message || "Order cancelled");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseTracking"] });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
-      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getPurchaseOrderDetail"],
+      });
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to reject modifications");

@@ -280,8 +280,8 @@ function buildMonthCalendar(scheduleDays: number[]) {
 
 function escapeCsvValue(value: string | number) {
   const text = String(value);
-  if (text.includes(",") || text.includes("\"") || text.includes("\n")) {
-    return `"${text.replace(/"/g, "\"\"")}"`;
+  if (text.includes(",") || text.includes('"') || text.includes("\n")) {
+    return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
 }
@@ -392,6 +392,9 @@ export default function ConnectedSupplierDetailPage() {
   const orderLink = detail.identity.warehouseSlug
     ? `/dashboard/warehouses/${detail.identity.warehouseSlug}`
     : "/dashboard/warehouses";
+  const compareLink = detail.smartInsight.compareCategory
+    ? `/dashboard/connected-suppliers?category=${encodeURIComponent(detail.smartInsight.compareCategory)}`
+    : "/dashboard/connected-suppliers";
   const calendar = buildMonthCalendar(
     detail.delivery.weeklyDays.map((day) => day.dayOfWeek),
   );
@@ -541,9 +544,7 @@ export default function ConnectedSupplierDetailPage() {
               label="Total Due"
               value={formatCurrency(detail.financialSummary.totalDue)}
               hint={`${detail.dueStatus.payableOrders} payable order${detail.dueStatus.payableOrders === 1 ? "" : "s"}`}
-              tone={
-                detail.financialSummary.totalDue > 0 ? "danger" : "success"
-              }
+              tone={detail.financialSummary.totalDue > 0 ? "danger" : "success"}
             />
             <StatCard
               label="Pending Orders"
@@ -646,19 +647,21 @@ export default function ConnectedSupplierDetailPage() {
               <div className="space-y-2 rounded-2xl border border-border/60 p-4">
                 <p className="text-sm font-medium">Document Links</p>
                 <div className="flex flex-col gap-2">
-                  {detail.documents.uploadedDocuments.map((documentUrl, index) => (
-                    <a
-                      key={documentUrl}
-                      className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
-                      href={documentUrl}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      <FileCheck2 className="h-4 w-4" />
-                      Document {index + 1}
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  ))}
+                  {detail.documents.uploadedDocuments.map(
+                    (documentUrl, index) => (
+                      <a
+                        key={documentUrl}
+                        className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                        href={documentUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <FileCheck2 className="h-4 w-4" />
+                        Document {index + 1}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    ),
+                  )}
                 </div>
               </div>
             ) : null}
@@ -776,9 +779,9 @@ export default function ConnectedSupplierDetailPage() {
               <DetailRow
                 label="Your Area Match"
                 value={
-                  detail.delivery.matchedArea?.name
-                    || detail.delivery.areaHint
-                    || "No matched delivery area"
+                  detail.delivery.matchedArea?.name ||
+                  detail.delivery.areaHint ||
+                  "No matched delivery area"
                 }
               />
               <DetailRow
@@ -805,7 +808,10 @@ export default function ConnectedSupplierDetailPage() {
                 </div>
                 <div className="grid grid-cols-7 gap-2 text-center text-xs">
                   {WEEKDAY_LABELS.map((label) => (
-                    <div key={label} className="font-medium text-muted-foreground">
+                    <div
+                      key={label}
+                      className="font-medium text-muted-foreground"
+                    >
                       {label}
                     </div>
                   ))}
@@ -845,13 +851,14 @@ export default function ConnectedSupplierDetailPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-5">
-          <StatCard label="Total Orders" value={detail.orderStatus.totalOrders} />
+          <StatCard
+            label="Total Orders"
+            value={detail.orderStatus.totalOrders}
+          />
           <StatCard
             label="Pending"
             value={detail.orderStatus.pendingOrders}
-            tone={
-              detail.orderStatus.pendingOrders > 0 ? "default" : "success"
-            }
+            tone={detail.orderStatus.pendingOrders > 0 ? "default" : "success"}
           />
           <StatCard
             label="Processing"
@@ -1026,7 +1033,8 @@ export default function ConnectedSupplierDetailPage() {
                   >
                     <span className="font-medium">{category.name}</span>
                     <span className="text-sm text-muted-foreground">
-                      {category.totalQty} qty across {category.orderCount} orders
+                      {category.totalQty} qty across {category.orderCount}{" "}
+                      orders
                     </span>
                   </div>
                 ))
@@ -1044,10 +1052,7 @@ export default function ConnectedSupplierDetailPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <DetailRow label="Total Issues" value={detail.issues.totalIssues} />
-            <DetailRow
-              label="Resolved"
-              value={detail.issues.resolvedIssues}
-            />
+            <DetailRow label="Resolved" value={detail.issues.resolvedIssues} />
             <DetailRow
               label="Unresolved"
               value={detail.issues.unresolvedIssues}
@@ -1114,7 +1119,9 @@ export default function ConnectedSupplierDetailPage() {
                         </TableCell>
                         <TableCell>{formatCurrency(entry.amount)}</TableCell>
                         <TableCell>{formatLabel(entry.orderStatus)}</TableCell>
-                        <TableCell>{formatLabel(entry.paymentStatus)}</TableCell>
+                        <TableCell>
+                          {formatLabel(entry.paymentStatus)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1194,7 +1201,7 @@ export default function ConnectedSupplierDetailPage() {
             Make Payment
           </Button>
           <Button asChild variant="outline">
-            <Link href="/dashboard/connected-suppliers">
+            <Link href={compareLink}>
               <Users className="mr-2 h-4 w-4" />
               Compare Supplier
             </Link>
