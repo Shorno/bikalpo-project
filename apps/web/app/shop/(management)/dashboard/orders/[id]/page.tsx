@@ -20,13 +20,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -54,14 +52,34 @@ const statusConfig: Record<
   { label: string; icon: React.ReactNode; className: string }
 > = {
   pending: {
-    label: "Pending",
+    label: "Pending Approval",
     icon: <Clock className="w-4 h-4" />,
     className: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-800",
   },
-  confirmed: {
-    label: "Accepted",
+  approved: {
+    label: "Approved",
     icon: <CheckCircle2 className="w-4 h-4" />,
+    className: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
+  },
+  ready_for_dispatch: {
+    label: "Ready for Dispatch",
+    icon: <Package className="w-4 h-4" />,
     className: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30 dark:border-blue-800",
+  },
+  partially_invoiced: {
+    label: "Partially Invoiced",
+    icon: <ExternalLink className="w-4 h-4" />,
+    className: "text-violet-700 bg-violet-50 border-violet-200 dark:text-violet-300 dark:bg-violet-950/30 dark:border-violet-800",
+  },
+  invoiced: {
+    label: "Invoiced",
+    icon: <ExternalLink className="w-4 h-4" />,
+    className: "text-sky-700 bg-sky-50 border-sky-200 dark:text-sky-300 dark:bg-sky-950/30 dark:border-sky-800",
+  },
+  confirmed: {
+    label: "Approved",
+    icon: <CheckCircle2 className="w-4 h-4" />,
+    className: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
   },
   processing: {
     label: "In Delivery",

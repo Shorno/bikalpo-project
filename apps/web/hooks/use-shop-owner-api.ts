@@ -11,6 +11,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
+type PurchaseOrderStatus =
+  | "pending"
+  | "approved"
+  | "ready_for_dispatch"
+  | "partially_invoiced"
+  | "invoiced"
+  | "confirmed"
+  | "processing"
+  | "delivered"
+  | "returned"
+  | "cancelled";
+
 // ────────────────────────────────────────────────────────────────
 // B2B QUERY HOOKS (Shop Owner as Buyer)
 // ────────────────────────────────────────────────────────────────
@@ -233,7 +245,7 @@ export function useMyInventory() {
 
 /** Shop owner's B2B purchase orders */
 export function useMyOrders(params?: {
-  status?: "pending" | "confirmed" | "processing" | "delivered" | "returned" | "cancelled";
+  status?: PurchaseOrderStatus;
   page?: number;
   limit?: number;
 }) {
@@ -252,7 +264,7 @@ export function useMyOrders(params?: {
 /** Purchase orders with search, filters, and KPIs */
 export function usePurchaseOrders(params?: {
   search?: string;
-  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+  status?: PurchaseOrderStatus;
   dateFrom?: string;
   dateTo?: string;
   page?: number;
@@ -325,7 +337,7 @@ export function useCancelPurchaseOrder() {
 /** Purchase order tracking with delivery progress and timelines */
 export function usePurchaseTracking(params?: {
   search?: string;
-  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
+  status?: PurchaseOrderStatus;
   dateFrom?: string;
   dateTo?: string;
   page?: number;

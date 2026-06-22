@@ -1,581 +1,730 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowRightIcon,
-  CheckCircle2Icon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  Copy,
-  KeyRound,
-  Loader2Icon,
-  MapPinIcon,
-  PackageIcon,
-  TruckIcon,
-  UserIcon,
-  XCircleIcon,
+  type ColumnFiltersState,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  type SortingState,
+  useReactTable,
+} from "@tanstack/react-table";
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  FileText,
+  Inbox,
+  Package,
+  PackageCheck,
+  Search,
+  ShoppingCart,
 } from "lucide-react";
+import Link from "next/link";
+import {
+  type ElementType,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
+import {
+  DashboardKpiCard,
+  type DashboardKpiChartPoint,
+  DashboardKpiGrid,
+  type DashboardKpiTone,
+  type DashboardKpiTrend,
+} from "@/components/dashboard/dashboard-kpi-card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { orpc } from "@/utils/orpc";
+import {
+  type DispatchOrderRow,
+  type DispatchStatus,
+  getDispatchColumns,
+} from "./_components/dispatch-columns";
+import { PartialInvoiceDialog } from "./_components/partial-invoice-dialog";
 
-type TabId = "ready" | "pickup";
+type StatusFilter = "all" | DispatchStatus;
+type DateFilter = "today" | "this_month" | "all";
 
-interface InvoiceCard {
-  id: number;
-  invoiceNumber: string;
-  fulfillmentMode?: string | null;
-  completionOtp?: string | null;
-  grandTotal: string;
-  customer?: {
-    id: string;
-    name: string;
-    phoneNumber: string | null;
-    shopName: string | null;
-  } | null;
-  order?: {
-    id: number;
-    orderNumber: string;
-    shippingName?: string | null;
-    shippingPhone?: string | null;
-    shippingAddress: string;
-    shippingCity: string;
-    shippingArea: string;
-  } | null;
-  items?: Array<{
-    id: number;
-    productName: string;
-    productSku: string | null;
-    quantity: number;
-    unitPrice: string;
-    lineTotal: string;
-  }>;
+const PER_PAGE = 20;
+
+const statusConfig: {
+  key: StatusFilter;
+  label: string;
+  emoji: string;
+  icon: ElementType;
+  tone: DashboardKpiTone;
+  description: string;
+}[] = [
+  {
+    key: "all",
+    label: "All",
+    emoji: "📦",
+    icon: Package,
+    tone: "slate",
+    description: "All dispatch-stage orders",
+  },
+  {
+    key: "ready_for_dispatch",
+    label: "Ready",
+    emoji: "🟣",
+    icon: PackageCheck,
+    tone: "violet",
+    description: "Approved and awaiting invoice",
+  },
+  {
+    key: "partially_invoiced",
+    label: "Partial",
+    emoji: "🟡",
+    icon: FileText,
+    tone: "amber",
+    description: "Some quantities still uninvoiced",
+  },
+  {
+    key: "invoiced",
+    label: "Invoiced",
+    emoji: "🟢",
+    icon: FileText,
+    tone: "emerald",
+    description: "All approved quantities invoiced",
+  },
+];
+
+const dateOptions = [
+  { value: "all", label: "All Dates" },
+  { value: "today", label: "Today" },
+  { value: "this_month", label: "This Month" },
+];
+
+function getOrderDate(order: DispatchOrderRow) {
+  return new Date(order.readyAt ?? order.createdAt);
+}
+
+function matchesDateFilter(order: DispatchOrderRow, dateRange: DateFilter) {
+  if (dateRange === "all") return true;
+  const date = getOrderDate(order);
+  const now = new Date();
+  if (dateRange === "today") {
+    return (
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate()
+    );
+  }
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth()
+  );
+}
+
+function matchesSearch(order: DispatchOrderRow, search: string) {
+  if (!search.trim()) return true;
+  const query = search.trim().toLowerCase();
+  const customer =
+    order.customer.warehouseName ||
+    order.customer.shopName ||
+    order.customer.name ||
+    order.shipping.name;
+  return (
+    order.orderNumber.toLowerCase().includes(query) ||
+    customer.toLowerCase().includes(query) ||
+    (order.customer.phoneNumber ?? "").toLowerCase().includes(query) ||
+    order.shipping.phone.toLowerCase().includes(query)
+  );
+}
+
+function buildTrendCopy(current: number, previous: number): DashboardKpiTrend {
+  if (current === 0 && previous === 0) {
+    return {
+      value: "0%",
+      label: "vs Previous 7 Days",
+      direction: "neutral",
+    };
+  }
+
+  if (previous === 0) {
+    return {
+      value: `+${current.toLocaleString()}`,
+      label: "new vs Previous 7 Days",
+      direction: "up",
+    };
+  }
+
+  const change = Math.round(((current - previous) / previous) * 100);
+  return {
+    value: `${change > 0 ? "+" : ""}${change}%`,
+    label: "vs Previous 7 Days",
+    direction: change > 0 ? "up" : change < 0 ? "down" : "neutral",
+  };
+}
+
+function buildChartData(
+  orders: DispatchOrderRow[],
+  status: StatusFilter,
+): DashboardKpiChartPoint[] {
+  const now = new Date();
+  const points: DashboardKpiChartPoint[] = [];
+
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const day = new Date(now);
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() - offset);
+
+    const nextDay = new Date(day);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    const value = orders.filter((order) => {
+      if (status !== "all" && order.status !== status) return false;
+      const orderDate = getOrderDate(order);
+      return orderDate >= day && orderDate < nextDay;
+    }).length;
+
+    points.push({
+      label: day.toLocaleDateString("en-BD", { weekday: "short" }),
+      value,
+    });
+  }
+
+  return points;
+}
+
+function buildTrendTotals(orders: DispatchOrderRow[], status: StatusFilter) {
+  const now = new Date();
+  const currentStart = new Date(now);
+  currentStart.setHours(0, 0, 0, 0);
+  currentStart.setDate(currentStart.getDate() - 6);
+
+  const previousStart = new Date(currentStart);
+  previousStart.setDate(previousStart.getDate() - 7);
+
+  const previousEnd = new Date(currentStart);
+
+  const inRange = (order: DispatchOrderRow, start: Date, end: Date) => {
+    if (status !== "all" && order.status !== status) return false;
+    const orderDate = getOrderDate(order);
+    return orderDate >= start && orderDate < end;
+  };
+
+  const current = orders.filter((order) =>
+    inRange(order, currentStart, new Date(now.getTime() + 86_400_000)),
+  ).length;
+  const previous = orders.filter((order) =>
+    inRange(order, previousStart, previousEnd),
+  ).length;
+
+  return { current, previous };
+}
+
+function generatePageNumbers(
+  current: number,
+  total: number,
+): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (current > 3) pages.push("...");
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (current < total - 2) pages.push("...");
+  pages.push(total);
+  return pages;
+}
+
+function buildDefaultPartialQuantities(order: DispatchOrderRow) {
+  return order.items.reduce<Record<number, number>>((quantities, item) => {
+    if (item.remainingQty > 0) {
+      quantities[item.orderItemId] = item.remainingQty;
+    }
+    return quantities;
+  }, {});
 }
 
 export default function DispatchOrdersPage() {
-  const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabId>("ready");
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const [status, setStatus] = useState<StatusFilter>("ready_for_dispatch");
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateFilter>("all");
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [readyInvoices, setReadyInvoices] = useState<InvoiceCard[]>([]);
-  const [selfPickupInvoices, setSelfPickupInvoices] = useState<InvoiceCard[]>([]);
-  const [deliveryQueueCount, setDeliveryQueueCount] = useState(0);
-  const [expandedInvoice, setExpandedInvoice] = useState<number | null>(null);
-  const [showVerifyPickupModal, setShowVerifyPickupModal] = useState<{
-    invoiceId: number;
-    invoiceNumber: string;
-  } | null>(null);
-  const [pickupOtpInput, setPickupOtpInput] = useState("");
+  const [partialInvoiceOrder, setPartialInvoiceOrder] =
+    useState<DispatchOrderRow | null>(null);
+  const [partialQuantities, setPartialQuantities] = useState<
+    Record<number, number>
+  >({});
 
-  const apiBase = process.env.NEXT_PUBLIC_AUTH_URL || "";
-
-  const apiFetch = useCallback(
-    async (path: string, opts?: RequestInit) => {
-      const res = await fetch(`${apiBase}${path}`, {
-        ...opts,
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...opts?.headers },
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || `API error ${res.status}`);
-      }
-
-      return res.json();
-    },
-    [apiBase],
-  );
-
-  const fetchDispatchDashboard = useCallback(async () => {
-    const data = await apiFetch("/warehouse/dispatch/dashboard");
-    setReadyInvoices(data.readyInvoices || []);
-    setSelfPickupInvoices(data.selfPickupInvoices || []);
-    setDeliveryQueueCount(data.deliveryQueueCount || 0);
-  }, [apiFetch]);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      await fetchDispatchDashboard();
-    } catch (error) {
-      console.error("Dispatch load failed:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to load dispatch data");
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchDispatchDashboard]);
-
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    timerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 350);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [search]);
 
-  const handleSelectMode = async (
-    invoiceId: number,
-    invoiceNumber: string,
-    fulfillmentMode: "self_pickup" | "delivery",
-  ) => {
-    setActionLoading(`mode-${invoiceId}-${fulfillmentMode}`);
-    try {
-      const result = await apiFetch("/warehouse/dispatch/configure", {
-        method: "POST",
-        body: JSON.stringify({ invoiceId, fulfillmentMode }),
-      });
-
-      if (fulfillmentMode === "self_pickup" && result.completionOtp) {
-        toast.success(`${invoiceNumber} is ready for self pickup. OTP: ${result.completionOtp}`);
-        setActiveTab("pickup");
-      } else {
-        toast.success(result.message || "Invoice moved to delivery management");
-        router.push("/warehouse/dashboard/delivery-management");
-      }
-
-      await fetchDispatchDashboard();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update dispatch mode");
-    } finally {
-      setActionLoading(null);
-    }
+  const selectStatus = (nextStatus: StatusFilter) => {
+    setStatus(nextStatus);
+    setPage(1);
   };
 
-  const handleVerifyPickup = async () => {
-    if (!showVerifyPickupModal) return;
-    if (pickupOtpInput.length !== 4) {
-      toast.error("Enter the 4-digit pickup OTP");
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["warehouse", "dispatch-dashboard"],
+    queryFn: () => orpc.warehouse.getDispatchDashboard.call({}),
+  });
+
+  const allOrders = useMemo((): DispatchOrderRow[] => {
+    if (!data) return [];
+    return [
+      ...data.readyOrders,
+      ...data.partiallyInvoicedOrders,
+      ...data.invoicedOrders,
+    ].map((order) => ({
+      ...order,
+      status: order.status as DispatchStatus,
+    })) as unknown as DispatchOrderRow[];
+  }, [data]);
+
+  const counts: Record<StatusFilter, number> = useMemo(
+    () => ({
+      all: allOrders.length,
+      ready_for_dispatch: data?.readyOrders.length ?? 0,
+      partially_invoiced: data?.partiallyInvoicedOrders.length ?? 0,
+      invoiced: data?.invoicedOrders.length ?? 0,
+    }),
+    [allOrders.length, data],
+  );
+
+  const filteredOrders = useMemo(() => {
+    return allOrders.filter((order) => {
+      if (status !== "all" && order.status !== status) return false;
+      if (!matchesSearch(order, debouncedSearch)) return false;
+      if (!matchesDateFilter(order, dateRange)) return false;
+      return true;
+    });
+  }, [allOrders, status, debouncedSearch, dateRange]);
+
+  const totalCount = filteredOrders.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
+  const paginatedOrders = useMemo(() => {
+    const start = (page - 1) * PER_PAGE;
+    return filteredOrders.slice(start, start + PER_PAGE);
+  }, [filteredOrders, page]);
+
+  const invalidateDispatch = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["warehouse", "dispatch-dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["warehouse", "order-management"] });
+  }, [queryClient]);
+
+  const fullInvoiceMutation = useMutation({
+    mutationFn: (orderId: number) =>
+      orpc.warehouse.createFullDispatchInvoice.call({ orderId }),
+    onSuccess: (result) => {
+      toast.success(result.message || "Invoice created");
+      invalidateDispatch();
+      selectStatus("invoiced");
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to create invoice"),
+    onSettled: () => setActionLoading(null),
+  });
+
+  const partialInvoiceMutation = useMutation({
+    mutationFn: (input: {
+      orderId: number;
+      items: Array<{ orderItemId: number; quantity: number }>;
+    }) => orpc.warehouse.createPartialDispatchInvoice.call(input),
+    onSuccess: (result) => {
+      toast.success(result.message || "Partial invoice created");
+      setPartialInvoiceOrder(null);
+      setPartialQuantities({});
+      invalidateDispatch();
+      selectStatus(
+        result.fullyInvoiced ? "invoiced" : "partially_invoiced",
+      );
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to create partial invoice"),
+    onSettled: () => setActionLoading(null),
+  });
+
+  const handleCreateFullInvoice = useCallback(
+    (order: DispatchOrderRow) => {
+      setActionLoading(`full-${order.id}`);
+      fullInvoiceMutation.mutate(order.id);
+    },
+    [fullInvoiceMutation],
+  );
+
+  const openPartialInvoice = useCallback((order: DispatchOrderRow) => {
+    setPartialInvoiceOrder(order);
+    setPartialQuantities(buildDefaultPartialQuantities(order));
+  }, []);
+
+  const columns = useMemo(
+    () =>
+      getDispatchColumns({
+        actionLoading,
+        onCreateFullInvoice: handleCreateFullInvoice,
+        onOpenPartialInvoice: openPartialInvoice,
+      }),
+    [actionLoading, handleCreateFullInvoice, openPartialInvoice],
+  );
+
+  const table = useReactTable({
+    data: paginatedOrders,
+    columns,
+    state: { sorting, columnFilters },
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    manualPagination: true,
+    pageCount: totalPages,
+  });
+
+  const handlePartialQuantity = (
+    orderItemId: number,
+    remainingQty: number,
+    nextQuantity: number,
+  ) => {
+    setPartialQuantities((current) => ({
+      ...current,
+      [orderItemId]: Math.max(
+        0,
+        Math.min(
+          remainingQty,
+          Number.isFinite(nextQuantity) ? nextQuantity : 0,
+        ),
+      ),
+    }));
+  };
+
+  const handleCreatePartialInvoice = () => {
+    if (!partialInvoiceOrder) return;
+    const items = partialInvoiceOrder.items
+      .map((item) => ({
+        orderItemId: item.orderItemId,
+        quantity: partialQuantities[item.orderItemId] ?? 0,
+      }))
+      .filter((item) => item.quantity > 0);
+
+    if (items.length === 0) {
+      toast.error("Select at least one item quantity");
       return;
     }
 
-    setActionLoading(`pickup-${showVerifyPickupModal.invoiceId}`);
-    try {
-      const result = await apiFetch("/warehouse/dispatch/self-pickup/verify", {
-        method: "POST",
-        body: JSON.stringify({
-          invoiceId: showVerifyPickupModal.invoiceId,
-          otp: pickupOtpInput,
-        }),
-      });
-
-      toast.success(result.message || "Self pickup completed");
-      setShowVerifyPickupModal(null);
-      setPickupOtpInput("");
-      await fetchDispatchDashboard();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Pickup verification failed");
-    } finally {
-      setActionLoading(null);
-    }
+    setActionLoading(`partial-${partialInvoiceOrder.id}`);
+    partialInvoiceMutation.mutate({
+      orderId: partialInvoiceOrder.id,
+      items,
+    });
   };
 
-  const copyOtp = async (otp: string) => {
-    try {
-      await navigator.clipboard.writeText(otp);
-      toast.success("OTP copied");
-    } catch {
-      toast.error("Could not copy OTP");
-    }
-  };
-
-  const tabs: Array<{ id: TabId; label: string; count?: number }> = [
-    { id: "ready", label: "Ready", count: readyInvoices.length || undefined },
-    { id: "pickup", label: "Self Pickup", count: selfPickupInvoices.length || undefined },
-  ];
+  const showFrom = totalCount > 0 ? (page - 1) * PER_PAGE + 1 : 0;
+  const showTo = Math.min(page * PER_PAGE, totalCount);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dispatch Orders</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Dispatch decides whether an invoice completes by self pickup or moves into
-            Delivery Management.
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Dispatch Orders
+          </h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Create full or partial invoices for approved warehouse orders
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={() => router.push("/warehouse/dashboard/delivery-management")}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
-        >
-          Open Delivery Management
-          <ArrowRightIcon className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-        Self pickup completes and settles from this page with OTP. Delivery invoices
-        continue in Delivery Management for internal delivery handling.
-      </div>
-
-      {deliveryQueueCount > 0 ? (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
-          {deliveryQueueCount} invoice{deliveryQueueCount > 1 ? "s are" : " is"} already waiting in
-          Delivery Management.
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? "bg-gray-900 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/warehouse/dashboard/order-management"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
           >
-            <span>{tab.label}</span>
-            {tab.count ? (
-              <span
-                className={`rounded-full px-2 py-0.5 text-[11px] ${
-                  activeTab === tab.id
-                    ? "bg-white/15 text-white"
-                    : "bg-white text-gray-700"
-                }`}
-              >
-                {tab.count}
-              </span>
-            ) : null}
-          </button>
-        ))}
+            <ShoppingCart className="h-4 w-4" />
+            Order Management
+          </Link>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <Loader2Icon className="h-6 w-6 animate-spin text-gray-400" />
-        </div>
-      ) : activeTab === "ready" ? (
-        <div className="space-y-3">
-          {readyInvoices.length === 0 ? (
-            <EmptyState
-              icon={<CheckCircle2Icon className="h-10 w-10 text-emerald-300" />}
-              title="No invoices waiting for dispatch"
-              subtitle="Prepare a warehouse invoice first, then choose self pickup or delivery here."
+      <DashboardKpiGrid className="sm:grid-cols-2 xl:grid-cols-4">
+        {statusConfig.map((cfg) => {
+          const isActive = status === cfg.key;
+          const Icon = cfg.icon;
+          const { current, previous } = buildTrendTotals(allOrders, cfg.key);
+
+          return (
+            <DashboardKpiCard
+              key={cfg.key}
+              active={isActive}
+              chartData={buildChartData(allOrders, cfg.key)}
+              description={cfg.description}
+              footer={{
+                label: "Last 7 Days",
+                value: current.toLocaleString(),
+              }}
+              icon={<Icon className="h-6 w-6" />}
+              label={
+                cfg.key === "all"
+                  ? "All Dispatch"
+                  : cfg.key === "ready_for_dispatch"
+                    ? "Ready for Dispatch"
+                    : cfg.key === "partially_invoiced"
+                      ? "Partially Invoiced"
+                      : "Invoiced"
+              }
+              onClick={() => selectStatus(cfg.key)}
+              tone={cfg.tone}
+              trend={buildTrendCopy(current, previous)}
+              value={counts[cfg.key].toLocaleString()}
             />
-          ) : (
-            readyInvoices.map((invoice) => {
-              const expanded = expandedInvoice === invoice.id;
-              return (
-                <div key={invoice.id} className="overflow-hidden rounded-xl border bg-white shadow-sm">
-                  <button
-                    onClick={() => setExpandedInvoice(expanded ? null : invoice.id)}
-                    className="flex w-full items-center justify-between gap-3 p-4 text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50">
-                        <PackageIcon className="h-5 w-5 text-violet-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          {invoice.customer?.shopName || invoice.customer?.name || invoice.invoiceNumber}
-                        </p>
-                        <p className="mt-0.5 text-xs text-gray-500">
-                          {invoice.invoiceNumber} - {invoice.order?.orderNumber}
-                        </p>
-                      </div>
-                    </div>
+          );
+        })}
+      </DashboardKpiGrid>
 
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-bold text-gray-900">
-                        Tk {Number(invoice.grandTotal || 0).toLocaleString()}
-                      </span>
-                      {expanded ? (
-                        <ChevronUpIcon className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronDownIcon className="h-4 w-4 text-gray-400" />
-                      )}
-                    </div>
-                  </button>
-
-                  {expanded && (
-                    <div className="border-t bg-gray-50/70 p-4">
-                      <InvoiceMeta invoice={invoice} />
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          onClick={() =>
-                            void handleSelectMode(invoice.id, invoice.invoiceNumber, "self_pickup")
-                          }
-                          disabled={!!actionLoading}
-                          className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-60"
-                        >
-                          {actionLoading === `mode-${invoice.id}-self_pickup` ? (
-                            <Loader2Icon className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <KeyRound className="h-4 w-4" />
-                          )}
-                          Self Pickup
-                        </button>
-
-                        <button
-                          onClick={() =>
-                            void handleSelectMode(invoice.id, invoice.invoiceNumber, "delivery")
-                          }
-                          disabled={!!actionLoading}
-                          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
-                        >
-                          {actionLoading === `mode-${invoice.id}-delivery` ? (
-                            <Loader2Icon className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <TruckIcon className="h-4 w-4" />
-                          )}
-                          Delivery
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {selfPickupInvoices.length === 0 ? (
-            <EmptyState
-              icon={<KeyRound className="h-10 w-10 text-amber-300" />}
-              title="No self pickup handovers pending"
-              subtitle="Invoices marked for pickup will appear here with their completion OTP."
+      <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Order ID / Customer / Phone..."
+              className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
-          ) : (
-            selfPickupInvoices.map((invoice) => (
-              <div key={invoice.id} className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-2">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {invoice.customer?.shopName || invoice.customer?.name || invoice.invoiceNumber}
-                      </p>
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        {invoice.invoiceNumber} - {invoice.order?.orderNumber}
-                      </p>
-                    </div>
-
-                    <div className="space-y-1 text-xs text-gray-600">
-                      {invoice.order?.shippingName ? (
-                        <div className="flex items-center gap-2">
-                          <UserIcon className="h-3.5 w-3.5 text-gray-400" />
-                          <span>{invoice.order.shippingName}</span>
-                        </div>
-                      ) : null}
-                      {invoice.order?.shippingPhone ? (
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-500">Phone</span>
-                          <span>{invoice.order.shippingPhone}</span>
-                        </div>
-                      ) : null}
-                      <div className="flex items-start gap-2">
-                        <MapPinIcon className="mt-0.5 h-3.5 w-3.5 text-gray-400" />
-                        <span>
-                          {invoice.order?.shippingAddress}
-                          {invoice.order?.shippingArea ? `, ${invoice.order.shippingArea}` : ""}
-                          {invoice.order?.shippingCity ? `, ${invoice.order.shippingCity}` : ""}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="min-w-[260px] rounded-xl border border-amber-200 bg-amber-50 p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-amber-700">
-                        Pickup OTP
-                      </span>
-                      {invoice.completionOtp ? (
-                        <button
-                          type="button"
-                          onClick={() => void copyOtp(invoice.completionOtp!)}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-800"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                          Copy
-                        </button>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-3 rounded-lg bg-white px-4 py-3 text-center font-mono text-3xl font-bold tracking-[0.35em] text-amber-700">
-                      {invoice.completionOtp || "----"}
-                    </div>
-
-                    <p className="mt-3 text-xs text-amber-800">
-                      Verify this code from the retailer at handover to settle the invoice
-                      immediately.
-                    </p>
-
-                    <button
-                      onClick={() =>
-                        setShowVerifyPickupModal({
-                          invoiceId: invoice.id,
-                          invoiceNumber: invoice.invoiceNumber,
-                        })
-                      }
-                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700"
-                    >
-                      <CheckCircle2Icon className="h-4 w-4" />
-                      Verify Pickup
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
+          </div>
+          <Select
+            value={dateRange}
+            onValueChange={(v) => {
+              setDateRange(v as DateFilter);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-9 w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {dateOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      )}
 
-      {showVerifyPickupModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">Verify Self Pickup</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Confirm OTP for {showVerifyPickupModal.invoiceNumber}
-                </p>
-              </div>
+        <div className="flex items-center gap-1 border-b px-4 py-2">
+          {statusConfig.map((tab) => {
+            const active = status === tab.key;
+            return (
               <button
-                onClick={() => {
-                  setShowVerifyPickupModal(null);
-                  setPickupOtpInput("");
-                }}
-                className="text-gray-400 hover:text-gray-600"
+                key={tab.key}
+                type="button"
+                onClick={() => selectStatus(tab.key)}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
+                  active
+                    ? "bg-foreground text-background shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
               >
-                <XCircleIcon className="h-6 w-6" />
+                <span>{tab.emoji}</span>
+                {tab.label}
+                <Badge
+                  variant={active ? "secondary" : "outline"}
+                  className="h-5 min-w-5 justify-center px-1.5 text-[10px]"
+                >
+                  {counts[tab.key]}
+                </Badge>
               </button>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Pickup OTP
-              </label>
-              <input
-                type="text"
-                maxLength={4}
-                value={pickupOtpInput}
-                onChange={(event) => setPickupOtpInput(event.target.value.replace(/\D/g, ""))}
-                className="w-full rounded-xl border px-4 py-3 text-center font-mono text-2xl tracking-[0.45em] outline-none transition-colors focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                placeholder="0000"
-                autoFocus
-              />
-            </div>
-
-            <button
-              onClick={() => void handleVerifyPickup()}
-              disabled={actionLoading === `pickup-${showVerifyPickupModal.invoiceId}`}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-60"
-            >
-              {actionLoading === `pickup-${showVerifyPickupModal.invoiceId}` ? (
-                <Loader2Icon className="h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2Icon className="h-4 w-4" />
-              )}
-              Complete Pickup
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InvoiceMeta({ invoice }: { invoice: InvoiceCard }) {
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="space-y-1.5 text-xs text-gray-600">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            Customer
-          </p>
-          <div className="flex items-center gap-2">
-            <UserIcon className="h-3.5 w-3.5 text-gray-400" />
-            <span>{invoice.customer?.name || "N/A"}</span>
-          </div>
-          {invoice.customer?.phoneNumber ? (
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-500">Phone</span>
-              <span>{invoice.customer.phoneNumber}</span>
-            </div>
-          ) : null}
-          {invoice.customer?.shopName ? (
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-500">Shop</span>
-              <span>{invoice.customer.shopName}</span>
-            </div>
-          ) : null}
+            );
+          })}
         </div>
 
-        <div className="space-y-1.5 text-xs text-gray-600">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            Shipping
-          </p>
-          {invoice.order?.shippingName ? (
-            <div className="flex items-center gap-2">
-              <UserIcon className="h-3.5 w-3.5 text-gray-400" />
-              <span>{invoice.order.shippingName}</span>
-            </div>
-          ) : null}
-          {invoice.order?.shippingPhone ? (
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-500">Phone</span>
-              <span>{invoice.order.shippingPhone}</span>
-            </div>
-          ) : null}
-          <div className="flex items-start gap-2">
-            <MapPinIcon className="mt-0.5 h-3.5 w-3.5 text-gray-400" />
-            <span>
-              {invoice.order?.shippingAddress}
-              {invoice.order?.shippingArea ? `, ${invoice.order.shippingArea}` : ""}
-              {invoice.order?.shippingCity ? `, ${invoice.order.shippingCity}` : ""}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {invoice.items?.length ? (
-        <div>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            Invoice Items
-          </p>
-          <div className="space-y-1.5">
-            {invoice.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between rounded-lg border border-gray-100 bg-white p-2.5 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-gray-900">{item.productName}</p>
-                  {item.productSku ? (
-                    <p className="text-xs text-gray-400">{item.productSku}</p>
-                  ) : null}
-                </div>
-                <div className="text-right text-xs text-gray-600">
-                  <p>
-                    {item.quantity} x Tk {Number(item.unitPrice || 0).toLocaleString()}
-                  </p>
-                  <p className="font-semibold text-gray-900">
-                    Tk {Number(item.lineTotal || 0).toLocaleString()}
-                  </p>
-                </div>
+        {isLoading ? (
+          <div className="divide-y">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+                <div className="h-4 w-36 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-28 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+                <div className="ml-auto h-4 w-16 animate-pulse rounded bg-muted" />
+                <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
+                <div className="h-7 w-20 animate-pulse rounded bg-muted" />
               </div>
             ))}
           </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+        ) : isError ? (
+          <div className="grid min-h-[320px] place-items-center text-center">
+            <div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+                <AlertCircle className="h-6 w-6 text-red-500" />
+              </div>
+              <h2 className="mt-3 font-semibold">Failed to load dispatch orders</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Try refreshing or adjusting your filters.
+              </p>
+            </div>
+          </div>
+        ) : paginatedOrders.length === 0 ? (
+          <div className="grid min-h-[320px] place-items-center text-center">
+            <div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <Inbox className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h2 className="mt-3 font-semibold">No dispatch orders available</h2>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Orders will appear here as they move through approval and become
+                ready for invoicing.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow
+                  key={headerGroup.id}
+                  className="bg-muted/30 hover:bg-muted/30"
+                >
+                  {headerGroup.headers.map((header) => (
+                    <TableHead
+                      key={header.id}
+                      className="px-4 text-xs font-semibold uppercase tracking-wider"
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} className="px-4 py-3">
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
 
-function EmptyState({
-  icon,
-  title,
-  subtitle,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="rounded-xl border bg-white p-12 text-center">
-      <div className="mb-3 flex justify-center">{icon}</div>
-      <p className="text-sm font-semibold text-gray-900">{title}</p>
-      <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
+        {!isLoading && !isError && totalCount > 0 && (
+          <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm text-muted-foreground">
+              Showing {showFrom}–{showTo} of {totalCount} orders
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page <= 1}
+                onClick={() => setPage(1)}
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {generatePageNumbers(page, totalPages).map((p, i) =>
+                p === "..." ? (
+                  <span
+                    key={`dot-${i}`}
+                    className="px-1 text-xs text-muted-foreground"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <Button
+                    key={p}
+                    variant={p === page ? "default" : "outline"}
+                    size="icon"
+                    className="h-8 w-8 text-xs"
+                    onClick={() => setPage(p as number)}
+                  >
+                    {p}
+                  </Button>
+                ),
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page >= totalPages}
+                onClick={() => setPage(totalPages)}
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <PartialInvoiceDialog
+        open={!!partialInvoiceOrder}
+        order={partialInvoiceOrder}
+        quantities={partialQuantities}
+        actionLoading={actionLoading}
+        onClose={() => {
+          setPartialInvoiceOrder(null);
+          setPartialQuantities({});
+        }}
+        onCreate={() => void handleCreatePartialInvoice()}
+        onQuantityChange={handlePartialQuantity}
+      />
     </div>
   );
 }

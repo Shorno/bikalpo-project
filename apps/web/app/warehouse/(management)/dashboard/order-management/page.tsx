@@ -16,13 +16,30 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Clock3,
+  FileText,
   Inbox,
+  Package,
   Search,
   ShoppingCart,
   Truck,
+  UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ElementType,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  DashboardKpiCard,
+  type DashboardKpiChartPoint,
+  DashboardKpiGrid,
+  type DashboardKpiTone,
+  type DashboardKpiTrend,
+} from "@/components/dashboard/dashboard-kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,67 +59,87 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
-import { type OrderRow, getColumnsForSource } from "./_components/order-columns";
+import {
+  getColumnsForSource,
+  type OrderRow,
+} from "./_components/order-columns";
 
 /* ── Constants ───────────────────────────────────────────── */
 
 type Source = "all" | "direct" | "salesman" | "estimate" | "pre_order";
-type StatusFilter = "all" | "pending" | "accepted" | "processing" | "rejected";
+type StatusFilter =
+  | "all"
+  | "pending"
+  | "approved"
+  | "ready_for_dispatch"
+  | "partially_invoiced"
+  | "invoiced"
+  | "processing"
+  | "rejected";
 type PaymentFilter = "all" | "paid" | "due" | "partial";
 type DateFilter = "today" | "this_month" | "custom" | "all";
+type OrderTrendKey = "all" | "direct" | "salesman" | "estimate" | "preOrder";
+type OrderTrendPoint = Record<OrderTrendKey, number> & {
+  date: string;
+  label: string;
+};
+type OrderTrendSummary = {
+  current: Record<OrderTrendKey, number>;
+  previous: Record<OrderTrendKey, number>;
+};
 
 const sourceConfig: {
   key: Source;
   label: string;
   emoji: string;
+  icon: ElementType;
+  tone: DashboardKpiTone;
   enabled: boolean;
-  color: string;
-  activeColor: string;
   description: string;
 }[] = [
   {
     key: "all",
     label: "All",
     emoji: "📦",
+    icon: Package,
+    tone: "slate",
     enabled: true,
-    color: "text-foreground",
-    activeColor: "border-gray-200 bg-gray-50 ring-gray-100",
     description: "All order types",
   },
   {
     key: "direct",
     label: "Direct",
     emoji: "🔴",
+    icon: ShoppingCart,
+    tone: "red",
     enabled: true,
-    color: "text-red-600",
-    activeColor: "border-red-200 bg-red-50 ring-red-100",
     description: "Retailer checkout",
   },
   {
     key: "salesman",
     label: "Salesman",
     emoji: "🔵",
+    icon: UserRound,
+    tone: "blue",
     enabled: false,
-    color: "text-blue-600",
-    activeColor: "border-blue-200 bg-blue-50 ring-blue-100",
     description: "Field sales flow",
   },
   {
     key: "estimate",
     label: "Estimate",
     emoji: "🟣",
+    icon: FileText,
+    tone: "violet",
     enabled: false,
-    color: "text-violet-600",
-    activeColor: "border-violet-200 bg-violet-50 ring-violet-100",
     description: "Quote conversions",
   },
   {
     key: "pre_order",
     label: "Pre-Order",
     emoji: "🟡",
+    icon: Clock3,
+    tone: "amber",
     enabled: false,
-    color: "text-amber-600",
-    activeColor: "border-amber-200 bg-amber-50 ring-amber-100",
     description: "Advance payment",
   },
 ];
@@ -132,8 +169,11 @@ const sourceDescriptions: Record<Source, { title: string; subtitle: string }> = 
 
 const statusOptions = [
   { value: "all", label: "All Status" },
-  { value: "pending", label: "Pending" },
-  { value: "accepted", label: "Accepted" },
+  { value: "pending", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "ready_for_dispatch", label: "Ready for Dispatch" },
+  { value: "partially_invoiced", label: "Partially Invoiced" },
+  { value: "invoiced", label: "Invoiced" },
   { value: "processing", label: "Processing" },
   { value: "rejected", label: "Rejected" },
 ];
@@ -149,6 +189,50 @@ const dateOptions = [
   { value: "today", label: "Today" },
   { value: "this_month", label: "This Month" },
 ];
+
+const sourceTrendKey: Record<Source, OrderTrendKey> = {
+  all: "all",
+  direct: "direct",
+  salesman: "salesman",
+  estimate: "estimate",
+  pre_order: "preOrder",
+};
+
+function buildTrendCopy(current: number, previous: number): DashboardKpiTrend {
+  if (current === 0 && previous === 0) {
+    return {
+      value: "0%",
+      label: "vs Previous 7 Days",
+      direction: "neutral",
+    };
+  }
+
+  if (previous === 0) {
+    return {
+      value: `+${current.toLocaleString()}`,
+      label: "new vs Previous 7 Days",
+      direction: "up",
+    };
+  }
+
+  const change = Math.round(((current - previous) / previous) * 100);
+
+  return {
+    value: `${change > 0 ? "+" : ""}${change}%`,
+    label: "vs Previous 7 Days",
+    direction: change > 0 ? "up" : change < 0 ? "down" : "neutral",
+  };
+}
+
+function buildChartData(
+  trend: OrderTrendPoint[],
+  key: OrderTrendKey,
+): DashboardKpiChartPoint[] {
+  return trend.map((point) => ({
+    label: point.label,
+    value: point[key],
+  }));
+}
 
 /* ── Page ────────────────────────────────────────────────── */
 
@@ -167,15 +251,19 @@ export default function WarehouseOrderManagementPage() {
   // Debounce search
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
   useEffect(() => {
-    timerRef.current = setTimeout(() => setDebouncedSearch(search), 350);
+    timerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 350);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [search]);
 
-  // Reset page on filter change
-  const resetPage = useCallback(() => setPage(1), []);
-  useEffect(resetPage, [source, status, payment, dateRange, debouncedSearch, resetPage]);
+  const selectSource = (nextSource: Source) => {
+    setSource(nextSource);
+    setPage(1);
+  };
 
   const queryInput = useMemo(
     () => ({
@@ -198,6 +286,8 @@ export default function WarehouseOrderManagementPage() {
   const orders = (data?.orders ?? []) as OrderRow[];
   const pagination = data?.pagination;
   const summary = data?.summary ?? { direct: 0, salesman: 0, estimate: 0, preOrder: 0 };
+  const trend = (data?.trend ?? []) as OrderTrendPoint[];
+  const trendSummary = data?.trendSummary as OrderTrendSummary | undefined;
   const counts: Record<Source, number> = {
     all: summary.direct + summary.salesman + summary.estimate + summary.preOrder,
     direct: summary.direct,
@@ -225,7 +315,6 @@ export default function WarehouseOrderManagementPage() {
   const totalCount = pagination?.totalCount ?? 0;
   const showFrom = totalCount > 0 ? (page - 1) * 20 + 1 : 0;
   const showTo = Math.min(page * 20, totalCount);
-  const currentSource = sourceConfig.find((s) => s.key === source)!;
   const desc = sourceDescriptions[source];
 
   return (
@@ -252,48 +341,36 @@ export default function WarehouseOrderManagementPage() {
       </div>
 
       {/* ─── Summary Cards ─── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <DashboardKpiGrid>
         {sourceConfig.map((cfg) => {
           const isActive = source === cfg.key;
+          const Icon = cfg.icon;
+          const trendKey = sourceTrendKey[cfg.key];
+          const currentTrendTotal = trendSummary?.current[trendKey] ?? 0;
+          const previousTrendTotal = trendSummary?.previous[trendKey] ?? 0;
+
           return (
-            <button
+            <DashboardKpiCard
               key={cfg.key}
-              type="button"
+              active={isActive}
+              badge={!cfg.enabled ? "Coming soon" : undefined}
+              chartData={buildChartData(trend, trendKey)}
+              description={cfg.description}
               disabled={!cfg.enabled}
-              onClick={() => setSource(cfg.key)}
-              className={cn(
-                "group relative overflow-hidden rounded-xl border p-4 text-left transition-all",
-                isActive
-                  ? cn(cfg.activeColor, "ring-2 shadow-sm")
-                  : cfg.enabled
-                    ? "bg-background hover:bg-muted/50 hover:shadow-sm"
-                    : "cursor-not-allowed bg-muted/30 opacity-60",
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-lg">{cfg.emoji}</span>
-                <ShoppingCart className="h-4 w-4 text-muted-foreground/60" />
-              </div>
-              <div className="mt-3">
-                <div className={cn("text-3xl font-bold tabular-nums tracking-tight", isActive ? cfg.color : "text-foreground")}>
-                  {counts[cfg.key]}
-                </div>
-                <div className="mt-1 text-sm font-medium text-foreground">
-                  {cfg.label}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {cfg.description}
-                </div>
-              </div>
-              {!cfg.enabled && (
-                <span className="absolute right-3 top-3 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  Coming soon
-                </span>
-              )}
-            </button>
+              footer={{
+                label: "Last 7 Days",
+                value: currentTrendTotal.toLocaleString(),
+              }}
+              icon={<Icon className="h-6 w-6" />}
+              label={cfg.key === "all" ? "All Orders" : `${cfg.label} Orders`}
+              onClick={() => selectSource(cfg.key)}
+              tone={cfg.tone}
+              trend={buildTrendCopy(currentTrendTotal, previousTrendTotal)}
+              value={counts[cfg.key].toLocaleString()}
+            />
           );
         })}
-      </div>
+      </DashboardKpiGrid>
 
       {/* ─── Filter Bar ─── */}
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
@@ -307,7 +384,13 @@ export default function WarehouseOrderManagementPage() {
               className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
           </div>
-          <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
+          <Select
+            value={status}
+            onValueChange={(v) => {
+              setStatus(v as StatusFilter);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="h-9 w-[130px]">
               <SelectValue />
             </SelectTrigger>
@@ -317,7 +400,13 @@ export default function WarehouseOrderManagementPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={payment} onValueChange={(v) => setPayment(v as PaymentFilter)}>
+          <Select
+            value={payment}
+            onValueChange={(v) => {
+              setPayment(v as PaymentFilter);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="h-9 w-[130px]">
               <SelectValue />
             </SelectTrigger>
@@ -327,7 +416,13 @@ export default function WarehouseOrderManagementPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateFilter)}>
+          <Select
+            value={dateRange}
+            onValueChange={(v) => {
+              setDateRange(v as DateFilter);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="h-9 w-[130px]">
               <SelectValue />
             </SelectTrigger>
@@ -348,7 +443,7 @@ export default function WarehouseOrderManagementPage() {
                 key={tab.key}
                 type="button"
                 disabled={!tab.enabled}
-                onClick={() => setSource(tab.key)}
+                onClick={() => selectSource(tab.key)}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
                   active
