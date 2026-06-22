@@ -424,6 +424,24 @@ export function useMySuppliers(params?: {
   );
 }
 
+/** Active platform-connected suppliers with network filters */
+export function useConnectedSuppliers(params?: {
+  search?: string;
+  status?: "all" | "active" | "inactive";
+  category?: string;
+}) {
+  return useQuery(
+    orpc.shopOwner.getConnectedSuppliers.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        status: params?.status ?? "all",
+        category: params?.category || undefined,
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
 /** Full supplier detail profile */
 export function useSupplierDetail(warehouseId: string) {
   return useQuery(

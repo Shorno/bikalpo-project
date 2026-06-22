@@ -131,6 +131,12 @@ const shopOwnerNavGroups: NavGroup[] = [
     ],
   },
   {
+    label: "Network",
+    items: [
+      { title: "Connected Suppliers", url: `${D}/connected-suppliers`, icon: UsersIcon },
+    ],
+  },
+  {
     label: "E-Commerce Store",
     items: [
       { title: "Product Sync", url: `${D}/product-sync`, icon: PackageIcon },
