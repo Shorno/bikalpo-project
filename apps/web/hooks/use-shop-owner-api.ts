@@ -409,10 +409,16 @@ export function usePurchaseHistory(params?: {
 }
 
 /** List of suppliers (warehouses this shop has ordered from) */
-export function useMySuppliers(search?: string) {
+export function useMySuppliers(params?: {
+  search?: string;
+  status?: "all" | "with_due" | "no_due";
+}) {
   return useQuery(
     orpc.shopOwner.getMySuppliers.queryOptions({
-      input: { search: search || undefined },
+      input: {
+        search: params?.search || undefined,
+        status: params?.status ?? "all",
+      },
       staleTime: 1000 * 30,
     }),
   );

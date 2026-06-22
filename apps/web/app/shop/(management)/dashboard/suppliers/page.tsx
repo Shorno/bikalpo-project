@@ -30,7 +30,9 @@ export default function SuppliersPage() {
     (window as any).__supTimer = setTimeout(() => setSearchDebounced(v), 400);
   }, []);
 
-  const { data, isLoading, isError } = useMySuppliers(searchDebounced || undefined);
+  const { data, isLoading, isError } = useMySuppliers({
+    search: searchDebounced || undefined,
+  });
   const suppliers = data?.suppliers ?? [];
 
   return (

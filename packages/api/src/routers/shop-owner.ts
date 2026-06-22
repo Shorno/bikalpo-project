@@ -96,6 +96,39 @@ const productFiltersSchema = z.object({
     limit: z.string().optional().default("12"),
 });
 
+const PAID_INVOICE_STATUSES = new Set(["collected", "settled"]);
+const NON_PURCHASE_ORDER_STATUSES = new Set(["cancelled", "returned"]);
+const PAYABLE_ORDER_STATUSES = new Set(["confirmed", "processing", "delivered"]);
+
+function toSafeNumber(value: string | number | null | undefined) {
+    return Number(value || 0);
+}
+
+function isOrderPaid(
+    orderPaymentStatus: string | null | undefined,
+    invoicePaymentStatus: string | null | undefined,
+) {
+    return (
+        orderPaymentStatus === "paid"
+        || PAID_INVOICE_STATUSES.has(invoicePaymentStatus || "")
+    );
+}
+
+function isPurchaseOrderStatus(status: string | null | undefined) {
+    return !NON_PURCHASE_ORDER_STATUSES.has(status || "");
+}
+
+function isPayableOrder(
+    status: string | null | undefined,
+    orderPaymentStatus: string | null | undefined,
+    invoicePaymentStatus: string | null | undefined,
+) {
+    return (
+        PAYABLE_ORDER_STATUSES.has(status || "")
+        && !isOrderPaid(orderPaymentStatus, invoicePaymentStatus)
+    );
+}
+
 // ────────────────────────────────────────────────────────────────
 // B2B Queries (Shop Owner as Buyer — TRADE variants)
 // ────────────────────────────────────────────────────────────────
@@ -2652,26 +2685,126 @@ const orderQueries = {
             tags: ["Shop Owner"],
             summary: "List suppliers (warehouses ordered from)",
         })
-        .input(z.object({ search: z.string().optional() }))
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z.enum(["all", "with_due", "no_due"]).default("all"),
+            }),
+        )
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            // Get distinct warehouseIds from orders
-            const warehouseOrders = await db
+            const supplierOrders = await db
                 .select({
                     warehouseId: order.warehouseId,
-                    totalOrders: count(),
-                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("ta"),
-                    lastOrderDate: sql<Date>`MAX(${order.createdAt})`.as("lo"),
-                    pendingCount: sql<number>`count(*) filter (where ${order.status} in ('pending', 'confirmed', 'processing'))`.as("pc"),
+                    orderId: order.id,
+                    status: order.status,
+                    paymentStatus: order.paymentStatus,
+                    total: order.total,
+                    createdAt: order.createdAt,
+                    invoicePaymentStatus: invoice.paymentStatus,
                 })
                 .from(order)
-                .where(and(eq(order.userId, userId), sql`${order.warehouseId} is not null`))
-                .groupBy(order.warehouseId);
+                .leftJoin(
+                    invoice,
+                    and(
+                        eq(invoice.orderId, order.id),
+                        eq(invoice.invoiceType, "main"),
+                    ),
+                )
+                .where(and(eq(order.userId, userId), sql`${order.warehouseId} is not null`));
 
-            if (warehouseOrders.length === 0) return { suppliers: [] };
+            if (supplierOrders.length === 0) {
+                return {
+                    summary: {
+                        totalSuppliers: 0,
+                        payableSuppliers: 0,
+                        totalPayable: 0,
+                    },
+                    suppliers: [],
+                };
+            }
 
-            const whIds = warehouseOrders.map((w) => w.warehouseId!).filter(Boolean);
+            const supplierMap = new Map<
+                string,
+                {
+                    warehouseId: string;
+                    totalOrders: number;
+                    totalPurchased: number;
+                    totalPaid: number;
+                    totalPayable: number;
+                    payableOrders: number;
+                    pendingCount: number;
+                    lastOrderDate: Date | null;
+                    lastPurchaseAmount: number;
+                }
+            >();
+
+            for (const row of supplierOrders) {
+                const warehouseId = row.warehouseId;
+                if (!warehouseId) continue;
+
+                const total = toSafeNumber(row.total);
+                const existing = supplierMap.get(warehouseId) ?? {
+                    warehouseId,
+                    totalOrders: 0,
+                    totalPurchased: 0,
+                    totalPaid: 0,
+                    totalPayable: 0,
+                    payableOrders: 0,
+                    pendingCount: 0,
+                    lastOrderDate: null,
+                    lastPurchaseAmount: 0,
+                };
+
+                existing.totalOrders += 1;
+
+                if (
+                    !existing.lastOrderDate
+                    || (row.createdAt && row.createdAt > existing.lastOrderDate)
+                ) {
+                    existing.lastOrderDate = row.createdAt;
+                    existing.lastPurchaseAmount = total;
+                }
+
+                if (["pending", "confirmed", "processing"].includes(row.status)) {
+                    existing.pendingCount += 1;
+                }
+
+                if (isPurchaseOrderStatus(row.status)) {
+                    existing.totalPurchased += total;
+                }
+
+                if (isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)) {
+                    existing.totalPaid += total;
+                }
+
+                if (
+                    isPayableOrder(
+                        row.status,
+                        row.paymentStatus,
+                        row.invoicePaymentStatus,
+                    )
+                ) {
+                    existing.totalPayable += total;
+                    existing.payableOrders += 1;
+                }
+
+                supplierMap.set(warehouseId, existing);
+            }
+
+            const allSuppliers = Array.from(supplierMap.values());
+            const baseSummary = {
+                totalSuppliers: allSuppliers.length,
+                payableSuppliers: allSuppliers.filter((supplier) => supplier.totalPayable > 0)
+                    .length,
+                totalPayable: allSuppliers.reduce(
+                    (total, supplier) => total + supplier.totalPayable,
+                    0,
+                ),
+            };
+
+            const whIds = Array.from(supplierMap.keys());
             const warehouseUsers = await db
                 .select({
                     id: user.id,
@@ -2684,30 +2817,86 @@ const orderQueries = {
                 .from(user)
                 .where(inArray(user.id, whIds));
 
-            const userMap = new Map(warehouseUsers.map((u) => [u.id, u]));
+            const connections = await db
+                .select({
+                    warehouseId: shopWarehouseConnection.warehouseId,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                    status: shopWarehouseConnection.status,
+                })
+                .from(shopWarehouseConnection)
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.shopId, userId),
+                        inArray(shopWarehouseConnection.warehouseId, whIds),
+                    ),
+                );
 
-            let suppliers = warehouseOrders.map((wo) => {
-                const u = userMap.get(wo.warehouseId!);
+            const userMap = new Map(warehouseUsers.map((u) => [u.id, u]));
+            const connectionMap = new Map(
+                connections.map((connection) => [connection.warehouseId, connection]),
+            );
+
+            let suppliers = Array.from(supplierMap.values()).map((supplier) => {
+                const u = userMap.get(supplier.warehouseId);
+                const connection = connectionMap.get(supplier.warehouseId);
                 return {
-                    warehouseId: wo.warehouseId!,
+                    warehouseId: supplier.warehouseId,
                     name: u?.warehouseName || u?.shopName || u?.name || "Unknown",
                     phone: u?.phoneNumber || null,
                     email: u?.email || null,
-                    totalOrders: Number(wo.totalOrders),
-                    totalAmount: Number(wo.totalAmount),
-                    lastOrderDate: wo.lastOrderDate,
-                    pendingCount: Number(wo.pendingCount),
+                    totalOrders: supplier.totalOrders,
+                    totalPurchased: supplier.totalPurchased,
+                    totalPaid: supplier.totalPaid,
+                    totalPayable: supplier.totalPayable,
+                    payableOrders: supplier.payableOrders,
+                    pendingCount: supplier.pendingCount,
+                    lastOrderDate: supplier.lastOrderDate,
+                    lastPurchaseAmount: supplier.lastPurchaseAmount,
+                    hasDue: supplier.totalPayable > 0,
+                    connectionStatus: connection?.status || null,
+                    connectedAt: connection?.connectedAt || null,
+                    lastOrderedAt: connection?.lastOrderedAt || null,
                 };
             });
 
             if (input.search) {
                 const s = input.search.toLowerCase();
-                suppliers = suppliers.filter((sup) => sup.name.toLowerCase().includes(s));
+                suppliers = suppliers.filter((sup) =>
+                    [sup.name, sup.phone, sup.email]
+                        .filter(Boolean)
+                        .some((value) => value!.toLowerCase().includes(s)),
+                );
             }
 
-            suppliers.sort((a, b) => Number(b.totalAmount) - Number(a.totalAmount));
+            if (input.status === "with_due") {
+                suppliers = suppliers.filter((sup) => sup.hasDue);
+            } else if (input.status === "no_due") {
+                suppliers = suppliers.filter((sup) => !sup.hasDue);
+            }
 
-            return { suppliers };
+            suppliers.sort((a, b) => {
+                if (Number(b.hasDue) !== Number(a.hasDue)) {
+                    return Number(b.hasDue) - Number(a.hasDue);
+                }
+
+                if (b.totalPayable !== a.totalPayable) {
+                    return b.totalPayable - a.totalPayable;
+                }
+
+                if (b.totalPurchased !== a.totalPurchased) {
+                    return b.totalPurchased - a.totalPurchased;
+                }
+
+                return (
+                    (b.lastOrderDate?.getTime() || 0) - (a.lastOrderDate?.getTime() || 0)
+                );
+            });
+
+            return {
+                summary: baseSummary,
+                suppliers,
+            };
         }),
 
     /**
