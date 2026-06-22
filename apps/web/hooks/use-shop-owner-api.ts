@@ -452,6 +452,16 @@ export function useSupplierDetail(warehouseId: string) {
   );
 }
 
+/** Full detail profile for a platform-connected supplier */
+export function useConnectedSupplierDetail(warehouseId: string) {
+  return useQuery(
+    orpc.shopOwner.getConnectedSupplierDetail.queryOptions({
+      input: { warehouseId },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
 /** Dashboard summary stats */
 export function useDashboardStats() {
   return useQuery(
