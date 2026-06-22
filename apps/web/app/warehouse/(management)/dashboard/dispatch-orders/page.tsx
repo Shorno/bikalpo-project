@@ -1,219 +1,433 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeftIcon,
-  CheckCircle2Icon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  FileTextIcon,
-  Loader2Icon,
-  MapPinIcon,
-  PackageIcon,
-  PlusIcon,
-  ReceiptTextIcon,
-  UserIcon,
+  type ColumnFiltersState,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  type SortingState,
+  useReactTable,
+} from "@tanstack/react-table";
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  FileText,
+  Inbox,
+  Package,
+  PackageCheck,
+  Search,
+  ShoppingCart,
 } from "lucide-react";
 import Link from "next/link";
+import {
+  type ElementType,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
+import {
+  DashboardKpiCard,
+  type DashboardKpiChartPoint,
+  DashboardKpiGrid,
+  type DashboardKpiTone,
+  type DashboardKpiTrend,
+} from "@/components/dashboard/dashboard-kpi-card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { orpc } from "@/utils/orpc";
+import {
+  type DispatchOrderRow,
+  type DispatchStatus,
+  getDispatchColumns,
+} from "./_components/dispatch-columns";
+import { PartialInvoiceDialog } from "./_components/partial-invoice-dialog";
 
-type TabId = "ready" | "partial" | "invoiced";
+type StatusFilter = "all" | DispatchStatus;
+type DateFilter = "today" | "this_month" | "all";
 
-interface DispatchOrderItem {
-  orderItemId: number;
-  productId: number;
-  productName: string;
-  productSku: string;
-  approvedQty: number;
-  invoicedQty: number;
-  remainingQty: number;
-  unitPrice: string;
-  lineTotal: string;
+const PER_PAGE = 20;
+
+const statusConfig: {
+  key: StatusFilter;
+  label: string;
+  emoji: string;
+  icon: ElementType;
+  tone: DashboardKpiTone;
+  description: string;
+}[] = [
+  {
+    key: "all",
+    label: "All",
+    emoji: "📦",
+    icon: Package,
+    tone: "slate",
+    description: "All dispatch-stage orders",
+  },
+  {
+    key: "ready_for_dispatch",
+    label: "Ready",
+    emoji: "🟣",
+    icon: PackageCheck,
+    tone: "violet",
+    description: "Approved and awaiting invoice",
+  },
+  {
+    key: "partially_invoiced",
+    label: "Partial",
+    emoji: "🟡",
+    icon: FileText,
+    tone: "amber",
+    description: "Some quantities still uninvoiced",
+  },
+  {
+    key: "invoiced",
+    label: "Invoiced",
+    emoji: "🟢",
+    icon: FileText,
+    tone: "emerald",
+    description: "All approved quantities invoiced",
+  },
+];
+
+const dateOptions = [
+  { value: "all", label: "All Dates" },
+  { value: "today", label: "Today" },
+  { value: "this_month", label: "This Month" },
+];
+
+function getOrderDate(order: DispatchOrderRow) {
+  return new Date(order.readyAt ?? order.createdAt);
 }
 
-interface DispatchOrder {
-  id: number;
-  orderNumber: string;
-  status: "ready_for_dispatch" | "partially_invoiced" | "invoiced";
-  createdAt: string;
-  readyAt: string | null;
-  customer: {
-    id: string;
-    name: string;
-    phoneNumber: string | null;
-    shopName: string | null;
-    warehouseName: string | null;
+function matchesDateFilter(order: DispatchOrderRow, dateRange: DateFilter) {
+  if (dateRange === "all") return true;
+  const date = getOrderDate(order);
+  const now = new Date();
+  if (dateRange === "today") {
+    return (
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate()
+    );
+  }
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth()
+  );
+}
+
+function matchesSearch(order: DispatchOrderRow, search: string) {
+  if (!search.trim()) return true;
+  const query = search.trim().toLowerCase();
+  const customer =
+    order.customer.warehouseName ||
+    order.customer.shopName ||
+    order.customer.name ||
+    order.shipping.name;
+  return (
+    order.orderNumber.toLowerCase().includes(query) ||
+    customer.toLowerCase().includes(query) ||
+    (order.customer.phoneNumber ?? "").toLowerCase().includes(query) ||
+    order.shipping.phone.toLowerCase().includes(query)
+  );
+}
+
+function buildTrendCopy(current: number, previous: number): DashboardKpiTrend {
+  if (current === 0 && previous === 0) {
+    return {
+      value: "0%",
+      label: "vs Previous 7 Days",
+      direction: "neutral",
+    };
+  }
+
+  if (previous === 0) {
+    return {
+      value: `+${current.toLocaleString()}`,
+      label: "new vs Previous 7 Days",
+      direction: "up",
+    };
+  }
+
+  const change = Math.round(((current - previous) / previous) * 100);
+  return {
+    value: `${change > 0 ? "+" : ""}${change}%`,
+    label: "vs Previous 7 Days",
+    direction: change > 0 ? "up" : change < 0 ? "down" : "neutral",
   };
-  shipping: {
-    name: string;
-    phone: string;
-    address: string;
-    city: string;
-    area: string | null;
+}
+
+function buildChartData(
+  orders: DispatchOrderRow[],
+  status: StatusFilter,
+): DashboardKpiChartPoint[] {
+  const now = new Date();
+  const points: DashboardKpiChartPoint[] = [];
+
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const day = new Date(now);
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() - offset);
+
+    const nextDay = new Date(day);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    const value = orders.filter((order) => {
+      if (status !== "all" && order.status !== status) return false;
+      const orderDate = getOrderDate(order);
+      return orderDate >= day && orderDate < nextDay;
+    }).length;
+
+    points.push({
+      label: day.toLocaleDateString("en-BD", { weekday: "short" }),
+      value,
+    });
+  }
+
+  return points;
+}
+
+function buildTrendTotals(orders: DispatchOrderRow[], status: StatusFilter) {
+  const now = new Date();
+  const currentStart = new Date(now);
+  currentStart.setHours(0, 0, 0, 0);
+  currentStart.setDate(currentStart.getDate() - 6);
+
+  const previousStart = new Date(currentStart);
+  previousStart.setDate(previousStart.getDate() - 7);
+
+  const previousEnd = new Date(currentStart);
+
+  const inRange = (order: DispatchOrderRow, start: Date, end: Date) => {
+    if (status !== "all" && order.status !== status) return false;
+    const orderDate = getOrderDate(order);
+    return orderDate >= start && orderDate < end;
   };
-  progress: {
-    approvedQty: number;
-    invoicedQty: number;
-    remainingQty: number;
-    approvedTotal: string;
-    invoicedTotal: string;
-    remainingTotal: string;
-  };
-  items: DispatchOrderItem[];
-  invoices: Array<{
-    id: number;
-    invoiceNumber: string;
-    invoiceType: "main" | "split";
-    splitSequence: number | null;
-    grandTotal: string;
-    deliveryStatus: string;
-    createdAt: string;
-  }>;
+
+  const current = orders.filter((order) =>
+    inRange(order, currentStart, new Date(now.getTime() + 86_400_000)),
+  ).length;
+  const previous = orders.filter((order) =>
+    inRange(order, previousStart, previousEnd),
+  ).length;
+
+  return { current, previous };
 }
 
-interface DispatchDashboardResponse {
-  readyOrders: DispatchOrder[];
-  partiallyInvoicedOrders: DispatchOrder[];
-  invoicedOrders: DispatchOrder[];
+function generatePageNumbers(
+  current: number,
+  total: number,
+): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (current > 3) pages.push("...");
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (current < total - 2) pages.push("...");
+  pages.push(total);
+  return pages;
 }
 
-function formatMoney(value: string | number) {
-  return `Tk ${Number(value || 0).toLocaleString("en-BD")}`;
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "Not set";
-  return new Date(value).toLocaleDateString("en-BD", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function statusLabel(status: DispatchOrder["status"]) {
-  if (status === "invoiced") return "Invoiced";
-  if (status === "partially_invoiced") return "Partially Invoiced";
-  return "Ready for Dispatch";
+function buildDefaultPartialQuantities(order: DispatchOrderRow) {
+  return order.items.reduce<Record<number, number>>((quantities, item) => {
+    if (item.remainingQty > 0) {
+      quantities[item.orderItemId] = item.remainingQty;
+    }
+    return quantities;
+  }, {});
 }
 
 export default function DispatchOrdersPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("ready");
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const [status, setStatus] = useState<StatusFilter>("ready_for_dispatch");
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateFilter>("all");
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [readyOrders, setReadyOrders] = useState<DispatchOrder[]>([]);
-  const [partialOrders, setPartialOrders] = useState<DispatchOrder[]>([]);
-  const [invoicedOrders, setInvoicedOrders] = useState<DispatchOrder[]>([]);
-  const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
   const [partialInvoiceOrder, setPartialInvoiceOrder] =
-    useState<DispatchOrder | null>(null);
+    useState<DispatchOrderRow | null>(null);
   const [partialQuantities, setPartialQuantities] = useState<
     Record<number, number>
   >({});
 
-  const apiBase = process.env.NEXT_PUBLIC_AUTH_URL || "";
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 350);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [search]);
 
-  const apiFetch = useCallback(
-    async <T,>(path: string, opts?: RequestInit): Promise<T> => {
-      const res = await fetch(`${apiBase}${path}`, {
-        ...opts,
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...opts?.headers },
-      });
+  const selectStatus = (nextStatus: StatusFilter) => {
+    setStatus(nextStatus);
+    setPage(1);
+  };
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || `API error ${res.status}`);
-      }
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["warehouse", "dispatch-dashboard"],
+    queryFn: () => orpc.warehouse.getDispatchDashboard.call({}),
+  });
 
-      return res.json();
-    },
-    [apiBase],
+  const allOrders = useMemo((): DispatchOrderRow[] => {
+    if (!data) return [];
+    return [
+      ...data.readyOrders,
+      ...data.partiallyInvoicedOrders,
+      ...data.invoicedOrders,
+    ].map((order) => ({
+      ...order,
+      status: order.status as DispatchStatus,
+    })) as unknown as DispatchOrderRow[];
+  }, [data]);
+
+  const counts: Record<StatusFilter, number> = useMemo(
+    () => ({
+      all: allOrders.length,
+      ready_for_dispatch: data?.readyOrders.length ?? 0,
+      partially_invoiced: data?.partiallyInvoicedOrders.length ?? 0,
+      invoiced: data?.invoicedOrders.length ?? 0,
+    }),
+    [allOrders.length, data],
   );
 
-  const fetchDispatchDashboard = useCallback(async () => {
-    const data = await apiFetch<DispatchDashboardResponse>(
-      "/warehouse/dispatch/dashboard",
-    );
-    setReadyOrders(data.readyOrders || []);
-    setPartialOrders(data.partiallyInvoicedOrders || []);
-    setInvoicedOrders(data.invoicedOrders || []);
-  }, [apiFetch]);
+  const filteredOrders = useMemo(() => {
+    return allOrders.filter((order) => {
+      if (status !== "all" && order.status !== status) return false;
+      if (!matchesSearch(order, debouncedSearch)) return false;
+      if (!matchesDateFilter(order, dateRange)) return false;
+      return true;
+    });
+  }, [allOrders, status, debouncedSearch, dateRange]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      await fetchDispatchDashboard();
-    } catch (error) {
-      console.error("Dispatch load failed:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to load dispatch data",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchDispatchDashboard]);
+  const totalCount = filteredOrders.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
+  const paginatedOrders = useMemo(() => {
+    const start = (page - 1) * PER_PAGE;
+    return filteredOrders.slice(start, start + PER_PAGE);
+  }, [filteredOrders, page]);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  const invalidateDispatch = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["warehouse", "dispatch-dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["warehouse", "order-management"] });
+  }, [queryClient]);
 
-  const currentOrders = useMemo(() => {
-    if (activeTab === "partial") return partialOrders;
-    if (activeTab === "invoiced") return invoicedOrders;
-    return readyOrders;
-  }, [activeTab, invoicedOrders, partialOrders, readyOrders]);
-
-  const tabs: Array<{ id: TabId; label: string; count: number }> = [
-    { id: "ready", label: "Ready for Dispatch", count: readyOrders.length },
-    {
-      id: "partial",
-      label: "Partially Invoiced",
-      count: partialOrders.length,
-    },
-    { id: "invoiced", label: "Invoiced", count: invoicedOrders.length },
-  ];
-
-  const handleCreateFullInvoice = async (order: DispatchOrder) => {
-    setActionLoading(`full-${order.id}`);
-    try {
-      const result = await apiFetch<{ message?: string }>(
-        "/warehouse/dispatch/orders/full-invoice",
-        {
-          method: "POST",
-          body: JSON.stringify({ orderId: order.id }),
-        },
-      );
-
+  const fullInvoiceMutation = useMutation({
+    mutationFn: (orderId: number) =>
+      orpc.warehouse.createFullDispatchInvoice.call({ orderId }),
+    onSuccess: (result) => {
       toast.success(result.message || "Invoice created");
-      await fetchDispatchDashboard();
-      setActiveTab("invoiced");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create invoice");
-    } finally {
-      setActionLoading(null);
-    }
-  };
+      invalidateDispatch();
+      selectStatus("invoiced");
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to create invoice"),
+    onSettled: () => setActionLoading(null),
+  });
 
-  const openPartialInvoice = (order: DispatchOrder) => {
+  const partialInvoiceMutation = useMutation({
+    mutationFn: (input: {
+      orderId: number;
+      items: Array<{ orderItemId: number; quantity: number }>;
+    }) => orpc.warehouse.createPartialDispatchInvoice.call(input),
+    onSuccess: (result) => {
+      toast.success(result.message || "Partial invoice created");
+      setPartialInvoiceOrder(null);
+      setPartialQuantities({});
+      invalidateDispatch();
+      selectStatus(
+        result.fullyInvoiced ? "invoiced" : "partially_invoiced",
+      );
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to create partial invoice"),
+    onSettled: () => setActionLoading(null),
+  });
+
+  const handleCreateFullInvoice = useCallback(
+    (order: DispatchOrderRow) => {
+      setActionLoading(`full-${order.id}`);
+      fullInvoiceMutation.mutate(order.id);
+    },
+    [fullInvoiceMutation],
+  );
+
+  const openPartialInvoice = useCallback((order: DispatchOrderRow) => {
     setPartialInvoiceOrder(order);
-    setPartialQuantities({});
-  };
+    setPartialQuantities(buildDefaultPartialQuantities(order));
+  }, []);
+
+  const columns = useMemo(
+    () =>
+      getDispatchColumns({
+        actionLoading,
+        onCreateFullInvoice: handleCreateFullInvoice,
+        onOpenPartialInvoice: openPartialInvoice,
+      }),
+    [actionLoading, handleCreateFullInvoice, openPartialInvoice],
+  );
+
+  const table = useReactTable({
+    data: paginatedOrders,
+    columns,
+    state: { sorting, columnFilters },
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    manualPagination: true,
+    pageCount: totalPages,
+  });
 
   const handlePartialQuantity = (
-    item: DispatchOrderItem,
+    orderItemId: number,
+    remainingQty: number,
     nextQuantity: number,
   ) => {
     setPartialQuantities((current) => ({
       ...current,
-      [item.orderItemId]: Math.max(
+      [orderItemId]: Math.max(
         0,
-        Math.min(item.remainingQty, Number.isFinite(nextQuantity) ? nextQuantity : 0),
+        Math.min(
+          remainingQty,
+          Number.isFinite(nextQuantity) ? nextQuantity : 0,
+        ),
       ),
     }));
   };
 
-  const handleCreatePartialInvoice = async () => {
+  const handleCreatePartialInvoice = () => {
     if (!partialInvoiceOrder) return;
     const items = partialInvoiceOrder.items
       .map((item) => ({
@@ -228,515 +442,289 @@ export default function DispatchOrdersPage() {
     }
 
     setActionLoading(`partial-${partialInvoiceOrder.id}`);
-    try {
-      const result = await apiFetch<{ message?: string; status?: string }>(
-        "/warehouse/dispatch/orders/partial-invoice",
-        {
-          method: "POST",
-          body: JSON.stringify({ orderId: partialInvoiceOrder.id, items }),
-        },
-      );
-
-      toast.success(result.message || "Partial invoice created");
-      setPartialInvoiceOrder(null);
-      setPartialQuantities({});
-      await fetchDispatchDashboard();
-      setActiveTab(result.status === "invoiced" ? "invoiced" : "partial");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to create partial invoice",
-      );
-    } finally {
-      setActionLoading(null);
-    }
+    partialInvoiceMutation.mutate({
+      orderId: partialInvoiceOrder.id,
+      items,
+    });
   };
+
+  const showFrom = totalCount > 0 ? (page - 1) * PER_PAGE + 1 : 0;
+  const showTo = Math.min(page * PER_PAGE, totalCount);
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/warehouse/dashboard/order-management"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border bg-white transition-colors hover:bg-gray-50"
-            >
-              <ArrowLeftIcon className="h-4 w-4" />
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Dispatch Orders
-              </h1>
-              <p className="mt-1 text-sm text-gray-500">
-                Create full or partial invoices for approved warehouse orders.
-              </p>
-            </div>
-          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Dispatch Orders
+          </h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Create full or partial invoices for approved warehouse orders
+          </p>
         </div>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <SummaryCard
-          label="Ready for Dispatch"
-          value={readyOrders.length}
-          tone="violet"
-        />
-        <SummaryCard
-          label="Partially Invoiced"
-          value={partialOrders.length}
-          tone="amber"
-        />
-        <SummaryCard label="Invoiced" value={invoicedOrders.length} tone="emerald" />
-      </div>
-
-      <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
-        This phase stops at invoice creation. Delivery, self pickup, rider assignment,
-        and settlement stay out of this flow until the next lifecycle is confirmed.
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? "bg-gray-900 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/warehouse/dashboard/order-management"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
           >
-            <span>{tab.label}</span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] ${
-                activeTab === tab.id
-                  ? "bg-white/15 text-white"
-                  : "bg-white text-gray-700"
-              }`}
-            >
-              {tab.count}
-            </span>
-          </button>
-        ))}
+            <ShoppingCart className="h-4 w-4" />
+            Order Management
+          </Link>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <Loader2Icon className="h-6 w-6 animate-spin text-gray-400" />
+      <DashboardKpiGrid className="sm:grid-cols-2 xl:grid-cols-4">
+        {statusConfig.map((cfg) => {
+          const isActive = status === cfg.key;
+          const Icon = cfg.icon;
+          const { current, previous } = buildTrendTotals(allOrders, cfg.key);
+
+          return (
+            <DashboardKpiCard
+              key={cfg.key}
+              active={isActive}
+              chartData={buildChartData(allOrders, cfg.key)}
+              description={cfg.description}
+              footer={{
+                label: "Last 7 Days",
+                value: current.toLocaleString(),
+              }}
+              icon={<Icon className="h-6 w-6" />}
+              label={
+                cfg.key === "all"
+                  ? "All Dispatch"
+                  : cfg.key === "ready_for_dispatch"
+                    ? "Ready for Dispatch"
+                    : cfg.key === "partially_invoiced"
+                      ? "Partially Invoiced"
+                      : "Invoiced"
+              }
+              onClick={() => selectStatus(cfg.key)}
+              tone={cfg.tone}
+              trend={buildTrendCopy(current, previous)}
+              value={counts[cfg.key].toLocaleString()}
+            />
+          );
+        })}
+      </DashboardKpiGrid>
+
+      <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Order ID / Customer / Phone..."
+              className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          <Select
+            value={dateRange}
+            onValueChange={(v) => {
+              setDateRange(v as DateFilter);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-9 w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {dateOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      ) : currentOrders.length === 0 ? (
-        <EmptyState
-          icon={<PackageIcon className="h-10 w-10 text-violet-300" />}
-          title={`No ${tabs.find((tab) => tab.id === activeTab)?.label.toLowerCase()} orders`}
-          subtitle="Orders will appear here automatically as they move through the strict approval and invoicing flow."
-        />
-      ) : (
-        <div className="space-y-3">
-          {currentOrders.map((order) => {
-            const expanded = expandedOrder === order.id;
+
+        <div className="flex items-center gap-1 border-b px-4 py-2">
+          {statusConfig.map((tab) => {
+            const active = status === tab.key;
             return (
-              <OrderCard
-                key={order.id}
-                actionLoading={actionLoading}
-                expanded={expanded}
-                onCreateFullInvoice={handleCreateFullInvoice}
-                onOpenPartialInvoice={openPartialInvoice}
-                onToggle={() => setExpandedOrder(expanded ? null : order.id)}
-                order={order}
-              />
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => selectStatus(tab.key)}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
+                  active
+                    ? "bg-foreground text-background shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <span>{tab.emoji}</span>
+                {tab.label}
+                <Badge
+                  variant={active ? "secondary" : "outline"}
+                  className="h-5 min-w-5 justify-center px-1.5 text-[10px]"
+                >
+                  {counts[tab.key]}
+                </Badge>
+              </button>
             );
           })}
         </div>
-      )}
 
-      {partialInvoiceOrder ? (
-        <PartialInvoiceModal
-          actionLoading={actionLoading}
-          onClose={() => {
-            setPartialInvoiceOrder(null);
-            setPartialQuantities({});
-          }}
-          onCreate={handleCreatePartialInvoice}
-          onQuantityChange={handlePartialQuantity}
-          order={partialInvoiceOrder}
-          quantities={partialQuantities}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function OrderCard({
-  actionLoading,
-  expanded,
-  onCreateFullInvoice,
-  onOpenPartialInvoice,
-  onToggle,
-  order,
-}: {
-  actionLoading: string | null;
-  expanded: boolean;
-  onCreateFullInvoice: (order: DispatchOrder) => Promise<void>;
-  onOpenPartialInvoice: (order: DispatchOrder) => void;
-  onToggle: () => void;
-  order: DispatchOrder;
-}) {
-  const canInvoice = order.status !== "invoiced" && order.progress.remainingQty > 0;
-  const customerName =
-    order.customer.warehouseName ||
-    order.customer.shopName ||
-    order.customer.name ||
-    order.shipping.name;
-
-  return (
-    <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-3 p-4 text-left"
-      >
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50">
-            <ReceiptTextIcon className="h-5 w-5 text-violet-600" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="truncate text-sm font-semibold text-gray-900">
-                {customerName}
-              </p>
-              <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
-                {statusLabel(order.status)}
-              </span>
-            </div>
-            <p className="mt-0.5 text-xs text-gray-500">
-              {order.orderNumber} · Ready {formatDate(order.readyAt)}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-3">
-          <div className="hidden text-right sm:block">
-            <p className="text-sm font-bold text-gray-900">
-              {formatMoney(order.progress.remainingTotal)}
-            </p>
-            <p className="text-xs text-gray-500">
-              {order.progress.remainingQty} remaining
-            </p>
-          </div>
-          {expanded ? (
-            <ChevronUpIcon className="h-4 w-4 text-gray-400" />
-          ) : (
-            <ChevronDownIcon className="h-4 w-4 text-gray-400" />
-          )}
-        </div>
-      </button>
-
-      {expanded ? (
-        <div className="border-t bg-gray-50/70 p-4">
-          <OrderMeta order={order} />
-
-          {canInvoice ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                onClick={() => void onCreateFullInvoice(order)}
-                disabled={!!actionLoading}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
-              >
-                {actionLoading === `full-${order.id}` ? (
-                  <Loader2Icon className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileTextIcon className="h-4 w-4" />
-                )}
-                {order.status === "partially_invoiced"
-                  ? "Invoice Remaining"
-                  : "Create Full Invoice"}
-              </button>
-              <button
-                onClick={() => onOpenPartialInvoice(order)}
-                disabled={!!actionLoading}
-                className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-4 py-2 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-50 disabled:opacity-60"
-              >
-                <PlusIcon className="h-4 w-4" />
-                Create Partial Invoice
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
-              <CheckCircle2Icon className="h-4 w-4" />
-              All approved quantities are invoiced.
-            </div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function OrderMeta({ order }: { order: DispatchOrder }) {
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
-        <InfoPanel label="Customer">
-          <div className="flex items-center gap-2">
-            <UserIcon className="h-3.5 w-3.5 text-gray-400" />
-            <span>
-              {order.customer.warehouseName ||
-                order.customer.shopName ||
-                order.customer.name}
-            </span>
-          </div>
-          {order.customer.phoneNumber ? <span>{order.customer.phoneNumber}</span> : null}
-        </InfoPanel>
-        <InfoPanel label="Shipping">
-          <div className="flex items-start gap-2">
-            <MapPinIcon className="mt-0.5 h-3.5 w-3.5 text-gray-400" />
-            <span>
-              {order.shipping.address}
-              {order.shipping.area ? `, ${order.shipping.area}` : ""}
-              {order.shipping.city ? `, ${order.shipping.city}` : ""}
-            </span>
-          </div>
-        </InfoPanel>
-        <InfoPanel label="Progress">
-          <span>Approved: {order.progress.approvedQty}</span>
-          <span>Invoiced: {order.progress.invoicedQty}</span>
-          <span>Remaining: {order.progress.remainingQty}</span>
-        </InfoPanel>
-      </div>
-
-      <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-          Order Items
-        </p>
-        <div className="overflow-hidden rounded-lg border bg-white">
-          {order.items.map((item) => (
-            <div
-              key={item.orderItemId}
-              className="grid gap-2 border-b p-3 text-sm last:border-0 md:grid-cols-[1fr_auto_auto_auto]"
-            >
-              <div className="min-w-0">
-                <p className="truncate font-medium text-gray-900">
-                  {item.productName}
-                </p>
-                <p className="text-xs text-gray-400">{item.productSku}</p>
+        {isLoading ? (
+          <div className="divide-y">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+                <div className="h-4 w-36 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-28 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+                <div className="ml-auto h-4 w-16 animate-pulse rounded bg-muted" />
+                <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
+                <div className="h-7 w-20 animate-pulse rounded bg-muted" />
               </div>
-              <Metric label="Approved" value={item.approvedQty} />
-              <Metric label="Invoiced" value={item.invoicedQty} />
-              <Metric label="Remaining" value={item.remainingQty} strong />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {order.invoices.length > 0 ? (
-        <div>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            Created Invoices
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {order.invoices.map((invoice) => (
-              <span
-                key={invoice.id}
-                className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs"
-              >
-                <ReceiptTextIcon className="h-3.5 w-3.5 text-gray-400" />
-                <span className="font-mono font-semibold">
-                  {invoice.invoiceNumber}
-                </span>
-                <span className="text-gray-500">
-                  {formatMoney(invoice.grandTotal)}
-                </span>
-              </span>
             ))}
           </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function PartialInvoiceModal({
-  actionLoading,
-  onClose,
-  onCreate,
-  onQuantityChange,
-  order,
-  quantities,
-}: {
-  actionLoading: string | null;
-  onClose: () => void;
-  onCreate: () => Promise<void>;
-  onQuantityChange: (item: DispatchOrderItem, quantity: number) => void;
-  order: DispatchOrder;
-  quantities: Record<number, number>;
-}) {
-  const selectedTotal = order.items.reduce((sum, item) => {
-    const quantity = quantities[item.orderItemId] ?? 0;
-    return sum + quantity * Number(item.unitPrice);
-  }, 0);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white">
-        <div className="border-b p-5">
-          <div className="flex items-start justify-between gap-4">
+        ) : isError ? (
+          <div className="grid min-h-[320px] place-items-center text-center">
             <div>
-              <h3 className="text-lg font-bold text-gray-900">
-                Create Partial Invoice
-              </h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Select quantities to invoice for {order.orderNumber}.
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+                <AlertCircle className="h-6 w-6 text-red-500" />
+              </div>
+              <h2 className="mt-3 font-semibold">Failed to load dispatch orders</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Try refreshing or adjusting your filters.
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="rounded-lg border px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
-            >
-              Close
-            </button>
           </div>
-        </div>
-
-        <div className="overflow-y-auto p-5">
-          <div className="overflow-hidden rounded-xl border">
-            {order.items.map((item) => {
-              const quantity = quantities[item.orderItemId] ?? 0;
-              const disabled = item.remainingQty <= 0;
-              return (
-                <div
-                  key={item.orderItemId}
-                  className="grid gap-3 border-b p-4 last:border-0 md:grid-cols-[1fr_120px_140px_130px]"
+        ) : paginatedOrders.length === 0 ? (
+          <div className="grid min-h-[320px] place-items-center text-center">
+            <div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <Inbox className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h2 className="mt-3 font-semibold">No dispatch orders available</h2>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Orders will appear here as they move through approval and become
+                ready for invoicing.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow
+                  key={headerGroup.id}
+                  className="bg-muted/30 hover:bg-muted/30"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-gray-900">
-                      {item.productName}
-                    </p>
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      Remaining {item.remainingQty} of {item.approvedQty}
-                    </p>
-                  </div>
-                  <Metric label="Invoiced" value={item.invoicedQty} />
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                      Invoice Qty
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={item.remainingQty}
-                      value={quantity}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        onQuantityChange(item, Number(event.target.value))
-                      }
-                      className="h-9 w-full rounded-lg border bg-white px-3 text-right text-sm tabular-nums outline-none transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-                    />
-                  </label>
-                  <Metric
-                    label="Line Total"
-                    value={formatMoney(quantity * Number(item.unitPrice))}
-                    strong
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead
+                      key={header.id}
+                      className="px-4 text-xs font-semibold uppercase tracking-wider"
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} className="px-4 py-3">
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
 
-        <div className="flex flex-col gap-3 border-t bg-gray-50 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-              Partial Invoice Total
-            </p>
-            <p className="text-2xl font-bold text-gray-950">
-              {formatMoney(selectedTotal)}
-            </p>
+        {!isLoading && !isError && totalCount > 0 && (
+          <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm text-muted-foreground">
+              Showing {showFrom}–{showTo} of {totalCount} orders
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page <= 1}
+                onClick={() => setPage(1)}
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {generatePageNumbers(page, totalPages).map((p, i) =>
+                p === "..." ? (
+                  <span
+                    key={`dot-${i}`}
+                    className="px-1 text-xs text-muted-foreground"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <Button
+                    key={p}
+                    variant={p === page ? "default" : "outline"}
+                    size="icon"
+                    className="h-8 w-8 text-xs"
+                    onClick={() => setPage(p as number)}
+                  >
+                    {p}
+                  </Button>
+                ),
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page >= totalPages}
+                onClick={() => setPage(totalPages)}
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <button
-            onClick={() => void onCreate()}
-            disabled={actionLoading === `partial-${order.id}` || selectedTotal <= 0}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-violet-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-violet-700 disabled:opacity-60"
-          >
-            {actionLoading === `partial-${order.id}` ? (
-              <Loader2Icon className="h-4 w-4 animate-spin" />
-            ) : (
-              <ReceiptTextIcon className="h-4 w-4" />
-            )}
-            Create Partial Invoice
-          </button>
-        </div>
+        )}
       </div>
-    </div>
-  );
-}
 
-function InfoPanel({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <div className="space-y-1.5 rounded-lg border bg-white p-3 text-xs text-gray-600">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-        {label}
-      </p>
-      <div className="flex flex-col gap-1">{children}</div>
-    </div>
-  );
-}
-
-function Metric({
-  label,
-  strong,
-  value,
-}: {
-  label: string;
-  strong?: boolean;
-  value: ReactNode;
-}) {
-  return (
-    <div className="text-right tabular-nums">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-        {label}
-      </p>
-      <p className={strong ? "font-bold text-gray-950" : "font-medium text-gray-700"}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function SummaryCard({
-  label,
-  tone,
-  value,
-}: {
-  label: string;
-  tone: "violet" | "amber" | "emerald";
-  value: number;
-}) {
-  const toneClass =
-    tone === "violet"
-      ? "border-violet-200 bg-violet-50 text-violet-700"
-      : tone === "amber"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
-        : "border-emerald-200 bg-emerald-50 text-emerald-700";
-
-  return (
-    <div className={`rounded-xl border p-4 ${toneClass}`}>
-      <p className="text-sm font-medium">{label}</p>
-      <p className="mt-2 text-2xl font-bold tabular-nums">{value}</p>
-    </div>
-  );
-}
-
-function EmptyState({
-  icon,
-  subtitle,
-  title,
-}: {
-  icon: ReactNode;
-  subtitle: string;
-  title: string;
-}) {
-  return (
-    <div className="rounded-xl border bg-white p-12 text-center">
-      <div className="mb-3 flex justify-center">{icon}</div>
-      <p className="text-sm font-semibold text-gray-900">{title}</p>
-      <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
+      <PartialInvoiceDialog
+        open={!!partialInvoiceOrder}
+        order={partialInvoiceOrder}
+        quantities={partialQuantities}
+        actionLoading={actionLoading}
+        onClose={() => {
+          setPartialInvoiceOrder(null);
+          setPartialQuantities({});
+        }}
+        onCreate={() => void handleCreatePartialInvoice()}
+        onQuantityChange={handlePartialQuantity}
+      />
     </div>
   );
 }
