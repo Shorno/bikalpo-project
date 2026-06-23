@@ -2118,6 +2118,7 @@ const orderQueries = {
                                 totalPrice: true,
                                 modifiedQty: true,
                                 modifiedUnitPrice: true,
+                                supplyMode: true,
                             },
                         },
                     },
@@ -2163,6 +2164,7 @@ const orderQueries = {
 
             const enrichedOrders = orders.map((o: any) => ({
                 ...o,
+                items: enrichPurchaseOrderItemsFulfillment(o.items),
                 warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
             }));
 
