@@ -17,6 +17,13 @@
  * at the application level if needed in the future.
  */
 
+import {
+    buildProductTypeFulfillmentProfile,
+    isContainerFulfillmentMode,
+    isDirectFulfillmentMode,
+    usesWeightPoolFulfillmentMode,
+    type FulfillmentMode,
+} from "@bikalpo-project/db/fulfillment";
 import {carton, inventory, order, orderItem, product, productVariant, user, variantConversionMap,} from "@bikalpo-project/db/schema";
 import {and, desc, eq} from "drizzle-orm";
 
@@ -127,9 +134,35 @@ export async function convertB2bOrderToRetailInventory(
         // Load product to get unitSize (carton/sack total size)
         const productData = await tx.query.product.findFirst({
             where: eq(product.id, item.productId),
-            columns: { id: true, unitSize: true },
+            columns: {
+                id: true,
+                trackingType: true,
+                isReturnablePack: true,
+            },
+            with: {
+                category: {
+                    columns: { id: true, name: true, slug: true },
+                    with: {
+                        type: {
+                            columns: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                inventoryBehaviour: true,
+                            },
+                        },
+                    },
+                },
+            },
         });
-        const productUnitSize = Number(productData?.unitSize || 0);
+        const productUnitSize = 0;
+        const fulfillmentProfile = buildProductTypeFulfillmentProfile({
+            name: productData?.category?.type?.name,
+            slug: productData?.category?.type?.slug,
+            inventoryBehaviour: productData?.category?.type?.inventoryBehaviour,
+            trackingType: productData?.trackingType,
+            isReturnablePack: productData?.isReturnablePack,
+        });
 
         // ─── Determine target variant & conversion ratio ───
         // NEW: Check shop's supplyMode first, then fall back to legacy logic
@@ -139,10 +172,18 @@ export async function convertB2bOrderToRetailInventory(
         let isPackBreakdown = false;
         let conversionSource = "legacy"; // For logging
 
-        const shopSupplyMode = item.supplyMode; // "loose" | "pack" | null (legacy)
+        const rawSupplyMode = String(item.supplyMode || "").toLowerCase();
+        const shopSupplyMode = rawSupplyMode
+            ? (rawSupplyMode as FulfillmentMode)
+            : null;
         const shopTargetVariantId = item.targetVariantId; // number | null
 
-        if (shopSupplyMode === "pack" && shopTargetVariantId) {
+        if (
+            shopSupplyMode
+            && isContainerFulfillmentMode(shopSupplyMode)
+            && fulfillmentProfile.inventoryBehaviour === "auto_break"
+            && shopTargetVariantId
+        ) {
             // ═══ PACK MODE: Shop chose a specific retail variant (e.g. 5KG) ═══
             targetRetailVariantId = shopTargetVariantId;
 
@@ -209,6 +250,42 @@ export async function convertB2bOrderToRetailInventory(
                 console.log(`[B2B-CONVERT] Pack mode: target=${shopTargetVariantId}, cartonKg=${cartonTotalWeightKg}, cartonPacks=${cartonTotalPacks}, tradeKg=${tradeWeightKg}, targetKg=${targetWeightKg}, ratio=${conversionRatio}`);
             }
 
+        } else if (
+            shopSupplyMode
+            && usesWeightPoolFulfillmentMode(shopSupplyMode)
+            && fulfillmentProfile.inventoryBehaviour === "loose_convert"
+        ) {
+            // ═══ BULK → LOOSE MODE: Convert drums/cartons to a loose KG/L pool ═══
+            const looseTargetVariant = shopTargetVariantId
+                ? await tx.query.productVariant.findFirst({
+                    where: eq(productVariant.id, shopTargetVariantId),
+                    columns: { id: true, weightKg: true },
+                })
+                : await tx.query.productVariant.findFirst({
+                    where: and(
+                        eq(productVariant.productId, tradeVariant.productId),
+                        eq(productVariant.packType, "loose"),
+                    ),
+                    columns: { id: true, weightKg: true },
+                });
+
+            targetRetailVariantId = looseTargetVariant?.id ?? tradeVariant.id;
+
+            const activeCarton = await tx.query.carton.findFirst({
+                where: and(
+                    eq(carton.variantId, tradeVariant.id),
+                    eq(carton.status, "active"),
+                ),
+                columns: { totalWeightKg: true },
+                orderBy: [desc(carton.createdAt)],
+            });
+
+            const containerWeightKg = Number(activeCarton?.totalWeightKg || 0);
+            const variantWeightKg = Number(tradeVariant.weightKg || 0);
+            conversionRatio = containerWeightKg > 0 ? containerWeightKg : (variantWeightKg > 0 ? variantWeightKg : 1);
+            conversionSource = "bulk_loose_convert";
+            console.log(`[B2B-CONVERT] Bulk loose convert: mode=${shopSupplyMode}, target=${targetRetailVariantId}, ratio=${conversionRatio}`);
+
         } else if (shopSupplyMode === "loose") {
             // ═══ LOOSE MODE: Direct KG transfer — no conversion ═══
             // Add raw KG directly to shop's loose variant inventory.
@@ -221,6 +298,23 @@ export async function convertB2bOrderToRetailInventory(
 
             conversionSource = "loose_direct_kg";
             console.log(`[B2B-CONVERT] Loose direct KG: target=${targetRetailVariantId}, variantKg=${variantWeightKg}, ratio=${conversionRatio} (KG per unit), totalKg=${orderedQty * conversionRatio}`);
+
+        } else if (
+            shopSupplyMode
+            && (isDirectFulfillmentMode(shopSupplyMode)
+                || (
+                    isContainerFulfillmentMode(shopSupplyMode)
+                    && fulfillmentProfile.inventoryBehaviour === "fixed_pack"
+                ))
+        ) {
+            // ═══ DIRECT UNIT MODE: transfer fixed-pack, cylinder, pair, unit, or box as-is ═══
+            targetRetailVariantId =
+                shopTargetVariantId
+                ?? tradeVariant.linkedRetailVariantId
+                ?? tradeVariant.id;
+            conversionRatio = 1;
+            conversionSource = "direct_unit_transfer";
+            console.log(`[B2B-CONVERT] Direct transfer: mode=${shopSupplyMode}, target=${targetRetailVariantId}, ratio=${conversionRatio}`);
 
         } else {
             // ═══ LEGACY MODE: No supplyMode set — use existing logic ═══
@@ -258,9 +352,12 @@ export async function convertB2bOrderToRetailInventory(
         }
 
         const lossPercent = Number(tradeVariant.conversionLossPercent || 0);
-        const isLooseDirect = conversionSource === "loose_direct_kg";
-        // Loose direct: no loss applied — raw KG transfer
-        const retailQty = isLooseDirect
+        const isNoLossTransfer =
+            conversionSource === "loose_direct_kg"
+            || conversionSource === "bulk_loose_convert"
+            || conversionSource === "direct_unit_transfer";
+        // Direct loose/unit transfers: no loss applied
+        const retailQty = isNoLossTransfer
             ? orderedQty * conversionRatio
             : orderedQty * conversionRatio * (1 - lossPercent / 100);
 
@@ -298,7 +395,19 @@ export async function convertB2bOrderToRetailInventory(
                 : Math.max(0, availableQty - (deductQty - reservedQty));
 
             // Also decrement inCartonQty for carton orders (packs leaving warehouse inside a carton)
-            const isCartonOrder = conversionSource === "shop_pack_choice" || conversionSource === "loose_carton_weight";
+            const isCartonOrder =
+                conversionSource === "shop_pack_choice"
+                || conversionSource === "loose_carton_weight"
+                || (
+                    conversionSource === "direct_unit_transfer"
+                    && !!shopSupplyMode
+                    && isContainerFulfillmentMode(shopSupplyMode)
+                )
+                || (
+                    conversionSource === "bulk_loose_convert"
+                    && !!shopSupplyMode
+                    && isContainerFulfillmentMode(shopSupplyMode)
+                );
             const currentInCarton = Number(sourceInv.inCartonQty || 0);
             const newInCarton = isCartonOrder
                 ? Math.max(0, currentInCarton - deductQty)
