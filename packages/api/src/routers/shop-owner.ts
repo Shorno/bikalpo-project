@@ -10,7 +10,10 @@
  */
 
 import { db } from "@bikalpo-project/db";
-import { FULFILLMENT_MODES } from "@bikalpo-project/db/fulfillment";
+import {
+    FULFILLMENT_MODES,
+    FULFILLMENT_MODE_LABELS,
+} from "@bikalpo-project/db/fulfillment";
 import {
     brand,
     category,
@@ -1425,6 +1428,7 @@ const managementQueries = {
                 quantity: number;
                 unitPrice: string;
                 supplyMode: string | null;
+                supplyModeLabel: string;
                 targetVariantId: number | null;
                 conversionStatus: string | null;
                 convertedQty: string | null;
@@ -1441,6 +1445,11 @@ const managementQueries = {
                     else if (status === "failed") totalFailed++;
                     else totalPending++;
 
+                    const modeLabel = item.supplyMode
+                        && item.supplyMode in FULFILLMENT_MODE_LABELS
+                        ? FULFILLMENT_MODE_LABELS[item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS]
+                        : "Legacy";
+
                     conversionItems.push({
                         orderItemId: item.id,
                         orderNumber: o.orderNumber,
@@ -1453,6 +1462,7 @@ const managementQueries = {
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         supplyMode: item.supplyMode,
+                        supplyModeLabel: modeLabel,
                         targetVariantId: item.targetVariantId,
                         conversionStatus: status,
                         convertedQty: item.convertedQty,
