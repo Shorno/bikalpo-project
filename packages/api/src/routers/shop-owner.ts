@@ -5010,18 +5010,35 @@ const warehouseOrderQueries = {
 
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
-                // Validate targetVariantId for pack mode
-                let resolvedTargetVariantId: number | null = item.targetVariantId ?? null;
-                if (item.supplyMode === "pack" && item.targetVariantId) {
+                // Validate targetVariantId only when the fulfillment strategy needs it.
+                const canCarryOptionalTargetVariant =
+                    resolvedMode.profile.inventoryBehaviour === "loose_convert"
+                    && (resolvedMode.mode === "drum"
+                        || resolvedMode.mode === "loose"
+                        || resolvedMode.stockStrategy === "container_count");
+                const shouldPersistTargetVariant =
+                    resolvedMode.requiresTargetVariant
+                    || (canCarryOptionalTargetVariant && !!item.targetVariantId);
+
+                if (resolvedMode.requiresTargetVariant && !item.targetVariantId) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `${resolvedMode.mode} orders for ${inv.variant?.product?.name || "this product"} require a target variant for conversion.`,
+                    });
+                }
+
+                let resolvedTargetVariantId: number | null =
+                    shouldPersistTargetVariant ? (item.targetVariantId ?? null) : null;
+
+                if (resolvedTargetVariantId) {
                     const targetVar = await db.query.productVariant.findFirst({
                         where: and(
-                            eq(productVariant.id, item.targetVariantId),
+                            eq(productVariant.id, resolvedTargetVariantId),
                             eq(productVariant.productId, inv.variant?.product?.id || 0),
                         ),
                     });
                     if (!targetVar) {
                         throw new ORPCError("BAD_REQUEST", {
-                            message: `Target variant ${item.targetVariantId} not found for product ${inv.variant?.product?.name}`,
+                            message: `Target variant ${resolvedTargetVariantId} not found for product ${inv.variant?.product?.name}`,
                         });
                     }
                 }
