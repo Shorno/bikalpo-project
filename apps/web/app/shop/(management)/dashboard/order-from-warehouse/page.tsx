@@ -1197,7 +1197,22 @@ export default function OrderFromWarehousePage() {
           <p className="text-sm text-gray-500 mb-1">{orderResult.message}</p>
           <p className="text-xs text-gray-400 font-mono mb-6">Order #{orderResult.order?.orderNumber}</p>
           <div className="flex gap-3 justify-center">
-            <button onClick={() => { setStep("connect"); setSelectedSlug(null); setOrderResult(null); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">New Order</button>
+            <button
+              onClick={() => {
+                setCart([]);
+                setOrderResult(null);
+                if (selectedSlug) {
+                  setStep("browse");
+                  router.replace(buildWarehouseOrderUrl(selectedSlug));
+                  return;
+                }
+                setStep("connect");
+                router.replace(buildWarehouseOrderUrl(null));
+              }}
+              className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              New Order
+            </button>
             <a href="/dashboard/orders" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">View My Orders</a>
           </div>
         </div>
