@@ -57,6 +57,29 @@ function getModeConfig(item: { supplyMode?: string | null; supplyModeLabel?: str
   };
 }
 
+function getConvertedQtyUnit(item: { supplyMode?: string | null }) {
+  switch (item.supplyMode) {
+    case "loose":
+      return "KG";
+    case "drum":
+      return "L";
+    case "pair":
+      return "pair";
+    case "cylinder":
+      return "unit";
+    case "carton":
+      return "carton";
+    case "box":
+      return "box";
+    case "bundle":
+      return "bundle";
+    case "pack":
+      return "pack";
+    default:
+      return "unit";
+  }
+}
+
 // ─── KPI Card ───────────────────────────────────────────────
 
 function KPICard({
@@ -207,7 +230,7 @@ export default function ConversionHistoryPage() {
                     <TableCell className="py-3">
                       {item.convertedQty ? (
                         <span className="text-sm font-bold text-emerald-700 tabular-nums">
-                          {Number(item.convertedQty).toFixed(0)} {item.supplyMode === "loose" ? "KG" : "pcs"}
+                          {Number(item.convertedQty).toFixed(0)} {getConvertedQtyUnit(item)}
                         </span>
                       ) : (
                         <span className="text-xs text-gray-400">—</span>
