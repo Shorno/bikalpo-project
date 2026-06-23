@@ -22,6 +22,11 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import type {
+  FulfillmentMode,
+  InventoryBehaviour,
+  ProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
 import { orpc } from "@/utils/orpc";
 
 /* ─── Types ─── */
@@ -35,8 +40,13 @@ type CartItem = {
   productImage: string;
   innerPackSizeKg?: string | null;
   packCountInside?: number | null;
-  supplyMode: "loose" | "pack";
-  targetVariantId?: number;
+  fulfillmentMode: FulfillmentMode;
+  supplyMode: FulfillmentMode;
+  modeLabel: string;
+  quantityUnitLabel: string;
+  targetVariantId?: number | null;
+  targetVariantLabel?: string | null;
+  familyLabel?: string;
 };
 
 type CartonOption = {
@@ -44,6 +54,8 @@ type CartonOption = {
   count: number;
   totalKg: number;
   packsPerCarton: number;
+  cartonPrice?: string | null;
+  deliveryCost?: string | null;
 };
 
 type VariantItem = {
@@ -73,11 +85,35 @@ type GroupedProduct = {
   image: string | null;
   categoryName: string;
   unitSize: string | null;
+  type: {
+    name: string;
+    slug: string | null;
+    inventoryBehaviour: InventoryBehaviour;
+    trackingType: "none" | "batch" | "serial";
+    isReturnablePack: boolean;
+  };
+  fulfillmentProfile: ProductTypeFulfillmentProfile;
   variants: VariantItem[];
 };
 
 /* ─── Group flat API data → category → product → variants ─── */
-function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
+function groupByCategory(products: Array<{
+  inventoryId: number;
+  variantId: number;
+  availableQty: string;
+  price: string;
+  canOrder: boolean;
+  product: {
+    id: number;
+    name: string;
+    image: string | null;
+    categoryName: string;
+    unitSize: string | null;
+    type: GroupedProduct["type"];
+    fulfillmentProfile: ProductTypeFulfillmentProfile;
+  };
+  variant: VariantItem["variant"];
+}>): Map<string, GroupedProduct[]> {
   const productMap = new Map<number, GroupedProduct>();
   for (const item of products) {
     const pid = item.product?.id;
@@ -89,6 +125,8 @@ function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
         image: item.product.image,
         categoryName: item.product.categoryName || "Uncategorized",
         unitSize: item.product.unitSize || null,
+        type: item.product.type,
+        fulfillmentProfile: item.product.fulfillmentProfile,
         variants: [],
       });
     }
