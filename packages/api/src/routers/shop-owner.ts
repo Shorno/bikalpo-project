@@ -1979,6 +1979,7 @@ const orderQueries = {
                                 quantity: true,
                                 unitPrice: true,
                                 totalPrice: true,
+                                supplyMode: true,
                             },
                         },
                     },
@@ -5218,6 +5219,13 @@ const warehouseOrderQueries = {
             return {
                 orders: orders.map((o: any) => ({
                     ...o,
+                    items: (o.items || []).map((item: any) => ({
+                        ...item,
+                        supplyModeLabel: item.supplyMode
+                            && item.supplyMode in FULFILLMENT_MODE_LABELS
+                            ? FULFILLMENT_MODE_LABELS[item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS]
+                            : "Legacy",
+                    })),
                     warehouseName: warehouseMap.get(o.warehouseId) || "Unknown Warehouse",
                 })),
                 pagination: {
