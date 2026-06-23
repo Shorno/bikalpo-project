@@ -819,9 +819,14 @@ function VariantModal({
    ═══════════════════════════════════════════════════════════ */
 export default function OrderFromWarehousePage() {
   const queryClient = useQueryClient();
-  const [step, setStep] = useState<"connect" | "browse" | "checkout" | "success">("connect");
-  const [warehouseInput, setWarehouseInput] = useState("");
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const deepLinkedWarehouseSlug = searchParams.get("warehouse");
+  const [step, setStep] = useState<"connect" | "browse" | "checkout" | "success">(
+    deepLinkedWarehouseSlug ? "browse" : "connect",
+  );
+  const [warehouseInput, setWarehouseInput] = useState(deepLinkedWarehouseSlug ?? "");
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(deepLinkedWarehouseSlug);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<GroupedProduct | null>(null);
