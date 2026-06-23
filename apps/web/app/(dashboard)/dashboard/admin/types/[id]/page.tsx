@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  FULFILLMENT_UNITS,
+  INVENTORY_BEHAVIOUR_LABELS,
+  PRODUCT_TYPE_FAMILY_LABELS,
+  VARIANT_DIMENSION_LABELS,
+} from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -98,6 +104,7 @@ export default function TypeDetailPage() {
   }
 
   const t = data.type;
+  const profile = t.fulfillmentProfile;
   const categories = t.categories || [];
   const products = data.products || [];
   const sellerCount = data.sellerCount ?? 0;
@@ -164,6 +171,80 @@ export default function TypeDetailPage() {
       </div>
 
       {/* Categories Under This Type */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Fulfillment Profile</CardTitle>
+          <CardDescription>
+            Shared rules that later phases will use from admin setup through retailer conversion.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-muted-foreground">Family</div>
+              <div className="mt-1 font-semibold">
+                {PRODUCT_TYPE_FAMILY_LABELS[profile.family]}
+              </div>
+            </div>
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-muted-foreground">Inventory Behaviour</div>
+              <div className="mt-1 font-semibold">
+                {INVENTORY_BEHAVIOUR_LABELS[t.inventoryBehaviour]}
+              </div>
+            </div>
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-muted-foreground">Default Mode</div>
+              <div className="mt-1 font-semibold capitalize">{profile.defaultMode}</div>
+            </div>
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-muted-foreground">Mode Switching</div>
+              <div className="mt-1 font-semibold">
+                {profile.supportsModeSwitching ? "Supported" : "Fixed"}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-lg border p-4">
+              <div className="text-sm font-medium">Unit Model</div>
+              <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                <div>Order: {FULFILLMENT_UNITS[profile.orderUnit].label}</div>
+                <div>Stock: {FULFILLMENT_UNITS[profile.stockUnit].label}</div>
+                <div>Conversion: {FULFILLMENT_UNITS[profile.conversionUnit].label}</div>
+                <div>Display: {FULFILLMENT_UNITS[profile.displayUnit].label}</div>
+              </div>
+            </div>
+            <div className="rounded-lg border p-4">
+              <div className="text-sm font-medium">Dimensions & Capabilities</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {profile.variantDimensions.map((dimension) => (
+                  <Badge key={dimension} variant="outline">
+                    {VARIANT_DIMENSION_LABELS[dimension]}
+                  </Badge>
+                ))}
+                {profile.supportsTrackedAssets && (
+                  <Badge variant="outline">Tracked Assets</Badge>
+                )}
+                {profile.supportsEmptyReturn && (
+                  <Badge variant="outline">Empty Return</Badge>
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {profile.supportedModes.map((mode) => (
+                  <Badge key={mode} variant="secondary" className="capitalize">
+                    {mode}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            {profile.notes}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">

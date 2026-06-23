@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  INVENTORY_BEHAVIOUR_LABELS,
+  PRODUCT_TYPE_FAMILY_LABELS,
+  type ProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Eye, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
@@ -23,11 +28,12 @@ export type ProductTypeRow = {
   description: string | null;
   image: string | null;
   skuCode: string | null;
+  inventoryBehaviour: keyof typeof INVENTORY_BEHAVIOUR_LABELS;
   isActive: boolean;
   displayOrder: number;
+  categoryCount: number;
+  fulfillmentProfile: ProductTypeFulfillmentProfile;
 };
-
-
 
 export function useProductTypeColumns() {
   const columns: ColumnDef<ProductTypeRow>[] = [
@@ -60,6 +66,23 @@ export function useProductTypeColumns() {
           <span className="ml-2 text-xs text-muted-foreground font-mono">
             {row.original.slug}
           </span>
+        </div>
+      ),
+    },
+    {
+      id: "fulfillment",
+      header: "Flow",
+      cell: ({ row }) => (
+        <div className="space-y-1">
+          <div className="text-sm font-medium">
+            {PRODUCT_TYPE_FAMILY_LABELS[row.original.fulfillmentProfile.family]}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {INVENTORY_BEHAVIOUR_LABELS[row.original.inventoryBehaviour]}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {row.original.fulfillmentProfile.supportedModes.join(", ")}
+          </div>
         </div>
       ),
     },

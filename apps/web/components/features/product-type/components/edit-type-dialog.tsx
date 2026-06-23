@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  INVENTORY_BEHAVIOURS,
+  INVENTORY_BEHAVIOUR_LABELS,
+  PRODUCT_TYPE_FAMILY_LABELS,
+  buildProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
 import type { ProductTypeRow } from "./product-type-columns";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +27,13 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -39,6 +52,7 @@ export default function EditTypeDialog({ type }: EditTypeDialogProps) {
       name: string;
       slug: string;
       description?: string;
+      inventoryBehaviour: (typeof INVENTORY_BEHAVIOURS)[number];
       displayOrder?: number;
     }) => orpc.adminProductType.update.call(data),
     onSuccess: (result) => {
@@ -58,6 +72,7 @@ export default function EditTypeDialog({ type }: EditTypeDialogProps) {
       name: type.name,
       slug: type.slug,
       description: type.description || "",
+      inventoryBehaviour: type.inventoryBehaviour,
       displayOrder: type.displayOrder,
     },
     onSubmit: async ({ value }) => {
@@ -144,6 +159,55 @@ export default function EditTypeDialog({ type }: EditTypeDialogProps) {
               </Field>
             )}
           </form.Field>
+
+          <form.Field name="inventoryBehaviour">
+            {(field) => (
+              <Field>
+                <FieldLabel htmlFor={field.name}>Inventory Behaviour</FieldLabel>
+                <Select
+                  value={field.state.value}
+                  onValueChange={(value) =>
+                    field.handleChange(value as (typeof INVENTORY_BEHAVIOURS)[number])
+                  }
+                >
+                  <SelectTrigger id={field.name}>
+                    <SelectValue placeholder="Select inventory behaviour" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_BEHAVIOURS.map((behaviour) => (
+                      <SelectItem key={behaviour} value={behaviour}>
+                        {INVENTORY_BEHAVIOUR_LABELS[behaviour]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+          </form.Field>
+
+          <form.Subscribe selector={(state) => state.values}>
+            {(values) => {
+              const profile = buildProductTypeFulfillmentProfile({
+                name: values.name,
+                slug: values.slug || generateSlug(values.name),
+                inventoryBehaviour: values.inventoryBehaviour,
+              });
+
+              return (
+                <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+                  <div className="font-medium">
+                    Family: {PRODUCT_TYPE_FAMILY_LABELS[profile.family]}
+                  </div>
+                  <div className="text-muted-foreground">
+                    Modes: {profile.supportedModes.join(", ")}
+                  </div>
+                  <div className="text-muted-foreground">
+                    Flow: {profile.orderUnit} order {"->"} {profile.conversionUnit} conversion
+                  </div>
+                </div>
+              );
+            }}
+          </form.Subscribe>
         </form>
         <DialogFooter>
           <Button
