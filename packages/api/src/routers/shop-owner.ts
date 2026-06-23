@@ -10,6 +10,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
+import { FULFILLMENT_MODES } from "@bikalpo-project/db/fulfillment";
 import {
     brand,
     category,
@@ -113,6 +114,8 @@ const DAY_NAMES = [
     "Friday",
     "Saturday",
 ] as const;
+
+const warehouseOrderModeSchema = z.enum(FULFILLMENT_MODES);
 
 function toSafeNumber(value: string | number | null | undefined) {
     return Number(value || 0);
@@ -4767,8 +4770,9 @@ const warehouseOrderQueries = {
                     z.object({
                         variantId: z.number(),
                         quantity: z.number().min(1),
-                        supplyMode: z.enum(["loose", "pack"]).default("loose"),
-                        targetVariantId: z.number().optional(),
+                        supplyMode: warehouseOrderModeSchema.optional(),
+                        fulfillmentMode: warehouseOrderModeSchema.optional(),
+                        targetVariantId: z.number().optional().nullable(),
                     }),
                 ).min(1),
                 shippingName: z.string().min(1),
