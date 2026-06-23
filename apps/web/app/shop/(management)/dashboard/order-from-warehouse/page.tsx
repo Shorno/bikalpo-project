@@ -27,6 +27,8 @@ import type {
   InventoryBehaviour,
   ProductTypeFulfillmentProfile,
 } from "@bikalpo-project/db/fulfillment";
+import { INVENTORY_BEHAVIOUR_LABELS } from "@bikalpo-project/db/fulfillment";
+import { getFulfillmentFamilyLabel } from "@/components/features/warehouse/warehouse-order-fulfillment";
 import { orpc } from "@/utils/orpc";
 
 /* ─── Types ─── */
@@ -162,6 +164,8 @@ function ProductCard({
   const lowestPrice = Math.min(...product.variants.map((v) => Number(v.price) || 0));
   const variantCount = product.variants.length;
   const brandName = product.variants[0]?.variant.brandName;
+  const familyLabel = getFulfillmentFamilyLabel(product.fulfillmentProfile);
+  const behaviourLabel = INVENTORY_BEHAVIOUR_LABELS[product.type.inventoryBehaviour];
 
   return (
     <button
@@ -217,6 +221,14 @@ function ProductCard({
       {/* Info */}
       <div className="p-3">
         <h3 className="text-sm font-semibold text-gray-900 line-clamp-1">{product.name}</h3>
+        <div className="mt-1 flex flex-wrap gap-1">
+          <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+            {familyLabel}
+          </span>
+          <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">
+            {behaviourLabel}
+          </span>
+        </div>
         <p className="text-[10px] text-gray-400 mt-0.5">
           {brandName && <span className="text-blue-500 font-medium">{brandName}</span>}
           {brandName && " • "}
