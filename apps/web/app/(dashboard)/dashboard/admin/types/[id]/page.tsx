@@ -1,10 +1,7 @@
 "use client";
 
 import {
-  FULFILLMENT_UNITS,
   INVENTORY_BEHAVIOUR_LABELS,
-  PRODUCT_TYPE_FAMILY_LABELS,
-  VARIANT_DIMENSION_LABELS,
 } from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -20,6 +17,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -179,69 +177,15 @@ export default function TypeDetailPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-lg border p-3">
-              <div className="text-xs text-muted-foreground">Family</div>
-              <div className="mt-1 font-semibold">
-                {PRODUCT_TYPE_FAMILY_LABELS[profile.family]}
-              </div>
-            </div>
-            <div className="rounded-lg border p-3">
-              <div className="text-xs text-muted-foreground">Inventory Behaviour</div>
-              <div className="mt-1 font-semibold">
-                {INVENTORY_BEHAVIOUR_LABELS[t.inventoryBehaviour]}
-              </div>
-            </div>
-            <div className="rounded-lg border p-3">
-              <div className="text-xs text-muted-foreground">Default Mode</div>
-              <div className="mt-1 font-semibold capitalize">{profile.defaultMode}</div>
-            </div>
-            <div className="rounded-lg border p-3">
-              <div className="text-xs text-muted-foreground">Mode Switching</div>
-              <div className="mt-1 font-semibold">
-                {profile.supportsModeSwitching ? "Supported" : "Fixed"}
-              </div>
-            </div>
+          <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+            Inventory behaviour for this type is set to{" "}
+            <span className="font-medium text-foreground">
+              {INVENTORY_BEHAVIOUR_LABELS[t.inventoryBehaviour]}
+            </span>
+            . This shared profile will drive admin setup, retailer ordering, and stock conversion in later phases.
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border p-4">
-              <div className="text-sm font-medium">Unit Model</div>
-              <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                <div>Order: {FULFILLMENT_UNITS[profile.orderUnit].label}</div>
-                <div>Stock: {FULFILLMENT_UNITS[profile.stockUnit].label}</div>
-                <div>Conversion: {FULFILLMENT_UNITS[profile.conversionUnit].label}</div>
-                <div>Display: {FULFILLMENT_UNITS[profile.displayUnit].label}</div>
-              </div>
-            </div>
-            <div className="rounded-lg border p-4">
-              <div className="text-sm font-medium">Dimensions & Capabilities</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {profile.variantDimensions.map((dimension) => (
-                  <Badge key={dimension} variant="outline">
-                    {VARIANT_DIMENSION_LABELS[dimension]}
-                  </Badge>
-                ))}
-                {profile.supportsTrackedAssets && (
-                  <Badge variant="outline">Tracked Assets</Badge>
-                )}
-                {profile.supportsEmptyReturn && (
-                  <Badge variant="outline">Empty Return</Badge>
-                )}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {profile.supportedModes.map((mode) => (
-                  <Badge key={mode} variant="secondary" className="capitalize">
-                    {mode}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            {profile.notes}
-          </div>
+          <FulfillmentProfilePreview profile={profile} />
         </CardContent>
       </Card>
 
