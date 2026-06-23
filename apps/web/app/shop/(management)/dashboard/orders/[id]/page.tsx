@@ -21,6 +21,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import {
+  formatRetailerOrderItemQuantity,
+  getRetailerOrderFulfillmentSummary,
+  getRetailerOrderItemEffectiveQty,
+  getRetailerOrderItemOrderedQty,
+} from "@/components/features/orders/retailer-order-fulfillment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -125,6 +131,14 @@ export default function PurchaseOrderDetailPage() {
   const config = statusConfig[po.status] || statusConfig.pending;
   const isCancellable = ["pending", "confirmed"].includes(po.status);
   const isReceivable = ["processing", "delivered"].includes(po.status) && !po.receivedAt;
+  const requestedSummary = getRetailerOrderFulfillmentSummary(
+    po.items,
+    getRetailerOrderItemOrderedQty,
+  );
+  const approvedSummary = getRetailerOrderFulfillmentSummary(
+    po.items,
+    getRetailerOrderItemEffectiveQty,
+  );
 
   const initReceiveItems = () => {
     const items: Record<number, number> = {};
@@ -236,6 +250,7 @@ export default function PurchaseOrderDetailPage() {
                   <thead>
                     <tr className="bg-muted/40 text-[10px] font-bold text-muted-foreground">
                       <th className="text-left p-2 pl-4">Product</th>
+                      <th className="text-center p-2">Mode</th>
                       <th className="text-center p-2">Requested Qty</th>
                       <th className="text-center p-2">Approved Qty</th>
                       <th className="text-right p-2">Price</th>
@@ -279,14 +294,21 @@ export default function PurchaseOrderDetailPage() {
                               </div>
                             </div>
                           </td>
+                          <td className="text-center p-2">
+                            <Badge variant="outline" className="text-[10px]">
+                              {item.supplyModeLabel}
+                            </Badge>
+                          </td>
                           <td className="text-center p-2 tabular-nums">
-                            {item.quantity}
+                            {formatRetailerOrderItemQuantity(item.quantity, item)}
                           </td>
                           <td className="text-center p-2 tabular-nums">
                             {wasModified ? (
-                              <span className="text-orange-600 font-semibold">{approvedQty} ↓</span>
+                              <span className="text-orange-600 font-semibold">
+                                {formatRetailerOrderItemQuantity(approvedQty, item)} ↓
+                              </span>
                             ) : (
-                              <span>{approvedQty}</span>
+                              <span>{formatRetailerOrderItemQuantity(approvedQty, item)}</span>
                             )}
                           </td>
                           <td className="text-right p-2 tabular-nums">
@@ -321,19 +343,38 @@ export default function PurchaseOrderDetailPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {(() => {
-                  const totalRequested = po.items?.reduce((s: number, i: any) => s + i.quantity, 0) || 0;
-                  const totalApproved = po.items?.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0) || 0;
+                  const approvedReduced =
+                    approvedSummary.breakdown.length === requestedSummary.breakdown.length
+                    && approvedSummary.primary !== requestedSummary.primary;
                   return (
                     <>
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">Total Requested Qty</span>
-                        <span className="font-medium tabular-nums">{totalRequested} Units</span>
+                        <div className="text-right">
+                          <p className="font-medium tabular-nums">{requestedSummary.primary}</p>
+                          {requestedSummary.secondary && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {requestedSummary.secondary}
+                            </p>
+                          )}
+                        </div>
                       </div>
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">Total Approved Qty</span>
-                        <span className={`font-medium tabular-nums ${totalApproved < totalRequested ? "text-orange-600" : ""}`}>
-                          {totalApproved} Units
-                        </span>
+                        <div className="text-right">
+                          <p
+                            className={`font-medium tabular-nums ${
+                              approvedReduced ? "text-orange-600" : ""
+                            }`}
+                          >
+                            {approvedSummary.primary}
+                          </p>
+                          {approvedSummary.secondary && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {approvedSummary.secondary}
+                            </p>
+                          )}
+                        </div>
                       </div>
                       <Separator />
                       <div className="flex justify-between text-sm">
@@ -357,7 +398,12 @@ export default function PurchaseOrderDetailPage() {
                     <p key={item.id} className="text-[10px] flex items-start gap-1.5">
                       <span className="text-orange-500 shrink-0">⚠</span>
                       <span className="text-muted-foreground">
-                        Quantity reduced ({item.productName}: <span className="font-semibold text-orange-600">{item.modifiedQty - item.quantity}</span>)
+                        Quantity updated ({item.productName}:{" "}
+                        <span className="font-semibold text-orange-600">
+                          {formatRetailerOrderItemQuantity(item.quantity, item)}
+                          {" → "}
+                          {formatRetailerOrderItemQuantity(item.modifiedQty, item)}
+                        </span>)
                       </span>
                     </p>
                   ))}
@@ -604,7 +650,9 @@ export default function PurchaseOrderDetailPage() {
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{item.productName}</p>
-                    <p className="text-xs text-muted-foreground">Ordered: {expectedQty}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Ordered: {formatRetailerOrderItemQuantity(expectedQty, item)}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Input
