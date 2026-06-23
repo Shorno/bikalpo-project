@@ -4,6 +4,7 @@ import { getInventoryBehaviourOptions } from "@bikalpo-project/db/fulfillment.sc
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useProductTypeColumns } from "@/components/features/product-type/components/product-type-columns";
+import { resolveProductTypeProfile } from "@/components/features/product-type/components/product-type-row";
 import ProductTypeTable from "@/components/features/product-type/components/product-type-table";
 import TableSkeleton from "@/components/table-skeleton";
 import { orpc } from "@/utils/orpc";
@@ -36,10 +37,15 @@ export default function ProductTypeList() {
     return <TableSkeleton columns={7} />;
   }
 
+  const rows = (data?.types ?? []).map((type) => ({
+    ...type,
+    fulfillmentProfile: resolveProductTypeProfile(type),
+  }));
+
   return (
     <ProductTypeTable
       columns={columns}
-      data={data?.types ?? []}
+      data={rows}
       statusFilter={statusFilter}
       inventoryBehaviourFilter={inventoryBehaviourFilter}
       inventoryBehaviourOptions={inventoryBehaviourOptions}

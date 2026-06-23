@@ -10,6 +10,7 @@ import { ArrowUpDown, Eye, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import DeleteTypeDialog from "@/components/features/product-type/components/delete-type-dialog";
 import EditTypeDialog from "@/components/features/product-type/components/edit-type-dialog";
+import { resolveProductTypeProfile } from "@/components/features/product-type/components/product-type-row";
 import ToggleTypeDialog from "@/components/features/product-type/components/toggle-type-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ export type ProductTypeRow = {
   isActive: boolean;
   displayOrder: number;
   categoryCount: number;
-  fulfillmentProfile: ProductTypeFulfillmentProfile;
+  fulfillmentProfile?: ProductTypeFulfillmentProfile;
 };
 
 export function useProductTypeColumns() {
@@ -72,19 +73,23 @@ export function useProductTypeColumns() {
     {
       id: "fulfillment",
       header: "Flow",
-      cell: ({ row }) => (
-        <div className="space-y-1">
-          <div className="text-sm font-medium">
-            {PRODUCT_TYPE_FAMILY_LABELS[row.original.fulfillmentProfile.family]}
+      cell: ({ row }) => {
+        const profile = resolveProductTypeProfile(row.original);
+
+        return (
+          <div className="space-y-1">
+            <div className="text-sm font-medium">
+              {PRODUCT_TYPE_FAMILY_LABELS[profile.family]}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {INVENTORY_BEHAVIOUR_LABELS[row.original.inventoryBehaviour]}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {profile.supportedModes.join(", ")}
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground">
-            {INVENTORY_BEHAVIOUR_LABELS[row.original.inventoryBehaviour]}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {row.original.fulfillmentProfile.supportedModes.join(", ")}
-          </div>
-        </div>
-      ),
+        );
+      },
     },
 
     {

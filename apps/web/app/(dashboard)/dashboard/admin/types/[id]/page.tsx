@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
+import { resolveProductTypeProfile } from "@/components/features/product-type/components/product-type-row";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -102,7 +103,7 @@ export default function TypeDetailPage() {
   }
 
   const t = data.type;
-  const profile = t.fulfillmentProfile;
+  const profile = resolveProductTypeProfile(t);
   const categories = t.categories || [];
   const products = data.products || [];
   const sellerCount = data.sellerCount ?? 0;
