@@ -2283,6 +2283,7 @@ const orderQueries = {
             return {
                 order: {
                     ...result,
+                    items: enrichPurchaseOrderItemsFulfillment(result.items),
                     warehouseName: warehouseInfo?.shopName || warehouseInfo?.name || "Admin",
                     warehousePhone: warehouseInfo?.phone || null,
                 },
