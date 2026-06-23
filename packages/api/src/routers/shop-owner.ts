@@ -4938,11 +4938,13 @@ const warehouseOrderQueries = {
 
                 const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
                 const isLooseOrder = resolvedMode.mode === "loose";
+                const usesContainerPricing =
+                    resolvedMode.stockStrategy === "container_count";
 
                 if (isLooseOrder) {
                     // ═══ LOOSE ORDER: Use variant's base price directly — no carton calculation ═══
                     console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose order — using base variant price: ${unitPrice}`);
-                } else {
+                } else if (usesContainerPricing) {
                     // ═══ PACK/CARTON ORDER: Resolve per-carton price ═══
 
                     // Look up carton and config for carton pricing
@@ -5000,6 +5002,10 @@ const warehouseOrderQueries = {
                     } else {
                         console.log(`[ORDER-PRICE] variant=${item.variantId}: No carton found, using raw pack price: ${unitPrice}`);
                     }
+                } else {
+                    console.log(
+                        `[ORDER-PRICE] variant=${item.variantId}: Direct ${resolvedMode.mode} order — using base variant price: ${unitPrice}`,
+                    );
                 }
 
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
