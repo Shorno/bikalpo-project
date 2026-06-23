@@ -3,7 +3,6 @@
 import {
   INVENTORY_BEHAVIOURS,
   INVENTORY_BEHAVIOUR_LABELS,
-  PRODUCT_TYPE_FAMILY_LABELS,
   buildProductTypeFulfillmentProfile,
 } from "@bikalpo-project/db/fulfillment";
 import { useForm } from "@tanstack/react-form";
@@ -33,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
 
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -185,17 +185,7 @@ export default function NewTypeDialog() {
               });
 
               return (
-                <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm">
-                  <div className="font-medium">
-                    Family: {PRODUCT_TYPE_FAMILY_LABELS[profile.family]}
-                  </div>
-                  <div className="text-muted-foreground">
-                    Modes: {profile.supportedModes.join(", ")}
-                  </div>
-                  <div className="text-muted-foreground">
-                    Flow: {profile.orderUnit} order {"->"} {profile.conversionUnit} conversion
-                  </div>
-                </div>
+                <FulfillmentProfilePreview profile={profile} compact />
               );
             }}
           </form.Subscribe>
