@@ -19,6 +19,10 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useCallback } from "react";
+import {
+  formatRetailerOrderItemQuantity,
+  getRetailerOrderFulfillmentSummary,
+} from "@/components/features/orders/retailer-order-fulfillment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,12 +48,26 @@ const statusCfg: Record<string, { label: string; icon: React.ReactNode; cls: str
 // ─── CSV Export ──────────────────────────────────────────────
 
 function exportCSV(orders: any[]) {
-  const rows = [["PO ID", "Wholesaler", "Product", "Qty", "Amount", "Date", "Status", "Payment", "Invoice"]];
+  const rows = [[
+    "PO ID",
+    "Wholesaler",
+    "Product",
+    "Fulfillment",
+    "Mode Breakdown",
+    "Amount",
+    "Date",
+    "Status",
+    "Payment",
+    "Invoice",
+  ]];
   for (const o of orders) {
     const productNames = o.items?.map((i: any) => i.productName).join("; ") || "";
+    const fulfillment = getRetailerOrderFulfillmentSummary(o.items);
     rows.push([
       o.orderNumber, o.warehouseName, productNames,
-      String(o.totalQty), String(o.totalAmount),
+      fulfillment.primary,
+      fulfillment.secondary || fulfillment.badges.join("; "),
+      String(o.totalAmount),
       new Date(o.createdAt).toLocaleDateString("en-BD"),
       o.status, o.paymentMethod || "", o.invoiceNumber || "",
     ]);
@@ -217,7 +235,7 @@ export default function PurchaseHistoryPage() {
                   <TableHead className="font-semibold">PO ID</TableHead>
                   <TableHead className="font-semibold">Wholesaler</TableHead>
                   <TableHead className="font-semibold">Product</TableHead>
-                  <TableHead className="font-semibold text-center">Qty</TableHead>
+                  <TableHead className="font-semibold text-center">Fulfillment</TableHead>
                   <TableHead className="font-semibold text-right">Amount</TableHead>
                   <TableHead className="font-semibold">Date</TableHead>
                   <TableHead className="font-semibold">Status</TableHead>
@@ -228,6 +246,7 @@ export default function PurchaseHistoryPage() {
                   const cfg = statusCfg[o.status] || statusCfg.delivered;
                   const isExpanded = expandedId === o.id;
                   const firstProduct = o.items?.[0];
+                  const fulfillment = getRetailerOrderFulfillmentSummary(o.items);
                   return (
                     <>
                       <TableRow
@@ -253,7 +272,14 @@ export default function PurchaseHistoryPage() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center"><span className="text-sm tabular-nums">{o.totalQty}</span></TableCell>
+                        <TableCell className="text-center">
+                          <div className="space-y-0.5">
+                            <p className="text-sm font-medium tabular-nums">{fulfillment.primary}</p>
+                            {fulfillment.secondary && (
+                              <p className="text-[10px] text-muted-foreground">{fulfillment.secondary}</p>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right"><span className="text-sm font-medium tabular-nums">৳ {o.totalAmount.toLocaleString("en-BD")}</span></TableCell>
                         <TableCell>
                           <span className="text-xs text-muted-foreground tabular-nums">
@@ -317,10 +343,15 @@ function HistoryDetail({ order: o }: { order: any }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{item.productName}</p>
                     <p className="text-xs text-muted-foreground">{item.productSize}</p>
+                    <Badge variant="outline" className="mt-1 text-[10px]">
+                      {item.supplyModeLabel}
+                    </Badge>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-semibold tabular-nums">৳ {(qty * Number(price)).toLocaleString("en-BD")}</p>
-                    <p className="text-xs text-muted-foreground">{qty} × ৳{Number(price).toFixed(0)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatRetailerOrderItemQuantity(qty, item)} × ৳{Number(price).toFixed(0)}
+                    </p>
                   </div>
                 </div>
               );
