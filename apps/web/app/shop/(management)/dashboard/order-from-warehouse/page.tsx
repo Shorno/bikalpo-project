@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type {
   FulfillmentMode,
@@ -148,6 +149,14 @@ function getCartItemKey(item: {
   targetVariantId?: number | null;
 }) {
   return `${item.variantId}:${item.fulfillmentMode}:${item.targetVariantId ?? "none"}`;
+}
+
+function buildWarehouseOrderUrl(warehouseSlug?: string | null) {
+  if (!warehouseSlug) {
+    return "/dashboard/order-from-warehouse";
+  }
+
+  return `/dashboard/order-from-warehouse?warehouse=${encodeURIComponent(warehouseSlug)}`;
 }
 
 /* ─── Product Card (grid card) ─── */
