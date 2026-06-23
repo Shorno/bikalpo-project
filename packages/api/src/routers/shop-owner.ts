@@ -4915,20 +4915,19 @@ const warehouseOrderQueries = {
                     });
                 }
 
-                // Stock validation depends on supply mode:
-                // - Pack/carton orders: item.quantity = carton count, so verify active carton count
-                // - Loose orders: item.quantity = unit count (in KG units), so verify availableQty
-                if (item.supplyMode === "pack") {
+                // Stock validation depends on the resolved fulfillment strategy:
+                // - container_count: quantity is the number of cartons/boxes/bundles/drums
+                // - direct_quantity: quantity is the number of direct units or loose units
+                if (resolvedMode.stockStrategy === "container_count") {
                     if (activeCartonCount < item.quantity) {
                         throw new ORPCError("BAD_REQUEST", {
-                            message: `Not enough cartons for ${inv.variant?.product?.name || "product"}. Active cartons: ${activeCartonCount}, requested: ${item.quantity}`,
+                            message: `Not enough ${resolvedMode.mode}s for ${inv.variant?.product?.name || "product"}. Available containers: ${activeCartonCount}, requested: ${item.quantity}`,
                         });
                     }
                 } else {
-                    // Loose orders: compare unit/KG count directly
                     if (availableQty < item.quantity) {
                         throw new ORPCError("BAD_REQUEST", {
-                            message: `Insufficient stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
+                            message: `Insufficient ${resolvedMode.mode} stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
                         });
                     }
                 }
