@@ -13,3 +13,4 @@ const pool = new Pool({
 
 export const db = drizzle({ client: pool, schema });
 export * from "./fulfillment";
+export * from "./fulfillment.schema";
