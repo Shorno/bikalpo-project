@@ -390,7 +390,7 @@ export default function ConnectedSupplierDetailPage() {
   const detail = data as ConnectedSupplierDetail;
   const phoneForLinks = detail.identity.phone?.replace(/[^\d+]/g, "") || "";
   const orderLink = detail.identity.warehouseSlug
-    ? `/dashboard/warehouses/${detail.identity.warehouseSlug}`
+    ? `/dashboard/order-from-warehouse?warehouse=${encodeURIComponent(detail.identity.warehouseSlug)}`
     : "/dashboard/warehouses";
   const compareLink = detail.smartInsight.compareCategory
     ? `/dashboard/connected-suppliers?category=${encodeURIComponent(detail.smartInsight.compareCategory)}`
