@@ -37,14 +37,20 @@ interface DataTableProps {
   columns: ColumnDef<ProductTypeRow, unknown>[];
   data: ProductTypeRow[];
   statusFilter: string;
+  inventoryBehaviourFilter: string;
+  inventoryBehaviourOptions: Array<{ value: string; label: string }>;
   onStatusFilterChange: (value: string) => void;
+  onInventoryBehaviourFilterChange: (value: string) => void;
 }
 
 export default function ProductTypeTable({
   columns,
   data,
   statusFilter,
+  inventoryBehaviourFilter,
+  inventoryBehaviourOptions,
   onStatusFilterChange,
+  onInventoryBehaviourFilterChange,
 }: DataTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -90,6 +96,22 @@ export default function ProductTypeTable({
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="inactive">Draft</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={inventoryBehaviourFilter}
+            onValueChange={onInventoryBehaviourFilterChange}
+          >
+            <SelectTrigger className="w-[190px]">
+              <SelectValue placeholder="Inventory behaviour" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Behaviours</SelectItem>
+              {inventoryBehaviourOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
