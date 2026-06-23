@@ -864,6 +864,16 @@ export default function OrderFromWarehousePage() {
 
   const orderMutation = usePlaceWarehouseOrder();
 
+  useEffect(() => {
+    if (!deepLinkedWarehouseSlug || deepLinkedWarehouseSlug === selectedSlug) {
+      return;
+    }
+
+    setWarehouseInput(deepLinkedWarehouseSlug);
+    setSelectedSlug(deepLinkedWarehouseSlug);
+    setStep("browse");
+  }, [deepLinkedWarehouseSlug, selectedSlug]);
+
   function parseSlug(input: string): string | null {
     const t = input.trim();
     if (!t) return null;
