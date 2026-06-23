@@ -21,14 +21,18 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   FulfillmentMode,
   InventoryBehaviour,
   ProductTypeFulfillmentProfile,
 } from "@bikalpo-project/db/fulfillment";
 import { INVENTORY_BEHAVIOUR_LABELS } from "@bikalpo-project/db/fulfillment";
-import { getFulfillmentFamilyLabel } from "@/components/features/warehouse/warehouse-order-fulfillment";
+import {
+  getDefaultWarehouseOrderMode,
+  getFulfillmentFamilyLabel,
+  getWarehouseOrderModeOptions,
+} from "@/components/features/warehouse/warehouse-order-fulfillment";
 import { orpc } from "@/utils/orpc";
 
 /* ─── Types ─── */
@@ -99,23 +103,7 @@ type GroupedProduct = {
 };
 
 /* ─── Group flat API data → category → product → variants ─── */
-function groupByCategory(products: Array<{
-  inventoryId: number;
-  variantId: number;
-  availableQty: string;
-  price: string;
-  canOrder: boolean;
-  product: {
-    id: number;
-    name: string;
-    image: string | null;
-    categoryName: string;
-    unitSize: string | null;
-    type: GroupedProduct["type"];
-    fulfillmentProfile: ProductTypeFulfillmentProfile;
-  };
-  variant: VariantItem["variant"];
-}>): Map<string, GroupedProduct[]> {
+function groupByCategory(products: any[]): Map<string, GroupedProduct[]> {
   const productMap = new Map<number, GroupedProduct>();
   for (const item of products) {
     const pid = item.product?.id;
@@ -148,6 +136,14 @@ function groupByCategory(products: Array<{
     catMap.get(cat)!.push(prod);
   }
   return catMap;
+}
+
+function getCartItemKey(item: {
+  variantId: number;
+  fulfillmentMode: FulfillmentMode;
+  targetVariantId?: number | null;
+}) {
+  return `${item.variantId}:${item.fulfillmentMode}:${item.targetVariantId ?? "none"}`;
 }
 
 /* ─── Product Card (grid card) ─── */
@@ -254,12 +250,15 @@ function VariantModal({
   product: GroupedProduct;
   cart: CartItem[];
   addToCart: (item: CartItem) => void;
-  updateQty: (variantId: number, delta: number) => void;
+  updateQty: (itemKey: string, delta: number) => void;
   onClose: () => void;
 }) {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const [selectedCartonSizeIdx, setSelectedCartonSizeIdx] = useState(0);
+  const [selectedMode, setSelectedMode] = useState<FulfillmentMode>(
+    product.fulfillmentProfile.defaultMode,
+  );
 
   // ── Group variants by brand ──
   const brandGroups = (() => {
@@ -277,41 +276,70 @@ function VariantModal({
   const hasBrands = brandGroups.length > 1 || (brandGroups.length === 1 && brandGroups[0]!.brandName !== "Unbranded");
 
   const selected = product.variants[selectedIdx]!;
+  const profile = product.fulfillmentProfile;
+  const modeOptions = getWarehouseOrderModeOptions(profile, selected);
+  const selectedModeOption =
+    modeOptions.find((option) => option.mode === selectedMode) ?? modeOptions[0];
   const selectedBrandKey = selected.variant.brandName || "Unbranded";
-  const inCart = cart.find((c) => c.variantId === selected.variantId);
   const isLooseVariant = (selected.variant.packType || "").toLowerCase() === "loose";
   const variantWeightKg = Number(selected.variant.weightKg) || 0;
   const rawPrice = Number(selected.price) || 0;
+  const usesContainerStock = selectedModeOption?.usesContainerStock ?? false;
+  const selectedTargetVariantId = selectedModeOption?.requiresTargetVariant
+    ? selected.variantId
+    : null;
+  const selectedCartKey = getCartItemKey({
+    variantId: selected.variantId,
+    fulfillmentMode: selectedModeOption?.mode ?? profile.defaultMode,
+    targetVariantId: selectedTargetVariantId,
+  });
+  const inCart = cart.find((c) => getCartItemKey(c) === selectedCartKey);
 
   // ── Loose vs Carton: different stock & pricing logic ──
   const cartonOptions = selected.variant.cartonOptions || [];
-  const selectedCarton = isLooseVariant ? null : (cartonOptions[selectedCartonSizeIdx] || cartonOptions[0]);
+  const selectedCarton = usesContainerStock
+    ? (cartonOptions[selectedCartonSizeIdx] || cartonOptions[0])
+    : null;
 
   // For loose: stock is the raw availableQty (in KG); for carton: stock is carton count
-  const looseStockKg = isLooseVariant ? Number(selected.availableQty) || 0 : 0;
+  const looseStockKg =
+    !usesContainerStock && isLooseVariant ? Number(selected.availableQty) || 0 : 0;
   // For loose: max orderable qty = floor(total_loose_kg / variant_weight)
-  const looseMaxQty = isLooseVariant && variantWeightKg > 0 ? Math.floor(looseStockKg / variantWeightKg) : 0;
-  const stockQty = isLooseVariant ? looseMaxQty : (selectedCarton?.count ?? 0);
+  const looseMaxQty =
+    !usesContainerStock && isLooseVariant && variantWeightKg > 0
+      ? Math.floor(looseStockKg / variantWeightKg)
+      : 0;
+  const directStockQty =
+    !usesContainerStock && !isLooseVariant
+      ? Math.floor(Number(selected.availableQty) || 0)
+      : 0;
+  const stockQty = usesContainerStock
+    ? (selectedCarton?.count ?? selected.variant.totalCartonCount ?? 0)
+    : isLooseVariant
+      ? looseMaxQty
+      : directStockQty;
   const canOrder = selected.canOrder !== false && stockQty > 0;
 
   // For loose: price is the base variant price (per weightKg unit, e.g. per 10KG)
   // For carton: calculate per-carton price from variant price
-  const perUnitPrice = isLooseVariant
-    ? rawPrice
-    : (() => {
-        if (isLooseVariant && selectedCarton) {
-          if (variantWeightKg > 0) {
-            const perKg = rawPrice / variantWeightKg;
-            return perKg * selectedCarton.weightKg;
-          }
-          return rawPrice * selectedCarton.weightKg;
-        }
-        return rawPrice;
-      })();
+  const perUnitPrice = usesContainerStock
+    ? Number(selectedCarton?.cartonPrice || rawPrice)
+    : rawPrice;
 
   // Get variants for the currently selected brand
   const currentBrandGroup = brandGroups.find(bg => bg.brandName === selectedBrandKey);
   const brandVariants = currentBrandGroup?.variants ?? [];
+  const familyLabel = getFulfillmentFamilyLabel(profile);
+  const behaviourLabel = INVENTORY_BEHAVIOUR_LABELS[product.type.inventoryBehaviour];
+  const quantityUnitLabel =
+    selectedModeOption?.quantityUnitLabel
+    ?? (isLooseVariant && variantWeightKg > 0
+      ? `${variantWeightKg} KG`
+      : selected.variant.unitLabel || "Unit");
+
+  useEffect(() => {
+    setSelectedMode(getDefaultWarehouseOrderMode(profile, selected));
+  }, [profile, selected]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -341,6 +369,14 @@ function VariantModal({
           <div>
             <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
             <p className="text-xs text-gray-400 mt-0.5">{product.categoryName}</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                {familyLabel}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">
+                {behaviourLabel}
+              </span>
+            </div>
           </div>
 
           {/* ─── Brand-wise Price Comparison ─── */}
@@ -356,8 +392,10 @@ function VariantModal({
                   const maxPrice = Math.max(...prices);
                   const isActive = bg.brandName === selectedBrandKey;
                   const brandCartCount = bg.variants.reduce((sum, v) => {
-                    const ci = cart.find(c => c.variantId === v.variantId);
-                    return sum + (ci?.quantity ?? 0);
+                    const variantQty = cart
+                      .filter((c) => c.variantId === v.variantId)
+                      .reduce((variantSum, c) => variantSum + c.quantity, 0);
+                    return sum + variantQty;
                   }, 0);
                   const totalBrandCartons = bg.variants.reduce((s, v) => s + (v.variant.totalCartonCount || 0), 0);
 
@@ -423,6 +461,37 @@ function VariantModal({
             </div>
           )}
 
+          {modeOptions.length > 1 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Select Supply Mode
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {modeOptions.map((option) => {
+                  const isActive = option.mode === selectedModeOption?.mode;
+                  return (
+                    <button
+                      key={`${selected.variantId}-${option.mode}`}
+                      onClick={() => {
+                        setSelectedMode(option.mode);
+                        setQty(1);
+                        setSelectedCartonSizeIdx(0);
+                      }}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        isActive
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-gray-200 bg-white text-gray-600 hover:border-blue-300"
+                      }`}
+                    >
+                      <div className="text-xs font-semibold">{option.label}</div>
+                      <div className="text-[10px] opacity-80">{option.description}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Variant Info */}
           <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
             <div className="flex items-center justify-between">
@@ -457,9 +526,9 @@ function VariantModal({
             <div>
               <div className="text-xl font-bold text-gray-900">৳{perUnitPrice.toLocaleString()}</div>
               <div className="text-[10px] text-gray-400">
-                {isLooseVariant
-                  ? `per ${variantWeightKg > 0 ? `${variantWeightKg} KG` : "unit"}`
-                  : "per Carton"
+                {usesContainerStock
+                  ? `per ${selectedModeOption?.label || "container"}`
+                  : `per ${quantityUnitLabel.toLowerCase()}`
                 }
               </div>
             </div>
@@ -495,7 +564,9 @@ function VariantModal({
                       {packVars.map((v) => {
                         const vWeight = Number(v.variant.weightKg) || 0;
                         const isSelected = v.idx === selectedIdx;
-                        const vInCart = cart.find((c) => c.variantId === v.variantId);
+                        const vCartQty = cart
+                          .filter((c) => c.variantId === v.variantId)
+                          .reduce((sum, c) => sum + c.quantity, 0);
                         const vTotalCartons = v.variant.totalCartonCount || 0;
 
                         return (
@@ -517,9 +588,9 @@ function VariantModal({
                                 📦 {vTotalCartons} carton
                               </div>
                             )}
-                            {vInCart && (
+                            {vCartQty > 0 && (
                               <div className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-blue-500"}`}>
-                                {vInCart.quantity} in cart
+                                {vCartQty} in cart
                               </div>
                             )}
                           </button>
@@ -572,10 +643,10 @@ function VariantModal({
           })()}
 
           {/* ─── Select Carton Size (hidden for loose) ─── */}
-          {!isLooseVariant && cartonOptions.length >= 1 && (
+          {usesContainerStock && cartonOptions.length >= 1 && (
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Select Carton Size
+                Select {selectedModeOption?.label || "Carton"} Size
               </h3>
               <div className="flex flex-wrap gap-2">
                 {cartonOptions.map((opt, optIdx) => {
@@ -641,7 +712,7 @@ function VariantModal({
                 {/* Total calculation */}
                 <div className="flex items-center justify-between mt-2 px-2 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-500">
                   <span>
-                    {isLooseVariant
+                    {!usesContainerStock && isLooseVariant
                       ? `Total: ${qty} × ${variantWeightKg} KG × ৳${perUnitPrice.toLocaleString()}`
                       : `Total: ${qty} Carton × ৳${perUnitPrice.toLocaleString()}`
                     }
@@ -668,7 +739,7 @@ function VariantModal({
               {inCart ? (
                 <>
                   <button
-                    onClick={() => { updateQty(selected.variantId, qty - inCart.quantity); onClose(); }}
+                    onClick={() => { updateQty(selectedCartKey, qty - inCart.quantity); onClose(); }}
                     className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 transition-colors"
                   >
                     <ShoppingCart size={14} /> Update Cart ({qty})
@@ -685,19 +756,28 @@ function VariantModal({
                         variantId: selected.variantId,
                         quantity: qty,
                         productName: product.name,
-                        unitLabel: isLooseVariant ? `${variantWeightKg} KG` : "Carton",
-                        weightKg: isLooseVariant ? String(variantWeightKg) : (selectedCarton ? String(selectedCarton.weightKg) : selected.variant.weightKg),
+                        unitLabel: usesContainerStock
+                          ? (selectedModeOption?.label || "Carton")
+                          : quantityUnitLabel,
+                        weightKg: !usesContainerStock && isLooseVariant
+                          ? String(variantWeightKg)
+                          : (selectedCarton ? String(selectedCarton.weightKg) : selected.variant.weightKg),
                         retailPrice: String(perUnitPrice),
                         productImage: product.image || "",
                         innerPackSizeKg: selected.variant.innerPackSizeKg,
                         packCountInside: selected.variant.packCountInside,
-                        supplyMode: isLooseVariant ? "loose" : "pack",
-                        targetVariantId: isLooseVariant ? undefined : selected.variantId,
+                        fulfillmentMode: selectedModeOption?.mode ?? profile.defaultMode,
+                        supplyMode: selectedModeOption?.mode ?? profile.defaultMode,
+                        modeLabel: selectedModeOption?.label ?? "Unit",
+                        quantityUnitLabel,
+                        targetVariantId: selectedTargetVariantId,
+                        targetVariantLabel: selectedTargetVariantId ? selected.variant.unitLabel : null,
+                        familyLabel,
                       });
                       onClose();
                     }}
                     className={`flex-1 py-2.5 text-white text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition-colors ${
-                      isLooseVariant
+                      !usesContainerStock && isLooseVariant
                         ? "bg-emerald-600 hover:bg-emerald-700"
                         : "bg-blue-600 hover:bg-blue-700"
                     }`}
@@ -788,20 +868,33 @@ export default function OrderFromWarehousePage() {
 
   function addToCart(item: CartItem) {
     setCart((prev) => {
-      const ex = prev.find((c) => c.variantId === item.variantId);
-      if (ex) return prev.map((c) => (c.variantId === item.variantId ? { ...c, quantity: c.quantity + 1 } : c));
+      const itemKey = getCartItemKey(item);
+      const ex = prev.find((c) => getCartItemKey(c) === itemKey);
+      if (ex) {
+        return prev.map((c) =>
+          getCartItemKey(c) === itemKey
+            ? { ...c, quantity: c.quantity + item.quantity }
+            : c,
+        );
+      }
       return [...prev, item];
     });
   }
 
-  function updateQty(variantId: number, delta: number) {
+  function updateQty(itemKey: string, delta: number) {
     setCart((prev) =>
-      prev.map((c) => (c.variantId === variantId ? { ...c, quantity: Math.max(0, c.quantity + delta) } : c)).filter((c) => c.quantity > 0),
+      prev
+        .map((c) =>
+          getCartItemKey(c) === itemKey
+            ? { ...c, quantity: Math.max(0, c.quantity + delta) }
+            : c,
+        )
+        .filter((c) => c.quantity > 0),
     );
   }
 
-  function removeFromCart(variantId: number) {
-    setCart((prev) => prev.filter((c) => c.variantId !== variantId));
+  function removeFromCart(itemKey: string) {
+    setCart((prev) => prev.filter((c) => getCartItemKey(c) !== itemKey));
   }
 
   const cartTotal = cart.reduce((s, c) => s + Number(c.retailPrice) * c.quantity, 0);
@@ -983,7 +1076,7 @@ export default function OrderFromWarehousePage() {
                   <>
                     <div className="space-y-2 max-h-[300px] overflow-y-auto">
                       {cart.map((item) => (
-                        <div key={item.variantId} className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
+                        <div key={getCartItemKey(item)} className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
                           {item.productImage && <Image src={item.productImage} alt="" width={28} height={28} className="w-7 h-7 rounded object-cover shrink-0" unoptimized />}
                           <div className="flex-1 min-w-0">
                             <div className="text-[11px] font-medium text-gray-800 truncate">{item.productName}</div>
@@ -991,7 +1084,7 @@ export default function OrderFromWarehousePage() {
                           </div>
                           <div className="flex flex-col items-end gap-1 shrink-0">
                             <span className="text-[11px] font-semibold">৳{(Number(item.retailPrice) * item.quantity).toLocaleString()}</span>
-                            <button onClick={() => removeFromCart(item.variantId)} className="text-red-400 hover:text-red-600"><Trash2 size={10} /></button>
+                            <button onClick={() => removeFromCart(getCartItemKey(item))} className="text-red-400 hover:text-red-600"><Trash2 size={10} /></button>
                           </div>
                         </div>
                       ))}
@@ -1029,7 +1122,7 @@ export default function OrderFromWarehousePage() {
             <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Order Summary</h3>
             <div className="space-y-2">
               {cart.map((item) => (
-                <div key={item.variantId} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+                <div key={getCartItemKey(item)} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
                   {item.productImage && <Image src={item.productImage} alt="" width={36} height={36} className="w-9 h-9 rounded object-cover" unoptimized />}
                   <div className="flex-1 min-w-0"><span className="text-sm text-gray-800 font-medium truncate block">{item.productName}</span><span className="text-[10px] text-gray-400">{item.unitLabel} × {item.quantity}</span></div>
                   <span className="text-sm font-semibold shrink-0">৳{(Number(item.retailPrice) * item.quantity).toLocaleString()}</span>
@@ -1043,7 +1136,7 @@ export default function OrderFromWarehousePage() {
             <button onClick={() => setStep("browse")} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Back</button>
             <button onClick={() => {
               if (!shippingName || !shippingPhone || !shippingAddress || !shippingCity) { alert("Please fill in all required shipping fields"); return; }
-              orderMutation.mutate({ warehouseSlug: selectedSlug!, items: cart.map((c) => ({ variantId: c.variantId, quantity: c.quantity, supplyMode: c.supplyMode, targetVariantId: c.targetVariantId })), shippingName, shippingPhone, shippingAddress, shippingCity, customerNote: customerNote || undefined });
+              orderMutation.mutate({ warehouseSlug: selectedSlug!, items: cart.map((c) => ({ variantId: c.variantId, quantity: c.quantity, fulfillmentMode: c.fulfillmentMode, supplyMode: c.supplyMode, targetVariantId: c.targetVariantId })), shippingName, shippingPhone, shippingAddress, shippingCity, customerNote: customerNote || undefined });
             }} disabled={orderMutation.isPending}
               className="flex-1 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
               {orderMutation.isPending ? (<><Loader2 size={14} className="animate-spin" /> Placing Order...</>) : (<>Place Order — ৳{cartTotal.toLocaleString()}</>)}
