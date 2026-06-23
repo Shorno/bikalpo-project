@@ -199,6 +199,61 @@ export function useConversionHistory() {
   );
 }
 
+/** Approved warehouse catalog for retailer ordering */
+export function useWarehouseCatalog(params: {
+  warehouseSlug: string;
+  search?: string;
+  page?: string;
+  limit?: string;
+  enabled?: boolean;
+}) {
+  return useQuery(
+    orpc.shopOwner.getWarehouseProductsFiltered.queryOptions({
+      input: {
+        warehouseSlug: params.warehouseSlug,
+        search: params.search || undefined,
+        page: params.page ?? "1",
+        limit: params.limit ?? "100",
+      },
+      enabled: params.enabled ?? Boolean(params.warehouseSlug),
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Place a retailer purchase order to a connected warehouse */
+export function usePlaceWarehouseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      warehouseSlug: string;
+      items: Array<{
+        variantId: number;
+        quantity: number;
+        fulfillmentMode?: string;
+        supplyMode?: string;
+        targetVariantId?: number | null;
+      }>;
+      shippingName: string;
+      shippingPhone: string;
+      shippingAddress: string;
+      shippingCity: string;
+      customerNote?: string;
+    }) => orpc.shopOwner.placeWarehouseOrder.call(input),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getConnectedWarehouses"],
+      });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getWarehouseProductsFiltered"],
+      });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getConversionHistory"],
+      });
+    },
+  });
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;
