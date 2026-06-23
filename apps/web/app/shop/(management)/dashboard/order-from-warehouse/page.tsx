@@ -1080,7 +1080,10 @@ export default function OrderFromWarehousePage() {
                           {item.productImage && <Image src={item.productImage} alt="" width={28} height={28} className="w-7 h-7 rounded object-cover shrink-0" unoptimized />}
                           <div className="flex-1 min-w-0">
                             <div className="text-[11px] font-medium text-gray-800 truncate">{item.productName}</div>
-                            <div className="text-[10px] text-gray-400">{item.unitLabel} × {item.quantity}</div>
+                            <div className="text-[10px] text-gray-400">{item.modeLabel} • {item.unitLabel} × {item.quantity}</div>
+                            {item.targetVariantLabel && (
+                              <div className="text-[10px] text-blue-500">Target: {item.targetVariantLabel}</div>
+                            )}
                           </div>
                           <div className="flex flex-col items-end gap-1 shrink-0">
                             <span className="text-[11px] font-semibold">৳{(Number(item.retailPrice) * item.quantity).toLocaleString()}</span>
@@ -1124,7 +1127,13 @@ export default function OrderFromWarehousePage() {
               {cart.map((item) => (
                 <div key={getCartItemKey(item)} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
                   {item.productImage && <Image src={item.productImage} alt="" width={36} height={36} className="w-9 h-9 rounded object-cover" unoptimized />}
-                  <div className="flex-1 min-w-0"><span className="text-sm text-gray-800 font-medium truncate block">{item.productName}</span><span className="text-[10px] text-gray-400">{item.unitLabel} × {item.quantity}</span></div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm text-gray-800 font-medium truncate block">{item.productName}</span>
+                    <span className="text-[10px] text-gray-400">{item.modeLabel} • {item.unitLabel} × {item.quantity}</span>
+                    {item.targetVariantLabel && (
+                      <span className="block text-[10px] text-blue-500">Target: {item.targetVariantLabel}</span>
+                    )}
+                  </div>
                   <span className="text-sm font-semibold shrink-0">৳{(Number(item.retailPrice) * item.quantity).toLocaleString()}</span>
                 </div>
               ))}
