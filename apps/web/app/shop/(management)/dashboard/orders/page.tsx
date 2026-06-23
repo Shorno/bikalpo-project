@@ -21,6 +21,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { getRetailerOrderFulfillmentSummary } from "@/components/features/orders/retailer-order-fulfillment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -426,7 +427,7 @@ export default function PurchaseOrdersPage() {
                   <TableHead className="font-bold py-2">PO ID</TableHead>
                   <TableHead className="font-bold py-2">Wholesaler</TableHead>
                   <TableHead className="font-bold py-2">Product</TableHead>
-                  <TableHead className="text-center font-bold py-2">Qty</TableHead>
+                  <TableHead className="text-center font-bold py-2">Fulfillment</TableHead>
                   <TableHead className="text-right font-bold py-2">Amount</TableHead>
                   <TableHead className="font-bold py-2">Status</TableHead>
                   <TableHead className="font-bold py-2">OTP</TableHead>
@@ -439,6 +440,7 @@ export default function PurchaseOrdersPage() {
                   const hasModifications = o.items?.some(
                     (item: any) => item.modifiedQty !== null
                   );
+                  const fulfillment = getRetailerOrderFulfillmentSummary(o.items);
 
                   return (
                     <TableRow
@@ -497,15 +499,43 @@ export default function PurchaseOrdersPage() {
                                 +{o.items.length - 1} more
                               </p>
                             )}
+                            {fulfillment.badges.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {fulfillment.badges.slice(0, 2).map((label) => (
+                                  <Badge
+                                    key={label}
+                                    variant="outline"
+                                    className="px-1.5 py-0 text-[9px]"
+                                  >
+                                    {label}
+                                  </Badge>
+                                ))}
+                                {fulfillment.badges.length > 2 && (
+                                  <Badge
+                                    variant="outline"
+                                    className="px-1.5 py-0 text-[9px]"
+                                  >
+                                    +{fulfillment.badges.length - 2}
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </TableCell>
 
-                      {/* Qty */}
+                      {/* Fulfillment */}
                       <TableCell className="text-center py-2">
-                        <span className="text-xs tabular-nums font-medium">
-                          {o.items?.reduce((sum: number, item: any) => sum + (item.modifiedQty ?? item.quantity), 0) || 0} pcs
-                        </span>
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-medium tabular-nums">
+                            {fulfillment.primary}
+                          </p>
+                          {fulfillment.secondary && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {fulfillment.secondary}
+                            </p>
+                          )}
+                        </div>
                       </TableCell>
 
                       {/* Amount */}
