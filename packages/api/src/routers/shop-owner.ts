@@ -140,6 +140,26 @@ function isPurchaseOrderStatus(status: string | null | undefined) {
     return !NON_PURCHASE_ORDER_STATUSES.has(status || "");
 }
 
+function getFulfillmentModeLabel(mode?: string | null) {
+    return (
+        (mode
+            && mode in FULFILLMENT_MODE_LABELS
+            && FULFILLMENT_MODE_LABELS[
+                mode as keyof typeof FULFILLMENT_MODE_LABELS
+            ])
+        || "Legacy"
+    );
+}
+
+function enrichPurchaseOrderItemsFulfillment<
+    TItem extends { supplyMode?: string | null },
+>(items: TItem[] | null | undefined) {
+    return (items || []).map((item) => ({
+        ...item,
+        supplyModeLabel: getFulfillmentModeLabel(item.supplyMode),
+    }));
+}
+
 function isPayableOrder(
     status: string | null | undefined,
     orderPaymentStatus: string | null | undefined,
