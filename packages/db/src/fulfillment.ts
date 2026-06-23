@@ -61,6 +61,23 @@ export const VARIANT_DIMENSION_KEYS = [
 
 export type VariantDimensionKey = (typeof VARIANT_DIMENSION_KEYS)[number];
 
+export const CONTAINER_FULFILLMENT_MODES = [
+  "pack",
+  "carton",
+  "box",
+  "bundle",
+  "drum",
+] as const;
+
+export const DIRECT_FULFILLMENT_MODES = [
+  "loose",
+  "unit",
+  "pair",
+  "cylinder",
+] as const;
+
+export const WEIGHT_POOL_FULFILLMENT_MODES = ["loose", "drum"] as const;
+
 type QuantityKind = "weight" | "volume" | "count";
 
 export type FulfillmentUnitDescriptor = {
@@ -522,4 +539,35 @@ export function describeFulfillmentProfile(
     .join(", ");
 
   return `${family} • ${behaviour} • ${modes}`;
+}
+
+export function isContainerFulfillmentMode(
+  mode: FulfillmentMode,
+): boolean {
+  return CONTAINER_FULFILLMENT_MODES.includes(
+    mode as (typeof CONTAINER_FULFILLMENT_MODES)[number],
+  );
+}
+
+export function isDirectFulfillmentMode(
+  mode: FulfillmentMode,
+): boolean {
+  return DIRECT_FULFILLMENT_MODES.includes(
+    mode as (typeof DIRECT_FULFILLMENT_MODES)[number],
+  );
+}
+
+export function usesWeightPoolFulfillmentMode(
+  mode: FulfillmentMode,
+): boolean {
+  return WEIGHT_POOL_FULFILLMENT_MODES.includes(
+    mode as (typeof WEIGHT_POOL_FULFILLMENT_MODES)[number],
+  );
+}
+
+export function supportsFulfillmentMode(
+  profile: ProductTypeFulfillmentProfile,
+  mode: FulfillmentMode,
+): boolean {
+  return profile.supportedModes.includes(mode);
 }
