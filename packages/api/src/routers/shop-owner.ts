@@ -11,6 +11,7 @@
 
 import { db } from "@bikalpo-project/db";
 import {
+    buildProductTypeFulfillmentProfile,
     FULFILLMENT_MODES,
     FULFILLMENT_MODE_LABELS,
 } from "@bikalpo-project/db/fulfillment";
@@ -6037,7 +6038,13 @@ const warehouseConnectionEndpoints = {
                     productSize: product.size,
                     productCategoryId: product.categoryId,
                     productSubCategoryId: product.subCategoryId,
+                    productTrackingType: product.trackingType,
+                    productIsReturnablePack: product.isReturnablePack,
                     categoryName: category.name,
+                    productTypeName: productType.name,
+                    productTypeSlug: productType.slug,
+                    productTypeInventoryBehaviour:
+                        productType.inventoryBehaviour,
                     variantUnitLabel: productVariant.unitLabel,
                     variantWeightKg: productVariant.weightKg,
                     variantSku: productVariant.sku,
@@ -6062,6 +6069,10 @@ const warehouseConnectionEndpoints = {
                 .leftJoin(
                     category,
                     eq(product.categoryId, category.id),
+                )
+                .leftJoin(
+                    productType,
+                    eq(category.typeId, productType.id),
                 )
                 // Prefer variant-level brand, fall back to product-level brand
                 .leftJoin(
@@ -6092,6 +6103,14 @@ const warehouseConnectionEndpoints = {
                 const rawQty = Number(item.availableQty || 0);
                 const inCarton = Number(item.inCartonQty || 0);
                 const effectiveQty = Math.max(0, rawQty - inCarton);
+                const fulfillmentProfile = buildProductTypeFulfillmentProfile({
+                    name: item.productTypeName,
+                    slug: item.productTypeSlug,
+                    inventoryBehaviour:
+                        item.productTypeInventoryBehaviour ?? "fixed_pack",
+                    trackingType: item.productTrackingType,
+                    isReturnablePack: item.productIsReturnablePack,
+                });
 
                 return {
                     inventoryId: item.inventoryId,
@@ -6107,6 +6126,16 @@ const warehouseConnectionEndpoints = {
                         size: item.productSize,
                         unitSize: item.productUnitSize,
                         categoryName: item.categoryName || "Uncategorized",
+                        type: {
+                            name: item.productTypeName ?? "Generic",
+                            slug: item.productTypeSlug,
+                            inventoryBehaviour:
+                                item.productTypeInventoryBehaviour
+                                ?? "fixed_pack",
+                            trackingType: item.productTrackingType,
+                            isReturnablePack: item.productIsReturnablePack,
+                        },
+                        fulfillmentProfile,
                     },
                     variant: {
                         unitLabel: item.variantUnitLabel,
