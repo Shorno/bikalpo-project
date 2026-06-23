@@ -31,6 +31,10 @@ export const adminProductTypeRouter = {
             z.object({
                 search: z.string().optional(),
                 status: z.enum(["all", "active", "inactive"]).optional().default("all"),
+                inventoryBehaviour: z
+                    .enum(["all", ...INVENTORY_BEHAVIOURS])
+                    .optional()
+                    .default("all"),
             }),
         )
         .handler(async ({ input }) => {
@@ -42,6 +46,11 @@ export const adminProductTypeRouter = {
                 conditions.push(eq(productType.isActive, true));
             } else if (input.status === "inactive") {
                 conditions.push(eq(productType.isActive, false));
+            }
+            if (input.inventoryBehaviour !== "all") {
+                conditions.push(
+                    eq(productType.inventoryBehaviour, input.inventoryBehaviour),
+                );
             }
 
             const types = await db.query.productType.findMany({
