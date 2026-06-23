@@ -33,6 +33,10 @@ import {
   getFulfillmentFamilyLabel,
   getWarehouseOrderModeOptions,
 } from "@/components/features/warehouse/warehouse-order-fulfillment";
+import {
+  usePlaceWarehouseOrder,
+  useWarehouseCatalog,
+} from "@/hooks/use-shop-owner-api";
 import { orpc } from "@/utils/orpc";
 
 /* ─── Types ─── */
@@ -836,27 +840,15 @@ export default function OrderFromWarehousePage() {
     },
   });
 
-  const { data: productsData, isLoading: loadingProducts } = useQuery({
-    queryKey: ["shopOwner", "getWarehouseProductsFiltered", selectedSlug, search],
-    queryFn: () =>
-      orpc.shopOwner.getWarehouseProductsFiltered.call({
-        warehouseSlug: selectedSlug!,
-        search: search || undefined,
-        page: "1",
-        limit: "100",
-      }),
+  const { data: productsData, isLoading: loadingProducts } = useWarehouseCatalog({
+    warehouseSlug: selectedSlug ?? "",
+    search,
+    page: "1",
+    limit: "100",
     enabled: !!selectedSlug && step === "browse",
   });
 
-  const orderMutation = useMutation({
-    mutationFn: (data: any) => orpc.shopOwner.placeWarehouseOrder.call(data),
-    onSuccess: (result) => {
-      setOrderResult(result);
-      setStep("success");
-      setCart([]);
-      queryClient.invalidateQueries({ queryKey: ["shopOwner", "getConnectedWarehouses"] });
-    },
-  });
+  const orderMutation = usePlaceWarehouseOrder();
 
   function parseSlug(input: string): string | null {
     const t = input.trim();
@@ -1145,7 +1137,13 @@ export default function OrderFromWarehousePage() {
             <button onClick={() => setStep("browse")} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Back</button>
             <button onClick={() => {
               if (!shippingName || !shippingPhone || !shippingAddress || !shippingCity) { alert("Please fill in all required shipping fields"); return; }
-              orderMutation.mutate({ warehouseSlug: selectedSlug!, items: cart.map((c) => ({ variantId: c.variantId, quantity: c.quantity, fulfillmentMode: c.fulfillmentMode, supplyMode: c.supplyMode, targetVariantId: c.targetVariantId })), shippingName, shippingPhone, shippingAddress, shippingCity, customerNote: customerNote || undefined });
+              orderMutation.mutate({ warehouseSlug: selectedSlug!, items: cart.map((c) => ({ variantId: c.variantId, quantity: c.quantity, fulfillmentMode: c.fulfillmentMode, supplyMode: c.supplyMode, targetVariantId: c.targetVariantId })), shippingName, shippingPhone, shippingAddress, shippingCity, customerNote: customerNote || undefined }, {
+                onSuccess: (result) => {
+                  setOrderResult(result);
+                  setStep("success");
+                  setCart([]);
+                },
+              });
             }} disabled={orderMutation.isPending}
               className="flex-1 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
               {orderMutation.isPending ? (<><Loader2 size={14} className="animate-spin" /> Placing Order...</>) : (<>Place Order — ৳{cartTotal.toLocaleString()}</>)}

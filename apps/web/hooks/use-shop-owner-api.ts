@@ -9,6 +9,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { orpc } from "@/utils/orpc";
 
 // ────────────────────────────────────────────────────────────────
@@ -230,8 +231,8 @@ export function usePlaceWarehouseOrder() {
       items: Array<{
         variantId: number;
         quantity: number;
-        fulfillmentMode?: string;
-        supplyMode?: string;
+        fulfillmentMode?: FulfillmentMode;
+        supplyMode?: FulfillmentMode;
         targetVariantId?: number | null;
       }>;
       shippingName: string;
