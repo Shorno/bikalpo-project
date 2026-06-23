@@ -84,6 +84,7 @@ import {
     checkAndExpireBids,
 } from "../services/open-order-matching";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -4848,7 +4849,29 @@ const warehouseOrderQueries = {
                         variant: {
                             with: {
                                 product: {
-                                    columns: { id: true, name: true, image: true, size: true },
+                                    columns: {
+                                        id: true,
+                                        name: true,
+                                        image: true,
+                                        size: true,
+                                        trackingType: true,
+                                        isReturnablePack: true,
+                                    },
+                                    with: {
+                                        category: {
+                                            columns: { id: true, name: true, slug: true },
+                                            with: {
+                                                type: {
+                                                    columns: {
+                                                        id: true,
+                                                        name: true,
+                                                        slug: true,
+                                                        inventoryBehaviour: true,
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
                                 },
                             },
                         },
@@ -4862,22 +4885,40 @@ const warehouseOrderQueries = {
                 }
 
                 const availableQty = Number(inv.availableQty);
+                const [cartonCountResult] = await db
+                    .select({ cnt: count() })
+                    .from(carton)
+                    .where(and(
+                        eq(carton.warehouseId, warehouseId),
+                        eq(carton.variantId, item.variantId),
+                        eq(carton.status, "active"),
+                    ));
+                const activeCartonCount = cartonCountResult?.cnt ?? 0;
+                const requestedMode = item.fulfillmentMode ?? item.supplyMode ?? "loose";
+                const resolvedMode = resolveWarehouseOrderMode({
+                    requestedMode,
+                    fallbackMode: "loose",
+                    activeCartonCount,
+                    productType: {
+                        typeName: inv.variant?.product?.category?.type?.name,
+                        typeSlug: inv.variant?.product?.category?.type?.slug,
+                        inventoryBehaviour:
+                            inv.variant?.product?.category?.type?.inventoryBehaviour,
+                        trackingType: inv.variant?.product?.trackingType,
+                        isReturnablePack: inv.variant?.product?.isReturnablePack,
+                    },
+                });
+
+                if (requestedMode && !resolvedMode.supportsRequestedMode) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `${requestedMode} mode is not supported for ${inv.variant?.product?.name || "this product type"}. Supported modes: ${resolvedMode.profile.supportedModes.join(", ")}`,
+                    });
+                }
 
                 // Stock validation depends on supply mode:
                 // - Pack/carton orders: item.quantity = carton count, so verify active carton count
                 // - Loose orders: item.quantity = unit count (in KG units), so verify availableQty
                 if (item.supplyMode === "pack") {
-                    // Count active cartons for this variant in the warehouse
-                    const [cartonCountResult] = await db
-                        .select({ cnt: count() })
-                        .from(carton)
-                        .where(and(
-                            eq(carton.warehouseId, warehouseId),
-                            eq(carton.variantId, item.variantId),
-                            eq(carton.status, "active"),
-                        ));
-                    const activeCartonCount = cartonCountResult?.cnt ?? 0;
-
                     if (activeCartonCount < item.quantity) {
                         throw new ORPCError("BAD_REQUEST", {
                             message: `Not enough cartons for ${inv.variant?.product?.name || "product"}. Active cartons: ${activeCartonCount}, requested: ${item.quantity}`,
@@ -4897,7 +4938,7 @@ const warehouseOrderQueries = {
                 let unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
 
                 const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
-                const isLooseOrder = item.supplyMode === "loose";
+                const isLooseOrder = resolvedMode.mode === "loose";
 
                 if (isLooseOrder) {
                     // ═══ LOOSE ORDER: Use variant's base price directly — no carton calculation ═══
@@ -4991,7 +5032,7 @@ const warehouseOrderQueries = {
                     productId: inv.variant?.product?.id || 0,
                     inventoryId: inv.id,
                     currentQty: inv.availableQty,
-                    supplyMode: item.supplyMode,
+                    supplyMode: resolvedMode.mode,
                     targetVariantId: resolvedTargetVariantId,
                 });
             }
