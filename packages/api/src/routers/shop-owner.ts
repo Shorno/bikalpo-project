@@ -2377,6 +2377,7 @@ const orderQueries = {
                                 modifiedQty: true,
                                 modifiedUnitPrice: true,
                                 deliveredQty: true,
+                                supplyMode: true,
                             },
                         },
                     },
@@ -2423,6 +2424,7 @@ const orderQueries = {
 
                 return {
                     ...o,
+                    items: enrichPurchaseOrderItemsFulfillment(o.items),
                     warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
                     tracking: {
                         totalOrdered,
