@@ -60,7 +60,8 @@ export function getRetailerOrderItemRemainingQty(
   item: RetailerOrderItemFulfillmentLike,
 ) {
   return Math.max(
-    getRetailerOrderItemEffectiveQty(item) - getRetailerOrderItemDeliveredQty(item),
+    getRetailerOrderItemEffectiveQty(item) -
+      getRetailerOrderItemDeliveredQty(item),
     0,
   );
 }
@@ -136,7 +137,9 @@ export function getRetailerOrderFulfillmentSummary(
 
   return {
     primary: `${itemCount} line items`,
-    secondary: breakdown.map((entry) => `${entry.quantity} ${entry.label}`).join(" • "),
+    secondary: breakdown
+      .map((entry) => `${entry.quantity} ${entry.label}`)
+      .join(" • "),
     badges: breakdown.map((entry) => entry.label),
     mixed: true,
     breakdown,
