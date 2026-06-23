@@ -1014,7 +1014,19 @@ export default function OrderFromWarehousePage() {
             <span className="text-sm text-blue-700 font-medium flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-500" /> 🏭 Connected to: {selectedSlug}
             </span>
-            <button onClick={() => { setStep("connect"); setSelectedSlug(null); setCart([]); setSearch(""); }} className="text-xs text-blue-500 hover:underline">Change warehouse</button>
+            <button
+              onClick={() => {
+                setStep("connect");
+                setSelectedSlug(null);
+                setCart([]);
+                setSearch("");
+                setWarehouseInput("");
+                router.replace(buildWarehouseOrderUrl(null));
+              }}
+              className="text-xs text-blue-500 hover:underline"
+            >
+              Change warehouse
+            </button>
           </div>
 
           {/* Search + Cart count */}
