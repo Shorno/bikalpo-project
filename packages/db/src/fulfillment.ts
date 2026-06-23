@@ -399,6 +399,17 @@ export function inferProductTypeFamily(
     return "lpg";
   }
 
+  const looksLikeBulkLiquid =
+    token.includes("bulk oil") ||
+    token.includes("drum oil") ||
+    token.includes("industrial oil") ||
+    ((token.includes("oil") || token.includes("liquid")) &&
+      (token.includes("bulk") || token.includes("drum")));
+
+  if (looksLikeBulkLiquid) {
+    return "bulk_liquid";
+  }
+
   if (
     input.inventoryBehaviour === "loose_convert" &&
     /(oil|liquid|chemical|lubricant|solvent|drum)/.test(token)

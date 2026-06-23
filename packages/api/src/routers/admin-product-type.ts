@@ -1,8 +1,8 @@
-import { db } from "@bikalpo-project/db";
 import {
     INVENTORY_BEHAVIOURS,
     buildProductTypeFulfillmentProfile,
-} from "@bikalpo-project/db/fulfillment";
+    db,
+} from "@bikalpo-project/db";
 import { category, product, productType, shopCategoryAssignment } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, asc, count, countDistinct, eq, ilike, inArray, type SQL } from "drizzle-orm";
