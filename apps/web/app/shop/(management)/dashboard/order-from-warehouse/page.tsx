@@ -849,6 +849,7 @@ export default function OrderFromWarehousePage() {
       if ((data.status as string) === "connected" || data.status === "already_connected") {
         setSelectedSlug(data.warehouse.warehouseSlug);
         setStep("browse");
+        router.replace(buildWarehouseOrderUrl(data.warehouse.warehouseSlug));
       }
       queryClient.invalidateQueries({ queryKey: ["shopOwner", "getConnectedWarehouses"] });
     },
