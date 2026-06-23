@@ -855,7 +855,11 @@ export default function OrderFromWarehousePage() {
     },
   });
 
-  const { data: productsData, isLoading: loadingProducts } = useWarehouseCatalog({
+  const {
+    data: productsData,
+    isLoading: loadingProducts,
+    error: productsError,
+  } = useWarehouseCatalog({
     warehouseSlug: selectedSlug ?? "",
     search,
     page: "1",
@@ -1028,6 +1032,22 @@ export default function OrderFromWarehousePage() {
               Change warehouse
             </button>
           </div>
+
+          {productsError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+                <div>
+                  <p className="text-sm font-medium text-red-700">
+                    Unable to open this warehouse
+                  </p>
+                  <p className="mt-0.5 text-xs text-red-600">
+                    {(productsError as Error)?.message || "This warehouse is not available for ordering right now."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Search + Cart count */}
           <div className="flex items-center gap-3">
