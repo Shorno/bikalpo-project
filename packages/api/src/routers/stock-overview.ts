@@ -41,6 +41,89 @@ function getStockStatus(qty: number, reorderLevel = 10): {
     return { label: "In Stock", badge: "in_stock" };
 }
 
+const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
+const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
+
+function normalizeMeasureUnit(unit?: string | null) {
+    return String(unit || "")
+        .trim()
+        .toUpperCase();
+}
+
+function parseLabelMeasure(label?: string | null) {
+    const normalizedLabel = String(label || "").trim();
+    if (!normalizedLabel) return null;
+
+    const pieceMatch = normalizedLabel.match(
+        /(\d+(?:\.\d+)?)\s*(pc|pcs|piece|pieces|pair|unit)\b/i,
+    );
+    if (pieceMatch) {
+        const value = Number(pieceMatch[1]);
+        if (value > 0) {
+            return {
+                quantityPerPack: value,
+                quantityUnit:
+                    normalizeMeasureUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
+            };
+        }
+    }
+
+    const weightMatch = normalizedLabel.match(
+        /(\d+(?:\.\d+)?)\s*(kg|kgs|kilogram|kilograms)\b/i,
+    );
+    if (weightMatch) {
+        const value = Number(weightMatch[1]);
+        if (value > 0) {
+            return {
+                quantityPerPack: value,
+                quantityUnit: "KG",
+            };
+        }
+    }
+
+    return null;
+}
+
+function getVariantMeasureInfo(input: {
+    packType?: string | null;
+    unitLabel?: string | null;
+    orderUnit?: string | null;
+    weightKg?: string | null;
+    piecesPerUnit?: number | null;
+}) {
+    const packType = input.packType || "other";
+    if (packType === "loose") {
+        return { quantityPerPack: 1, quantityUnit: "KG", isLoose: true };
+    }
+
+    const normalizedUnit = normalizeMeasureUnit(input.orderUnit);
+    const weightKg = parseFloat(input.weightKg || "0");
+    const piecesPerUnit = Number(input.piecesPerUnit || 0);
+
+    if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
+        return { quantityPerPack: weightKg, quantityUnit: "KG", isLoose: false };
+    }
+
+    if (piecesPerUnit > 0) {
+        return {
+            quantityPerPack: piecesPerUnit,
+            quantityUnit: PIECE_UNITS.has(normalizedUnit) ? "PCS" : normalizedUnit || "UNIT",
+            isLoose: false,
+        };
+    }
+
+    const parsedLabel = parseLabelMeasure(input.unitLabel);
+    if (parsedLabel) {
+        return {
+            quantityPerPack: parsedLabel.quantityPerPack,
+            quantityUnit: parsedLabel.quantityUnit,
+            isLoose: false,
+        };
+    }
+
+    return { quantityPerPack: 1, quantityUnit: "PACK", isLoose: false };
+}
+
 
 export const stockOverviewRouter = {
     /**
@@ -440,6 +523,8 @@ export const stockOverviewRouter = {
                     packagingType: productVariant.packagingType,
                     unitLabel: productVariant.unitLabel,
                     weightKg: productVariant.weightKg,
+                    piecesPerUnit: productVariant.piecesPerUnit,
+                    orderUnit: productVariant.orderUnit,
                     packWeightKg: productVariant.packWeightKg,
                     innerPackSizeKg: productVariant.innerPackSizeKg,
                     packCountInside: productVariant.packCountInside,
@@ -481,6 +566,8 @@ export const stockOverviewRouter = {
                 packType: string;
                 unitLabel: string;
                 weightKg: string;
+                piecesPerUnit: number | null;
+                orderUnit: string | null;
                 innerPackSizeKg: string | null;
                 packCountInside: number | null;
                 items: Array<{
@@ -506,7 +593,14 @@ export const stockOverviewRouter = {
                 const qty = parseFloat(row.availableQty || "0");
                 const inCartonQty = parseFloat(row.inCartonQty || "0");
                 const packKey = row.packType || row.packagingType || "other";
-                const isLoose = packKey === "loose";
+                const measure = getVariantMeasureInfo({
+                    packType: packKey,
+                    unitLabel: row.unitLabel,
+                    orderUnit: row.orderUnit,
+                    weightKg: row.weightKg,
+                    piecesPerUnit: row.piecesPerUnit,
+                });
+                const isLoose = measure.isLoose;
 
                 if (isLoose) {
                     // For loose variants, subtract in-carton qty to get actual loose stock
@@ -514,21 +608,21 @@ export const stockOverviewRouter = {
                 }
 
                 // Group key: packType + weightKg for uniqueness
-                const groupKey = `${packKey}_${row.weightKg}`;
+                const groupKey = `${packKey}_${measure.quantityUnit}_${measure.quantityPerPack}_${row.unitLabel || ""}`;
 
                 if (!variantGroupMap.has(groupKey)) {
                     // Build a generic group label from pack type + weight
                     // e.g. "Carton (12.00kg)" instead of "Carton 12×1L (IFAD)"
-                    const packLabel = packKey.charAt(0).toUpperCase() + packKey.slice(1);
-                    const wt = parseFloat(row.weightKg || "0");
                     const genericLabel = isLoose
                         ? `Loose (per KG)`
-                        : `${packLabel} (${wt % 1 === 0 ? wt.toFixed(0) : wt}kg)`;
+                        : row.unitLabel || "Pack";
 
                     variantGroupMap.set(groupKey, {
                         packType: packKey,
                         unitLabel: genericLabel,
                         weightKg: row.weightKg,
+                        piecesPerUnit: row.piecesPerUnit,
+                        orderUnit: row.orderUnit,
                         innerPackSizeKg: row.innerPackSizeKg,
                         packCountInside: row.packCountInside,
                         items: [],
@@ -555,7 +649,18 @@ export const stockOverviewRouter = {
             }
 
             // Calculate total
-            const totalQty = enrichedRows.reduce((sum, r) => sum + parseFloat(r.availableQty || "0"), 0);
+            const totalQty = enrichedRows.reduce((sum, r) => {
+                const packKey = r.packType || r.packagingType || "other";
+                const measure = getVariantMeasureInfo({
+                    packType: packKey,
+                    unitLabel: r.unitLabel,
+                    orderUnit: r.orderUnit,
+                    weightKg: r.weightKg,
+                    piecesPerUnit: r.piecesPerUnit,
+                });
+                const qty = parseFloat(r.availableQty || "0");
+                return sum + qty * measure.quantityPerPack;
+            }, 0);
 
             return {
                 productId: input.productId,
@@ -662,6 +767,8 @@ export const stockOverviewRouter = {
                     variantId: productVariant.id,
                     packagingType: productVariant.packagingType,
                     weightKg: productVariant.weightKg,
+                    piecesPerUnit: productVariant.piecesPerUnit,
+                    orderUnit: productVariant.orderUnit,
                     unitLabel: productVariant.unitLabel,
                     color: productVariant.color,
                     size: productVariant.size,
@@ -691,6 +798,7 @@ export const stockOverviewRouter = {
                 variantIds: Set<number>;
                 productIds: Set<number>;
                 hasColorSize: boolean;
+                summaryUnit: string | null;
                 breakdownMap: Map<string, { qty: number; unit: string; type: string }>;
             };
 
@@ -747,6 +855,7 @@ export const stockOverviewRouter = {
                         variantIds: new Set(),
                         productIds: new Set(),
                         hasColorSize: false,
+                        summaryUnit: null,
                         breakdownMap: new Map(),
                     });
                 }
@@ -758,9 +867,19 @@ export const stockOverviewRouter = {
 
                 // Calculate carton vs loose breakdown
                 const packType = row.packagingType || "other";
-                const isLoose = packType === "loose";
-                const weightPerPack = parseFloat(row.weightKg || "0");
+                const measure = getVariantMeasureInfo({
+                    packType,
+                    unitLabel: row.unitLabel,
+                    orderUnit: row.orderUnit,
+                    weightKg: row.weightKg,
+                    piecesPerUnit: row.piecesPerUnit,
+                });
+                const isLoose = measure.isLoose;
                 const cfg = cartonConfigMap.get(row.variantId);
+
+                if (!g.summaryUnit || measure.quantityUnit === "KG") {
+                    g.summaryUnit = measure.quantityUnit;
+                }
 
                 if (isLoose) {
                     // Loose stock → add to total as KG directly
@@ -773,9 +892,9 @@ export const stockOverviewRouter = {
                     // Has carton config → compute carton count + loose remainder
                     const cartonCount = Math.floor(qty / cfg.packsPerCarton);
                     const remainderPacks = qty % cfg.packsPerCarton;
-                    const remainderKg = remainderPacks * weightPerPack;
+                    const remainderMeasureQty = remainderPacks * measure.quantityPerPack;
 
-                    g.totalQty += qty * weightPerPack; // Total in KG
+                    g.totalQty += qty * measure.quantityPerPack;
 
                     if (cartonCount > 0) {
                         if (!g.breakdownMap.has("carton")) {
@@ -783,15 +902,23 @@ export const stockOverviewRouter = {
                         }
                         g.breakdownMap.get("carton")!.qty += cartonCount;
                     }
-                    if (remainderKg > 0) {
-                        if (!g.breakdownMap.has("loose")) {
-                            g.breakdownMap.set("loose", { qty: 0, unit: "KG", type: "loose" });
+                    if (remainderMeasureQty > 0) {
+                        if (measure.quantityUnit === "KG") {
+                            if (!g.breakdownMap.has("loose")) {
+                                g.breakdownMap.set("loose", { qty: 0, unit: "KG", type: "loose" });
+                            }
+                            g.breakdownMap.get("loose")!.qty += remainderMeasureQty;
+                        } else {
+                            if (!g.breakdownMap.has(packType)) {
+                                const label = packType.charAt(0).toUpperCase() + packType.slice(1);
+                                g.breakdownMap.set(packType, { qty: 0, unit: label, type: packType });
+                            }
+                            g.breakdownMap.get(packType)!.qty += remainderPacks;
                         }
-                        g.breakdownMap.get("loose")!.qty += remainderKg;
                     }
                 } else {
-                    // No carton config → count as packs, total in KG
-                    g.totalQty += qty * weightPerPack;
+                    // No carton config → count as packs, total in base unit
+                    g.totalQty += qty * measure.quantityPerPack;
                     const label = packType.charAt(0).toUpperCase() + packType.slice(1);
                     if (!g.breakdownMap.has(packType)) {
                         g.breakdownMap.set(packType, { qty: 0, unit: label, type: packType });
@@ -815,10 +942,7 @@ export const stockOverviewRouter = {
             const paginated = groups.slice(offset, offset + input.pageSize);
 
             const items = paginated.map((g) => {
-                let stdUnit = "Pc";
-                if (!g.hasColorSize) {
-                    stdUnit = "KG";
-                }
+                const stdUnit = g.summaryUnit || "KG";
 
                 const breakdown = Array.from(g.breakdownMap.entries())
                     .map(([type, data]) => ({

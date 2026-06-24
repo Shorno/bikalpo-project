@@ -62,6 +62,49 @@ function formatUnitQty(value: number, isLoose: boolean) {
   return Math.round(value).toLocaleString();
 }
 
+const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
+const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
+
+function normalizeUnit(unit?: string | null) {
+  return String(unit || "")
+    .trim()
+    .toUpperCase();
+}
+
+function parseUnitLabelMeasure(label?: string | null) {
+  const normalizedLabel = String(label || "").trim();
+  if (!normalizedLabel) return null;
+
+  const pieceMatch = normalizedLabel.match(
+    /(\d+(?:\.\d+)?)\s*(pc|pcs|piece|pieces|pair|unit)\b/i,
+  );
+  if (pieceMatch) {
+    const value = Number(pieceMatch[1]);
+    if (value > 0) {
+      return {
+        quantityPerPack: value,
+        quantityUnit:
+          normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
+      };
+    }
+  }
+
+  const weightMatch = normalizedLabel.match(
+    /(\d+(?:\.\d+)?)\s*(kg|kgs|kilogram|kilograms)\b/i,
+  );
+  if (weightMatch) {
+    const value = Number(weightMatch[1]);
+    if (value > 0) {
+      return {
+        quantityPerPack: value,
+        quantityUnit: "KG",
+      };
+    }
+  }
+
+  return null;
+}
+
 type VariantDisplayInventory = {
   totalQty: number;
   inCartonQty: number;
@@ -104,6 +147,8 @@ type StockVariantGroup = {
   packType: string;
   unitLabel: string;
   weightKg: string;
+  piecesPerUnit?: number | null;
+  orderUnit?: string | null;
   innerPackSizeKg: string | null;
   packCountInside: number | null;
   items: StockVariantItem[];
@@ -119,6 +164,40 @@ type CartonSummary = {
   latestCartonId: string;
   latestCartonDbId: number;
 };
+
+function getGroupMeasure(group?: StockVariantGroup | null) {
+  if (!group) {
+    return { quantityPerPack: 0, quantityUnit: "PACK" };
+  }
+
+  if (group.packType === "loose") {
+    return { quantityPerPack: 1, quantityUnit: "KG" };
+  }
+
+  const normalizedUnit = normalizeUnit(group.orderUnit);
+  const weightKg = parseFloat(group.weightKg || "0");
+  const piecesPerUnit = Number(group.piecesPerUnit || 0);
+
+  if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
+    return { quantityPerPack: weightKg, quantityUnit: "KG" };
+  }
+
+  if (piecesPerUnit > 0) {
+    return {
+      quantityPerPack: piecesPerUnit,
+      quantityUnit: PIECE_UNITS.has(normalizedUnit)
+        ? "PCS"
+        : normalizedUnit || "UNIT",
+    };
+  }
+
+  const parsed = parseUnitLabelMeasure(group.unitLabel);
+  if (parsed) {
+    return parsed;
+  }
+
+  return { quantityPerPack: 1, quantityUnit: "PACK" };
+}
 
 // ─── Section Header ────────────────────────────────────────────
 
@@ -199,9 +278,14 @@ export default function StockDetailPage() {
       mergedLooseOpen += bd.loosePool?.openStock ?? 0;
       mergedLooseDrum += bd.loosePool?.fullDrum ?? 0;
       for (const group of bd.variantGroups) {
-        // Try to merge into existing group with same packType + weightKg
+        // Keep piece-based variants distinct even when their weightKg is 0.
         const existing = mergedGroups.find(
-          (g) => g.packType === group.packType && g.weightKg === group.weightKg,
+          (g) =>
+            g.packType === group.packType &&
+            g.weightKg === group.weightKg &&
+            g.unitLabel === group.unitLabel &&
+            g.piecesPerUnit === group.piecesPerUnit &&
+            g.orderUnit === group.orderUnit,
         );
         if (existing) {
           existing.items.push(...group.items);
@@ -375,15 +459,18 @@ export default function StockDetailPage() {
 
   // Compute actual carton counts from real carton table data (not deprecated cartonConfig)
   function getCartonInfo(group: any) {
-    const weightKg = parseFloat(group.weightKg || "0");
+    const measure = getGroupMeasure(group);
     let totalActiveCartons = 0;
-    let totalWeightInCartons = 0;
+    let totalMeasureInCartons = 0;
 
     for (const it of group.items) {
       const summary = cartonByVariant.get(it.variantId);
       if (summary) {
         totalActiveCartons += summary.activeCartonCount;
-        totalWeightInCartons += parseFloat(summary.totalWeightKg || "0");
+        totalMeasureInCartons +=
+          measure.quantityUnit === "KG"
+            ? parseFloat(summary.totalWeightKg || "0")
+            : (summary.totalPacks || 0) * measure.quantityPerPack;
       }
     }
 
@@ -391,12 +478,13 @@ export default function StockDetailPage() {
       (sum: number, i: any) => sum + i.availableQty,
       0,
     );
-    const totalKg = totalPacks * weightKg;
+    const totalMeasure = totalPacks * measure.quantityPerPack;
 
     return {
       cartonCount: totalActiveCartons,
-      totalKg,
-      totalWeightInCartons,
+      totalMeasure,
+      totalMeasureInCartons,
+      quantityUnit: measure.quantityUnit,
       hasCartons: totalActiveCartons > 0,
     };
   }
@@ -481,7 +569,7 @@ export default function StockDetailPage() {
               Total Stock
             </div>
             <div className="text-xl font-bold text-gray-900 tabular-nums mt-0.5">
-              {Math.round(totalQty).toLocaleString()}{" "}
+              {formatUnitQty(totalQty, item.stdUnit === "KG")}{" "}
               <span className="text-sm font-medium text-gray-500">
                 {item.stdUnit}
               </span>
@@ -584,46 +672,48 @@ export default function StockDetailPage() {
               const brandCartonRows: {
                 brandName: string;
                 cartonCount: number;
-                totalKg: number;
-                weightKg: number;
+                totalMeasure: number;
               }[] = [];
-              const weightKg = parseFloat(group.weightKg || "0");
+              const measure = getGroupMeasure(group);
 
               for (const it of group.items) {
                 const summary = cartonByVariant.get(it.variantId);
                 const brandName = it.brand?.name || "Unbranded";
                 const activeCount = summary?.activeCartonCount ?? 0;
-                const wtInCartons = parseFloat(summary?.totalWeightKg || "0");
+                const measureInCartons =
+                  measure.quantityUnit === "KG"
+                    ? parseFloat(summary?.totalWeightKg || "0")
+                    : (summary?.totalPacks || 0) * measure.quantityPerPack;
                 brandCartonRows.push({
                   brandName,
                   cartonCount: activeCount,
-                  totalKg:
-                    wtInCartons ||
-                    activeCount * weightKg * (it.availableQty > 0 ? 1 : 0),
-                  weightKg,
+                  totalMeasure: measureInCartons,
                 });
               }
 
               // Group by brand — sum if same brand has multiple variant items
               const brandMap = new Map<
                 string,
-                { cartonCount: number; totalKg: number }
+                { cartonCount: number; totalMeasure: number }
               >();
               for (const row of brandCartonRows) {
                 if (!brandMap.has(row.brandName)) {
-                  brandMap.set(row.brandName, { cartonCount: 0, totalKg: 0 });
+                  brandMap.set(row.brandName, {
+                    cartonCount: 0,
+                    totalMeasure: 0,
+                  });
                 }
                 const e = brandMap.get(row.brandName)!;
                 e.cartonCount += row.cartonCount;
-                e.totalKg += row.totalKg;
+                e.totalMeasure += row.totalMeasure;
               }
               const brandEntries = Array.from(brandMap.entries());
               const totalCartons = brandEntries.reduce(
                 (s, [, v]) => s + v.cartonCount,
                 0,
               );
-              const totalKg = brandEntries.reduce(
-                (s, [, v]) => s + v.totalKg,
+              const totalMeasure = brandEntries.reduce(
+                (s, [, v]) => s + v.totalMeasure,
                 0,
               );
 
@@ -652,7 +742,13 @@ export default function StockDetailPage() {
                       <div className="min-w-[120px]">
                         {totalCartons > 0 ? (
                           <span className="text-xs text-gray-500">
-                            ({Math.round(totalKg).toLocaleString()} KG)
+                            (
+                            {formatUnitQty(
+                              totalMeasure,
+                              measure.quantityUnit === "KG",
+                            )}{" "}
+                            {measure.quantityUnit}
+                            )
                           </span>
                         ) : (
                           <NotAvailable />
@@ -671,7 +767,7 @@ export default function StockDetailPage() {
                           <span className="text-gray-600">{brand}</span>
                           <span className="tabular-nums">
                             {info.cartonCount > 0
-                              ? `${info.cartonCount} carton (${Math.round(info.totalKg)} KG)`
+                              ? `${info.cartonCount} carton (${formatUnitQty(info.totalMeasure, measure.quantityUnit === "KG")} ${measure.quantityUnit})`
                               : "—  no cartons"}
                           </span>
                         </div>
@@ -764,8 +860,11 @@ export default function StockDetailPage() {
                   <div className="text-sm text-gray-800">
                     →{" "}
                     <span className="font-bold tabular-nums text-blue-700">
-                      {Math.round(info.totalWeightInCartons).toLocaleString()}{" "}
-                      KG
+                      {formatUnitQty(
+                        info.totalMeasureInCartons,
+                        info.quantityUnit === "KG",
+                      )}{" "}
+                      {info.quantityUnit}
                     </span>{" "}
                     <span className="text-gray-500">
                       currently packed into cartons
