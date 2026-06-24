@@ -14,6 +14,7 @@ import {
     productVariant,
     brand,
     category,
+    productType,
     subCategory,
     stockEntry,
     coreProductIdentity,
@@ -92,13 +93,27 @@ function getVariantMeasureInfo(input: {
     piecesPerUnit?: number | null;
 }) {
     const packType = input.packType || "other";
-    if (packType === "loose") {
-        return { quantityPerPack: 1, quantityUnit: "KG", isLoose: true };
-    }
-
     const normalizedUnit = normalizeMeasureUnit(input.orderUnit);
     const weightKg = parseFloat(input.weightKg || "0");
     const piecesPerUnit = Number(input.piecesPerUnit || 0);
+
+    if (packType === "loose") {
+        if (PIECE_UNITS.has(normalizedUnit)) {
+            return { quantityPerPack: 1, quantityUnit: "PCS", isLoose: true };
+        }
+        if (weightKg > 0 || WEIGHT_UNITS.has(normalizedUnit)) {
+            return { quantityPerPack: 1, quantityUnit: "KG", isLoose: true };
+        }
+        const parsedLooseLabel = parseLabelMeasure(input.unitLabel);
+        if (parsedLooseLabel && parsedLooseLabel.quantityUnit !== "KG") {
+            return {
+                quantityPerPack: 1,
+                quantityUnit: parsedLooseLabel.quantityUnit,
+                isLoose: true,
+            };
+        }
+        return { quantityPerPack: 1, quantityUnit: normalizedUnit || "KG", isLoose: true };
+    }
 
     if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
         return { quantityPerPack: weightKg, quantityUnit: "KG", isLoose: false };
@@ -762,6 +777,7 @@ export const stockOverviewRouter = {
                     coreProductName: coreProductIdentity.name,
                     coreProductSku: coreProductIdentity.sku,
                     coreProductImage: coreProductIdentity.image,
+                    typeName: productType.name,
                     categoryName: category.name,
                     subCategoryName: subCategory.name,
                     variantId: productVariant.id,
@@ -780,6 +796,7 @@ export const stockOverviewRouter = {
                 .innerJoin(product, eq(productVariant.productId, product.id))
                 .leftJoin(coreProductIdentity, eq(product.coreProductId, coreProductIdentity.id))
                 .leftJoin(category, eq(product.categoryId, category.id))
+                .leftJoin(productType, eq(category.typeId, productType.id))
                 .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
                 .leftJoin(brand, eq(productVariant.brandId, brand.id))
                 .where(and(...conditions))
@@ -792,6 +809,7 @@ export const stockOverviewRouter = {
                 coreProductName: string;
                 coreProductSku: string | null;
                 coreProductImage: string;
+                typeName: string | null;
                 categoryName: string | null;
                 subCategoryName: string | null;
                 totalQty: number;
@@ -849,6 +867,7 @@ export const stockOverviewRouter = {
                         coreProductName: row.coreProductName || row.productName,
                         coreProductSku: row.coreProductSku || null,
                         coreProductImage: row.coreProductImage || row.productImage,
+                        typeName: row.typeName,
                         categoryName: row.categoryName,
                         subCategoryName: row.subCategoryName,
                         totalQty: 0,
@@ -962,6 +981,7 @@ export const stockOverviewRouter = {
                     coreProductName: g.coreProductName,
                     coreProductSku: g.coreProductSku,
                     coreProductImage: g.coreProductImage,
+                    typeName: g.typeName,
                     categoryName: g.categoryName,
                     subCategoryName: g.subCategoryName,
                     totalQty: g.totalQty,
