@@ -896,15 +896,24 @@ export const stockOverviewRouter = {
                 const isLoose = measure.isLoose;
                 const cfg = cartonConfigMap.get(row.variantId);
 
-                if (!g.summaryUnit || measure.quantityUnit === "KG") {
+                if (!g.summaryUnit) {
+                    g.summaryUnit = measure.quantityUnit;
+                } else if (
+                    normalizeMeasureUnit(g.summaryUnit) === "KG" &&
+                    normalizeMeasureUnit(measure.quantityUnit) !== "KG"
+                ) {
                     g.summaryUnit = measure.quantityUnit;
                 }
 
                 if (isLoose) {
-                    // Loose stock → add to total as KG directly
+                    // Loose stock stays in its own base unit.
                     g.totalQty += qty;
                     if (!g.breakdownMap.has("loose")) {
-                        g.breakdownMap.set("loose", { qty: 0, unit: "KG", type: "loose" });
+                        g.breakdownMap.set("loose", {
+                            qty: 0,
+                            unit: measure.quantityUnit,
+                            type: "loose",
+                        });
                     }
                     g.breakdownMap.get("loose")!.qty += qty;
                 } else if (cfg && cfg.packsPerCarton > 0) {
@@ -924,7 +933,11 @@ export const stockOverviewRouter = {
                     if (remainderMeasureQty > 0) {
                         if (measure.quantityUnit === "KG") {
                             if (!g.breakdownMap.has("loose")) {
-                                g.breakdownMap.set("loose", { qty: 0, unit: "KG", type: "loose" });
+                                g.breakdownMap.set("loose", {
+                                    qty: 0,
+                                    unit: measure.quantityUnit,
+                                    type: "loose",
+                                });
                             }
                             g.breakdownMap.get("loose")!.qty += remainderMeasureQty;
                         } else {
