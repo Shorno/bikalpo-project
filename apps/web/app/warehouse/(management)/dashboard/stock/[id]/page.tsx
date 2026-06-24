@@ -672,7 +672,9 @@ export default function StockDetailPage() {
               )}
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              Core Identity Level Stock
+              {isFashion
+                ? "Fashion core stock view"
+                : "Core Identity Level Stock"}
             </p>
           </div>
         </div>
@@ -1196,7 +1198,8 @@ export default function StockDetailPage() {
             disabled
             className="gap-1.5 text-xs"
           >
-            <PackagePlus size={14} />📦 Create Pack
+            <PackagePlus size={14} />
+            {isFashion ? "📦 Create Bundle" : "📦 Create Pack"}
           </Button>
           <Button
             variant="outline"
@@ -1204,7 +1207,8 @@ export default function StockDetailPage() {
             disabled
             className="gap-1.5 text-xs"
           >
-            <RefreshCw size={14} />🔄 Convert Loose → Pack
+            <RefreshCw size={14} />
+            {isFashion ? "🔄 Sort Loose → Variant" : "🔄 Convert Loose → Pack"}
           </Button>
           <Button
             variant="outline"
