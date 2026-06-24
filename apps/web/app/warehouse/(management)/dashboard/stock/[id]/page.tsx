@@ -671,6 +671,20 @@ export default function StockDetailPage() {
                 </span>
               )}
             </h1>
+            {(item.typeName || item.categoryName) && (
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                {item.typeName && (
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                    {item.typeName}
+                  </span>
+                )}
+                {item.categoryName && (
+                  <span className="text-[11px] text-gray-400">
+                    {item.categoryName}
+                  </span>
+                )}
+              </div>
+            )}
             <p className="text-xs text-gray-500 mt-0.5">
               {isFashion
                 ? "Fashion core stock view"
