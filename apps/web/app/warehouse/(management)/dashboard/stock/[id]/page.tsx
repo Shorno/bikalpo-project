@@ -1052,7 +1052,7 @@ export default function StockDetailPage() {
                                     totalMeasure,
                                     measure.quantityUnit === "KG",
                                   )}{" "}
-                                  {measure.quantityUnit})
+                                  {formatDisplayUnit(measure.quantityUnit)})
                                 </span>
                               ) : (
                                 <NotAvailable />
@@ -1071,7 +1071,7 @@ export default function StockDetailPage() {
                                 <span className="text-gray-600">{brand}</span>
                                 <span className="tabular-nums">
                                   {info.cartonCount > 0
-                                    ? `${info.cartonCount} carton (${formatUnitQty(info.totalMeasure, measure.quantityUnit === "KG")} ${measure.quantityUnit})`
+                                    ? `${info.cartonCount} carton (${formatUnitQty(info.totalMeasure, measure.quantityUnit === "KG")} ${formatDisplayUnit(measure.quantityUnit)})`
                                     : "—  no cartons"}
                                 </span>
                               </div>
@@ -1171,7 +1171,7 @@ export default function StockDetailPage() {
                             info.totalMeasureInCartons,
                             info.quantityUnit === "KG",
                           )}{" "}
-                          {info.quantityUnit}
+                          {formatDisplayUnit(info.quantityUnit)}
                         </span>{" "}
                         <span className="text-gray-500">
                           currently packed into cartons
