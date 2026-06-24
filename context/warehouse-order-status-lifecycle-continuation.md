@@ -7,10 +7,10 @@ Use this note when continuing the warehouse order status and dispatch/invoice fl
 The active warehouse order lifecycle is:
 
 ```text
-Pending Approval -> Approved -> Ready for Dispatch -> Partially Invoiced / Invoiced
+Pending Approval -> Approved -> Ready for Dispatch -> Partially Invoiced / Invoiced -> Fulfillment Mode -> Delivery Management / Self Pickup OTP
 ```
 
-Delivery, rider assignment, self-pickup, settlement, and post-invoice handoff are intentionally out of scope until the business flow is confirmed.
+Fulfillment mode selection and self-pickup OTP verification are handled on the Dispatch Orders page. Rider assignment and delivery group creation remain on Delivery Management.
 
 ## Status Meanings
 
@@ -53,7 +53,11 @@ Delivery, rider assignment, self-pickup, settlement, and post-invoice handoff ar
 - Partial invoice quantity must be greater than zero and cannot exceed remaining uninvoiced quantity.
 - Creating a partial invoice moves the order to `partially_invoiced`.
 - Creating the final invoice that covers all approved quantities moves the order to `invoiced`.
-- Do not move invoices into delivery, self-pickup, rider assignment, or settlement from this page yet.
+- Dispatch uses a unified modal (`dispatch-order-modal.tsx`) for full/partial invoice strategy, item quantities, and delivery mode (`self_pickup` | `delivery`).
+- `POST /warehouse/dispatch/orders/confirm` creates the invoice and sets `invoice.fulfillment_mode` in one transaction.
+- Legacy invoiced rows without fulfillment mode can be configured via the same modal (`mode: configure`).
+- Self pickup: OTP is generated on confirm; warehouse verifies via `POST /warehouse/dispatch/self-pickup/verify` in the modal.
+- Delivery: invoice is saved with `fulfillment_mode = delivery` and appears in Delivery Management. Rider assignment is not done from dispatch.
 
 ## Key Implementation Files
 
@@ -62,6 +66,7 @@ Delivery, rider assignment, self-pickup, settlement, and post-invoice handoff ar
 - Warehouse API: `packages/api/src/routers/warehouse.ts`
 - Retailer purchase API: `packages/api/src/routers/shop-owner.ts`
 - Dispatch UI: `apps/web/app/warehouse/(management)/dashboard/dispatch-orders/page.tsx`
+- Dispatch modal: `apps/web/app/warehouse/(management)/dashboard/dispatch-orders/_components/dispatch-order-modal.tsx`
 - Warehouse order management list: `apps/web/app/warehouse/(management)/dashboard/order-management/page.tsx`
 - Warehouse order detail: `apps/web/app/warehouse/(management)/dashboard/order-management/[id]/page.tsx`
 - Warehouse order table columns: `apps/web/app/warehouse/(management)/dashboard/order-management/_components/order-columns.tsx`
@@ -120,5 +125,5 @@ If adding manual enum SQL, make it idempotent with `ADD VALUE IF NOT EXISTS`.
 
 - Keep `Approved` as a completed lifecycle milestone, but normal approvals should still auto-move to `ready_for_dispatch`.
 - Use `confirmed` only as legacy compatibility, not as the primary new warehouse flow state.
-- Any future delivery/self-pickup work should start after `invoiced` or `partially_invoiced`, not before invoice creation.
-- If adding invoice delivery or fulfillment from dispatch later, do not reuse this page's current full/partial invoice actions to assign riders without a confirmed business decision.
+- Any future delivery group / rider assignment work should use Delivery Management after fulfillment mode is set to `delivery`.
+- Do not assign riders from the dispatch modal without a confirmed business decision to expand that scope.

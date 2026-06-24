@@ -836,24 +836,28 @@ export const deliverymanRouter = {
         .input(z.object({
             groupName: z.string().min(1),
             invoiceIds: z.array(z.number()).min(1),
-            deliverymanId: z.string().min(1),
+            deliverymanId: z.string().min(1).optional(),
             notes: z.string().optional(),
             vehicleType: z.enum(["bike", "car", "van", "truck"]).optional(),
             expectedDeliveryAt: z.string().optional(),
         }))
         .handler(async ({ input, context }) => {
-            const deliveryman = await db.query.user.findFirst({
-                where: and(
-                    eq(user.id, input.deliverymanId),
-                    eq(user.role, "deliveryman"),
-                    ...(context.session.user.role === "warehouse"
-                        ? [eq(user.warehouseId, context.session.user.id)]
-                        : []),
-                ),
-                columns: { id: true, name: true, phoneNumber: true },
-            });
-            if (!deliveryman) {
-                throw new ORPCError("NOT_FOUND", { message: "Deliveryman not found" });
+            let deliveryman: { id: string; name: string; phoneNumber: string | null } | null = null;
+            if (input.deliverymanId) {
+                const found = await db.query.user.findFirst({
+                    where: and(
+                        eq(user.id, input.deliverymanId),
+                        eq(user.role, "deliveryman"),
+                        ...(context.session.user.role === "warehouse"
+                            ? [eq(user.warehouseId, context.session.user.id)]
+                            : []),
+                    ),
+                    columns: { id: true, name: true, phoneNumber: true },
+                });
+                if (!found) {
+                    throw new ORPCError("NOT_FOUND", { message: "Deliveryman not found" });
+                }
+                deliveryman = found;
             }
 
             const selectedInvoices = await db.query.invoice.findMany({
@@ -902,17 +906,17 @@ export const deliverymanRouter = {
                     .insert(deliveryGroup)
                     .values({
                         groupName: input.groupName,
-                        deliverymanId: input.deliverymanId,
+                        deliverymanId: input.deliverymanId ?? null,
                         warehouseId: context.session.user.role === "warehouse"
                             ? context.session.user.id
                             : null,
-                        status: "assigned",
+                        status: deliveryman ? "assigned" : "pending_assignment",
                         totalInvoices: input.invoiceIds.length,
                         completedInvoices: 0,
                         notes: input.notes ?? null,
                         vehicleType: input.vehicleType ?? null,
                         expectedDeliveryAt: expectedDeliveryDate,
-                        assignedAt: new Date(),
+                        assignedAt: deliveryman ? new Date() : null,
                     })
                     .returning();
 
@@ -931,13 +935,12 @@ export const deliverymanRouter = {
                     .update(invoice)
                     .set({
                         deliveryStatus: "pending",
-                        deliverymanId: input.deliverymanId,
+                        deliverymanId: input.deliverymanId ?? null,
                         vehicleType: input.vehicleType ?? null,
                         expectedDeliveryAt: expectedDeliveryDate,
                     })
                     .where(inArray(invoice.id, input.invoiceIds));
 
-                // Update linked orders to "processing" + set shippedAt
                 const linkedInvoices = await tx.query.invoice.findMany({
                     where: inArray(invoice.id, input.invoiceIds),
                     columns: { orderId: true },
@@ -948,8 +951,12 @@ export const deliverymanRouter = {
                         status: "processing",
                         processingStartedAt: new Date(),
                         shippedAt: new Date(),
-                        riderName: deliveryman.name,
-                        riderPhone: deliveryman.phoneNumber,
+                        ...(deliveryman
+                            ? {
+                                riderName: deliveryman.name,
+                                riderPhone: deliveryman.phoneNumber,
+                            }
+                            : {}),
                     }).where(and(
                         inArray(order.id, orderIds),
                         sql`${order.status} IN ('pending', 'confirmed')`,
@@ -960,6 +967,128 @@ export const deliverymanRouter = {
             });
 
             return { success: true, group: createdGroup };
+        }),
+
+    /**
+     * Add invoices to an existing open delivery group
+     */
+    addInvoicesToGroup: warehouseOrAdminProcedure
+        .route({
+            method: "POST",
+            path: "/delivery-groups/{groupId}/add-invoices",
+            tags: ["Delivery Management"],
+            summary: "Add invoices to an existing delivery group",
+        })
+        .input(z.object({
+            groupId: z.number(),
+            invoiceIds: z.array(z.number()).min(1),
+        }))
+        .handler(async ({ input, context }) => {
+            const existingGroup = await db.query.deliveryGroup.findFirst({
+                where: and(
+                    eq(deliveryGroup.id, input.groupId),
+                    inArray(deliveryGroup.status, ["pending_assignment", "assigned"]),
+                    ...(context.session.user.role === "warehouse"
+                        ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
+                        : []),
+                ),
+                columns: {
+                    id: true,
+                    deliverymanId: true,
+                    totalInvoices: true,
+                    vehicleType: true,
+                    expectedDeliveryAt: true,
+                },
+            });
+            if (!existingGroup) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Delivery group not found or not open for new invoices",
+                });
+            }
+
+            const selectedInvoices = await db.query.invoice.findMany({
+                where: and(
+                    inArray(invoice.id, input.invoiceIds),
+                    eq(invoice.fulfillmentMode, "internal_delivery"),
+                    eq(invoice.deliveryStatus, "not_assigned"),
+                    ...(context.session.user.role === "warehouse"
+                        ? [
+                            sql`EXISTS (
+                                SELECT 1 FROM "order" scoped_order
+                                WHERE scoped_order."id" = ${invoice.orderId}
+                                  AND scoped_order."warehouse_id" = ${context.session.user.id}
+                            )`,
+                        ]
+                        : []),
+                ),
+                columns: { id: true },
+            });
+            if (selectedInvoices.length !== input.invoiceIds.length) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "One or more invoices are not ready to add to a delivery group",
+                });
+            }
+
+            const alreadyLinked = await db.query.deliveryGroupInvoice.findMany({
+                where: inArray(deliveryGroupInvoice.invoiceId, input.invoiceIds),
+                columns: { invoiceId: true },
+            });
+            if (alreadyLinked.length > 0) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "One or more invoices are already in a delivery group",
+                });
+            }
+
+            const nextSequence = existingGroup.totalInvoices;
+
+            await db.transaction(async (tx) => {
+                await tx.insert(deliveryGroupInvoice).values(
+                    input.invoiceIds.map((invoiceId, index) => ({
+                        groupId: existingGroup.id,
+                        invoiceId,
+                        sequence: nextSequence + index,
+                        status: "pending" as const,
+                    })),
+                );
+
+                await tx
+                    .update(deliveryGroup)
+                    .set({
+                        totalInvoices: existingGroup.totalInvoices + input.invoiceIds.length,
+                    })
+                    .where(eq(deliveryGroup.id, existingGroup.id));
+
+                await tx
+                    .update(invoice)
+                    .set({
+                        deliveryStatus: "pending",
+                        deliverymanId: existingGroup.deliverymanId,
+                        vehicleType: existingGroup.vehicleType,
+                        expectedDeliveryAt: existingGroup.expectedDeliveryAt,
+                    })
+                    .where(inArray(invoice.id, input.invoiceIds));
+
+                const linkedInvoices = await tx.query.invoice.findMany({
+                    where: inArray(invoice.id, input.invoiceIds),
+                    columns: { orderId: true },
+                });
+                const orderIds = [...new Set(linkedInvoices.map((row) => row.orderId).filter(Boolean))] as number[];
+                if (orderIds.length > 0) {
+                    await tx.update(order).set({
+                        status: "processing",
+                        processingStartedAt: new Date(),
+                        shippedAt: new Date(),
+                    }).where(and(
+                        inArray(order.id, orderIds),
+                        sql`${order.status} IN ('pending', 'confirmed')`,
+                    ));
+                }
+            });
+
+            return {
+                success: true,
+                addedCount: input.invoiceIds.length,
+            };
         }),
 
     /**
@@ -1114,6 +1243,7 @@ export const deliverymanRouter = {
                                             name: true,
                                             phoneNumber: true,
                                             shopName: true,
+                                            warehouseName: true,
                                         },
                                     },
                                     items: true,
@@ -1157,10 +1287,15 @@ export const deliverymanRouter = {
                         ? [eq(deliveryGroup.warehouseId, context.session.user.id)]
                         : []),
                 ),
-                columns: { id: true },
+                columns: { id: true, status: true },
             });
             if (!existingGroup) {
                 throw new ORPCError("NOT_FOUND", { message: "Delivery group not found" });
+            }
+            if (!["pending_assignment", "assigned"].includes(existingGroup.status)) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "This delivery group cannot be reassigned",
+                });
             }
 
             // Verify deliveryman exists and has correct role
@@ -1212,6 +1347,50 @@ export const deliverymanRouter = {
                 .update(deliveryGroup)
                 .set(set)
                 .where(eq(deliveryGroup.id, input.groupId));
+
+            const groupInvoiceLinks = await db.query.deliveryGroupInvoice.findMany({
+                where: eq(deliveryGroupInvoice.groupId, input.groupId),
+                columns: { invoiceId: true },
+                with: {
+                    invoice: {
+                        columns: { orderId: true },
+                    },
+                },
+            });
+            const invoiceIds = groupInvoiceLinks.map((link) => link.invoiceId);
+
+            if (invoiceIds.length > 0) {
+                await db
+                    .update(invoice)
+                    .set({
+                        deliverymanId: input.deliverymanId,
+                        ...(input.vehicleType !== undefined
+                            ? { vehicleType: input.vehicleType }
+                            : {}),
+                        ...(input.expectedDeliveryAt !== undefined
+                            ? {
+                                expectedDeliveryAt: input.expectedDeliveryAt
+                                    ? new Date(input.expectedDeliveryAt)
+                                    : null,
+                            }
+                            : {}),
+                    })
+                    .where(inArray(invoice.id, invoiceIds));
+
+                const orderIds = [
+                    ...new Set(
+                        groupInvoiceLinks
+                            .map((link) => link.invoice?.orderId)
+                            .filter((id): id is number => typeof id === "number"),
+                    ),
+                ];
+                if (orderIds.length > 0) {
+                    await db.update(order).set({
+                        riderName: deliveryman.name,
+                        riderPhone: deliveryman.phoneNumber,
+                    }).where(inArray(order.id, orderIds));
+                }
+            }
 
             return { success: true };
         }),

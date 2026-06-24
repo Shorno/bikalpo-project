@@ -2029,10 +2029,70 @@ function formatMoneyValue(value: number) {
 	return value.toFixed(2);
 }
 
+type FulfillmentMode = "self_pickup" | "delivery";
+
+async function applyFulfillmentModeToInvoice(
+	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+	input: {
+		invoiceId: number;
+		fulfillmentMode: FulfillmentMode;
+		orderId: number;
+		orderReadyAt: Date | null;
+		existingFulfillmentMode?: string | null;
+		deliveryStatus?: string | null;
+	},
+) {
+	if (input.deliveryStatus === "delivered") {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "This invoice has already been completed",
+		});
+	}
+
+	if (
+		input.existingFulfillmentMode &&
+		input.existingFulfillmentMode !== input.fulfillmentMode
+	) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Fulfillment mode has already been selected",
+		});
+	}
+
+	const completionOtp =
+		input.fulfillmentMode === "self_pickup"
+			? Math.floor(1000 + Math.random() * 9000).toString()
+			: null;
+
+	await tx
+		.update(invoice)
+		.set({
+			fulfillmentMode: input.fulfillmentMode,
+			completionOtp,
+			completionOtpGeneratedAt:
+				input.fulfillmentMode === "self_pickup" ? new Date() : null,
+			completionOtpVerifiedAt: null,
+			deliveryStatus:
+				input.fulfillmentMode === "self_pickup" ? "pending" : "not_assigned",
+			deliverymanId: null,
+			vehicleType: null,
+			expectedDeliveryAt: null,
+		})
+		.where(eq(invoice.id, input.invoiceId));
+
+	if (!input.orderReadyAt) {
+		await tx
+			.update(order)
+			.set({ readyAt: new Date() })
+			.where(eq(order.id, input.orderId));
+	}
+
+	return { completionOtp };
+}
+
 async function createDispatchInvoiceForOrder(input: {
 	userId: string;
 	orderId: number;
 	items?: Array<{ orderItemId: number; quantity: number }>;
+	fulfillmentMode?: FulfillmentMode;
 }) {
 	return db.transaction(async (tx) => {
 		const existingOrder = await tx.query.order.findFirst({
@@ -2205,12 +2265,204 @@ async function createDispatchInvoiceForOrder(input: {
 			})
 			.where(eq(order.id, existingOrder.id));
 
+		let completionOtp: string | null = null;
+		if (input.fulfillmentMode) {
+			const fulfillmentResult = await applyFulfillmentModeToInvoice(tx, {
+				invoiceId: newInvoice.id,
+				fulfillmentMode: input.fulfillmentMode,
+				orderId: existingOrder.id,
+				orderReadyAt: existingOrder.readyAt,
+			});
+			completionOtp = fulfillmentResult.completionOtp;
+		}
+
 		return {
 			invoice: newInvoice,
 			status: nextStatus,
 			fullyInvoiced: isFullyInvoicedAfterThis,
+			completionOtp,
 		};
 	});
+}
+
+async function configureExistingInvoiceFulfillment(input: {
+	userId: string;
+	invoiceId: number;
+	fulfillmentMode: FulfillmentMode;
+}) {
+	return db.transaction(async (tx) => {
+		const existingInvoice = await tx.query.invoice.findFirst({
+			where: and(
+				eq(invoice.id, input.invoiceId),
+				sql`EXISTS (
+                    SELECT 1 FROM "order" scoped_order
+                    WHERE scoped_order."id" = ${invoice.orderId}
+                      AND scoped_order."warehouse_id" = ${input.userId}
+                )`,
+			),
+			with: {
+				order: {
+					columns: {
+						id: true,
+						readyAt: true,
+					},
+				},
+			},
+		});
+
+		if (!existingInvoice?.order) {
+			throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
+		}
+
+		const { completionOtp } = await applyFulfillmentModeToInvoice(tx, {
+			invoiceId: input.invoiceId,
+			fulfillmentMode: input.fulfillmentMode,
+			orderId: existingInvoice.order.id,
+			orderReadyAt: existingInvoice.order.readyAt,
+			existingFulfillmentMode: existingInvoice.fulfillmentMode,
+			deliveryStatus: existingInvoice.deliveryStatus,
+		});
+
+		return {
+			invoice: existingInvoice,
+			completionOtp,
+		};
+	});
+}
+
+const DELIVERY_PIPELINE_MODES = [
+	"delivery",
+	"internal_delivery",
+	"third_party",
+] as const;
+
+type DeliveryKpiFilter = "all" | "pending" | "in_delivery" | "delivered";
+type DeliveryTypeFilter = "all" | "not_selected" | "internal" | "third_party";
+type DeliveryStatusFilter =
+	| "all"
+	| "pending"
+	| "locked"
+	| "in_delivery"
+	| "delivered";
+
+function warehouseInvoiceScope(userId: string) {
+	return sql`EXISTS (
+        SELECT 1 FROM "order" scoped_order
+        WHERE scoped_order."id" = ${invoice.orderId}
+          AND scoped_order."warehouse_id" = ${userId}
+    )`;
+}
+
+function getDeliveryTypeLabel(
+	fulfillmentMode: string | null,
+): "not_selected" | "internal" | "third_party" {
+	if (fulfillmentMode === "internal_delivery") return "internal";
+	if (fulfillmentMode === "third_party") return "third_party";
+	return "not_selected";
+}
+
+function classifyDeliveryInvoice(input: {
+	fulfillmentMode: string | null;
+	deliveryStatus: string | null;
+	groupStatus?: string | null;
+	inGroup: boolean;
+}) {
+	const isPendingType =
+		input.fulfillmentMode === "delivery" &&
+		input.deliveryStatus === "not_assigned";
+
+	if (input.deliveryStatus === "delivered") {
+		return {
+			kpiBucket: "delivered" as const,
+			displayStatus: "delivered" as const,
+			isSelectable: false,
+		};
+	}
+
+	if (isPendingType) {
+		return {
+			kpiBucket: "pending" as const,
+			displayStatus: "pending" as const,
+			isSelectable: true,
+		};
+	}
+
+	if (
+		(input.fulfillmentMode === "internal_delivery" ||
+			input.fulfillmentMode === "third_party") &&
+		!input.inGroup
+	) {
+		return {
+			kpiBucket: "in_delivery" as const,
+			displayStatus: "locked" as const,
+			isSelectable: input.fulfillmentMode === "internal_delivery",
+		};
+	}
+
+	if (
+		input.deliveryStatus === "out_for_delivery" ||
+		input.groupStatus === "out_for_delivery"
+	) {
+		return {
+			kpiBucket: "in_delivery" as const,
+			displayStatus: "in_delivery" as const,
+			isSelectable: false,
+		};
+	}
+
+	if (input.inGroup || input.deliveryStatus === "pending") {
+		return {
+			kpiBucket: "in_delivery" as const,
+			displayStatus: input.inGroup ? ("locked" as const) : ("pending" as const),
+			isSelectable: false,
+		};
+	}
+
+	return {
+		kpiBucket: "in_delivery" as const,
+		displayStatus: "locked" as const,
+		isSelectable: false,
+	};
+}
+
+function resolveBuyerDisplayName(input: {
+	warehouseName?: string | null;
+	shopName?: string | null;
+	name?: string | null;
+	shippingName?: string | null;
+}) {
+	return (
+		input.warehouseName ||
+		input.shopName ||
+		input.name ||
+		input.shippingName ||
+		"—"
+	);
+}
+
+type AssignmentKpiFilter =
+	| "all"
+	| "pending_assignment"
+	| "assigned"
+	| "completed";
+
+function getAssignmentKpiBucket(
+	status: string,
+): AssignmentKpiFilter | "assigned" | "pending_assignment" | "completed" {
+	if (status === "pending_assignment") return "pending_assignment";
+	if (status === "completed" || status === "partial") return "completed";
+	return "assigned";
+}
+
+function rollUpAreaLabel(areas: Array<string | null | undefined>) {
+	const unique = [
+		...new Set(
+			areas.map((area) => area?.trim()).filter((area): area is string => !!area),
+		),
+	];
+	if (unique.length === 0) return "—";
+	if (unique.length === 1) return unique[0];
+	return "Mixed";
 }
 
 const orderQueries = {
@@ -2731,7 +2983,6 @@ const orderQueries = {
 							deliveryStatus: currentInvoice.deliveryStatus,
 							paymentStatus: currentInvoice.paymentStatus,
 							fulfillmentMode: currentInvoice.fulfillmentMode,
-							completionOtp: currentInvoice.completionOtp,
 							completionOtpVerifiedAt: currentInvoice.completionOtpVerifiedAt,
 							settledAt: currentInvoice.settledAt,
 							deliveryman: currentInvoice.deliveryman,
@@ -3141,6 +3392,11 @@ const orderQueries = {
 						splitSequence: invoiceRow.splitSequence,
 						grandTotal: invoiceRow.grandTotal,
 						deliveryStatus: invoiceRow.deliveryStatus,
+						fulfillmentMode: invoiceRow.fulfillmentMode,
+						completionOtpVerifiedAt: invoiceRow.completionOtpVerifiedAt,
+						needsFulfillmentConfig:
+							!invoiceRow.fulfillmentMode &&
+							invoiceRow.deliveryStatus !== "delivered",
 						createdAt: invoiceRow.createdAt,
 					})),
 				};
@@ -3256,60 +3512,107 @@ const orderQueries = {
 				throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
 			}
 
-			if (existingInvoice.deliveryStatus === "delivered") {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "This invoice has already been completed",
-				});
-			}
-
-			if (
-				existingInvoice.fulfillmentMode &&
-				existingInvoice.fulfillmentMode !== input.fulfillmentMode
-			) {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "Fulfillment mode has already been selected",
-				});
-			}
-
-			const completionOtp =
-				input.fulfillmentMode === "self_pickup"
-					? Math.floor(1000 + Math.random() * 9000).toString()
-					: null;
-
-			await db.transaction(async (tx) => {
-				await tx
-					.update(invoice)
-					.set({
-						fulfillmentMode: input.fulfillmentMode,
-						completionOtp,
-						completionOtpGeneratedAt:
-							input.fulfillmentMode === "self_pickup" ? new Date() : null,
-						completionOtpVerifiedAt: null,
-						deliveryStatus:
-							input.fulfillmentMode === "self_pickup"
-								? "pending"
-								: "not_assigned",
-						deliverymanId: null,
-						vehicleType: null,
-						expectedDeliveryAt: null,
-					})
-					.where(eq(invoice.id, input.invoiceId));
-
-				if (!existingInvoice.order.readyAt) {
-					await tx
-						.update(order)
-						.set({ readyAt: new Date() })
-						.where(eq(order.id, existingInvoice.order.id));
-				}
+			await configureExistingInvoiceFulfillment({
+				userId,
+				invoiceId: input.invoiceId,
+				fulfillmentMode: input.fulfillmentMode,
 			});
 
 			return {
 				success: true,
-				completionOtp,
 				message:
 					input.fulfillmentMode === "self_pickup"
-						? "Self pickup is ready. Share the OTP at handover."
+						? "Self pickup is ready. Ask the customer for their pickup code at handover."
 						: "Invoice moved to delivery management.",
+			};
+		}),
+
+	confirmDispatch: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/dispatch/orders/confirm",
+			tags: ["Warehouse"],
+			summary:
+				"Create dispatch invoice and set fulfillment mode in one transaction",
+		})
+		.input(
+			z.discriminatedUnion("mode", [
+				z.object({
+					mode: z.literal("create"),
+					orderId: z.number(),
+					strategy: z.enum(["full", "partial"]),
+					items: z
+						.array(
+							z.object({
+								orderItemId: z.number(),
+								quantity: z.number().int().min(1),
+							}),
+						)
+						.optional(),
+					fulfillmentMode: z.enum(["self_pickup", "delivery"]),
+				}),
+				z.object({
+					mode: z.literal("configure"),
+					invoiceId: z.number(),
+					fulfillmentMode: z.enum(["self_pickup", "delivery"]),
+				}),
+			]),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+
+			if (input.mode === "configure") {
+				const result = await configureExistingInvoiceFulfillment({
+					userId,
+					invoiceId: input.invoiceId,
+					fulfillmentMode: input.fulfillmentMode,
+				});
+
+				return {
+					success: true,
+					invoiceId: result.invoice.id,
+					invoiceNumber: result.invoice.invoiceNumber,
+					fulfillmentMode: input.fulfillmentMode,
+					fullyInvoiced: null,
+					orderStatus: null,
+					message:
+						input.fulfillmentMode === "self_pickup"
+							? "Self pickup is ready. Ask the customer for their pickup code at handover."
+							: "Invoice saved for delivery management.",
+				};
+			}
+
+			const items =
+				input.strategy === "partial"
+					? input.items
+					: undefined;
+
+			if (input.strategy === "partial" && (!items || items.length === 0)) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Partial dispatch requires at least one item quantity",
+				});
+			}
+
+			const result = await createDispatchInvoiceForOrder({
+				userId,
+				orderId: input.orderId,
+				items,
+				fulfillmentMode: input.fulfillmentMode,
+			});
+
+			return {
+				success: true,
+				invoiceId: result.invoice.id,
+				invoiceNumber: result.invoice.invoiceNumber,
+				fulfillmentMode: input.fulfillmentMode,
+				fullyInvoiced: result.fullyInvoiced,
+				orderStatus: result.status,
+				message:
+					input.fulfillmentMode === "self_pickup"
+						? "Pickup invoice created. Ask the customer for their pickup code at handover."
+						: result.fullyInvoiced
+							? "Order fully invoiced and saved for delivery."
+							: "Partial invoice created and saved for delivery.",
 			};
 		}),
 
@@ -3345,6 +3648,7 @@ const orderQueries = {
 							name: true,
 							phoneNumber: true,
 							shopName: true,
+							warehouseName: true,
 						},
 					},
 					order: {
@@ -3366,6 +3670,722 @@ const orderQueries = {
 			return {
 				pendingDeliveryInvoices,
 				pendingDeliveryCount: pendingDeliveryInvoices.length,
+			};
+		}),
+
+	getDeliveryManagementInvoices: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-management/invoices",
+			tags: ["Warehouse"],
+			summary: "List delivery management invoices with KPIs and filters",
+		})
+		.input(
+			z.object({
+				search: z.string().optional(),
+				kpi: z
+					.enum(["all", "pending", "in_delivery", "delivered"])
+					.default("all"),
+				deliveryType: z
+					.enum(["all", "not_selected", "internal", "third_party"])
+					.default("all"),
+				status: z
+					.enum(["all", "pending", "locked", "in_delivery", "delivered"])
+					.default("all"),
+				dateRange: z.enum(["all", "today", "this_month"]).default("all"),
+				page: z.number().int().min(1).default(1),
+				limit: z.number().int().min(1).max(100).default(20),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			const page = input.page;
+			const limit = input.limit;
+
+			const invoiceRows = await db.query.invoice.findMany({
+				where: and(
+					warehouseInvoiceScope(userId),
+					inArray(invoice.fulfillmentMode, [...DELIVERY_PIPELINE_MODES]),
+				),
+				with: {
+					customer: {
+						columns: {
+							id: true,
+							name: true,
+							phoneNumber: true,
+							shopName: true,
+							warehouseName: true,
+						},
+					},
+					order: {
+						columns: {
+							id: true,
+							orderNumber: true,
+							shippingName: true,
+							shippingPhone: true,
+							shippingAddress: true,
+							shippingCity: true,
+							shippingArea: true,
+						},
+					},
+				},
+				orderBy: [desc(invoice.createdAt)],
+			});
+
+			const invoiceIds = invoiceRows.map((row) => row.id);
+			const groupLinks = invoiceIds.length
+				? await db.query.deliveryGroupInvoice.findMany({
+						where: inArray(deliveryGroupInvoice.invoiceId, invoiceIds),
+						with: {
+							group: {
+								columns: {
+									id: true,
+									groupName: true,
+									status: true,
+									deliverymanId: true,
+								},
+							},
+						},
+					})
+				: [];
+
+			const groupByInvoiceId = new Map(
+				groupLinks.map((link) => [link.invoiceId, link.group]),
+			);
+
+			const now = new Date();
+			const startOfToday = new Date(now);
+			startOfToday.setHours(0, 0, 0, 0);
+			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+			const mapped = invoiceRows.map((row) => {
+				const group = groupByInvoiceId.get(row.id) ?? null;
+				const classified = classifyDeliveryInvoice({
+					fulfillmentMode: row.fulfillmentMode,
+					deliveryStatus: row.deliveryStatus,
+					groupStatus: group?.status ?? null,
+					inGroup: !!group,
+				});
+
+				return {
+					id: row.id,
+					invoiceNumber: row.invoiceNumber,
+					grandTotal: row.grandTotal,
+					fulfillmentMode: row.fulfillmentMode,
+					deliveryStatus: row.deliveryStatus,
+					createdAt: row.createdAt,
+					deliveryType: getDeliveryTypeLabel(row.fulfillmentMode),
+					displayStatus: classified.displayStatus,
+					kpiBucket: classified.kpiBucket,
+					isSelectable: classified.isSelectable,
+					group: group
+						? {
+								id: group.id,
+								groupName: group.groupName,
+								status: group.status,
+								hasRider: !!group.deliverymanId,
+							}
+						: null,
+					customer: {
+						id: row.customer?.id ?? row.customerId,
+						name: row.customer?.name ?? row.order?.shippingName ?? "—",
+						phoneNumber: row.customer?.phoneNumber ?? null,
+						shopName: row.customer?.shopName ?? null,
+						warehouseName: row.customer?.warehouseName ?? null,
+						displayName: resolveBuyerDisplayName({
+							warehouseName: row.customer?.warehouseName,
+							shopName: row.customer?.shopName,
+							name: row.customer?.name,
+							shippingName: row.order?.shippingName,
+						}),
+					},
+					order: row.order
+						? {
+								id: row.order.id,
+								orderNumber: row.order.orderNumber,
+								shippingArea: row.order.shippingArea,
+								shippingCity: row.order.shippingCity,
+								shippingAddress: row.order.shippingAddress,
+								shippingPhone: row.order.shippingPhone,
+							}
+						: null,
+				};
+			});
+
+			const kpis = {
+				total: mapped.length,
+				pending: mapped.filter((row) => row.kpiBucket === "pending").length,
+				inDelivery: mapped.filter((row) => row.kpiBucket === "in_delivery")
+					.length,
+				delivered: mapped.filter((row) => row.kpiBucket === "delivered").length,
+			};
+
+			const filtered = mapped.filter((row) => {
+				if (input.kpi !== "all" && row.kpiBucket !== input.kpi) return false;
+				if (
+					input.deliveryType !== "all" &&
+					row.deliveryType !== input.deliveryType
+				) {
+					return false;
+				}
+				if (input.status !== "all" && row.displayStatus !== input.status) {
+					return false;
+				}
+				if (input.search?.trim()) {
+					const query = input.search.trim().toLowerCase();
+					const customer = row.customer.displayName;
+					if (
+						!row.invoiceNumber.toLowerCase().includes(query) &&
+						!(row.order?.orderNumber ?? "").toLowerCase().includes(query) &&
+						!customer.toLowerCase().includes(query) &&
+						!(row.customer.phoneNumber ?? "")
+							.toLowerCase()
+							.includes(query)
+					) {
+						return false;
+					}
+				}
+				if (input.dateRange !== "all") {
+					const created = new Date(row.createdAt);
+					if (input.dateRange === "today" && created < startOfToday) {
+						return false;
+					}
+					if (input.dateRange === "this_month" && created < startOfMonth) {
+						return false;
+					}
+				}
+				return true;
+			});
+
+			const total = filtered.length;
+			const offset = (page - 1) * limit;
+			const invoices = filtered.slice(offset, offset + limit);
+
+			return {
+				invoices,
+				kpis,
+				pagination: {
+					page,
+					limit,
+					total,
+					totalPages: Math.max(1, Math.ceil(total / limit)),
+				},
+			};
+		}),
+
+	getDeliveryInvoiceDetail: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-management/invoices/{invoiceId}",
+			tags: ["Warehouse"],
+			summary: "Get delivery invoice detail for management view",
+		})
+		.input(z.object({ invoiceId: z.number() }))
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+
+			const row = await db.query.invoice.findFirst({
+				where: and(
+					eq(invoice.id, input.invoiceId),
+					warehouseInvoiceScope(userId),
+					inArray(invoice.fulfillmentMode, [...DELIVERY_PIPELINE_MODES]),
+				),
+				with: {
+					customer: {
+						columns: {
+							id: true,
+							name: true,
+							phoneNumber: true,
+							shopName: true,
+							warehouseName: true,
+						},
+					},
+					order: {
+						columns: {
+							id: true,
+							orderNumber: true,
+							shippingName: true,
+							shippingPhone: true,
+							shippingAddress: true,
+							shippingCity: true,
+							shippingArea: true,
+						},
+					},
+					items: true,
+				},
+			});
+
+			if (!row) {
+				throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
+			}
+
+			const groupLink = await db.query.deliveryGroupInvoice.findFirst({
+				where: eq(deliveryGroupInvoice.invoiceId, row.id),
+				with: {
+					group: {
+						columns: {
+							id: true,
+							groupName: true,
+							status: true,
+							deliverymanId: true,
+						},
+						with: {
+							deliveryman: {
+								columns: {
+									id: true,
+									name: true,
+									phoneNumber: true,
+								},
+							},
+						},
+					},
+				},
+			});
+
+			const classified = classifyDeliveryInvoice({
+				fulfillmentMode: row.fulfillmentMode,
+				deliveryStatus: row.deliveryStatus,
+				groupStatus: groupLink?.group?.status ?? null,
+				inGroup: !!groupLink,
+			});
+
+			return {
+				invoice: {
+					id: row.id,
+					invoiceNumber: row.invoiceNumber,
+					grandTotal: row.grandTotal,
+					subtotal: row.subtotal,
+					deliveryCharge: row.deliveryCharge,
+					fulfillmentMode: row.fulfillmentMode,
+					deliveryStatus: row.deliveryStatus,
+					createdAt: row.createdAt,
+					deliveryType: getDeliveryTypeLabel(row.fulfillmentMode),
+					displayStatus: classified.displayStatus,
+					items: row.items,
+					customer: {
+						id: row.customer?.id ?? row.customerId,
+						name: row.customer?.name ?? row.order?.shippingName ?? "—",
+						phoneNumber: row.customer?.phoneNumber ?? null,
+						shopName: row.customer?.shopName ?? null,
+						warehouseName: row.customer?.warehouseName ?? null,
+						displayName: resolveBuyerDisplayName({
+							warehouseName: row.customer?.warehouseName,
+							shopName: row.customer?.shopName,
+							name: row.customer?.name,
+							shippingName: row.order?.shippingName,
+						}),
+					},
+					order: row.order,
+					group: groupLink?.group ?? null,
+				},
+			};
+		}),
+
+	getOpenDeliveryGroups: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-management/open-groups",
+			tags: ["Warehouse"],
+			summary: "List delivery groups available for adding invoices",
+		})
+		.handler(async ({ context }) => {
+			const userId = context.session.user.id;
+
+			const groups = await db.query.deliveryGroup.findMany({
+				where: and(
+					eq(deliveryGroup.warehouseId, userId),
+					inArray(deliveryGroup.status, [
+						"pending_assignment",
+						"assigned",
+					]),
+				),
+				with: {
+					deliveryman: {
+						columns: {
+							id: true,
+							name: true,
+							phoneNumber: true,
+						},
+					},
+				},
+				orderBy: [desc(deliveryGroup.createdAt)],
+			});
+
+			return {
+				groups: groups.map((group) => ({
+					id: group.id,
+					groupName: group.groupName,
+					status: group.status,
+					totalInvoices: group.totalInvoices,
+					deliveryman: group.deliveryman,
+					hasRider: !!group.deliverymanId,
+				})),
+			};
+		}),
+
+	getDeliveryTeamAssignments: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-team/assignments",
+			tags: ["Warehouse"],
+			summary: "List delivery groups for team assignment with KPIs",
+		})
+		.input(
+			z.object({
+				search: z.string().optional(),
+				kpi: z
+					.enum(["all", "pending_assignment", "assigned", "completed"])
+					.default("all"),
+				area: z.string().optional(),
+				dateRange: z.enum(["all", "today", "this_month"]).default("all"),
+				page: z.number().int().min(1).default(1),
+				limit: z.number().int().min(1).max(100).default(20),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			const page = input.page;
+			const limit = input.limit;
+
+			const groupRows = await db.query.deliveryGroup.findMany({
+				where: eq(deliveryGroup.warehouseId, userId),
+				with: {
+					deliveryman: {
+						columns: {
+							id: true,
+							name: true,
+							phoneNumber: true,
+						},
+					},
+					invoices: {
+						with: {
+							invoice: {
+								columns: {
+									id: true,
+									grandTotal: true,
+									fulfillmentMode: true,
+								},
+								with: {
+									order: {
+										columns: {
+											shippingArea: true,
+											orderNumber: true,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				orderBy: [desc(deliveryGroup.createdAt)],
+			});
+
+			const now = new Date();
+			const startOfToday = new Date(now);
+			startOfToday.setHours(0, 0, 0, 0);
+			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+			const mapped = groupRows
+				.filter((group) =>
+					group.invoices.some(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					),
+				)
+				.map((group) => {
+					const areas = group.invoices.map(
+						(link) => link.invoice?.order?.shippingArea,
+					);
+					const areaLabel = rollUpAreaLabel(areas);
+					const totalAmount = group.invoices.reduce((sum, link) => {
+						const value = Number.parseFloat(link.invoice?.grandTotal ?? "0");
+						return sum + (Number.isNaN(value) ? 0 : value);
+					}, 0);
+					const kpiBucket = getAssignmentKpiBucket(group.status);
+
+					return {
+						id: group.id,
+						groupName: group.groupName,
+						status: group.status,
+						kpiBucket,
+						totalInvoices: group.totalInvoices,
+						completedInvoices: group.completedInvoices,
+						totalAmount: formatMoneyValue(totalAmount),
+						areaLabel,
+						createdAt: group.createdAt,
+						rider: group.deliveryman
+							? {
+									id: group.deliveryman.id,
+									name: group.deliveryman.name,
+									phoneNumber: group.deliveryman.phoneNumber,
+								}
+							: null,
+						hasRider: !!group.deliverymanId,
+					};
+				});
+
+			const kpis = {
+				total: mapped.length,
+				pendingAssignment: mapped.filter(
+					(row) => row.kpiBucket === "pending_assignment",
+				).length,
+				assigned: mapped.filter((row) => row.kpiBucket === "assigned").length,
+				completed: mapped.filter((row) => row.kpiBucket === "completed").length,
+			};
+
+			const filtered = mapped.filter((row) => {
+				if (input.kpi !== "all" && row.kpiBucket !== input.kpi) return false;
+				if (
+					input.area &&
+					input.area !== "all" &&
+					row.areaLabel !== input.area
+				) {
+					return false;
+				}
+				if (input.search?.trim()) {
+					const query = input.search.trim().toLowerCase();
+					if (
+						!row.groupName.toLowerCase().includes(query) &&
+						!String(row.id).includes(query) &&
+						!(row.rider?.name ?? "").toLowerCase().includes(query) &&
+						!row.areaLabel.toLowerCase().includes(query)
+					) {
+						return false;
+					}
+				}
+				if (input.dateRange !== "all") {
+					const created = new Date(row.createdAt);
+					if (input.dateRange === "today" && created < startOfToday) {
+						return false;
+					}
+					if (input.dateRange === "this_month" && created < startOfMonth) {
+						return false;
+					}
+				}
+				return true;
+			});
+
+			const total = filtered.length;
+			const offset = (page - 1) * limit;
+			const groups = filtered.slice(offset, offset + limit);
+
+			const areaOptions = [
+				...new Set(
+					mapped
+						.map((row) => row.areaLabel)
+						.filter((area) => area && area !== "—"),
+				),
+			].sort();
+
+			return {
+				groups,
+				kpis,
+				areaOptions,
+				pagination: {
+					page,
+					limit,
+					total,
+					totalPages: Math.max(1, Math.ceil(total / limit)),
+				},
+			};
+		}),
+
+	getDeliveryTeamRidersOverview: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-team/riders-overview",
+			tags: ["Warehouse"],
+			summary: "Rider-centric delivery assignment overview",
+		})
+		.input(
+			z.object({
+				search: z.string().optional(),
+				status: z.enum(["all", "active", "idle"]).default("all"),
+				area: z.string().optional(),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const warehouseId = context.session.user.id;
+
+			const deliverymen = await db.query.user.findMany({
+				where: and(
+					eq(user.warehouseId, warehouseId),
+					eq(user.role, "deliveryman"),
+				),
+				columns: {
+					id: true,
+					name: true,
+					phoneNumber: true,
+					banned: true,
+					serviceArea: true,
+				},
+				orderBy: [user.name],
+			});
+
+			const activeGroupStatuses = [
+				"assigned",
+				"out_for_delivery",
+				"partial",
+			] as const;
+
+			const [activeGroups, pendingGroupRows] = await Promise.all([
+				db.query.deliveryGroup.findMany({
+					where: and(
+						eq(deliveryGroup.warehouseId, warehouseId),
+						inArray(deliveryGroup.status, [...activeGroupStatuses]),
+					),
+					with: {
+						invoices: {
+							with: {
+								invoice: {
+									columns: { fulfillmentMode: true },
+									with: {
+										order: {
+											columns: { shippingArea: true },
+										},
+									},
+								},
+							},
+						},
+					},
+					orderBy: [desc(deliveryGroup.createdAt)],
+				}),
+				db.query.deliveryGroup.findMany({
+					where: and(
+						eq(deliveryGroup.warehouseId, warehouseId),
+						eq(deliveryGroup.status, "pending_assignment"),
+					),
+					with: {
+						invoices: {
+							with: {
+								invoice: {
+									columns: { fulfillmentMode: true },
+									with: {
+										order: {
+											columns: { shippingArea: true },
+										},
+									},
+								},
+							},
+						},
+					},
+					orderBy: [desc(deliveryGroup.createdAt)],
+				}),
+			]);
+
+			const activeGroupByRiderId = new Map<
+				string,
+				(typeof activeGroups)[number]
+			>();
+			for (const group of activeGroups) {
+				if (!group.deliverymanId) continue;
+				if (!activeGroupByRiderId.has(group.deliverymanId)) {
+					activeGroupByRiderId.set(group.deliverymanId, group);
+				}
+			}
+
+			const pendingGroups = pendingGroupRows
+				.filter((group) =>
+					group.invoices.some(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					),
+				)
+				.map((group) => ({
+					id: group.id,
+					groupName: group.groupName,
+					areaLabel: rollUpAreaLabel(
+						group.invoices.map((link) => link.invoice?.order?.shippingArea),
+					),
+					totalInvoices: group.totalInvoices,
+				}));
+
+			const mappedRiders = deliverymen.map((rider) => {
+				const group = activeGroupByRiderId.get(rider.id) ?? null;
+				const isActive = !!group && !rider.banned;
+				const areaLabel = group
+					? rollUpAreaLabel(
+							group.invoices.map(
+								(link) => link.invoice?.order?.shippingArea,
+							),
+						)
+					: rider.serviceArea ?? "—";
+
+				return {
+					id: rider.id,
+					name: rider.name,
+					phoneNumber: rider.phoneNumber,
+					banned: rider.banned ?? false,
+					serviceArea: rider.serviceArea,
+					status: isActive ? ("active" as const) : ("idle" as const),
+					areaLabel,
+					activeGroup: group
+						? {
+								id: group.id,
+								groupName: group.groupName,
+								areaLabel: rollUpAreaLabel(
+									group.invoices.map(
+										(link) => link.invoice?.order?.shippingArea,
+									),
+								),
+								status: group.status,
+							}
+						: null,
+					totalOrders: group?.totalInvoices ?? 0,
+					completedOrders: group?.completedInvoices ?? 0,
+					vehicleType: group?.vehicleType ?? null,
+				};
+			});
+
+			const kpis = {
+				totalRiders: deliverymen.filter((rider) => !rider.banned).length,
+				ridersAssigned: mappedRiders.filter(
+					(rider) => rider.status === "active",
+				).length,
+				unassignedGroups: pendingGroups.length,
+			};
+
+			const filteredRiders = mappedRiders.filter((rider) => {
+				if (input.status === "active" && rider.status !== "active") {
+					return false;
+				}
+				if (input.status === "idle" && rider.status !== "idle") {
+					return false;
+				}
+				if (
+					input.area &&
+					input.area !== "all" &&
+					rider.areaLabel !== input.area
+				) {
+					return false;
+				}
+				if (input.search?.trim()) {
+					const query = input.search.trim().toLowerCase();
+					if (
+						!rider.name.toLowerCase().includes(query) &&
+						!(rider.phoneNumber ?? "").toLowerCase().includes(query) &&
+						!rider.areaLabel.toLowerCase().includes(query) &&
+						!(rider.activeGroup?.groupName ?? "")
+							.toLowerCase()
+							.includes(query)
+					) {
+						return false;
+					}
+				}
+				return true;
+			});
+
+			const areaOptions = [
+				...new Set(
+					mappedRiders
+						.map((rider) => rider.areaLabel)
+						.filter((area) => area && area !== "—"),
+				),
+			].sort();
+
+			return {
+				riders: filteredRiders,
+				kpis,
+				pendingGroups,
+				areaOptions,
 			};
 		}),
 
@@ -3424,7 +4444,7 @@ const orderQueries = {
 			return {
 				success: true,
 				movedCount: input.invoiceIds.length,
-				message: "Invoices moved to the internal delivery queue.",
+				message: "Delivery type set to internal delivery.",
 			};
 		}),
 

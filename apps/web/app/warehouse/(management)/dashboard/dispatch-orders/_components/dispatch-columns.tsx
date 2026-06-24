@@ -3,15 +3,21 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   ArrowRight,
-  FileText,
   Loader2,
   MapPin,
   Package,
-  Plus,
+  Truck,
   User,
 } from "lucide-react";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  canShowDispatchAction,
+  getDeliveryStatusLabel,
+  getDispatchActionLabel,
+  getInvoiceStatusLabel,
+} from "./dispatch-utils";
 
 export type DispatchStatus =
   | "ready_for_dispatch"
@@ -64,14 +70,16 @@ export type DispatchOrderRow = {
     splitSequence: number | null;
     grandTotal: string;
     deliveryStatus: string;
+    fulfillmentMode: string | null;
+    completionOtpVerifiedAt: string | Date | null;
+    needsFulfillmentConfig: boolean;
     createdAt: string;
   }>;
 };
 
 export type DispatchColumnActions = {
   actionLoading: string | null;
-  onCreateFullInvoice: (order: DispatchOrderRow) => void;
-  onOpenPartialInvoice: (order: DispatchOrderRow) => void;
+  onOpenDispatch: (order: DispatchOrderRow) => void;
 };
 
 function customerName(order: DispatchOrderRow) {
@@ -160,52 +168,65 @@ export function getDispatchColumns(
       },
     },
     {
+      id: "invoice",
+      header: "Invoice",
+      cell: ({ row }) => {
+        const label = getInvoiceStatusLabel(row.original);
+        if (label === "—") {
+          return <span className="text-sm text-muted-foreground">—</span>;
+        }
+        return (
+          <Badge
+            variant={label === "Partial" ? "outline" : "secondary"}
+            className="text-[10px] font-medium"
+          >
+            {label}
+          </Badge>
+        );
+      },
+    },
+    {
+      id: "delivery",
+      header: "Delivery",
+      cell: ({ row }) => {
+        const { label, variant } = getDeliveryStatusLabel(row.original);
+        if (label === "—") {
+          return <span className="text-sm text-muted-foreground">—</span>;
+        }
+        return (
+          <Badge variant={variant} className="text-[10px] font-medium">
+            {label}
+          </Badge>
+        );
+      },
+    },
+    {
       id: "actions",
       header: () => <div className="text-right">Action</div>,
       cell: ({ row }) => {
         const order = row.original;
-        const canInvoice =
-          order.status !== "invoiced" && order.progress.remainingQty > 0;
-        const fullLoading = actions.actionLoading === `full-${order.id}`;
-        const partialLoading = actions.actionLoading === `partial-${order.id}`;
+        const showDispatch = canShowDispatchAction(order);
+        const dispatchLoading = actions.actionLoading === `confirm-${order.id}`;
+        const pickupLoading = actions.actionLoading?.startsWith("otp-");
 
         return (
           <div className="flex flex-wrap items-center justify-end gap-1.5">
-            {canInvoice ? (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="default"
-                  className="h-8 gap-1 bg-emerald-600 px-2.5 text-xs hover:bg-emerald-700"
-                  disabled={!!actions.actionLoading}
-                  onClick={() => actions.onCreateFullInvoice(order)}
-                >
-                  {fullLoading ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <FileText className="h-3 w-3" />
-                  )}
-                  {order.status === "partially_invoiced"
-                    ? "Invoice Remaining"
-                    : "Full Invoice"}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 gap-1 px-2.5 text-xs"
-                  disabled={!!actions.actionLoading}
-                  onClick={() => actions.onOpenPartialInvoice(order)}
-                >
-                  {partialLoading ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Plus className="h-3 w-3" />
-                  )}
-                  Partial
-                </Button>
-              </>
+            {showDispatch ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                className="h-8 gap-1 bg-violet-600 px-2.5 text-xs hover:bg-violet-700"
+                disabled={!!actions.actionLoading}
+                onClick={() => actions.onOpenDispatch(order)}
+              >
+                {dispatchLoading || pickupLoading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Truck className="h-3 w-3" />
+                )}
+                {getDispatchActionLabel(order)}
+              </Button>
             ) : null}
             <Link
               href={`/warehouse/dashboard/order-management/${order.id}`}

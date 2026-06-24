@@ -168,6 +168,16 @@ const warehouseNavGroups: NavGroup[] = [
       { title: "Sales Team", url: `${WH}/sales-team`, icon: UserCheckIcon },
       { title: "Delivery Team", url: `${WH}/delivery-team`, icon: TruckIcon },
       {
+        title: "Rider Assignment",
+        url: `${WH}/delivery-team/assignment`,
+        icon: UserCheckIcon,
+      },
+      {
+        title: "Assign Orders",
+        url: `${WH}/delivery-team/assignments`,
+        icon: ClipboardListIcon,
+      },
+      {
         title: "Staff Performance",
         url: `${WH}/staff-performance`,
         icon: BarChart3Icon,

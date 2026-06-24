@@ -78,6 +78,13 @@
       "when": 1780550699276,
       "tag": "0010_bright_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782000000000,
+      "tag": "0013_delivery_group_optional_rider",
+      "breakpoints": true
     }
   ]
 }

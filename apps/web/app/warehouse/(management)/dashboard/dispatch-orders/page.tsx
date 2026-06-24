@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ColumnFiltersState,
   flexRender,
@@ -32,7 +32,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
 import {
   DashboardKpiCard,
   type DashboardKpiChartPoint,
@@ -64,10 +63,12 @@ import {
   type DispatchStatus,
   getDispatchColumns,
 } from "./_components/dispatch-columns";
-import { PartialInvoiceDialog } from "./_components/partial-invoice-dialog";
+import { DispatchOrderModal } from "./_components/dispatch-order-modal";
+import { getInvoiceStatusLabel } from "./_components/dispatch-utils";
 
 type StatusFilter = "all" | DispatchStatus;
 type DateFilter = "today" | "this_month" | "all";
+type InvoiceFilter = "all" | "not_invoiced" | "partial" | "full";
 
 const PER_PAGE = 20;
 
@@ -119,6 +120,13 @@ const dateOptions = [
   { value: "this_month", label: "This Month" },
 ];
 
+const invoiceFilterOptions = [
+  { value: "all", label: "All Invoice Status" },
+  { value: "not_invoiced", label: "Not Invoiced" },
+  { value: "partial", label: "Partial" },
+  { value: "full", label: "Full" },
+];
+
 function getOrderDate(order: DispatchOrderRow) {
   return new Date(order.readyAt ?? order.createdAt);
 }
@@ -154,6 +162,15 @@ function matchesSearch(order: DispatchOrderRow, search: string) {
     (order.customer.phoneNumber ?? "").toLowerCase().includes(query) ||
     order.shipping.phone.toLowerCase().includes(query)
   );
+}
+
+function matchesInvoiceFilter(order: DispatchOrderRow, filter: InvoiceFilter) {
+  if (filter === "all") return true;
+  const label = getInvoiceStatusLabel(order);
+  if (filter === "not_invoiced") return label === "—";
+  if (filter === "partial") return label === "Partial";
+  if (filter === "full") return label === "Full";
+  return true;
 }
 
 function buildTrendCopy(current: number, previous: number): DashboardKpiTrend {
@@ -253,15 +270,6 @@ function generatePageNumbers(
   return pages;
 }
 
-function buildDefaultPartialQuantities(order: DispatchOrderRow) {
-  return order.items.reduce<Record<number, number>>((quantities, item) => {
-    if (item.remainingQty > 0) {
-      quantities[item.orderItemId] = item.remainingQty;
-    }
-    return quantities;
-  }, {});
-}
-
 export default function DispatchOrdersPage() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<StatusFilter>("ready_for_dispatch");
@@ -269,14 +277,13 @@ export default function DispatchOrdersPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateFilter>("all");
+  const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>("all");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [partialInvoiceOrder, setPartialInvoiceOrder] =
-    useState<DispatchOrderRow | null>(null);
-  const [partialQuantities, setPartialQuantities] = useState<
-    Record<number, number>
-  >({});
+  const [dispatchOrder, setDispatchOrder] = useState<DispatchOrderRow | null>(
+    null,
+  );
 
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
   useEffect(() => {
@@ -308,6 +315,12 @@ export default function DispatchOrdersPage() {
     ].map((order) => ({
       ...order,
       status: order.status as DispatchStatus,
+      invoices: order.invoices.map((inv) => ({
+        ...inv,
+        fulfillmentMode: inv.fulfillmentMode ?? null,
+        completionOtpVerifiedAt: inv.completionOtpVerifiedAt ?? null,
+        needsFulfillmentConfig: inv.needsFulfillmentConfig ?? false,
+      })),
     })) as unknown as DispatchOrderRow[];
   }, [data]);
 
@@ -326,9 +339,10 @@ export default function DispatchOrdersPage() {
       if (status !== "all" && order.status !== status) return false;
       if (!matchesSearch(order, debouncedSearch)) return false;
       if (!matchesDateFilter(order, dateRange)) return false;
+      if (!matchesInvoiceFilter(order, invoiceFilter)) return false;
       return true;
     });
-  }, [allOrders, status, debouncedSearch, dateRange]);
+  }, [allOrders, status, debouncedSearch, dateRange, invoiceFilter]);
 
   const totalCount = filteredOrders.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
@@ -340,61 +354,28 @@ export default function DispatchOrdersPage() {
   const invalidateDispatch = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["warehouse", "dispatch-dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["warehouse", "order-management"] });
-  }, [queryClient]);
+    if (dispatchOrder) {
+      queryClient.invalidateQueries({
+        queryKey: ["warehouse", "order-detail", dispatchOrder.id],
+      });
+    }
+  }, [queryClient, dispatchOrder]);
 
-  const fullInvoiceMutation = useMutation({
-    mutationFn: (orderId: number) =>
-      orpc.warehouse.createFullDispatchInvoice.call({ orderId }),
-    onSuccess: (result) => {
-      toast.success(result.message || "Invoice created");
-      invalidateDispatch();
-      selectStatus("invoiced");
-    },
-    onError: (error) =>
-      toast.error(error.message || "Failed to create invoice"),
-    onSettled: () => setActionLoading(null),
-  });
+  const handleDispatchSuccess = useCallback(() => {
+    invalidateDispatch();
+  }, [invalidateDispatch]);
 
-  const partialInvoiceMutation = useMutation({
-    mutationFn: (input: {
-      orderId: number;
-      items: Array<{ orderItemId: number; quantity: number }>;
-    }) => orpc.warehouse.createPartialDispatchInvoice.call(input),
-    onSuccess: (result) => {
-      toast.success(result.message || "Partial invoice created");
-      setPartialInvoiceOrder(null);
-      setPartialQuantities({});
-      invalidateDispatch();
-      selectStatus(
-        result.fullyInvoiced ? "invoiced" : "partially_invoiced",
-      );
-    },
-    onError: (error) =>
-      toast.error(error.message || "Failed to create partial invoice"),
-    onSettled: () => setActionLoading(null),
-  });
-
-  const handleCreateFullInvoice = useCallback(
-    (order: DispatchOrderRow) => {
-      setActionLoading(`full-${order.id}`);
-      fullInvoiceMutation.mutate(order.id);
-    },
-    [fullInvoiceMutation],
-  );
-
-  const openPartialInvoice = useCallback((order: DispatchOrderRow) => {
-    setPartialInvoiceOrder(order);
-    setPartialQuantities(buildDefaultPartialQuantities(order));
+  const openDispatch = useCallback((order: DispatchOrderRow) => {
+    setDispatchOrder(order);
   }, []);
 
   const columns = useMemo(
     () =>
       getDispatchColumns({
         actionLoading,
-        onCreateFullInvoice: handleCreateFullInvoice,
-        onOpenPartialInvoice: openPartialInvoice,
+        onOpenDispatch: openDispatch,
       }),
-    [actionLoading, handleCreateFullInvoice, openPartialInvoice],
+    [actionLoading, openDispatch],
   );
 
   const table = useReactTable({
@@ -410,44 +391,6 @@ export default function DispatchOrdersPage() {
     pageCount: totalPages,
   });
 
-  const handlePartialQuantity = (
-    orderItemId: number,
-    remainingQty: number,
-    nextQuantity: number,
-  ) => {
-    setPartialQuantities((current) => ({
-      ...current,
-      [orderItemId]: Math.max(
-        0,
-        Math.min(
-          remainingQty,
-          Number.isFinite(nextQuantity) ? nextQuantity : 0,
-        ),
-      ),
-    }));
-  };
-
-  const handleCreatePartialInvoice = () => {
-    if (!partialInvoiceOrder) return;
-    const items = partialInvoiceOrder.items
-      .map((item) => ({
-        orderItemId: item.orderItemId,
-        quantity: partialQuantities[item.orderItemId] ?? 0,
-      }))
-      .filter((item) => item.quantity > 0);
-
-    if (items.length === 0) {
-      toast.error("Select at least one item quantity");
-      return;
-    }
-
-    setActionLoading(`partial-${partialInvoiceOrder.id}`);
-    partialInvoiceMutation.mutate({
-      orderId: partialInvoiceOrder.id,
-      items,
-    });
-  };
-
   const showFrom = totalCount > 0 ? (page - 1) * PER_PAGE + 1 : 0;
   const showTo = Math.min(page * PER_PAGE, totalCount);
 
@@ -459,7 +402,7 @@ export default function DispatchOrdersPage() {
             Dispatch Orders
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Create full or partial invoices for approved warehouse orders
+            Create invoices, select delivery mode, and complete self pickup
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -494,7 +437,7 @@ export default function DispatchOrdersPage() {
                 cfg.key === "all"
                   ? "All Dispatch"
                   : cfg.key === "ready_for_dispatch"
-                    ? "Ready for Dispatch"
+                    ? "Ready Orders"
                     : cfg.key === "partially_invoiced"
                       ? "Partially Invoiced"
                       : "Invoiced"
@@ -519,6 +462,24 @@ export default function DispatchOrdersPage() {
               className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
           </div>
+          <Select
+            value={invoiceFilter}
+            onValueChange={(v) => {
+              setInvoiceFilter(v as InvoiceFilter);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-9 w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {invoiceFilterOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={dateRange}
             onValueChange={(v) => {
@@ -598,7 +559,7 @@ export default function DispatchOrdersPage() {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                 <Inbox className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h2 className="mt-3 font-semibold">No dispatch orders available</h2>
+              <h2 className="mt-3 font-semibold">No ready orders found</h2>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
                 Orders will appear here as they move through approval and become
                 ready for invoicing.
@@ -713,17 +674,14 @@ export default function DispatchOrdersPage() {
         )}
       </div>
 
-      <PartialInvoiceDialog
-        open={!!partialInvoiceOrder}
-        order={partialInvoiceOrder}
-        quantities={partialQuantities}
+      <DispatchOrderModal
+        open={!!dispatchOrder}
+        order={dispatchOrder}
         actionLoading={actionLoading}
-        onClose={() => {
-          setPartialInvoiceOrder(null);
-          setPartialQuantities({});
-        }}
-        onCreate={() => void handleCreatePartialInvoice()}
-        onQuantityChange={handlePartialQuantity}
+        onClose={() => setDispatchOrder(null)}
+        onActionStart={setActionLoading}
+        onActionEnd={() => setActionLoading(null)}
+        onSuccess={handleDispatchSuccess}
       />
     </div>
   );
