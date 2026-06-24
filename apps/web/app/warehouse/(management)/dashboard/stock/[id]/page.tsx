@@ -71,6 +71,31 @@ function normalizeUnit(unit?: string | null) {
     .toUpperCase();
 }
 
+function formatDisplayUnit(unit?: string | null) {
+  const normalized = normalizeUnit(unit);
+  if (normalized === "PCS" || normalized === "PC" || normalized === "PIECES") {
+    return "Pc";
+  }
+  if (normalized === "PAIR") {
+    return "Pair";
+  }
+  if (normalized === "PACK") {
+    return "Pack";
+  }
+  if (normalized === "CARTON") {
+    return "Carton";
+  }
+  return normalized || "Unit";
+}
+
+function formatQtyByUnit(value: number, unit?: string | null) {
+  return formatUnitQty(value, normalizeUnit(unit) === "KG");
+}
+
+function isFashionType(typeName?: string | null) {
+  return String(typeName || "").trim().toLowerCase() === "fashion";
+}
+
 function parseUnitLabelMeasure(label?: string | null) {
   const normalizedLabel = String(label || "").trim();
   if (!normalizedLabel) return null;
@@ -170,13 +195,23 @@ function getGroupMeasure(group?: StockVariantGroup | null) {
     return { quantityPerPack: 0, quantityUnit: "PACK" };
   }
 
-  if (group.packType === "loose") {
-    return { quantityPerPack: 1, quantityUnit: "KG" };
-  }
-
   const normalizedUnit = normalizeUnit(group.orderUnit);
   const weightKg = parseFloat(group.weightKg || "0");
   const piecesPerUnit = Number(group.piecesPerUnit || 0);
+
+  if (group.packType === "loose") {
+    if (PIECE_UNITS.has(normalizedUnit)) {
+      return { quantityPerPack: 1, quantityUnit: "PCS" };
+    }
+    if (weightKg > 0 || WEIGHT_UNITS.has(normalizedUnit)) {
+      return { quantityPerPack: 1, quantityUnit: "KG" };
+    }
+    const parsedLoose = parseUnitLabelMeasure(group.unitLabel);
+    if (parsedLoose && parsedLoose.quantityUnit !== "KG") {
+      return { quantityPerPack: 1, quantityUnit: parsedLoose.quantityUnit };
+    }
+    return { quantityPerPack: 1, quantityUnit: normalizedUnit || "KG" };
+  }
 
   if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
     return { quantityPerPack: weightKg, quantityUnit: "KG" };
