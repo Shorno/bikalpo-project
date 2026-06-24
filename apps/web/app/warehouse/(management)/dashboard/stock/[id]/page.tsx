@@ -163,6 +163,7 @@ type VariantDisplayInventory = {
 
 type LooseVariantRow = {
   key: string;
+  matchKey: string;
   label: string;
   totalQty: number;
   looseQty: number;
@@ -213,6 +214,22 @@ type CartonSummary = {
   latestCartonId: string;
   latestCartonDbId: number;
 };
+
+function getVariantIdentityKey(item: {
+  brand?: StockVariantBrand | null;
+  color?: string | null;
+  size?: string | null;
+}) {
+  return [
+    item.brand?.id ?? item.brand?.name ?? "no-brand",
+    String(item.color || "")
+      .trim()
+      .toLowerCase() || "no-color",
+    String(item.size || "")
+      .trim()
+      .toLowerCase() || "no-size",
+  ].join("|");
+}
 
 function getGroupMeasure(group?: StockVariantGroup | null) {
   if (!group) {
@@ -576,6 +593,7 @@ export default function StockDetailPage() {
 
       looseVariantRows.push({
         key: `${group.weightKg}-${item.variantId}`,
+        matchKey: getVariantIdentityKey(item),
         label: buildVariantLabel(group, item, true),
         totalQty: inventory.totalQty,
         looseQty: inventory.looseQty,
@@ -591,6 +609,22 @@ export default function StockDetailPage() {
     (a, b) => b.looseQty - a.looseQty || b.totalQty - a.totalQty,
   );
 
+  const fashionLooseByIdentity = isFashion
+    ? looseVariantRows.reduce((map, row) => {
+        const current = map.get(row.matchKey);
+        if (current) {
+          current.totalQty += row.totalQty;
+          current.looseQty += row.looseQty;
+          current.inCartonQty += row.inCartonQty;
+          current.activeCartonCount += row.activeCartonCount;
+          return map;
+        }
+
+        map.set(row.matchKey, { ...row });
+        return map;
+      }, new Map<string, LooseVariantRow>())
+    : new Map<string, LooseVariantRow>();
+
   const fashionVariantRows = isFashion
     ? packVariantGroups.flatMap((group) => {
         const measure = getGroupMeasure(group);
@@ -601,6 +635,10 @@ export default function StockDetailPage() {
         return group.items.map((variantItem) => {
           const inventory = getVariantDisplayInventory(variantItem, false);
           const quantityPerPack = measure.quantityPerPack || 1;
+          const bundledQty = inventory.totalQty * quantityPerPack;
+          const openStock =
+            fashionLooseByIdentity.get(getVariantIdentityKey(variantItem))
+              ?.looseQty ?? 0;
           const label =
             [variantItem.color, variantItem.size].filter(Boolean).join(" - ") ||
             buildVariantLabel(group, variantItem, false);
@@ -608,9 +646,9 @@ export default function StockDetailPage() {
           return {
             key: `${group.unitLabel}-${variantItem.variantId}`,
             label,
-            totalQty: inventory.totalQty * quantityPerPack,
-            looseQty: inventory.looseQty * quantityPerPack,
-            inCartonQty: inventory.inCartonQty * quantityPerPack,
+            totalQty: bundledQty + openStock,
+            looseQty: openStock,
+            inCartonQty: bundledQty,
             quantityUnit: measure.quantityUnit,
             unitLabel: group.unitLabel,
           };
