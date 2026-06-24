@@ -241,9 +241,16 @@ export default function StockListPage() {
                   <Package size={14} className="text-gray-400" />
                 )}
               </div>
-              <span className="text-sm font-semibold text-gray-900 truncate">
-                {item.coreProductName}
-              </span>
+              <div className="min-w-0">
+                <span className="block text-sm font-semibold text-gray-900 truncate">
+                  {item.coreProductName}
+                </span>
+                {item.typeName && (
+                  <span className="text-[11px] text-gray-500">
+                    {item.typeName}
+                  </span>
+                )}
+              </div>
             </div>
           );
         },
