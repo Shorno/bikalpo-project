@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Loader2, MapPin, Package } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
@@ -11,14 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
 import { orpc } from "@/utils/orpc";
 import {
   formatMoney,
@@ -32,6 +26,29 @@ type DeliveryInvoiceDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
+
+function DetailRow({
+  label,
+  children,
+  align = "end",
+}: {
+  label: string;
+  children: ReactNode;
+  align?: "start" | "end";
+}) {
+  return (
+    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-x-4 py-2.5">
+      <dt className="pt-0.5 text-sm text-muted-foreground">{label}</dt>
+      <dd
+        className={`min-w-0 text-sm font-medium leading-snug ${
+          align === "end" ? "text-right" : "text-left"
+        }`}
+      >
+        {children}
+      </dd>
+    </div>
+  );
+}
 
 export function DeliveryInvoiceDrawer({
   invoiceId,
@@ -49,122 +66,143 @@ export function DeliveryInvoiceDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
+      >
+        <SheetHeader className="shrink-0 border-b px-6 py-4 pr-12">
+          <SheetTitle className="flex items-center gap-2 text-base">
+            <FileText className="h-4 w-4 text-muted-foreground" />
             Invoice Details
           </SheetTitle>
-          <SheetDescription>
+          <SheetDescription className="font-mono text-xs">
             {invoice?.invoiceNumber ?? "Loading invoice…"}
           </SheetDescription>
         </SheetHeader>
 
         {isLoading || !invoice ? (
-          <div className="mt-8 flex items-center justify-center text-muted-foreground">
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             Loading…
           </div>
         ) : (
-          <div className="mt-6 space-y-6">
-            <div className="grid gap-3 text-sm">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">Status</span>
-                <Badge variant={getDisplayStatusTone(invoice.displayStatus)}>
-                  {getDisplayStatusLabel(invoice.displayStatus)}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">Order</span>
-                <span className="font-mono">{invoice.order?.orderNumber ?? "—"}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">Customer</span>
-                <span className="text-right">
-                  {invoice.customer.displayName}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">Delivery type</span>
-                <span>{getDeliveryTypeLabel(invoice.deliveryType)}</span>
-              </div>
-              {invoice.order?.shippingArea ? (
-                <div className="flex items-start justify-between gap-4">
-                  <span className="text-muted-foreground">Area</span>
-                  <span className="flex items-center gap-1 text-right">
-                    <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    {invoice.order.shippingArea}
-                  </span>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <section className="rounded-lg border bg-muted/20 px-4">
+                <dl>
+                  <DetailRow label="Status">
+                    <Badge variant={getDisplayStatusTone(invoice.displayStatus)}>
+                      {getDisplayStatusLabel(invoice.displayStatus)}
+                    </Badge>
+                  </DetailRow>
+                  <Separator />
+                  <DetailRow label="Order">
+                    <span className="break-all font-mono text-[13px] font-semibold">
+                      {invoice.order?.orderNumber ?? "—"}
+                    </span>
+                  </DetailRow>
+                  <Separator />
+                  <DetailRow label="Customer">
+                    <span className="break-words">
+                      {invoice.customer.displayName}
+                    </span>
+                  </DetailRow>
+                  <Separator />
+                  <DetailRow label="Type">
+                    {getDeliveryTypeLabel(invoice.deliveryType)}
+                  </DetailRow>
+                  {invoice.order?.shippingArea ? (
+                    <>
+                      <Separator />
+                      <DetailRow label="Area">
+                        <span className="inline-flex items-start justify-end gap-1.5 break-words">
+                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          {invoice.order.shippingArea}
+                        </span>
+                      </DetailRow>
+                    </>
+                  ) : null}
+                  {invoice.group ? (
+                    <>
+                      <Separator />
+                      <DetailRow label="Group">
+                        <span className="break-words">{invoice.group.groupName}</span>
+                        {!invoice.group.deliverymanId ? (
+                          <p className="mt-1 text-xs font-normal text-muted-foreground">
+                            Rider not assigned —{" "}
+                            <Link
+                              href="/warehouse/dashboard/delivery-team"
+                              className="font-medium underline underline-offset-2"
+                            >
+                              Delivery Team
+                            </Link>
+                          </p>
+                        ) : null}
+                      </DetailRow>
+                    </>
+                  ) : null}
+                </dl>
+              </section>
+
+              <section className="mt-6">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                  Line items
                 </div>
-              ) : null}
-              {invoice.group ? (
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Delivery group</span>
-                  <span className="text-right">
-                    {invoice.group.groupName}
-                    {!invoice.group.deliverymanId ? (
-                      <span className="block text-xs text-muted-foreground">
-                        Rider not assigned —{" "}
-                        <Link
-                          href="/warehouse/dashboard/delivery-team"
-                          className="underline underline-offset-2"
-                        >
-                          Delivery Team
-                        </Link>
-                      </span>
-                    ) : null}
-                  </span>
+
+                <div className="overflow-hidden rounded-lg border">
+                  <div className="grid grid-cols-[minmax(0,1fr)_2.75rem_5.5rem] gap-3 border-b bg-muted/40 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <span>Product</span>
+                    <span className="text-right">Qty</span>
+                    <span className="text-right">Total</span>
+                  </div>
+                  <ul className="divide-y">
+                    {invoice.items.map((item) => (
+                      <li
+                        key={item.id}
+                        className="grid grid-cols-[minmax(0,1fr)_2.75rem_5.5rem] gap-3 px-3 py-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium leading-snug">
+                            {item.productName}
+                          </p>
+                          {item.productSku ? (
+                            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                              {item.productSku}
+                            </p>
+                          ) : null}
+                        </div>
+                        <span className="self-start pt-0.5 text-right text-sm tabular-nums">
+                          {item.quantity}
+                        </span>
+                        <span className="self-start pt-0.5 text-right text-sm font-medium tabular-nums">
+                          {formatMoney(item.lineTotal)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              ) : null}
+              </section>
             </div>
 
-            <div>
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium">
-                <Package className="h-4 w-4" />
-                Line items
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {invoice.items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <div className="font-medium">{item.productName}</div>
-                        {item.productSku ? (
-                          <div className="text-xs text-muted-foreground">
-                            {item.productSku}
-                          </div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {item.quantity}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatMoney(item.lineTotal)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-
-              <div className="mt-4 space-y-1 border-t pt-4 text-sm">
-                <div className="flex justify-between">
+            <div className="shrink-0 border-t bg-muted/10 px-6 py-4">
+              <div className="space-y-2.5 text-sm">
+                <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span>{formatMoney(invoice.subtotal)}</span>
+                  <span className="tabular-nums">{formatMoney(invoice.subtotal)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Delivery</span>
-                  <span>{formatMoney(invoice.deliveryCharge)}</span>
+                  <span className="tabular-nums">
+                    {formatMoney(invoice.deliveryCharge)}
+                  </span>
                 </div>
-                <div className="flex justify-between font-semibold">
+                <Separator />
+                <div className="flex items-center justify-between gap-4 pt-1 text-base font-semibold">
                   <span>Grand total</span>
-                  <span>{formatMoney(invoice.grandTotal)}</span>
+                  <span className="tabular-nums">
+                    {formatMoney(invoice.grandTotal)}
+                  </span>
                 </div>
               </div>
             </div>
