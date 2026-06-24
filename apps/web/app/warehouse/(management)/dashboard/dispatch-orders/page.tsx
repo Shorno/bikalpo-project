@@ -12,7 +12,6 @@ import {
 } from "@tanstack/react-table";
 import {
   AlertCircle,
-  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -335,39 +334,6 @@ export default function DispatchOrdersPage() {
     [allOrders.length, data],
   );
 
-  const alerts = useMemo(() => {
-    const readyNotInvoiced = allOrders.filter(
-      (o) => o.status === "ready_for_dispatch",
-    ).length;
-    const needsFulfillment = allOrders.filter((o) =>
-      o.invoices.some((inv) => inv.needsFulfillmentConfig),
-    ).length;
-    const pendingPickup = allOrders.filter((o) =>
-      o.invoices.some(
-        (inv) =>
-          inv.fulfillmentMode === "self_pickup" &&
-          !inv.completionOtpVerifiedAt &&
-          inv.deliveryStatus !== "delivered",
-      ),
-    ).length;
-
-    const items: string[] = [];
-    if (readyNotInvoiced > 0) {
-      items.push(`${readyNotInvoiced} order${readyNotInvoiced !== 1 ? "s" : ""} ready, not invoiced`);
-    }
-    if (needsFulfillment > 0) {
-      items.push(
-        `${needsFulfillment} invoiced, delivery mode not selected`,
-      );
-    }
-    if (pendingPickup > 0) {
-      items.push(
-        `${pendingPickup} self pickup${pendingPickup !== 1 ? "s" : ""} awaiting OTP verification`,
-      );
-    }
-    return items;
-  }, [allOrders]);
-
   const filteredOrders = useMemo(() => {
     return allOrders.filter((order) => {
       if (status !== "all" && order.status !== status) return false;
@@ -484,23 +450,6 @@ export default function DispatchOrdersPage() {
           );
         })}
       </DashboardKpiGrid>
-
-      <p className="text-xs text-muted-foreground">
-        Only accepted + ready orders can be dispatched.
-      </p>
-
-      {alerts.length > 0 ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <ul className="space-y-1 text-sm text-amber-900">
-              {alerts.map((alert) => (
-                <li key={alert}>{alert}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      ) : null}
 
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">

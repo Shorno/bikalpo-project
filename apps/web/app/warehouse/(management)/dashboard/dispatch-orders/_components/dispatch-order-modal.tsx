@@ -444,12 +444,9 @@ export function DispatchOrderModal({
             </div>
           ) : postSubmit.kind === "self_pickup" ? (
             <div className="space-y-4">
-              <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
-                  OTP Confirmation Required
-                </p>
-                <p className="mt-1 text-xs text-violet-800">
-                  Share this OTP with the customer at handover, then verify below.
+              <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4 text-center">
+                <p className="text-sm font-medium text-violet-900">
+                  Ask the customer for their pickup code
                 </p>
                 {postSubmit.completionOtp ? (
                   <div className="mt-3 flex items-center justify-center gap-2">
@@ -468,16 +465,11 @@ export function DispatchOrderModal({
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    OTP was generated earlier. Ask the customer for their pickup
-                    code.
-                  </p>
-                )}
+                ) : null}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="pickup-otp" className="text-xs">
-                  Enter 4-digit OTP
+              <div className="flex flex-col items-center space-y-2">
+                <Label htmlFor="pickup-otp" className="sr-only">
+                  Pickup code
                 </Label>
                 <input
                   id="pickup-otp"
@@ -489,7 +481,7 @@ export function DispatchOrderModal({
                     setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 4))
                   }
                   placeholder="0000"
-                  className="h-10 w-full max-w-[140px] rounded-lg border bg-background px-3 text-center font-mono text-lg tracking-widest outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                  className="h-10 w-[140px] rounded-lg border bg-background px-3 text-center font-mono text-lg tracking-widest outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
                 />
               </div>
             </div>

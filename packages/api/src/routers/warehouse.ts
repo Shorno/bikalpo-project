@@ -3389,7 +3389,7 @@ const orderQueries = {
 				completionOtp,
 				message:
 					input.fulfillmentMode === "self_pickup"
-						? "Self pickup is ready. Share the OTP at handover."
+						? "Self pickup is ready. Ask the customer for their pickup code at handover."
 						: "Invoice moved to delivery management.",
 			};
 		}),
@@ -3445,7 +3445,7 @@ const orderQueries = {
 					orderStatus: null,
 					message:
 						input.fulfillmentMode === "self_pickup"
-							? "Self pickup is ready. Share the OTP at handover."
+							? "Self pickup is ready. Ask the customer for their pickup code at handover."
 							: "Invoice saved for delivery management.",
 				};
 			}
@@ -3478,7 +3478,7 @@ const orderQueries = {
 				orderStatus: result.status,
 				message:
 					input.fulfillmentMode === "self_pickup"
-						? "Pickup invoice created. Share the OTP at handover."
+						? "Pickup invoice created. Ask the customer for their pickup code at handover."
 						: result.fullyInvoiced
 							? "Order fully invoiced and saved for delivery."
 							: "Partial invoice created and saved for delivery.",
