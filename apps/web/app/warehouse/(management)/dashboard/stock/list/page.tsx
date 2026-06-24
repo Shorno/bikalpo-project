@@ -52,6 +52,7 @@ type StockListItem = {
   coreProductName: string;
   coreProductSku: string | null;
   coreProductImage: string;
+  typeName?: string | null;
   categoryName: string | null;
   subCategoryName: string | null;
   totalQty: number;
@@ -66,7 +67,37 @@ type StockListItem = {
 
 // ─── Helpers ───────────────────────────────────────────────────
 
-function formatBreakdownText(breakdown: BreakdownItem[], totalQty: number, stdUnit: string): string {
+function normalizeDisplayUnit(unit?: string | null) {
+  const normalized = String(unit || "").trim().toUpperCase();
+  if (normalized === "PCS" || normalized === "PC" || normalized === "PIECES") {
+    return "Pc";
+  }
+  if (normalized === "PAIR") {
+    return "Pair";
+  }
+  if (normalized === "KG" || normalized === "KGS") {
+    return "KG";
+  }
+  if (normalized === "UNIT") {
+    return "Unit";
+  }
+  if (normalized === "PACK") {
+    return "Pack";
+  }
+  if (normalized === "CARTON") {
+    return "Carton";
+  }
+  return normalized || "Unit";
+}
+
+function isFashionItem(item: Pick<StockListItem, "typeName">) {
+  return String(item.typeName || "").trim().toLowerCase() === "fashion";
+}
+
+function formatBreakdownText(
+  item: Pick<StockListItem, "breakdown" | "stdUnit" | "typeName">
+): string {
+  const { breakdown, stdUnit } = item;
   if (breakdown.length === 0) return "—";
 
   const parts: string[] = [];
@@ -78,6 +109,32 @@ function formatBreakdownText(breakdown: BreakdownItem[], totalQty: number, stdUn
     }
   }
   return parts.join(" + ");
+}
+
+function formatStockBreakdownText(
+  item: Pick<StockListItem, "breakdown" | "stdUnit" | "typeName">
+): string {
+  if (item.breakdown.length === 0) return "—";
+
+  return item.breakdown
+    .map((entry) => {
+      if (entry.packagingType === "loose") {
+        return `${Math.round(entry.qty).toLocaleString()} ${normalizeDisplayUnit(
+          item.stdUnit
+        )} Loose`;
+      }
+
+      if (isFashionItem(item) && entry.packagingType !== "carton") {
+        return `${Math.round(entry.qty).toLocaleString()} Bundle`;
+      }
+
+      if (entry.packagingType === "carton") {
+        return `${Math.round(entry.qty).toLocaleString()} Carton`;
+      }
+
+      return `${Math.round(entry.qty).toLocaleString()} ${entry.label}`;
+    })
+    .join(" + ");
 }
 
 function StatusCell({ totalQty }: { totalQty: number }) {
@@ -225,7 +282,9 @@ export default function StockListPage() {
           return (
             <span className="text-sm font-bold text-gray-900 tabular-nums whitespace-nowrap">
               {Math.round(item.totalQty).toLocaleString()}{" "}
-              <span className="font-medium text-gray-500">{item.stdUnit}</span>
+              <span className="font-medium text-gray-500">
+                {normalizeDisplayUnit(item.stdUnit)}
+              </span>
             </span>
           );
         },
@@ -236,7 +295,7 @@ export default function StockListPage() {
         header: "Stock Breakdown",
         cell: ({ row }) => (
           <span className="text-sm text-gray-700">
-            {formatBreakdownText(row.original.breakdown, row.original.totalQty, row.original.stdUnit)}
+            {formatStockBreakdownText(row.original)}
           </span>
         ),
         size: 230,
