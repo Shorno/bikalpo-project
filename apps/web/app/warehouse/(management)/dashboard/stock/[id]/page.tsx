@@ -93,7 +93,11 @@ function formatQtyByUnit(value: number, unit?: string | null) {
 }
 
 function isFashionType(typeName?: string | null) {
-  return String(typeName || "").trim().toLowerCase() === "fashion";
+  return (
+    String(typeName || "")
+      .trim()
+      .toLowerCase() === "fashion"
+  );
 }
 
 function parseUnitLabelMeasure(label?: string | null) {
@@ -108,8 +112,7 @@ function parseUnitLabelMeasure(label?: string | null) {
     if (value > 0) {
       return {
         quantityPerPack: value,
-        quantityUnit:
-          normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
+        quantityUnit: normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
       };
     }
   }
@@ -437,7 +440,7 @@ export default function StockDetailPage() {
     .map((b: any) => {
       if (b.packagingType === "loose") {
         return `${Math.round(b.qty).toLocaleString()} ${formatDisplayUnit(
-          item.stdUnit
+          item.stdUnit,
         )} Loose`;
       }
       if (isFashion && b.packagingType !== "carton") {
@@ -621,9 +624,7 @@ export default function StockDetailPage() {
     : [];
 
   const fashionLooseRows = isFashion
-    ? looseVariantRows.filter(
-        (row) => normalizeUnit(row.quantityUnit) !== "KG",
-      )
+    ? looseVariantRows.filter((row) => normalizeUnit(row.quantityUnit) !== "KG")
     : [];
 
   const selectedFashionVariant =
@@ -682,9 +683,9 @@ export default function StockDetailPage() {
               Total Stock
             </div>
             <div className="text-xl font-bold text-gray-900 tabular-nums mt-0.5">
-              {formatUnitQty(totalQty, item.stdUnit === "KG")}{" "}
+              {formatQtyByUnit(totalQty, item.stdUnit)}{" "}
               <span className="text-sm font-medium text-gray-500">
-                {item.stdUnit}
+                {formatDisplayUnit(item.stdUnit)}
               </span>
             </div>
           </div>
@@ -710,199 +711,67 @@ export default function StockDetailPage() {
       {/* ══════════════════════════════════════════════════════════════
           📊 VARIANT STOCK (PACK LEVEL)
           ══════════════════════════════════════════════════════════════ */}
-      <div>
-        <SectionHeader emoji="📊" title="Variant Stock (Pack Level)" />
-        {packVariantGroups.length === 0 ? (
-          <div className="py-6 text-center text-sm text-gray-400 border border-dashed rounded-lg bg-gray-50/50">
-            No pack variants available
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-            {packVariantGroups.map((group: StockVariantGroup, gi: number) => {
-              return (
-                <Fragment key={gi}>
-                  {group.items.map((item: StockVariantItem, ii: number) => {
-                    const { totalQty, inCartonQty, looseQty } =
-                      getVariantDisplayInventory(item, false);
-                    const label = buildVariantLabel(group, item, false);
-                    const isLoose = false;
-                    const weightKg = parseFloat(group.weightKg || "0");
-                    const looseQtyCount = 0;
-
-                    return (
-                      <div
-                        key={`${gi}-${ii}`}
-                        className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
-                      >
-                        <span className="text-sm text-gray-800 font-medium">
-                          {label}
-                        </span>
-                        <div className="flex items-center gap-6">
-                          <div className="text-right min-w-[220px]">
-                            <div className="text-sm font-bold text-gray-900 tabular-nums">
-                              {formatUnitQty(totalQty, false)}{" "}
-                              <span className="text-xs font-normal text-gray-500">
-                                Pack total
-                              </span>
-                              {isLoose && weightKg > 0 && looseQtyCount > 0 && (
-                                <span className="text-xs font-normal text-gray-400 ml-1">
-                                  ({looseQtyCount} × {weightKg} KG)
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-blue-600 tabular-nums mt-1">
-                              {formatUnitQty(inCartonQty, false)} Pack inside
-                              cartons
-                            </div>
-                            <div className="text-xs text-slate-500 tabular-nums mt-0.5">
-                              {formatUnitQty(looseQty, false)} Pack outside
-                              cartons
-                            </div>
-                          </div>
-                          <div className="min-w-[100px]">
-                            <StatusIndicator qty={totalQty} />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </Fragment>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ══════════════════════════════════════════════════════════════
-          📦 PACK TYPE STOCK (SUPPLY LEVEL)
-          ══════════════════════════════════════════════════════════════ */}
-      {packVariantGroups.length > 0 && (
-        <div>
-          <SectionHeader emoji="📦" title="Pack Type Stock (Supply Level)" />
-          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-            {packVariantGroups.map((group: StockVariantGroup, gi: number) => {
-              // Build per-brand carton info for this weight group
-              const brandCartonRows: {
-                brandName: string;
-                cartonCount: number;
-                totalMeasure: number;
-              }[] = [];
-              const measure = getGroupMeasure(group);
-
-              for (const it of group.items) {
-                const summary = cartonByVariant.get(it.variantId);
-                const brandName = it.brand?.name || "Unbranded";
-                const activeCount = summary?.activeCartonCount ?? 0;
-                const measureInCartons =
-                  measure.quantityUnit === "KG"
-                    ? parseFloat(summary?.totalWeightKg || "0")
-                    : (summary?.totalPacks || 0) * measure.quantityPerPack;
-                brandCartonRows.push({
-                  brandName,
-                  cartonCount: activeCount,
-                  totalMeasure: measureInCartons,
-                });
-              }
-
-              // Group by brand — sum if same brand has multiple variant items
-              const brandMap = new Map<
-                string,
-                { cartonCount: number; totalMeasure: number }
-              >();
-              for (const row of brandCartonRows) {
-                if (!brandMap.has(row.brandName)) {
-                  brandMap.set(row.brandName, {
-                    cartonCount: 0,
-                    totalMeasure: 0,
-                  });
-                }
-                const e = brandMap.get(row.brandName)!;
-                e.cartonCount += row.cartonCount;
-                e.totalMeasure += row.totalMeasure;
-              }
-              const brandEntries = Array.from(brandMap.entries());
-              const totalCartons = brandEntries.reduce(
-                (s, [, v]) => s + v.cartonCount,
-                0,
-              );
-              const totalMeasure = brandEntries.reduce(
-                (s, [, v]) => s + v.totalMeasure,
-                0,
-              );
-
-              return (
-                <div key={gi}>
-                  <div
-                    className={`flex items-center justify-between px-5 py-3 cursor-pointer transition-colors ${
-                      selectedPackIndex === gi
+      {isFashion && (
+        <>
+          <div>
+            <SectionHeader
+              emoji="🎨"
+              title="Variant Stock (Color + Size Level)"
+            />
+            {fashionVariantRows.length === 0 ? (
+              <div className="py-6 text-center text-sm text-gray-400 border border-dashed rounded-lg bg-gray-50/50">
+                No color or size level stock available
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {fashionVariantRows.map((row) => (
+                  <button
+                    key={row.key}
+                    type="button"
+                    onClick={() => setSelectedFashionVariantKey(row.key)}
+                    className={`w-full flex items-center justify-between px-5 py-3 text-left transition-colors ${
+                      selectedFashionVariant?.key === row.key
                         ? "bg-blue-50 border-l-2 border-l-blue-500"
                         : "hover:bg-gray-50/50"
                     }`}
-                    onClick={() =>
-                      setSelectedPackIndex(selectedPackIndex === gi ? null : gi)
-                    }
                   >
                     <span className="text-sm text-gray-800 font-medium">
-                      {group.unitLabel} Carton
+                      {row.label}
                     </span>
                     <div className="flex items-center gap-6">
-                      <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                        → {totalCartons.toLocaleString()}{" "}
-                        <span className="text-xs font-normal text-gray-500">
-                          Carton
-                        </span>
-                      </span>
-                      <div className="min-w-[120px]">
-                        {totalCartons > 0 ? (
-                          <span className="text-xs text-gray-500">
-                            (
-                            {formatUnitQty(
-                              totalMeasure,
-                              measure.quantityUnit === "KG",
-                            )}{" "}
-                            {measure.quantityUnit}
-                            )
-                          </span>
-                        ) : (
-                          <NotAvailable />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Per-brand breakdown */}
-                  {brandEntries.length > 1 && (
-                    <div className="px-8 pb-2 pt-0.5 space-y-1">
-                      {brandEntries.map(([brand, info], bi) => (
-                        <div
-                          key={bi}
-                          className="flex items-center justify-between text-xs text-gray-500"
-                        >
-                          <span className="text-gray-600">{brand}</span>
-                          <span className="tabular-nums">
-                            {info.cartonCount > 0
-                              ? `${info.cartonCount} carton (${formatUnitQty(info.totalMeasure, measure.quantityUnit === "KG")} ${measure.quantityUnit})`
-                              : "—  no cartons"}
+                      <div className="text-right min-w-[220px]">
+                        <div className="text-sm font-bold text-gray-900 tabular-nums">
+                          {formatQtyByUnit(row.totalQty, row.quantityUnit)}{" "}
+                          <span className="text-xs font-normal text-gray-500">
+                            {formatDisplayUnit(row.quantityUnit)}
                           </span>
                         </div>
-                      ))}
+                        <div className="text-xs text-blue-600 tabular-nums mt-1">
+                          {formatQtyByUnit(row.inCartonQty, row.quantityUnit)}{" "}
+                          packed in bundles
+                        </div>
+                        <div className="text-xs text-slate-500 tabular-nums mt-0.5">
+                          {formatQtyByUnit(row.looseQty, row.quantityUnit)}{" "}
+                          ready outside bundles
+                        </div>
+                      </div>
+                      <div className="min-w-[100px]">
+                        <StatusIndicator qty={row.totalQty} />
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
 
-      {looseVariantRows.length > 0 && (
-        <div>
-          <SectionHeader emoji="💧" title="Loose Variant Availability" />
-          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-            {looseVariantRows.map((row) => {
-              const totalUnitCount =
-                row.weightKg > 0 ? Math.round(row.totalQty / row.weightKg) : 0;
-
-              return (
+          <div>
+            <SectionHeader
+              emoji="📦"
+              title="Bundle / Pack Stock (Supply Level)"
+            />
+            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+              {fashionBundleRows.map((row) => (
                 <div
                   key={row.key}
                   className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
@@ -910,88 +779,414 @@ export default function StockDetailPage() {
                   <span className="text-sm text-gray-800 font-medium">
                     {row.label}
                   </span>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right min-w-[260px]">
+                  <div className="text-right min-w-[220px]">
+                    <div className="text-sm font-bold text-gray-900 tabular-nums">
+                      {formatUnitQty(row.bundleQty, false)}{" "}
+                      <span className="text-xs font-normal text-gray-500">
+                        Bundle
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 tabular-nums mt-1">
+                      ({formatQtyByUnit(row.totalQty, row.quantityUnit)}{" "}
+                      {formatDisplayUnit(row.quantityUnit)})
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {fashionLooseRows.length > 0 && (
+                <div className="flex items-center justify-between px-5 py-3 bg-emerald-50/40">
+                  <span className="text-sm text-gray-800 font-medium">
+                    Single (Loose)
+                  </span>
+                  <div className="text-right min-w-[220px]">
+                    <div className="text-sm font-bold text-emerald-700 tabular-nums">
+                      {formatQtyByUnit(
+                        fashionLooseRows.reduce(
+                          (sum, row) => sum + row.looseQty,
+                          0,
+                        ),
+                        fashionLooseRows[0]?.quantityUnit,
+                      )}{" "}
+                      <span className="text-xs font-normal text-gray-500">
+                        {formatDisplayUnit(fashionLooseRows[0]?.quantityUnit)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Ready to sell
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {fashionLooseRows.length > 0 && (
+            <div>
+              <SectionHeader emoji="📦" title="Ready / Unpacked Stock" />
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {fashionLooseRows.map((row) => (
+                  <div
+                    key={row.key}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                  >
+                    <span className="text-sm text-gray-800 font-medium">
+                      {row.label}
+                    </span>
+                    <div className="text-right min-w-[240px]">
                       <div className="text-sm font-bold text-gray-900 tabular-nums">
-                        {formatUnitQty(row.totalQty, true)}{" "}
+                        {formatQtyByUnit(row.looseQty, row.quantityUnit)}{" "}
                         <span className="text-xs font-normal text-gray-500">
-                          KG total
+                          {formatDisplayUnit(row.quantityUnit)}
                         </span>
-                        {row.weightKg > 0 && totalUnitCount > 0 && (
-                          <span className="text-xs font-normal text-gray-400 ml-1">
-                            ({totalUnitCount} × {row.weightKg} KG)
-                          </span>
-                        )}
                       </div>
-                      <div className="text-xs text-blue-600 tabular-nums mt-1">
-                        {row.activeCartonCount.toLocaleString()} carton
-                        generated
-                        {" • "}
-                        {formatUnitQty(row.inCartonQty, true)} KG packed into
-                        cartons
-                      </div>
-                      <div className="text-xs text-emerald-700 tabular-nums mt-0.5">
-                        {formatUnitQty(row.looseQty, true)} KG available in
-                        loose
+                      <div className="text-xs text-amber-700 mt-1">
+                        Ready for sorting
                       </div>
                     </div>
-                    <div className="min-w-[100px]">
-                      <StatusIndicator qty={row.looseQty} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selectedFashionVariant && (
+            <div>
+              <SectionHeader
+                emoji="📊"
+                title={`Selected Variant: ${selectedFashionVariant.label}`}
+              />
+              <div className="bg-blue-50/50 rounded-lg border border-blue-200 p-5 space-y-2">
+                <div className="text-sm text-gray-800">
+                  →{" "}
+                  <span className="font-bold tabular-nums">
+                    {formatQtyByUnit(
+                      selectedFashionVariant.totalQty,
+                      selectedFashionVariant.quantityUnit,
+                    )}{" "}
+                    {formatDisplayUnit(selectedFashionVariant.quantityUnit)}
+                  </span>{" "}
+                  available
+                </div>
+                <div className="text-sm text-gray-800">
+                  → Bundle conversion:
+                  <span className="ml-1 text-blue-700 font-medium">
+                    {selectedFashionVariant.looseQty > 0
+                      ? "Can be created from loose stock"
+                      : "No loose stock ready"}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-800">
+                  → MOQ: 1{" "}
+                  {formatDisplayUnit(selectedFashionVariant.quantityUnit)}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {!isFashion && (
+        <>
+          <div>
+            <SectionHeader emoji="📊" title="Variant Stock (Pack Level)" />
+            {packVariantGroups.length === 0 ? (
+              <div className="py-6 text-center text-sm text-gray-400 border border-dashed rounded-lg bg-gray-50/50">
+                No pack variants available
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {packVariantGroups.map(
+                  (group: StockVariantGroup, gi: number) => {
+                    return (
+                      <Fragment key={gi}>
+                        {group.items.map(
+                          (item: StockVariantItem, ii: number) => {
+                            const { totalQty, inCartonQty, looseQty } =
+                              getVariantDisplayInventory(item, false);
+                            const label = buildVariantLabel(group, item, false);
+                            const isLoose = false;
+                            const weightKg = parseFloat(group.weightKg || "0");
+                            const looseQtyCount = 0;
+
+                            return (
+                              <div
+                                key={`${gi}-${ii}`}
+                                className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                              >
+                                <span className="text-sm text-gray-800 font-medium">
+                                  {label}
+                                </span>
+                                <div className="flex items-center gap-6">
+                                  <div className="text-right min-w-[220px]">
+                                    <div className="text-sm font-bold text-gray-900 tabular-nums">
+                                      {formatUnitQty(totalQty, false)}{" "}
+                                      <span className="text-xs font-normal text-gray-500">
+                                        Pack total
+                                      </span>
+                                      {isLoose &&
+                                        weightKg > 0 &&
+                                        looseQtyCount > 0 && (
+                                          <span className="text-xs font-normal text-gray-400 ml-1">
+                                            ({looseQtyCount} × {weightKg} KG)
+                                          </span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-blue-600 tabular-nums mt-1">
+                                      {formatUnitQty(inCartonQty, false)} Pack
+                                      inside cartons
+                                    </div>
+                                    <div className="text-xs text-slate-500 tabular-nums mt-0.5">
+                                      {formatUnitQty(looseQty, false)} Pack
+                                      outside cartons
+                                    </div>
+                                  </div>
+                                  <div className="min-w-[100px]">
+                                    <StatusIndicator qty={totalQty} />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          },
+                        )}
+                      </Fragment>
+                    );
+                  },
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════════
+          📦 PACK TYPE STOCK (SUPPLY LEVEL)
+          ══════════════════════════════════════════════════════════════ */}
+          {packVariantGroups.length > 0 && (
+            <div>
+              <SectionHeader
+                emoji="📦"
+                title="Pack Type Stock (Supply Level)"
+              />
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {packVariantGroups.map(
+                  (group: StockVariantGroup, gi: number) => {
+                    // Build per-brand carton info for this weight group
+                    const brandCartonRows: {
+                      brandName: string;
+                      cartonCount: number;
+                      totalMeasure: number;
+                    }[] = [];
+                    const measure = getGroupMeasure(group);
+
+                    for (const it of group.items) {
+                      const summary = cartonByVariant.get(it.variantId);
+                      const brandName = it.brand?.name || "Unbranded";
+                      const activeCount = summary?.activeCartonCount ?? 0;
+                      const measureInCartons =
+                        measure.quantityUnit === "KG"
+                          ? parseFloat(summary?.totalWeightKg || "0")
+                          : (summary?.totalPacks || 0) *
+                            measure.quantityPerPack;
+                      brandCartonRows.push({
+                        brandName,
+                        cartonCount: activeCount,
+                        totalMeasure: measureInCartons,
+                      });
+                    }
+
+                    // Group by brand — sum if same brand has multiple variant items
+                    const brandMap = new Map<
+                      string,
+                      { cartonCount: number; totalMeasure: number }
+                    >();
+                    for (const row of brandCartonRows) {
+                      if (!brandMap.has(row.brandName)) {
+                        brandMap.set(row.brandName, {
+                          cartonCount: 0,
+                          totalMeasure: 0,
+                        });
+                      }
+                      const e = brandMap.get(row.brandName)!;
+                      e.cartonCount += row.cartonCount;
+                      e.totalMeasure += row.totalMeasure;
+                    }
+                    const brandEntries = Array.from(brandMap.entries());
+                    const totalCartons = brandEntries.reduce(
+                      (s, [, v]) => s + v.cartonCount,
+                      0,
+                    );
+                    const totalMeasure = brandEntries.reduce(
+                      (s, [, v]) => s + v.totalMeasure,
+                      0,
+                    );
+
+                    return (
+                      <div key={gi}>
+                        <div
+                          className={`flex items-center justify-between px-5 py-3 cursor-pointer transition-colors ${
+                            selectedPackIndex === gi
+                              ? "bg-blue-50 border-l-2 border-l-blue-500"
+                              : "hover:bg-gray-50/50"
+                          }`}
+                          onClick={() =>
+                            setSelectedPackIndex(
+                              selectedPackIndex === gi ? null : gi,
+                            )
+                          }
+                        >
+                          <span className="text-sm text-gray-800 font-medium">
+                            {group.unitLabel} Carton
+                          </span>
+                          <div className="flex items-center gap-6">
+                            <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
+                              → {totalCartons.toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-gray-500">
+                                Carton
+                              </span>
+                            </span>
+                            <div className="min-w-[120px]">
+                              {totalCartons > 0 ? (
+                                <span className="text-xs text-gray-500">
+                                  (
+                                  {formatUnitQty(
+                                    totalMeasure,
+                                    measure.quantityUnit === "KG",
+                                  )}{" "}
+                                  {measure.quantityUnit})
+                                </span>
+                              ) : (
+                                <NotAvailable />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {/* Per-brand breakdown */}
+                        {brandEntries.length > 1 && (
+                          <div className="px-8 pb-2 pt-0.5 space-y-1">
+                            {brandEntries.map(([brand, info], bi) => (
+                              <div
+                                key={bi}
+                                className="flex items-center justify-between text-xs text-gray-500"
+                              >
+                                <span className="text-gray-600">{brand}</span>
+                                <span className="tabular-nums">
+                                  {info.cartonCount > 0
+                                    ? `${info.cartonCount} carton (${formatUnitQty(info.totalMeasure, measure.quantityUnit === "KG")} ${measure.quantityUnit})`
+                                    : "—  no cartons"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  },
+                )}
+              </div>
+            </div>
+          )}
+
+          {looseVariantRows.length > 0 && (
+            <div>
+              <SectionHeader emoji="💧" title="Loose Variant Availability" />
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {looseVariantRows.map((row) => {
+                  const totalUnitCount =
+                    row.weightKg > 0
+                      ? Math.round(row.totalQty / row.weightKg)
+                      : 0;
+
+                  return (
+                    <div
+                      key={row.key}
+                      className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                    >
+                      <span className="text-sm text-gray-800 font-medium">
+                        {row.label}
+                      </span>
+                      <div className="flex items-center gap-6">
+                        <div className="text-right min-w-[260px]">
+                          <div className="text-sm font-bold text-gray-900 tabular-nums">
+                            {formatUnitQty(row.totalQty, true)}{" "}
+                            <span className="text-xs font-normal text-gray-500">
+                              KG total
+                            </span>
+                            {row.weightKg > 0 && totalUnitCount > 0 && (
+                              <span className="text-xs font-normal text-gray-400 ml-1">
+                                ({totalUnitCount} × {row.weightKg} KG)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-blue-600 tabular-nums mt-1">
+                            {row.activeCartonCount.toLocaleString()} carton
+                            generated
+                            {" • "}
+                            {formatUnitQty(row.inCartonQty, true)} KG packed
+                            into cartons
+                          </div>
+                          <div className="text-xs text-emerald-700 tabular-nums mt-0.5">
+                            {formatUnitQty(row.looseQty, true)} KG available in
+                            loose
+                          </div>
+                        </div>
+                        <div className="min-w-[100px]">
+                          <StatusIndicator qty={row.looseQty} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════
+          📊 SELECTED PACK SNAPSHOT
+          ══════════════════════════════════════════════════════════════ */}
+          {selectedPack &&
+            (() => {
+              const info = getCartonInfo(selectedPack);
+              return (
+                <div>
+                  <SectionHeader
+                    emoji="📊"
+                    title={`Selected Pack Snapshot: ${selectedPack.unitLabel} Carton`}
+                  />
+                  <div className="bg-blue-50/50 rounded-lg border border-blue-200 p-5">
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
+                        Available:
+                      </div>
+                      <div className="text-sm text-gray-800">
+                        →{" "}
+                        <span className="font-bold tabular-nums">
+                          {info.cartonCount.toLocaleString()}
+                        </span>{" "}
+                        Carton
+                      </div>
+                      <div className="text-sm text-gray-800">
+                        →{" "}
+                        <span className="font-bold tabular-nums text-blue-700">
+                          {formatUnitQty(
+                            info.totalMeasureInCartons,
+                            info.quantityUnit === "KG",
+                          )}{" "}
+                          {info.quantityUnit}
+                        </span>{" "}
+                        <span className="text-gray-500">
+                          currently packed into cartons
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
               );
-            })}
-          </div>
-        </div>
-      )}
+            })()}
 
-      {/* ══════════════════════════════════════════════════════════════
-          📊 SELECTED PACK SNAPSHOT
-          ══════════════════════════════════════════════════════════════ */}
-      {selectedPack &&
-        (() => {
-          const info = getCartonInfo(selectedPack);
-          return (
-            <div>
-              <SectionHeader
-                emoji="📊"
-                title={`Selected Pack Snapshot: ${selectedPack.unitLabel} Carton`}
-              />
-              <div className="bg-blue-50/50 rounded-lg border border-blue-200 p-5">
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
-                    Available:
-                  </div>
-                  <div className="text-sm text-gray-800">
-                    →{" "}
-                    <span className="font-bold tabular-nums">
-                      {info.cartonCount.toLocaleString()}
-                    </span>{" "}
-                    Carton
-                  </div>
-                  <div className="text-sm text-gray-800">
-                    →{" "}
-                    <span className="font-bold tabular-nums text-blue-700">
-                      {formatUnitQty(
-                        info.totalMeasureInCartons,
-                        info.quantityUnit === "KG",
-                      )}{" "}
-                      {info.quantityUnit}
-                    </span>{" "}
-                    <span className="text-gray-500">
-                      currently packed into cartons
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-      {/* ══════════════════════════════════════════════════════════════
+          {/* ══════════════════════════════════════════════════════════════
           ⚙ ACTION
           ══════════════════════════════════════════════════════════════ */}
+        </>
+      )}
+
       <div>
         <SectionHeader emoji="⚙" title="Action" />
         <div className="flex flex-wrap gap-2">

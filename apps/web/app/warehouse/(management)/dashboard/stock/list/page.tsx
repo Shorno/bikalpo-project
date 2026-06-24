@@ -9,24 +9,10 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import {
-  ArrowUpDown,
-  BoxesIcon,
-  Package,
-  Search,
-} from "lucide-react";
+import { ArrowUpDown, BoxesIcon, Package, Search } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { orpc } from "@/utils/orpc";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,6 +22,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { orpc } from "@/utils/orpc";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -68,7 +63,9 @@ type StockListItem = {
 // ─── Helpers ───────────────────────────────────────────────────
 
 function normalizeDisplayUnit(unit?: string | null) {
-  const normalized = String(unit || "").trim().toUpperCase();
+  const normalized = String(unit || "")
+    .trim()
+    .toUpperCase();
   if (normalized === "PCS" || normalized === "PC" || normalized === "PIECES") {
     return "Pc";
   }
@@ -91,11 +88,15 @@ function normalizeDisplayUnit(unit?: string | null) {
 }
 
 function isFashionItem(item: Pick<StockListItem, "typeName">) {
-  return String(item.typeName || "").trim().toLowerCase() === "fashion";
+  return (
+    String(item.typeName || "")
+      .trim()
+      .toLowerCase() === "fashion"
+  );
 }
 
-function formatBreakdownText(
-  item: Pick<StockListItem, "breakdown" | "stdUnit" | "typeName">
+function _formatBreakdownText(
+  item: Pick<StockListItem, "breakdown" | "stdUnit" | "typeName">,
 ): string {
   const { breakdown, stdUnit } = item;
   if (breakdown.length === 0) return "—";
@@ -112,7 +113,7 @@ function formatBreakdownText(
 }
 
 function formatStockBreakdownText(
-  item: Pick<StockListItem, "breakdown" | "stdUnit" | "typeName">
+  item: Pick<StockListItem, "breakdown" | "stdUnit" | "typeName">,
 ): string {
   if (item.breakdown.length === 0) return "—";
 
@@ -120,7 +121,7 @@ function formatStockBreakdownText(
     .map((entry) => {
       if (entry.packagingType === "loose") {
         return `${Math.round(entry.qty).toLocaleString()} ${normalizeDisplayUnit(
-          item.stdUnit
+          item.stdUnit,
         )} Loose`;
       }
 
@@ -333,7 +334,7 @@ export default function StockListPage() {
         size: 70,
       },
     ],
-    []
+    [],
   );
 
   const table = useReactTable({
@@ -350,7 +351,9 @@ export default function StockListPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-gray-900">📦 Stock (Real-Time)</h1>
+        <h1 className="text-xl font-bold text-gray-900">
+          📦 Stock (Real-Time)
+        </h1>
         <p className="text-sm text-gray-500 mt-0.5">
           Core Identity Level — all brands & variants aggregated
         </p>
@@ -446,7 +449,10 @@ export default function StockListPage() {
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id} className="bg-gray-50 border-b border-gray-200">
+                <TableRow
+                  key={hg.id}
+                  className="bg-gray-50 border-b border-gray-200"
+                >
                   {hg.headers.map((h) => (
                     <TableHead
                       key={h.id}
@@ -473,7 +479,10 @@ export default function StockListPage() {
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="py-2.5">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -486,16 +495,52 @@ export default function StockListPage() {
               <p className="text-xs text-gray-500">
                 Showing{" "}
                 <span className="font-medium text-gray-900">
-                  {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)}
+                  {(page - 1) * pageSize + 1}–
+                  {Math.min(page * pageSize, totalCount)}
                 </span>{" "}
-                of <span className="font-medium text-gray-900">{totalCount}</span>
+                of{" "}
+                <span className="font-medium text-gray-900">{totalCount}</span>
               </p>
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="sm" onClick={() => setPage(1)} disabled={page === 1} className="h-7 w-7 p-0 text-xs">«</Button>
-                <Button variant="outline" size="sm" onClick={() => setPage(page - 1)} disabled={page === 1} className="h-7 w-7 p-0 text-xs">‹</Button>
-                <span className="text-xs font-medium text-gray-600 px-2">Page {page} of {totalPages}</span>
-                <Button variant="outline" size="sm" onClick={() => setPage(page + 1)} disabled={page === totalPages} className="h-7 w-7 p-0 text-xs">›</Button>
-                <Button variant="outline" size="sm" onClick={() => setPage(totalPages)} disabled={page === totalPages} className="h-7 w-7 p-0 text-xs">»</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  className="h-7 w-7 p-0 text-xs"
+                >
+                  «
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(page - 1)}
+                  disabled={page === 1}
+                  className="h-7 w-7 p-0 text-xs"
+                >
+                  ‹
+                </Button>
+                <span className="text-xs font-medium text-gray-600 px-2">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(page + 1)}
+                  disabled={page === totalPages}
+                  className="h-7 w-7 p-0 text-xs"
+                >
+                  ›
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages}
+                  className="h-7 w-7 p-0 text-xs"
+                >
+                  »
+                </Button>
               </div>
             </div>
           )}
