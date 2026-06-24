@@ -15,6 +15,7 @@ import { invoice, invoiceVehicleTypeEnum } from "./invoice";
 
 // Delivery group status enum
 export const deliveryGroupStatusEnum = pgEnum("delivery_group_status", [
+    "pending_assignment",
     "assigned",
     "out_for_delivery",
     "completed",
@@ -48,12 +49,10 @@ export const deliveryGroup = pgTable(
         id: serial("id").primaryKey(),
         groupName: text("group_name").notNull(),
 
-        // Assigned deliveryman (required)
-        deliverymanId: text("deliveryman_id")
-            .notNull()
-            .references(() => user.id, {
-                onDelete: "cascade",
-            }),
+        // Assigned deliveryman (optional until Delivery Team assigns)
+        deliverymanId: text("deliveryman_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
 
         // Which warehouse this delivery group belongs to
         warehouseId: text("warehouse_id").references(() => user.id, {
