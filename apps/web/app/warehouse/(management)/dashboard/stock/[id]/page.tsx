@@ -79,6 +79,12 @@ function formatDisplayUnit(unit?: string | null) {
   if (normalized === "PAIR") {
     return "Pair";
   }
+  if (normalized === "FIT") {
+    return "Fit";
+  }
+  if (normalized === "YARD") {
+    return "Yard";
+  }
   if (normalized === "PACK") {
     return "Pack";
   }
@@ -98,6 +104,20 @@ function isFashionType(typeName?: string | null) {
       .trim()
       .toLowerCase() === "fashion"
   );
+}
+
+function getFashionOpenStockLabel(unit?: string | null) {
+  const normalized = normalizeUnit(unit);
+  if (normalized === "PCS" || normalized === "PC") {
+    return "open piece stock";
+  }
+  if (normalized === "FIT") {
+    return "open fit stock";
+  }
+  if (normalized === "YARD") {
+    return "open yard stock";
+  }
+  return `open ${formatDisplayUnit(unit).toLowerCase()} stock`;
 }
 
 function parseUnitLabelMeasure(label?: string | null) {
@@ -444,7 +464,7 @@ export default function StockDetailPage() {
         )} Loose`;
       }
       if (isFashion && b.packagingType !== "carton") {
-        return `${Math.round(b.qty).toLocaleString()} Bundle`;
+        return `${Math.round(b.qty).toLocaleString()} Bundle (Carton)`;
       }
       if (b.packagingType === "carton") {
         return `${Math.round(b.qty).toLocaleString()} Carton`;
@@ -614,7 +634,7 @@ export default function StockDetailPage() {
 
           return {
             key: `${group.unitLabel}-${index}`,
-            label: `Bundle (${group.unitLabel || `${measure.quantityPerPack} ${formatDisplayUnit(measure.quantityUnit)}`})`,
+            label: `Bundle / Carton (${group.unitLabel || `${measure.quantityPerPack} ${formatDisplayUnit(measure.quantityUnit)}`})`,
             bundleQty: totalBundles,
             totalQty: totalBundles * (measure.quantityPerPack || 1),
             quantityUnit: measure.quantityUnit,
@@ -764,11 +784,12 @@ export default function StockDetailPage() {
                         </div>
                         <div className="text-xs text-blue-600 tabular-nums mt-1">
                           {formatQtyByUnit(row.inCartonQty, row.quantityUnit)}{" "}
-                          packed in bundles
+                          inside bundle/carton stock
                         </div>
                         <div className="text-xs text-slate-500 tabular-nums mt-0.5">
                           {formatQtyByUnit(row.looseQty, row.quantityUnit)}{" "}
-                          ready outside bundles
+                          available as{" "}
+                          {getFashionOpenStockLabel(row.quantityUnit)}
                         </div>
                       </div>
                       <div className="min-w-[100px]">
@@ -784,7 +805,7 @@ export default function StockDetailPage() {
           <div>
             <SectionHeader
               emoji="📦"
-              title="Bundle / Pack Stock (Supply Level)"
+              title="Bundle / Carton Stock (Supply Level)"
             />
             <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
               {fashionBundleRows.map((row) => (
@@ -799,7 +820,7 @@ export default function StockDetailPage() {
                     <div className="text-sm font-bold text-gray-900 tabular-nums">
                       {formatUnitQty(row.bundleQty, false)}{" "}
                       <span className="text-xs font-normal text-gray-500">
-                        Bundle
+                        Bundle / Carton
                       </span>
                     </div>
                     <div className="text-xs text-slate-500 tabular-nums mt-1">
@@ -812,7 +833,7 @@ export default function StockDetailPage() {
               {fashionLooseRows.length > 0 && (
                 <div className="flex items-center justify-between px-5 py-3 bg-emerald-50/40">
                   <span className="text-sm text-gray-800 font-medium">
-                    Single (Loose)
+                    Loose Open Stock
                   </span>
                   <div className="text-right min-w-[220px]">
                     <div className="text-sm font-bold text-emerald-700 tabular-nums">
@@ -828,7 +849,7 @@ export default function StockDetailPage() {
                       </span>
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
-                      Ready to sell
+                      Open quantity after breaking
                     </div>
                   </div>
                 </div>
@@ -884,11 +905,11 @@ export default function StockDetailPage() {
                   available
                 </div>
                 <div className="text-sm text-gray-800">
-                  → Bundle conversion:
+                  → Open stock support:
                   <span className="ml-1 text-blue-700 font-medium">
                     {selectedFashionVariant.looseQty > 0
-                      ? "Can be created from loose stock"
-                      : "No loose stock ready"}
+                      ? `Has ${getFashionOpenStockLabel(selectedFashionVariant.quantityUnit)}`
+                      : "No open stock available"}
                   </span>
                 </div>
                 <div className="text-sm text-gray-800">
@@ -1213,7 +1234,7 @@ export default function StockDetailPage() {
             className="gap-1.5 text-xs"
           >
             <PackagePlus size={14} />
-            {isFashion ? "📦 Create Bundle" : "📦 Create Pack"}
+            {isFashion ? "📦 Break Bundle → Piece" : "📦 Create Pack"}
           </Button>
           <Button
             variant="outline"
@@ -1222,7 +1243,9 @@ export default function StockDetailPage() {
             className="gap-1.5 text-xs"
           >
             <RefreshCw size={14} />
-            {isFashion ? "🔄 Sort Loose → Variant" : "🔄 Convert Loose → Pack"}
+            {isFashion
+              ? "🔄 Break Loose → Fit/Yard"
+              : "🔄 Convert Loose → Pack"}
           </Button>
           <Button
             variant="outline"

@@ -109,7 +109,7 @@ function formatStockBreakdownText(
       }
 
       if (isFashionItem(item) && entry.packagingType !== "carton") {
-        return `${Math.round(entry.qty).toLocaleString()} Bundle`;
+        return `${Math.round(entry.qty).toLocaleString()} Bundle (Carton)`;
       }
 
       if (entry.packagingType === "carton") {
