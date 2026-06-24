@@ -2848,7 +2848,6 @@ const orderQueries = {
 							deliveryStatus: currentInvoice.deliveryStatus,
 							paymentStatus: currentInvoice.paymentStatus,
 							fulfillmentMode: currentInvoice.fulfillmentMode,
-							completionOtp: currentInvoice.completionOtp,
 							completionOtpVerifiedAt: currentInvoice.completionOtpVerifiedAt,
 							settledAt: currentInvoice.settledAt,
 							deliveryman: currentInvoice.deliveryman,
@@ -3378,7 +3377,7 @@ const orderQueries = {
 				throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
 			}
 
-			const { completionOtp } = await configureExistingInvoiceFulfillment({
+			await configureExistingInvoiceFulfillment({
 				userId,
 				invoiceId: input.invoiceId,
 				fulfillmentMode: input.fulfillmentMode,
@@ -3386,7 +3385,6 @@ const orderQueries = {
 
 			return {
 				success: true,
-				completionOtp,
 				message:
 					input.fulfillmentMode === "self_pickup"
 						? "Self pickup is ready. Ask the customer for their pickup code at handover."
@@ -3440,7 +3438,6 @@ const orderQueries = {
 					invoiceId: result.invoice.id,
 					invoiceNumber: result.invoice.invoiceNumber,
 					fulfillmentMode: input.fulfillmentMode,
-					completionOtp: result.completionOtp,
 					fullyInvoiced: null,
 					orderStatus: null,
 					message:
@@ -3473,7 +3470,6 @@ const orderQueries = {
 				invoiceId: result.invoice.id,
 				invoiceNumber: result.invoice.invoiceNumber,
 				fulfillmentMode: input.fulfillmentMode,
-				completionOtp: result.completionOtp,
 				fullyInvoiced: result.fullyInvoiced,
 				orderStatus: result.status,
 				message:

@@ -3,7 +3,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   CheckCircle2,
-  Copy,
   ExternalLink,
   Loader2,
   MapPin,
@@ -51,7 +50,6 @@ type PostSubmitState =
       kind: "self_pickup";
       invoiceId: number;
       invoiceNumber: string;
-      completionOtp: string | null;
     }
   | {
       kind: "delivery";
@@ -194,7 +192,6 @@ export function DispatchOrderModal({
         kind: "self_pickup",
         invoiceId: pendingPickup.id,
         invoiceNumber: pendingPickup.invoiceNumber,
-        completionOtp: null,
       });
     }
   }, [open, order]);
@@ -225,7 +222,6 @@ export function DispatchOrderModal({
           kind: "self_pickup",
           invoiceId: result.invoiceId,
           invoiceNumber: result.invoiceNumber,
-          completionOtp: result.completionOtp ?? null,
         });
       } else {
         setPostSubmit({
@@ -320,15 +316,6 @@ export function DispatchOrderModal({
       invoiceId: postSubmit.invoiceId,
       otp: otpInput,
     });
-  };
-
-  const handleCopyOtp = async (otp: string) => {
-    try {
-      await navigator.clipboard.writeText(otp);
-      toast.success("OTP copied");
-    } catch {
-      toast.error("Could not copy OTP");
-    }
   };
 
   const isLoading =
@@ -444,29 +431,9 @@ export function DispatchOrderModal({
             </div>
           ) : postSubmit.kind === "self_pickup" ? (
             <div className="space-y-4">
-              <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4 text-center">
-                <p className="text-sm font-medium text-violet-900">
-                  Ask the customer for their pickup code
-                </p>
-                {postSubmit.completionOtp ? (
-                  <div className="mt-3 flex items-center justify-center gap-2">
-                    <span className="font-mono text-2xl font-bold tracking-[0.25em] text-violet-900">
-                      {postSubmit.completionOtp}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() =>
-                        void handleCopyOtp(postSubmit.completionOtp!)
-                      }
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
+              <p className="text-center text-sm text-muted-foreground">
+                Ask the customer for their pickup code
+              </p>
               <div className="flex flex-col items-center space-y-2">
                 <Label htmlFor="pickup-otp" className="sr-only">
                   Pickup code
