@@ -112,10 +112,45 @@ function formatUnit(unit?: string | null) {
   return normalized || "UNIT";
 }
 
+function parseUnitLabelMeasure(label?: string | null) {
+  const normalizedLabel = String(label || "").trim();
+  if (!normalizedLabel) return null;
+
+  const pieceMatch = normalizedLabel.match(
+    /(\d+(?:\.\d+)?)\s*(pc|pcs|piece|pieces|pair|unit)\b/i,
+  );
+  if (pieceMatch) {
+    const value = Number(pieceMatch[1]);
+    if (value > 0) {
+      return {
+        quantityPerPack: value,
+        quantityUnit:
+          normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
+      };
+    }
+  }
+
+  const weightMatch = normalizedLabel.match(
+    /(\d+(?:\.\d+)?)\s*(kg|kgs|kilogram|kilograms)\b/i,
+  );
+  if (weightMatch) {
+    const value = Number(weightMatch[1]);
+    if (value > 0) {
+      return {
+        quantityPerPack: value,
+        quantityUnit: "KG",
+      };
+    }
+  }
+
+  return null;
+}
+
 function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
   const normalizedUnit = normalizeUnit(variant?.orderUnit);
   const weightKg = parseFloat(variant?.weightKg || "0");
   const piecesPerUnit = Number(variant?.piecesPerUnit || 0);
+  const parsedLabelMeasure = parseUnitLabelMeasure(variant?.unitLabel);
 
   if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
     return {
@@ -131,6 +166,14 @@ function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
       quantityPerPack: piecesPerUnit,
       quantityUnit: unitLabel,
       displayLabel: `${variant?.unitLabel || "Unit"} (${piecesPerUnit} ${unitLabel})`,
+    };
+  }
+
+  if (parsedLabelMeasure) {
+    return {
+      quantityPerPack: parsedLabelMeasure.quantityPerPack,
+      quantityUnit: parsedLabelMeasure.quantityUnit,
+      displayLabel: variant?.unitLabel || "Unit",
     };
   }
 
