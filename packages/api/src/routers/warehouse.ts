@@ -5682,7 +5682,30 @@ const warehouseProductCreation = {
 						const vo = voMap[v.variantOptionId];
 						const isLoose = vo?.variantType === "loose";
 						const packType = isLoose ? "loose" : "packet";
-						const weightKg = vo?.size || "0";
+						const normalizedUnit = String(vo?.unit || "")
+							.trim()
+							.toUpperCase();
+						const numericSize =
+							vo?.size && !Number.isNaN(Number(vo.size))
+								? Number(vo.size)
+								: null;
+						const isWeightBasedUnit = normalizedUnit === "KG";
+						const isPieceBasedUnit = [
+							"PC",
+							"PCS",
+							"PIECE",
+							"PIECES",
+							"PAIR",
+							"UNIT",
+						].includes(normalizedUnit);
+						const weightKg =
+							isWeightBasedUnit && numericSize !== null
+								? String(numericSize)
+								: "0";
+						const piecesPerUnit =
+							!isLoose && isPieceBasedUnit && numericSize !== null
+								? Math.round(numericSize)
+								: null;
 
 						// Insert variant price row
 						const [insertedPrice] = await tx
@@ -5707,10 +5730,14 @@ const warehouseProductCreation = {
 								quantitySelectorLabel: vo?.name || "Unit",
 								packagingType: packType,
 								weightKg,
+								piecesPerUnit,
 								price: v.retailerPrice,
 								orderUnit: vo?.unit || "piece",
 								packType: (packType as any) || null,
-								packWeightKg: weightKg || null,
+								packWeightKg:
+									isWeightBasedUnit && numericSize !== null
+										? String(numericSize)
+										: null,
 								sellUnit: vo?.name || null,
 								sourceVariantPriceId: insertedPrice!.id,
 								sourceVariantOptionId: v.variantOptionId,
@@ -5960,6 +5987,8 @@ const stockEntryQueries = {
 							sku: true,
 							unitLabel: true,
 							weightKg: true,
+							piecesPerUnit: true,
+							orderUnit: true,
 							price: true,
 							brandId: true,
 							packType: true,

@@ -88,12 +88,58 @@ type ProductResult = {
     sku: string | null;
     unitLabel: string;
     weightKg: string;
+    piecesPerUnit?: number | null;
+    orderUnit?: string | null;
     price: string;
     brandId: number | null;
     packType: string | null;
     brand?: { id: number; name: string } | null;
   }[];
 };
+
+const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
+const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
+
+function normalizeUnit(unit?: string | null) {
+  return String(unit || "")
+    .trim()
+    .toUpperCase();
+}
+
+function formatUnit(unit?: string | null) {
+  const normalized = normalizeUnit(unit);
+  if (PIECE_UNITS.has(normalized)) return "PCS";
+  return normalized || "UNIT";
+}
+
+function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
+  const normalizedUnit = normalizeUnit(variant?.orderUnit);
+  const weightKg = parseFloat(variant?.weightKg || "0");
+  const piecesPerUnit = Number(variant?.piecesPerUnit || 0);
+
+  if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
+    return {
+      quantityPerPack: weightKg,
+      quantityUnit: "KG",
+      displayLabel: `${variant?.unitLabel || "Unit"} (${weightKg} KG)`,
+    };
+  }
+
+  if (piecesPerUnit > 0) {
+    const unitLabel = formatUnit(variant?.orderUnit);
+    return {
+      quantityPerPack: piecesPerUnit,
+      quantityUnit: unitLabel,
+      displayLabel: `${variant?.unitLabel || "Unit"} (${piecesPerUnit} ${unitLabel})`,
+    };
+  }
+
+  return {
+    quantityPerPack: 0,
+    quantityUnit: formatUnit(variant?.orderUnit),
+    displayLabel: variant?.unitLabel || "Unit",
+  };
+}
 
 /** One row in the new table-first stock entry */
 type TableRow = {
@@ -340,7 +386,8 @@ export default function AddStockPage() {
         })
         .sort(
           (a, b) =>
-            (parseFloat(a.weightKg) || 0) - (parseFloat(b.weightKg) || 0),
+            getVariantMeasure(a).quantityPerPack -
+            getVariantMeasure(b).quantityPerPack,
         );
     },
     [entryType],
@@ -365,10 +412,18 @@ export default function AddStockPage() {
         const cartonUnitSize = parseFloat(row.cartonUnitSize) || 0;
         return qty * cartonUnitSize;
       }
-      const weight = parseFloat(variant.weightKg);
-      return qty * weight;
+      return qty * getVariantMeasure(variant).quantityPerPack;
     },
     [getRowVariant, entryType],
+  );
+
+  const getRowTotalQtyUnit = useCallback(
+    (row: TableRow) => {
+      const variant = getRowVariant(row);
+      if (entryType === "loose" || entryType === "carton") return "KG";
+      return getVariantMeasure(variant).quantityUnit;
+    },
+    [entryType, getRowVariant],
   );
 
   // Compute total qty string for a row
@@ -376,9 +431,11 @@ export default function AddStockPage() {
     (row: TableRow) => {
       const totalQty = getRowTotalQtyValue(row);
       if (totalQty <= 0) return "—";
-      return `${totalQty.toFixed(1)} KG`;
+      const unit = getRowTotalQtyUnit(row);
+      const decimals = unit === "KG" ? 1 : 0;
+      return `${totalQty.toFixed(decimals)} ${unit}`;
     },
-    [getRowTotalQtyValue],
+    [getRowTotalQtyUnit, getRowTotalQtyValue],
   );
 
   const getLooseSupplierPricePerKg = useCallback(
@@ -392,9 +449,38 @@ export default function AddStockPage() {
   );
 
   // Totals
-  const totalWeight = useMemo(() => {
-    return tableRows.reduce((sum, row) => sum + getRowTotalQtyValue(row), 0);
-  }, [tableRows, getRowTotalQtyValue]);
+  const totalSummary = useMemo(() => {
+    const totals = new Map<string, number>();
+
+    for (const row of tableRows) {
+      const value = getRowTotalQtyValue(row);
+      const unit = getRowTotalQtyUnit(row);
+      if (value <= 0 || !unit) continue;
+      totals.set(unit, (totals.get(unit) || 0) + value);
+    }
+
+    if (totals.size === 0) {
+      return { label: "Total Quantity", value: "0", unit: "" };
+    }
+
+    if (totals.size === 1) {
+      const [unit, total] = Array.from(totals.entries())[0]!;
+      const decimals = unit === "KG" ? 1 : 0;
+      return {
+        label: unit === "KG" ? "Total Weight" : "Total Quantity",
+        value: total.toFixed(decimals),
+        unit,
+      };
+    }
+
+    return {
+      label: "Total Quantity",
+      value: Array.from(totals.entries())
+        .map(([unit, total]) => `${total.toFixed(unit === "KG" ? 1 : 0)} ${unit}`)
+        .join(" + "),
+      unit: "",
+    };
+  }, [getRowTotalQtyUnit, getRowTotalQtyValue, tableRows]);
 
   const getCartonCodeRange = useCallback(
     (rowIndex: number) => {
@@ -456,7 +542,9 @@ export default function AddStockPage() {
         return v.packType !== "loose";
       })
       .sort(
-        (a, b) => (parseFloat(a.weightKg) || 0) - (parseFloat(b.weightKg) || 0),
+        (a, b) =>
+          getVariantMeasure(a).quantityPerPack -
+          getVariantMeasure(b).quantityPerPack,
       );
     const newRow: TableRow = {
       id: ++rowIdRef.current,
@@ -953,7 +1041,7 @@ export default function AddStockPage() {
                                           key={v.id}
                                           value={String(v.id)}
                                         >
-                                          {v.unitLabel} ({v.weightKg} KG)
+                                          {getVariantMeasure(v).displayLabel}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
@@ -1270,11 +1358,15 @@ export default function AddStockPage() {
                   </div>
                   <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900">
                     <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mb-0.5">
-                      Total Weight
+                      {totalSummary.label}
                     </p>
                     <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
-                      {totalWeight > 0 ? `${totalWeight.toFixed(1)}` : "0"}
-                      <span className="text-xs font-medium ml-0.5">KG</span>
+                      {totalSummary.value}
+                      {totalSummary.unit && (
+                        <span className="text-xs font-medium ml-0.5">
+                          {totalSummary.unit}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
