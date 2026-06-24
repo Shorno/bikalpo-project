@@ -2029,10 +2029,70 @@ function formatMoneyValue(value: number) {
 	return value.toFixed(2);
 }
 
+type FulfillmentMode = "self_pickup" | "delivery";
+
+async function applyFulfillmentModeToInvoice(
+	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+	input: {
+		invoiceId: number;
+		fulfillmentMode: FulfillmentMode;
+		orderId: number;
+		orderReadyAt: Date | null;
+		existingFulfillmentMode?: string | null;
+		deliveryStatus?: string | null;
+	},
+) {
+	if (input.deliveryStatus === "delivered") {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "This invoice has already been completed",
+		});
+	}
+
+	if (
+		input.existingFulfillmentMode &&
+		input.existingFulfillmentMode !== input.fulfillmentMode
+	) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Fulfillment mode has already been selected",
+		});
+	}
+
+	const completionOtp =
+		input.fulfillmentMode === "self_pickup"
+			? Math.floor(1000 + Math.random() * 9000).toString()
+			: null;
+
+	await tx
+		.update(invoice)
+		.set({
+			fulfillmentMode: input.fulfillmentMode,
+			completionOtp,
+			completionOtpGeneratedAt:
+				input.fulfillmentMode === "self_pickup" ? new Date() : null,
+			completionOtpVerifiedAt: null,
+			deliveryStatus:
+				input.fulfillmentMode === "self_pickup" ? "pending" : "not_assigned",
+			deliverymanId: null,
+			vehicleType: null,
+			expectedDeliveryAt: null,
+		})
+		.where(eq(invoice.id, input.invoiceId));
+
+	if (!input.orderReadyAt) {
+		await tx
+			.update(order)
+			.set({ readyAt: new Date() })
+			.where(eq(order.id, input.orderId));
+	}
+
+	return { completionOtp };
+}
+
 async function createDispatchInvoiceForOrder(input: {
 	userId: string;
 	orderId: number;
 	items?: Array<{ orderItemId: number; quantity: number }>;
+	fulfillmentMode?: FulfillmentMode;
 }) {
 	return db.transaction(async (tx) => {
 		const existingOrder = await tx.query.order.findFirst({
@@ -2205,10 +2265,67 @@ async function createDispatchInvoiceForOrder(input: {
 			})
 			.where(eq(order.id, existingOrder.id));
 
+		let completionOtp: string | null = null;
+		if (input.fulfillmentMode) {
+			const fulfillmentResult = await applyFulfillmentModeToInvoice(tx, {
+				invoiceId: newInvoice.id,
+				fulfillmentMode: input.fulfillmentMode,
+				orderId: existingOrder.id,
+				orderReadyAt: existingOrder.readyAt,
+			});
+			completionOtp = fulfillmentResult.completionOtp;
+		}
+
 		return {
 			invoice: newInvoice,
 			status: nextStatus,
 			fullyInvoiced: isFullyInvoicedAfterThis,
+			completionOtp,
+		};
+	});
+}
+
+async function configureExistingInvoiceFulfillment(input: {
+	userId: string;
+	invoiceId: number;
+	fulfillmentMode: FulfillmentMode;
+}) {
+	return db.transaction(async (tx) => {
+		const existingInvoice = await tx.query.invoice.findFirst({
+			where: and(
+				eq(invoice.id, input.invoiceId),
+				sql`EXISTS (
+                    SELECT 1 FROM "order" scoped_order
+                    WHERE scoped_order."id" = ${invoice.orderId}
+                      AND scoped_order."warehouse_id" = ${input.userId}
+                )`,
+			),
+			with: {
+				order: {
+					columns: {
+						id: true,
+						readyAt: true,
+					},
+				},
+			},
+		});
+
+		if (!existingInvoice?.order) {
+			throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
+		}
+
+		const { completionOtp } = await applyFulfillmentModeToInvoice(tx, {
+			invoiceId: input.invoiceId,
+			fulfillmentMode: input.fulfillmentMode,
+			orderId: existingInvoice.order.id,
+			orderReadyAt: existingInvoice.order.readyAt,
+			existingFulfillmentMode: existingInvoice.fulfillmentMode,
+			deliveryStatus: existingInvoice.deliveryStatus,
+		});
+
+		return {
+			invoice: existingInvoice,
+			completionOtp,
 		};
 	});
 }
@@ -3141,6 +3258,11 @@ const orderQueries = {
 						splitSequence: invoiceRow.splitSequence,
 						grandTotal: invoiceRow.grandTotal,
 						deliveryStatus: invoiceRow.deliveryStatus,
+						fulfillmentMode: invoiceRow.fulfillmentMode,
+						completionOtpVerifiedAt: invoiceRow.completionOtpVerifiedAt,
+						needsFulfillmentConfig:
+							!invoiceRow.fulfillmentMode &&
+							invoiceRow.deliveryStatus !== "delivered",
 						createdAt: invoiceRow.createdAt,
 					})),
 				};
@@ -3256,51 +3378,10 @@ const orderQueries = {
 				throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
 			}
 
-			if (existingInvoice.deliveryStatus === "delivered") {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "This invoice has already been completed",
-				});
-			}
-
-			if (
-				existingInvoice.fulfillmentMode &&
-				existingInvoice.fulfillmentMode !== input.fulfillmentMode
-			) {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "Fulfillment mode has already been selected",
-				});
-			}
-
-			const completionOtp =
-				input.fulfillmentMode === "self_pickup"
-					? Math.floor(1000 + Math.random() * 9000).toString()
-					: null;
-
-			await db.transaction(async (tx) => {
-				await tx
-					.update(invoice)
-					.set({
-						fulfillmentMode: input.fulfillmentMode,
-						completionOtp,
-						completionOtpGeneratedAt:
-							input.fulfillmentMode === "self_pickup" ? new Date() : null,
-						completionOtpVerifiedAt: null,
-						deliveryStatus:
-							input.fulfillmentMode === "self_pickup"
-								? "pending"
-								: "not_assigned",
-						deliverymanId: null,
-						vehicleType: null,
-						expectedDeliveryAt: null,
-					})
-					.where(eq(invoice.id, input.invoiceId));
-
-				if (!existingInvoice.order.readyAt) {
-					await tx
-						.update(order)
-						.set({ readyAt: new Date() })
-						.where(eq(order.id, existingInvoice.order.id));
-				}
+			const { completionOtp } = await configureExistingInvoiceFulfillment({
+				userId,
+				invoiceId: input.invoiceId,
+				fulfillmentMode: input.fulfillmentMode,
 			});
 
 			return {
@@ -3310,6 +3391,97 @@ const orderQueries = {
 					input.fulfillmentMode === "self_pickup"
 						? "Self pickup is ready. Share the OTP at handover."
 						: "Invoice moved to delivery management.",
+			};
+		}),
+
+	confirmDispatch: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/dispatch/orders/confirm",
+			tags: ["Warehouse"],
+			summary:
+				"Create dispatch invoice and set fulfillment mode in one transaction",
+		})
+		.input(
+			z.discriminatedUnion("mode", [
+				z.object({
+					mode: z.literal("create"),
+					orderId: z.number(),
+					strategy: z.enum(["full", "partial"]),
+					items: z
+						.array(
+							z.object({
+								orderItemId: z.number(),
+								quantity: z.number().int().min(1),
+							}),
+						)
+						.optional(),
+					fulfillmentMode: z.enum(["self_pickup", "delivery"]),
+				}),
+				z.object({
+					mode: z.literal("configure"),
+					invoiceId: z.number(),
+					fulfillmentMode: z.enum(["self_pickup", "delivery"]),
+				}),
+			]),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+
+			if (input.mode === "configure") {
+				const result = await configureExistingInvoiceFulfillment({
+					userId,
+					invoiceId: input.invoiceId,
+					fulfillmentMode: input.fulfillmentMode,
+				});
+
+				return {
+					success: true,
+					invoiceId: result.invoice.id,
+					invoiceNumber: result.invoice.invoiceNumber,
+					fulfillmentMode: input.fulfillmentMode,
+					completionOtp: result.completionOtp,
+					fullyInvoiced: null,
+					orderStatus: null,
+					message:
+						input.fulfillmentMode === "self_pickup"
+							? "Self pickup is ready. Share the OTP at handover."
+							: "Invoice saved for delivery management.",
+				};
+			}
+
+			const items =
+				input.strategy === "partial"
+					? input.items
+					: undefined;
+
+			if (input.strategy === "partial" && (!items || items.length === 0)) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Partial dispatch requires at least one item quantity",
+				});
+			}
+
+			const result = await createDispatchInvoiceForOrder({
+				userId,
+				orderId: input.orderId,
+				items,
+				fulfillmentMode: input.fulfillmentMode,
+			});
+
+			return {
+				success: true,
+				invoiceId: result.invoice.id,
+				invoiceNumber: result.invoice.invoiceNumber,
+				fulfillmentMode: input.fulfillmentMode,
+				completionOtp: result.completionOtp,
+				fullyInvoiced: result.fullyInvoiced,
+				orderStatus: result.status,
+				message:
+					input.fulfillmentMode === "self_pickup"
+						? "Pickup invoice created. Share the OTP at handover."
+						: result.fullyInvoiced
+							? "Order fully invoiced and saved for delivery."
+							: "Partial invoice created and saved for delivery.",
 			};
 		}),
 
