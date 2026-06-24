@@ -2440,6 +2440,31 @@ function resolveBuyerDisplayName(input: {
 	);
 }
 
+type AssignmentKpiFilter =
+	| "all"
+	| "pending_assignment"
+	| "assigned"
+	| "completed";
+
+function getAssignmentKpiBucket(
+	status: string,
+): AssignmentKpiFilter | "assigned" | "pending_assignment" | "completed" {
+	if (status === "pending_assignment") return "pending_assignment";
+	if (status === "completed" || status === "partial") return "completed";
+	return "assigned";
+}
+
+function rollUpAreaLabel(areas: Array<string | null | undefined>) {
+	const unique = [
+		...new Set(
+			areas.map((area) => area?.trim()).filter((area): area is string => !!area),
+		),
+	];
+	if (unique.length === 0) return "—";
+	if (unique.length === 1) return unique[0];
+	return "Mixed";
+}
+
 const orderQueries = {
 	/**
 	 * Direct order overview for warehouse order management.
@@ -3995,6 +4020,372 @@ const orderQueries = {
 					deliveryman: group.deliveryman,
 					hasRider: !!group.deliverymanId,
 				})),
+			};
+		}),
+
+	getDeliveryTeamAssignments: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-team/assignments",
+			tags: ["Warehouse"],
+			summary: "List delivery groups for team assignment with KPIs",
+		})
+		.input(
+			z.object({
+				search: z.string().optional(),
+				kpi: z
+					.enum(["all", "pending_assignment", "assigned", "completed"])
+					.default("all"),
+				area: z.string().optional(),
+				dateRange: z.enum(["all", "today", "this_month"]).default("all"),
+				page: z.number().int().min(1).default(1),
+				limit: z.number().int().min(1).max(100).default(20),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			const page = input.page;
+			const limit = input.limit;
+
+			const groupRows = await db.query.deliveryGroup.findMany({
+				where: eq(deliveryGroup.warehouseId, userId),
+				with: {
+					deliveryman: {
+						columns: {
+							id: true,
+							name: true,
+							phoneNumber: true,
+						},
+					},
+					invoices: {
+						with: {
+							invoice: {
+								columns: {
+									id: true,
+									grandTotal: true,
+									fulfillmentMode: true,
+								},
+								with: {
+									order: {
+										columns: {
+											shippingArea: true,
+											orderNumber: true,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				orderBy: [desc(deliveryGroup.createdAt)],
+			});
+
+			const now = new Date();
+			const startOfToday = new Date(now);
+			startOfToday.setHours(0, 0, 0, 0);
+			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+			const mapped = groupRows
+				.filter((group) =>
+					group.invoices.some(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					),
+				)
+				.map((group) => {
+					const areas = group.invoices.map(
+						(link) => link.invoice?.order?.shippingArea,
+					);
+					const areaLabel = rollUpAreaLabel(areas);
+					const totalAmount = group.invoices.reduce((sum, link) => {
+						const value = Number.parseFloat(link.invoice?.grandTotal ?? "0");
+						return sum + (Number.isNaN(value) ? 0 : value);
+					}, 0);
+					const kpiBucket = getAssignmentKpiBucket(group.status);
+
+					return {
+						id: group.id,
+						groupName: group.groupName,
+						status: group.status,
+						kpiBucket,
+						totalInvoices: group.totalInvoices,
+						completedInvoices: group.completedInvoices,
+						totalAmount: formatMoneyValue(totalAmount),
+						areaLabel,
+						createdAt: group.createdAt,
+						rider: group.deliveryman
+							? {
+									id: group.deliveryman.id,
+									name: group.deliveryman.name,
+									phoneNumber: group.deliveryman.phoneNumber,
+								}
+							: null,
+						hasRider: !!group.deliverymanId,
+					};
+				});
+
+			const kpis = {
+				total: mapped.length,
+				pendingAssignment: mapped.filter(
+					(row) => row.kpiBucket === "pending_assignment",
+				).length,
+				assigned: mapped.filter((row) => row.kpiBucket === "assigned").length,
+				completed: mapped.filter((row) => row.kpiBucket === "completed").length,
+			};
+
+			const filtered = mapped.filter((row) => {
+				if (input.kpi !== "all" && row.kpiBucket !== input.kpi) return false;
+				if (
+					input.area &&
+					input.area !== "all" &&
+					row.areaLabel !== input.area
+				) {
+					return false;
+				}
+				if (input.search?.trim()) {
+					const query = input.search.trim().toLowerCase();
+					if (
+						!row.groupName.toLowerCase().includes(query) &&
+						!String(row.id).includes(query) &&
+						!(row.rider?.name ?? "").toLowerCase().includes(query) &&
+						!row.areaLabel.toLowerCase().includes(query)
+					) {
+						return false;
+					}
+				}
+				if (input.dateRange !== "all") {
+					const created = new Date(row.createdAt);
+					if (input.dateRange === "today" && created < startOfToday) {
+						return false;
+					}
+					if (input.dateRange === "this_month" && created < startOfMonth) {
+						return false;
+					}
+				}
+				return true;
+			});
+
+			const total = filtered.length;
+			const offset = (page - 1) * limit;
+			const groups = filtered.slice(offset, offset + limit);
+
+			const areaOptions = [
+				...new Set(
+					mapped
+						.map((row) => row.areaLabel)
+						.filter((area) => area && area !== "—"),
+				),
+			].sort();
+
+			return {
+				groups,
+				kpis,
+				areaOptions,
+				pagination: {
+					page,
+					limit,
+					total,
+					totalPages: Math.max(1, Math.ceil(total / limit)),
+				},
+			};
+		}),
+
+	getDeliveryTeamRidersOverview: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-team/riders-overview",
+			tags: ["Warehouse"],
+			summary: "Rider-centric delivery assignment overview",
+		})
+		.input(
+			z.object({
+				search: z.string().optional(),
+				status: z.enum(["all", "active", "idle"]).default("all"),
+				area: z.string().optional(),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const warehouseId = context.session.user.id;
+
+			const deliverymen = await db.query.user.findMany({
+				where: and(
+					eq(user.warehouseId, warehouseId),
+					eq(user.role, "deliveryman"),
+				),
+				columns: {
+					id: true,
+					name: true,
+					phoneNumber: true,
+					banned: true,
+					serviceArea: true,
+				},
+				orderBy: [user.name],
+			});
+
+			const activeGroupStatuses = [
+				"assigned",
+				"out_for_delivery",
+				"partial",
+			] as const;
+
+			const [activeGroups, pendingGroupRows] = await Promise.all([
+				db.query.deliveryGroup.findMany({
+					where: and(
+						eq(deliveryGroup.warehouseId, warehouseId),
+						inArray(deliveryGroup.status, [...activeGroupStatuses]),
+					),
+					with: {
+						invoices: {
+							with: {
+								invoice: {
+									columns: { fulfillmentMode: true },
+									with: {
+										order: {
+											columns: { shippingArea: true },
+										},
+									},
+								},
+							},
+						},
+					},
+					orderBy: [desc(deliveryGroup.createdAt)],
+				}),
+				db.query.deliveryGroup.findMany({
+					where: and(
+						eq(deliveryGroup.warehouseId, warehouseId),
+						eq(deliveryGroup.status, "pending_assignment"),
+					),
+					with: {
+						invoices: {
+							with: {
+								invoice: {
+									columns: { fulfillmentMode: true },
+									with: {
+										order: {
+											columns: { shippingArea: true },
+										},
+									},
+								},
+							},
+						},
+					},
+					orderBy: [desc(deliveryGroup.createdAt)],
+				}),
+			]);
+
+			const activeGroupByRiderId = new Map<
+				string,
+				(typeof activeGroups)[number]
+			>();
+			for (const group of activeGroups) {
+				if (!group.deliverymanId) continue;
+				if (!activeGroupByRiderId.has(group.deliverymanId)) {
+					activeGroupByRiderId.set(group.deliverymanId, group);
+				}
+			}
+
+			const pendingGroups = pendingGroupRows
+				.filter((group) =>
+					group.invoices.some(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					),
+				)
+				.map((group) => ({
+					id: group.id,
+					groupName: group.groupName,
+					areaLabel: rollUpAreaLabel(
+						group.invoices.map((link) => link.invoice?.order?.shippingArea),
+					),
+					totalInvoices: group.totalInvoices,
+				}));
+
+			const mappedRiders = deliverymen.map((rider) => {
+				const group = activeGroupByRiderId.get(rider.id) ?? null;
+				const isActive = !!group && !rider.banned;
+				const areaLabel = group
+					? rollUpAreaLabel(
+							group.invoices.map(
+								(link) => link.invoice?.order?.shippingArea,
+							),
+						)
+					: rider.serviceArea ?? "—";
+
+				return {
+					id: rider.id,
+					name: rider.name,
+					phoneNumber: rider.phoneNumber,
+					banned: rider.banned ?? false,
+					serviceArea: rider.serviceArea,
+					status: isActive ? ("active" as const) : ("idle" as const),
+					areaLabel,
+					activeGroup: group
+						? {
+								id: group.id,
+								groupName: group.groupName,
+								areaLabel: rollUpAreaLabel(
+									group.invoices.map(
+										(link) => link.invoice?.order?.shippingArea,
+									),
+								),
+								status: group.status,
+							}
+						: null,
+					totalOrders: group?.totalInvoices ?? 0,
+					completedOrders: group?.completedInvoices ?? 0,
+					vehicleType: group?.vehicleType ?? null,
+				};
+			});
+
+			const kpis = {
+				totalRiders: deliverymen.filter((rider) => !rider.banned).length,
+				ridersAssigned: mappedRiders.filter(
+					(rider) => rider.status === "active",
+				).length,
+				unassignedGroups: pendingGroups.length,
+			};
+
+			const filteredRiders = mappedRiders.filter((rider) => {
+				if (input.status === "active" && rider.status !== "active") {
+					return false;
+				}
+				if (input.status === "idle" && rider.status !== "idle") {
+					return false;
+				}
+				if (
+					input.area &&
+					input.area !== "all" &&
+					rider.areaLabel !== input.area
+				) {
+					return false;
+				}
+				if (input.search?.trim()) {
+					const query = input.search.trim().toLowerCase();
+					if (
+						!rider.name.toLowerCase().includes(query) &&
+						!(rider.phoneNumber ?? "").toLowerCase().includes(query) &&
+						!rider.areaLabel.toLowerCase().includes(query) &&
+						!(rider.activeGroup?.groupName ?? "")
+							.toLowerCase()
+							.includes(query)
+					) {
+						return false;
+					}
+				}
+				return true;
+			});
+
+			const areaOptions = [
+				...new Set(
+					mappedRiders
+						.map((rider) => rider.areaLabel)
+						.filter((area) => area && area !== "—"),
+				),
+			].sort();
+
+			return {
+				riders: filteredRiders,
+				kpis,
+				pendingGroups,
+				areaOptions,
 			};
 		}),
 

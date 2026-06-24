@@ -1,45 +1,35 @@
 "use client";
 
 import {
-  type ColumnDef,
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
   useReactTable,
 } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
 import {
-  Ban,
+  AlertCircle,
   ChevronLeft,
   ChevronRight,
-  Eye,
-  KeyRound,
+  ClipboardList,
+  Inbox,
   Loader2,
-  MoreHorizontal,
   Search,
-  ShieldCheck,
-  Trash2,
   Truck,
+  UserCheck,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { type ElementType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CreateWarehouseEmployeeModal } from "@/components/features/warehouse/create-warehouse-employee-modal";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+  DashboardKpiCard,
+  DashboardKpiGrid,
+  type DashboardKpiTone,
+} from "@/components/dashboard/dashboard-kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -48,13 +38,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -64,74 +47,101 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import TableSkeleton from "@/components/table-skeleton";
+import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
+import { getDeliveryTeamColumns } from "./_components/delivery-team-columns";
+import {
+  type DeliverymanRow,
+  type DeliverymanStatusFilter,
+  filterDeliverymen,
+  generatePassword,
+  getStatusTabCounts,
+} from "./_components/delivery-team-utils";
 
 const WH = "/warehouse/dashboard";
+const PER_PAGE = 20;
 
-interface Deliveryman {
-  id: string;
-  name: string;
-  email: string;
-  phoneNumber: string | null;
-  createdAt: Date;
-  banned: boolean;
-  deliveriesCount: number;
-}
+type TeamKpiKey = "all" | "active" | "deliveries";
 
-interface DeliverymenStats {
-  total: number;
-  totalDeliveries: number;
-  activeCount: number;
-}
+const kpiConfig: {
+  key: TeamKpiKey;
+  statusFilter: DeliverymanStatusFilter | null;
+  label: string;
+  icon: ElementType;
+  tone: DashboardKpiTone;
+  description: string;
+}[] = [
+  {
+    key: "all",
+    statusFilter: "all",
+    label: "Total Riders",
+    icon: Users,
+    tone: "slate",
+    description: "All delivery riders on your team",
+  },
+  {
+    key: "active",
+    statusFilter: "active",
+    label: "Active",
+    icon: UserCheck,
+    tone: "emerald",
+    description: "Riders with active accounts",
+  },
+  {
+    key: "deliveries",
+    statusFilter: null,
+    label: "Total Deliveries",
+    icon: Truck,
+    tone: "violet",
+    description: "Completed delivery groups across the team",
+  },
+];
 
-function getStatusBadge(banned: boolean) {
-  if (banned) {
-    return (
-      <Badge variant="destructive" className="text-xs">
-        Banned
-      </Badge>
-    );
-  }
-  return (
-    <Badge
-      variant="outline"
-      className="text-xs text-green-600 border-green-600"
-    >
-      Active
-    </Badge>
-  );
-}
+const statusTabs: { value: DeliverymanStatusFilter; label: string }[] = [
+  { value: "all", label: "All Riders" },
+  { value: "active", label: "Active" },
+  { value: "banned", label: "Banned" },
+];
 
-function generatePassword(length = 10): string {
-  const chars = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let password = "";
-  for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
-
-function DeliveryTeamClient({
-  deliverymen,
-  stats,
-}: {
-  deliverymen: Deliveryman[];
-  stats: DeliverymenStats;
-}) {
-  const [globalFilter, setGlobalFilter] = useState("");
+export default function DeliveryTeamPage() {
   const queryClient = useQueryClient();
+  const [status, setStatus] = useState<DeliverymanStatusFilter>("all");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [resetPasswordDialog, setResetPasswordDialog] = useState<{
     userId: string;
     name: string;
   } | null>(null);
   const [newPassword, setNewPassword] = useState("");
 
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 350);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [search]);
+
+  const listQuery = useQuery(
+    orpc.warehouseEmployee.getDeliverymen.queryOptions({ input: {} }),
+  );
+
+  const deliverymen = (listQuery.data?.deliverymen ?? []) as DeliverymanRow[];
+  const stats = listQuery.data?.stats ?? {
+    total: 0,
+    activeCount: 0,
+    totalDeliveries: 0,
+  };
+
   const banMutation = useMutation({
     ...orpc.warehouseEmployee.toggleBan.mutationOptions(),
     onSuccess: (result) => {
       toast.success(result.message);
-      queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
+      void queryClient.invalidateQueries({
+        queryKey: orpc.warehouseEmployee.key(),
+      });
     },
     onError: (error) => toast.error(error.message || "Failed to update status"),
   });
@@ -140,7 +150,9 @@ function DeliveryTeamClient({
     ...orpc.warehouseEmployee.delete.mutationOptions(),
     onSuccess: (result) => {
       toast.success(result.message);
-      queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
+      void queryClient.invalidateQueries({
+        queryKey: orpc.warehouseEmployee.key(),
+      });
     },
     onError: (error) => toast.error(error.message || "Failed to delete"),
   });
@@ -156,159 +168,273 @@ function DeliveryTeamClient({
       toast.error(error.message || "Failed to reset password"),
   });
 
-  const columns: ColumnDef<Deliveryman>[] = useMemo(
-    () => [
-      {
-        accessorKey: "name",
-        header: "Name",
-        cell: ({ row }) => (
-          <div>
-            <p className="font-medium">{row.original.name}</p>
-            <p className="text-xs text-muted-foreground">
-              {row.original.email}
-            </p>
-          </div>
-        ),
-      },
-      {
-        accessorKey: "phoneNumber",
-        header: "Phone",
-        cell: ({ row }) => row.original.phoneNumber || "-",
-      },
-      {
-        accessorKey: "deliveriesCount",
-        header: "Deliveries",
-        cell: ({ row }) => (
-          <Badge variant="secondary" className="text-xs">
-            {row.original.deliveriesCount}
-          </Badge>
-        ),
-      },
-      {
-        accessorKey: "banned",
-        header: "Status",
-        cell: ({ row }) => getStatusBadge(row.original.banned),
-      },
-      {
-        accessorKey: "createdAt",
-        header: "Joined",
-        cell: ({ row }) =>
-          format(new Date(row.original.createdAt), "MMM d, yyyy"),
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) => {
-          const d = row.original;
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                  <Link href={`${WH}/delivery-team/${d.id}`}>
-                    <Eye className="h-4 w-4 mr-2" />
-                    View Details
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    setNewPassword(generatePassword());
-                    setResetPasswordDialog({ userId: d.id, name: d.name });
-                  }}
-                >
-                  <KeyRound className="h-4 w-4 mr-2" />
-                  Reset Password
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() =>
-                    banMutation.mutate({
-                      userId: d.id,
-                      banned: !d.banned,
-                    })
-                  }
-                >
-                  {d.banned ? (
-                    <>
-                      <ShieldCheck className="h-4 w-4 mr-2" />
-                      Unban
-                    </>
-                  ) : (
-                    <>
-                      <Ban className="h-4 w-4 mr-2" />
-                      Ban
-                    </>
-                  )}
-                </DropdownMenuItem>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onSelect={(e) => e.preventDefault()}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete {d.name}?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently remove this deliveryman. This
-                        action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => deleteMutation.mutate({ id: d.id })}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        {deleteMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : null}
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-        },
-      },
-    ],
-    [banMutation, deleteMutation],
+  const openResetPassword = useCallback((rider: DeliverymanRow) => {
+    setNewPassword(generatePassword());
+    setResetPasswordDialog({ userId: rider.id, name: rider.name });
+  }, []);
+
+  const columns = useMemo(
+    () =>
+      getDeliveryTeamColumns({
+        onResetPassword: openResetPassword,
+        onToggleBan: (rider) =>
+          banMutation.mutate({ userId: rider.id, banned: !rider.banned }),
+        onDelete: (id) => deleteMutation.mutate({ id }),
+        isDeleting: deleteMutation.isPending,
+      }),
+    [banMutation, deleteMutation, openResetPassword],
   );
 
-  const filteredData = useMemo(() => {
-    if (!globalFilter) return deliverymen;
-    const search = globalFilter.toLowerCase();
-    return deliverymen.filter(
-      (d) =>
-        d.name.toLowerCase().includes(search) ||
-        d.email.toLowerCase().includes(search) ||
-        (d.phoneNumber?.toLowerCase().includes(search) ?? false),
-    );
-  }, [deliverymen, globalFilter]);
+  const filteredRiders = useMemo(
+    () =>
+      filterDeliverymen(deliverymen, {
+        search: debouncedSearch,
+        status,
+      }),
+    [deliverymen, debouncedSearch, status],
+  );
+
+  const tabCounts = useMemo(
+    () => getStatusTabCounts(deliverymen),
+    [deliverymen],
+  );
 
   const table = useReactTable({
-    data: filteredData,
+    data: filteredRiders,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getRowId: (row) => row.id,
     initialState: {
-      pagination: { pageSize: 10 },
+      pagination: { pageSize: PER_PAGE },
     },
   });
 
+  const pageIndex = table.getState().pagination.pageIndex;
+  const pageCount = table.getPageCount();
+  const showFrom =
+    filteredRiders.length > 0 ? pageIndex * PER_PAGE + 1 : 0;
+  const showTo = Math.min((pageIndex + 1) * PER_PAGE, filteredRiders.length);
+
+  const kpiCounts: Record<TeamKpiKey, number> = {
+    all: stats.total,
+    active: stats.activeCount,
+    deliveries: stats.totalDeliveries,
+  };
+
+  const handleKpiClick = (key: TeamKpiKey) => {
+    const cfg = kpiConfig.find((item) => item.key === key);
+    if (cfg?.statusFilter) {
+      setStatus(cfg.statusFilter);
+    }
+  };
+
   return (
-    <div className="space-y-4">
-      {/* Reset Password Dialog */}
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Delivery Team</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Manage delivery riders and employee accounts
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`${WH}/delivery-team/assignment`}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
+          >
+            <UserCheck className="h-4 w-4" />
+            Rider Assignment
+          </Link>
+          <Link
+            href={`${WH}/delivery-team/assignments`}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Assign Orders
+          </Link>
+        </div>
+      </div>
+
+      <DashboardKpiGrid className="sm:grid-cols-2 xl:grid-cols-3">
+        {kpiConfig.map((cfg) => {
+          const Icon = cfg.icon;
+          const active =
+            cfg.key === "deliveries" ? false : status === cfg.statusFilter;
+          return (
+            <DashboardKpiCard
+              key={cfg.key}
+              active={active}
+              description={cfg.description}
+              footer={{
+                label: cfg.key === "deliveries" ? "Deliveries" : "Riders",
+                value: kpiCounts[cfg.key].toLocaleString(),
+              }}
+              icon={<Icon className="h-6 w-6" />}
+              label={cfg.label}
+              onClick={() => handleKpiClick(cfg.key)}
+              tone={cfg.tone}
+              value={kpiCounts[cfg.key].toLocaleString()}
+            />
+          );
+        })}
+      </DashboardKpiGrid>
+
+      <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Name / email / phone..."
+              className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          <CreateWarehouseEmployeeModal defaultRole="deliveryman" />
+        </div>
+
+        <div className="flex items-center gap-1 border-b px-4 py-2">
+          {statusTabs.map((tab) => {
+            const active = status === tab.value;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setStatus(tab.value)}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
+                  active
+                    ? "bg-foreground text-background shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                {tab.label}
+                <Badge
+                  variant={active ? "secondary" : "outline"}
+                  className="h-5 min-w-5 justify-center px-1.5 text-[10px]"
+                >
+                  {tabCounts[tab.value]}
+                </Badge>
+              </button>
+            );
+          })}
+        </div>
+
+        {listQuery.isLoading ? (
+          <div className="divide-y">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="flex items-center gap-4 px-4 py-3.5">
+                <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-12 animate-pulse rounded bg-muted" />
+                <div className="ml-auto h-5 w-16 animate-pulse rounded-full bg-muted" />
+              </div>
+            ))}
+          </div>
+        ) : listQuery.isError ? (
+          <div className="grid min-h-[320px] place-items-center text-center">
+            <div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+                <AlertCircle className="h-6 w-6 text-red-500" />
+              </div>
+              <p className="mt-3 text-sm font-medium">Failed to load delivery team</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => void listQuery.refetch()}
+              >
+                Retry
+              </Button>
+            </div>
+          </div>
+        ) : filteredRiders.length === 0 ? (
+          <div className="grid min-h-[320px] place-items-center text-center">
+            <div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <Inbox className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-sm font-medium">No riders found</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {deliverymen.length === 0
+                  ? "Add your first delivery rider to get started."
+                  : "Try adjusting your search or status filter."}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+        {!listQuery.isLoading && !listQuery.isError && filteredRiders.length > 0 ? (
+          <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              Showing {showFrom}–{showTo} of {filteredRiders.length}
+            </p>
+            {pageCount > 1 ? (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!table.getCanPreviousPage()}
+                  onClick={() => table.previousPage()}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {pageIndex + 1} of {pageCount}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!table.getCanNextPage()}
+                  onClick={() => table.nextPage()}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
       <Dialog
         open={!!resetPasswordDialog}
         onOpenChange={(open) => {
@@ -328,12 +454,13 @@ function DeliveryTeamClient({
           <div className="space-y-3">
             <Input
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={(event) => setNewPassword(event.target.value)}
               placeholder="New password"
             />
           </div>
           <DialogFooter>
             <Button
+              type="button"
               variant="outline"
               onClick={() => {
                 setResetPasswordDialog(null);
@@ -343,6 +470,7 @@ function DeliveryTeamClient({
               Cancel
             </Button>
             <Button
+              type="button"
               onClick={() => {
                 if (resetPasswordDialog && newPassword.length >= 8) {
                   resetPasswordMutation.mutate({
@@ -355,218 +483,14 @@ function DeliveryTeamClient({
               }}
               disabled={resetPasswordMutation.isPending}
             >
-              {resetPasswordMutation.isPending && (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              )}
+              {resetPasswordMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               Reset
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="p-0">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.total}</p>
-            <p className="text-xs text-muted-foreground">Total</p>
-          </CardContent>
-        </Card>
-        <Card className="p-0">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.activeCount}</p>
-            <p className="text-xs text-muted-foreground">Active</p>
-          </CardContent>
-        </Card>
-        <Card className="p-0">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.totalDeliveries}</p>
-            <p className="text-xs text-muted-foreground">Deliveries</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search and Add Button */}
-      <div className="flex gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, email, phone..."
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <CreateWarehouseEmployeeModal defaultRole="deliveryman" />
-      </div>
-
-      {filteredData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center border rounded-lg bg-muted/30">
-          <Truck className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="text-sm text-muted-foreground">No deliverymen found</p>
-        </div>
-      ) : (
-        <>
-          {/* Mobile: Card View */}
-          <div className="sm:hidden space-y-3">
-            {table.getRowModel().rows.map((row) => {
-              const d = row.original;
-              return (
-                <Card key={d.id} className="p-0">
-                  <CardContent className="p-3">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate">
-                          {d.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {d.email}
-                        </p>
-                      </div>
-                      {getStatusBadge(d.banned)}
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">
-                        {d.phoneNumber || "No phone"}
-                      </span>
-                      <Badge variant="secondary" className="text-xs">
-                        {d.deliveriesCount} deliveries
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground mt-2 pt-2 border-t">
-                      <span>
-                        Joined {format(new Date(d.createdAt), "MMM d, yyyy")}
-                      </span>
-                      <Link href={`${WH}/delivery-team/${d.id}`}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </Link>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Desktop: Table View */}
-          <div className="hidden sm:block rounded-md border">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination */}
-          {table.getPageCount() > 1 && (
-            <div className="flex items-center justify-between px-2">
-              <p className="text-xs text-muted-foreground">
-                Page {table.getState().pagination.pageIndex + 1} of{" "}
-                {table.getPageCount()}
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => table.previousPage()}
-                  disabled={!table.getCanPreviousPage()}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Prev
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => table.nextPage()}
-                  disabled={!table.getCanNextPage()}
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-export default function DeliveryTeamPage() {
-  const { data, isLoading, error } = useQuery(
-    orpc.warehouseEmployee.getDeliverymen.queryOptions({ input: {} }),
-  );
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-            Delivery Team
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage delivery personnel for your warehouse
-          </p>
-        </div>
-        <TableSkeleton />
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-            Delivery Team
-          </h1>
-        </div>
-        <div className="flex items-center justify-center h-40">
-          <p className="text-muted-foreground">Failed to load delivery team</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-          Delivery Team
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Manage delivery personnel for your warehouse
-        </p>
-      </div>
-      <DeliveryTeamClient deliverymen={data.deliverymen} stats={data.stats} />
     </div>
   );
 }

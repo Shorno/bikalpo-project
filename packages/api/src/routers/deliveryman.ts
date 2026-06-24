@@ -1243,6 +1243,7 @@ export const deliverymanRouter = {
                                             name: true,
                                             phoneNumber: true,
                                             shopName: true,
+                                            warehouseName: true,
                                         },
                                     },
                                     items: true,

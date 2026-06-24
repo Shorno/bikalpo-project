@@ -1,8 +1,7 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  type RowSelectionState,
   flexRender,
   getCoreRowModel,
   useReactTable,
@@ -14,15 +13,16 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  ClipboardList,
   Clock,
-  FileText,
   Inbox,
   Search,
   Truck,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { type ElementType, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import {
   DashboardKpiCard,
   DashboardKpiGrid,
@@ -47,23 +47,22 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
-import { getDeliveryColumns } from "./_components/delivery-columns";
-import { DeliveryInvoiceDrawer } from "./_components/delivery-invoice-drawer";
-import { DeliveryTypeModal } from "./_components/delivery-type-modal";
-import { InternalGroupModal } from "./_components/internal-group-modal";
+import { getAssignmentColumns } from "./_components/assignment-columns";
 import {
-  type DeliveryDisplayStatus,
-  type DeliveryInvoiceRow,
-  type DeliveryKpiFilter,
-  type DeliveryTypeFilter,
-} from "./_components/delivery-utils";
+  type AssignmentGroupRow,
+  type AssignmentKpiFilter,
+  buildAssignmentGroupRowFromDetail,
+} from "./_components/assignment-utils";
+import { AssignRiderModal } from "./_components/assign-rider-modal";
+import { GroupDetailDrawer } from "./_components/group-detail-drawer";
 
 const PER_PAGE = 20;
+const WH = "/warehouse/dashboard";
 
 type DateFilter = "all" | "today" | "this_month";
 
 const kpiConfig: {
-  key: DeliveryKpiFilter;
+  key: AssignmentKpiFilter;
   label: string;
   emoji: string;
   icon: ElementType;
@@ -72,35 +71,35 @@ const kpiConfig: {
 }[] = [
   {
     key: "all",
-    label: "Total Invoice",
+    label: "Total Groups",
     emoji: "📋",
-    icon: FileText,
+    icon: ClipboardList,
     tone: "slate",
-    description: "All delivery-stage invoices",
+    description: "All internal delivery groups",
   },
   {
-    key: "pending",
-    label: "Pending",
+    key: "pending_assignment",
+    label: "Pending Assignment",
     emoji: "🟡",
     icon: Clock,
     tone: "amber",
-    description: "Delivery type not selected yet",
+    description: "Groups waiting for a rider",
   },
   {
-    key: "in_delivery",
-    label: "In Delivery",
+    key: "assigned",
+    label: "Assigned",
     emoji: "🚚",
     icon: Truck,
     tone: "violet",
-    description: "Grouped or out for delivery",
+    description: "Rider assigned or on route",
   },
   {
-    key: "delivered",
-    label: "Delivered",
+    key: "completed",
+    label: "Completed",
     emoji: "✅",
     icon: CheckCircle2,
     tone: "emerald",
-    description: "Successfully delivered",
+    description: "Finished delivery groups",
   },
 ];
 
@@ -109,22 +108,6 @@ const dateOptions = [
   { value: "today", label: "Today" },
   { value: "this_month", label: "This Month" },
 ];
-
-const deliveryTypeOptions = [
-  { value: "all", label: "All Delivery Types" },
-  { value: "not_selected", label: "Not Selected" },
-  { value: "internal", label: "Internal" },
-  { value: "third_party", label: "Third Party" },
-];
-
-const statusOptions: { value: "all" | DeliveryDisplayStatus; label: string }[] =
-  [
-    { value: "all", label: "All Status" },
-    { value: "pending", label: "Pending" },
-    { value: "locked", label: "Locked" },
-    { value: "in_delivery", label: "In Delivery" },
-    { value: "delivered", label: "Delivered" },
-  ];
 
 function generatePageNumbers(
   current: number,
@@ -141,20 +124,23 @@ function generatePageNumbers(
   return pages;
 }
 
-export default function DeliveryManagementPage() {
-  const queryClient = useQueryClient();
-  const [kpi, setKpi] = useState<DeliveryKpiFilter>("all");
+export default function DeliveryTeamAssignmentsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const groupIdParam = searchParams.get("group");
+  const deepLinkGroupId = groupIdParam
+    ? Number.parseInt(groupIdParam, 10)
+    : null;
+  const openedDeepLinkRef = useRef<number | null>(null);
+
+  const [kpi, setKpi] = useState<AssignmentKpiFilter>("pending_assignment");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [area, setArea] = useState("all");
   const [dateRange, setDateRange] = useState<DateFilter>("all");
-  const [deliveryType, setDeliveryType] = useState<DeliveryTypeFilter>("all");
-  const [status, setStatus] = useState<"all" | DeliveryDisplayStatus>("all");
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [viewInvoiceId, setViewInvoiceId] = useState<number | null>(null);
-  const [typeModalOpen, setTypeModalOpen] = useState(false);
-  const [groupModalOpen, setGroupModalOpen] = useState(false);
-  const [groupInvoices, setGroupInvoices] = useState<DeliveryInvoiceRow[]>([]);
+  const [viewGroup, setViewGroup] = useState<AssignmentGroupRow | null>(null);
+  const [assignGroup, setAssignGroup] = useState<AssignmentGroupRow | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
   useEffect(() => {
@@ -168,12 +154,11 @@ export default function DeliveryManagementPage() {
   }, [search]);
 
   const listQuery = useQuery({
-    ...orpc.warehouse.getDeliveryManagementInvoices.queryOptions({
+    ...orpc.warehouse.getDeliveryTeamAssignments.queryOptions({
       input: {
         search: debouncedSearch || undefined,
         kpi,
-        deliveryType,
-        status,
+        area: area === "all" ? undefined : area,
         dateRange,
         page,
         limit: PER_PAGE,
@@ -181,17 +166,53 @@ export default function DeliveryManagementPage() {
     }),
   });
 
-  const selectTypeMutation = useMutation(
-    orpc.warehouse.selectDeliveryManagementType.mutationOptions(),
-  );
+  const deepLinkQuery = useQuery({
+    ...orpc.deliveryman.getGroupById.queryOptions({
+      input: { id: deepLinkGroupId ?? 0 },
+    }),
+    enabled: !!deepLinkGroupId && !Number.isNaN(deepLinkGroupId),
+  });
 
-  const invoices = (listQuery.data?.invoices ?? []) as DeliveryInvoiceRow[];
+  const clearGroupDeepLink = useCallback(() => {
+    if (!searchParams.get("group")) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("group");
+    const query = next.toString();
+    router.replace(
+      query
+        ? `${WH}/delivery-team/assignments?${query}`
+        : `${WH}/delivery-team/assignments`,
+      { scroll: false },
+    );
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (!groupIdParam) {
+      openedDeepLinkRef.current = null;
+    }
+  }, [groupIdParam]);
+
+  useEffect(() => {
+    const group = deepLinkQuery.data?.group;
+    if (!group || !deepLinkGroupId || Number.isNaN(deepLinkGroupId)) return;
+    if (openedDeepLinkRef.current === group.id) return;
+
+    openedDeepLinkRef.current = group.id;
+    const row = buildAssignmentGroupRowFromDetail(group);
+    setViewGroup(row);
+    if (row.kpiBucket !== "all") {
+      setKpi(row.kpiBucket as AssignmentKpiFilter);
+    }
+  }, [deepLinkQuery.data, deepLinkGroupId]);
+
+  const groups = (listQuery.data?.groups ?? []) as AssignmentGroupRow[];
   const kpis = listQuery.data?.kpis ?? {
     total: 0,
-    pending: 0,
-    inDelivery: 0,
-    delivered: 0,
+    pendingAssignment: 0,
+    assigned: 0,
+    completed: 0,
   };
+  const areaOptions = listQuery.data?.areaOptions ?? [];
   const pagination = listQuery.data?.pagination ?? {
     page: 1,
     limit: PER_PAGE,
@@ -199,153 +220,39 @@ export default function DeliveryManagementPage() {
     totalPages: 1,
   };
 
-  const selectedInvoices = useMemo(
-    () => invoices.filter((row) => rowSelection[String(row.id)]),
-    [invoices, rowSelection],
-  );
-
-  const selectionMode = useMemo(() => {
-    if (selectedInvoices.length === 0) return null;
-    const allPending = selectedInvoices.every(
-      (row) => row.deliveryType === "not_selected",
-    );
-    const allInternalReady = selectedInvoices.every(
-      (row) =>
-        row.deliveryType === "internal" &&
-        !row.group &&
-        row.deliveryStatus === "not_assigned",
-    );
-    if (allPending) return "choose_type" as const;
-    if (allInternalReady) return "create_group" as const;
-    return "mixed" as const;
-  }, [selectedInvoices]);
-
-  const selectKpi = (next: DeliveryKpiFilter) => {
+  const selectKpi = (next: AssignmentKpiFilter) => {
     setKpi(next);
     setPage(1);
-    setRowSelection({});
   };
 
-  const invalidateList = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey(),
-    });
-  }, [queryClient]);
-
-  const handleToggleRow = useCallback(
-    (invoice: DeliveryInvoiceRow, checked: boolean) => {
-      if (!invoice.isSelectable) return;
-      setRowSelection((prev) => {
-        const next = { ...prev };
-        if (checked) next[String(invoice.id)] = true;
-        else delete next[String(invoice.id)];
-        return next;
-      });
-    },
-    [],
-  );
-
-  const handleToggleAll = useCallback(
-    (checked: boolean, rows: DeliveryInvoiceRow[]) => {
-      if (!checked) {
-        setRowSelection({});
-        return;
-      }
-      const next: RowSelectionState = {};
-      for (const row of rows) {
-        if (row.isSelectable) next[String(row.id)] = true;
-      }
-      setRowSelection(next);
-    },
-    [],
-  );
-
-  const handleChooseDeliveryType = () => {
-    if (selectedInvoices.length === 0) {
-      toast.error("Select at least one invoice");
-      return;
-    }
-    if (selectionMode === "mixed") {
-      toast.error(
-        "Select only pending invoices, or only internal invoices awaiting a group",
-      );
-      return;
-    }
-    if (selectionMode === "create_group") {
-      setGroupInvoices(selectedInvoices);
-      setGroupModalOpen(true);
-      return;
-    }
-    setTypeModalOpen(true);
-  };
-
-  const handleConfirmInternal = async () => {
-    const invoiceIds = selectedInvoices.map((inv) => inv.id);
-    try {
-      await selectTypeMutation.mutateAsync({
-        invoiceIds,
-        deliveryType: "internal_delivery",
-      });
-      setTypeModalOpen(false);
-      setGroupInvoices(
-        selectedInvoices.map((inv) => ({
-          ...inv,
-          deliveryType: "internal",
-          fulfillmentMode: "internal_delivery",
-        })),
-      );
-      setRowSelection({});
-      setGroupModalOpen(true);
-      invalidateList();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to choose delivery type",
-      );
-    }
-  };
-
-  const handleGroupSuccess = ({ riderAssigned }: { riderAssigned: boolean }) => {
-    invalidateList();
-    if (!riderAssigned) {
-      toast.success("Delivery group saved", {
-        description: "Assign a rider on Assign Orders when ready.",
-        action: {
-          label: "Assign Orders",
-          onClick: () => {
-            window.location.href = "/warehouse/dashboard/delivery-team/assignments";
-          },
-        },
-      });
-    }
-  };
+  const openAssign = useCallback((group: AssignmentGroupRow) => {
+    setAssignGroup(group);
+    setViewGroup(null);
+  }, []);
 
   const columns = useMemo(
     () =>
-      getDeliveryColumns({
-        rowSelection,
-        onToggleRow: handleToggleRow,
-        onToggleAll: handleToggleAll,
-        onView: (invoice) => setViewInvoiceId(invoice.id),
-      }, invoices),
-    [rowSelection, handleToggleRow, handleToggleAll, invoices],
+      getAssignmentColumns({
+        onView: setViewGroup,
+        onAssign: openAssign,
+      }),
+    [openAssign],
   );
 
   const table = useReactTable({
-    data: invoices,
+    data: groups,
     columns,
-    state: { rowSelection },
-    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => String(row.id),
     manualPagination: true,
     pageCount: pagination.totalPages,
   });
 
-  const counts: Record<DeliveryKpiFilter, number> = {
+  const counts: Record<AssignmentKpiFilter, number> = {
     all: kpis.total,
-    pending: kpis.pending,
-    in_delivery: kpis.inDelivery,
-    delivered: kpis.delivered,
+    pending_assignment: kpis.pendingAssignment,
+    assigned: kpis.assigned,
+    completed: kpis.completed,
   };
 
   const showFrom =
@@ -356,33 +263,45 @@ export default function DeliveryManagementPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Delivery Management
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Assign Orders</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Select pending invoices, choose delivery type, and create delivery
-            groups
+            Assign riders to internal delivery groups from Delivery Management
           </p>
         </div>
-        <Link
-          href="/warehouse/dashboard/delivery-team/assignments"
-          className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
-        >
-          <Truck className="h-4 w-4" />
-          Assign Orders
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`${WH}/delivery-team/assignment`}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
+          >
+            <Users className="h-4 w-4" />
+            Rider Assignment
+          </Link>
+          <Link
+            href={`${WH}/delivery-management`}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Delivery Management
+          </Link>
+          <Link
+            href={`${WH}/delivery-team`}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
+          >
+            <Users className="h-4 w-4" />
+            Delivery Team
+          </Link>
+        </div>
       </div>
 
       <DashboardKpiGrid className="sm:grid-cols-2 xl:grid-cols-4">
         {kpiConfig.map((cfg) => {
-          const isActive = kpi === cfg.key;
           const Icon = cfg.icon;
           return (
             <DashboardKpiCard
               key={cfg.key}
-              active={isActive}
+              active={kpi === cfg.key}
               description={cfg.description}
-              footer={{ label: "Invoices", value: counts[cfg.key].toLocaleString() }}
+              footer={{ label: "Groups", value: counts[cfg.key].toLocaleString() }}
               icon={<Icon className="h-6 w-6" />}
               label={cfg.label}
               onClick={() => selectKpi(cfg.key)}
@@ -400,42 +319,25 @@ export default function DeliveryManagementPage() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Invoice / Order / Customer..."
+              placeholder="Group / Rider / Area..."
               className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
           </div>
           <Select
-            value={deliveryType}
+            value={area}
             onValueChange={(value) => {
-              setDeliveryType(value as DeliveryTypeFilter);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="h-9 w-[170px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {deliveryTypeOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={status}
-            onValueChange={(value) => {
-              setStatus(value as "all" | DeliveryDisplayStatus);
+              setArea(value);
               setPage(1);
             }}
           >
             <SelectTrigger className="h-9 w-[150px]">
-              <SelectValue />
+              <SelectValue placeholder="All areas" />
             </SelectTrigger>
             <SelectContent>
-              {statusOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
+              <SelectItem value="all">All Areas</SelectItem>
+              {areaOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -488,28 +390,13 @@ export default function DeliveryManagementPage() {
           })}
         </div>
 
-        {selectedInvoices.length > 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3">
-            <p className="text-sm font-medium">
-              {selectedInvoices.length} invoice
-              {selectedInvoices.length === 1 ? "" : "s"} selected
-            </p>
-            <Button type="button" size="sm" onClick={handleChooseDeliveryType}>
-              {selectionMode === "create_group"
-                ? "Create Delivery Group"
-                : "Choose Delivery Type"}
-            </Button>
-          </div>
-        ) : null}
-
         {listQuery.isLoading ? (
           <div className="divide-y">
-            {Array.from({ length: 8 }).map((_, index) => (
+            {Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="flex items-center gap-4 px-4 py-3.5">
-                <div className="h-4 w-4 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-28 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-24 animate-pulse rounded bg-muted" />
                 <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-12 animate-pulse rounded bg-muted" />
                 <div className="ml-auto h-4 w-16 animate-pulse rounded bg-muted" />
                 <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
               </div>
@@ -521,7 +408,7 @@ export default function DeliveryManagementPage() {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
                 <AlertCircle className="h-6 w-6 text-red-500" />
               </div>
-              <p className="mt-3 text-sm font-medium">Failed to load invoices</p>
+              <p className="mt-3 text-sm font-medium">Failed to load groups</p>
               <Button
                 type="button"
                 variant="outline"
@@ -533,16 +420,22 @@ export default function DeliveryManagementPage() {
               </Button>
             </div>
           </div>
-        ) : invoices.length === 0 ? (
+        ) : groups.length === 0 ? (
           <div className="grid min-h-[320px] place-items-center text-center">
             <div>
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                 <Inbox className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="mt-3 text-sm font-medium">No delivery invoices</p>
+              <p className="mt-3 text-sm font-medium">No delivery groups</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Invoices appear here after dispatch with delivery mode selected.
+                Create an internal group in Delivery Management first.
               </p>
+              <Link
+                href={`${WH}/delivery-management`}
+                className="mt-3 inline-flex text-sm font-medium underline underline-offset-2"
+              >
+                Go to Delivery Management
+              </Link>
             </div>
           </div>
         ) : (
@@ -651,26 +544,32 @@ export default function DeliveryManagementPage() {
         </div>
       </div>
 
-      <DeliveryTypeModal
-        open={typeModalOpen}
-        onOpenChange={setTypeModalOpen}
-        selectedCount={selectedInvoices.length}
-        loading={selectTypeMutation.isPending}
-        onConfirmInternal={() => void handleConfirmInternal()}
-      />
-
-      <InternalGroupModal
-        open={groupModalOpen}
-        onOpenChange={setGroupModalOpen}
-        invoices={groupInvoices}
-        onSuccess={handleGroupSuccess}
-      />
-
-      <DeliveryInvoiceDrawer
-        invoiceId={viewInvoiceId}
-        open={viewInvoiceId !== null}
+      <GroupDetailDrawer
+        group={viewGroup}
+        open={viewGroup !== null}
         onOpenChange={(open) => {
-          if (!open) setViewInvoiceId(null);
+          if (!open) {
+            setViewGroup(null);
+            clearGroupDeepLink();
+          }
+        }}
+        onAssign={(group) => {
+          setViewGroup(null);
+          setAssignGroup(group);
+        }}
+      />
+
+      <AssignRiderModal
+        open={assignGroup !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssignGroup(null);
+        }}
+        groupId={assignGroup?.id ?? 0}
+        groupName={assignGroup?.groupName}
+        orderShippingArea={assignGroup?.areaLabel !== "—" ? assignGroup?.areaLabel : undefined}
+        onSuccess={() => {
+          setAssignGroup(null);
+          void listQuery.refetch();
         }}
       />
     </div>

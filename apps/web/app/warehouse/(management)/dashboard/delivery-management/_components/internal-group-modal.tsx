@@ -195,7 +195,7 @@ export function InternalGroupModal({
                       }
                     >
                       <SelectTrigger id="deliveryman">
-                        <SelectValue placeholder="Assign later in Delivery Team" />
+                        <SelectValue placeholder="Assign later on Assign Orders" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Assign later</SelectItem>
@@ -213,10 +213,10 @@ export function InternalGroupModal({
                     </Select>
                     <p className="text-xs text-muted-foreground">
                       <Link
-                        href="/warehouse/dashboard/delivery-team"
+                        href="/warehouse/dashboard/delivery-team/assignments"
                         className="underline underline-offset-2"
                       >
-                        Assign later in Delivery Team
+                        Assign later on Assign Orders
                       </Link>
                     </p>
                   </div>

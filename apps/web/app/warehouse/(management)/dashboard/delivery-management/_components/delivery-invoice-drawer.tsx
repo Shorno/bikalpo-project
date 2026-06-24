@@ -131,10 +131,10 @@ export function DeliveryInvoiceDrawer({
                           <p className="mt-1 text-xs font-normal text-muted-foreground">
                             Rider not assigned —{" "}
                             <Link
-                              href="/warehouse/dashboard/delivery-team"
+                              href="/warehouse/dashboard/delivery-team/assignments"
                               className="font-medium underline underline-offset-2"
                             >
-                              Delivery Team
+                              Assign Orders
                             </Link>
                           </p>
                         ) : null}
