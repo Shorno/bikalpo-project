@@ -95,23 +95,6 @@ function isFashionItem(item: Pick<StockListItem, "typeName">) {
   );
 }
 
-function _formatBreakdownText(
-  item: Pick<StockListItem, "breakdown" | "stdUnit" | "typeName">,
-): string {
-  const { breakdown, stdUnit } = item;
-  if (breakdown.length === 0) return "—";
-
-  const parts: string[] = [];
-  for (const b of breakdown) {
-    if (b.packagingType === "loose") {
-      parts.push(`${Math.round(b.qty).toLocaleString()} ${stdUnit} Loose`);
-    } else {
-      parts.push(`${Math.round(b.qty).toLocaleString()} ${b.label}`);
-    }
-  }
-  return parts.join(" + ");
-}
-
 function formatStockBreakdownText(
   item: Pick<StockListItem, "breakdown" | "stdUnit" | "typeName">,
 ): string {
