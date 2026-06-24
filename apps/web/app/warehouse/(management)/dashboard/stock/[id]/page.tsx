@@ -145,6 +145,7 @@ type LooseVariantRow = {
   looseQty: number;
   inCartonQty: number;
   activeCartonCount: number;
+  quantityUnit: string;
   weightKg: number;
 };
 
@@ -384,6 +385,9 @@ export default function StockDetailPage() {
   const [selectedPackIndex, setSelectedPackIndex] = useState<number | null>(
     null,
   );
+  const [selectedFashionVariantKey, setSelectedFashionVariantKey] = useState<
+    string | null
+  >(null);
 
   const isLoading = listLoading || breakdownLoading;
 
@@ -426,12 +430,21 @@ export default function StockDetailPage() {
   }
 
   const totalQty = item.totalQty;
+  const isFashion = isFashionType(item.typeName);
 
   // Build breakdown text from item.breakdown (now carton-aware from API)
   const breakdownText = item.breakdown
     .map((b: any) => {
       if (b.packagingType === "loose") {
-        return `${Math.round(b.qty).toLocaleString()} ${item.stdUnit} Loose`;
+        return `${Math.round(b.qty).toLocaleString()} ${formatDisplayUnit(
+          item.stdUnit
+        )} Loose`;
+      }
+      if (isFashion && b.packagingType !== "carton") {
+        return `${Math.round(b.qty).toLocaleString()} Bundle`;
+      }
+      if (b.packagingType === "carton") {
+        return `${Math.round(b.qty).toLocaleString()} Carton`;
       }
       return `${Math.round(b.qty).toLocaleString()} ${b.label}`;
     })
@@ -527,6 +540,7 @@ export default function StockDetailPage() {
   const looseVariantRows: LooseVariantRow[] = [];
 
   for (const group of looseVariantGroups) {
+    const measure = getGroupMeasure(group);
     for (const item of group.items) {
       const inventory = getVariantDisplayInventory(item, true);
       if (
@@ -544,6 +558,7 @@ export default function StockDetailPage() {
         looseQty: inventory.looseQty,
         inCartonQty: inventory.inCartonQty,
         activeCartonCount: inventory.activeCartonCount,
+        quantityUnit: measure.quantityUnit,
         weightKg: parseFloat(group.weightKg || "0"),
       });
     }
@@ -552,6 +567,69 @@ export default function StockDetailPage() {
   looseVariantRows.sort(
     (a, b) => b.looseQty - a.looseQty || b.totalQty - a.totalQty,
   );
+
+  const fashionVariantRows = isFashion
+    ? packVariantGroups.flatMap((group) => {
+        const measure = getGroupMeasure(group);
+        if (normalizeUnit(measure.quantityUnit) === "KG") {
+          return [];
+        }
+
+        return group.items.map((variantItem) => {
+          const inventory = getVariantDisplayInventory(variantItem, false);
+          const quantityPerPack = measure.quantityPerPack || 1;
+          const label =
+            [variantItem.color, variantItem.size].filter(Boolean).join(" - ") ||
+            buildVariantLabel(group, variantItem, false);
+
+          return {
+            key: `${group.unitLabel}-${variantItem.variantId}`,
+            label,
+            totalQty: inventory.totalQty * quantityPerPack,
+            looseQty: inventory.looseQty * quantityPerPack,
+            inCartonQty: inventory.inCartonQty * quantityPerPack,
+            quantityUnit: measure.quantityUnit,
+            unitLabel: group.unitLabel,
+          };
+        });
+      })
+    : [];
+
+  const fashionBundleRows = isFashion
+    ? packVariantGroups
+        .map((group, index) => {
+          const measure = getGroupMeasure(group);
+          if (normalizeUnit(measure.quantityUnit) === "KG") {
+            return null;
+          }
+
+          const totalBundles = group.items.reduce(
+            (sum, variantItem) =>
+              sum + getVariantDisplayInventory(variantItem, false).totalQty,
+            0,
+          );
+
+          return {
+            key: `${group.unitLabel}-${index}`,
+            label: `Bundle (${group.unitLabel || `${measure.quantityPerPack} ${formatDisplayUnit(measure.quantityUnit)}`})`,
+            bundleQty: totalBundles,
+            totalQty: totalBundles * (measure.quantityPerPack || 1),
+            quantityUnit: measure.quantityUnit,
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    : [];
+
+  const fashionLooseRows = isFashion
+    ? looseVariantRows.filter(
+        (row) => normalizeUnit(row.quantityUnit) !== "KG",
+      )
+    : [];
+
+  const selectedFashionVariant =
+    fashionVariantRows.find((row) => row.key === selectedFashionVariantKey) ??
+    fashionVariantRows[0] ??
+    null;
 
   return (
     <div className="space-y-6 max-w-4xl">
