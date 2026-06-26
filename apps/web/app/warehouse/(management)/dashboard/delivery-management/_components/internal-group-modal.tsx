@@ -80,7 +80,7 @@ export function InternalGroupModal({
     orpc.deliveryman.createGroup.mutationOptions({
       onSuccess: () => {
         void queryClient.invalidateQueries({
-          queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey(),
+          queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey({} as any),
         });
         void queryClient.invalidateQueries({
           queryKey: orpc.warehouse.getOpenDeliveryGroups.queryKey(),
@@ -93,7 +93,7 @@ export function InternalGroupModal({
     orpc.deliveryman.addInvoicesToGroup.mutationOptions({
       onSuccess: () => {
         void queryClient.invalidateQueries({
-          queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey(),
+          queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey({} as any),
         });
         void queryClient.invalidateQueries({
           queryKey: orpc.warehouse.getOpenDeliveryGroups.queryKey(),

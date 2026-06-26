@@ -26,7 +26,9 @@ export interface ProductWithRelations extends Product {
   category: Category;
   subCategory: SubCategory | null;
   brand?: { id: number; name: string } | null;
-  variants?: (ProductVariant & { brand?: { id: number; name: string } | null })[];
+  variants?: (Pick<ProductVariant, "id" | "variantType" | "brandId" | "unitLabel"> & {
+    brand?: { id: number; name: string } | null;
+  })[];
 }
 
 export function useProductColumns() {

@@ -25,6 +25,7 @@ export type ProductTypeRow = {
   skuCode: string | null;
   isActive: boolean;
   displayOrder: number;
+  categoryCount: number;
 };
 
 

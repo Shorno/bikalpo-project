@@ -54,7 +54,7 @@ export function ReorderProductPicker({
   // Filter out already added products and out of stock items
   const filteredProducts = products
     .filter((product) => !excludeProductIds.includes(product.id))
-    .filter((product) => product.stockQuantity > 0);
+    .filter((product) => product.inStock);
 
   const handleSelect = (product: ReorderProduct) => {
     onSelect(product);
@@ -126,7 +126,7 @@ export function ReorderProductPicker({
                         image: product.image,
                         price: String(product.price),
                         size: product.size,
-                        stockQuantity: product.stockQuantity,
+                        stockQuantity: product.inStock ? 99 : 0,
                         inStock: product.inStock,
                       })
                     }
@@ -153,7 +153,7 @@ export function ReorderProductPicker({
                         </span>
                         <div className="flex items-center justify-between text-xs mt-0.5">
                           <span className="text-muted-foreground/80">
-                            {product.size} • Stock: {product.stockQuantity}
+                            {product.size} • {product.inStock ? "In Stock" : "Out of Stock"}
                           </span>
                           <span className="font-bold text-emerald-600">
                             ৳{Number(product.price).toLocaleString()}

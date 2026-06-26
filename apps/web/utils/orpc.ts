@@ -25,8 +25,6 @@ export const queryClient = new QueryClient({
 export const link = new RPCLink({
   url: `${env.NEXT_PUBLIC_SERVER_URL}/rpc`,
   async fetch(url, options: RequestInit | undefined) {
-    const bodyStr = typeof options?.body === 'string' ? options.body : '';
-    console.log("orpc fetch →", { url, body: bodyStr.substring(0, 500) });
     try {
       const response = await fetch(url, {
         ...options,

@@ -21,60 +21,49 @@ function InvoiceItemRow({ item }: { item: DeliveryInvoiceItem }) {
   const lineTotal = Number(item.lineTotal || 0);
 
   return (
-    <div className="grid gap-3 px-3 py-3 sm:grid-cols-[56px_minmax(0,1fr)_180px] sm:items-center">
-      <div className="flex items-start gap-3 sm:contents">
-        {item.productImage ? (
-          <Image
-            src={item.productImage}
-            alt={item.productName}
-            width={56}
-            height={56}
-            className="size-14 rounded-lg border object-cover shrink-0 bg-muted"
-          />
-        ) : (
-          <div className="size-14 rounded-lg bg-muted flex items-center justify-center shrink-0 border">
-            <Package className="size-5 text-muted-foreground" />
-          </div>
-        )}
+    <div className="flex items-center gap-3 py-3 sm:grid sm:grid-cols-[48px_1fr_auto] sm:gap-4">
+      {item.productImage ? (
+        <Image
+          src={item.productImage}
+          alt={item.productName}
+          width={48}
+          height={48}
+          className="size-12 rounded-lg border object-cover shrink-0 bg-muted"
+        />
+      ) : (
+        <div className="size-12 rounded-lg bg-muted flex items-center justify-center shrink-0 border">
+          <Package className="size-5 text-muted-foreground" />
+        </div>
+      )}
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold leading-snug">
-                {item.productName}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {item.productSku ? `SKU: ${item.productSku}` : "No SKU"}
-              </p>
-            </div>
-            <Badge
-              variant="outline"
-              className="shrink-0 rounded-full bg-background text-xs sm:hidden"
-            >
-              Qty {item.quantity}
-            </Badge>
-          </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold leading-snug">
+          {item.productName}
+        </p>
+        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+          <span>{item.productSku ? `SKU: ${item.productSku}` : "No SKU"}</span>
+          <span>•</span>
+          <span>Qty {item.quantity}</span>
+          <span className="sm:hidden">•</span>
+          <span className="sm:hidden">৳{unitPrice.toLocaleString()}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 rounded-lg bg-muted/35 p-1 text-xs ring-1 ring-border/60">
-        <div className="rounded-md px-2.5 py-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            Unit
-          </p>
-          <p className="mt-0.5 font-semibold">৳{unitPrice.toLocaleString()}</p>
+      <div className="shrink-0 text-right sm:grid sm:grid-cols-[100px_60px_100px] sm:items-center sm:gap-4">
+        {/* On desktop: Unit Price */}
+        <div className="hidden sm:block text-right">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Unit</p>
+          <p className="mt-0.5 text-xs text-foreground">৳{unitPrice.toLocaleString()}</p>
         </div>
-        <div className="rounded-md border-x border-border/60 px-2.5 py-1.5 text-center">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            Qty
-          </p>
-          <p className="mt-0.5 font-semibold">x{item.quantity}</p>
+        {/* On desktop: Qty */}
+        <div className="hidden sm:block text-center">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Qty</p>
+          <p className="mt-0.5 text-xs text-foreground">x{item.quantity}</p>
         </div>
-        <div className="rounded-md px-2.5 py-1.5 text-right">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            Total
-          </p>
-          <p className="mt-0.5 font-bold text-primary">
+        {/* On desktop & mobile: Total */}
+        <div className="text-right">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold hidden sm:block">Total</p>
+          <p className="mt-0.5 text-sm font-bold text-primary">
             ৳{lineTotal.toLocaleString()}
           </p>
         </div>
@@ -97,53 +86,46 @@ export function InvoiceItemsList({ items }: InvoiceItemsListProps) {
   );
 
   return (
-    <div className="mt-3">
-      <Separator className="mb-3" />
+    <div className="mt-4 border-t pt-3">
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <div className="overflow-hidden rounded-xl border bg-background">
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-3 bg-muted/30 px-3 py-3 text-left transition-colors hover:bg-muted/50"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Package className="size-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">Products</p>
-                  <p className="text-xs text-muted-foreground">
-                    {items.length} item{items.length === 1 ? "" : "s"} ·{" "}
-                    {totalQuantity} unit{totalQuantity === 1 ? "" : "s"}
-                  </p>
-                </div>
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 text-left transition-colors hover:text-primary py-1"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <Package className="size-4 text-muted-foreground" />
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm font-semibold">Products</span>
+                <span className="text-xs text-muted-foreground">
+                  ({items.length} item{items.length === 1 ? "" : "s"} ·{" "}
+                  {totalQuantity} unit{totalQuantity === 1 ? "" : "s"})
+                </span>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <div className="text-right">
-                  <p className="text-sm font-bold text-primary">
-                    ৳{totalAmount.toLocaleString()}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {isOpen ? "Hide" : "View"} details
-                  </p>
-                </div>
-                <ChevronDown
-                  className={`size-4 text-muted-foreground transition-transform ${
-                    isOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </div>
-            </button>
-          </CollapsibleTrigger>
-
-          <CollapsibleContent>
-            <div className="divide-y">
-              {items.map((item) => (
-                <InvoiceItemRow key={item.id} item={item} />
-              ))}
             </div>
-          </CollapsibleContent>
-        </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-sm font-bold text-primary">
+                ৳{totalAmount.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-muted-foreground border rounded px-1.5 py-0.5 bg-muted/20">
+                {isOpen ? "Hide" : "Show"}
+              </span>
+              <ChevronDown
+                className={`size-4 text-muted-foreground transition-transform duration-200 ${
+                  isOpen ? "rotate-180" : ""
+                }`}
+              />
+            </div>
+          </button>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent className="pt-2">
+          <div className="divide-y divide-border/40">
+            {items.map((item) => (
+              <InvoiceItemRow key={item.id} item={item} />
+            ))}
+          </div>
+        </CollapsibleContent>
       </Collapsible>
     </div>
   );

@@ -228,7 +228,7 @@ export default function DeliveryManagementPage() {
 
   const invalidateList = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey(),
+      queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey({} as any),
     });
   }, [queryClient]);
 
