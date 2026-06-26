@@ -202,5 +202,29 @@ export const auth = betterAuth({
 export type Session = typeof auth.$Infer.Session;
 export type User = Session["user"];
 
+export async function setCredentialPassword(
+  userId: string,
+  newPassword: string,
+) {
+  const context = await auth.$context;
+  const hashedPassword = await context.password.hash(newPassword);
+  const accounts = await context.internalAdapter.findAccounts(userId);
+  const credentialAccount = accounts.find(
+    (account) => account.providerId === "credential",
+  );
+
+  if (credentialAccount) {
+    await context.internalAdapter.updatePassword(userId, hashedPassword);
+    return;
+  }
+
+  await context.internalAdapter.createAccount({
+    userId,
+    providerId: "credential",
+    password: hashedPassword,
+    accountId: userId,
+  });
+}
+
 // Re-export permissions for client usage
 export { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman, warehouse } from "./permissions";

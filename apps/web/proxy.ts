@@ -180,6 +180,17 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
 
+    // Keep warehouse subdomain URLs scoped to /dashboard.
+    if (pathname.startsWith("/warehouse/dashboard")) {
+      const suffix = pathname.slice("/warehouse/dashboard".length);
+      return NextResponse.redirect(
+        new URL(
+          `/dashboard${suffix || ""}${request.nextUrl.search}`,
+          request.url,
+        ),
+      );
+    }
+
     // Skip if already accessing warehouse routes
     if (pathname.startsWith("/warehouse")) {
       return NextResponse.next();
