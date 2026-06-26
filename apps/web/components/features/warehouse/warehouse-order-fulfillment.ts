@@ -1,11 +1,11 @@
 import {
   FULFILLMENT_MODE_LABELS,
   FULFILLMENT_UNITS,
-  PRODUCT_TYPE_FAMILY_LABELS,
-  isContainerFulfillmentMode,
-  supportsFulfillmentMode,
   type FulfillmentMode,
+  isContainerFulfillmentMode,
+  PRODUCT_TYPE_FAMILY_LABELS,
   type ProductTypeFulfillmentProfile,
+  supportsFulfillmentMode,
 } from "@bikalpo-project/db/fulfillment";
 
 export type WarehouseCatalogCartonOption = {
@@ -57,16 +57,40 @@ function normalizePackType(value?: string | null) {
   return (value || "").trim().toLowerCase();
 }
 
-function getVariantDisplayUnit(variant: WarehouseCatalogVariantLike["variant"]) {
+export function getWarehouseModeDisplayLabel(
+  profile: ProductTypeFulfillmentProfile,
+  mode: FulfillmentMode,
+) {
+  if (profile.family === "fashion" && mode === "carton") {
+    return "Bundle";
+  }
+
+  return FULFILLMENT_MODE_LABELS[mode];
+}
+
+function getVariantDisplayUnit(
+  profile: ProductTypeFulfillmentProfile,
+  variant: WarehouseCatalogVariantLike["variant"],
+) {
   const weightKg = Number(variant.weightKg || 0);
   if (weightKg > 0 && normalizePackType(variant.packType) === "loose") {
     return `${weightKg} KG`;
   }
 
-  return variant.unitLabel || "Unit";
+  if (profile.family === "fashion") {
+    return FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
+  }
+
+  return (
+    variant.unitLabel ||
+    FULFILLMENT_UNITS[profile.displayUnit].shortLabel ||
+    "Unit"
+  );
 }
 
-export function getFulfillmentFamilyLabel(profile: ProductTypeFulfillmentProfile) {
+export function getFulfillmentFamilyLabel(
+  profile: ProductTypeFulfillmentProfile,
+) {
   return PRODUCT_TYPE_FAMILY_LABELS[profile.family];
 }
 
@@ -95,9 +119,10 @@ export function getWarehouseOrderModeOptions(
   variantRow: WarehouseCatalogVariantLike,
 ): WarehouseOrderModeOption[] {
   const hasCartons =
-    Number(variantRow.variant.totalCartonCount || 0) > 0
-    || (variantRow.variant.cartonOptions?.length || 0) > 0;
-  const isLooseVariant = normalizePackType(variantRow.variant.packType) === "loose";
+    Number(variantRow.variant.totalCartonCount || 0) > 0 ||
+    (variantRow.variant.cartonOptions?.length || 0) > 0;
+  const isLooseVariant =
+    normalizePackType(variantRow.variant.packType) === "loose";
   const preferredContainerMode = getPreferredContainerMode(profile);
   const preferredDirectMode = getPreferredDirectMode(profile);
   const modes = new Set<FulfillmentMode>();
@@ -122,19 +147,20 @@ export function getWarehouseOrderModeOptions(
     .filter((mode) => supportsFulfillmentMode(profile, mode))
     .map((mode) => {
       const usesContainerStock = isContainerFulfillmentMode(mode) && hasCartons;
+      const modeLabel = getWarehouseModeDisplayLabel(profile, mode);
       const quantityUnitLabel = usesContainerStock
-        ? FULFILLMENT_MODE_LABELS[mode]
-        : getVariantDisplayUnit(variantRow.variant);
+        ? modeLabel
+        : getVariantDisplayUnit(profile, variantRow.variant);
       const stockUnitLabel = usesContainerStock
-        ? FULFILLMENT_MODE_LABELS[mode]
+        ? modeLabel
         : FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
 
       return {
         mode,
-        label: FULFILLMENT_MODE_LABELS[mode],
+        label: modeLabel,
         description: usesContainerStock
-          ? `Order using ${FULFILLMENT_MODE_LABELS[mode].toLowerCase()} stock.`
-          : `Order as ${FULFILLMENT_MODE_LABELS[mode].toLowerCase()} quantity.`,
+          ? `Order using ${modeLabel.toLowerCase()} stock.`
+          : `Order as ${modeLabel.toLowerCase()} quantity.`,
         quantityUnitLabel,
         stockUnitLabel,
         usesContainerStock,
@@ -149,7 +175,7 @@ export function getDefaultWarehouseOrderMode(
   variantRow: WarehouseCatalogVariantLike,
 ): FulfillmentMode {
   return (
-    getWarehouseOrderModeOptions(profile, variantRow)[0]?.mode
-    ?? profile.defaultMode
+    getWarehouseOrderModeOptions(profile, variantRow)[0]?.mode ??
+    profile.defaultMode
   );
 }
