@@ -894,6 +894,10 @@ export const stockOverviewRouter = {
                     piecesPerUnit: row.piecesPerUnit,
                 });
                 const isLoose = measure.isLoose;
+                const isFashionRow =
+                    String(row.typeName || "")
+                        .trim()
+                        .toLowerCase() === "fashion";
                 const cfg = cartonConfigMap.get(row.variantId);
 
                 if (!g.summaryUnit) {
@@ -916,6 +920,18 @@ export const stockOverviewRouter = {
                         });
                     }
                     g.breakdownMap.get("loose")!.qty += qty;
+                } else if (isFashionRow) {
+                    // Fashion pack stock stays as open stock until a real bundle/carton is created.
+                    const openMeasureQty = qty * measure.quantityPerPack;
+                    g.totalQty += openMeasureQty;
+                    if (!g.breakdownMap.has("loose")) {
+                        g.breakdownMap.set("loose", {
+                            qty: 0,
+                            unit: measure.quantityUnit,
+                            type: "loose",
+                        });
+                    }
+                    g.breakdownMap.get("loose")!.qty += openMeasureQty;
                 } else if (cfg && cfg.packsPerCarton > 0) {
                     // Has carton config → compute carton count + loose remainder
                     const cartonCount = Math.floor(qty / cfg.packsPerCarton);

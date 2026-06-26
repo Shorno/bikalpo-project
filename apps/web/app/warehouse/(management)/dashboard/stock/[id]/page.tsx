@@ -476,9 +476,13 @@ export default function StockDetailPage() {
   const breakdownText = item.breakdown
     .map((b: any) => {
       if (b.packagingType === "loose") {
-        return `${Math.round(b.qty).toLocaleString()} ${formatDisplayUnit(
-          item.stdUnit,
-        )} Loose`;
+        return isFashion
+          ? `${Math.round(b.qty).toLocaleString()} ${formatDisplayUnit(
+              item.stdUnit,
+            )} Open Stock`
+          : `${Math.round(b.qty).toLocaleString()} ${formatDisplayUnit(
+              item.stdUnit,
+            )} Loose`;
       }
       if (isFashion && b.packagingType !== "carton") {
         return `${Math.round(b.qty).toLocaleString()} Bundle (Carton)`;
@@ -522,6 +526,7 @@ export default function StockDetailPage() {
     isLoose: boolean,
   ): VariantDisplayInventory {
     const summary = cartonByVariant.get(item.variantId);
+    const hasPhysicalCartons = (summary?.activeCartonCount ?? 0) > 0;
     const summaryInCartonQty = summary
       ? parseFloat(
           isLoose
@@ -530,8 +535,16 @@ export default function StockDetailPage() {
         )
       : 0;
 
-    const looseQty = item.availableForCartonQty ?? item.availableQty ?? 0;
-    const inCartonQty = summary ? summaryInCartonQty : (item.inCartonQty ?? 0);
+    const useFashionOpenStockFallback =
+      isFashion && !isLoose && !hasPhysicalCartons;
+    const looseQty = useFashionOpenStockFallback
+      ? item.totalQty ?? item.availableQty ?? 0
+      : (item.availableForCartonQty ?? item.availableQty ?? 0);
+    const inCartonQty = summary
+      ? summaryInCartonQty
+      : useFashionOpenStockFallback
+        ? 0
+        : (item.inCartonQty ?? 0);
     const totalQty = summary
       ? looseQty + summaryInCartonQty
       : (item.totalQty ?? looseQty);
@@ -635,8 +648,11 @@ export default function StockDetailPage() {
         return group.items.map((variantItem) => {
           const inventory = getVariantDisplayInventory(variantItem, false);
           const quantityPerPack = measure.quantityPerPack || 1;
-          const bundledQty = inventory.totalQty * quantityPerPack;
-          const openStock =
+          const bundledQty = inventory.inCartonQty * quantityPerPack;
+          const openVariantStock =
+            Math.max(0, inventory.totalQty - inventory.inCartonQty) *
+            quantityPerPack;
+          const openLooseStock =
             fashionLooseByIdentity.get(getVariantIdentityKey(variantItem))
               ?.looseQty ?? 0;
           const label =
@@ -646,8 +662,8 @@ export default function StockDetailPage() {
           return {
             key: `${group.unitLabel}-${variantItem.variantId}`,
             label,
-            totalQty: bundledQty + openStock,
-            looseQty: openStock,
+            totalQty: bundledQty + openVariantStock + openLooseStock,
+            looseQty: openVariantStock + openLooseStock,
             inCartonQty: bundledQty,
             quantityUnit: measure.quantityUnit,
             unitLabel: group.unitLabel,
@@ -664,17 +680,26 @@ export default function StockDetailPage() {
             return null;
           }
 
-          const totalBundles = group.items.reduce(
+          const totalBundleCount = group.items.reduce(
             (sum, variantItem) =>
-              sum + getVariantDisplayInventory(variantItem, false).totalQty,
+              sum +
+              (cartonByVariant.get(variantItem.variantId)?.activeCartonCount ??
+                0),
             0,
           );
+          const totalBundledQty = group.items.reduce((sum, variantItem) => {
+            const inventory = getVariantDisplayInventory(variantItem, false);
+            return sum + inventory.inCartonQty * (measure.quantityPerPack || 1);
+          }, 0);
+          if (totalBundleCount <= 0 && totalBundledQty <= 0) {
+            return null;
+          }
 
           return {
             key: `${group.unitLabel}-${index}`,
             label: `Bundle / Carton (${group.unitLabel || `${measure.quantityPerPack} ${formatDisplayUnit(measure.quantityUnit)}`})`,
-            bundleQty: totalBundles,
-            totalQty: totalBundles * (measure.quantityPerPack || 1),
+            bundleQty: totalBundleCount,
+            totalQty: totalBundledQty,
             quantityUnit: measure.quantityUnit,
           };
         })
@@ -846,28 +871,34 @@ export default function StockDetailPage() {
               title="Bundle / Carton Stock (Supply Level)"
             />
             <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-              {fashionBundleRows.map((row) => (
-                <div
-                  key={row.key}
-                  className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
-                >
-                  <span className="text-sm text-gray-800 font-medium">
-                    {row.label}
-                  </span>
-                  <div className="text-right min-w-[220px]">
-                    <div className="text-sm font-bold text-gray-900 tabular-nums">
-                      {formatUnitQty(row.bundleQty, false)}{" "}
-                      <span className="text-xs font-normal text-gray-500">
-                        Bundle / Carton
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500 tabular-nums mt-1">
-                      ({formatQtyByUnit(row.totalQty, row.quantityUnit)}{" "}
-                      {formatDisplayUnit(row.quantityUnit)})
+              {fashionBundleRows.length === 0 ? (
+                <div className="px-5 py-4 text-sm text-gray-500">
+                  No bundle/carton created yet
+                </div>
+              ) : (
+                fashionBundleRows.map((row) => (
+                  <div
+                    key={row.key}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                  >
+                    <span className="text-sm text-gray-800 font-medium">
+                      {row.label}
+                    </span>
+                    <div className="text-right min-w-[220px]">
+                      <div className="text-sm font-bold text-gray-900 tabular-nums">
+                        {formatUnitQty(row.bundleQty, false)}{" "}
+                        <span className="text-xs font-normal text-gray-500">
+                          Bundle / Carton
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 tabular-nums mt-1">
+                        ({formatQtyByUnit(row.totalQty, row.quantityUnit)}{" "}
+                        {formatDisplayUnit(row.quantityUnit)})
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
               {fashionLooseRows.length > 0 && (
                 <div className="flex items-center justify-between px-5 py-3 bg-emerald-50/40">
                   <span className="text-sm text-gray-800 font-medium">
