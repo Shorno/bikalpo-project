@@ -20,7 +20,7 @@ export function ProductCard({ product }: ProductCardProps) {
   const [imageError, setImageError] = useState(false);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
 
-  const isOutOfStock = !product.inStock || product.stockQuantity === 0;
+  const isOutOfStock = !product.inStock;
 
   const handleAddToCart = async () => {
     setIsAdding(true);
