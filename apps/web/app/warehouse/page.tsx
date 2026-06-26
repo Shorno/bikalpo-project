@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 /**
  * Root page for the warehouse subdomain (warehouse.bikalpo.localhost)
@@ -11,7 +11,7 @@ export default function WarehouseRootPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/warehouse/dashboard");
+    router.replace("/dashboard");
   }, [router]);
 
   return (

@@ -24,6 +24,7 @@ import { ORPCError } from "@orpc/server";
 import { localDateStamp } from "../utils/date";
 import {
 	and,
+	asc,
 	count,
 	desc,
 	eq,
@@ -39,7 +40,13 @@ import {
 import { z } from "zod";
 
 import { publicProcedure, warehouseProcedure } from "../index";
-import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import {
+	buildBuyerOrderTimeline,
+	buildInvoiceShipmentFlow,
+	deriveBuyerPurchaseDisplayStatus,
+	getShipmentLifecycleLabel,
+} from "./helpers/buyer-purchase-display";
+import { convertB2bOrderToRetailInventory, receiveB2bInvoiceShipment } from "./helpers/b2b-conversion";
 import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
 
 // ────────────────────────────────────────────────────────────────
@@ -4935,6 +4942,9 @@ const orderQueries = {
 					.enum([
 						"pending",
 						"confirmed",
+						"ready_for_dispatch",
+						"partially_invoiced",
+						"invoiced",
 						"processing",
 						"delivered",
 						"cancelled",
@@ -5077,18 +5087,57 @@ const orderQueries = {
 				}
 			}
 
+			const orderIds = orders.map((o) => o.id);
+			const invoiceRows =
+				orderIds.length > 0
+					? await db
+							.select({
+								id: invoice.id,
+								orderId: invoice.orderId,
+								deliveryStatus: invoice.deliveryStatus,
+								deliveredAt: invoice.deliveredAt,
+								receivedAt: invoice.receivedAt,
+							})
+							.from(invoice)
+							.where(inArray(invoice.orderId, orderIds))
+					: [];
+
+			const invoicesByOrderId = new Map<number, typeof invoiceRows>();
+			for (const row of invoiceRows) {
+				const list = invoicesByOrderId.get(row.orderId) ?? [];
+				list.push(row);
+				invoicesByOrderId.set(row.orderId, list);
+			}
+
 			return {
-				orders: orders.map((o: any) => ({
-					...o,
-					supplierWarehouseName:
-						supplierMap.get(o.warehouseId)?.name || "Unknown Warehouse",
-					supplierWarehousePhone: supplierMap.get(o.warehouseId)?.phone || null,
-					requiresBuyerAcceptance:
-						!!o.modifiedByWarehouseAt &&
-						!o.modificationAcceptedAt &&
-						!o.modificationRejectedAt &&
-						o.status !== "cancelled",
-				})),
+				orders: orders.map((o: any) => {
+					const orderInvoices = invoicesByOrderId.get(o.id) ?? [];
+					const shipments = orderInvoices.map((inv) => ({
+						canReceive:
+							inv.deliveryStatus === "delivered" && !inv.receivedAt,
+						receivedAt: inv.receivedAt,
+						deliveredAt: inv.deliveredAt,
+						deliveryStatus: inv.deliveryStatus,
+					}));
+					const displayStatus = deriveBuyerPurchaseDisplayStatus(
+						o,
+						shipments,
+						null,
+					);
+
+					return {
+						...o,
+						displayStatus,
+						supplierWarehouseName:
+							supplierMap.get(o.warehouseId)?.name || "Unknown Warehouse",
+						supplierWarehousePhone: supplierMap.get(o.warehouseId)?.phone || null,
+						requiresBuyerAcceptance:
+							!!o.modifiedByWarehouseAt &&
+							!o.modificationAcceptedAt &&
+							!o.modificationRejectedAt &&
+							o.status !== "cancelled",
+					};
+				}),
 				pagination: {
 					page,
 					limit,
@@ -5161,52 +5210,130 @@ const orderQueries = {
 				supplierInfo = supplier[0] ?? null;
 			}
 
-			const timeline = [
-				{ step: "Placed", date: result.createdAt, completed: true },
-				{
-					step: "Confirmed",
-					date: result.confirmedAt,
-					completed: !!result.confirmedAt,
-				},
-				{
-					step: "Modified",
-					date: result.modifiedByWarehouseAt,
-					completed: !!result.modifiedByWarehouseAt,
-					isModification: true,
-				},
-				{
-					step: "Processing",
-					date: result.processingStartedAt,
-					completed:
-						!!result.processingStartedAt ||
-						result.status === "processing" ||
-						result.status === "delivered",
-				},
-				{
-					step: "Ready",
-					date: result.readyAt,
-					completed: !!result.readyAt,
-				},
-				{
-					step: "Delivered",
-					date: result.deliveredAt,
-					completed: !!result.deliveredAt || result.status === "delivered",
-				},
-				{
-					step: "Received",
-					date: result.receivedAt,
-					completed: !!result.receivedAt,
-				},
-			].filter((t) => !t.isModification || t.completed);
+			const invoices = await db.query.invoice.findMany({
+				where: eq(invoice.orderId, result.id),
+				with: { items: true },
+				orderBy: [asc(invoice.createdAt)],
+			});
+
+			const invoiceIds = invoices.map((row) => row.id);
+			const deliveryLinks = invoiceIds.length
+				? await db
+						.select({
+							invoiceId: deliveryGroupInvoice.invoiceId,
+							groupId: deliveryGroup.id,
+							groupName: deliveryGroup.groupName,
+							groupStatus: deliveryGroup.status,
+							deliveryOtp: deliveryGroupInvoice.deliveryOtp,
+							assignedAt: deliveryGroupInvoice.createdAt,
+							deliverymanName: user.name,
+							deliverymanPhone: user.phoneNumber,
+						})
+						.from(deliveryGroupInvoice)
+						.innerJoin(
+							deliveryGroup,
+							eq(deliveryGroupInvoice.groupId, deliveryGroup.id),
+						)
+						.leftJoin(user, eq(deliveryGroup.deliverymanId, user.id))
+						.where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
+				: [];
+
+			const deliveryByInvoiceId = new Map(
+				deliveryLinks.map((row) => [row.invoiceId, row]),
+			);
+
+			const invoiceProgressItems = buildInvoiceProgress(result.items, invoices);
+			const invoiceProgress = summarizeInvoiceProgress(invoiceProgressItems);
+			const invoiceProgressByItemId = new Map(
+				invoiceProgressItems.map((item) => [item.orderItemId, item]),
+			);
+
+			const deliveredQtyTotal = result.items.reduce(
+				(sum, item) => sum + (item.deliveredQty ?? 0),
+				0,
+			);
+
+			const shipments = invoices.map((inv) => {
+				const link = deliveryByInvoiceId.get(inv.id);
+				const isOutForDelivery = link?.groupStatus === "out_for_delivery";
+				const isSelfPickup =
+					inv.fulfillmentMode === "self_pickup" &&
+					!!inv.completionOtp &&
+					!inv.completionOtpVerifiedAt;
+
+				let otp: string | null = null;
+				if (isOutForDelivery && link?.deliveryOtp) {
+					otp = link.deliveryOtp;
+				} else if (isSelfPickup && inv.completionOtp) {
+					otp = inv.completionOtp;
+				}
+
+				const flow = buildInvoiceShipmentFlow(inv, link);
+
+				return {
+					invoiceId: inv.id,
+					invoiceNumber: inv.invoiceNumber,
+					invoiceType: inv.invoiceType,
+					splitSequence: inv.splitSequence,
+					createdAt: inv.createdAt,
+					deliveryStatus: inv.deliveryStatus,
+					fulfillmentMode: inv.fulfillmentMode,
+					grandTotal: inv.grandTotal,
+					deliveredAt: inv.deliveredAt,
+					receivedAt: inv.receivedAt,
+					lifecycleLabel: getShipmentLifecycleLabel(flow),
+					flow,
+					items: inv.items.map((item) => ({
+						id: item.id,
+						productName: item.productName,
+						productSku: item.productSku,
+						quantity: item.quantity,
+						unitPrice: item.unitPrice,
+						lineTotal: item.lineTotal,
+					})),
+					delivery: link
+						? {
+								groupId: link.groupId,
+								groupName: link.groupName,
+								groupStatus: link.groupStatus,
+								riderName: link.deliverymanName,
+								riderPhone: link.deliverymanPhone,
+							}
+						: null,
+					otp,
+					canReceive:
+						inv.deliveryStatus === "delivered" && !inv.receivedAt,
+				};
+			});
+
+			const orderTimeline = buildBuyerOrderTimeline(result, invoices.length > 0);
+
+			const displayStatus = deriveBuyerPurchaseDisplayStatus(
+				result,
+				shipments,
+				{ ...invoiceProgress, deliveredQty: deliveredQtyTotal },
+			);
 
 			const hasModifications = result.items.some(
 				(item: any) =>
 					item.modifiedQty !== null || item.modifiedUnitPrice !== null,
 			);
 
+			const enrichedItems = result.items.map((item) => {
+				const progressItem = invoiceProgressByItemId.get(item.id);
+				return {
+					...item,
+					approvedQty: progressItem?.approvedQty ?? item.quantity,
+					invoicedQty: progressItem?.invoicedQty ?? 0,
+					remainingQty: progressItem?.remainingQty ?? item.quantity,
+					deliveredQty: item.deliveredQty ?? 0,
+				};
+			});
+
 			return {
 				order: {
 					...result,
+					items: enrichedItems,
 					supplierWarehouseName:
 						supplierInfo?.warehouseName ||
 						supplierInfo?.name ||
@@ -5219,14 +5346,69 @@ const orderQueries = {
 						!result.modificationRejectedAt &&
 						result.status !== "cancelled",
 				},
-				timeline,
+				orderTimeline,
+				displayStatus,
 				hasModifications,
+				invoiceProgress: {
+					...invoiceProgress,
+					deliveredQty: deliveredQtyTotal,
+					approvedTotal: formatMoneyValue(invoiceProgress.approvedTotal),
+					invoicedTotal: formatMoneyValue(invoiceProgress.invoicedTotal),
+					remainingTotal: formatMoneyValue(invoiceProgress.remainingTotal),
+				},
+				shipments,
 				delivery: {
 					trackingId: result.trackingId,
 					riderName: result.riderName,
 					riderPhone: result.riderPhone,
 				},
 			};
+		}),
+
+	receiveWarehouseSupplierShipment: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/my-orders/receive-shipment",
+			tags: ["Warehouse"],
+			summary: "Receive a delivered invoice shipment into buyer inventory",
+		})
+		.input(
+			z.object({
+				invoiceId: z.number(),
+				receivedItems: z
+					.array(
+						z.object({
+							invoiceItemId: z.number(),
+							receivedQty: z.number().int().min(0),
+						}),
+					)
+					.optional(),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+
+			try {
+				const result = await db.transaction(async (tx) =>
+					receiveB2bInvoiceShipment(tx, {
+						invoiceId: input.invoiceId,
+						buyerWarehouseId: userId,
+						receivedItems: input.receivedItems,
+					}),
+				);
+
+				return {
+					success: true,
+					message: result.allReceived
+						? "Shipment received — order fully received"
+						: "Shipment received into inventory",
+					...result,
+				};
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : "Failed to receive shipment";
+				throw new ORPCError("BAD_REQUEST", { message });
+			}
 		}),
 
 	receiveWarehouseSupplierOrder: warehouseProcedure
@@ -5265,9 +5447,9 @@ const orderQueries = {
 				throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 			}
 
-			if (!["processing", "delivered"].includes(existingOrder.status)) {
+			if (existingOrder.status !== "delivered") {
 				throw new ORPCError("BAD_REQUEST", {
-					message: `Cannot receive an order with status '${existingOrder.status}'`,
+					message: `Cannot receive an order until all shipments are delivered (current status: '${existingOrder.status}')`,
 				});
 			}
 

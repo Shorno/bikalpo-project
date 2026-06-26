@@ -102,6 +102,10 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      warehouseId: {
+        type: "string",
+        required: false,
+      },
       // === Warehouse fields ===
       warehouseName: {
         type: "string",
@@ -151,7 +155,13 @@ export const auth = betterAuth({
     env.BETTER_AUTH_URL,
     "mybettertapp://",
     ...(env.NODE_ENV === "development"
-      ? ["exp://", "exp://**", "exp://192.168.*.*:*/**", "http://localhost:8081"]
+      ? [
+          "exp://",
+          "exp://**",
+          "exp://192.168.*.*:*/**",
+          "http://localhost:8081",
+          "http://delivery.bikalpo.localhost:3001",
+        ]
       : []),
   ].filter(Boolean) as string[],
   hooks: {
@@ -191,6 +201,30 @@ export const auth = betterAuth({
 
 export type Session = typeof auth.$Infer.Session;
 export type User = Session["user"];
+
+export async function setCredentialPassword(
+  userId: string,
+  newPassword: string,
+) {
+  const context = await auth.$context;
+  const hashedPassword = await context.password.hash(newPassword);
+  const accounts = await context.internalAdapter.findAccounts(userId);
+  const credentialAccount = accounts.find(
+    (account) => account.providerId === "credential",
+  );
+
+  if (credentialAccount) {
+    await context.internalAdapter.updatePassword(userId, hashedPassword);
+    return;
+  }
+
+  await context.internalAdapter.createAccount({
+    userId,
+    providerId: "credential",
+    password: hashedPassword,
+    accountId: userId,
+  });
+}
 
 // Re-export permissions for client usage
 export { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman, warehouse } from "./permissions";

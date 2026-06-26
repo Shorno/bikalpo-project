@@ -42,11 +42,13 @@ export function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL,
     process.env.NEXT_PUBLIC_B2B_SUBDOMAIN_URL,
     process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL,
+    process.env.NEXT_PUBLIC_DELIVERY_SUBDOMAIN_URL,
     "http://localhost:3001",
     "http://bikalpo.localhost:3001",
     "http://shop.bikalpo.localhost:3001",
     "http://b2b.bikalpo.localhost:3001",
     "http://warehouse.bikalpo.localhost:3001",
+    "http://delivery.bikalpo.localhost:3001",
   ].filter(Boolean) as string[];
 
   // Handle CORS for API routes
@@ -94,6 +96,7 @@ export function proxy(request: NextRequest) {
   const isShopSubdomain = hostname.startsWith("shop.");
   const isB2bSubdomain = hostname.startsWith("b2b.");
   const isWarehouseSubdomain = hostname.startsWith("warehouse.");
+  const isDeliverySubdomain = hostname.startsWith("delivery.");
 
   // === B2B SUBDOMAIN (Public marketing/landing page) ===
   if (isB2bSubdomain) {
@@ -177,6 +180,17 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
 
+    // Keep warehouse subdomain URLs scoped to /dashboard.
+    if (pathname.startsWith("/warehouse/dashboard")) {
+      const suffix = pathname.slice("/warehouse/dashboard".length);
+      return NextResponse.redirect(
+        new URL(
+          `/dashboard${suffix || ""}${request.nextUrl.search}`,
+          request.url,
+        ),
+      );
+    }
+
     // Skip if already accessing warehouse routes
     if (pathname.startsWith("/warehouse")) {
       return NextResponse.next();
@@ -195,13 +209,74 @@ export function proxy(request: NextRequest) {
     }
 
     // Rewrite to warehouse folder for warehouse users
-    const rewritePath = pathname === "/" ? "/warehouse" : `/warehouse${pathname}`;
+    const rewritePath =
+      pathname === "/" ? "/warehouse" : `/warehouse${pathname}`;
     const rewriteUrl = new URL(rewritePath, request.url);
     rewriteUrl.search = request.nextUrl.search;
     return NextResponse.rewrite(rewriteUrl);
   }
 
+  // === DELIVERY SUBDOMAIN (Warehouse Rider Portal — requires deliveryman auth) ===
+  if (isDeliverySubdomain) {
+    // Auth routes - redirect logged-in users away from login/sign-up
+    if (isAuthRoute) {
+      if (token) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+      return NextResponse.next();
+    }
+
+    // Redirect to main domain login if not authenticated
+    if (!token) {
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^delivery\./, "")}`;
+      return NextResponse.redirect(new URL("/login", mainDomain));
+    }
+
+    // If logged in but not a deliveryman, redirect to main domain
+    if (role && role !== "deliveryman") {
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^delivery\./, "")}`;
+      return NextResponse.redirect(new URL("/", mainDomain));
+    }
+
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
+    if (pathname.startsWith("/delivery/dashboard")) {
+      const suffix = pathname.slice("/delivery/dashboard".length);
+      return NextResponse.redirect(
+        new URL(
+          `/dashboard${suffix || ""}${request.nextUrl.search}`,
+          request.url,
+        ),
+      );
+    }
+
+    if (pathname.startsWith("/dashboard")) {
+      const suffix = pathname.slice("/dashboard".length);
+      const rewritePath = `/delivery/dashboard${suffix}`;
+      const rewriteUrl = new URL(rewritePath, request.url);
+      rewriteUrl.search = request.nextUrl.search;
+      return NextResponse.rewrite(rewriteUrl);
+    }
+
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
   // === MAIN DOMAIN ===
+
+  if (pathname.startsWith("/delivery/dashboard")) {
+    const deliveryDomain =
+      process.env.NEXT_PUBLIC_DELIVERY_SUBDOMAIN_URL ||
+      "http://delivery.bikalpo.localhost:3001";
+    const suffix = pathname.slice("/delivery/dashboard".length);
+    return NextResponse.redirect(
+      new URL(
+        `/dashboard${suffix || ""}${request.nextUrl.search}`,
+        deliveryDomain,
+      ),
+    );
+  }
 
   // Auth routes - redirect logged-in users away from login/sign-up
   if (isAuthRoute) {
@@ -265,7 +340,13 @@ export function proxy(request: NextRequest) {
   }
 
   // If logged in as staff trying to access public pages, redirect to dashboard
-  const staffRoles = ["admin", "salesman", "deliveryman", "shop_owner", "warehouse"];
+  const staffRoles = [
+    "admin",
+    "salesman",
+    "deliveryman",
+    "shop_owner",
+    "warehouse",
+  ];
   if (token && role && staffRoles.includes(role)) {
     if (role === "shop_owner") {
       const shopDomain =

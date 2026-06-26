@@ -85,6 +85,13 @@
       "when": 1782000000000,
       "tag": "0013_delivery_group_optional_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782509026814,
+      "tag": "0012_broad_sumo",
+      "breakpoints": true
     }
   ]
 }

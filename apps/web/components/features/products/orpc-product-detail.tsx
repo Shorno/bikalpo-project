@@ -188,7 +188,7 @@ export function OrpcProductDetail({
 
               {/* Stock */}
               <div className="mb-6">
-                {product.inStock && product.stockQuantity > 0 ? (
+                {product.inStock ? (
                   <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-emerald-100 text-emerald-800">
                     <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2" />
                     In Stock

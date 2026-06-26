@@ -1,4 +1,4 @@
-import { auth } from "@bikalpo-project/auth";
+import { auth, setCredentialPassword } from "@bikalpo-project/auth";
 import { db } from "@bikalpo-project/db";
 import { user, deliveryGroup, deliveryGroupInvoice, invoice, customerAssignment } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
@@ -532,6 +532,7 @@ export const warehouseEmployeeRouter = {
                     and(
                         eq(user.id, input.userId),
                         eq(user.warehouseId, warehouseId),
+                        inArray(user.role, ["deliveryman", "salesman"]),
                     ),
                 );
 
@@ -539,15 +540,7 @@ export const warehouseEmployeeRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Employee not found" });
             }
 
-            await auth.api.setUserPassword({
-                body: {
-                    userId: input.userId,
-                    newPassword: input.newPassword,
-                },
-                headers: new Headers({
-                    Authorization: `Bearer ${context.session.session.token}`,
-                }),
-            });
+            await setCredentialPassword(input.userId, input.newPassword);
 
             return { message: "Password reset successfully" };
         }),

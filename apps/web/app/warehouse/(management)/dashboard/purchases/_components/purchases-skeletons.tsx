@@ -189,7 +189,7 @@ export function TrendChartSkeleton() {
 
 export function PurchaseDetailPageSkeleton() {
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-10">
+    <div className="mx-auto w-full max-w-[88rem] space-y-5 pb-10">
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5">
         <Skeleton className="h-3 w-20" />
@@ -217,13 +217,37 @@ export function PurchaseDetailPageSkeleton() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        {/* Line items */}
-        <Card className="ring-border/60">
-          <CardHeader className="border-b border-border pb-4">
-            <Skeleton className="h-3 w-20" />
-          </CardHeader>
-          <CardContent className="p-0">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(17.5rem,20rem)] xl:items-start">
+        <div className="space-y-6 min-w-0">
+          <Card className="ring-border/60">
+            <CardContent className="py-4 space-y-3">
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-4 w-full max-w-md" />
+              <Skeleton className="h-1.5 w-full rounded-full" />
+            </CardContent>
+          </Card>
+
+          <Card className="ring-border/60">
+            <CardHeader className="border-b border-border pb-4">
+              <Skeleton className="h-3 w-20" />
+            </CardHeader>
+            <CardContent className="space-y-4 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-3 w-48" />
+                </div>
+                <Skeleton className="h-8 w-32 rounded-md" />
+              </div>
+              <Skeleton className="h-16 w-full rounded-lg" />
+            </CardContent>
+          </Card>
+
+          <Card className="ring-border/60">
+            <CardHeader className="border-b border-border pb-4">
+              <Skeleton className="h-3 w-20" />
+            </CardHeader>
+            <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-border bg-muted/30 hover:bg-muted/30">
@@ -267,36 +291,36 @@ export function PurchaseDetailPageSkeleton() {
             </Table>
           </CardContent>
         </Card>
+        </div>
 
-        <div className="space-y-6">
-          {/* Summary */}
-          <Card className="ring-border/60">
-            <CardHeader className="border-b border-border pb-4">
+        <aside className="space-y-5">
+          <Card className="border-border">
+            <CardHeader className="border-b border-border px-4 py-3">
               <Skeleton className="h-3 w-24" />
             </CardHeader>
-            <CardContent className="space-y-3 pt-4">
+            <CardContent className="space-y-3 px-4 py-4">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="flex items-center justify-between gap-3">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-4 w-24" />
+                <div key={i} className="grid grid-cols-[auto_1fr] gap-x-3">
+                  <Skeleton className="h-4 w-14" />
+                  <Skeleton className="h-4 w-24 justify-self-end" />
                 </div>
               ))}
               <div className="border-t border-border pt-3">
-                <div className="flex items-center justify-between gap-3">
-                  <Skeleton className="h-4 w-12" />
-                  <Skeleton className="h-6 w-28" />
+                <div className="grid grid-cols-[auto_1fr] gap-x-3">
+                  <Skeleton className="h-4 w-10" />
+                  <Skeleton className="h-6 w-28 justify-self-end" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Timeline */}
-          <Card className="ring-border/60">
+          {/* Order progress */}
+          <Card className="border-border">
             <CardHeader className="border-b border-border pb-4">
-              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-3 w-24" />
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
-              {Array.from({ length: TIMELINE_SKELETON_STEPS }).map((_, i) => (
+              {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex gap-3">
                   <Skeleton className="h-3 w-3 shrink-0 rounded-full" />
                   <div className="space-y-1.5 pb-1">
@@ -307,7 +331,7 @@ export function PurchaseDetailPageSkeleton() {
               ))}
             </CardContent>
           </Card>
-        </div>
+        </aside>
       </div>
     </div>
   );

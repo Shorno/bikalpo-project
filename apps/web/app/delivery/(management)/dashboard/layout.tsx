@@ -1,14 +1,14 @@
 import { SiteHeader } from "@/components/dashboard/site-header";
 import { DeliverySidebar } from "@/components/features/delivery/DeliverySidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { requireDeliveryman } from "@/utils/auth";
+import { requireWarehouseDeliveryman } from "@/utils/auth";
 
 export default async function DeliveryDashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  await requireDeliveryman();
+  await requireWarehouseDeliveryman();
 
   return (
     <SidebarProvider
