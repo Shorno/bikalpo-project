@@ -242,8 +242,8 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
 
-    if (pathname.startsWith("/dashboard/delivery")) {
-      const suffix = pathname.slice("/dashboard/delivery".length);
+    if (pathname.startsWith("/delivery/dashboard")) {
+      const suffix = pathname.slice("/delivery/dashboard".length);
       return NextResponse.redirect(
         new URL(
           `/dashboard${suffix || ""}${request.nextUrl.search}`,
@@ -254,7 +254,7 @@ export function proxy(request: NextRequest) {
 
     if (pathname.startsWith("/dashboard")) {
       const suffix = pathname.slice("/dashboard".length);
-      const rewritePath = `/dashboard/delivery${suffix}`;
+      const rewritePath = `/delivery/dashboard${suffix}`;
       const rewriteUrl = new URL(rewritePath, request.url);
       rewriteUrl.search = request.nextUrl.search;
       return NextResponse.rewrite(rewriteUrl);
@@ -264,6 +264,19 @@ export function proxy(request: NextRequest) {
   }
 
   // === MAIN DOMAIN ===
+
+  if (pathname.startsWith("/delivery/dashboard")) {
+    const deliveryDomain =
+      process.env.NEXT_PUBLIC_DELIVERY_SUBDOMAIN_URL ||
+      "http://delivery.bikalpo.localhost:3001";
+    const suffix = pathname.slice("/delivery/dashboard".length);
+    return NextResponse.redirect(
+      new URL(
+        `/dashboard${suffix || ""}${request.nextUrl.search}`,
+        deliveryDomain,
+      ),
+    );
+  }
 
   // Auth routes - redirect logged-in users away from login/sign-up
   if (isAuthRoute) {

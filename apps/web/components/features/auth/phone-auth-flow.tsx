@@ -6,32 +6,125 @@ import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
 import { client } from "@/utils/orpc";
 
 type AuthStep = "phone" | "otp" | "name" | "done";
+type AuthMethod = "phone" | "email";
+type AuthUser = {
+  name?: string;
+  role?: string;
+  warehouseId?: string | null;
+};
 
 interface PhoneAuthFlowProps {
   onComplete: () => void;
 }
 
 export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("phone");
   const [step, setStep] = useState<AuthStep>("phone");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [otpValues, setOtpValues] = useState(["", "", "", "", "", ""]);
   const [name, setName] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [otpAutoFilling, setOtpAutoFilling] = useState(false);
   const [error, setError] = useState("");
   const [isNewUser, setIsNewUser] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const phoneInputRef = useRef<HTMLInputElement | null>(null);
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
 
   const fullPhone = `+880${phone.replace(/^0+/, "")}`;
 
   useEffect(() => {
-    if (step === "phone") {
+    if (step === "phone" && authMethod === "phone") {
       setTimeout(() => phoneInputRef.current?.focus(), 200);
+    } else if (step === "phone" && authMethod === "email") {
+      setTimeout(() => emailInputRef.current?.focus(), 200);
     }
-  }, [step]);
+  }, [step, authMethod]);
+
+  const readRoleCookie = () => {
+    const roleCookie = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("user-role="));
+    return roleCookie?.split("=")[1];
+  };
+
+  const setRoleCookie = (role: string) => {
+    // biome-ignore lint/suspicious/noDocumentCookie: Proxy routing relies on this role cookie after client auth flows.
+    document.cookie = `user-role=${role};path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
+  };
+
+  const getRedirectUrl = (role?: string, warehouseId?: string | null) => {
+    if (!role || role === "customer" || role === "consumer") return null;
+
+    if (role === "deliveryman" && warehouseId) {
+      return `${getDeliverySubdomainUrl()}/dashboard`;
+    }
+    if (role === "deliveryman") {
+      return "http://bikalpo.localhost:3001/deliveryman/dashboard";
+    }
+    if (role === "warehouse") {
+      return "http://warehouse.bikalpo.localhost:3001/dashboard";
+    }
+    if (role === "shop_owner") {
+      return "http://shop.bikalpo.localhost:3001/dashboard";
+    }
+    if (role === "admin" || role === "salesman") {
+      return "/dashboard";
+    }
+
+    return null;
+  };
+
+  const getSessionUser = async (fallback?: AuthUser) => {
+    let role = fallback?.role;
+    let userName = fallback?.name;
+    let warehouseId = fallback?.warehouseId;
+
+    try {
+      const session = await authClient.getSession();
+      const sessionUser = session.data?.user as AuthUser | undefined;
+      role = sessionUser?.role || role;
+      warehouseId = sessionUser?.warehouseId ?? warehouseId;
+      userName = sessionUser?.name || userName;
+    } catch {
+      /* fallback */
+    }
+
+    role = role || readRoleCookie();
+
+    if (role) {
+      setRoleCookie(role);
+    }
+
+    return { role, userName, warehouseId };
+  };
+
+  const redirectSignedInUser = async (fallback?: AuthUser) => {
+    const { role, userName, warehouseId } = await getSessionUser(fallback);
+    const redirectUrl = getRedirectUrl(role, warehouseId);
+
+    if (redirectUrl) {
+      setStep("done");
+      setTimeout(() => {
+        window.location.href = redirectUrl;
+      }, 1500);
+      return true;
+    }
+
+    if (userName && !userName.startsWith("+")) {
+      setStep("done");
+      setTimeout(onComplete, 1500);
+      return true;
+    }
+
+    return false;
+  };
 
   /* ── Send OTP ── */
   const handleSendOtp = async () => {
@@ -74,6 +167,41 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
     }
   };
 
+  const handleEmailSignIn = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!email.trim() || !password) {
+      setError("Please enter your email and password");
+      return;
+    }
+
+    setIsSigningIn(true);
+    setError("");
+
+    try {
+      const result = await authClient.signIn.email({
+        email: email.trim(),
+        password,
+      });
+
+      if (result.error) {
+        setError(result.error.message || "Invalid email or password");
+        return;
+      }
+
+      const signedInUser = result.data?.user as AuthUser | undefined;
+      const handled = await redirectSignedInUser(signedInUser);
+      if (!handled) {
+        setStep("done");
+        setTimeout(onComplete, 1500);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to sign in");
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
   /* ── OTP handlers ── */
   const handleOtpChange = (index: number, value: string) => {
     if (value.length > 1) return;
@@ -111,70 +239,12 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
         return;
       }
 
-      const user = result.data?.user as
-        | { name?: string; role?: string; warehouseId?: string | null }
-        | undefined;
+      const user = result.data?.user as AuthUser | undefined;
+      const handled = await redirectSignedInUser(user);
+      if (handled) return;
 
-      // Fetch full session to reliably get the user role
-      // (verify response may not include custom fields like role)
-      let role = user?.role;
-      let userName = user?.name;
-      let warehouseId = user?.warehouseId;
-      if (!role) {
-        try {
-          const session = await authClient.getSession();
-          const sessionUser = session.data?.user as any;
-          role = sessionUser?.role;
-          warehouseId = sessionUser?.warehouseId;
-          if (!userName && sessionUser?.name) userName = sessionUser.name;
-        } catch {
-          /* fallback */
-        }
-      }
-
-      // Also try reading role from cookie (server sets it on sign-in hooks)
-      if (!role) {
-        const roleCookie = document.cookie
-          .split("; ")
-          .find((c) => c.startsWith("user-role="));
-        role = roleCookie?.split("=")[1];
-      }
-
-      // Set user-role cookie for proxy routing (client-side fallback)
-      if (role) {
-        document.cookie = `user-role=${role};path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
-      }
-
-      // Role-based redirect: send non-customer roles to their panels
-      if (role && role !== "customer" && role !== "consumer") {
-        setStep("done");
-        const redirectUrl =
-          role === "deliveryman" && warehouseId
-            ? `${getDeliverySubdomainUrl()}/dashboard`
-            : role === "deliveryman"
-              ? "http://bikalpo.localhost:3001/deliveryman/dashboard"
-              : role === "warehouse"
-                ? "http://warehouse.bikalpo.localhost:3001/dashboard"
-                : role === "shop_owner"
-                  ? "http://shop.bikalpo.localhost:3001/dashboard"
-                  : role === "admin" || role === "salesman"
-                    ? "/dashboard"
-                    : null;
-        if (redirectUrl) {
-          setTimeout(() => {
-            window.location.href = redirectUrl;
-          }, 1500);
-          return;
-        }
-      }
-
-      if (userName && !userName.startsWith("+")) {
-        setStep("done");
-        setTimeout(onComplete, 1500);
-      } else {
-        setIsNewUser(true);
-        setStep("name");
-      }
+      setIsNewUser(true);
+      setStep("name");
     } catch (err: any) {
       setError(err?.message || "Verification failed");
     } finally {
@@ -218,62 +288,138 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
             Sign in or create an account to continue
           </p>
 
-          <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Phone Number
-            </label>
-            <div className="flex gap-2">
-              <div className="flex items-center px-4 bg-gray-50 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 select-none">
-                🇧🇩 +880
+          <AuthMethodTabs
+            value={authMethod}
+            onChange={(nextMethod) => {
+              setAuthMethod(nextMethod);
+              setError("");
+            }}
+          />
+
+          {authMethod === "phone" ? (
+            <>
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Phone Number
+                </label>
+                <div className="flex gap-2">
+                  <div className="flex items-center px-4 bg-gray-50 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 select-none">
+                    +880
+                  </div>
+                  <input
+                    ref={phoneInputRef}
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="01XXXXXXXXX"
+                    value={phone}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "");
+                      if (val.length <= 11) setPhone(val);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSendOtp();
+                    }}
+                    className={`flex-1 ${inputClass}`}
+                  />
+                </div>
               </div>
-              <input
-                ref={phoneInputRef}
-                type="tel"
-                inputMode="numeric"
-                placeholder="01XXXXXXXXX"
-                value={phone}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, "");
-                  if (val.length <= 11) setPhone(val);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSendOtp();
-                }}
-                className={`flex-1 ${inputClass}`}
-              />
-            </div>
-          </div>
 
-          <button
-            onClick={handleSendOtp}
-            disabled={!phone || phone.length < 11 || isSending}
-            className={`${primaryBtnClass} mb-5`}
-            style={primaryBtnStyle}
-          >
-            {isSending ? (
-              <span className="flex items-center justify-center gap-2">
-                <Spinner /> Sending code...
-              </span>
-            ) : (
-              "Continue"
-            )}
-          </button>
+              <button
+                onClick={handleSendOtp}
+                disabled={!phone || phone.length < 11 || isSending}
+                className={`${primaryBtnClass} mb-5`}
+                style={primaryBtnStyle}
+              >
+                {isSending ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner /> Sending code...
+                  </span>
+                ) : (
+                  "Continue"
+                )}
+              </button>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="h-px flex-1 bg-gray-200" />
-            <span className="text-xs text-gray-400 font-medium">or</span>
-            <div className="h-px flex-1 bg-gray-200" />
-          </div>
+              <div className="flex items-center gap-3 mb-5">
+                <div className="h-px flex-1 bg-gray-200" />
+                <span className="text-xs text-gray-400 font-medium">or</span>
+                <div className="h-px flex-1 bg-gray-200" />
+              </div>
 
-          {/* Social login buttons */}
-          <div className="space-y-3 mb-6">
-            <SocialButton icon={<GoogleIcon />} label="Continue with Google" />
-            <SocialButton
-              icon={<FacebookIcon />}
-              label="Continue with Facebook"
-            />
-          </div>
+              <div className="space-y-3 mb-6">
+                <SocialButton
+                  icon={<GoogleIcon />}
+                  label="Continue with Google"
+                />
+                <SocialButton
+                  icon={<FacebookIcon />}
+                  label="Continue with Facebook"
+                />
+              </div>
+            </>
+          ) : (
+            <form onSubmit={handleEmailSignIn} className="space-y-4 mb-6">
+              <div>
+                <label
+                  htmlFor="email-login"
+                  className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2"
+                >
+                  Email
+                </label>
+                <input
+                  id="email-login"
+                  ref={emailInputRef}
+                  type="email"
+                  autoComplete="email"
+                  placeholder="delivery@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="password-login"
+                  className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2"
+                >
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    id="password-login"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`${inputClass} pr-16`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="absolute inset-y-0 right-3 text-xs font-semibold text-[#1E62C3] hover:text-[#1a56ad]"
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!email.trim() || !password || isSigningIn}
+                className={primaryBtnClass}
+                style={primaryBtnStyle}
+              >
+                {isSigningIn ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner /> Signing in...
+                  </span>
+                ) : (
+                  "Sign in"
+                )}
+              </button>
+            </form>
+          )}
 
           <p className="text-xs text-gray-400 leading-relaxed">
             By signing up, you agree to our{" "}
@@ -488,6 +634,41 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
 }
 
 /* ── Shared small components ── */
+
+function AuthMethodTabs({
+  value,
+  onChange,
+}: {
+  value: AuthMethod;
+  onChange: (value: AuthMethod) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1 mb-6">
+      <button
+        type="button"
+        onClick={() => onChange("phone")}
+        className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
+          value === "phone"
+            ? "bg-white text-gray-900 shadow-sm"
+            : "text-gray-500 hover:text-gray-900"
+        }`}
+      >
+        Phone
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("email")}
+        className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
+          value === "email"
+            ? "bg-white text-gray-900 shadow-sm"
+            : "text-gray-500 hover:text-gray-900"
+        }`}
+      >
+        Email
+      </button>
+    </div>
+  );
+}
 
 function Spinner() {
   return (
