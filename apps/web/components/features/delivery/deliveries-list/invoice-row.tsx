@@ -14,7 +14,14 @@ export function InvoiceRow({
       <TableCell className="text-center font-medium">{item.sequence}</TableCell>
       <TableCell>
         <div className="flex flex-col">
-          <span className="font-medium">{item.invoice.invoiceNumber}</span>
+          <span className="font-medium font-mono text-sm">
+            {item.invoice.order?.orderNumber ?? item.invoice.invoiceNumber}
+          </span>
+          {item.invoice.order?.orderNumber ? (
+            <span className="text-xs text-muted-foreground">
+              Invoice: {item.invoice.invoiceNumber}
+            </span>
+          ) : null}
           <span className="text-xs text-muted-foreground">
             {item.invoice.customer?.name} ({item.invoice.customer?.phoneNumber})
           </span>

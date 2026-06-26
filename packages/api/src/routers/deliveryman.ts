@@ -1568,7 +1568,7 @@ export const deliverymanRouter = {
             tags: ["Deliveryman"],
             summary: "Get delivery OTP for an order",
         })
-        .input(z.object({ orderId: z.number() }))
+        .input(z.object({ orderId: z.number(), invoiceId: z.number().optional() }))
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
 
@@ -1594,8 +1594,15 @@ export const deliverymanRouter = {
                 return { otp: null, showOtp: false, mode: null, label: null };
             }
 
+            const invoiceIds = input.invoiceId
+                ? [input.invoiceId]
+                : orderInvoices.map((inv) => inv.id);
+
+            if (input.invoiceId && !orderInvoices.some((inv) => inv.id === input.invoiceId)) {
+                throw new ORPCError("NOT_FOUND", { message: "Invoice not found on this order" });
+            }
+
             // Find delivery group invoice for any of these invoices
-            const invoiceIds = orderInvoices.map((inv) => inv.id);
             const selfPickupInvoice = await db.query.invoice.findFirst({
                 where: and(
                     inArray(invoice.id, invoiceIds),
@@ -1613,18 +1620,19 @@ export const deliverymanRouter = {
                     deliveryStatus: selfPickupInvoice.deliveryStatus,
                     mode: "self_pickup" as const,
                     label: "Pickup OTP",
+                    invoiceId: selfPickupInvoice.id,
                 };
             }
 
-            const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
-                where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
-                    invoiceIds.map((id) => sql`${id}`),
-                    sql`, `,
-                )})`,
-                with: {
-                    group: true,
-                },
+            const deliveryInvoices = await db.query.deliveryGroupInvoice.findMany({
+                where: inArray(deliveryGroupInvoice.invoiceId, invoiceIds),
+                with: { group: true },
+                orderBy: [desc(deliveryGroupInvoice.id)],
             });
+
+            const deliveryInvoice = deliveryInvoices.find(
+                (row) => row.group?.status === "out_for_delivery",
+            );
 
             // Only show OTP if order is out for delivery
             if (
@@ -1641,6 +1649,7 @@ export const deliverymanRouter = {
                 deliveryStatus: deliveryInvoice.status,
                 mode: "internal_delivery" as const,
                 label: "Delivery OTP",
+                invoiceId: deliveryInvoice.invoiceId,
             };
         }),
 

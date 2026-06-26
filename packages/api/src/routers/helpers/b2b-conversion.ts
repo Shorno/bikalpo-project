@@ -17,7 +17,7 @@
  * at the application level if needed in the future.
  */
 
-import {carton, inventory, order, orderItem, product, productVariant, user, variantConversionMap,} from "@bikalpo-project/db/schema";
+import {carton, inventory, invoice, order, orderItem, product, productVariant, user, variantConversionMap,} from "@bikalpo-project/db/schema";
 import {and, desc, eq} from "drizzle-orm";
 
 /**
@@ -502,4 +502,197 @@ async function markItemTransferFailed(tx: any, itemId: number, reason: string) {
         .update(orderItem)
         .set({ conversionStatus: "failed" })
         .where(eq(orderItem.id, itemId));
+}
+
+/**
+ * Transfer a single variant quantity from supplier warehouse to buyer warehouse inventory.
+ */
+async function transferWarehouseVariantQty(
+    tx: any,
+    input: {
+        supplierWarehouseId: string;
+        buyerWarehouseId: string;
+        variantId: number;
+        quantity: number;
+        unitPrice?: string | null;
+    },
+) {
+    const { supplierWarehouseId, buyerWarehouseId, variantId, quantity } = input;
+    if (!Number.isFinite(quantity) || quantity <= 0) return;
+
+    const sourceInv = await tx.query.inventory.findFirst({
+        where: and(
+            eq(inventory.ownerType, "warehouse"),
+            eq(inventory.ownerId, supplierWarehouseId),
+            eq(inventory.variantId, variantId),
+        ),
+    });
+
+    if (!sourceInv) {
+        throw new Error("Supplier warehouse inventory not found");
+    }
+
+    const reservedQty = Number(sourceInv.reservedQty || 0);
+    const availableQty = Number(sourceInv.availableQty || 0);
+    const newReservedQty = Math.max(0, reservedQty - quantity);
+    const newSourceQty =
+        reservedQty >= quantity
+            ? availableQty
+            : Math.max(0, availableQty - (quantity - reservedQty));
+
+    await tx
+        .update(inventory)
+        .set({
+            availableQty: newSourceQty.toFixed(2),
+            reservedQty: newReservedQty.toFixed(2),
+            updatedAt: new Date(),
+        })
+        .where(eq(inventory.id, sourceInv.id));
+
+    const buyerInv = await tx.query.inventory.findFirst({
+        where: and(
+            eq(inventory.ownerType, "warehouse"),
+            eq(inventory.ownerId, buyerWarehouseId),
+            eq(inventory.variantId, variantId),
+        ),
+    });
+
+    if (buyerInv) {
+        await tx
+            .update(inventory)
+            .set({
+                availableQty: (
+                    Number(buyerInv.availableQty || 0) + quantity
+                ).toFixed(2),
+                updatedAt: new Date(),
+            })
+            .where(eq(inventory.id, buyerInv.id));
+    } else {
+        const initialPrice =
+            sourceInv.retailPrice
+                ? String(sourceInv.retailPrice)
+                : input.unitPrice
+                    ? String(input.unitPrice)
+                    : null;
+
+        await tx.insert(inventory).values({
+            ownerType: "warehouse" as const,
+            ownerId: buyerWarehouseId,
+            variantId,
+            availableQty: quantity.toFixed(2),
+            reservedQty: "0",
+            ...(initialPrice ? { retailPrice: initialPrice } : {}),
+        });
+    }
+}
+
+/**
+ * Receive one delivered invoice shipment into the buyer warehouse's inventory.
+ */
+export async function receiveB2bInvoiceShipment(
+    tx: any,
+    input: {
+        invoiceId: number;
+        buyerWarehouseId: string;
+        receivedItems?: Array<{ invoiceItemId: number; receivedQty: number }>;
+    },
+) {
+    const inv = await tx.query.invoice.findFirst({
+        where: eq(invoice.id, input.invoiceId),
+        with: { items: true, order: true },
+    });
+
+    if (!inv?.order) {
+        throw new Error("Invoice not found");
+    }
+    if (inv.order.userId !== input.buyerWarehouseId) {
+        throw new Error("Not authorized to receive this shipment");
+    }
+    if (!inv.order.warehouseId) {
+        throw new Error("Supplier warehouse not found on order");
+    }
+    if (inv.deliveryStatus !== "delivered") {
+        throw new Error("Shipment has not been delivered yet");
+    }
+    if (inv.receivedAt) {
+        throw new Error("Shipment has already been received");
+    }
+
+    const orderItems = await tx.query.orderItem.findMany({
+        where: eq(orderItem.orderId, inv.orderId),
+    });
+
+    const receivedByItemId = new Map(
+        (input.receivedItems ?? []).map((row) => [row.invoiceItemId, row.receivedQty]),
+    );
+
+    for (const invoiceItem of inv.items) {
+        const qty = receivedByItemId.has(invoiceItem.id)
+            ? receivedByItemId.get(invoiceItem.id)!
+            : invoiceItem.quantity;
+
+        if (qty <= 0) continue;
+
+        const matchedOrderItem =
+            orderItems.find(
+                (item: typeof orderItem.$inferSelect) =>
+                    item.productId === invoiceItem.productId &&
+                    (item.productSize === invoiceItem.productSku ||
+                        !invoiceItem.productSku),
+            ) ??
+            orderItems.find(
+                (item: typeof orderItem.$inferSelect) =>
+                    item.productId === invoiceItem.productId,
+            );
+
+        if (!matchedOrderItem?.variantId) {
+            throw new Error(
+                `No matching order item for product ${invoiceItem.productName}`,
+            );
+        }
+
+        await transferWarehouseVariantQty(tx, {
+            supplierWarehouseId: inv.order.warehouseId,
+            buyerWarehouseId: input.buyerWarehouseId,
+            variantId: matchedOrderItem.variantId,
+            quantity: qty,
+            unitPrice: matchedOrderItem.unitPrice,
+        });
+
+        const prevConverted = Number(matchedOrderItem.convertedQty ?? 0);
+        const nextConverted = prevConverted + qty;
+        const targetQty = matchedOrderItem.modifiedQty ?? matchedOrderItem.quantity;
+
+        await tx
+            .update(orderItem)
+            .set({
+                convertedQty: nextConverted.toFixed(2),
+                conversionStatus:
+                    nextConverted >= targetQty ? "converted" : "pending",
+            })
+            .where(eq(orderItem.id, matchedOrderItem.id));
+
+        matchedOrderItem.convertedQty = nextConverted.toFixed(2);
+    }
+
+    await tx
+        .update(invoice)
+        .set({ receivedAt: new Date() })
+        .where(eq(invoice.id, inv.id));
+
+    const allInvoices = await tx.query.invoice.findMany({
+        where: eq(invoice.orderId, inv.orderId),
+    });
+    const allReceived =
+        allInvoices.length > 0 &&
+        allInvoices.every((row: { receivedAt: Date | null }) => row.receivedAt);
+
+    if (allReceived && inv.order.status === "delivered") {
+        await tx
+            .update(order)
+            .set({ receivedAt: inv.order.receivedAt ?? new Date() })
+            .where(eq(order.id, inv.orderId));
+    }
+
+    return { invoiceId: inv.id, orderId: inv.orderId, allReceived };
 }

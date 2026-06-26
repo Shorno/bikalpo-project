@@ -70,6 +70,21 @@ const statusConfig: Record<
     dotClass: "bg-indigo-500",
     pillClass: "text-indigo-700 bg-indigo-50 border-indigo-200",
   },
+  ready_for_dispatch: {
+    label: "Ready for Dispatch",
+    dotClass: "bg-violet-500",
+    pillClass: "text-violet-700 bg-violet-50 border-violet-200",
+  },
+  partially_invoiced: {
+    label: "Partially Invoiced",
+    dotClass: "bg-amber-500",
+    pillClass: "text-amber-700 bg-amber-50 border-amber-200",
+  },
+  invoiced: {
+    label: "Invoiced",
+    dotClass: "bg-sky-500",
+    pillClass: "text-sky-700 bg-sky-50 border-sky-200",
+  },
   delivered: {
     label: "Delivered",
     dotClass: "bg-emerald-500",
@@ -80,11 +95,39 @@ const statusConfig: Record<
     dotClass: "bg-rose-500",
     pillClass: "text-rose-700 bg-rose-50 border-rose-200",
   },
+  received: {
+    label: "Received",
+    dotClass: "bg-emerald-500",
+    pillClass: "text-emerald-700 bg-emerald-50 border-emerald-200",
+  },
+  awaiting_receive: {
+    label: "Awaiting Receive",
+    dotClass: "bg-amber-500",
+    pillClass: "text-amber-700 bg-amber-50 border-amber-200",
+  },
+  in_delivery: {
+    label: "In Delivery",
+    dotClass: "bg-sky-500",
+    pillClass: "text-sky-700 bg-sky-50 border-sky-200",
+  },
+  partially_delivered: {
+    label: "Partially Delivered",
+    dotClass: "bg-indigo-500",
+    pillClass: "text-indigo-700 bg-indigo-50 border-indigo-200",
+  },
+  awaiting_dispatch: {
+    label: "Awaiting Dispatch",
+    dotClass: "bg-violet-500",
+    pillClass: "text-violet-700 bg-violet-50 border-violet-200",
+  },
 };
 
 type OrderStatus =
   | "pending"
   | "confirmed"
+  | "ready_for_dispatch"
+  | "partially_invoiced"
+  | "invoiced"
   | "processing"
   | "delivered"
   | "cancelled";
@@ -225,14 +268,19 @@ const columns = [
   columnHelper.accessor("status", {
     header: "Status",
     cell: (info) => {
-      const status = info.getValue();
-      const config = statusConfig[status] || statusConfig.pending;
+      const order = info.row.original as {
+        status: string;
+        displayStatus?: { key: string; label: string };
+      };
+      const statusKey = order.displayStatus?.key ?? order.status;
+      const statusLabel = order.displayStatus?.label;
+      const config = statusConfig[statusKey] || statusConfig.pending;
       return (
         <span
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full border ${config.pillClass}`}
         >
           <span className={`w-1.5 h-1.5 rounded-full ${config.dotClass}`} />
-          {config.label}
+          {statusLabel ?? config.label}
         </span>
       );
     },
@@ -792,6 +840,9 @@ export default function SupplierPurchasesPage() {
                       <SelectItem value="all">All Statuses</SelectItem>
                       <SelectItem value="pending">Pending</SelectItem>
                       <SelectItem value="confirmed">Confirmed</SelectItem>
+                      <SelectItem value="ready_for_dispatch">Ready for Dispatch</SelectItem>
+                      <SelectItem value="partially_invoiced">Partially Invoiced</SelectItem>
+                      <SelectItem value="invoiced">Invoiced</SelectItem>
                       <SelectItem value="processing">Processing</SelectItem>
                       <SelectItem value="delivered">Delivered</SelectItem>
                       <SelectItem value="cancelled">Cancelled</SelectItem>

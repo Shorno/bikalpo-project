@@ -7,6 +7,8 @@ import {
   Ban,
   CheckCircle2,
   Clock,
+  Copy,
+  KeyRound,
   Loader2,
   Package,
   PackageCheck,
@@ -45,6 +47,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { orpc } from "@/utils/orpc";
+import {
+  OrderTimeline,
+  ShipmentFlowStepper,
+} from "../_components/purchase-flow-steppers";
 import { PurchaseDetailPageSkeleton } from "../_components/purchases-skeletons";
 
 const statusConfig: Record<
@@ -66,6 +72,21 @@ const statusConfig: Record<
     icon: <Truck className="h-3.5 w-3.5" />,
     className: "text-indigo-700 bg-indigo-50 border-indigo-200",
   },
+  ready_for_dispatch: {
+    label: "Ready for Dispatch",
+    icon: <Package className="h-3.5 w-3.5" />,
+    className: "text-violet-700 bg-violet-50 border-violet-200",
+  },
+  partially_invoiced: {
+    label: "Partially Invoiced",
+    icon: <Package className="h-3.5 w-3.5" />,
+    className: "text-amber-700 bg-amber-50 border-amber-200",
+  },
+  invoiced: {
+    label: "Invoiced",
+    icon: <PackageCheck className="h-3.5 w-3.5" />,
+    className: "text-sky-700 bg-sky-50 border-sky-200",
+  },
   delivered: {
     label: "Delivered",
     icon: <PackageCheck className="h-3.5 w-3.5" />,
@@ -76,10 +97,42 @@ const statusConfig: Record<
     icon: <XCircle className="h-3.5 w-3.5" />,
     className: "text-rose-700 bg-rose-50 border-rose-200",
   },
+  received: {
+    label: "Received",
+    icon: <PackageCheck className="h-3.5 w-3.5" />,
+    className: "text-emerald-700 bg-emerald-50 border-emerald-200",
+  },
+  awaiting_receive: {
+    label: "Awaiting Receive",
+    icon: <PackageCheck className="h-3.5 w-3.5" />,
+    className: "text-amber-700 bg-amber-50 border-amber-200",
+  },
+  in_delivery: {
+    label: "In Delivery",
+    icon: <Truck className="h-3.5 w-3.5" />,
+    className: "text-sky-700 bg-sky-50 border-sky-200",
+  },
+  partially_delivered: {
+    label: "Partially Delivered",
+    icon: <Truck className="h-3.5 w-3.5" />,
+    className: "text-indigo-700 bg-indigo-50 border-indigo-200",
+  },
+  awaiting_dispatch: {
+    label: "Awaiting Dispatch",
+    icon: <Package className="h-3.5 w-3.5" />,
+    className: "text-violet-700 bg-violet-50 border-violet-200",
+  },
 };
 
 function formatMoney(value: unknown) {
   return `৳${Number(value || 0).toLocaleString("en-BD")}`;
+}
+
+function copyToClipboard(text: string) {
+  navigator.clipboard.writeText(text).then(
+    () => toast.success("OTP copied"),
+    () => toast.error("Failed to copy"),
+  );
 }
 
 export default function WarehouseSupplierOrderDetailPage() {
@@ -89,11 +142,16 @@ export default function WarehouseSupplierOrderDetailPage() {
   const orderId = Number(params.id);
   const [showReceiveDialog, setShowReceiveDialog] = useState(false);
   const [receivedItems, setReceivedItems] = useState<Record<number, number>>({});
+  const [shipmentReceiveId, setShipmentReceiveId] = useState<number | null>(null);
+  const [shipmentReceivedItems, setShipmentReceivedItems] = useState<
+    Record<number, number>
+  >({});
 
   const detailQuery = useQuery({
     queryKey: ["warehouse", "getMyOrderDetail", orderId],
     queryFn: () => orpc.warehouse.getMyOrderDetail.call({ orderId }),
     enabled: Number.isFinite(orderId) && orderId > 0,
+    refetchInterval: 30_000,
   });
 
   const invalidate = () => {
@@ -146,6 +204,27 @@ export default function WarehouseSupplierOrderDetailPage() {
     onError: (error: any) => toast.error(error.message || "Failed to receive order"),
   });
 
+  const receiveShipmentMutation = useMutation({
+    mutationFn: (invoiceId: number) =>
+      orpc.warehouse.receiveWarehouseSupplierShipment.call({
+        invoiceId,
+        receivedItems: Object.entries(shipmentReceivedItems).map(
+          ([invoiceItemId, receivedQty]) => ({
+            invoiceItemId: Number(invoiceItemId),
+            receivedQty,
+          }),
+        ),
+      }),
+    onSuccess: (result) => {
+      toast.success(result.message || "Shipment received");
+      setShipmentReceiveId(null);
+      setShipmentReceivedItems({});
+      invalidate();
+    },
+    onError: (error: any) =>
+      toast.error(error.message || "Failed to receive shipment"),
+  });
+
   if (detailQuery.isLoading) {
     return <PurchaseDetailPageSkeleton />;
   }
@@ -167,14 +246,33 @@ export default function WarehouseSupplierOrderDetailPage() {
     );
   }
 
-  const { order, timeline, hasModifications, delivery } = detailQuery.data;
-  const config = statusConfig[order.status] || statusConfig.pending;
+  const {
+    order,
+    orderTimeline,
+    displayStatus,
+    hasModifications,
+    delivery,
+    invoiceProgress,
+    shipments,
+  } = detailQuery.data;
+  const config =
+    statusConfig[displayStatus?.key ?? order.status] || statusConfig.pending;
+  const statusLabel = displayStatus?.label ?? config.label;
   const isCancellable = ["pending", "confirmed"].includes(order.status);
+  const hasPendingShipmentReceive = (shipments ?? []).some((s) => s.canReceive);
   const isReceivable =
-    ["processing", "delivered"].includes(order.status) && !order.receivedAt;
+    order.status === "delivered" && !order.receivedAt && !hasPendingShipmentReceive;
   const hasWarehouseReview =
     !!order.confirmedAt ||
-    ["confirmed", "processing", "delivered"].includes(order.status);
+    [
+      "confirmed",
+      "ready_for_dispatch",
+      "partially_invoiced",
+      "invoiced",
+      "processing",
+      "delivered",
+    ].includes(order.status);
+  const hasFulfillmentColumns = (shipments ?? []).length > 0;
 
   const initReceiveItems = () => {
     const nextItems: Record<number, number> = {};
@@ -185,10 +283,32 @@ export default function WarehouseSupplierOrderDetailPage() {
     setShowReceiveDialog(true);
   };
 
-  const currentTimelineIdx = timeline.findIndex((step: any) => !step.completed);
+  const initShipmentReceive = (shipment: (typeof shipments)[number]) => {
+    const nextItems: Record<number, number> = {};
+    for (const item of shipment.items) {
+      nextItems[item.id] = item.quantity;
+    }
+    setShipmentReceivedItems(nextItems);
+    setShipmentReceiveId(shipment.invoiceId);
+  };
+
+  const invoicedPercent =
+    invoiceProgress && invoiceProgress.approvedQty > 0
+      ? Math.round((invoiceProgress.invoicedQty / invoiceProgress.approvedQty) * 100)
+      : 0;
+  const shipmentTotal = (shipments ?? []).length;
+  const shipmentsReceived = (shipments ?? []).filter((s) => s.receivedAt).length;
+  const activeShipmentDelivery = (shipments ?? []).find(
+    (s) =>
+      s.delivery?.riderName &&
+      (s.delivery.groupStatus === "out_for_delivery" || s.canReceive),
+  )?.delivery ?? (shipments ?? []).findLast((s) => s.delivery?.riderName)?.delivery;
+  const summaryRiderName = delivery?.riderName ?? activeShipmentDelivery?.riderName ?? null;
+  const summaryRiderPhone = delivery?.riderPhone ?? activeShipmentDelivery?.riderPhone ?? null;
+  const summaryTrackingId = delivery?.trackingId ?? null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-10">
+    <div className="mx-auto w-full max-w-[88rem] space-y-5 pb-10">
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Link href="/warehouse/dashboard" className="hover:text-foreground transition-colors">
@@ -217,7 +337,7 @@ export default function WarehouseSupplierOrderDetailPage() {
               </h1>
               <Badge variant="outline" className={`gap-1 text-xs ${config.className}`}>
                 {config.icon}
-                {config.label}
+                {statusLabel}
               </Badge>
               {order.requiresBuyerAcceptance ? (
                 <Badge
@@ -313,197 +433,316 @@ export default function WarehouseSupplierOrderDetailPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <div className="space-y-6">
-          <Card className="ring-border/60">
-            <CardHeader className="border-b border-border pb-4">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(17.5rem,20rem)] xl:items-start">
+        <div className="space-y-5 min-w-0">
+          {invoiceProgress ? (
+            <div className="rounded-lg border border-border bg-card px-4 py-3.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Fulfillment
+                </p>
+                {shipmentTotal > 0 ? (
+                  <p className="text-xs text-muted-foreground font-mono tabular-nums">
+                    {shipmentsReceived}/{shipmentTotal} shipments received
+                  </p>
+                ) : null}
+              </div>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+                <span>
+                  <span className="font-mono tabular-nums font-semibold text-foreground">
+                    {invoiceProgress.invoicedQty}
+                  </span>
+                  <span className="text-muted-foreground">
+                    /{invoiceProgress.approvedQty} invoiced
+                  </span>
+                </span>
+                <span className="text-muted-foreground hidden sm:inline">·</span>
+                <span>
+                  <span className="font-mono tabular-nums font-semibold text-foreground">
+                    {invoiceProgress.deliveredQty ?? 0}
+                  </span>
+                  <span className="text-muted-foreground"> delivered</span>
+                </span>
+                <span className="text-muted-foreground hidden sm:inline">·</span>
+                <span>
+                  <span className="font-mono tabular-nums font-semibold text-foreground">
+                    {invoiceProgress.remainingQty}
+                  </span>
+                  <span className="text-muted-foreground"> remaining</span>
+                </span>
+              </div>
+              <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
+                  style={{ width: `${invoicedPercent}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {(shipments ?? []).length > 0 ? (
+            <Card className="border-border">
+              <CardHeader className="border-b border-border px-4 py-3">
+                <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Shipments
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 divide-y divide-border">
+                {(shipments ?? []).map((shipment) => {
+                  const isSplit = shipment.invoiceType === "split";
+                  const isSelfPickup = shipment.fulfillmentMode === "self_pickup";
+                  const currentStep = shipment.flow?.find((s) => s.state === "current");
+                  return (
+                    <div key={shipment.invoiceId} className="px-4 py-3.5 space-y-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-mono text-sm font-semibold tabular-nums">
+                              {shipment.invoiceNumber}
+                            </p>
+                            {isSplit && shipment.splitSequence ? (
+                              <Badge
+                                variant="outline"
+                                className="text-xs text-muted-foreground"
+                              >
+                                Part {shipment.splitSequence}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {shipment.items.length} item
+                            {shipment.items.length !== 1 ? "s" : ""} ·{" "}
+                            {formatMoney(shipment.grandTotal)}
+                            {currentStep ? (
+                              <span className="text-foreground"> · {currentStep.label}</span>
+                            ) : null}
+                          </p>
+                        </div>
+                        {shipment.canReceive ? (
+                          <Button
+                            size="sm"
+                            className="h-8 shrink-0"
+                            onClick={() => initShipmentReceive(shipment)}
+                          >
+                            <PackageCheck className="mr-1.5 h-3.5 w-3.5" />
+                            Receive
+                          </Button>
+                        ) : null}
+                      </div>
+
+                      {shipment.flow?.length ? (
+                        <div className="rounded-md border border-border/80 bg-muted/15 px-2 py-2.5">
+                          <ShipmentFlowStepper steps={shipment.flow} />
+                        </div>
+                      ) : null}
+
+                      {shipment.otp ? (
+                        <div
+                          className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${
+                            isSelfPickup
+                              ? "border-amber-200 bg-amber-50/80"
+                              : "border-emerald-200 bg-emerald-50/80"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <KeyRound
+                              className={`h-4 w-4 shrink-0 ${
+                                isSelfPickup ? "text-amber-600" : "text-emerald-600"
+                              }`}
+                            />
+                            <p
+                              className={`text-xs ${
+                                isSelfPickup ? "text-amber-800" : "text-emerald-800"
+                              }`}
+                            >
+                              {isSelfPickup ? "Pickup OTP" : "Delivery OTP"} — share with
+                              rider when goods arrive
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className={`text-xl font-bold tracking-widest font-mono ${
+                                isSelfPickup ? "text-amber-700" : "text-emerald-700"
+                              }`}
+                            >
+                              {shipment.otp}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => copyToClipboard(shipment.otp!)}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card className="border-border">
+            <CardHeader className="border-b border-border px-4 py-3">
               <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Line Items
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border">
-                      <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Product
-                      </TableHead>
-                      <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Requested
-                      </TableHead>
-                      <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        {hasWarehouseReview ? "Approved" : "Approval"}
-                      </TableHead>
-                      <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Unit Price
-                      </TableHead>
-                      <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Total
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {order.items?.map((item: any) => {
-                      const approvedQty = item.modifiedQty ?? item.quantity;
-                      const unitPrice = Number(item.modifiedUnitPrice ?? item.unitPrice);
-                      const changed =
-                        item.modifiedQty !== null && item.modifiedQty !== item.quantity;
-                      const displayQty = hasWarehouseReview ? approvedQty : item.quantity;
-                      return (
-                        <TableRow key={item.id} className="border-b border-border hover:bg-muted/30">
-                          <TableCell className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
-                                {item.product?.image ? (
-                                  <Image
-                                    src={item.product.image}
-                                    alt={item.productName}
-                                    width={40}
-                                    height={40}
-                                    unoptimized
-                                    className="h-full w-full object-cover"
-                                  />
-                                ) : (
-                                  <Package className="h-5 w-5 text-muted-foreground/50" />
-                                )}
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-foreground">
-                                  {item.productName}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {item.productSize || item.variant?.unitLabel || "Unit"}
-                                </p>
-                              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border">
+                    <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Product
+                    </TableHead>
+                    <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Requested
+                    </TableHead>
+                    <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {hasWarehouseReview ? "Approved" : "Approval"}
+                    </TableHead>
+                    {hasFulfillmentColumns ? (
+                      <>
+                        <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Invoiced
+                        </TableHead>
+                        <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Delivered
+                        </TableHead>
+                        <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Remaining
+                        </TableHead>
+                      </>
+                    ) : null}
+                    <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Unit Price
+                    </TableHead>
+                    <TableHead className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Total
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {order.items?.map((item: any) => {
+                    const approvedQty = item.modifiedQty ?? item.quantity;
+                    const unitPrice = Number(item.modifiedUnitPrice ?? item.unitPrice);
+                    const changed =
+                      item.modifiedQty !== null && item.modifiedQty !== item.quantity;
+                    const displayQty = hasWarehouseReview ? approvedQty : item.quantity;
+                    return (
+                      <TableRow key={item.id} className="border-b border-border hover:bg-muted/30">
+                        <TableCell className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
+                              {item.product?.image ? (
+                                <Image
+                                  src={item.product.image}
+                                  alt={item.productName}
+                                  width={40}
+                                  height={40}
+                                  unoptimized
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <Package className="h-5 w-5 text-muted-foreground/50" />
+                              )}
                             </div>
-                          </TableCell>
-                          <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-foreground">
-                            {item.quantity}
-                          </TableCell>
-                          <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums">
-                            {hasWarehouseReview ? (
-                              <span className={changed ? "font-semibold text-amber-700" : "text-foreground"}>
-                                {approvedQty}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">Pending</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-foreground">
-                            {formatMoney(unitPrice)}
-                          </TableCell>
-                          <TableCell className="px-4 py-3 text-right text-sm font-semibold font-mono tabular-nums text-foreground">
-                            {formatMoney(displayQty * unitPrice)}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground">
+                                {item.productName}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.productSize || item.variant?.unitLabel || "Unit"}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-foreground">
+                          {item.quantity}
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums">
+                          {hasWarehouseReview ? (
+                            <span className={changed ? "font-semibold text-amber-700" : "text-foreground"}>
+                              {approvedQty}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Pending</span>
+                          )}
+                        </TableCell>
+                        {hasFulfillmentColumns ? (
+                          <>
+                            <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-foreground">
+                              {item.invoicedQty ?? 0}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-foreground">
+                              {item.deliveredQty ?? 0}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-muted-foreground">
+                              {item.remainingQty ?? 0}
+                            </TableCell>
+                          </>
+                        ) : null}
+                        <TableCell className="px-4 py-3 text-right text-sm font-mono tabular-nums text-foreground">
+                          {formatMoney(unitPrice)}
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-right text-sm font-semibold font-mono tabular-nums text-foreground">
+                          {formatMoney(displayQty * unitPrice)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
-
-          {delivery?.trackingId || delivery?.riderName || delivery?.riderPhone ? (
-            <Card className="ring-border/60">
-              <CardHeader className="border-b border-border pb-4">
-                <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Delivery
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4 pt-4 text-sm sm:grid-cols-3">
-                <Info label="Tracking ID" value={delivery.trackingId || "—"} mono />
-                <Info label="Rider" value={delivery.riderName || "—"} />
-                <Info label="Rider Phone" value={delivery.riderPhone || "—"} mono />
-              </CardContent>
-            </Card>
-          ) : null}
         </div>
 
-        <div className="space-y-6">
-          <Card className="ring-border/60">
-            <CardHeader className="border-b border-border pb-4">
+        <aside className="space-y-5 xl:sticky xl:top-6">
+          <Card className="border-border">
+            <CardHeader className="border-b border-border px-4 py-3">
               <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Order Summary
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 pt-4 text-sm">
+            <CardContent className="space-y-3 px-4 py-4 text-sm">
               <Info label="Supplier" value={order.supplierWarehouseName} />
               <Info
                 label="Payment"
                 value={String(order.paymentMethod).replaceAll("_", " ")}
               />
-              <Info label="Status" value={config.label} />
+              <Info label="Status" value={statusLabel} />
+              {summaryRiderName ? <Info label="Rider" value={summaryRiderName} /> : null}
+              {summaryRiderPhone ? (
+                <Info label="Rider phone" value={summaryRiderPhone} mono />
+              ) : null}
+              {summaryTrackingId ? (
+                <Info label="Tracking ID" value={summaryTrackingId} mono />
+              ) : null}
               <div className="border-t border-border pt-3">
                 <Info label="Total" value={formatMoney(order.total)} strong mono />
               </div>
               {hasModifications ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  Some quantities were changed by the supplier.
-                </div>
+                <p className="text-xs text-amber-800 border border-amber-200 bg-amber-50 rounded-md px-2.5 py-2">
+                  Supplier adjusted some line quantities.
+                </p>
               ) : null}
             </CardContent>
           </Card>
 
-          <Card className="ring-border/60">
-            <CardHeader className="border-b border-border pb-4">
+          <Card className="border-border">
+            <CardHeader className="border-b border-border px-4 py-3">
               <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Timeline
+                Order Progress
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 pt-4">
-              {timeline.map((step: any, idx: number) => {
-                const isDone = step.completed;
-                const isCurrent = !isDone && idx === currentTimelineIdx;
-                return (
-                  <div key={step.step} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div
-                        className={`flex h-3 w-3 shrink-0 rounded-full border-2 ${
-                          isDone
-                            ? "border-emerald-500 bg-emerald-500"
-                            : isCurrent
-                              ? "border-amber-500 bg-amber-500"
-                              : "border-border bg-card"
-                        }`}
-                      />
-                      {idx < timeline.length - 1 ? (
-                        <div
-                          className={`mt-1 w-px flex-1 min-h-4 ${
-                            isDone ? "bg-emerald-300" : "bg-border"
-                          }`}
-                        />
-                      ) : null}
-                    </div>
-                    <div className="pb-1">
-                      <p
-                        className={`text-sm font-medium ${
-                          isDone
-                            ? "text-foreground"
-                            : isCurrent
-                              ? "text-amber-700"
-                              : "text-muted-foreground"
-                        }`}
-                      >
-                        {step.step}
-                      </p>
-                      <p className="text-xs text-muted-foreground tabular-nums">
-                        {step.date
-                          ? new Date(step.date).toLocaleDateString("en-BD", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            })
-                          : "Pending"}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+            <CardContent className="px-4 pt-4 pb-2">
+              <OrderTimeline steps={orderTimeline ?? []} />
             </CardContent>
           </Card>
-        </div>
+        </aside>
       </div>
 
       <Dialog open={showReceiveDialog} onOpenChange={setShowReceiveDialog}>
@@ -561,6 +800,86 @@ export default function WarehouseSupplierOrderDetailPage() {
                 <PackageCheck className="mr-2 h-4 w-4" />
               )}
               Confirm Receipt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={shipmentReceiveId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShipmentReceiveId(null);
+            setShipmentReceivedItems({});
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Receive Shipment</DialogTitle>
+            <DialogDescription>
+              Confirm quantities for this shipment. Stock will be added to your
+              warehouse inventory.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {(shipments ?? [])
+              .find((s) => s.invoiceId === shipmentReceiveId)
+              ?.items.map((item) => (
+                <div
+                  key={item.id}
+                  className="grid grid-cols-[1fr_110px] items-center gap-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {item.productName}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Shipped{" "}
+                      <span className="font-mono tabular-nums">
+                        {item.quantity}
+                      </span>
+                    </p>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="font-mono tabular-nums"
+                    value={shipmentReceivedItems[item.id] ?? item.quantity}
+                    onChange={(event) =>
+                      setShipmentReceivedItems((current) => ({
+                        ...current,
+                        [item.id]: Math.max(0, Number(event.target.value) || 0),
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShipmentReceiveId(null);
+                setShipmentReceivedItems({});
+              }}
+              disabled={receiveShipmentMutation.isPending}
+            >
+              Close
+            </Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-500/90 text-white"
+              onClick={() => {
+                if (shipmentReceiveId) receiveShipmentMutation.mutate(shipmentReceiveId);
+              }}
+              disabled={receiveShipmentMutation.isPending || !shipmentReceiveId}
+            >
+              {receiveShipmentMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <PackageCheck className="mr-2 h-4 w-4" />
+              )}
+              Confirm Shipment Receipt
             </Button>
           </DialogFooter>
         </DialogContent>
