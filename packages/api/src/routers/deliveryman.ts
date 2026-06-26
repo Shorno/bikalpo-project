@@ -289,6 +289,7 @@ export const deliverymanRouter = {
                                             shopName: true,
                                         },
                                     },
+                                    items: true,
                                     order: {
                                         columns: {
                                             id: true,

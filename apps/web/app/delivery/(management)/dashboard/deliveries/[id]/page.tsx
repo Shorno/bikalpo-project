@@ -10,6 +10,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { DELIVERY_PORTAL_BASE } from "@/lib/delivery-routing";
 import { client } from "@/utils/orpc";
 
+export const dynamic = "force-dynamic";
+
 function StatusBadge({ status }: { status: string }) {
   const variant = status === "out_for_delivery" ? "default" : "secondary";
   return (
