@@ -737,6 +737,40 @@ export const deliverymanRouter = {
         }),
 
     /**
+     * Get delivery man's assigned warehouse details
+     */
+    getAssignedWarehouse: deliverymanProcedure
+        .route({
+            method: "GET",
+            path: "/assigned-warehouse",
+            tags: ["Deliveryman"],
+            summary: "Get deliveryman's assigned warehouse details",
+        })
+        .handler(async ({ context }) => {
+            const warehouseId = getSessionWarehouseId(context);
+            if (!warehouseId) {
+                return null;
+            }
+
+            const warehouseUser = await db.query.user.findFirst({
+                where: eq(user.id, warehouseId),
+            });
+
+            if (!warehouseUser) {
+                return null;
+            }
+
+            return {
+                id: warehouseUser.id,
+                name: warehouseUser.name,
+                warehouseName: warehouseUser.warehouseName,
+                warehouseAddress: warehouseUser.warehouseAddress,
+                phoneNumber: warehouseUser.phoneNumber,
+                email: warehouseUser.email,
+            };
+        }),
+
+    /**
      * Get unassigned invoices (admin) for creating delivery groups
      */
     getUnassignedInvoices: warehouseOrAdminProcedure
@@ -1301,7 +1335,7 @@ export const deliverymanRouter = {
         .input(z.object({
             groupId: z.number(),
             deliverymanId: z.string(),
-            vehicleType: z.string().optional(),
+            vehicleType: z.enum(["bike", "car", "van", "truck"]).optional(),
             expectedDeliveryAt: z.string().optional(),
         }))
         .handler(async ({ input, context }) => {

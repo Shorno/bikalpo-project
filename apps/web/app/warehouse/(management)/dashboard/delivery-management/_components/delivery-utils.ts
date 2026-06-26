@@ -38,6 +38,7 @@ export type DeliveryInvoiceRow = {
   order: {
     id: number;
     orderNumber: string;
+    shippingName: string | null;
     shippingArea: string | null;
     shippingCity: string | null;
     shippingAddress: string | null;
