@@ -7,7 +7,7 @@ import { DeliveryExecution } from "@/components/features/delivery/delivery-execu
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DELIVERY_BASE } from "@/lib/routes";
+import { DELIVERY_PORTAL_BASE } from "@/lib/delivery-routing";
 import { client } from "@/utils/orpc";
 
 function StatusBadge({ status }: { status: string }) {
@@ -90,7 +90,7 @@ export default async function DeliveryRunPage({
     <div className="flex flex-col gap-3 sm:gap-6">
       {/* Compact Header */}
       <div className="flex items-center gap-2 sm:gap-4">
-        <Link href={`${DELIVERY_BASE}/deliveries`}>
+        <Link href={`${DELIVERY_PORTAL_BASE}/deliveries`}>
           <Button
             variant="ghost"
             size="icon"

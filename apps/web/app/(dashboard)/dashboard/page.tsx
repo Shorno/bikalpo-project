@@ -4,12 +4,8 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
-import {
-  ADMIN_BASE,
-  DELIVERY_BASE,
-  SALES_BASE,
-  WAREHOUSE_BASE,
-} from "@/lib/routes";
+import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
+import { ADMIN_BASE, SALES_BASE } from "@/lib/routes";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -33,12 +29,18 @@ export default function DashboardPage() {
         router.replace(SALES_BASE);
         break;
       case "deliveryman":
-        router.replace(DELIVERY_BASE);
+        if ((session.user as { warehouseId?: string | null }).warehouseId) {
+          window.location.href = `${getDeliverySubdomainUrl()}/dashboard`;
+          return;
+        }
+        router.replace("/deliveryman/dashboard");
         break;
       case "shop_owner": {
         // Update role cookie so proxy allows shop subdomain access
         document.cookie = `user-role=shop_owner;path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
-        const shopUrl = process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL || "http://shop.bikalpo.localhost:3001";
+        const shopUrl =
+          process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
+          "http://shop.bikalpo.localhost:3001";
         window.location.href = `${shopUrl}/dashboard`;
         return;
       }

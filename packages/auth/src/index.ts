@@ -102,6 +102,10 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      warehouseId: {
+        type: "string",
+        required: false,
+      },
       // === Warehouse fields ===
       warehouseName: {
         type: "string",
@@ -151,7 +155,13 @@ export const auth = betterAuth({
     env.BETTER_AUTH_URL,
     "mybettertapp://",
     ...(env.NODE_ENV === "development"
-      ? ["exp://", "exp://**", "exp://192.168.*.*:*/**", "http://localhost:8081"]
+      ? [
+          "exp://",
+          "exp://**",
+          "exp://192.168.*.*:*/**",
+          "http://localhost:8081",
+          "http://delivery.bikalpo.localhost:3001",
+        ]
       : []),
   ].filter(Boolean) as string[],
   hooks: {

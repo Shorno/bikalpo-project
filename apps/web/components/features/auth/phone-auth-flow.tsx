@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
 import { client } from "@/utils/orpc";
 
 type AuthStep = "phone" | "otp" | "name" | "done";
@@ -48,16 +49,19 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
           setOtpAutoFilling(true);
           const digits = result.code.split("");
           digits.forEach((digit: string, index: number) => {
-            setTimeout(() => {
-              setOtpValues((prev) => {
-                const newValues = [...prev];
-                newValues[index] = digit;
-                return newValues;
-              });
-              if (index === digits.length - 1) {
-                setOtpAutoFilling(false);
-              }
-            }, 150 * (index + 1) + 600);
+            setTimeout(
+              () => {
+                setOtpValues((prev) => {
+                  const newValues = [...prev];
+                  newValues[index] = digit;
+                  return newValues;
+                });
+                if (index === digits.length - 1) {
+                  setOtpAutoFilling(false);
+                }
+              },
+              150 * (index + 1) + 600,
+            );
           });
         }
       } catch {
@@ -107,24 +111,32 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
         return;
       }
 
-      const user = result.data?.user as { name?: string; role?: string } | undefined;
+      const user = result.data?.user as
+        | { name?: string; role?: string; warehouseId?: string | null }
+        | undefined;
 
       // Fetch full session to reliably get the user role
       // (verify response may not include custom fields like role)
       let role = user?.role;
       let userName = user?.name;
+      let warehouseId = user?.warehouseId;
       if (!role) {
         try {
           const session = await authClient.getSession();
           const sessionUser = session.data?.user as any;
           role = sessionUser?.role;
+          warehouseId = sessionUser?.warehouseId;
           if (!userName && sessionUser?.name) userName = sessionUser.name;
-        } catch { /* fallback */ }
+        } catch {
+          /* fallback */
+        }
       }
 
       // Also try reading role from cookie (server sets it on sign-in hooks)
       if (!role) {
-        const roleCookie = document.cookie.split("; ").find(c => c.startsWith("user-role="));
+        const roleCookie = document.cookie
+          .split("; ")
+          .find((c) => c.startsWith("user-role="));
         role = roleCookie?.split("=")[1];
       }
 
@@ -137,13 +149,21 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
       if (role && role !== "customer" && role !== "consumer") {
         setStep("done");
         const redirectUrl =
-          role === "deliveryman" ? "http://bikalpo.localhost:3001/deliveryman/dashboard"
-          : role === "warehouse" ? "http://warehouse.bikalpo.localhost:3001/dashboard"
-          : role === "shop_owner" ? "http://shop.bikalpo.localhost:3001/dashboard"
-          : role === "admin" || role === "salesman" ? "/dashboard"
-          : null;
+          role === "deliveryman" && warehouseId
+            ? `${getDeliverySubdomainUrl()}/dashboard`
+            : role === "deliveryman"
+              ? "http://bikalpo.localhost:3001/deliveryman/dashboard"
+              : role === "warehouse"
+                ? "http://warehouse.bikalpo.localhost:3001/dashboard"
+                : role === "shop_owner"
+                  ? "http://shop.bikalpo.localhost:3001/dashboard"
+                  : role === "admin" || role === "salesman"
+                    ? "/dashboard"
+                    : null;
         if (redirectUrl) {
-          setTimeout(() => { window.location.href = redirectUrl; }, 1500);
+          setTimeout(() => {
+            window.location.href = redirectUrl;
+          }, 1500);
           return;
         }
       }
@@ -184,7 +204,10 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
     "w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-white text-[15px] outline-none focus:border-[#1E62C3] focus:ring-2 focus:ring-[#1E62C3]/10 transition-all placeholder:text-gray-300";
 
   return (
-    <div style={{ minHeight: "520px" }} className="flex flex-col justify-center">
+    <div
+      style={{ minHeight: "520px" }}
+      className="flex flex-col justify-center"
+    >
       {/* ===== STEP: PHONE ===== */}
       {step === "phone" && (
         <div>
@@ -246,14 +269,22 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
           {/* Social login buttons */}
           <div className="space-y-3 mb-6">
             <SocialButton icon={<GoogleIcon />} label="Continue with Google" />
-            <SocialButton icon={<FacebookIcon />} label="Continue with Facebook" />
+            <SocialButton
+              icon={<FacebookIcon />}
+              label="Continue with Facebook"
+            />
           </div>
 
           <p className="text-xs text-gray-400 leading-relaxed">
             By signing up, you agree to our{" "}
-            <span className="text-[#1E62C3] cursor-pointer hover:underline">Terms and Conditions</span>{" "}
+            <span className="text-[#1E62C3] cursor-pointer hover:underline">
+              Terms and Conditions
+            </span>{" "}
             and{" "}
-            <span className="text-[#1E62C3] cursor-pointer hover:underline">Privacy Policy</span>.
+            <span className="text-[#1E62C3] cursor-pointer hover:underline">
+              Privacy Policy
+            </span>
+            .
           </p>
         </div>
       )}
@@ -269,7 +300,16 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
             }}
             className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-6"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="15 18 9 12 15 6" />
             </svg>
             Back
@@ -307,7 +347,9 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
 
           <button
             onClick={handleVerify}
-            disabled={otpValues.join("").length !== 6 || isVerifying || otpAutoFilling}
+            disabled={
+              otpValues.join("").length !== 6 || isVerifying || otpAutoFilling
+            }
             className={`${primaryBtnClass} mb-5`}
             style={primaryBtnStyle}
           >
@@ -339,7 +381,15 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
       {step === "name" && (
         <div>
           <div className="inline-flex items-center gap-2 bg-green-50 text-green-700 rounded-full px-4 py-1.5 mb-6 text-xs font-semibold">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
             Phone verified
@@ -364,6 +414,7 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSaveName();
               }}
+              // biome-ignore lint/a11y/noAutofocus: Existing auth flow intentionally focuses the name field after OTP verification.
               autoFocus
               className={inputClass}
             />
@@ -393,7 +444,16 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
             className="inline-flex items-center justify-center w-20 h-20 bg-green-50 rounded-full mb-5"
             style={{ animation: "authScaleIn 0.4s ease-out" }}
           >
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="40"
+              height="40"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#16a34a"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
@@ -407,7 +467,15 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
       {/* Error */}
       {error && (
         <div className="mt-4 flex items-center gap-2 bg-red-50 text-red-600 rounded-xl px-4 py-3 text-sm font-medium">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
             <circle cx="12" cy="12" r="10" />
             <line x1="15" y1="9" x2="9" y2="15" />
             <line x1="9" y1="9" x2="15" y2="15" />
@@ -422,10 +490,18 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
 /* ── Shared small components ── */
 
 function Spinner() {
-  return <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />;
+  return (
+    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+  );
 }
 
-function SocialButton({ icon, label }: { icon: React.ReactNode; label: string }) {
+function SocialButton({
+  icon,
+  label,
+}: {
+  icon: React.ReactNode;
+  label: string;
+}) {
   return (
     <button
       disabled
@@ -440,10 +516,22 @@ function SocialButton({ icon, label }: { icon: React.ReactNode; label: string })
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+      />
     </svg>
   );
 }

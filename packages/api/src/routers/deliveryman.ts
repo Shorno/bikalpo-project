@@ -25,6 +25,14 @@ const deliverymanIdSchema = z.object({
 
 console.log("--- LOADING DELIVERYMAN ROUTER WITH FIX ---");
 
+function getSessionWarehouseId(context: {
+    session: { user: unknown };
+}) {
+    return (
+        context.session.user as { warehouseId?: string | null }
+    ).warehouseId ?? null;
+}
+
 export const deliverymanRouter = {
     /**
      * Get all deliverymen with stats
@@ -174,10 +182,12 @@ export const deliverymanRouter = {
         })
         .handler(async ({ context }) => {
             try {
+                const warehouseId = getSessionWarehouseId(context);
                 const groups = await db.query.deliveryGroup.findMany({
                     where: and(
                         eq(deliveryGroup.deliverymanId, context.session.user.id),
-                        sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`
+                        sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`,
+                        ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
                     ),
                     with: {
                         invoices: {
@@ -251,10 +261,12 @@ export const deliverymanRouter = {
         })
         .input(z.object({ id: z.number() }))
         .handler(async ({ input, context }) => {
+            const warehouseId = getSessionWarehouseId(context);
             const group = await db.query.deliveryGroup.findFirst({
                 where: and(
                     eq(deliveryGroup.id, input.id),
-                    eq(deliveryGroup.deliverymanId, context.session.user.id)
+                    eq(deliveryGroup.deliverymanId, context.session.user.id),
+                    ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
                 ),
                 with: {
                     deliveryman: {
@@ -336,6 +348,7 @@ export const deliverymanRouter = {
             lng: z.number().optional(),
         }))
         .handler(async ({ input, context }) => {
+            const warehouseId = getSessionWarehouseId(context);
             const group = await db.query.deliveryGroup.findFirst({
                 where: eq(deliveryGroup.id, input.id),
                 with: { invoices: true },
@@ -343,6 +356,7 @@ export const deliverymanRouter = {
 
             if (!group) throw new ORPCError("NOT_FOUND", { message: "Group not found" });
             if (group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
+            if (warehouseId && group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
             if (group.status !== "assigned") throw new ORPCError("BAD_REQUEST", { message: "Trip already started" });
 
             const generateOtp = () => Math.floor(1000 + Math.random() * 9000).toString();
@@ -418,6 +432,7 @@ export const deliverymanRouter = {
             transactionId: z.string().optional(),
         }))
         .handler(async ({ input, context }) => {
+            const warehouseId = getSessionWarehouseId(context);
             const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
                 where: eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
                 with: { group: true, invoice: true },
@@ -425,6 +440,7 @@ export const deliverymanRouter = {
 
             if (!deliveryInv) throw new ORPCError("NOT_FOUND");
             if (deliveryInv.group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
+            if (warehouseId && deliveryInv.group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
             if (deliveryInv.group.status !== "out_for_delivery") throw new ORPCError("BAD_REQUEST", { message: "Trip not started" });
             if (deliveryInv.status !== "pending") throw new ORPCError("BAD_REQUEST", { message: "Already processed" });
             if (deliveryInv.deliveryOtp !== input.deliveryOtp) throw new ORPCError("BAD_REQUEST", { message: "Invalid OTP" });
@@ -510,6 +526,7 @@ export const deliverymanRouter = {
             lng: z.number().optional(),
         }))
         .handler(async ({ input, context }) => {
+            const warehouseId = getSessionWarehouseId(context);
             const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
                 where: eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
                 with: { group: true },
@@ -517,6 +534,7 @@ export const deliverymanRouter = {
 
             if (!deliveryInv) throw new ORPCError("NOT_FOUND");
             if (deliveryInv.group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
+            if (warehouseId && deliveryInv.group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
             if (deliveryInv.group.status !== "out_for_delivery") throw new ORPCError("BAD_REQUEST", { message: "Trip not started" });
             if (deliveryInv.status !== "pending") throw new ORPCError("BAD_REQUEST", { message: "Already processed" });
 
@@ -572,6 +590,7 @@ export const deliverymanRouter = {
             lng: z.number().optional(),
         }))
         .handler(async ({ input, context }) => {
+            const warehouseId = getSessionWarehouseId(context);
             const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
                 where: eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
                 with: { group: true, invoice: true },
@@ -579,6 +598,7 @@ export const deliverymanRouter = {
 
             if (!deliveryInv) throw new ORPCError("NOT_FOUND");
             if (deliveryInv.group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
+            if (warehouseId && deliveryInv.group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
             if (deliveryInv.group.status !== "out_for_delivery") throw new ORPCError("BAD_REQUEST", { message: "Trip not started" });
             if (deliveryInv.status !== "pending") throw new ORPCError("BAD_REQUEST", { message: "Already processed" });
 
@@ -648,8 +668,12 @@ export const deliverymanRouter = {
         })
         .handler(async ({ context }) => {
             const userId = context.session.user.id;
+            const warehouseId = getSessionWarehouseId(context);
             const groups = await db.query.deliveryGroup.findMany({
-                where: eq(deliveryGroup.deliverymanId, userId),
+                where: and(
+                    eq(deliveryGroup.deliverymanId, userId),
+                    ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
+                ),
                 with: { invoices: true },
             });
 

@@ -1,20 +1,17 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
-import { DELIVERY_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
 import { DeliveredModal } from "./delivered-modal";
 import { FailedModal } from "./failed-modal";
-import { ReturnedModal } from "./returned-modal";
 import { InvoicesList } from "./invoices-list";
+import { ReturnedModal } from "./returned-modal";
 import { StartDeliveryCard } from "./start-delivery-card";
 import type { ActionType, DeliveryExecutionProps } from "./types";
 
 export function DeliveryExecution({ group }: DeliveryExecutionProps) {
-  const router = useRouter();
   const queryClient = useQueryClient();
 
   // Modal state
@@ -24,9 +21,9 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
   const [failedInvoiceId, setFailedInvoiceId] = React.useState<number | null>(
     null,
   );
-  const [returnedInvoiceId, setReturnedInvoiceId] = React.useState<number | null>(
-    null,
-  );
+  const [returnedInvoiceId, setReturnedInvoiceId] = React.useState<
+    number | null
+  >(null);
   const [otp, setOtp] = React.useState("");
   const [failReason, setFailReason] = React.useState("");
   const [returnReason, setReturnReason] = React.useState("");

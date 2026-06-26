@@ -1,14 +1,23 @@
+import { headers } from "next/headers";
 import { SiteHeader } from "@/components/dashboard/site-header";
 import { DeliverySidebar } from "@/components/features/delivery/DeliverySidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { requireDeliveryman } from "@/utils/auth";
+import { isDeliverySubdomainHost } from "@/lib/delivery-routing";
+import { requireDeliveryman, requireWarehouseDeliveryman } from "@/utils/auth";
 
 export default async function DeliveryDashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  await requireDeliveryman();
+  const headerStore = await headers();
+  const host = headerStore.get("host");
+
+  if (isDeliverySubdomainHost(host)) {
+    await requireWarehouseDeliveryman();
+  } else {
+    await requireDeliveryman();
+  }
 
   return (
     <SidebarProvider

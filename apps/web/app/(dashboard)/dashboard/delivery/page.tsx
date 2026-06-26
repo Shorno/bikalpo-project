@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { ActiveDeliveryGroups } from "@/components/employee/active-delivery-groups";
 import { DeliveryStats } from "@/components/employee/delivery-stats";
 import { Card, CardContent } from "@/components/ui/card";
-import { DELIVERY_BASE } from "@/lib/routes";
+import { DELIVERY_PORTAL_BASE } from "@/lib/delivery-routing";
 import { client } from "@/utils/orpc";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +44,7 @@ export default async function DeliveryDashboardPage() {
 
       {/* Quick Actions Row */}
       <div className="grid grid-cols-2 gap-3">
-        <Link href={`${DELIVERY_BASE}/deliveries`}>
+        <Link href={`${DELIVERY_PORTAL_BASE}/deliveries`}>
           <Card className="hover:shadow-md hover:border-primary/30 transition-all duration-200 cursor-pointer h-full p-0 rounded-xl overflow-hidden">
             <CardContent className="flex items-center justify-center gap-2 p-4">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
@@ -55,7 +55,7 @@ export default async function DeliveryDashboardPage() {
           </Card>
         </Link>
 
-        <Link href={`${DELIVERY_BASE}/returns`}>
+        <Link href={`${DELIVERY_PORTAL_BASE}/returns`}>
           <Card className="hover:shadow-md hover:border-primary/30 transition-all duration-200 cursor-pointer h-full p-0 rounded-xl overflow-hidden">
             <CardContent className="flex items-center justify-center gap-2 p-4">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
