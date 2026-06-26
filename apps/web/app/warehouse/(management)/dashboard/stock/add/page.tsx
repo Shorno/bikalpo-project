@@ -92,6 +92,8 @@ type ProductResult = {
     orderUnit?: string | null;
     price: string;
     brandId: number | null;
+    color?: string | null;
+    size?: string | null;
     packType: string | null;
     brand?: { id: number; name: string } | null;
   }[];
@@ -112,6 +114,14 @@ function formatUnit(unit?: string | null) {
   return normalized || "UNIT";
 }
 
+function isFashionTypeName(typeName?: string | null) {
+  return (
+    String(typeName || "")
+      .trim()
+      .toLowerCase() === "fashion"
+  );
+}
+
 function parseUnitLabelMeasure(label?: string | null) {
   const normalizedLabel = String(label || "").trim();
   if (!normalizedLabel) return null;
@@ -124,8 +134,7 @@ function parseUnitLabelMeasure(label?: string | null) {
     if (value > 0) {
       return {
         quantityPerPack: value,
-        quantityUnit:
-          normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
+        quantityUnit: normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
       };
     }
   }
@@ -165,7 +174,10 @@ function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
     return {
       quantityPerPack: piecesPerUnit,
       quantityUnit: unitLabel,
-      displayLabel: `${variant?.unitLabel || "Unit"} (${piecesPerUnit} ${unitLabel})`,
+      displayLabel:
+        piecesPerUnit === 1
+          ? variant?.unitLabel || "Unit"
+          : `${variant?.unitLabel || "Unit"} (${piecesPerUnit} ${unitLabel})`,
     };
   }
 
@@ -188,8 +200,9 @@ function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
 type TableRow = {
   id: number;
   product: ProductResult;
-  brandId: number;
+  brandId: number | null;
   brandName: string;
+  attributeKind: "brand" | "color";
   variantId: number | null;
   looseWeight: string;
   cartonUnitSize: string;
@@ -227,6 +240,9 @@ export default function AddStockPage() {
   const [modalSelectedBrandId, setModalSelectedBrandId] = useState<
     number | null
   >(null);
+  const [modalSelectedColor, setModalSelectedColor] = useState<string | null>(
+    null,
+  );
 
   // Payment & Supplier
   const [supplierId, setSupplierId] = useState<number | null>(null);
@@ -370,20 +386,43 @@ export default function AddStockPage() {
     return Math.abs(packs - roundedPacks) < 0.001 ? roundedPacks : 0;
   }, []);
 
-  // Available brands for modal selected product (filtered by entry type)
-  const modalAvailableBrands = useMemo(() => {
+  const modalIsFashionProduct = isFashionTypeName(
+    modalSelectedProduct?.category?.type?.name,
+  );
+
+  // Available attributes for modal selected product (filtered by entry type)
+  const modalAvailableAttributes = useMemo(() => {
     if (!modalSelectedProduct) return [];
-    const brandMap = new Map<number, { id: number; name: string }>();
+
+    if (modalIsFashionProduct) {
+      const colorSet = new Set<string>();
+      modalSelectedProduct.variants.forEach((v) => {
+        const isLoose = v.packType === "loose";
+        if (entryType === "loose" && !isLoose) return;
+        if (entryType !== "loose" && isLoose) return;
+        const color = String(v.color || "").trim();
+        if (color) colorSet.add(color);
+      });
+      return Array.from(colorSet.values()).map((color) => ({
+        key: color,
+        label: color,
+      }));
+    }
+
+    const brandMap = new Map<number, { key: string; label: string }>();
     modalSelectedProduct.variants.forEach((v) => {
       if (v.brand && v.brandId) {
         const isLoose = v.packType === "loose";
         if (entryType === "loose" && !isLoose) return;
         if (entryType !== "loose" && isLoose) return;
-        brandMap.set(v.brand.id, v.brand);
+        brandMap.set(v.brand.id, {
+          key: String(v.brand.id),
+          label: v.brand.name,
+        });
       }
     });
     return Array.from(brandMap.values());
-  }, [modalSelectedProduct, entryType]);
+  }, [entryType, modalIsFashionProduct, modalSelectedProduct]);
 
   // Check if all rows are complete
   const allRowsComplete = useMemo(() => {
@@ -418,12 +457,16 @@ export default function AddStockPage() {
     });
   }, [getCartonCount, getCartonPacksPerCarton, tableRows, entryType]);
 
-  // Get filtered variants for a row (by brand + entry type)
+  // Get filtered variants for a row (by brand/color + entry type)
   const getVariantsForRow = useCallback(
     (row: TableRow) => {
       return row.product.variants
         .filter((v) => {
-          if (v.brandId !== row.brandId) return false;
+          if (row.attributeKind === "color") {
+            if (String(v.color || "").trim() !== row.brandName) return false;
+          } else if (v.brandId !== row.brandId) {
+            return false;
+          }
           if (entryType === "loose") return v.packType === "loose";
           return v.packType !== "loose";
         })
@@ -447,6 +490,7 @@ export default function AddStockPage() {
       const variant = getRowVariant(row);
       if (!variant || !row.quantity || parseFloat(row.quantity) <= 0) return 0;
       const qty = parseFloat(row.quantity);
+      const isFashionRow = isFashionTypeName(row.product.category?.type?.name);
       if (entryType === "loose") {
         const looseWeight = parseFloat(row.looseWeight) || 0;
         return qty * looseWeight;
@@ -454,6 +498,9 @@ export default function AddStockPage() {
       if (entryType === "carton") {
         const cartonUnitSize = parseFloat(row.cartonUnitSize) || 0;
         return qty * cartonUnitSize;
+      }
+      if (isFashionRow) {
+        return qty;
       }
       return qty * getVariantMeasure(variant).quantityPerPack;
     },
@@ -464,6 +511,7 @@ export default function AddStockPage() {
     (row: TableRow) => {
       const variant = getRowVariant(row);
       if (entryType === "loose" || entryType === "carton") return "KG";
+      if (isFashionTypeName(row.product.category?.type?.name)) return "PCS";
       return getVariantMeasure(variant).quantityUnit;
     },
     [entryType, getRowVariant],
@@ -519,11 +567,22 @@ export default function AddStockPage() {
     return {
       label: "Total Quantity",
       value: Array.from(totals.entries())
-        .map(([unit, total]) => `${total.toFixed(unit === "KG" ? 1 : 0)} ${unit}`)
+        .map(
+          ([unit, total]) => `${total.toFixed(unit === "KG" ? 1 : 0)} ${unit}`,
+        )
         .join(" + "),
       unit: "",
     };
   }, [getRowTotalQtyUnit, getRowTotalQtyValue, tableRows]);
+
+  const showGenericPackQtyLabel = useMemo(
+    () =>
+      entryType === "pack" &&
+      tableRows.some((row) =>
+        isFashionTypeName(row.product.category?.type?.name),
+      ),
+    [entryType, tableRows],
+  );
 
   const getCartonCodeRange = useCallback(
     (rowIndex: number) => {
@@ -570,17 +629,32 @@ export default function AddStockPage() {
     setModalSubCategoryId(undefined);
     setModalSelectedProduct(null);
     setModalSelectedBrandId(null);
+    setModalSelectedColor(null);
     setShowProductModal(true);
   }, []);
 
   const handleAddFromModal = useCallback(() => {
-    if (!modalSelectedProduct || !modalSelectedBrandId) return;
+    if (!modalSelectedProduct) return;
+    const isFashionProduct = isFashionTypeName(
+      modalSelectedProduct.category?.type?.name,
+    );
+    if (isFashionProduct && entryType !== "pack") {
+      toast.error("Fashion stock should be added through Pack Entry.");
+      return;
+    }
+    if (!isFashionProduct && !modalSelectedBrandId) return;
+    if (isFashionProduct && !modalSelectedColor) return;
+
     const brand = modalSelectedProduct.variants.find(
       (v) => v.brandId === modalSelectedBrandId,
     )?.brand;
     const availableVariants = modalSelectedProduct.variants
       .filter((v) => {
-        if (v.brandId !== modalSelectedBrandId) return false;
+        if (isFashionProduct) {
+          if (String(v.color || "").trim() !== modalSelectedColor) return false;
+        } else if (v.brandId !== modalSelectedBrandId) {
+          return false;
+        }
         if (entryType === "loose") return v.packType === "loose";
         return v.packType !== "loose";
       })
@@ -592,8 +666,11 @@ export default function AddStockPage() {
     const newRow: TableRow = {
       id: ++rowIdRef.current,
       product: modalSelectedProduct,
-      brandId: modalSelectedBrandId,
-      brandName: brand?.name || "",
+      brandId: isFashionProduct ? null : modalSelectedBrandId,
+      brandName: isFashionProduct
+        ? modalSelectedColor || ""
+        : brand?.name || "",
+      attributeKind: isFashionProduct ? "color" : "brand",
       variantId:
         (entryType === "loose" || entryType === "carton") &&
         availableVariants.length > 0
@@ -611,8 +688,14 @@ export default function AddStockPage() {
     setShowProductModal(false);
     setModalSelectedProduct(null);
     setModalSelectedBrandId(null);
+    setModalSelectedColor(null);
     toast.success(`Added ${modalSelectedProduct.name} to the table`);
-  }, [modalSelectedProduct, modalSelectedBrandId, entryType]);
+  }, [
+    entryType,
+    modalSelectedBrandId,
+    modalSelectedColor,
+    modalSelectedProduct,
+  ]);
 
   const updateRow = useCallback((rowId: number, updates: Partial<TableRow>) => {
     setTableRows((prev) =>
@@ -970,7 +1053,9 @@ export default function AddStockPage() {
                         <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">
                           {entryType === "loose" || entryType === "carton"
                             ? "Qty"
-                            : "Qty (Pack)"}
+                            : showGenericPackQtyLabel
+                              ? "Qty"
+                              : "Qty (Pack)"}
                         </th>
                         <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">
                           Total Qty
@@ -1471,7 +1556,8 @@ export default function AddStockPage() {
           <DialogHeader>
             <DialogTitle>Select Product</DialogTitle>
             <DialogDescription>
-              Choose a product and brand to add to your stock entry
+              Choose a product and the matching attribute to add to your stock
+              entry
             </DialogDescription>
           </DialogHeader>
 
@@ -1570,6 +1656,7 @@ export default function AddStockPage() {
                       onClick={() => {
                         setModalSelectedProduct(p);
                         setModalSelectedBrandId(null);
+                        setModalSelectedColor(null);
                       }}
                     >
                       {p.image && (
@@ -1627,29 +1714,54 @@ export default function AddStockPage() {
                   onClick={() => {
                     setModalSelectedProduct(null);
                     setModalSelectedBrandId(null);
+                    setModalSelectedColor(null);
                   }}
                 >
                   <ArrowLeft className="h-4 w-4 mr-1" /> Back
                 </Button>
               </div>
 
-              {/* Brand selection */}
+              {/* Attribute selection */}
               <div>
-                <p className="text-sm font-medium mb-2">Select Brand</p>
-                {modalAvailableBrands.length === 0 ? (
+                {modalIsFashionProduct && entryType !== "pack" && (
+                  <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                    Fashion products should be added with Pack Entry only.
+                  </p>
+                )}
+                <p className="text-sm font-medium mb-2">
+                  Select {modalIsFashionProduct ? "Color" : "Brand"}
+                </p>
+                {modalAvailableAttributes.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4 text-center">
-                    No brands available for this entry type
+                    No {modalIsFashionProduct ? "colors" : "brands"} available{" "}
+                    for this entry type
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
-                    {modalAvailableBrands.map((b) => (
+                    {modalAvailableAttributes.map((attribute) => (
                       <button
-                        key={b.id}
+                        key={attribute.key}
                         type="button"
-                        onClick={() => setModalSelectedBrandId(b.id)}
-                        className={`p-3 rounded-lg border-2 text-left transition-all cursor-pointer ${modalSelectedBrandId === b.id ? "border-primary bg-primary/5 shadow-sm" : "border-gray-200 hover:border-primary/30"}`}
+                        onClick={() => {
+                          if (modalIsFashionProduct) {
+                            setModalSelectedColor(attribute.label);
+                            setModalSelectedBrandId(null);
+                          } else {
+                            setModalSelectedBrandId(Number(attribute.key));
+                            setModalSelectedColor(null);
+                          }
+                        }}
+                        className={`p-3 rounded-lg border-2 text-left transition-all cursor-pointer ${
+                          (
+                            modalIsFashionProduct
+                              ? modalSelectedColor === attribute.label
+                              : modalSelectedBrandId === Number(attribute.key)
+                          )
+                            ? "border-primary bg-primary/5 shadow-sm"
+                            : "border-gray-200 hover:border-primary/30"
+                        }`}
                       >
-                        <p className="text-sm font-medium">{b.name}</p>
+                        <p className="text-sm font-medium">{attribute.label}</p>
                       </button>
                     ))}
                   </div>
@@ -1665,7 +1777,11 @@ export default function AddStockPage() {
                 </Button>
                 <Button
                   onClick={handleAddFromModal}
-                  disabled={!modalSelectedBrandId}
+                  disabled={
+                    modalIsFashionProduct
+                      ? !modalSelectedColor
+                      : !modalSelectedBrandId
+                  }
                 >
                   <Plus className="mr-1.5 h-4 w-4" /> Add to Table
                 </Button>
