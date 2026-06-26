@@ -7,6 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,6 @@ import {
 } from "@/components/ui/dialog";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
   FieldLabel,
@@ -31,19 +31,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-
 
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 
-
-
 export default function NewCoreProductDialog() {
   const [open, setOpen] = React.useState(false);
 
-  const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(null);
+  const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(
+    null,
+  );
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<number>(0);
   const queryClient = useQueryClient();
 
@@ -58,12 +55,12 @@ export default function NewCoreProductDialog() {
   );
   const allCategories = Array.isArray(categoriesData) ? categoriesData : [];
 
-
-
   const { data: subcategoriesData } = useQuery(
     orpc.adminSubcategory.getAllGlobal.queryOptions({ input: {} }),
   );
-  const allSubcategories = Array.isArray(subcategoriesData) ? subcategoriesData : [];
+  const allSubcategories = Array.isArray(subcategoriesData)
+    ? subcategoriesData
+    : [];
 
   const mutation = useMutation(
     orpc.adminCoreProduct.create.mutationOptions({
@@ -96,6 +93,11 @@ export default function NewCoreProductDialog() {
       supportsLoose: false,
     },
     onSubmit: async ({ value }) => {
+      if (!value.image.trim()) {
+        toast.error("Product image is required");
+        return;
+      }
+
       mutation.mutate({
         sku: value.sku.trim() || undefined,
         name: value.name,
@@ -124,10 +126,6 @@ export default function NewCoreProductDialog() {
     ? allSubcategories.filter((sc: any) => sc.categoryId === selectedCategoryId)
     : [];
 
-
-
-
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -154,19 +152,22 @@ export default function NewCoreProductDialog() {
             {(field) => (
               <Field
                 data-invalid={
-                  field.state.meta.isTouched && !field.state.meta.isValid
+                  !field.state.value.trim() ||
+                  (field.state.meta.isTouched && !field.state.meta.isValid)
                 }
               >
-                <FieldLabel htmlFor={field.name}>Product Image</FieldLabel>
+                <FieldLabel htmlFor={field.name}>Product Image *</FieldLabel>
                 <ImageUploader
                   value={field.state.value}
                   onChange={field.handleChange}
                   folder="core-products"
                   maxSizeMB={5}
                 />
-                {field.state.meta.isTouched && !field.state.meta.isValid && (
+                {!field.state.value.trim() ? (
+                  <FieldError errors={["Product image is required"]} />
+                ) : field.state.meta.isTouched && !field.state.meta.isValid ? (
                   <FieldError errors={field.state.meta.errors} />
-                )}
+                ) : null}
               </Field>
             )}
           </form.Field>
@@ -185,11 +186,12 @@ export default function NewCoreProductDialog() {
                     placeholder="e.g. 003 (leave empty to auto-generate)"
                     autoComplete="off"
                   />
-                  <FieldDescription>Leave empty to auto-generate</FieldDescription>
+                  <FieldDescription>
+                    Leave empty to auto-generate
+                  </FieldDescription>
                 </Field>
               )}
             </form.Field>
-
 
             <form.Field name="name">
               {(field) => (
@@ -350,7 +352,9 @@ export default function NewCoreProductDialog() {
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={field.state.value}
-                      onCheckedChange={(checked) => field.handleChange(!!checked)}
+                      onCheckedChange={(checked) =>
+                        field.handleChange(!!checked)
+                      }
                     />
                     <span className="text-sm">Pack Based</span>
                   </label>
@@ -361,7 +365,9 @@ export default function NewCoreProductDialog() {
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={field.state.value}
-                      onCheckedChange={(checked) => field.handleChange(!!checked)}
+                      onCheckedChange={(checked) =>
+                        field.handleChange(!!checked)
+                      }
                     />
                     <span className="text-sm">Loose</span>
                   </label>
@@ -369,12 +375,10 @@ export default function NewCoreProductDialog() {
               </form.Field>
             </div>
             <p className="text-xs text-muted-foreground">
-              Select which variant types this product supports. Pack-based (e.g. 1KG, 5KG) and/or Loose (e.g. per KG).
+              Select which variant types this product supports. Pack-based (e.g.
+              1KG, 5KG) and/or Loose (e.g. per KG).
             </p>
           </div>
-
-
-
         </form>
 
         <DialogFooter>
