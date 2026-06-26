@@ -234,6 +234,32 @@ export default function WarehouseAddProductPage() {
     setBrandModalOpen(false);
   };
 
+  const handleAddExistingColorBrand = (brandId: number) => {
+    const brand = allBrands.find((b: any) => b.id === brandId);
+    if (!brand) return;
+
+    const colorName = String(brand.name || "").trim();
+    if (!colorName) return;
+
+    if (configuredColorKeys.has(colorName.toLowerCase())) {
+      toast.error(`Color "${colorName}" has already been added`);
+      return;
+    }
+
+    const newConfig: BrandConfig = {
+      brandId: brand.id,
+      brandName: brand.name,
+      colorName,
+      selectedVariantIds: [],
+      variantSettings: {},
+    };
+
+    setBrandConfigs((prev) => [...prev, newConfig]);
+    setExpandedBrandId(brand.id);
+    setBrandSearch("");
+    setBrandModalOpen(false);
+  };
+
   const handleRemoveBrand = (brandId: number) => {
     setBrandConfigs((prev) => prev.filter((bc) => bc.brandId !== brandId));
     if (expandedBrandId === brandId) setExpandedBrandId(null);
@@ -634,7 +660,7 @@ export default function WarehouseAddProductPage() {
                       <div className="space-y-3">
                         <div className="flex gap-2">
                           <Input
-                            placeholder="e.g. Red"
+                            placeholder="Search saved colors or type a new one"
                             value={brandSearch}
                             onChange={(e) => setBrandSearch(e.target.value)}
                             autoFocus
@@ -651,6 +677,42 @@ export default function WarehouseAddProductPage() {
                           >
                             Add
                           </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Saved brand/color options
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {availableBrands
+                              .filter((b: any) =>
+                                b.name
+                                  .toLowerCase()
+                                  .includes(brandSearch.toLowerCase()),
+                              )
+                              .slice(0, 24)
+                              .map((brand: any) => (
+                                <Button
+                                  key={brand.id}
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    handleAddExistingColorBrand(brand.id)
+                                  }
+                                >
+                                  {brand.name}
+                                </Button>
+                              ))}
+                          </div>
+                          {availableBrands.filter((b: any) =>
+                            b.name
+                              .toLowerCase()
+                              .includes(brandSearch.toLowerCase()),
+                          ).length === 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              No saved brand/color matched your search.
+                            </p>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {[
