@@ -57,6 +57,29 @@ function normalizePackType(value?: string | null) {
   return (value || "").trim().toLowerCase();
 }
 
+function isPackStyleLabel(label?: string | null) {
+  const normalized = normalizePackType(label);
+  if (!normalized) {
+    return false;
+  }
+
+  return /(^|\b)(kg|g|gm|gram|liter|litre|ml|pc|pcs|piece|pack|packet|box|bundle|carton|pair|unit|set|dozen|drum|cylinder)(\b|$)/.test(
+    normalized,
+  );
+}
+
+function isFashionAttributeVariant(
+  profile: ProductTypeFulfillmentProfile,
+  variant: WarehouseCatalogVariantLike["variant"],
+) {
+  return (
+    profile.family === "fashion" &&
+    Number(variant.weightKg || 0) <= 0 &&
+    !isPackStyleLabel(variant.unitLabel) &&
+    normalizePackType(variant.packType) !== "loose"
+  );
+}
+
 export function getWarehouseModeDisplayLabel(
   profile: ProductTypeFulfillmentProfile,
   mode: FulfillmentMode,
@@ -72,6 +95,10 @@ function getVariantDisplayUnit(
   profile: ProductTypeFulfillmentProfile,
   variant: WarehouseCatalogVariantLike["variant"],
 ) {
+  if (isFashionAttributeVariant(profile, variant)) {
+    return FULFILLMENT_UNITS.piece.shortLabel;
+  }
+
   const weightKg = Number(variant.weightKg || 0);
   if (weightKg > 0 && normalizePackType(variant.packType) === "loose") {
     return `${weightKg} KG`;
@@ -118,6 +145,10 @@ export function getWarehouseOrderModeOptions(
   profile: ProductTypeFulfillmentProfile,
   variantRow: WarehouseCatalogVariantLike,
 ): WarehouseOrderModeOption[] {
+  const isFashionAttributeDirect = isFashionAttributeVariant(
+    profile,
+    variantRow.variant,
+  );
   const hasCartons =
     Number(variantRow.variant.totalCartonCount || 0) > 0 ||
     (variantRow.variant.cartonOptions?.length || 0) > 0;
@@ -144,6 +175,7 @@ export function getWarehouseOrderModeOptions(
   }
 
   return [...modes]
+    .filter((mode) => !(isFashionAttributeDirect && mode === "pack"))
     .filter((mode) => supportsFulfillmentMode(profile, mode))
     .map((mode) => {
       const usesContainerStock = isContainerFulfillmentMode(mode) && hasCartons;
@@ -153,7 +185,9 @@ export function getWarehouseOrderModeOptions(
         : getVariantDisplayUnit(profile, variantRow.variant);
       const stockUnitLabel = usesContainerStock
         ? modeLabel
-        : FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
+        : isFashionAttributeDirect
+          ? FULFILLMENT_UNITS.piece.shortLabel
+          : FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
 
       return {
         mode,
