@@ -122,6 +122,8 @@ export const invoice = pgTable(
             .notNull(),
         approvedAt: timestamp("approved_at"),
         deliveredAt: timestamp("delivered_at"),
+        /** Buyer confirmed receipt of this shipment into inventory */
+        receivedAt: timestamp("received_at"),
     },
     (table) => [
         index("invoice_orderId_idx").on(table.orderId),

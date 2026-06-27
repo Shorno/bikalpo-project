@@ -269,7 +269,7 @@ export default function EditSubcategoryDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
             Cancel

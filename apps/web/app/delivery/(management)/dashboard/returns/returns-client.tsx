@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DELIVERY_BASE } from "@/lib/routes";
+import { DELIVERY_PORTAL_BASE } from "@/lib/delivery-routing";
 
 interface ReturnData {
   id: number;
@@ -162,7 +162,7 @@ export function ReturnsClient({ returns }: ReturnsClientProps) {
           return (
             <Link
               key={ret.id}
-              href={`${DELIVERY_BASE}/returns/${ret.id}`}
+              href={`${DELIVERY_PORTAL_BASE}/returns/${ret.id}`}
               className="block"
             >
               <Card className="p-0 hover:shadow-md hover:border-primary/30 transition-all duration-200 cursor-pointer rounded-xl overflow-hidden">
@@ -247,7 +247,9 @@ export function ReturnsClient({ returns }: ReturnsClientProps) {
                 key={row.id}
                 className={`cursor-pointer transition-colors hover:bg-primary/5 ${index % 2 === 0 ? "" : "bg-muted/20"}`}
                 onClick={() => {
-                  router.push(`${DELIVERY_BASE}/returns/${row.original.id}`);
+                  router.push(
+                    `${DELIVERY_PORTAL_BASE}/returns/${row.original.id}`,
+                  );
                 }}
               >
                 {row.getVisibleCells().map((cell) => (

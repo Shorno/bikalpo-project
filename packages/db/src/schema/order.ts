@@ -18,6 +18,10 @@ import { productVariant } from "./product-variant";
 // Order status enum
 export const orderStatusEnum = pgEnum("order_status", [
     "pending",
+    "approved",
+    "ready_for_dispatch",
+    "partially_invoiced",
+    "invoiced",
     "matching_shop",
     "negotiating",
     "confirmed",

@@ -7,16 +7,51 @@ import { DeliveryExecution } from "@/components/features/delivery/delivery-execu
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DELIVERY_BASE } from "@/lib/routes";
+import { DELIVERY_PORTAL_BASE } from "@/lib/delivery-routing";
 import { client } from "@/utils/orpc";
 
+export const dynamic = "force-dynamic";
+
 function StatusBadge({ status }: { status: string }) {
-  const variant = status === "out_for_delivery" ? "default" : "secondary";
+  const variants: Record<
+    string,
+    "default" | "secondary" | "outline" | "destructive"
+  > = {
+    assigned: "secondary",
+    out_for_delivery: "default",
+    completed: "outline",
+    partial: "destructive",
+  };
+  const labels: Record<string, string> = {
+    assigned: "Assigned",
+    out_for_delivery: "Out for Delivery",
+    completed: "Completed",
+    partial: "Partial",
+  };
   return (
-    <Badge variant={variant} className="text-[10px] sm:text-xs uppercase">
-      {status.replace(/_/g, " ")}
+    <Badge
+      variant={variants[status] || "secondary"}
+      className="text-[10px] sm:text-xs"
+    >
+      {labels[status] || status.replace(/_/g, " ")}
     </Badge>
   );
+}
+
+function formatGroupDate(group: {
+  status: string;
+  assignedAt: Date | null;
+  completedAt: Date | null;
+  createdAt: Date;
+}) {
+  const isHistory = group.status === "completed" || group.status === "partial";
+  const date =
+    (isHistory && group.completedAt) ||
+    group.assignedAt ||
+    group.createdAt;
+  const label =
+    isHistory && group.completedAt ? "Completed" : "Assigned";
+  return `${label} ${format(new Date(date), "MMM d, yyyy")}`;
 }
 
 function StatCard({
@@ -90,7 +125,7 @@ export default async function DeliveryRunPage({
     <div className="flex flex-col gap-3 sm:gap-6">
       {/* Compact Header */}
       <div className="flex items-center gap-2 sm:gap-4">
-        <Link href={`${DELIVERY_BASE}/deliveries`}>
+        <Link href={`${DELIVERY_PORTAL_BASE}/deliveries`}>
           <Button
             variant="ghost"
             size="icon"
@@ -107,7 +142,7 @@ export default async function DeliveryRunPage({
             <StatusBadge status={group.status} />
           </div>
           <p className="text-[10px] sm:text-sm text-muted-foreground">
-            {format(new Date(group.assignedAt!), "MMM d, yyyy")}
+            {formatGroupDate(group)}
           </p>
         </div>
       </div>

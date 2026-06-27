@@ -36,6 +36,7 @@ const deliveryConfig: Record<
   out_for_delivery: { label: "Out for Delivery", variant: "default" },
   delivered: { label: "Delivered", variant: "default" },
   failed: { label: "Failed", variant: "destructive" },
+  returned: { label: "Returned", variant: "secondary" },
 };
 
 export function InvoicePaymentBadge({ status }: InvoicePaymentBadgeProps) {

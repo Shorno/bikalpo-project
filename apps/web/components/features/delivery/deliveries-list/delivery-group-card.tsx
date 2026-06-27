@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DELIVERY_BASE } from "@/lib/routes";
+import { DELIVERY_PORTAL_BASE } from "@/lib/delivery-routing";
 import { InvoiceRow } from "./invoice-row";
 import { StatusBadge } from "./status-badge";
 import type { DeliveryGroupCardProps } from "./types";
@@ -38,7 +38,7 @@ export function DeliveryGroupCard({ group }: DeliveryGroupCardProps) {
             className="h-8 text-xs px-3 shrink-0 shadow-sm"
             asChild
           >
-            <Link href={`${DELIVERY_BASE}/deliveries/${group.id}`}>
+            <Link href={`${DELIVERY_PORTAL_BASE}/deliveries/${group.id}`}>
               <span className="hidden sm:inline">View Details</span>
               <span className="sm:hidden">View</span>
               <ArrowRight className="ml-1 h-3 w-3" />

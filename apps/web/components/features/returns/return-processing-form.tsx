@@ -41,13 +41,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { DELIVERY_BASE } from "@/lib/routes";
+import { fileToDataUrl } from "@/lib/cloudinary";
+import { DELIVERY_PORTAL_BASE } from "@/lib/delivery-routing";
 import {
   type ReturnProcessingFormValues,
   returnProcessingFormSchema,
 } from "@/schema/return.schema";
 import { client, orpc } from "@/utils/orpc";
-import { fileToDataUrl } from "@/lib/cloudinary";
 
 interface ReturnProcessingFormProps {
   orderId: number;
@@ -116,7 +116,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
             queryKey: orpc.returns.getAll.queryKey(),
           });
           toast.success("Return submitted successfully");
-          router.push(`${DELIVERY_BASE}/returns`);
+          router.push(`${DELIVERY_PORTAL_BASE}/returns`);
         }
       },
       onError: (error: Error) => {
@@ -243,7 +243,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
       <div className="flex flex-col items-center justify-center h-40 sm:h-64 gap-3 sm:gap-4">
         <p className="text-sm text-muted-foreground">Order not found</p>
         <Button asChild variant="outline" size="sm">
-          <Link href={`${DELIVERY_BASE}/returns`}>Back to Returns</Link>
+          <Link href={`${DELIVERY_PORTAL_BASE}/returns`}>Back to Returns</Link>
         </Button>
       </div>
     );
@@ -261,7 +261,7 @@ export function ReturnProcessingForm({ orderId }: ReturnProcessingFormProps) {
           className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 mt-0.5"
           asChild
         >
-          <Link href={`${DELIVERY_BASE}/returns`}>
+          <Link href={`${DELIVERY_PORTAL_BASE}/returns`}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>

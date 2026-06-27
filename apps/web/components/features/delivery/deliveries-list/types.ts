@@ -23,7 +23,7 @@ export interface InvoiceCustomer {
 export interface DeliveryInvoiceItem extends DeliveryGroupInvoice {
   invoice: Pick<Invoice, "invoiceNumber" | "grandTotal" | "invoiceType"> & {
     customer: InvoiceCustomer | null;
-    order: Pick<Order, "shippingAddress" | "shippingCity"> | null;
+    order: Pick<Order, "orderNumber" | "shippingAddress" | "shippingCity"> | null;
   };
 }
 

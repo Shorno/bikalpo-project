@@ -105,6 +105,22 @@ export async function requireDeliveryman() {
   return requireRole(["deliveryman"]);
 }
 
+export async function requireWarehouseDeliveryman() {
+  const session = await requireRole(["deliveryman"]);
+  const warehouseId = (session.user as { warehouseId?: string | null })
+    .warehouseId;
+
+  if (!warehouseId) {
+    if (typeof window === "undefined") {
+      const { unauthorized } = await import("next/navigation");
+      return unauthorized();
+    }
+    throw new Error("Warehouse deliveryman access required");
+  }
+
+  return session;
+}
+
 export async function requireShopOwner() {
   return requireRole(["shop_owner"]);
 }

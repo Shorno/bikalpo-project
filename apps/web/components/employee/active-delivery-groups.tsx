@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DELIVERY_BASE } from "@/lib/routes";
+import { DELIVERY_PORTAL_BASE } from "@/lib/delivery-routing";
 
 // Use a flexible type that works with the actual data structure
 interface ActiveDeliveryGroupsProps {
@@ -86,7 +86,7 @@ export function ActiveDeliveryGroups({ groups }: ActiveDeliveryGroupsProps) {
           className="h-8 text-xs shadow-sm"
           asChild
         >
-          <Link href={`${DELIVERY_BASE}/deliveries`}>
+          <Link href={`${DELIVERY_PORTAL_BASE}/deliveries`}>
             View All
             <ArrowRight className="ml-1 h-3 w-3" />
           </Link>
@@ -127,7 +127,7 @@ export function ActiveDeliveryGroups({ groups }: ActiveDeliveryGroupsProps) {
                   className="h-8 text-xs px-3 shadow-sm shrink-0"
                   asChild
                 >
-                  <Link href={`${DELIVERY_BASE}/deliveries/${group.id}`}>
+                  <Link href={`${DELIVERY_PORTAL_BASE}/deliveries/${group.id}`}>
                     View
                     <ArrowRight className="ml-1 h-3 w-3" />
                   </Link>

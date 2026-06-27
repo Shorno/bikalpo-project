@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
+import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,12 +24,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
-import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 
 const DASHBOARD_PATHS: Record<string, string> = {
   admin: "/dashboard/admin",
   salesman: "/dashboard/sales",
-  deliveryman: "/dashboard/delivery",
+  deliveryman: "/dashboard",
 };
 
 const STAFF_ROLES = ["admin", "salesman", "deliveryman"];
@@ -52,9 +52,7 @@ export function UserDropdown() {
   }
 
   if (!session) {
-    return (
-      <Button onClick={showLoginModal}>Login</Button>
-    );
+    return <Button onClick={showLoginModal}>Login</Button>;
   }
 
   const user = session.user;
