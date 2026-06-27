@@ -39,6 +39,9 @@ type CartonItem = {
   price: number;
   packCount: number;
   availableStock: number;
+  totalStock: number;
+  stockInCartons: number;
+  availableForCarton: number;
   image: string | null;
   isLoose: boolean;
 };
@@ -50,6 +53,16 @@ const STEPS = [
   { label: "Generate ID", icon: Hash },
   { label: "Preview", icon: BarChart3 },
 ];
+
+function formatStockValue(value: number, isLoose: boolean) {
+  if (isLoose) {
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: value % 1 === 0 ? 0 : 1,
+      maximumFractionDigits: 1,
+    });
+  }
+  return Math.floor(value).toLocaleString();
+}
 
 function Stepper({ current }: { current: number }) {
   return (
@@ -198,7 +211,10 @@ export default function CreateCartonPage() {
     if (items.find((i) => i.variantId === vid)) return;
     const packType = variant.packType || variant.packagingType || "other";
     const isLoose = packType === "loose";
+    const totalStock = Math.max(0, parseFloat(String(variant.stock?.availableQty ?? 0)));
+    const stockInCartons = Math.max(0, parseFloat(String(variant.stock?.inCartonQty ?? 0)));
     const looseStock = variant.stock?.looseStock ?? 0;
+    const availableForCarton = Math.max(0, parseFloat(String(looseStock)));
     const newItem: CartonItem = {
       variantId: vid,
       sku: variant.sku || "—",
@@ -211,8 +227,13 @@ export default function CreateCartonPage() {
       price: parseFloat(variant.price || "0"),
       packCount: 0,
       availableStock: isLoose
-        ? Math.max(0, parseFloat(String(looseStock)))
-        : Math.max(0, Math.floor(looseStock)),
+        ? availableForCarton
+        : Math.max(0, Math.floor(availableForCarton)),
+      totalStock: isLoose ? totalStock : Math.floor(totalStock),
+      stockInCartons: isLoose ? stockInCartons : Math.floor(stockInCartons),
+      availableForCarton: isLoose
+        ? availableForCarton
+        : Math.max(0, Math.floor(availableForCarton)),
       image: product.coreProduct?.image || product.image || null,
       isLoose,
     };
@@ -486,7 +507,13 @@ export default function CreateCartonPage() {
                         (p.variants || []).map((v: any) => {
                           const vid = v.variantId || v.id;
                           const alreadyAdded = items.find((i) => i.variantId === vid);
-                          const looseStock = Math.max(0, Math.floor(v.stock?.looseStock ?? 0));
+                          const isLoose = (v.packType || v.packagingType || "other") === "loose";
+                          const totalStock = Math.max(0, Number(v.stock?.availableQty ?? 0));
+                          const stockInCartons = Math.max(0, Number(v.stock?.inCartonQty ?? 0));
+                          const availableForCarton = Math.max(0, Number(v.stock?.looseStock ?? 0));
+                          const looseStock = isLoose
+                            ? availableForCarton
+                            : Math.max(0, Math.floor(availableForCarton));
                           const outOfStock = looseStock <= 0;
                           const productImage = p.coreProduct?.image || p.image;
                           return (
@@ -522,13 +549,35 @@ export default function CreateCartonPage() {
                                   {v.sku ? ` · ${v.sku}` : ""}
                                   {p.category ? ` · ${p.category.name}` : ""}
                                 </p>
+                                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
+                                  <span>
+                                    Total:{" "}
+                                    <span className="font-semibold text-gray-700">
+                                      {formatStockValue(totalStock, isLoose)} {isLoose ? "KG" : "Pack"}
+                                    </span>
+                                  </span>
+                                  <span>
+                                    In cartons:{" "}
+                                    <span className="font-semibold text-blue-600">
+                                      {formatStockValue(stockInCartons, isLoose)} {isLoose ? "KG" : "Pack"}
+                                    </span>
+                                  </span>
+                                  <span>
+                                    Available for carton:{" "}
+                                    <span className="font-semibold text-amber-600">
+                                      {formatStockValue(availableForCarton, isLoose)} {isLoose ? "KG" : "Pack"}
+                                    </span>
+                                  </span>
+                                </div>
                               </div>
                               <span className={`text-xs font-semibold tabular-nums px-2.5 py-1 rounded-full ${
                                 outOfStock
                                   ? "bg-red-50 text-red-600"
                                   : "bg-gray-100 text-gray-600"
                               }`}>
-                                {outOfStock ? "No stock" : `${looseStock} available`}
+                                {outOfStock
+                                  ? "No stock"
+                                  : `${formatStockValue(availableForCarton, isLoose)} ready`}
                               </span>
                               {alreadyAdded ? (
                                 <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-full">
@@ -569,7 +618,7 @@ export default function CreateCartonPage() {
                               Variant
                             </th>
                             <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                              Available
+                              Stock Snapshot
                             </th>
                             <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                               Qty {hasLooseItems && hasPackItems ? "" : hasLooseItems ? "(KG)" : "(Pack)"}
@@ -593,9 +642,17 @@ export default function CreateCartonPage() {
                                 </td>
                                 <td className="px-5 py-4 text-gray-600">{item.variantLabel}</td>
                                 <td className="px-5 py-4 text-center">
-                                  <span className="text-sm font-semibold tabular-nums text-gray-600">
-                                    {item.isLoose ? `${item.availableStock.toFixed(1)} KG` : item.availableStock}
-                                  </span>
+                                  <div className="space-y-1 text-xs">
+                                    <div className="font-semibold tabular-nums text-gray-700">
+                                      {formatStockValue(item.totalStock, item.isLoose)} {item.isLoose ? "KG" : "Pack"} total
+                                    </div>
+                                    <div className="tabular-nums text-blue-600">
+                                      {formatStockValue(item.stockInCartons, item.isLoose)} {item.isLoose ? "KG" : "Pack"} in cartons
+                                    </div>
+                                    <div className="tabular-nums text-amber-600">
+                                      {formatStockValue(item.availableForCarton, item.isLoose)} {item.isLoose ? "KG" : "Pack"} ready
+                                    </div>
+                                  </div>
                                 </td>
                                 <td className="px-5 py-4 text-center">
                                   <div className="flex flex-col items-center gap-1">

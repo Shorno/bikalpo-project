@@ -9,19 +9,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { orpc } from "@/utils/orpc";
-
-type PurchaseOrderStatus =
-  | "pending"
-  | "approved"
-  | "ready_for_dispatch"
-  | "partially_invoiced"
-  | "invoiced"
-  | "confirmed"
-  | "processing"
-  | "delivered"
-  | "returned"
-  | "cancelled";
 
 // ────────────────────────────────────────────────────────────────
 // B2B QUERY HOOKS (Shop Owner as Buyer)
@@ -63,7 +52,9 @@ export function useShopOwnerProductDetails(slug: string) {
 // ────────────────────────────────────────────────────────────────
 
 /** Get all warehouse connections for this shop */
-export function useMyWarehouses(status?: "all" | "active" | "pending" | "disconnected") {
+export function useMyWarehouses(
+  status?: "all" | "active" | "pending" | "disconnected",
+) {
   return useQuery(
     orpc.shopOwner.getMyWarehouses.queryOptions({
       input: { status: status ?? "all" },
@@ -98,7 +89,6 @@ export function useConnectToWarehouse() {
         toast.success(data.message || "Connection request sent");
       }
       qc.invalidateQueries({ queryKey: orpc.shopOwner.getMyWarehouses.key() });
-
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to connect to warehouse");
@@ -131,7 +121,6 @@ export function useDisconnectWarehouse() {
     onSuccess: (data) => {
       toast.success(data.message || "Disconnected successfully");
       qc.invalidateQueries({ queryKey: orpc.shopOwner.getMyWarehouses.key() });
-
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to disconnect");
@@ -211,6 +200,61 @@ export function useConversionHistory() {
   );
 }
 
+/** Approved warehouse catalog for retailer ordering */
+export function useWarehouseCatalog(params: {
+  warehouseSlug: string;
+  search?: string;
+  page?: string;
+  limit?: string;
+  enabled?: boolean;
+}) {
+  return useQuery(
+    orpc.shopOwner.getWarehouseProductsFiltered.queryOptions({
+      input: {
+        warehouseSlug: params.warehouseSlug,
+        search: params.search || undefined,
+        page: params.page ?? "1",
+        limit: params.limit ?? "100",
+      },
+      enabled: params.enabled ?? Boolean(params.warehouseSlug),
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Place a retailer purchase order to a connected warehouse */
+export function usePlaceWarehouseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      warehouseSlug: string;
+      items: Array<{
+        variantId: number;
+        quantity: number;
+        fulfillmentMode?: FulfillmentMode;
+        supplyMode?: FulfillmentMode;
+        targetVariantId?: number | null;
+      }>;
+      shippingName: string;
+      shippingPhone: string;
+      shippingAddress: string;
+      shippingCity: string;
+      customerNote?: string;
+    }) => orpc.shopOwner.placeWarehouseOrder.call(input),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getConnectedWarehouses"],
+      });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getWarehouseProductsFiltered"],
+      });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getConversionHistory"],
+      });
+    },
+  });
+}
+
 /** Shop owner's retail product catalog (RETAIL variants) */
 export function useMyRetailProducts(params?: {
   search?: string;
@@ -245,7 +289,13 @@ export function useMyInventory() {
 
 /** Shop owner's B2B purchase orders */
 export function useMyOrders(params?: {
-  status?: PurchaseOrderStatus;
+  status?:
+    | "pending"
+    | "confirmed"
+    | "processing"
+    | "delivered"
+    | "returned"
+    | "cancelled";
   page?: number;
   limit?: number;
 }) {
@@ -264,7 +314,7 @@ export function useMyOrders(params?: {
 /** Purchase orders with search, filters, and KPIs */
 export function usePurchaseOrders(params?: {
   search?: string;
-  status?: PurchaseOrderStatus;
+  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
   dateFrom?: string;
   dateTo?: string;
   page?: number;
@@ -307,7 +357,9 @@ export function useMarkPurchaseReceived() {
     onSuccess: (data) => {
       toast.success(data.message || "Order received successfully");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
-      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getPurchaseOrderDetail"],
+      });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
     },
     onError: (err: any) => {
@@ -325,7 +377,9 @@ export function useCancelPurchaseOrder() {
     onSuccess: (data) => {
       toast.success(data.message || "Order cancelled");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
-      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getPurchaseOrderDetail"],
+      });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
     },
     onError: (err: any) => {
@@ -337,7 +391,7 @@ export function useCancelPurchaseOrder() {
 /** Purchase order tracking with delivery progress and timelines */
 export function usePurchaseTracking(params?: {
   search?: string;
-  status?: PurchaseOrderStatus;
+  status?: "pending" | "confirmed" | "processing" | "delivered" | "cancelled";
   dateFrom?: string;
   dateTo?: string;
   page?: number;
@@ -368,7 +422,9 @@ export function useAcceptPurchaseModification() {
       toast.success(data.message || "Modifications accepted");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseTracking"] });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
-      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getPurchaseOrderDetail"],
+      });
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to accept modifications");
@@ -386,7 +442,9 @@ export function useRejectPurchaseModification() {
       toast.success(data.message || "Order cancelled");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseTracking"] });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
-      qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrderDetail"] });
+      qc.invalidateQueries({
+        queryKey: ["shopOwner", "getPurchaseOrderDetail"],
+      });
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to reject modifications");
@@ -421,10 +479,34 @@ export function usePurchaseHistory(params?: {
 }
 
 /** List of suppliers (warehouses this shop has ordered from) */
-export function useMySuppliers(search?: string) {
+export function useMySuppliers(params?: {
+  search?: string;
+  status?: "all" | "with_due" | "no_due";
+}) {
   return useQuery(
     orpc.shopOwner.getMySuppliers.queryOptions({
-      input: { search: search || undefined },
+      input: {
+        search: params?.search || undefined,
+        status: params?.status ?? "all",
+      },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Active platform-connected suppliers with network filters */
+export function useConnectedSuppliers(params?: {
+  search?: string;
+  status?: "all" | "active" | "inactive";
+  category?: string;
+}) {
+  return useQuery(
+    orpc.shopOwner.getConnectedSuppliers.queryOptions({
+      input: {
+        search: params?.search || undefined,
+        status: params?.status ?? "all",
+        category: params?.category || undefined,
+      },
       staleTime: 1000 * 30,
     }),
   );
@@ -434,6 +516,16 @@ export function useMySuppliers(search?: string) {
 export function useSupplierDetail(warehouseId: string) {
   return useQuery(
     orpc.shopOwner.getSupplierDetail.queryOptions({
+      input: { warehouseId },
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Full detail profile for a platform-connected supplier */
+export function useConnectedSupplierDetail(warehouseId: string) {
+  return useQuery(
+    orpc.shopOwner.getConnectedSupplierDetail.queryOptions({
       input: { warehouseId },
       staleTime: 1000 * 30,
     }),

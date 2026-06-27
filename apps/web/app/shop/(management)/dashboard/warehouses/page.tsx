@@ -193,7 +193,7 @@ function WarehouseCard({ connection }: { connection: any }) {
 
             {isActive && (
               <Button asChild size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700">
-                <Link href={`/dashboard/warehouses/${connection.warehouseSlug}`}>
+                <Link href={`/dashboard/order-from-warehouse?warehouse=${encodeURIComponent(connection.warehouseSlug)}`}>
                   Order <ArrowRight className="w-3 h-3 ml-1" />
                 </Link>
               </Button>

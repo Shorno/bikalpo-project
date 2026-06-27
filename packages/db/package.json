@@ -5,6 +5,12 @@
     ".": {
       "default": "./src/index.ts"
     },
+    "./fulfillment": {
+      "default": "./src/fulfillment.ts"
+    },
+    "./fulfillment.schema": {
+      "default": "./src/fulfillment.schema.ts"
+    },
     "./schema": {
       "default": "./src/schema/index.ts"
     },

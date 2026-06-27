@@ -22,10 +22,63 @@ const STATUS_CONFIG = {
   failed: { label: "❌ Failed", color: "border-red-200 text-red-700 bg-red-50", icon: XCircle },
 } as const;
 
-const MODE_CONFIG = {
-  loose: { label: "Loose (KG)", color: "border-teal-200 text-teal-700 bg-teal-50" },
-  pack: { label: "Pack", color: "border-blue-200 text-blue-700 bg-blue-50" },
-} as const;
+function getModeConfig(item: { supplyMode?: string | null; supplyModeLabel?: string | null }) {
+  if (item.supplyMode === "loose") {
+    return {
+      label: item.supplyModeLabel || "Loose",
+      color: "border-teal-200 text-teal-700 bg-teal-50",
+    };
+  }
+
+  if (item.supplyMode === "drum") {
+    return {
+      label: item.supplyModeLabel || "Drum",
+      color: "border-amber-200 text-amber-700 bg-amber-50",
+    };
+  }
+
+  if (item.supplyMode === "cylinder") {
+    return {
+      label: item.supplyModeLabel || "Cylinder",
+      color: "border-orange-200 text-orange-700 bg-orange-50",
+    };
+  }
+
+  if (item.supplyMode === "pair") {
+    return {
+      label: item.supplyModeLabel || "Pair",
+      color: "border-violet-200 text-violet-700 bg-violet-50",
+    };
+  }
+
+  return {
+    label: item.supplyModeLabel || item.supplyMode || "Legacy",
+    color: "border-blue-200 text-blue-700 bg-blue-50",
+  };
+}
+
+function getConvertedQtyUnit(item: { supplyMode?: string | null }) {
+  switch (item.supplyMode) {
+    case "loose":
+      return "KG";
+    case "drum":
+      return "L";
+    case "pair":
+      return "pair";
+    case "cylinder":
+      return "unit";
+    case "carton":
+      return "carton";
+    case "box":
+      return "box";
+    case "bundle":
+      return "bundle";
+    case "pack":
+      return "pack";
+    default:
+      return "unit";
+  }
+}
 
 // ─── KPI Card ───────────────────────────────────────────────
 
@@ -133,7 +186,7 @@ export default function ConversionHistoryPage() {
             <TableBody>
               {items.map((item: any, idx: number) => {
                 const sc = STATUS_CONFIG[item.conversionStatus as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.pending;
-                const mc = item.supplyMode ? MODE_CONFIG[item.supplyMode as keyof typeof MODE_CONFIG] : null;
+                const mc = item.supplyMode ? getModeConfig(item) : null;
 
                 return (
                   <TableRow key={item.orderItemId} className="hover:bg-indigo-50/20">
@@ -177,7 +230,7 @@ export default function ConversionHistoryPage() {
                     <TableCell className="py-3">
                       {item.convertedQty ? (
                         <span className="text-sm font-bold text-emerald-700 tabular-nums">
-                          {Number(item.convertedQty).toFixed(0)} {item.supplyMode === "loose" ? "KG" : "pcs"}
+                          {Number(item.convertedQty).toFixed(0)} {getConvertedQtyUnit(item)}
                         </span>
                       ) : (
                         <span className="text-xs text-gray-400">—</span>

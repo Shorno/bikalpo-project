@@ -79,7 +79,7 @@ function InfoRow({ icon: Icon, label, value, mono }: {
 
 function VariantSection({ variant, productId }: { variant: any; productId: number }) {
   const [expanded, setExpanded] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>("active");
   const [selectedCartonId, setSelectedCartonId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -96,11 +96,9 @@ function VariantSection({ variant, productId }: { variant: any; productId: numbe
 
   const cartons = data?.cartons ?? [];
   const statusOptions = [
-    { label: "All", value: undefined },
     { label: "Active", value: "active" },
     { label: "Broken", value: "broken" },
     { label: "Dispatched", value: "dispatched" },
-    { label: "Sold", value: "sold" },
   ];
 
   return (
@@ -170,7 +168,7 @@ function VariantSection({ variant, productId }: { variant: any; productId: numbe
                 </div>
               ) : cartons.length === 0 ? (
                 <div className="text-center py-6 text-sm text-gray-400">
-                  No {statusFilter || ""} cartons found
+                  No {statusFilter || "active"} cartons found
                 </div>
               ) : (
                 <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">

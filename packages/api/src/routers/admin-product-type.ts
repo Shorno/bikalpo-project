@@ -1,4 +1,8 @@
-import { db } from "@bikalpo-project/db";
+import {
+    INVENTORY_BEHAVIOURS,
+    buildProductTypeFulfillmentProfile,
+    db,
+} from "@bikalpo-project/db";
 import { category, product, productType, shopCategoryAssignment } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, asc, count, countDistinct, eq, ilike, inArray, type SQL } from "drizzle-orm";
@@ -7,6 +11,19 @@ import { z } from "zod";
 import { adminProcedure, publicProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
 
+function decorateProductType<T extends {
+    name: string;
+    slug: string;
+    inventoryBehaviour: (typeof INVENTORY_BEHAVIOURS)[number];
+}>(
+    type: T,
+) {
+    return {
+        ...type,
+        fulfillmentProfile: buildProductTypeFulfillmentProfile(type),
+    };
+}
+
 export const adminProductTypeRouter = {
     // List all product types with optional status filter
     getAll: adminProcedure
@@ -14,6 +31,10 @@ export const adminProductTypeRouter = {
             z.object({
                 search: z.string().optional(),
                 status: z.enum(["all", "active", "inactive"]).optional().default("all"),
+                inventoryBehaviour: z
+                    .enum(["all", ...INVENTORY_BEHAVIOURS])
+                    .optional()
+                    .default("all"),
             }),
         )
         .handler(async ({ input }) => {
@@ -26,6 +47,11 @@ export const adminProductTypeRouter = {
             } else if (input.status === "inactive") {
                 conditions.push(eq(productType.isActive, false));
             }
+            if (input.inventoryBehaviour !== "all") {
+                conditions.push(
+                    eq(productType.inventoryBehaviour, input.inventoryBehaviour),
+                );
+            }
 
             const types = await db.query.productType.findMany({
                 where: conditions.length > 0 ? and(...conditions) : undefined,
@@ -35,7 +61,7 @@ export const adminProductTypeRouter = {
 
             return {
                 types: types.map(({ categories: cats, ...rest }) => ({
-                    ...rest,
+                    ...decorateProductType(rest),
                     categoryCount: cats.length,
                 })),
             };
@@ -89,7 +115,7 @@ export const adminProductTypeRouter = {
                 sellerCount = result[0]?.count ?? 0;
             }
 
-            return { type, products, sellerCount };
+            return { type: decorateProductType(type), products, sellerCount };
         }),
 
     // Create a new product type
@@ -100,6 +126,7 @@ export const adminProductTypeRouter = {
                 slug: z.string().min(1),
                 description: z.string().optional(),
                 image: z.string().optional(),
+                inventoryBehaviour: z.enum(INVENTORY_BEHAVIOURS).default("fixed_pack"),
                 displayOrder: z.number().default(0),
             }),
         )
@@ -122,12 +149,16 @@ export const adminProductTypeRouter = {
                     slug: input.slug,
                     description: input.description || null,
                     image: input.image || null,
+                    inventoryBehaviour: input.inventoryBehaviour,
                     displayOrder: input.displayOrder,
                     skuCode,
                 })
                 .returning();
 
-            return { type: created, message: `Product type "${created!.name}" created successfully` };
+            return {
+                type: decorateProductType(created!),
+                message: `Product type "${created!.name}" created successfully`,
+            };
         }),
 
     // Update a product type
@@ -139,6 +170,7 @@ export const adminProductTypeRouter = {
                 slug: z.string().min(1),
                 description: z.string().optional(),
                 image: z.string().optional(),
+                inventoryBehaviour: z.enum(INVENTORY_BEHAVIOURS).default("fixed_pack"),
                 displayOrder: z.number().optional(),
             }),
         )
@@ -152,6 +184,7 @@ export const adminProductTypeRouter = {
                     slug: data.slug,
                     description: data.description || null,
                     image: data.image || null,
+                    inventoryBehaviour: data.inventoryBehaviour,
                     displayOrder: data.displayOrder,
                 })
                 .where(eq(productType.id, id))
@@ -161,7 +194,10 @@ export const adminProductTypeRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Product type not found" });
             }
 
-            return { type: updated, message: `Product type "${updated.name}" updated successfully` };
+            return {
+                type: decorateProductType(updated),
+                message: `Product type "${updated.name}" updated successfully`,
+            };
         }),
 
     // Toggle active status
@@ -182,7 +218,7 @@ export const adminProductTypeRouter = {
                 .returning();
 
             return {
-                type: updated,
+                type: decorateProductType(updated!),
                 message: `Product type "${updated!.name}" ${updated!.isActive ? "activated" : "deactivated"} successfully`,
             };
         }),
@@ -225,9 +261,10 @@ export const adminProductTypeRouter = {
                     id: true,
                     name: true,
                     slug: true,
+                    inventoryBehaviour: true,
                 },
             });
 
-            return { types };
+            return { types: types.map((type) => decorateProductType(type)) };
         }),
 };

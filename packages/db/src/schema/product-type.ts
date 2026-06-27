@@ -8,6 +8,7 @@ import {
     text,
     varchar,
 } from "drizzle-orm/pg-core";
+import { INVENTORY_BEHAVIOURS, type InventoryBehaviour } from "../fulfillment";
 import { timestamps } from "./columns.helpers";
 import { category } from "./category";
 
@@ -19,9 +20,7 @@ import { category } from "./category";
  * - fixed_pack:    Same pack from warehouse to shop to consumer (e.g. 1kg Nescafe jar)
  */
 export const inventoryBehaviourEnum = pgEnum("inventory_behaviour", [
-    "auto_break",
-    "loose_convert",
-    "fixed_pack",
+    ...INVENTORY_BEHAVIOURS,
 ]);
 
 /**
@@ -58,3 +57,4 @@ export const productTypeRelations = relations(productType, ({ many }) => ({
 
 export type ProductType = typeof productType.$inferSelect;
 export type NewProductType = typeof productType.$inferInsert;
+export type { InventoryBehaviour };
