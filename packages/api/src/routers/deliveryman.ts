@@ -186,7 +186,7 @@ export const deliverymanRouter = {
                 const groups = await db.query.deliveryGroup.findMany({
                     where: and(
                         eq(deliveryGroup.deliverymanId, context.session.user.id),
-                        sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery', 'partial')`,
+                        sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery')`,
                         ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
                     ),
                     with: {
@@ -247,6 +247,89 @@ export const deliverymanRouter = {
                 console.error("ERROR IN getMyGroups:", error);
                 throw error;
             }
+        }),
+
+    /**
+     * Get completed/partial delivery history for the current deliveryman
+     */
+    getMyDeliveryHistory: deliverymanProcedure
+        .route({
+            method: "GET",
+            path: "/my-deliveries/history",
+            tags: ["Deliveryman"],
+            summary: "Get delivery history for current deliveryman",
+        })
+        .input(
+            z
+                .object({
+                    limit: z.number().int().min(1).max(100).optional(),
+                    offset: z.number().int().min(0).optional(),
+                })
+                .optional(),
+        )
+        .handler(async ({ input, context }) => {
+            const warehouseId = getSessionWarehouseId(context);
+            const limit = input?.limit ?? 20;
+            const offset = input?.offset ?? 0;
+
+            const historyWhere = and(
+                eq(deliveryGroup.deliverymanId, context.session.user.id),
+                inArray(deliveryGroup.status, ["completed", "partial"]),
+                ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
+            );
+
+            const [{ total }] = await db
+                .select({ total: count() })
+                .from(deliveryGroup)
+                .where(historyWhere);
+
+            const groups = await db
+                .select({
+                    id: deliveryGroup.id,
+                    groupName: deliveryGroup.groupName,
+                    status: deliveryGroup.status,
+                    vehicleType: deliveryGroup.vehicleType,
+                    assignedAt: deliveryGroup.assignedAt,
+                    completedAt: deliveryGroup.completedAt,
+                    createdAt: deliveryGroup.createdAt,
+                })
+                .from(deliveryGroup)
+                .where(historyWhere)
+                .orderBy(
+                    desc(
+                        sql`COALESCE(${deliveryGroup.completedAt}, ${deliveryGroup.assignedAt}, ${deliveryGroup.createdAt})`,
+                    ),
+                )
+                .limit(limit)
+                .offset(offset);
+
+            const groupsWithDetails = await Promise.all(
+                groups.map(async (g) => {
+                    const [invoiceDetails] = await db
+                        .select({
+                            invoiceCount: sql<number>`COUNT(*)::int`,
+                            totalValue: sql<number>`COALESCE(SUM("invoice"."grand_total"::numeric), 0)`,
+                            deliveredCount: sql<number>`COUNT(*) FILTER (WHERE ${deliveryGroupInvoice.status} = 'delivered')::int`,
+                            failedCount: sql<number>`COUNT(*) FILTER (WHERE ${deliveryGroupInvoice.status} = 'failed')::int`,
+                        })
+                        .from(deliveryGroupInvoice)
+                        .innerJoin(
+                            invoice,
+                            eq(deliveryGroupInvoice.invoiceId, invoice.id),
+                        )
+                        .where(eq(deliveryGroupInvoice.groupId, g.id));
+
+                    return {
+                        ...g,
+                        invoiceCount: invoiceDetails?.invoiceCount ?? 0,
+                        totalValue: Number(invoiceDetails?.totalValue) || 0,
+                        deliveredCount: invoiceDetails?.deliveredCount ?? 0,
+                        failedCount: invoiceDetails?.failedCount ?? 0,
+                    };
+                }),
+            );
+
+            return { groups: groupsWithDetails, total };
         }),
 
     /**
