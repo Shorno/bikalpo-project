@@ -24,10 +24,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
+import { getSalesSubdomainUrl } from "@/lib/sales-routing";
 
 const DASHBOARD_PATHS: Record<string, string> = {
   admin: "/dashboard/admin",
-  salesman: "/dashboard/sales",
   deliveryman: "/dashboard",
 };
 
@@ -59,7 +59,10 @@ export function UserDropdown() {
   const userRole = user.role || "consumer";
   const isStaff = STAFF_ROLES.includes(userRole);
   const isSeller = userRole === "shop_owner" && user.isSeller;
-  const dashboardPath = DASHBOARD_PATHS[userRole] || "/dashboard";
+  const dashboardPath =
+    userRole === "salesman"
+      ? `${getSalesSubdomainUrl()}/dashboard`
+      : DASHBOARD_PATHS[userRole] || "/dashboard";
 
   // Shop owner dashboard – if already on shop/b2b subdomain, just use relative path
   const isOnShopSubdomain =

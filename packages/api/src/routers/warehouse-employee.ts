@@ -14,17 +14,17 @@ import { warehouseProcedure } from "../index";
 const employeeRoleSchema = z.enum(["salesman", "deliveryman"]);
 
 const createEmployeeSchema = z.object({
-    name: z.string().min(2).max(100).trim(),
-    email: z.string().email().trim(),
+    name: z.string().trim().min(2).max(100),
+    email: z.string().trim().email(),
     password: z.string().min(8).max(100),
-    phoneNumber: z.string().max(20).optional(),
+    phoneNumber: z.string().trim().max(20).optional(),
     role: employeeRoleSchema,
 });
 
 const updateEmployeeSchema = z.object({
     id: z.string(),
-    name: z.string().min(2).max(100).trim().optional(),
-    phoneNumber: z.string().max(20).optional(),
+    name: z.string().trim().min(2).max(100).optional(),
+    phoneNumber: z.string().trim().max(20).optional(),
 });
 
 const resetPasswordSchema = z.object({

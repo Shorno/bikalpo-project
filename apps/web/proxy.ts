@@ -43,12 +43,14 @@ export function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_B2B_SUBDOMAIN_URL,
     process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL,
     process.env.NEXT_PUBLIC_DELIVERY_SUBDOMAIN_URL,
+    process.env.NEXT_PUBLIC_SALES_SUBDOMAIN_URL,
     "http://localhost:3001",
     "http://bikalpo.localhost:3001",
     "http://shop.bikalpo.localhost:3001",
     "http://b2b.bikalpo.localhost:3001",
     "http://warehouse.bikalpo.localhost:3001",
     "http://delivery.bikalpo.localhost:3001",
+    "http://sales.bikalpo.localhost:3001",
   ].filter(Boolean) as string[];
 
   // Handle CORS for API routes
@@ -97,6 +99,7 @@ export function proxy(request: NextRequest) {
   const isB2bSubdomain = hostname.startsWith("b2b.");
   const isWarehouseSubdomain = hostname.startsWith("warehouse.");
   const isDeliverySubdomain = hostname.startsWith("delivery.");
+  const isSalesSubdomain = hostname.startsWith("sales.");
 
   // === B2B SUBDOMAIN (Public marketing/landing page) ===
   if (isB2bSubdomain) {
@@ -263,7 +266,67 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
+  // === SALES SUBDOMAIN (Warehouse Sales Portal — requires salesman auth) ===
+  if (isSalesSubdomain) {
+    // Auth routes - redirect logged-in users away from login/sign-up
+    if (isAuthRoute) {
+      if (token) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+      return NextResponse.next();
+    }
+
+    // Redirect to main domain login if not authenticated
+    if (!token) {
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^sales\./, "")}`;
+      return NextResponse.redirect(new URL("/login", mainDomain));
+    }
+
+    // If logged in but not a salesman, redirect to main domain
+    if (role && role !== "salesman") {
+      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^sales\./, "")}`;
+      return NextResponse.redirect(new URL("/", mainDomain));
+    }
+
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
+    if (pathname.startsWith("/sales/dashboard")) {
+      const suffix = pathname.slice("/sales/dashboard".length);
+      return NextResponse.redirect(
+        new URL(
+          `/dashboard${suffix || ""}${request.nextUrl.search}`,
+          request.url,
+        ),
+      );
+    }
+
+    if (pathname.startsWith("/dashboard")) {
+      const suffix = pathname.slice("/dashboard".length);
+      const rewritePath = `/sales/dashboard${suffix}`;
+      const rewriteUrl = new URL(rewritePath, request.url);
+      rewriteUrl.search = request.nextUrl.search;
+      return NextResponse.rewrite(rewriteUrl);
+    }
+
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
   // === MAIN DOMAIN ===
+
+  if (pathname.startsWith("/sales/dashboard")) {
+    const salesDomain =
+      process.env.NEXT_PUBLIC_SALES_SUBDOMAIN_URL ||
+      "http://sales.bikalpo.localhost:3001";
+    const suffix = pathname.slice("/sales/dashboard".length);
+    return NextResponse.redirect(
+      new URL(
+        `/dashboard${suffix || ""}${request.nextUrl.search}`,
+        salesDomain,
+      ),
+    );
+  }
 
   if (pathname.startsWith("/delivery/dashboard")) {
     const deliveryDomain =
@@ -294,6 +357,13 @@ export function proxy(request: NextRequest) {
           process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL ||
           "http://warehouse.bikalpo.localhost:3001";
         return NextResponse.redirect(new URL("/", warehouseDomain));
+      }
+      if (role === "salesman") {
+        // Sales users go to sales subdomain
+        const salesDomain =
+          process.env.NEXT_PUBLIC_SALES_SUBDOMAIN_URL ||
+          "http://sales.bikalpo.localhost:3001";
+        return NextResponse.redirect(new URL("/dashboard", salesDomain));
       }
       // Staff go to dashboard
       return NextResponse.redirect(new URL("/dashboard", request.url));
@@ -359,6 +429,12 @@ export function proxy(request: NextRequest) {
         process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL ||
         "http://warehouse.bikalpo.localhost:3001";
       return NextResponse.redirect(new URL("/", warehouseDomain));
+    }
+    if (role === "salesman") {
+      const salesDomain =
+        process.env.NEXT_PUBLIC_SALES_SUBDOMAIN_URL ||
+        "http://sales.bikalpo.localhost:3001";
+      return NextResponse.redirect(new URL("/dashboard", salesDomain));
     }
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }

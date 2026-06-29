@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     "shop.bikalpo.localhost",
     "b2b.bikalpo.localhost",
     "delivery.bikalpo.localhost",
+    "sales.bikalpo.localhost",
   ],
   experimental: {
     authInterrupts: true,
