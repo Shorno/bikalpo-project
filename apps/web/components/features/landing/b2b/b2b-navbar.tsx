@@ -71,7 +71,9 @@ export function B2bNavbar() {
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-black/[0.08] cursor-pointer">
             EN
-            <span className="material-symbols-outlined text-xs">expand_more</span>
+            <span className="material-symbols-outlined text-xs">
+              expand_more
+            </span>
           </div>
 
           {isPending ? (
@@ -104,16 +106,19 @@ export function B2bNavbar() {
             <>
               <Link
                 href="/b2b/login"
-                className="hidden sm:inline-flex px-5 py-2.5 text-sm font-semibold rounded-lg text-[#003178] border-[1.5px] border-[#003178]/15 hover:bg-[#003178]/[0.04] hover:border-[#003178]/30 transition-all"
+                className="hidden md:inline-flex px-5 py-2.5 text-sm font-semibold rounded-lg text-[#003178] border-[1.5px] border-[#003178]/15 hover:bg-[#003178]/[0.04] hover:border-[#003178]/30 transition-all"
               >
                 Sign In
               </Link>
               <Link
                 href="/b2b/register"
-                className="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-lg bg-gradient-to-br from-[#003178] to-[#0d47a1] shadow-[0_4px_16px_rgba(0,49,120,0.25)] hover:-translate-y-0.5 hover:shadow-[0_6px_24px_rgba(0,49,120,0.35)] transition-all"
+                aria-label="Register your warehouse or retail business"
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 sm:gap-2 sm:px-5 text-sm font-bold text-white rounded-lg bg-gradient-to-br from-[#003178] to-[#0d47a1] shadow-[0_4px_16px_rgba(0,49,120,0.25)] hover:-translate-y-0.5 hover:shadow-[0_6px_24px_rgba(0,49,120,0.35)] transition-all"
               >
-                Apply Now
-                <span className="material-symbols-outlined text-base">arrow_forward</span>
+                Register
+                <span className="material-symbols-outlined text-base hidden sm:inline">
+                  arrow_forward
+                </span>
               </Link>
             </>
           )}
@@ -123,7 +128,11 @@ export function B2bNavbar() {
             className="lg:hidden p-2 rounded-lg text-slate-600"
             onClick={() => setMobileOpen(!mobileOpen)}
           >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {mobileOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
           </button>
         </div>
       </div>
@@ -153,7 +162,10 @@ export function B2bNavbar() {
                 </Link>
                 <button
                   type="button"
-                  onClick={() => { setMobileOpen(false); handleLogout(); }}
+                  onClick={() => {
+                    setMobileOpen(false);
+                    handleLogout();
+                  }}
                   className="flex items-center gap-2 text-sm font-medium text-red-500 py-2"
                 >
                   <LogOut className="h-4 w-4" />
@@ -161,22 +173,13 @@ export function B2bNavbar() {
                 </button>
               </>
             ) : (
-              <>
-                <Link
-                  href="/b2b/login"
-                  className="block text-center text-sm font-semibold py-3 rounded-lg text-[#003178] border-[1.5px] border-[#003178]/20"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Sign In
-                </Link>
-                <Link
-                  href="/b2b/register"
-                  className="block text-center text-sm font-bold text-white py-3 rounded-lg bg-gradient-to-br from-[#003178] to-[#0d47a1]"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Apply Now
-                </Link>
-              </>
+              <Link
+                href="/b2b/login"
+                className="block text-center text-sm font-semibold py-3 rounded-lg text-[#003178] border-[1.5px] border-[#003178]/20"
+                onClick={() => setMobileOpen(false)}
+              >
+                Sign In
+              </Link>
             )}
           </div>
         </div>
