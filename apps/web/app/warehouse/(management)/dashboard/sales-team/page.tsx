@@ -11,6 +11,8 @@ import {
 import { format } from "date-fns";
 import {
   Ban,
+  Building2,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -46,6 +48,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -92,6 +95,8 @@ interface AssignedArea {
   status: "active" | "inactive" | string;
 }
 
+type CustomerType = "retailer" | "warehouse";
+
 interface Salesman {
   id: string;
   name: string;
@@ -110,11 +115,31 @@ interface AssignedCustomer {
   email: string;
   phoneNumber: string | null;
   shopName: string | null;
+  warehouseName: string | null;
+  customerType: CustomerType;
+  displayName: string;
   assignedAt: Date;
 }
 
 interface SalesmanDetail extends Salesman {
   assignedCustomers: AssignedCustomer[];
+}
+
+interface AssignableCustomer {
+  id: string;
+  customerType: CustomerType;
+  connectionId: number;
+  displayName: string;
+  contactName: string;
+  email: string;
+  phoneNumber: string | null;
+  address: string | null;
+  connectedAt: Date | null;
+  assignedSalesmanId: string | null;
+  assignedSalesmanName: string | null;
+  isAssigned: boolean;
+  isAssignedToThisSalesman: boolean;
+  isAssignable: boolean;
 }
 
 interface DeliveryAreaOption {
@@ -170,6 +195,18 @@ function getAreaBadge(area: AssignedArea | null) {
   );
 }
 
+function CustomerTypeBadge({ type }: { type: CustomerType }) {
+  const isWarehouse = type === "warehouse";
+  const Icon = isWarehouse ? Building2 : Store;
+
+  return (
+    <Badge variant="outline" className="gap-1 text-[11px]">
+      <Icon className="h-3 w-3" />
+      {isWarehouse ? "Warehouse" : "Retailer"}
+    </Badge>
+  );
+}
+
 function generatePassword(length = 10): string {
   const chars = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let password = "";
@@ -218,6 +255,9 @@ function SalesmanDetailsSheet({
 }) {
   const queryClient = useQueryClient();
   const [selectedAreaId, setSelectedAreaId] = useState<string | undefined>();
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [debouncedCustomerSearch, setDebouncedCustomerSearch] = useState("");
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
 
   const { data, isLoading } = useQuery({
     ...orpc.warehouseEmployee.getSalesmanById.queryOptions({
@@ -226,14 +266,50 @@ function SalesmanDetailsSheet({
     enabled: open && !!salesman?.id,
   });
 
+  const {
+    data: assignableCustomersData,
+    isLoading: assignableCustomersLoading,
+    isFetching: assignableCustomersFetching,
+  } = useQuery({
+    ...orpc.warehouseEmployee.getAssignableSalesmanCustomers.queryOptions({
+      input: {
+        salesmanId: salesman?.id ?? "",
+        search: debouncedCustomerSearch || undefined,
+      },
+    }),
+    enabled: open && !!salesman?.id,
+  });
+
   const detail = (data?.salesman ?? salesman) as SalesmanDetail | null;
   const assignedCustomers = detail?.assignedCustomers ?? [];
+  const assignableCustomers = (assignableCustomersData?.customers ??
+    []) as AssignableCustomer[];
   const currentAreaId = detail?.assignedArea?.id;
+  const selectedCustomerIdSet = useMemo(
+    () => new Set(selectedCustomerIds),
+    [selectedCustomerIds],
+  );
 
   useEffect(() => {
     if (!open) return;
     setSelectedAreaId(currentAreaId ? String(currentAreaId) : undefined);
   }, [currentAreaId, open]);
+
+  useEffect(() => {
+    if (!open) {
+      setCustomerSearch("");
+      setDebouncedCustomerSearch("");
+      setSelectedCustomerIds([]);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedCustomerSearch(customerSearch.trim());
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [customerSearch]);
 
   const assignAreaMutation = useMutation({
     ...orpc.warehouseEmployee.assignSalesmanArea.mutationOptions(),
@@ -244,6 +320,17 @@ function SalesmanDetailsSheet({
     },
     onError: (error) =>
       toast.error(error.message || "Failed to assign delivery area"),
+  });
+
+  const assignCustomersMutation = useMutation({
+    ...orpc.warehouseEmployee.assignSalesmanCustomers.mutationOptions(),
+    onSuccess: (result) => {
+      toast.success(result.message);
+      setSelectedCustomerIds([]);
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to assign customers"),
   });
 
   const canSaveArea =
@@ -258,6 +345,24 @@ function SalesmanDetailsSheet({
     assignAreaMutation.mutate({
       salesmanId: salesman.id,
       areaId: Number(selectedAreaId),
+    });
+  };
+
+  const toggleCustomerSelection = (customer: AssignableCustomer) => {
+    if (!customer.isAssignable || assignCustomersMutation.isPending) return;
+
+    setSelectedCustomerIds((current) =>
+      current.includes(customer.id)
+        ? current.filter((customerId) => customerId !== customer.id)
+        : [...current, customer.id],
+    );
+  };
+
+  const saveCustomers = () => {
+    if (!salesman?.id || selectedCustomerIds.length === 0) return;
+    assignCustomersMutation.mutate({
+      salesmanId: salesman.id,
+      customerIds: selectedCustomerIds,
     });
   };
 
@@ -397,6 +502,143 @@ function SalesmanDetailsSheet({
                 </div>
               </section>
 
+              <section className="rounded-lg border bg-background">
+                <div className="border-b px-4 py-3">
+                  <h3 className="text-sm font-semibold">Assign Customers</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Select active retailers or buyer warehouses connected to
+                    this warehouse.
+                  </p>
+                </div>
+                <div className="space-y-3 p-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={customerSearch}
+                      onChange={(event) =>
+                        setCustomerSearch(event.target.value)
+                      }
+                      placeholder="Search customers..."
+                      className="pl-9"
+                    />
+                  </div>
+
+                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                    {assignableCustomersLoading ? (
+                      <div className="flex items-center justify-center rounded-lg border bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Loading customers...
+                      </div>
+                    ) : assignableCustomers.length === 0 ? (
+                      <div className="rounded-lg border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                        No connected customers found
+                      </div>
+                    ) : (
+                      assignableCustomers.map((customer) => {
+                        const checkboxId = `assign-customer-${customer.id}`;
+                        const checked = selectedCustomerIdSet.has(customer.id);
+                        const disabled =
+                          !customer.isAssignable ||
+                          assignCustomersMutation.isPending;
+                        const assignmentLabel =
+                          customer.isAssignedToThisSalesman
+                            ? "Already assigned here"
+                            : customer.assignedSalesmanName
+                              ? `Assigned to ${customer.assignedSalesmanName}`
+                              : null;
+
+                        return (
+                          <label
+                            key={`${customer.customerType}-${customer.id}`}
+                            htmlFor={checkboxId}
+                            className={`flex cursor-pointer gap-3 rounded-lg border bg-background px-3 py-2.5 transition-colors ${
+                              disabled
+                                ? "cursor-not-allowed opacity-65"
+                                : "hover:bg-muted/50"
+                            }`}
+                          >
+                            <Checkbox
+                              id={checkboxId}
+                              checked={checked}
+                              disabled={disabled}
+                              onCheckedChange={() =>
+                                toggleCustomerSelection(customer)
+                              }
+                              className="mt-1"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="min-w-0 truncate text-sm font-medium">
+                                  {customer.displayName}
+                                </p>
+                                <CustomerTypeBadge
+                                  type={customer.customerType}
+                                />
+                              </div>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {customer.contactName}
+                                {customer.phoneNumber
+                                  ? ` - ${customer.phoneNumber}`
+                                  : ""}
+                              </p>
+                              {customer.address ? (
+                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                  {customer.address}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="flex shrink-0 items-start pt-0.5">
+                              {assignmentLabel ? (
+                                <Badge
+                                  variant="outline"
+                                  className="max-w-36 truncate text-[11px]"
+                                  title={assignmentLabel}
+                                >
+                                  {assignmentLabel}
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="secondary"
+                                  className="gap-1 text-[11px]"
+                                >
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Available
+                                </Badge>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <Button
+                    className="w-full"
+                    onClick={saveCustomers}
+                    disabled={
+                      selectedCustomerIds.length === 0 ||
+                      assignCustomersMutation.isPending
+                    }
+                  >
+                    {assignCustomersMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Users className="mr-2 h-4 w-4" />
+                    )}
+                    Assign Selected Customers
+                    {selectedCustomerIds.length > 0
+                      ? ` (${selectedCustomerIds.length})`
+                      : ""}
+                  </Button>
+                  {assignableCustomersFetching &&
+                  !assignableCustomersLoading ? (
+                    <p className="text-xs text-muted-foreground">
+                      Refreshing customer results...
+                    </p>
+                  ) : null}
+                </div>
+              </section>
+
               <section>
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold">Assigned Customers</h3>
@@ -413,33 +655,50 @@ function SalesmanDetailsSheet({
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {assignedCustomers.map((customer) => (
-                      <div
-                        key={customer.id}
-                        className="rounded-lg border bg-background px-3 py-2.5"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">
-                              {customer.shopName || customer.name}
-                            </p>
-                            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                              <Store className="h-3 w-3 shrink-0" />
-                              <span className="truncate">{customer.name}</span>
-                            </p>
+                    {assignedCustomers.map((customer) => {
+                      const CustomerIcon =
+                        customer.customerType === "warehouse"
+                          ? Building2
+                          : Store;
+
+                      return (
+                        <div
+                          key={customer.id}
+                          className="rounded-lg border bg-background px-3 py-2.5"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <p className="truncate text-sm font-medium">
+                                  {customer.displayName ||
+                                    customer.warehouseName ||
+                                    customer.shopName ||
+                                    customer.name}
+                                </p>
+                                <CustomerTypeBadge
+                                  type={customer.customerType}
+                                />
+                              </div>
+                              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                                <CustomerIcon className="h-3 w-3 shrink-0" />
+                                <span className="truncate">
+                                  {customer.name}
+                                </span>
+                              </p>
+                            </div>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {format(
+                                new Date(customer.assignedAt),
+                                "MMM d, yyyy",
+                              )}
+                            </span>
                           </div>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {format(
-                              new Date(customer.assignedAt),
-                              "MMM d, yyyy",
-                            )}
-                          </span>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {customer.phoneNumber ?? "No phone"}
+                          </p>
                         </div>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {customer.phoneNumber ?? "No phone"}
-                        </p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </section>

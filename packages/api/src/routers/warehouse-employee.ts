@@ -7,10 +7,12 @@ import {
 	deliveryGroupInvoice,
 	invoice,
 	salesmanAreaAssignment,
+	shopWarehouseConnection,
 	user,
+	warehouseWarehouseConnection,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { warehouseProcedure } from "../index";
@@ -54,6 +56,187 @@ const assignSalesmanAreaSchema = z.object({
 	salesmanId: z.string(),
 	areaId: z.number().int().positive(),
 });
+
+const getAssignableSalesmanCustomersSchema = z.object({
+	salesmanId: z.string(),
+	search: z.string().trim().max(100).optional(),
+});
+
+const assignSalesmanCustomersSchema = z.object({
+	salesmanId: z.string(),
+	customerIds: z.array(z.string()).min(1, "Select at least one customer"),
+});
+
+type WarehouseCustomerType = "retailer" | "warehouse";
+
+type WarehouseCustomerSource = {
+	id: string;
+	customerType: WarehouseCustomerType;
+	connectionId: number;
+	displayName: string;
+	contactName: string;
+	email: string;
+	phoneNumber: string | null;
+	address: string | null;
+	connectedAt: Date | null;
+};
+
+async function getWarehouseCustomerSources({
+	warehouseId,
+	customerIds,
+	search,
+}: {
+	warehouseId: string;
+	customerIds?: string[];
+	search?: string;
+}) {
+	const normalizedSearch = search?.trim().toLowerCase();
+
+	const retailerConditions: SQL[] = [
+		eq(shopWarehouseConnection.warehouseId, warehouseId),
+		eq(shopWarehouseConnection.status, "active"),
+	];
+	const warehouseConditions: SQL[] = [
+		eq(warehouseWarehouseConnection.supplierWarehouseId, warehouseId),
+		eq(warehouseWarehouseConnection.status, "active"),
+	];
+
+	if (customerIds?.length) {
+		retailerConditions.push(inArray(shopWarehouseConnection.shopId, customerIds));
+		warehouseConditions.push(
+			inArray(warehouseWarehouseConnection.buyerWarehouseId, customerIds),
+		);
+	}
+
+	if (normalizedSearch) {
+		const searchPattern = `%${normalizedSearch}%`;
+		retailerConditions.push(
+			sql`(LOWER(COALESCE(${user.shopName}, '')) LIKE ${searchPattern} OR LOWER(${user.name}) LIKE ${searchPattern} OR COALESCE(${user.phoneNumber}, '') LIKE ${searchPattern})`,
+		);
+		warehouseConditions.push(
+			sql`(LOWER(COALESCE(${user.warehouseName}, '')) LIKE ${searchPattern} OR LOWER(${user.name}) LIKE ${searchPattern} OR COALESCE(${user.phoneNumber}, '') LIKE ${searchPattern})`,
+		);
+	}
+
+	const [retailers, warehouses] = await Promise.all([
+		db
+			.select({
+				id: user.id,
+				customerType: sql<WarehouseCustomerType>`'retailer'`,
+				connectionId: shopWarehouseConnection.id,
+				displayName: sql<string>`COALESCE(${user.shopName}, ${user.name})`,
+				contactName: user.name,
+				email: user.email,
+				phoneNumber: user.phoneNumber,
+				address: user.shopAddress,
+				connectedAt: shopWarehouseConnection.connectedAt,
+			})
+			.from(shopWarehouseConnection)
+			.innerJoin(user, eq(shopWarehouseConnection.shopId, user.id))
+			.where(and(...retailerConditions)),
+		db
+			.select({
+				id: user.id,
+				customerType: sql<WarehouseCustomerType>`'warehouse'`,
+				connectionId: warehouseWarehouseConnection.id,
+				displayName: sql<string>`COALESCE(${user.warehouseName}, ${user.name})`,
+				contactName: user.name,
+				email: user.email,
+				phoneNumber: user.phoneNumber,
+				address: user.warehouseAddress,
+				connectedAt: warehouseWarehouseConnection.connectedAt,
+			})
+			.from(warehouseWarehouseConnection)
+			.innerJoin(
+				user,
+				eq(warehouseWarehouseConnection.buyerWarehouseId, user.id),
+			)
+			.where(and(...warehouseConditions)),
+	]);
+
+	return [...retailers, ...warehouses]
+		.map((customer) => ({
+			...customer,
+			displayName: customer.displayName || customer.contactName,
+		}))
+		.sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
+async function getSalesmanOrThrow(warehouseId: string, salesmanId: string) {
+	const [salesman] = await db
+		.select({ id: user.id })
+		.from(user)
+		.where(
+			and(
+				eq(user.id, salesmanId),
+				eq(user.warehouseId, warehouseId),
+				eq(user.role, "salesman"),
+			),
+		);
+
+	if (!salesman) {
+		throw new ORPCError("NOT_FOUND", { message: "Salesman not found" });
+	}
+
+	return salesman;
+}
+
+async function withAssignmentStatus(
+	customers: WarehouseCustomerSource[],
+	warehouseId: string,
+	salesmanId: string,
+) {
+	if (customers.length === 0) return [];
+
+	const customerIds = customers.map((customer) => customer.id);
+	const assignments = await db
+		.select({
+			customerId: customerAssignment.customerId,
+			salesmanId: customerAssignment.salesmanId,
+		})
+		.from(customerAssignment)
+		.where(
+			and(
+				eq(customerAssignment.warehouseId, warehouseId),
+				inArray(customerAssignment.customerId, customerIds),
+			),
+		);
+
+	const salesmanIds = Array.from(
+		new Set(assignments.map((assignment) => assignment.salesmanId)),
+	);
+	const assignedSalesmen =
+		salesmanIds.length > 0
+			? await db
+					.select({ id: user.id, name: user.name })
+					.from(user)
+					.where(inArray(user.id, salesmanIds))
+			: [];
+
+	const salesmanNameById = new Map(
+		assignedSalesmen.map((salesman) => [salesman.id, salesman.name]),
+	);
+	const assignmentByCustomerId = new Map(
+		assignments.map((assignment) => [assignment.customerId, assignment]),
+	);
+
+	return customers.map((customer) => {
+		const assignment = assignmentByCustomerId.get(customer.id);
+		const assignedSalesmanId = assignment?.salesmanId ?? null;
+		const isAssignedToThisSalesman = assignedSalesmanId === salesmanId;
+
+		return {
+			...customer,
+			assignedSalesmanId,
+			assignedSalesmanName: assignedSalesmanId
+				? salesmanNameById.get(assignedSalesmanId) ?? "Assigned salesman"
+				: null,
+			isAssigned: Boolean(assignedSalesmanId),
+			isAssignedToThisSalesman,
+			isAssignable: !assignedSalesmanId,
+		};
+	});
+}
 
 // ────────────────────────────────────────────────────────────────
 // Router
@@ -140,7 +323,9 @@ export const warehouseEmployeeRouter = {
                         SELECT COUNT(*)::int FROM estimate WHERE estimate.salesman_id = "user"."id"
                     ), 0)`,
 					assignedCustomersCount: sql<number>`COALESCE((
-                        SELECT COUNT(*)::int FROM customer_assignment WHERE customer_assignment.salesman_id = "user"."id"
+                        SELECT COUNT(*)::int FROM customer_assignment
+                        WHERE customer_assignment.salesman_id = "user"."id"
+                        AND customer_assignment.warehouse_id = ${warehouseId}
                     ), 0)`,
 				})
 				.from(user)
@@ -407,19 +592,58 @@ export const warehouseEmployeeRouter = {
 			}
 
 			// Get assigned customers
-			const assignedCustomers = await db
+			const assignedCustomerRows = await db
 				.select({
 					id: user.id,
 					name: user.name,
 					email: user.email,
 					phoneNumber: user.phoneNumber,
 					shopName: user.shopName,
+					warehouseName: user.warehouseName,
 					assignedAt: customerAssignment.assignedAt,
 				})
 				.from(customerAssignment)
 				.innerJoin(user, eq(customerAssignment.customerId, user.id))
-				.where(eq(customerAssignment.salesmanId, input.id))
+				.where(
+					and(
+						eq(customerAssignment.salesmanId, input.id),
+						eq(customerAssignment.warehouseId, warehouseId),
+					),
+				)
 				.orderBy(desc(customerAssignment.assignedAt));
+
+			const customerSourceRows =
+				assignedCustomerRows.length > 0
+					? await getWarehouseCustomerSources({
+							warehouseId,
+							customerIds: assignedCustomerRows.map((customer) => customer.id),
+						})
+					: [];
+			const customerSourceById = new Map(
+				customerSourceRows.map((customer) => [customer.id, customer]),
+			);
+			const assignedCustomers = assignedCustomerRows.map((customer) => {
+				const source = customerSourceById.get(customer.id);
+				const customerType =
+					source?.customerType ??
+					(customer.warehouseName ? "warehouse" : "retailer");
+
+				return {
+					id: customer.id,
+					name: customer.name,
+					email: customer.email,
+					phoneNumber: customer.phoneNumber,
+					shopName: customer.shopName,
+					warehouseName: customer.warehouseName,
+					customerType,
+					displayName:
+						source?.displayName ??
+						customer.warehouseName ??
+						customer.shopName ??
+						customer.name,
+					assignedAt: customer.assignedAt,
+				};
+			});
 
 			return {
 				salesman: {
@@ -524,6 +748,125 @@ export const warehouseEmployeeRouter = {
 			return {
 				message: "Area assigned successfully",
 				assignedArea: area,
+			};
+		}),
+
+	/**
+	 * Get connected retailer and warehouse customers available for assignment
+	 */
+	getAssignableSalesmanCustomers: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/employees/salesman/assignable-customers",
+			tags: ["Warehouse Employee Management"],
+			summary: "Get assignable customers for a salesman",
+			description:
+				"Get this warehouse's active retailer and buyer-warehouse customers with assignment status",
+		})
+		.input(getAssignableSalesmanCustomersSchema)
+		.handler(async ({ input, context }) => {
+			const warehouseId = context.session.user.id;
+			await getSalesmanOrThrow(warehouseId, input.salesmanId);
+
+			const customers = await getWarehouseCustomerSources({
+				warehouseId,
+				search: input.search,
+			});
+
+			return {
+				customers: await withAssignmentStatus(
+					customers,
+					warehouseId,
+					input.salesmanId,
+				),
+			};
+		}),
+
+	/**
+	 * Assign connected customers to a salesman
+	 */
+	assignSalesmanCustomers: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/employees/salesman/assign-customers",
+			tags: ["Warehouse Employee Management"],
+			summary: "Assign customers to salesman",
+			description:
+				"Assign active connected retailer or buyer-warehouse customers to one warehouse salesman",
+		})
+		.input(assignSalesmanCustomersSchema)
+		.handler(async ({ input, context }) => {
+			const warehouseId = context.session.user.id;
+			await getSalesmanOrThrow(warehouseId, input.salesmanId);
+
+			const customerIds = Array.from(new Set(input.customerIds));
+			const customerSources = await getWarehouseCustomerSources({
+				warehouseId,
+				customerIds,
+			});
+			const eligibleCustomerIds = new Set(
+				customerSources.map((customer) => customer.id),
+			);
+			const invalidCustomerIds = customerIds.filter(
+				(customerId) => !eligibleCustomerIds.has(customerId),
+			);
+
+			if (invalidCustomerIds.length > 0) {
+				throw new ORPCError("BAD_REQUEST", {
+					message:
+						"Some selected customers are not active customers of this warehouse",
+				});
+			}
+
+			const existingAssignments = await db
+				.select({
+					customerId: customerAssignment.customerId,
+					salesmanId: customerAssignment.salesmanId,
+				})
+				.from(customerAssignment)
+				.where(
+					and(
+						eq(customerAssignment.warehouseId, warehouseId),
+						inArray(customerAssignment.customerId, customerIds),
+					),
+				);
+
+			const conflictingAssignments = existingAssignments.filter(
+				(assignment) => assignment.salesmanId !== input.salesmanId,
+			);
+
+			if (conflictingAssignments.length > 0) {
+				throw new ORPCError("CONFLICT", {
+					message:
+						"One or more selected customers are already assigned to another salesman",
+				});
+			}
+
+			const alreadyAssignedToThisSalesman = new Set(
+				existingAssignments.map((assignment) => assignment.customerId),
+			);
+			const newCustomerIds = customerIds.filter(
+				(customerId) => !alreadyAssignedToThisSalesman.has(customerId),
+			);
+
+			if (newCustomerIds.length > 0) {
+				await db.insert(customerAssignment).values(
+					newCustomerIds.map((customerId) => ({
+						warehouseId,
+						customerId,
+						salesmanId: input.salesmanId,
+						assignedBy: warehouseId,
+					})),
+				);
+			}
+
+			return {
+				message:
+					newCustomerIds.length > 0
+						? `${newCustomerIds.length} customer(s) assigned successfully`
+						: "Selected customers are already assigned to this salesman",
+				assignedCount: newCustomerIds.length,
+				skippedCount: customerIds.length - newCustomerIds.length,
 			};
 		}),
 

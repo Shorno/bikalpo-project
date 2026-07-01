@@ -1,5 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import { customerAssignment, estimate, estimateItem, order, orderItem, product, user } from "@bikalpo-project/db/schema";
+import { customerAssignment, estimate, estimateItem, order, orderItem, user } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -821,9 +821,20 @@ export const salesmanRouter = {
         })
         .input(assignCustomersSchema)
         .handler(async ({ input, context }) => {
+            const [salesman] = await db
+                .select({ warehouseId: user.warehouseId })
+                .from(user)
+                .where(and(eq(user.id, input.salesmanId), eq(user.role, "salesman")));
+
+            if (!salesman?.warehouseId) {
+                throw new ORPCError("NOT_FOUND", { message: "Salesman not found" });
+            }
+            const warehouseId = salesman.warehouseId;
+
             // Insert assignments
             await db.insert(customerAssignment).values(
                 input.customerIds.map((customerId) => ({
+                    warehouseId,
                     customerId,
                     salesmanId: input.salesmanId,
                     assignedBy: context.session.user.id,

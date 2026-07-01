@@ -14,6 +14,9 @@ export const customerAssignment = pgTable(
     "customer_assignment",
     {
         id: serial("id").primaryKey(),
+        warehouseId: text("warehouse_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
         customerId: text("customer_id")
             .notNull()
             .references(() => user.id, { onDelete: "cascade" }),
@@ -26,10 +29,14 @@ export const customerAssignment = pgTable(
         }),
     },
     (table) => [
+        index("customer_assignment_warehouse_idx").on(table.warehouseId),
         index("customer_assignment_customer_idx").on(table.customerId),
         index("customer_assignment_salesman_idx").on(table.salesmanId),
-        // Ensure each customer is only assigned to one salesman
-        unique("customer_assignment_unique").on(table.customerId),
+        // Ensure each customer is only assigned to one salesman per warehouse.
+        unique("customer_assignment_warehouse_customer_unique").on(
+            table.warehouseId,
+            table.customerId,
+        ),
     ],
 );
 
@@ -37,6 +44,11 @@ export const customerAssignment = pgTable(
 export const customerAssignmentRelations = relations(
     customerAssignment,
     ({ one }) => ({
+        warehouse: one(user, {
+            fields: [customerAssignment.warehouseId],
+            references: [user.id],
+            relationName: "warehouseCustomerAssignments",
+        }),
         customer: one(user, {
             fields: [customerAssignment.customerId],
             references: [user.id],
