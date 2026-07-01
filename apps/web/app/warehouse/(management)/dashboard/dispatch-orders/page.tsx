@@ -309,13 +309,13 @@ export default function DispatchOrdersPage() {
   const allOrders = useMemo((): DispatchOrderRow[] => {
     if (!data) return [];
     return [
-      ...data.readyOrders,
-      ...data.partiallyInvoicedOrders,
-      ...data.invoicedOrders,
+      ...(data.readyOrders ?? []),
+      ...(data.partiallyInvoicedOrders ?? []),
+      ...(data.invoicedOrders ?? []),
     ].map((order) => ({
       ...order,
       status: order.status as DispatchStatus,
-      invoices: order.invoices.map((inv) => ({
+      invoices: (order.invoices ?? []).map((inv) => ({
         ...inv,
         fulfillmentMode: inv.fulfillmentMode ?? null,
         completionOtpVerifiedAt: inv.completionOtpVerifiedAt ?? null,
@@ -327,9 +327,9 @@ export default function DispatchOrdersPage() {
   const counts: Record<StatusFilter, number> = useMemo(
     () => ({
       all: allOrders.length,
-      ready_for_dispatch: data?.readyOrders.length ?? 0,
-      partially_invoiced: data?.partiallyInvoicedOrders.length ?? 0,
-      invoiced: data?.invoicedOrders.length ?? 0,
+      ready_for_dispatch: data?.readyOrders?.length ?? 0,
+      partially_invoiced: data?.partiallyInvoicedOrders?.length ?? 0,
+      invoiced: data?.invoicedOrders?.length ?? 0,
     }),
     [allOrders.length, data],
   );

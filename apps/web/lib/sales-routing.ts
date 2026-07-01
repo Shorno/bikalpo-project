@@ -8,4 +8,3 @@ export function getSalesSubdomainUrl() {
     DEFAULT_SALES_SUBDOMAIN_URL
   ).replace(/\/$/, "");
 }
-
