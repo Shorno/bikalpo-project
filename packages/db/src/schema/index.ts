@@ -47,6 +47,7 @@ export * from "./purchase";
 export * from "./review";
 export * from "./reward";
 export * from "./sales-model";
+export * from "./salesman-area-assignment";
 export * from "./seller-application";
 export * from "./shop-category-assignment";
 export * from "./shop-warehouse-connection";

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ColumnDef,
   flexRender,
@@ -7,7 +8,6 @@ import {
   getPaginationRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Ban,
@@ -16,16 +16,22 @@ import {
   Eye,
   KeyRound,
   Loader2,
+  type LucideIcon,
+  Mail,
+  MapPin,
   MoreHorizontal,
+  Phone,
   Search,
   ShieldCheck,
+  Store,
   Trash2,
+  UserCheck,
   Users,
 } from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CreateWarehouseEmployeeModal } from "@/components/features/warehouse/create-warehouse-employee-modal";
+import TableSkeleton from "@/components/table-skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,6 +63,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
   Table,
   TableBody,
   TableCell,
@@ -64,10 +84,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import TableSkeleton from "@/components/table-skeleton";
 import { orpc } from "@/utils/orpc";
 
-const WH = "/warehouse/dashboard";
+interface AssignedArea {
+  id: number;
+  name: string;
+  status: "active" | "inactive" | string;
+}
 
 interface Salesman {
   id: string;
@@ -78,28 +101,71 @@ interface Salesman {
   banned: boolean;
   estimatesCount: number;
   assignedCustomersCount: number;
+  assignedArea: AssignedArea | null;
+}
+
+interface AssignedCustomer {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string | null;
+  shopName: string | null;
+  assignedAt: Date;
+}
+
+interface SalesmanDetail extends Salesman {
+  assignedCustomers: AssignedCustomer[];
+}
+
+interface DeliveryAreaOption {
+  id: number;
+  name: string;
+  status: "active" | "inactive" | string;
 }
 
 interface SalesmenStats {
   total: number;
   totalEstimates: number;
   activeCount: number;
+  assignedSalesmen: number;
+  assignedCustomers: number;
 }
 
 function getStatusBadge(banned: boolean) {
   if (banned) {
     return (
       <Badge variant="destructive" className="text-xs">
-        Banned
+        Inactive
       </Badge>
     );
   }
   return (
     <Badge
       variant="outline"
-      className="text-xs text-green-600 border-green-600"
+      className="border-green-600 text-xs text-green-600"
     >
       Active
+    </Badge>
+  );
+}
+
+function getAreaBadge(area: AssignedArea | null) {
+  if (!area) {
+    return (
+      <Badge variant="outline" className="text-xs text-muted-foreground">
+        Not Assigned
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge
+      variant={area.status === "active" ? "secondary" : "outline"}
+      className="max-w-36 truncate text-xs"
+      title={area.name}
+    >
+      <MapPin className="mr-1 h-3 w-3 shrink-0" />
+      {area.name}
     </Badge>
   );
 }
@@ -113,6 +179,278 @@ function generatePassword(length = 10): string {
   return password;
 }
 
+function MetricCard({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: number;
+  icon: LucideIcon;
+}) {
+  return (
+    <Card className="p-0">
+      <CardContent className="flex items-center justify-between gap-3 p-4">
+        <div>
+          <p className="text-2xl font-bold tabular-nums">{value}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
+        </div>
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SalesmanDetailsSheet({
+  salesman,
+  open,
+  onOpenChange,
+  areas,
+  areasLoading,
+}: {
+  salesman: Salesman | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  areas: DeliveryAreaOption[];
+  areasLoading: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [selectedAreaId, setSelectedAreaId] = useState<string | undefined>();
+
+  const { data, isLoading } = useQuery({
+    ...orpc.warehouseEmployee.getSalesmanById.queryOptions({
+      input: { id: salesman?.id ?? "" },
+    }),
+    enabled: open && !!salesman?.id,
+  });
+
+  const detail = (data?.salesman ?? salesman) as SalesmanDetail | null;
+  const assignedCustomers = detail?.assignedCustomers ?? [];
+  const currentAreaId = detail?.assignedArea?.id;
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedAreaId(currentAreaId ? String(currentAreaId) : undefined);
+  }, [currentAreaId, open]);
+
+  const assignAreaMutation = useMutation({
+    ...orpc.warehouseEmployee.assignSalesmanArea.mutationOptions(),
+    onSuccess: (result) => {
+      toast.success(result.message);
+      setSelectedAreaId(String(result.assignedArea.id));
+      queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to assign delivery area"),
+  });
+
+  const canSaveArea =
+    !!salesman?.id &&
+    !!selectedAreaId &&
+    Number(selectedAreaId) !== currentAreaId &&
+    !areasLoading &&
+    !assignAreaMutation.isPending;
+
+  const saveArea = () => {
+    if (!salesman?.id || !selectedAreaId) return;
+    assignAreaMutation.mutate({
+      salesmanId: salesman.id,
+      areaId: Number(selectedAreaId),
+    });
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+      >
+        <SheetHeader className="shrink-0 border-b px-6 py-4 pr-12">
+          <SheetTitle className="flex items-center gap-2 text-base">
+            <UserCheck className="h-4 w-4 text-muted-foreground" />
+            {salesman?.name ?? "Salesman details"}
+          </SheetTitle>
+          <SheetDescription className="text-xs">
+            {salesman?.phoneNumber ?? salesman?.email ?? "Assignment overview"}
+          </SheetDescription>
+        </SheetHeader>
+
+        {isLoading || !detail ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Loading details...
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+              <section className="rounded-lg border bg-muted/20 px-4 py-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  {getStatusBadge(detail.banned)}
+                  {getAreaBadge(detail.assignedArea)}
+                </div>
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-muted-foreground">Phone</p>
+                    <p className="mt-0.5 flex items-center gap-1 font-medium tabular-nums">
+                      <Phone className="h-3.5 w-3.5 shrink-0" />
+                      {detail.phoneNumber ?? "No phone"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Email</p>
+                    <p className="mt-0.5 flex min-w-0 items-center gap-1 font-medium">
+                      <Mail className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{detail.email}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Assigned area</p>
+                    <p className="mt-0.5 flex items-center gap-1 font-medium">
+                      <MapPin className="h-3.5 w-3.5 shrink-0" />
+                      {detail.assignedArea?.name ?? "Not Assigned"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Joined</p>
+                    <p className="mt-0.5 font-medium">
+                      {format(new Date(detail.createdAt), "MMM d, yyyy")}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="mb-3 text-sm font-semibold">
+                  Performance Snapshot
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border bg-background p-3">
+                    <p className="text-xl font-bold tabular-nums">
+                      {detail.assignedCustomersCount}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Assigned customers
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-background p-3">
+                    <p className="text-xl font-bold tabular-nums">
+                      {detail.estimatesCount}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Estimates</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-lg border bg-background">
+                <div className="border-b px-4 py-3">
+                  <h3 className="text-sm font-semibold">Assign Area</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Select one delivery area for this salesman.
+                  </p>
+                </div>
+                <div className="space-y-3 p-4">
+                  <Select
+                    value={selectedAreaId}
+                    onValueChange={setSelectedAreaId}
+                    disabled={areasLoading || assignAreaMutation.isPending}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          areasLoading ? "Loading areas..." : "Select area"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {areas.map((area) => (
+                        <SelectItem
+                          key={area.id}
+                          value={String(area.id)}
+                          disabled={area.status !== "active"}
+                        >
+                          {area.name}
+                          {area.status !== "active" ? " (Inactive)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {areas.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No delivery areas found. Create areas from Delivery
+                      Management first.
+                    </p>
+                  ) : null}
+                  <Button
+                    className="w-full"
+                    onClick={saveArea}
+                    disabled={!canSaveArea}
+                  >
+                    {assignAreaMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <MapPin className="mr-2 h-4 w-4" />
+                    )}
+                    Save Assignment
+                  </Button>
+                </div>
+              </section>
+
+              <section>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold">Assigned Customers</h3>
+                  <Badge variant="outline" className="text-xs">
+                    {assignedCustomers.length}
+                  </Badge>
+                </div>
+                {assignedCustomers.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center rounded-lg border bg-muted/20 px-4 py-10 text-center">
+                    <Users className="mb-3 h-8 w-8 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      No customers assigned yet
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {assignedCustomers.map((customer) => (
+                      <div
+                        key={customer.id}
+                        className="rounded-lg border bg-background px-3 py-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {customer.shopName || customer.name}
+                            </p>
+                            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                              <Store className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{customer.name}</span>
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {format(
+                              new Date(customer.assignedAt),
+                              "MMM d, yyyy",
+                            )}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {customer.phoneNumber ?? "No phone"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function SalesTeamClient({
   salesmen,
   stats,
@@ -121,12 +459,33 @@ function SalesTeamClient({
   stats: SalesmenStats;
 }) {
   const [globalFilter, setGlobalFilter] = useState("");
+  const [selectedSalesmanId, setSelectedSalesmanId] = useState<string | null>(
+    null,
+  );
   const queryClient = useQueryClient();
   const [resetPasswordDialog, setResetPasswordDialog] = useState<{
     userId: string;
     name: string;
   } | null>(null);
   const [newPassword, setNewPassword] = useState("");
+
+  const selectedSalesman = useMemo(
+    () => salesmen.find((s) => s.id === selectedSalesmanId) ?? null,
+    [salesmen, selectedSalesmanId],
+  );
+
+  const { data: areasData, isLoading: areasLoading } = useQuery(
+    orpc.warehouseDelivery.getAreas.queryOptions({ input: {} }),
+  );
+
+  const deliveryAreas = useMemo(
+    () => (areasData?.areas ?? []) as DeliveryAreaOption[],
+    [areasData?.areas],
+  );
+
+  const openDetails = useCallback((salesmanId: string) => {
+    setSelectedSalesmanId(salesmanId);
+  }, []);
 
   const banMutation = useMutation({
     ...orpc.warehouseEmployee.toggleBan.mutationOptions(),
@@ -142,6 +501,7 @@ function SalesTeamClient({
     onSuccess: (result) => {
       toast.success(result.message);
       queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
+      if (selectedSalesmanId) setSelectedSalesmanId(null);
     },
     onError: (error) => toast.error(error.message || "Failed to delete"),
   });
@@ -161,7 +521,7 @@ function SalesTeamClient({
     () => [
       {
         accessorKey: "name",
-        header: "Name",
+        header: "Salesman Name",
         cell: ({ row }) => (
           <div>
             <p className="font-medium">{row.original.name}</p>
@@ -177,21 +537,17 @@ function SalesTeamClient({
         cell: ({ row }) => row.original.phoneNumber || "-",
       },
       {
-        accessorKey: "assignedCustomersCount",
-        header: "Customers",
-        cell: ({ row }) => (
-          <Badge variant="outline" className="text-xs">
-            <Users className="h-3 w-3 mr-1" />
-            {row.original.assignedCustomersCount}
-          </Badge>
-        ),
+        accessorKey: "assignedArea",
+        header: "Assigned Area",
+        cell: ({ row }) => getAreaBadge(row.original.assignedArea),
       },
       {
-        accessorKey: "estimatesCount",
-        header: "Estimates",
+        accessorKey: "assignedCustomersCount",
+        header: "Total Customers",
         cell: ({ row }) => (
-          <Badge variant="secondary" className="text-xs">
-            {row.original.estimatesCount}
+          <Badge variant="outline" className="text-xs">
+            <Users className="mr-1 h-3 w-3" />
+            {row.original.assignedCustomersCount}
           </Badge>
         ),
       },
@@ -199,12 +555,6 @@ function SalesTeamClient({
         accessorKey: "banned",
         header: "Status",
         cell: ({ row }) => getStatusBadge(row.original.banned),
-      },
-      {
-        accessorKey: "createdAt",
-        header: "Joined",
-        cell: ({ row }) =>
-          format(new Date(row.original.createdAt), "MMM d, yyyy"),
       },
       {
         id: "actions",
@@ -219,11 +569,9 @@ function SalesTeamClient({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                  <Link href={`${WH}/sales-team/${s.id}`}>
-                    <Eye className="h-4 w-4 mr-2" />
-                    View Details
-                  </Link>
+                <DropdownMenuItem onClick={() => openDetails(s.id)}>
+                  <Eye className="mr-2 h-4 w-4" />
+                  View Details
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
@@ -231,7 +579,7 @@ function SalesTeamClient({
                     setResetPasswordDialog({ userId: s.id, name: s.name });
                   }}
                 >
-                  <KeyRound className="h-4 w-4 mr-2" />
+                  <KeyRound className="mr-2 h-4 w-4" />
                   Reset Password
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -245,12 +593,12 @@ function SalesTeamClient({
                 >
                   {s.banned ? (
                     <>
-                      <ShieldCheck className="h-4 w-4 mr-2" />
+                      <ShieldCheck className="mr-2 h-4 w-4" />
                       Unban
                     </>
                   ) : (
                     <>
-                      <Ban className="h-4 w-4 mr-2" />
+                      <Ban className="mr-2 h-4 w-4" />
                       Ban
                     </>
                   )}
@@ -261,7 +609,7 @@ function SalesTeamClient({
                       className="text-destructive"
                       onSelect={(e) => e.preventDefault()}
                     >
-                      <Trash2 className="h-4 w-4 mr-2" />
+                      <Trash2 className="mr-2 h-4 w-4" />
                       Delete
                     </DropdownMenuItem>
                   </AlertDialogTrigger>
@@ -280,7 +628,7 @@ function SalesTeamClient({
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       >
                         {deleteMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : null}
                         Delete
                       </AlertDialogAction>
@@ -293,7 +641,7 @@ function SalesTeamClient({
         },
       },
     ],
-    [banMutation, deleteMutation],
+    [banMutation, deleteMutation, openDetails],
   );
 
   const filteredData = useMemo(() => {
@@ -303,7 +651,8 @@ function SalesTeamClient({
       (s) =>
         s.name.toLowerCase().includes(search) ||
         s.email.toLowerCase().includes(search) ||
-        (s.phoneNumber?.toLowerCase().includes(search) ?? false),
+        (s.phoneNumber?.toLowerCase().includes(search) ?? false) ||
+        (s.assignedArea?.name.toLowerCase().includes(search) ?? false),
     );
   }, [salesmen, globalFilter]);
 
@@ -319,7 +668,16 @@ function SalesTeamClient({
 
   return (
     <div className="space-y-4">
-      {/* Reset Password Dialog */}
+      <SalesmanDetailsSheet
+        salesman={selectedSalesman}
+        open={!!selectedSalesmanId}
+        onOpenChange={(open) => {
+          if (!open) setSelectedSalesmanId(null);
+        }}
+        areas={deliveryAreas}
+        areasLoading={areasLoading}
+      />
+
       <Dialog
         open={!!resetPasswordDialog}
         onOpenChange={(open) => {
@@ -367,7 +725,7 @@ function SalesTeamClient({
               disabled={resetPasswordMutation.isPending}
             >
               {resetPasswordMutation.isPending && (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Reset
             </Button>
@@ -375,34 +733,30 @@ function SalesTeamClient({
         </DialogContent>
       </Dialog>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="p-0">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.total}</p>
-            <p className="text-xs text-muted-foreground">Total</p>
-          </CardContent>
-        </Card>
-        <Card className="p-0">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.activeCount}</p>
-            <p className="text-xs text-muted-foreground">Active</p>
-          </CardContent>
-        </Card>
-        <Card className="p-0">
-          <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold">{stats.totalEstimates}</p>
-            <p className="text-xs text-muted-foreground">Estimates</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MetricCard label="Total Staff" value={stats.total} icon={Users} />
+        <MetricCard
+          label="Assigned Salesmen"
+          value={stats.assignedSalesmen}
+          icon={MapPin}
+        />
+        <MetricCard
+          label="Active Salesmen"
+          value={stats.activeCount}
+          icon={UserCheck}
+        />
+        <MetricCard
+          label="Assigned Customers"
+          value={stats.assignedCustomers}
+          icon={Store}
+        />
       </div>
 
-      {/* Search and Add Button */}
       <div className="flex gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by name, email, phone..."
+            placeholder="Search by salesman, email, phone, area..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             className="pl-9"
@@ -412,53 +766,49 @@ function SalesTeamClient({
       </div>
 
       {filteredData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center border rounded-lg bg-muted/30">
-          <Users className="h-10 w-10 text-muted-foreground mb-3" />
+        <div className="flex flex-col items-center justify-center rounded-lg border bg-muted/30 py-12 text-center">
+          <Users className="mb-3 h-10 w-10 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">No salesmen found</p>
         </div>
       ) : (
         <>
-          {/* Mobile: Card View */}
-          <div className="sm:hidden space-y-3">
+          <div className="space-y-3 sm:hidden">
             {table.getRowModel().rows.map((row) => {
               const s = row.original;
               return (
                 <Card key={s.id} className="p-0">
                   <CardContent className="p-3">
-                    <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="mb-2 flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate">
+                        <p className="truncate text-sm font-semibold">
                           {s.name}
                         </p>
-                        <p className="text-xs text-muted-foreground truncate">
+                        <p className="truncate text-xs text-muted-foreground">
                           {s.email}
                         </p>
                       </div>
                       {getStatusBadge(s.banned)}
                     </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate text-muted-foreground">
                         {s.phoneNumber || "No phone"}
                       </span>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          <Users className="h-3 w-3 mr-1" />
-                          {s.assignedCustomersCount}
-                        </Badge>
-                        <Badge variant="secondary" className="text-xs">
-                          {s.estimatesCount} est.
-                        </Badge>
-                      </div>
+                      <Badge variant="outline" className="shrink-0 text-xs">
+                        <Users className="mr-1 h-3 w-3" />
+                        {s.assignedCustomersCount}
+                      </Badge>
                     </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground mt-2 pt-2 border-t">
-                      <span>
-                        Joined {format(new Date(s.createdAt), "MMM d, yyyy")}
-                      </span>
-                      <Link href={`${WH}/sales-team/${s.id}`}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </Link>
+                    <div className="mt-2 flex items-center justify-between gap-3 border-t pt-2 text-xs text-muted-foreground">
+                      {getAreaBadge(s.assignedArea)}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => openDetails(s.id)}
+                      >
+                        <Eye className="h-4 w-4" />
+                        <span className="sr-only">View details</span>
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -466,8 +816,7 @@ function SalesTeamClient({
             })}
           </div>
 
-          {/* Desktop: Table View */}
-          <div className="hidden sm:block rounded-md border">
+          <div className="hidden rounded-md border sm:block">
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -502,7 +851,6 @@ function SalesTeamClient({
             </Table>
           </div>
 
-          {/* Pagination */}
           {table.getPageCount() > 1 && (
             <div className="flex items-center justify-between px-2">
               <p className="text-xs text-muted-foreground">
@@ -546,7 +894,7 @@ export default function SalesTeamPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
             Sales Team
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -562,11 +910,11 @@ export default function SalesTeamPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
             Sales Team
           </h1>
         </div>
-        <div className="flex items-center justify-center h-40">
+        <div className="flex h-40 items-center justify-center">
           <p className="text-muted-foreground">Failed to load sales team</p>
         </div>
       </div>
@@ -576,11 +924,11 @@ export default function SalesTeamPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
           Sales Team
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage sales personnel for your warehouse
+          Manage sales areas and customers for your warehouse sales team
         </p>
       </div>
       <SalesTeamClient salesmen={data.salesmen} stats={data.stats} />
