@@ -1,10 +1,16 @@
 "use client";
 
+import {
+  INVENTORY_BEHAVIOUR_LABELS,
+  PRODUCT_TYPE_FAMILY_LABELS,
+  type ProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Eye, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import DeleteTypeDialog from "@/components/features/product-type/components/delete-type-dialog";
 import EditTypeDialog from "@/components/features/product-type/components/edit-type-dialog";
+import { resolveProductTypeProfile } from "@/components/features/product-type/components/product-type-row";
 import ToggleTypeDialog from "@/components/features/product-type/components/toggle-type-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,12 +29,12 @@ export type ProductTypeRow = {
   description: string | null;
   image: string | null;
   skuCode: string | null;
+  inventoryBehaviour: keyof typeof INVENTORY_BEHAVIOUR_LABELS;
   isActive: boolean;
   displayOrder: number;
   categoryCount: number;
+  fulfillmentProfile?: ProductTypeFulfillmentProfile;
 };
-
-
 
 export function useProductTypeColumns() {
   const columns: ColumnDef<ProductTypeRow>[] = [
@@ -63,6 +69,27 @@ export function useProductTypeColumns() {
           </span>
         </div>
       ),
+    },
+    {
+      id: "fulfillment",
+      header: "Flow",
+      cell: ({ row }) => {
+        const profile = resolveProductTypeProfile(row.original);
+
+        return (
+          <div className="space-y-1">
+            <div className="text-sm font-medium">
+              {PRODUCT_TYPE_FAMILY_LABELS[profile.family]}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {INVENTORY_BEHAVIOUR_LABELS[row.original.inventoryBehaviour]}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {profile.supportedModes.join(", ")}
+            </div>
+          </div>
+        );
+      },
     },
 
     {

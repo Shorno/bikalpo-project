@@ -11,6 +11,11 @@
 
 import { db } from "@bikalpo-project/db";
 import {
+    buildProductTypeFulfillmentProfile,
+    FULFILLMENT_MODES,
+    FULFILLMENT_MODE_LABELS,
+} from "@bikalpo-project/db/fulfillment";
+import {
     brand,
     category,
     product,
@@ -44,9 +49,14 @@ import {
     supplier,
     purchaseItem,
     purchase,
+    customerAssignment,
+    deliveryArea,
+    deliverySchedule,
     invoice,
     carton,
     cartonConfig,
+    warehouseApplication,
+    complaint,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -78,6 +88,7 @@ import {
     checkAndExpireBids,
 } from "../services/open-order-matching";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 
 const purchaseOrderStatusValues = [
     "pending",
@@ -118,6 +129,128 @@ const productFiltersSchema = z.object({
     page: z.string().optional().default("1"),
     limit: z.string().optional().default("12"),
 });
+
+const PAID_INVOICE_STATUSES = new Set(["collected", "settled"]);
+const NON_PURCHASE_ORDER_STATUSES = new Set(["cancelled", "returned"]);
+const PAYABLE_ORDER_STATUSES = new Set(["confirmed", "processing", "delivered"]);
+const DAY_NAMES = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+] as const;
+
+const warehouseOrderModeSchema = z.enum(FULFILLMENT_MODES);
+
+function toSafeNumber(value: string | number | null | undefined) {
+    return Number(value || 0);
+}
+
+function isOrderPaid(
+    orderPaymentStatus: string | null | undefined,
+    invoicePaymentStatus: string | null | undefined,
+) {
+    return (
+        orderPaymentStatus === "paid"
+        || PAID_INVOICE_STATUSES.has(invoicePaymentStatus || "")
+    );
+}
+
+function isPurchaseOrderStatus(status: string | null | undefined) {
+    return !NON_PURCHASE_ORDER_STATUSES.has(status || "");
+}
+
+function getFulfillmentModeLabel(mode?: string | null) {
+    return (
+        (mode
+            && mode in FULFILLMENT_MODE_LABELS
+            && FULFILLMENT_MODE_LABELS[
+                mode as keyof typeof FULFILLMENT_MODE_LABELS
+            ])
+        || "Legacy"
+    );
+}
+
+function enrichPurchaseOrderItemsFulfillment<
+    TItem extends { supplyMode?: string | null },
+>(items: TItem[] | null | undefined) {
+    return (items || []).map((item) => ({
+        ...item,
+        supplyModeLabel: getFulfillmentModeLabel(item.supplyMode),
+    }));
+}
+
+function isPayableOrder(
+    status: string | null | undefined,
+    orderPaymentStatus: string | null | undefined,
+    invoicePaymentStatus: string | null | undefined,
+) {
+    return (
+        PAYABLE_ORDER_STATUSES.has(status || "")
+        && !isOrderPaid(orderPaymentStatus, invoicePaymentStatus)
+    );
+}
+
+function normalizeDeliveryText(value: string | null | undefined) {
+    return (value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function findNextDeliveryDate(
+    days: number[],
+    today = new Date(),
+) {
+    if (days.length === 0) return null;
+
+    const currentDay = today.getDay();
+    const uniqueDays = [...new Set(days)].sort((a, b) => a - b);
+    const offsets = uniqueDays.map((dayOfWeek) => {
+        let offset = (dayOfWeek - currentDay + 7) % 7;
+        if (offset === 0) offset = 7;
+        return { dayOfWeek, offset };
+    });
+    const next = offsets.sort((a, b) => a.offset - b.offset)[0];
+    if (!next) return null;
+
+    const nextDate = new Date(today);
+    nextDate.setDate(today.getDate() + next.offset);
+
+    return {
+        dayOfWeek: next.dayOfWeek,
+        dayName: DAY_NAMES[next.dayOfWeek] || "Unknown",
+        date: nextDate.toISOString(),
+        offsetDays: next.offset,
+    };
+}
+
+const CONNECTED_SUPPLIER_ACTIVE_WINDOW_DAYS = 45;
+
+function getConnectedSupplierActivityStatus(
+    lastOrderDate: Date | null | undefined,
+    connectedAt: Date | null | undefined,
+    pendingOrders = 0,
+) {
+    if (pendingOrders > 0) {
+        return "active" as const;
+    }
+
+    const referenceDate = lastOrderDate || connectedAt;
+    if (!referenceDate) {
+        return "inactive" as const;
+    }
+
+    const diffMs = Date.now() - referenceDate.getTime();
+    const activeWindowMs =
+        CONNECTED_SUPPLIER_ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+    return diffMs <= activeWindowMs ? "active" as const : "inactive" as const;
+}
 
 // ────────────────────────────────────────────────────────────────
 // B2B Queries (Shop Owner as Buyer — TRADE variants)
@@ -1339,6 +1472,7 @@ const managementQueries = {
                 quantity: number;
                 unitPrice: string;
                 supplyMode: string | null;
+                supplyModeLabel: string;
                 targetVariantId: number | null;
                 conversionStatus: string | null;
                 convertedQty: string | null;
@@ -1355,6 +1489,11 @@ const managementQueries = {
                     else if (status === "failed") totalFailed++;
                     else totalPending++;
 
+                    const modeLabel = item.supplyMode
+                        && item.supplyMode in FULFILLMENT_MODE_LABELS
+                        ? FULFILLMENT_MODE_LABELS[item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS]
+                        : "Legacy";
+
                     conversionItems.push({
                         orderItemId: item.id,
                         orderNumber: o.orderNumber,
@@ -1367,6 +1506,7 @@ const managementQueries = {
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         supplyMode: item.supplyMode,
+                        supplyModeLabel: modeLabel,
                         targetVariantId: item.targetVariantId,
                         conversionStatus: status,
                         convertedQty: item.convertedQty,
@@ -1878,6 +2018,7 @@ const orderQueries = {
                                 quantity: true,
                                 unitPrice: true,
                                 totalPrice: true,
+                                supplyMode: true,
                             },
                         },
                     },
@@ -1991,6 +2132,7 @@ const orderQueries = {
                                 totalPrice: true,
                                 modifiedQty: true,
                                 modifiedUnitPrice: true,
+                                supplyMode: true,
                             },
                         },
                     },
@@ -2040,6 +2182,7 @@ const orderQueries = {
 
             const enrichedOrders = orders.map((o: any) => ({
                 ...o,
+                items: enrichPurchaseOrderItemsFulfillment(o.items),
                 warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
             }));
 
@@ -2194,6 +2337,7 @@ const orderQueries = {
             return {
                 order: {
                     ...result,
+                    items: enrichPurchaseOrderItemsFulfillment(result.items),
                     warehouseName: warehouseInfo?.shopName || warehouseInfo?.name || "Admin",
                     warehousePhone: warehouseInfo?.phone || null,
                 },
@@ -2283,6 +2427,7 @@ const orderQueries = {
                                 modifiedQty: true,
                                 modifiedUnitPrice: true,
                                 deliveredQty: true,
+                                supplyMode: true,
                             },
                         },
                     },
@@ -2347,6 +2492,7 @@ const orderQueries = {
 
                 return {
                     ...o,
+                    items: enrichPurchaseOrderItemsFulfillment(o.items),
                     warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
                     tracking: {
                         totalOrdered,
@@ -2585,6 +2731,7 @@ const orderQueries = {
                                 modifiedUnitPrice: true,
                                 deliveredQty: true,
                                 convertedQty: true,
+                                supplyMode: true,
                             },
                         },
                     },
@@ -2654,7 +2801,7 @@ const orderQueries = {
                     subtotal: o.subtotal,
                     warehouseName: o.warehouseId ? (whMap[o.warehouseId] || "Unknown") : "Admin",
                     invoiceNumber: invoiceMap[o.id] || null,
-                    items: o.items,
+                    items: enrichPurchaseOrderItemsFulfillment(o.items),
                     totalQty,
                     totalAmount,
                     stockImpact,
@@ -2712,6 +2859,1058 @@ const orderQueries = {
     // ── Supplier Management ──────────────────────────────────
 
     /**
+     * List active platform-connected suppliers with network insights.
+     */
+    getConnectedSuppliers: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/connected-suppliers",
+            tags: ["Shop Owner"],
+            summary: "List connected suppliers from the platform network",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z.enum(["all", "active", "inactive"]).default("all"),
+                category: z.string().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            const connections = await db
+                .select({
+                    connectionId: shopWarehouseConnection.id,
+                    warehouseId: user.id,
+                    warehouseName: user.warehouseName,
+                    warehouseSlug: user.warehouseSlug,
+                    warehouseAddress: user.warehouseAddress,
+                    name: user.name,
+                    phone: user.phoneNumber,
+                    email: user.email,
+                    image: user.image,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                })
+                .from(shopWarehouseConnection)
+                .innerJoin(user, eq(shopWarehouseConnection.warehouseId, user.id))
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.shopId, shopId),
+                        eq(shopWarehouseConnection.status, "active"),
+                    ),
+                )
+                .orderBy(
+                    desc(shopWarehouseConnection.lastOrderedAt),
+                    desc(shopWarehouseConnection.connectedAt),
+                );
+
+            if (connections.length === 0) {
+                return {
+                    summary: {
+                        connectedSuppliers: 0,
+                        activeSuppliers: 0,
+                        totalPurchase: 0,
+                    },
+                    categories: [],
+                    suppliers: [],
+                };
+            }
+
+            const warehouseIds = connections.map((connection) => connection.warehouseId);
+
+            const orderRows = await db
+                .select({
+                    warehouseId: order.warehouseId,
+                    status: order.status,
+                    paymentStatus: order.paymentStatus,
+                    total: order.total,
+                    createdAt: order.createdAt,
+                    invoicePaymentStatus: invoice.paymentStatus,
+                })
+                .from(order)
+                .leftJoin(
+                    invoice,
+                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
+                )
+                .where(
+                    and(
+                        eq(order.userId, shopId),
+                        inArray(order.warehouseId, warehouseIds),
+                    ),
+                );
+
+            const supplierOrderMap = new Map<
+                string,
+                {
+                    totalOrders: number;
+                    totalPurchase: number;
+                    totalPaid: number;
+                    totalDue: number;
+                    pendingOrders: number;
+                    lastPurchaseDate: Date | null;
+                }
+            >();
+
+            for (const warehouseId of warehouseIds) {
+                supplierOrderMap.set(warehouseId, {
+                    totalOrders: 0,
+                    totalPurchase: 0,
+                    totalPaid: 0,
+                    totalDue: 0,
+                    pendingOrders: 0,
+                    lastPurchaseDate: null,
+                });
+            }
+
+            for (const row of orderRows) {
+                const warehouseId = row.warehouseId;
+                if (!warehouseId) continue;
+
+                const current = supplierOrderMap.get(warehouseId);
+                if (!current) continue;
+
+                const total = toSafeNumber(row.total);
+                current.totalOrders += 1;
+
+                if (
+                    !current.lastPurchaseDate
+                    || (row.createdAt && row.createdAt > current.lastPurchaseDate)
+                ) {
+                    current.lastPurchaseDate = row.createdAt;
+                }
+
+                if (["pending", "confirmed", "processing"].includes(row.status)) {
+                    current.pendingOrders += 1;
+                }
+
+                if (isPurchaseOrderStatus(row.status)) {
+                    current.totalPurchase += total;
+                }
+
+                if (isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)) {
+                    current.totalPaid += total;
+                }
+
+                if (
+                    isPayableOrder(
+                        row.status,
+                        row.paymentStatus,
+                        row.invoicePaymentStatus,
+                    )
+                ) {
+                    current.totalDue += total;
+                }
+            }
+
+            const inventoryCategoryRows = await db
+                .select({
+                    warehouseId: inventory.ownerId,
+                    categoryName: category.name,
+                    itemCount: count(),
+                })
+                .from(inventory)
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .innerJoin(category, eq(product.categoryId, category.id))
+                .where(
+                    and(
+                        eq(inventory.ownerType, "warehouse"),
+                        inArray(inventory.ownerId, warehouseIds),
+                        sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                    ),
+                )
+                .groupBy(inventory.ownerId, category.name);
+
+            const orderedCategoryRows = await db
+                .select({
+                    warehouseId: order.warehouseId,
+                    categoryName: category.name,
+                    itemCount: count(),
+                })
+                .from(orderItem)
+                .innerJoin(order, eq(orderItem.orderId, order.id))
+                .innerJoin(product, eq(orderItem.productId, product.id))
+                .innerJoin(category, eq(product.categoryId, category.id))
+                .where(
+                    and(
+                        eq(order.userId, shopId),
+                        inArray(order.warehouseId, warehouseIds),
+                    ),
+                )
+                .groupBy(order.warehouseId, category.name);
+
+            const inventoryCategoryMap = new Map<
+                string,
+                { categoryName: string; itemCount: number }
+            >();
+            for (const row of inventoryCategoryRows) {
+                const current = inventoryCategoryMap.get(row.warehouseId);
+                const nextCount = Number(row.itemCount || 0);
+                if (!current || nextCount > current.itemCount) {
+                    inventoryCategoryMap.set(row.warehouseId, {
+                        categoryName: row.categoryName,
+                        itemCount: nextCount,
+                    });
+                }
+            }
+
+            const orderedCategoryMap = new Map<
+                string,
+                { categoryName: string; itemCount: number }
+            >();
+            for (const row of orderedCategoryRows) {
+                if (!row.warehouseId) continue;
+
+                const current = orderedCategoryMap.get(row.warehouseId);
+                const nextCount = Number(row.itemCount || 0);
+                if (!current || nextCount > current.itemCount) {
+                    orderedCategoryMap.set(row.warehouseId, {
+                        categoryName: row.categoryName,
+                        itemCount: nextCount,
+                    });
+                }
+            }
+
+            const allSuppliers = connections.map((connection) => {
+                const orderSummary = supplierOrderMap.get(connection.warehouseId) ?? {
+                    totalOrders: 0,
+                    totalPurchase: 0,
+                    totalPaid: 0,
+                    totalDue: 0,
+                    pendingOrders: 0,
+                    lastPurchaseDate: null,
+                };
+                const primaryCategory = inventoryCategoryMap.get(connection.warehouseId)
+                    ?.categoryName
+                    || orderedCategoryMap.get(connection.warehouseId)?.categoryName
+                    || null;
+                const activityStatus = getConnectedSupplierActivityStatus(
+                    orderSummary.lastPurchaseDate,
+                    connection.connectedAt,
+                    orderSummary.pendingOrders,
+                );
+
+                return {
+                    connectionId: connection.connectionId,
+                    warehouseId: connection.warehouseId,
+                    warehouseSlug: connection.warehouseSlug,
+                    name:
+                        connection.warehouseName
+                        || connection.name
+                        || "Connected Supplier",
+                    phone: connection.phone,
+                    email: connection.email,
+                    address: connection.warehouseAddress,
+                    image: connection.image,
+                    primaryCategory,
+                    activityStatus,
+                    totalOrders: orderSummary.totalOrders,
+                    totalPurchase: orderSummary.totalPurchase,
+                    totalPaid: orderSummary.totalPaid,
+                    totalDue: orderSummary.totalDue,
+                    pendingOrders: orderSummary.pendingOrders,
+                    lastPurchaseDate: orderSummary.lastPurchaseDate,
+                    connectedAt: connection.connectedAt,
+                    lastOrderedAt: connection.lastOrderedAt,
+                };
+            });
+
+            const summary = {
+                connectedSuppliers: allSuppliers.length,
+                activeSuppliers: allSuppliers.filter(
+                    (supplier) => supplier.activityStatus === "active",
+                ).length,
+                totalPurchase: allSuppliers.reduce(
+                    (total, supplier) => total + supplier.totalPurchase,
+                    0,
+                ),
+            };
+
+            const categories = [...new Set(
+                allSuppliers
+                    .map((supplier) => supplier.primaryCategory)
+                    .filter((value): value is string => Boolean(value)),
+            )].sort((a, b) => a.localeCompare(b));
+
+            let suppliers = allSuppliers;
+
+            if (input.search?.trim()) {
+                const search = input.search.trim().toLowerCase();
+                suppliers = suppliers.filter((supplier) =>
+                    [
+                        supplier.name,
+                        supplier.phone,
+                        supplier.email,
+                        supplier.address,
+                        supplier.primaryCategory,
+                    ]
+                        .filter(Boolean)
+                        .some((value) => value!.toLowerCase().includes(search)),
+                );
+            }
+
+            if (input.status !== "all") {
+                suppliers = suppliers.filter(
+                    (supplier) => supplier.activityStatus === input.status,
+                );
+            }
+
+            if (input.category?.trim()) {
+                const categoryFilter = input.category.trim().toLowerCase();
+                suppliers = suppliers.filter(
+                    (supplier) =>
+                        supplier.primaryCategory?.toLowerCase() === categoryFilter,
+                );
+            }
+
+            suppliers = suppliers.sort((a, b) => {
+                if (a.activityStatus !== b.activityStatus) {
+                    return a.activityStatus === "active" ? -1 : 1;
+                }
+
+                if (b.totalPurchase !== a.totalPurchase) {
+                    return b.totalPurchase - a.totalPurchase;
+                }
+
+                return (
+                    (b.lastPurchaseDate?.getTime()
+                        || b.lastOrderedAt?.getTime()
+                        || b.connectedAt?.getTime()
+                        || 0)
+                    - (a.lastPurchaseDate?.getTime()
+                        || a.lastOrderedAt?.getTime()
+                        || a.connectedAt?.getTime()
+                        || 0)
+                );
+            });
+
+            return {
+                summary,
+                categories,
+                suppliers,
+            };
+        }),
+
+    /**
+     * Full detail for a platform-connected supplier.
+     */
+    getConnectedSupplierDetail: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/connected-supplier-detail",
+            tags: ["Shop Owner"],
+            summary: "Get a connected supplier network profile",
+        })
+        .input(z.object({ warehouseId: z.string() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            const warehouseId = input.warehouseId;
+
+            const [shopUser] = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    shopName: user.shopName,
+                    shopAddress: user.shopAddress,
+                    serviceArea: user.serviceArea,
+                })
+                .from(user)
+                .where(eq(user.id, shopId))
+                .limit(1);
+
+            const [warehouseUser] = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    warehouseName: user.warehouseName,
+                    warehouseSlug: user.warehouseSlug,
+                    phoneNumber: user.phoneNumber,
+                    email: user.email,
+                    image: user.image,
+                    address: user.warehouseAddress,
+                })
+                .from(user)
+                .where(eq(user.id, warehouseId))
+                .limit(1);
+
+            const [connection] = await db
+                .select({
+                    status: shopWarehouseConnection.status,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                })
+                .from(shopWarehouseConnection)
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.shopId, shopId),
+                        eq(shopWarehouseConnection.warehouseId, warehouseId),
+                        eq(shopWarehouseConnection.status, "active"),
+                    ),
+                )
+                .limit(1);
+
+            if (!warehouseUser || !connection) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Connected supplier not found",
+                });
+            }
+
+            const [warehouseProfile] = await db
+                .select({
+                    status: warehouseApplication.status,
+                    tradeLicenseNumber: warehouseApplication.tradeLicenseNumber,
+                    businessCategory: warehouseApplication.businessCategory,
+                    yearsInBusiness: warehouseApplication.yearsInBusiness,
+                    area: warehouseApplication.area,
+                    district: warehouseApplication.district,
+                    division: warehouseApplication.division,
+                    documents: warehouseApplication.documents,
+                    updatedAt: warehouseApplication.updatedAt,
+                })
+                .from(warehouseApplication)
+                .where(eq(warehouseApplication.userId, warehouseId))
+                .orderBy(desc(warehouseApplication.updatedAt))
+                .limit(1);
+
+            const supplierOrders = await db
+                .select({
+                    id: order.id,
+                    orderNumber: order.orderNumber,
+                    status: order.status,
+                    paymentStatus: order.paymentStatus,
+                    total: order.total,
+                    createdAt: order.createdAt,
+                    deliveredAt: order.deliveredAt,
+                    modifiedByWarehouseAt: order.modifiedByWarehouseAt,
+                    shippingAddress: order.shippingAddress,
+                    shippingCity: order.shippingCity,
+                    shippingArea: order.shippingArea,
+                    invoicePaymentStatus: invoice.paymentStatus,
+                    invoiceDeliveryStatus: invoice.deliveryStatus,
+                    expectedDeliveryAt: invoice.expectedDeliveryAt,
+                })
+                .from(order)
+                .leftJoin(
+                    invoice,
+                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
+                )
+                .where(
+                    and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)),
+                )
+                .orderBy(desc(order.createdAt));
+
+            const orderStats = {
+                total: supplierOrders.length,
+                pending: 0,
+                confirmed: 0,
+                processing: 0,
+                delivered: 0,
+                returned: 0,
+                cancelled: 0,
+                outForDelivery: 0,
+            };
+
+            let totalPurchase = 0;
+            let totalPaid = 0;
+            let totalDue = 0;
+            let overdueAmount = 0;
+            let payableOrders = 0;
+
+            for (const row of supplierOrders) {
+                const total = toSafeNumber(row.total);
+
+                if (row.status === "pending") orderStats.pending += 1;
+                if (row.status === "confirmed") orderStats.confirmed += 1;
+                if (row.status === "processing") orderStats.processing += 1;
+                if (row.status === "delivered") orderStats.delivered += 1;
+                if (row.status === "returned") orderStats.returned += 1;
+                if (row.status === "cancelled") orderStats.cancelled += 1;
+                if (row.invoiceDeliveryStatus === "out_for_delivery") {
+                    orderStats.outForDelivery += 1;
+                }
+
+                if (isPurchaseOrderStatus(row.status)) {
+                    totalPurchase += total;
+                }
+
+                if (
+                    isPurchaseOrderStatus(row.status)
+                    && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
+                ) {
+                    totalPaid += total;
+                }
+
+                if (
+                    isPayableOrder(
+                        row.status,
+                        row.paymentStatus,
+                        row.invoicePaymentStatus,
+                    )
+                ) {
+                    totalDue += total;
+                    payableOrders += 1;
+                    if (row.status === "delivered") {
+                        overdueAmount += total;
+                    }
+                }
+            }
+
+            const latestOrder = supplierOrders[0] || null;
+            const lastPayment = supplierOrders.find((row) =>
+                isPurchaseOrderStatus(row.status)
+                && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
+            ) || null;
+
+            const pendingOrders = await db.query.order.findMany({
+                where: and(
+                    eq(order.userId, shopId),
+                    eq(order.warehouseId, warehouseId),
+                    inArray(order.status, ["pending", "confirmed", "processing"]),
+                ),
+                with: {
+                    items: {
+                        columns: {
+                            id: true,
+                            productName: true,
+                            productImage: true,
+                            quantity: true,
+                            modifiedQty: true,
+                        },
+                    },
+                },
+                orderBy: [desc(order.createdAt)],
+                limit: 5,
+            });
+
+            const pendingOrderIds = pendingOrders.map((row) => row.id);
+            const pendingInvoices = pendingOrderIds.length > 0
+                ? await db
+                    .select({
+                        orderId: invoice.orderId,
+                        deliveryStatus: invoice.deliveryStatus,
+                        expectedDeliveryAt: invoice.expectedDeliveryAt,
+                    })
+                    .from(invoice)
+                    .where(
+                        and(
+                            eq(invoice.invoiceType, "main"),
+                            inArray(invoice.orderId, pendingOrderIds),
+                        ),
+                    )
+                : [];
+
+            const pendingInvoiceMap = new Map(
+                pendingInvoices.map((row) => [row.orderId, row]),
+            );
+
+            const historyOrderRows = supplierOrders.slice(0, 5);
+            const historyOrderIds = historyOrderRows.map((row) => row.id);
+            const historyItems = historyOrderIds.length > 0
+                ? await db
+                    .select({
+                        orderId: orderItem.orderId,
+                        productName: orderItem.productName,
+                    })
+                    .from(orderItem)
+                    .where(inArray(orderItem.orderId, historyOrderIds))
+                : [];
+
+            const historyItemMap = new Map<number, string[]>();
+            for (const item of historyItems) {
+                const current = historyItemMap.get(item.orderId) ?? [];
+                current.push(item.productName);
+                historyItemMap.set(item.orderId, current);
+            }
+
+            const purchaseHistory = historyOrderRows.map((row) => {
+                const total = toSafeNumber(row.total);
+                const productNames = historyItemMap.get(row.id) ?? [];
+                const productSummary = productNames.length <= 2
+                    ? productNames.join(", ")
+                    : `${productNames[0]}, ${productNames[1]} +${productNames.length - 2} more`;
+                const paid = isOrderPaid(row.paymentStatus, row.invoicePaymentStatus);
+                const dueAmount = isPayableOrder(
+                    row.status,
+                    row.paymentStatus,
+                    row.invoicePaymentStatus,
+                )
+                    ? total
+                    : 0;
+
+                return {
+                    id: row.id,
+                    orderNumber: row.orderNumber,
+                    date: row.createdAt,
+                    productSummary: productSummary || "Multiple products",
+                    amount: total,
+                    orderStatus: row.status,
+                    paymentStatus: paid
+                        ? "paid"
+                        : dueAmount > 0
+                            ? "due"
+                            : "pending",
+                    dueAmount,
+                };
+            });
+
+            const topProducts = await db
+                .select({
+                    productName: orderItem.productName,
+                    productImage: orderItem.productImage,
+                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
+                    orderCount: count(),
+                })
+                .from(orderItem)
+                .innerJoin(order, eq(orderItem.orderId, order.id))
+                .where(and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)))
+                .groupBy(orderItem.productName, orderItem.productImage)
+                .orderBy(
+                    sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`,
+                )
+                .limit(5);
+
+            const topCategories = await db
+                .select({
+                    categoryName: category.name,
+                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
+                    orderCount: count(),
+                })
+                .from(orderItem)
+                .innerJoin(order, eq(orderItem.orderId, order.id))
+                .innerJoin(product, eq(orderItem.productId, product.id))
+                .innerJoin(category, eq(product.categoryId, category.id))
+                .where(and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)))
+                .groupBy(category.name)
+                .orderBy(
+                    sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`,
+                )
+                .limit(3);
+
+            const [skuSummary] = await db
+                .select({
+                    totalSkuPurchased: sql<number>`COUNT(DISTINCT ${orderItem.productId})`.as(
+                        "total_sku_purchased",
+                    ),
+                })
+                .from(orderItem)
+                .innerJoin(order, eq(orderItem.orderId, order.id))
+                .where(and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)));
+
+            const perfData = await db
+                .select({
+                    avgDays: sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as("ad"),
+                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as("mc"),
+                    deliveredTotal: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
+                })
+                .from(order)
+                .where(
+                    and(
+                        eq(order.userId, shopId),
+                        eq(order.warehouseId, warehouseId),
+                        eq(order.status, "delivered"),
+                    ),
+                );
+
+            const avgDeliveryDays = Math.round(Number(perfData[0]?.avgDays) || 0);
+            const deliveredTotal = Number(perfData[0]?.deliveredTotal) || 0;
+            const modifiedRate = deliveredTotal > 0
+                ? Math.round(
+                    ((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100,
+                )
+                : 0;
+
+            const complaintRows = await db
+                .select({
+                    id: complaint.id,
+                    type: complaint.type,
+                    status: complaint.status,
+                    description: complaint.description,
+                    delayReason: complaint.delayReason,
+                    createdAt: complaint.createdAt,
+                })
+                .from(complaint)
+                .innerJoin(order, eq(complaint.orderId, order.id))
+                .where(
+                    and(
+                        eq(complaint.userId, shopId),
+                        eq(order.userId, shopId),
+                        eq(order.warehouseId, warehouseId),
+                    ),
+                )
+                .orderBy(desc(complaint.createdAt));
+
+            const totalIssues = complaintRows.length;
+            const resolvedIssues = complaintRows.filter((row) =>
+                ["resolved", "closed"].includes(row.status)
+            ).length;
+            const latestIssue = complaintRows[0] || null;
+            const issueRate = orderStats.total > 0
+                ? Math.round((totalIssues / orderStats.total) * 100)
+                : 0;
+
+            const assignment = await db.query.customerAssignment.findFirst({
+                where: eq(customerAssignment.customerId, shopId),
+                with: {
+                    salesman: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            role: true,
+                            warehouseId: true,
+                            banned: true,
+                        },
+                    },
+                },
+            });
+
+            const assignedSalesman = assignment?.salesman
+                && assignment.salesman.role === "salesman"
+                && assignment.salesman.warehouseId === warehouseId
+                ? {
+                    id: assignment.salesman.id,
+                    name: assignment.salesman.name,
+                    phone: assignment.salesman.phoneNumber,
+                    status: assignment.salesman.banned ? "inactive" : "active",
+                }
+                : null;
+
+            const warehouseAreas = await db.query.deliveryArea.findMany({
+                where: and(
+                    eq(deliveryArea.warehouseId, warehouseId),
+                    eq(deliveryArea.status, "active"),
+                ),
+                with: {
+                    schedules: {
+                        where: eq(deliverySchedule.isActive, true),
+                        with: {
+                            defaultRider: {
+                                columns: {
+                                    name: true,
+                                    phoneNumber: true,
+                                },
+                            },
+                        },
+                        orderBy: [asc(deliverySchedule.dayOfWeek)],
+                    },
+                },
+                orderBy: [asc(deliveryArea.sortOrder), asc(deliveryArea.name)],
+            });
+
+            const deliveryHints = [
+                {
+                    source: "shipping_area",
+                    value: latestOrder?.shippingArea || null,
+                },
+                {
+                    source: "shipping_city",
+                    value: latestOrder?.shippingCity || null,
+                },
+                {
+                    source: "service_area",
+                    value: shopUser?.serviceArea || null,
+                },
+                {
+                    source: "shop_address",
+                    value: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
+                },
+            ].filter((hint) => normalizeDeliveryText(hint.value).length > 0);
+
+            let matchedArea: (typeof warehouseAreas)[number] | null = null;
+            let matchSource: string | null = null;
+
+            for (const areaRow of warehouseAreas) {
+                const areaTerms = [areaRow.name, areaRow.slug, areaRow.description]
+                    .map((value) => normalizeDeliveryText(value))
+                    .filter(Boolean);
+
+                const matchedHint = deliveryHints.find((hint) => {
+                    const normalizedHint = normalizeDeliveryText(hint.value);
+                    return areaTerms.some((term) =>
+                        normalizedHint.includes(term) || term.includes(normalizedHint)
+                    );
+                });
+
+                if (matchedHint) {
+                    matchedArea = areaRow;
+                    matchSource = matchedHint.source;
+                    break;
+                }
+            }
+
+            const warehouseScheduleMap = new Map<
+                number,
+                {
+                    dayOfWeek: number;
+                    dayName: string;
+                    areaNames: string[];
+                    riderName: string | null;
+                    riderPhone: string | null;
+                }
+            >();
+
+            for (const areaRow of warehouseAreas) {
+                for (const schedule of areaRow.schedules) {
+                    const current = warehouseScheduleMap.get(schedule.dayOfWeek) ?? {
+                        dayOfWeek: schedule.dayOfWeek,
+                        dayName: DAY_NAMES[schedule.dayOfWeek] || "Unknown",
+                        areaNames: [],
+                        riderName: schedule.defaultRider?.name ?? null,
+                        riderPhone: schedule.defaultRider?.phoneNumber ?? null,
+                    };
+
+                    if (!current.areaNames.includes(areaRow.name)) {
+                        current.areaNames.push(areaRow.name);
+                    }
+
+                    if (!current.riderName && schedule.defaultRider?.name) {
+                        current.riderName = schedule.defaultRider.name;
+                    }
+
+                    if (!current.riderPhone && schedule.defaultRider?.phoneNumber) {
+                        current.riderPhone = schedule.defaultRider.phoneNumber;
+                    }
+
+                    warehouseScheduleMap.set(schedule.dayOfWeek, current);
+                }
+            }
+
+            const warehouseWeeklyDays = Array.from(warehouseScheduleMap.values()).sort(
+                (a, b) => a.dayOfWeek - b.dayOfWeek,
+            );
+            const matchedWeeklyDays = matchedArea
+                ? matchedArea.schedules.map((schedule) => ({
+                    dayOfWeek: schedule.dayOfWeek,
+                    dayName: DAY_NAMES[schedule.dayOfWeek] || "Unknown",
+                    areaNames: [matchedArea!.name],
+                    riderName: schedule.defaultRider?.name ?? null,
+                    riderPhone: schedule.defaultRider?.phoneNumber ?? null,
+                }))
+                : [];
+            const deliveryScope = matchedWeeklyDays.length > 0
+                ? "matched_area"
+                : warehouseWeeklyDays.length > 0
+                    ? "warehouse"
+                    : "none";
+            const effectiveWeeklyDays = deliveryScope === "matched_area"
+                ? matchedWeeklyDays
+                : warehouseWeeklyDays;
+            const today = new Date();
+            const todayDayOfWeek = today.getDay();
+            const hasDeliveryToday = effectiveWeeklyDays.some(
+                (day) => day.dayOfWeek === todayDayOfWeek,
+            );
+            const nextDelivery = findNextDeliveryDate(
+                effectiveWeeklyDays.map((day) => day.dayOfWeek),
+                today,
+            );
+
+            const uploadedDocuments = Array.isArray(warehouseProfile?.documents)
+                ? warehouseProfile.documents
+                : [];
+            const locationParts = [
+                warehouseProfile?.area,
+                warehouseProfile?.district,
+                warehouseProfile?.division,
+            ].filter(Boolean);
+            const businessType = warehouseProfile?.businessCategory
+                ? warehouseProfile.businessCategory
+                : "warehouse_supplier";
+            const bestCategory = topCategories[0]?.categoryName || null;
+
+            let reliability: "Excellent" | "Good" | "Stable" | "Needs attention" =
+                "Stable";
+            if (issueRate === 0 && modifiedRate <= 5) {
+                reliability = "Excellent";
+            } else if (issueRate <= 2 && modifiedRate <= 10) {
+                reliability = "Good";
+            } else if (issueRate > 10 || modifiedRate > 25) {
+                reliability = "Needs attention";
+            }
+
+            return {
+                identity: {
+                    warehouseId: warehouseUser.id,
+                    warehouseSlug: warehouseUser.warehouseSlug,
+                    name: warehouseUser.warehouseName || warehouseUser.name,
+                    type: businessType,
+                    location:
+                        locationParts.join(", ")
+                        || warehouseUser.address
+                        || null,
+                    phone: warehouseUser.phoneNumber,
+                    email: warehouseUser.email,
+                    image: warehouseUser.image,
+                    connectionStatus: connection.status,
+                    connectedAt: connection.connectedAt,
+                    lastOrderedAt: connection.lastOrderedAt,
+                },
+                business: {
+                    name: warehouseUser.warehouseName || warehouseUser.name,
+                    category: warehouseProfile?.businessCategory || null,
+                    yearsInBusiness: warehouseProfile?.yearsInBusiness || null,
+                    yourStoreName: shopUser?.shopName || shopUser?.name || null,
+                    yourAddress:
+                        shopUser?.shopAddress || latestOrder?.shippingAddress || null,
+                },
+                documents: {
+                    applicationStatus: warehouseProfile?.status || null,
+                    tradeLicenseNumber: warehouseProfile?.tradeLicenseNumber || null,
+                    uploadedDocumentCount: uploadedDocuments.length,
+                    uploadedDocuments,
+                    hasTradeLicense: Boolean(warehouseProfile?.tradeLicenseNumber),
+                    hasVatBin: false,
+                    hasAgreement: false,
+                    hasProductAuthorization: uploadedDocuments.length > 0,
+                },
+                financialSummary: {
+                    totalPurchase,
+                    totalPaid,
+                    totalDue,
+                    creditLimit: null,
+                    availableCredit: null,
+                    health: totalDue > 0 ? "attention" : "safe",
+                },
+                orderStatus: {
+                    totalOrders: orderStats.total,
+                    pendingOrders:
+                        orderStats.pending + orderStats.confirmed + orderStats.processing,
+                    processingOrders: orderStats.processing,
+                    outForDeliveryOrders: orderStats.outForDelivery,
+                    deliveredOrders: orderStats.delivered,
+                },
+                pendingOrders: pendingOrders.map((row: any) => {
+                    const invoiceData = pendingInvoiceMap.get(row.id);
+                    return {
+                        id: row.id,
+                        orderNumber: row.orderNumber,
+                        status: row.status,
+                        createdAt: row.createdAt,
+                        total: toSafeNumber(row.total),
+                        deliveryStatus: invoiceData?.deliveryStatus || null,
+                        expectedDeliveryAt: invoiceData?.expectedDeliveryAt || null,
+                        items: row.items.map((item: any) => ({
+                            id: item.id,
+                            productName: item.productName,
+                            quantity: Number(item.modifiedQty || item.quantity || 0),
+                            rawQuantity: Number(item.quantity || 0),
+                        })),
+                    };
+                }),
+                dueStatus: {
+                    totalPayable: totalDue,
+                    overdueAmount,
+                    payableOrders,
+                    lastPayment: lastPayment
+                        ? {
+                            orderNumber: lastPayment.orderNumber,
+                            amount: toSafeNumber(lastPayment.total),
+                            date: lastPayment.createdAt,
+                        }
+                        : null,
+                    alert:
+                        totalDue > 0
+                            ? overdueAmount > 0
+                                ? "Delivered dues are waiting to be settled."
+                                : "Pending purchase dues need follow-up."
+                            : "No pending payable balance.",
+                },
+                purchaseHistory,
+                productRelation: {
+                    topProducts: topProducts.map((row) => ({
+                        name: row.productName,
+                        image: row.productImage,
+                        totalQty: Number(row.totalQty),
+                        orderCount: Number(row.orderCount),
+                    })),
+                    totalSkuPurchased: Number(skuSummary?.totalSkuPurchased || 0),
+                    topCategories: topCategories.map((row) => ({
+                        name: row.categoryName,
+                        totalQty: Number(row.totalQty),
+                        orderCount: Number(row.orderCount),
+                    })),
+                },
+                performance: {
+                    avgDeliveryDays,
+                    deliverySpeed:
+                        avgDeliveryDays <= 1
+                            ? "Fast"
+                            : avgDeliveryDays <= 3
+                                ? "Normal"
+                                : avgDeliveryDays > 0
+                                    ? "Slow"
+                                    : "No delivery data",
+                    orderAccuracy: deliveredTotal > 0 ? 100 - modifiedRate : 100,
+                    reliability,
+                    issueRate,
+                },
+                issues: {
+                    totalIssues,
+                    resolvedIssues,
+                    unresolvedIssues: totalIssues - resolvedIssues,
+                    lastIssue: latestIssue
+                        ? {
+                            type: latestIssue.type,
+                            status: latestIssue.status,
+                            description: latestIssue.description,
+                            delayReason: latestIssue.delayReason,
+                            createdAt: latestIssue.createdAt,
+                        }
+                        : null,
+                },
+                salesman: assignedSalesman,
+                delivery: {
+                    scope: deliveryScope,
+                    matchSource,
+                    yourAddress:
+                        shopUser?.shopAddress || latestOrder?.shippingAddress || null,
+                    areaHint:
+                        latestOrder?.shippingArea
+                        || latestOrder?.shippingCity
+                        || shopUser?.serviceArea
+                        || null,
+                    matchedArea: matchedArea
+                        ? {
+                            id: matchedArea.id,
+                            name: matchedArea.name,
+                            description: matchedArea.description,
+                        }
+                        : null,
+                    availableAreas: warehouseAreas.map((areaRow) => areaRow.name),
+                    weeklyDays: effectiveWeeklyDays,
+                    hasDeliveryToday,
+                    todayDayName: DAY_NAMES[todayDayOfWeek],
+                    nextDelivery,
+                    cutoffTime: null,
+                },
+                smartInsight: {
+                    headline: bestCategory
+                        ? `This supplier performs strongest in ${bestCategory}.`
+                        : orderStats.total > 0
+                            ? "This supplier already has purchase activity."
+                            : "Connection is active, but no transactions have been recorded yet.",
+                    warning:
+                        totalDue > 0
+                            ? `Outstanding payable balance: Tk ${totalDue.toLocaleString("en-BD")}`
+                            : latestIssue
+                                ? `Latest issue: ${latestIssue.type.replace(/_/g, " ")}`
+                                : null,
+                    suggestion:
+                        totalDue > 0
+                            ? "Settle pending dues before scaling order volume."
+                            : orderStats.pending + orderStats.confirmed + orderStats.processing > 0
+                                ? "Track active orders closely against the delivery schedule."
+                                : "Use this connection to expand repeat purchasing in strong categories.",
+                    compareCategory: bestCategory,
+                },
+                emptyState: {
+                    hasTransactions: supplierOrders.length > 0,
+                },
+            };
+        }),
+
+    /**
      * List all warehouses this shop has ordered from (= suppliers).
      */
     getMySuppliers: shopOwnerProcedure
@@ -2721,26 +3920,126 @@ const orderQueries = {
             tags: ["Shop Owner"],
             summary: "List suppliers (warehouses ordered from)",
         })
-        .input(z.object({ search: z.string().optional() }))
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z.enum(["all", "with_due", "no_due"]).default("all"),
+            }),
+        )
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            // Get distinct warehouseIds from orders
-            const warehouseOrders = await db
+            const supplierOrders = await db
                 .select({
                     warehouseId: order.warehouseId,
-                    totalOrders: count(),
-                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("ta"),
-                    lastOrderDate: sql<Date>`MAX(${order.createdAt})`.as("lo"),
-                    pendingCount: sql<number>`count(*) filter (where ${order.status} in ('pending', 'confirmed', 'processing'))`.as("pc"),
+                    orderId: order.id,
+                    status: order.status,
+                    paymentStatus: order.paymentStatus,
+                    total: order.total,
+                    createdAt: order.createdAt,
+                    invoicePaymentStatus: invoice.paymentStatus,
                 })
                 .from(order)
-                .where(and(eq(order.userId, userId), sql`${order.warehouseId} is not null`))
-                .groupBy(order.warehouseId);
+                .leftJoin(
+                    invoice,
+                    and(
+                        eq(invoice.orderId, order.id),
+                        eq(invoice.invoiceType, "main"),
+                    ),
+                )
+                .where(and(eq(order.userId, userId), sql`${order.warehouseId} is not null`));
 
-            if (warehouseOrders.length === 0) return { suppliers: [] };
+            if (supplierOrders.length === 0) {
+                return {
+                    summary: {
+                        totalSuppliers: 0,
+                        payableSuppliers: 0,
+                        totalPayable: 0,
+                    },
+                    suppliers: [],
+                };
+            }
 
-            const whIds = warehouseOrders.map((w) => w.warehouseId!).filter(Boolean);
+            const supplierMap = new Map<
+                string,
+                {
+                    warehouseId: string;
+                    totalOrders: number;
+                    totalPurchased: number;
+                    totalPaid: number;
+                    totalPayable: number;
+                    payableOrders: number;
+                    pendingCount: number;
+                    lastOrderDate: Date | null;
+                    lastPurchaseAmount: number;
+                }
+            >();
+
+            for (const row of supplierOrders) {
+                const warehouseId = row.warehouseId;
+                if (!warehouseId) continue;
+
+                const total = toSafeNumber(row.total);
+                const existing = supplierMap.get(warehouseId) ?? {
+                    warehouseId,
+                    totalOrders: 0,
+                    totalPurchased: 0,
+                    totalPaid: 0,
+                    totalPayable: 0,
+                    payableOrders: 0,
+                    pendingCount: 0,
+                    lastOrderDate: null,
+                    lastPurchaseAmount: 0,
+                };
+
+                existing.totalOrders += 1;
+
+                if (
+                    !existing.lastOrderDate
+                    || (row.createdAt && row.createdAt > existing.lastOrderDate)
+                ) {
+                    existing.lastOrderDate = row.createdAt;
+                    existing.lastPurchaseAmount = total;
+                }
+
+                if (["pending", "confirmed", "processing"].includes(row.status)) {
+                    existing.pendingCount += 1;
+                }
+
+                if (isPurchaseOrderStatus(row.status)) {
+                    existing.totalPurchased += total;
+                }
+
+                if (isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)) {
+                    existing.totalPaid += total;
+                }
+
+                if (
+                    isPayableOrder(
+                        row.status,
+                        row.paymentStatus,
+                        row.invoicePaymentStatus,
+                    )
+                ) {
+                    existing.totalPayable += total;
+                    existing.payableOrders += 1;
+                }
+
+                supplierMap.set(warehouseId, existing);
+            }
+
+            const allSuppliers = Array.from(supplierMap.values());
+            const baseSummary = {
+                totalSuppliers: allSuppliers.length,
+                payableSuppliers: allSuppliers.filter((supplier) => supplier.totalPayable > 0)
+                    .length,
+                totalPayable: allSuppliers.reduce(
+                    (total, supplier) => total + supplier.totalPayable,
+                    0,
+                ),
+            };
+
+            const whIds = Array.from(supplierMap.keys());
             const warehouseUsers = await db
                 .select({
                     id: user.id,
@@ -2753,30 +4052,86 @@ const orderQueries = {
                 .from(user)
                 .where(inArray(user.id, whIds));
 
-            const userMap = new Map(warehouseUsers.map((u) => [u.id, u]));
+            const connections = await db
+                .select({
+                    warehouseId: shopWarehouseConnection.warehouseId,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                    status: shopWarehouseConnection.status,
+                })
+                .from(shopWarehouseConnection)
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.shopId, userId),
+                        inArray(shopWarehouseConnection.warehouseId, whIds),
+                    ),
+                );
 
-            let suppliers = warehouseOrders.map((wo) => {
-                const u = userMap.get(wo.warehouseId!);
+            const userMap = new Map(warehouseUsers.map((u) => [u.id, u]));
+            const connectionMap = new Map(
+                connections.map((connection) => [connection.warehouseId, connection]),
+            );
+
+            let suppliers = Array.from(supplierMap.values()).map((supplier) => {
+                const u = userMap.get(supplier.warehouseId);
+                const connection = connectionMap.get(supplier.warehouseId);
                 return {
-                    warehouseId: wo.warehouseId!,
+                    warehouseId: supplier.warehouseId,
                     name: u?.warehouseName || u?.shopName || u?.name || "Unknown",
                     phone: u?.phoneNumber || null,
                     email: u?.email || null,
-                    totalOrders: Number(wo.totalOrders),
-                    totalAmount: Number(wo.totalAmount),
-                    lastOrderDate: wo.lastOrderDate,
-                    pendingCount: Number(wo.pendingCount),
+                    totalOrders: supplier.totalOrders,
+                    totalPurchased: supplier.totalPurchased,
+                    totalPaid: supplier.totalPaid,
+                    totalPayable: supplier.totalPayable,
+                    payableOrders: supplier.payableOrders,
+                    pendingCount: supplier.pendingCount,
+                    lastOrderDate: supplier.lastOrderDate,
+                    lastPurchaseAmount: supplier.lastPurchaseAmount,
+                    hasDue: supplier.totalPayable > 0,
+                    connectionStatus: connection?.status || null,
+                    connectedAt: connection?.connectedAt || null,
+                    lastOrderedAt: connection?.lastOrderedAt || null,
                 };
             });
 
             if (input.search) {
                 const s = input.search.toLowerCase();
-                suppliers = suppliers.filter((sup) => sup.name.toLowerCase().includes(s));
+                suppliers = suppliers.filter((sup) =>
+                    [sup.name, sup.phone, sup.email]
+                        .filter(Boolean)
+                        .some((value) => value!.toLowerCase().includes(s)),
+                );
             }
 
-            suppliers.sort((a, b) => Number(b.totalAmount) - Number(a.totalAmount));
+            if (input.status === "with_due") {
+                suppliers = suppliers.filter((sup) => sup.hasDue);
+            } else if (input.status === "no_due") {
+                suppliers = suppliers.filter((sup) => !sup.hasDue);
+            }
 
-            return { suppliers };
+            suppliers.sort((a, b) => {
+                if (Number(b.hasDue) !== Number(a.hasDue)) {
+                    return Number(b.hasDue) - Number(a.hasDue);
+                }
+
+                if (b.totalPayable !== a.totalPayable) {
+                    return b.totalPayable - a.totalPayable;
+                }
+
+                if (b.totalPurchased !== a.totalPurchased) {
+                    return b.totalPurchased - a.totalPurchased;
+                }
+
+                return (
+                    (b.lastOrderDate?.getTime() || 0) - (a.lastOrderDate?.getTime() || 0)
+                );
+            });
+
+            return {
+                summary: baseSummary,
+                suppliers,
+            };
         }),
 
     /**
@@ -2795,7 +4150,18 @@ const orderQueries = {
             const userId = context.session.user.id;
             const whId = input.warehouseId;
 
-            // Supplier identity
+            const [shopUser] = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    shopName: user.shopName,
+                    shopAddress: user.shopAddress,
+                    serviceArea: user.serviceArea,
+                })
+                .from(user)
+                .where(eq(user.id, userId))
+                .limit(1);
+
             const [whUser] = await db
                 .select({
                     id: user.id,
@@ -2810,28 +4176,101 @@ const orderQueries = {
                 .where(eq(user.id, whId))
                 .limit(1);
 
-            if (!whUser) throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            if (!whUser) {
+                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            }
 
-            // Order stats
-            const [stats] = await db
+            const [connection] = await db
                 .select({
-                    totalOrders: count(),
-                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("ta"),
-                    deliveredCount: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dc"),
-                    deliveredAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)) filter (where ${order.status} = 'delivered'), 0)`.as("da"),
-                    pendingCount: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pc"),
-                    confirmedCount: sql<number>`count(*) filter (where ${order.status} = 'confirmed')`.as("cc"),
-                    processingCount: sql<number>`count(*) filter (where ${order.status} = 'processing')`.as("prc"),
-                    cancelledCount: sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as("canc"),
+                    status: shopWarehouseConnection.status,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                })
+                .from(shopWarehouseConnection)
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.shopId, userId),
+                        eq(shopWarehouseConnection.warehouseId, whId),
+                    ),
+                )
+                .limit(1);
+
+            const supplierOrders = await db
+                .select({
+                    id: order.id,
+                    orderNumber: order.orderNumber,
+                    status: order.status,
+                    paymentStatus: order.paymentStatus,
+                    total: order.total,
+                    createdAt: order.createdAt,
+                    deliveredAt: order.deliveredAt,
+                    modifiedByWarehouseAt: order.modifiedByWarehouseAt,
+                    shippingAddress: order.shippingAddress,
+                    shippingCity: order.shippingCity,
+                    shippingArea: order.shippingArea,
+                    invoicePaymentStatus: invoice.paymentStatus,
                 })
                 .from(order)
-                .where(and(eq(order.userId, userId), eq(order.warehouseId, whId)));
+                .leftJoin(
+                    invoice,
+                    and(
+                        eq(invoice.orderId, order.id),
+                        eq(invoice.invoiceType, "main"),
+                    ),
+                )
+                .where(and(eq(order.userId, userId), eq(order.warehouseId, whId)))
+                .orderBy(desc(order.createdAt));
 
-            const totalPaid = Number(stats?.deliveredAmount) || 0;
-            const totalPurchased = Number(stats?.totalAmount) || 0;
-            const totalDue = totalPurchased - totalPaid;
+            const orderStats = {
+                total: supplierOrders.length,
+                pending: 0,
+                confirmed: 0,
+                processing: 0,
+                delivered: 0,
+                returned: 0,
+                cancelled: 0,
+            };
 
-            // Pending orders (active)
+            let totalPurchased = 0;
+            let totalPaid = 0;
+            let totalDue = 0;
+            let payableOrders = 0;
+
+            for (const row of supplierOrders) {
+                const total = toSafeNumber(row.total);
+
+                if (row.status === "pending") orderStats.pending += 1;
+                if (row.status === "confirmed") orderStats.confirmed += 1;
+                if (row.status === "processing") orderStats.processing += 1;
+                if (row.status === "delivered") orderStats.delivered += 1;
+                if (row.status === "returned") orderStats.returned += 1;
+                if (row.status === "cancelled") orderStats.cancelled += 1;
+
+                if (isPurchaseOrderStatus(row.status)) {
+                    totalPurchased += total;
+                }
+
+                if (
+                    isPurchaseOrderStatus(row.status)
+                    && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
+                ) {
+                    totalPaid += total;
+                }
+
+                if (
+                    isPayableOrder(
+                        row.status,
+                        row.paymentStatus,
+                        row.invoicePaymentStatus,
+                    )
+                ) {
+                    totalDue += total;
+                    payableOrders += 1;
+                }
+            }
+
+            const latestOrder = supplierOrders[0] || null;
+
             const pendingOrders = await db.query.order.findMany({
                 where: and(
                     eq(order.userId, userId),
@@ -2847,18 +4286,69 @@ const orderQueries = {
                 limit: 5,
             });
 
-            // Recent history (last 5 completed)
-            const recentHistory = await db.query.order.findMany({
-                where: and(
-                    eq(order.userId, userId),
-                    eq(order.warehouseId, whId),
-                    inArray(order.status, ["delivered", "cancelled", "returned"]),
-                ),
-                orderBy: [desc(order.createdAt)],
-                limit: 5,
+            const historyOrderRows = supplierOrders.slice(0, 8);
+            const historyOrderIds = historyOrderRows.map((row) => row.id);
+            const historyItems = historyOrderIds.length
+                ? await db
+                    .select({
+                        orderId: orderItem.orderId,
+                        productName: orderItem.productName,
+                    })
+                    .from(orderItem)
+                    .where(inArray(orderItem.orderId, historyOrderIds))
+                : [];
+
+            const historyItemMap = new Map<number, string[]>();
+            for (const item of historyItems) {
+                const existing = historyItemMap.get(item.orderId) ?? [];
+                existing.push(item.productName);
+                historyItemMap.set(item.orderId, existing);
+            }
+
+            const purchaseHistory = historyOrderRows.map((row) => {
+                const total = toSafeNumber(row.total);
+                const productNames = historyItemMap.get(row.id) ?? [];
+                const productSummary = productNames.length <= 2
+                    ? productNames.join(", ")
+                    : `${productNames[0]}, ${productNames[1]} +${productNames.length - 2} more`;
+                const paid = isOrderPaid(row.paymentStatus, row.invoicePaymentStatus);
+                const dueAmount = isPayableOrder(
+                    row.status,
+                    row.paymentStatus,
+                    row.invoicePaymentStatus,
+                )
+                    ? total
+                    : 0;
+
+                return {
+                    id: row.id,
+                    orderNumber: row.orderNumber,
+                    date: row.createdAt,
+                    productSummary: productSummary || "Multiple products",
+                    amount: total,
+                    orderStatus: row.status,
+                    paymentStatus: paid
+                        ? "paid"
+                        : dueAmount > 0
+                            ? "due"
+                            : "pending",
+                    dueAmount,
+                };
             });
 
-            // Top purchased products
+            const recentHistory = supplierOrders
+                .filter((row) =>
+                    ["delivered", "cancelled", "returned"].includes(row.status),
+                )
+                .slice(0, 5)
+                .map((row) => ({
+                    id: row.id,
+                    orderNumber: row.orderNumber,
+                    status: row.status,
+                    createdAt: row.createdAt,
+                    total: row.total,
+                }));
+
             const topProducts = await db
                 .select({
                     productName: orderItem.productName,
@@ -2873,7 +4363,6 @@ const orderQueries = {
                 .orderBy(sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`)
                 .limit(10);
 
-            // Performance: avg delivery days + modification rate
             const perfData = await db
                 .select({
                     avgDays: sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as("ad"),
@@ -2893,6 +4382,167 @@ const orderQueries = {
             const deliveredTotal = Number(perfData[0]?.deliveredTotal) || 1;
             const modifiedRate = Math.round(((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100);
 
+            const assignment = await db.query.customerAssignment.findFirst({
+                where: eq(customerAssignment.customerId, userId),
+                with: {
+                    salesman: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            role: true,
+                            warehouseId: true,
+                            banned: true,
+                        },
+                    },
+                },
+            });
+
+            const assignedSalesman = assignment?.salesman
+                && assignment.salesman.role === "salesman"
+                && assignment.salesman.warehouseId === whId
+                ? {
+                    id: assignment.salesman.id,
+                    name: assignment.salesman.name,
+                    phone: assignment.salesman.phoneNumber,
+                    status: assignment.salesman.banned ? "inactive" : "active",
+                }
+                : null;
+
+            const warehouseAreas = await db.query.deliveryArea.findMany({
+                where: and(
+                    eq(deliveryArea.warehouseId, whId),
+                    eq(deliveryArea.status, "active"),
+                ),
+                with: {
+                    schedules: {
+                        where: eq(deliverySchedule.isActive, true),
+                        with: {
+                            defaultRider: {
+                                columns: {
+                                    name: true,
+                                    phoneNumber: true,
+                                },
+                            },
+                        },
+                        orderBy: [asc(deliverySchedule.dayOfWeek)],
+                    },
+                },
+                orderBy: [asc(deliveryArea.sortOrder), asc(deliveryArea.name)],
+            });
+
+            const deliveryHints = [
+                {
+                    source: "shipping_area",
+                    value: latestOrder?.shippingArea || null,
+                },
+                {
+                    source: "shipping_city",
+                    value: latestOrder?.shippingCity || null,
+                },
+                {
+                    source: "service_area",
+                    value: shopUser?.serviceArea || null,
+                },
+                {
+                    source: "shop_address",
+                    value: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
+                },
+            ].filter((hint) => normalizeDeliveryText(hint.value).length > 0);
+
+            let matchedArea: (typeof warehouseAreas)[number] | null = null;
+            let matchSource: string | null = null;
+
+            for (const areaRow of warehouseAreas) {
+                const areaTerms = [
+                    areaRow.name,
+                    areaRow.slug,
+                    areaRow.description,
+                ]
+                    .map((value) => normalizeDeliveryText(value))
+                    .filter(Boolean);
+
+                const matchedHint = deliveryHints.find((hint) => {
+                    const normalizedHint = normalizeDeliveryText(hint.value);
+                    return areaTerms.some((term) =>
+                        normalizedHint.includes(term) || term.includes(normalizedHint)
+                    );
+                });
+
+                if (matchedHint) {
+                    matchedArea = areaRow;
+                    matchSource = matchedHint.source;
+                    break;
+                }
+            }
+
+            const warehouseScheduleMap = new Map<
+                number,
+                {
+                    dayOfWeek: number;
+                    dayName: string;
+                    areaNames: string[];
+                    riderName: string | null;
+                    riderPhone: string | null;
+                }
+            >();
+
+            for (const areaRow of warehouseAreas) {
+                for (const schedule of areaRow.schedules) {
+                    const existing = warehouseScheduleMap.get(schedule.dayOfWeek) ?? {
+                        dayOfWeek: schedule.dayOfWeek,
+                        dayName: DAY_NAMES[schedule.dayOfWeek] || "Unknown",
+                        areaNames: [],
+                        riderName: schedule.defaultRider?.name ?? null,
+                        riderPhone: schedule.defaultRider?.phoneNumber ?? null,
+                    };
+
+                    if (!existing.areaNames.includes(areaRow.name)) {
+                        existing.areaNames.push(areaRow.name);
+                    }
+
+                    if (!existing.riderName && schedule.defaultRider?.name) {
+                        existing.riderName = schedule.defaultRider.name;
+                    }
+
+                    if (!existing.riderPhone && schedule.defaultRider?.phoneNumber) {
+                        existing.riderPhone = schedule.defaultRider.phoneNumber;
+                    }
+
+                    warehouseScheduleMap.set(schedule.dayOfWeek, existing);
+                }
+            }
+
+            const warehouseWeeklyDays = Array.from(warehouseScheduleMap.values()).sort(
+                (a, b) => a.dayOfWeek - b.dayOfWeek,
+            );
+            const matchedWeeklyDays = matchedArea
+                ? matchedArea.schedules.map((schedule) => ({
+                    dayOfWeek: schedule.dayOfWeek,
+                    dayName: DAY_NAMES[schedule.dayOfWeek] || "Unknown",
+                    areaNames: [matchedArea!.name],
+                    riderName: schedule.defaultRider?.name ?? null,
+                    riderPhone: schedule.defaultRider?.phoneNumber ?? null,
+                }))
+                : [];
+            const deliveryScope = matchedWeeklyDays.length > 0
+                ? "matched_area"
+                : warehouseWeeklyDays.length > 0
+                    ? "warehouse"
+                    : "none";
+            const effectiveWeeklyDays = deliveryScope === "matched_area"
+                ? matchedWeeklyDays
+                : warehouseWeeklyDays;
+            const today = new Date();
+            const todayDayOfWeek = today.getDay();
+            const hasDeliveryToday = effectiveWeeklyDays.some(
+                (day) => day.dayOfWeek === todayDayOfWeek,
+            );
+            const nextDelivery = findNextDeliveryDate(
+                effectiveWeeklyDays.map((day) => day.dayOfWeek),
+                today,
+            );
+
             return {
                 identity: {
                     warehouseId: whUser.id,
@@ -2900,19 +4550,63 @@ const orderQueries = {
                     phone: whUser.phoneNumber,
                     email: whUser.email,
                     address: whUser.address,
+                    connectionStatus: connection?.status || null,
+                    connectedAt: connection?.connectedAt || null,
+                    lastOrderedAt: connection?.lastOrderedAt || null,
                 },
                 financial: {
                     totalPurchased,
                     totalPaid,
                     totalDue,
+                    payableOrders,
                 },
-                orderStats: {
-                    total: Number(stats?.totalOrders) || 0,
-                    pending: Number(stats?.pendingCount) || 0,
-                    confirmed: Number(stats?.confirmedCount) || 0,
-                    processing: Number(stats?.processingCount) || 0,
-                    delivered: Number(stats?.deliveredCount) || 0,
-                    cancelled: Number(stats?.cancelledCount) || 0,
+                business: {
+                    name: whUser.warehouseName || whUser.shopName || whUser.name,
+                    phone: whUser.phoneNumber,
+                    email: whUser.email,
+                    location: whUser.address,
+                    yourShopName: shopUser?.shopName || shopUser?.name || null,
+                    yourAddress: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
+                },
+                orderStats,
+                salesman: assignedSalesman,
+                delivery: {
+                    scope: deliveryScope,
+                    matchSource,
+                    yourAddress: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
+                    areaHint: latestOrder?.shippingArea || latestOrder?.shippingCity || shopUser?.serviceArea || null,
+                    matchedArea: matchedArea
+                        ? {
+                            id: matchedArea.id,
+                            name: matchedArea.name,
+                            description: matchedArea.description,
+                        }
+                        : null,
+                    availableAreas: warehouseAreas.map((areaRow) => areaRow.name),
+                    weeklyDays: effectiveWeeklyDays,
+                    hasDeliveryToday,
+                    todayDayName: DAY_NAMES[todayDayOfWeek],
+                    nextDelivery,
+                    cutoffTime: null,
+                },
+                accountSummary: {
+                    totalPurchase: totalPurchased,
+                    paid: totalPaid,
+                    payable: totalDue,
+                    payableOrders,
+                },
+                purchaseHistory,
+                quickInfo: {
+                    lastOrderNumber: latestOrder?.orderNumber || null,
+                    lastOrderStatus: latestOrder?.status || null,
+                    pendingOrders:
+                        orderStats.pending + orderStats.confirmed + orderStats.processing,
+                    activeOrders:
+                        orderStats.pending + orderStats.confirmed + orderStats.processing,
+                    payableOrders,
+                    lastDeliveredAt:
+                        supplierOrders.find((row) => row.status === "delivered")
+                            ?.deliveredAt || null,
                 },
                 pendingOrders: pendingOrders.map((o: any) => ({
                     id: o.id,
@@ -3184,8 +4878,9 @@ const warehouseOrderQueries = {
                     z.object({
                         variantId: z.number(),
                         quantity: z.number().min(1),
-                        supplyMode: z.enum(["loose", "pack"]).default("loose"),
-                        targetVariantId: z.number().optional(),
+                        supplyMode: warehouseOrderModeSchema.optional(),
+                        fulfillmentMode: warehouseOrderModeSchema.optional(),
+                        targetVariantId: z.number().optional().nullable(),
                     }),
                 ).min(1),
                 shippingName: z.string().min(1),
@@ -3261,7 +4956,29 @@ const warehouseOrderQueries = {
                         variant: {
                             with: {
                                 product: {
-                                    columns: { id: true, name: true, image: true, size: true },
+                                    columns: {
+                                        id: true,
+                                        name: true,
+                                        image: true,
+                                        size: true,
+                                        trackingType: true,
+                                        isReturnablePack: true,
+                                    },
+                                    with: {
+                                        category: {
+                                            columns: { id: true, name: true, slug: true },
+                                            with: {
+                                                type: {
+                                                    columns: {
+                                                        id: true,
+                                                        name: true,
+                                                        slug: true,
+                                                        inventoryBehaviour: true,
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
                                 },
                             },
                         },
@@ -3275,32 +4992,49 @@ const warehouseOrderQueries = {
                 }
 
                 const availableQty = Number(inv.availableQty);
+                const [cartonCountResult] = await db
+                    .select({ cnt: count() })
+                    .from(carton)
+                    .where(and(
+                        eq(carton.warehouseId, warehouseId),
+                        eq(carton.variantId, item.variantId),
+                        eq(carton.status, "active"),
+                    ));
+                const activeCartonCount = cartonCountResult?.cnt ?? 0;
+                const requestedMode = item.fulfillmentMode ?? item.supplyMode ?? "loose";
+                const resolvedMode = resolveWarehouseOrderMode({
+                    requestedMode,
+                    fallbackMode: "loose",
+                    activeCartonCount,
+                    productType: {
+                        typeName: inv.variant?.product?.category?.type?.name,
+                        typeSlug: inv.variant?.product?.category?.type?.slug,
+                        inventoryBehaviour:
+                            inv.variant?.product?.category?.type?.inventoryBehaviour,
+                        trackingType: inv.variant?.product?.trackingType,
+                        isReturnablePack: inv.variant?.product?.isReturnablePack,
+                    },
+                });
 
-                // Stock validation depends on supply mode:
-                // - Pack/carton orders: item.quantity = carton count, so verify active carton count
-                // - Loose orders: item.quantity = unit count (in KG units), so verify availableQty
-                if (item.supplyMode === "pack") {
-                    // Count active cartons for this variant in the warehouse
-                    const [cartonCountResult] = await db
-                        .select({ cnt: count() })
-                        .from(carton)
-                        .where(and(
-                            eq(carton.warehouseId, warehouseId),
-                            eq(carton.variantId, item.variantId),
-                            eq(carton.status, "active"),
-                        ));
-                    const activeCartonCount = cartonCountResult?.cnt ?? 0;
+                if (requestedMode && !resolvedMode.supportsRequestedMode) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `${requestedMode} mode is not supported for ${inv.variant?.product?.name || "this product type"}. Supported modes: ${resolvedMode.profile.supportedModes.join(", ")}`,
+                    });
+                }
 
+                // Stock validation depends on the resolved fulfillment strategy:
+                // - container_count: quantity is the number of cartons/boxes/bundles/drums
+                // - direct_quantity: quantity is the number of direct units or loose units
+                if (resolvedMode.stockStrategy === "container_count") {
                     if (activeCartonCount < item.quantity) {
                         throw new ORPCError("BAD_REQUEST", {
-                            message: `Not enough cartons for ${inv.variant?.product?.name || "product"}. Active cartons: ${activeCartonCount}, requested: ${item.quantity}`,
+                            message: `Not enough ${resolvedMode.mode}s for ${inv.variant?.product?.name || "product"}. Available containers: ${activeCartonCount}, requested: ${item.quantity}`,
                         });
                     }
                 } else {
-                    // Loose orders: compare unit/KG count directly
                     if (availableQty < item.quantity) {
                         throw new ORPCError("BAD_REQUEST", {
-                            message: `Insufficient stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
+                            message: `Insufficient ${resolvedMode.mode} stock for ${inv.variant?.product?.name || "product"}. Available: ${availableQty}, requested: ${item.quantity}`,
                         });
                     }
                 }
@@ -3310,12 +5044,14 @@ const warehouseOrderQueries = {
                 let unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
 
                 const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
-                const isLooseOrder = item.supplyMode === "loose";
+                const isLooseOrder = resolvedMode.mode === "loose";
+                const usesContainerPricing =
+                    resolvedMode.stockStrategy === "container_count";
 
                 if (isLooseOrder) {
                     // ═══ LOOSE ORDER: Use variant's base price directly — no carton calculation ═══
                     console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose order — using base variant price: ${unitPrice}`);
-                } else {
+                } else if (usesContainerPricing) {
                     // ═══ PACK/CARTON ORDER: Resolve per-carton price ═══
 
                     // Look up carton and config for carton pricing
@@ -3373,22 +5109,43 @@ const warehouseOrderQueries = {
                     } else {
                         console.log(`[ORDER-PRICE] variant=${item.variantId}: No carton found, using raw pack price: ${unitPrice}`);
                     }
+                } else {
+                    console.log(
+                        `[ORDER-PRICE] variant=${item.variantId}: Direct ${resolvedMode.mode} order — using base variant price: ${unitPrice}`,
+                    );
                 }
 
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
-                // Validate targetVariantId for pack mode
-                let resolvedTargetVariantId: number | null = item.targetVariantId ?? null;
-                if (item.supplyMode === "pack" && item.targetVariantId) {
+                // Validate targetVariantId only when the fulfillment strategy needs it.
+                const canCarryOptionalTargetVariant =
+                    resolvedMode.profile.inventoryBehaviour === "loose_convert"
+                    && (resolvedMode.mode === "drum"
+                        || resolvedMode.mode === "loose"
+                        || resolvedMode.stockStrategy === "container_count");
+                const shouldPersistTargetVariant =
+                    resolvedMode.requiresTargetVariant
+                    || (canCarryOptionalTargetVariant && !!item.targetVariantId);
+
+                if (resolvedMode.requiresTargetVariant && !item.targetVariantId) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `${resolvedMode.mode} orders for ${inv.variant?.product?.name || "this product"} require a target variant for conversion.`,
+                    });
+                }
+
+                let resolvedTargetVariantId: number | null =
+                    shouldPersistTargetVariant ? (item.targetVariantId ?? null) : null;
+
+                if (resolvedTargetVariantId) {
                     const targetVar = await db.query.productVariant.findFirst({
                         where: and(
-                            eq(productVariant.id, item.targetVariantId),
+                            eq(productVariant.id, resolvedTargetVariantId),
                             eq(productVariant.productId, inv.variant?.product?.id || 0),
                         ),
                     });
                     if (!targetVar) {
                         throw new ORPCError("BAD_REQUEST", {
-                            message: `Target variant ${item.targetVariantId} not found for product ${inv.variant?.product?.name}`,
+                            message: `Target variant ${resolvedTargetVariantId} not found for product ${inv.variant?.product?.name}`,
                         });
                     }
                 }
@@ -3404,7 +5161,7 @@ const warehouseOrderQueries = {
                     productId: inv.variant?.product?.id || 0,
                     inventoryId: inv.id,
                     currentQty: inv.availableQty,
-                    supplyMode: item.supplyMode,
+                    supplyMode: resolvedMode.mode,
                     targetVariantId: resolvedTargetVariantId,
                 });
             }
@@ -3558,6 +5315,13 @@ const warehouseOrderQueries = {
             return {
                 orders: orders.map((o: any) => ({
                     ...o,
+                    items: (o.items || []).map((item: any) => ({
+                        ...item,
+                        supplyModeLabel: item.supplyMode
+                            && item.supplyMode in FULFILLMENT_MODE_LABELS
+                            ? FULFILLMENT_MODE_LABELS[item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS]
+                            : "Legacy",
+                    })),
                     warehouseName: warehouseMap.get(o.warehouseId) || "Unknown Warehouse",
                 })),
                 pagination: {
@@ -4369,7 +6133,13 @@ const warehouseConnectionEndpoints = {
                     productSize: product.size,
                     productCategoryId: product.categoryId,
                     productSubCategoryId: product.subCategoryId,
+                    productTrackingType: product.trackingType,
+                    productIsReturnablePack: product.isReturnablePack,
                     categoryName: category.name,
+                    productTypeName: productType.name,
+                    productTypeSlug: productType.slug,
+                    productTypeInventoryBehaviour:
+                        productType.inventoryBehaviour,
                     variantUnitLabel: productVariant.unitLabel,
                     variantWeightKg: productVariant.weightKg,
                     variantSku: productVariant.sku,
@@ -4394,6 +6164,10 @@ const warehouseConnectionEndpoints = {
                 .leftJoin(
                     category,
                     eq(product.categoryId, category.id),
+                )
+                .leftJoin(
+                    productType,
+                    eq(category.typeId, productType.id),
                 )
                 // Prefer variant-level brand, fall back to product-level brand
                 .leftJoin(
@@ -4424,6 +6198,14 @@ const warehouseConnectionEndpoints = {
                 const rawQty = Number(item.availableQty || 0);
                 const inCarton = Number(item.inCartonQty || 0);
                 const effectiveQty = Math.max(0, rawQty - inCarton);
+                const fulfillmentProfile = buildProductTypeFulfillmentProfile({
+                    name: item.productTypeName,
+                    slug: item.productTypeSlug,
+                    inventoryBehaviour:
+                        item.productTypeInventoryBehaviour ?? "fixed_pack",
+                    trackingType: item.productTrackingType,
+                    isReturnablePack: item.productIsReturnablePack,
+                });
 
                 return {
                     inventoryId: item.inventoryId,
@@ -4439,6 +6221,16 @@ const warehouseConnectionEndpoints = {
                         size: item.productSize,
                         unitSize: item.productUnitSize,
                         categoryName: item.categoryName || "Uncategorized",
+                        type: {
+                            name: item.productTypeName ?? "Generic",
+                            slug: item.productTypeSlug,
+                            inventoryBehaviour:
+                                item.productTypeInventoryBehaviour
+                                ?? "fixed_pack",
+                            trackingType: item.productTrackingType,
+                            isReturnablePack: item.productIsReturnablePack,
+                        },
+                        fulfillmentProfile,
                     },
                     variant: {
                         unitLabel: item.variantUnitLabel,

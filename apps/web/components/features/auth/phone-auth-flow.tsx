@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
+import { getSalesSubdomainUrl } from "@/lib/sales-routing";
 import { client } from "@/utils/orpc";
 
 type AuthStep = "phone" | "otp" | "name" | "done";
@@ -74,7 +75,10 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
     if (role === "shop_owner") {
       return "http://shop.bikalpo.localhost:3001/dashboard";
     }
-    if (role === "admin" || role === "salesman") {
+    if (role === "salesman") {
+      return `${getSalesSubdomainUrl()}/dashboard`;
+    }
+    if (role === "admin") {
       return "/dashboard";
     }
 

@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  Check,
   ChevronDown,
   ChevronRight,
   ImageIcon,
@@ -21,11 +20,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import ImageUploader from "@/components/ImageUploader";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
+import ImageUploader from "@/components/ImageUploader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -33,6 +31,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -67,9 +66,18 @@ type VariantConfig = {
 type BrandConfig = {
   brandId: number;
   brandName: string;
+  colorName?: string;
   selectedVariantIds: number[];
   variantSettings: Record<number, VariantConfig>;
 };
+
+function isFashionTypeName(typeName?: string | null) {
+  return (
+    String(typeName || "")
+      .trim()
+      .toLowerCase() === "fashion"
+  );
+}
 
 // ============================================================
 // Main Component
@@ -91,15 +99,15 @@ export default function WarehouseAddProductPage() {
   const [videoUrl, setVideoUrl] = useState("");
 
   // Supply rules
-  const [trackingType, setTrackingType] = useState<"none" | "batch" | "serial">("none");
+  const [trackingType, setTrackingType] = useState<"none" | "batch" | "serial">(
+    "none",
+  );
   const [expiryEnabled, setExpiryEnabled] = useState(false);
   const [damageControlEnabled, setDamageControlEnabled] = useState(false);
   const [isReturnablePack, setIsReturnablePack] = useState(false);
 
   // Visibility
   const [visibility, setVisibility] = useState<"public" | "private">("public");
-  const [status, setStatus] = useState<"active" | "draft">("active");
-
   // Brand configuration
   const [brandConfigs, setBrandConfigs] = useState<BrandConfig[]>([]);
   const [expandedBrandId, setExpandedBrandId] = useState<number | null>(null);
@@ -113,11 +121,15 @@ export default function WarehouseAddProductPage() {
 
   const { data: coreProductData, isLoading: loadingCoreProduct } = useQuery({
     queryKey: ["warehouse", "getCoreProductById", { id: coreProductId }],
-    queryFn: () => (orpc.warehouse as any).getCoreProductById.call({ id: coreProductId }),
-    enabled: !!coreProductId && !isNaN(coreProductId),
+    queryFn: () =>
+      (orpc.warehouse as any).getCoreProductById.call({ id: coreProductId }),
+    enabled: !!coreProductId && !Number.isNaN(coreProductId),
   });
 
   const coreProduct = coreProductData?.coreProduct;
+  const isFashionProduct = isFashionTypeName(coreProduct?.category?.type?.name);
+  const primaryAttributeLabel = isFashionProduct ? "Color" : "Brand";
+  const variantDimensionLabel = isFashionProduct ? "Size" : "Variant";
 
   // Auto-fill from core product on load (once)
   if (coreProduct && !initialized) {
@@ -131,7 +143,10 @@ export default function WarehouseAddProductPage() {
     queryKey: [
       "warehouse",
       "getBrandsAndVariants",
-      { typeId: coreProduct?.category?.typeId, categoryId: coreProduct?.categoryId },
+      {
+        typeId: coreProduct?.category?.typeId,
+        categoryId: coreProduct?.categoryId,
+      },
     ],
     queryFn: () =>
       (orpc.warehouse as any).getBrandsAndVariants.call({
@@ -147,7 +162,8 @@ export default function WarehouseAddProductPage() {
   // === Mutation ===
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => (orpc.warehouse as any).createWarehouseProduct.call(data),
+    mutationFn: (data: any) =>
+      (orpc.warehouse as any).createWarehouseProduct.call(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["warehouse"] });
       toast.success("Product created successfully!");
@@ -168,7 +184,16 @@ export default function WarehouseAddProductPage() {
   };
 
   const configuredBrandIds = new Set(brandConfigs.map((bc) => bc.brandId));
-  const availableBrands = allBrands.filter((b: any) => !configuredBrandIds.has(b.id));
+  const availableBrands = allBrands.filter(
+    (b: any) => !configuredBrandIds.has(b.id),
+  );
+  const configuredColorKeys = new Set(
+    brandConfigs.map((bc) =>
+      String(bc.colorName || bc.brandName)
+        .trim()
+        .toLowerCase(),
+    ),
+  );
 
   const handleAddBrand = (brandId: number) => {
     const brand = allBrands.find((b: any) => b.id === brandId);
@@ -185,6 +210,56 @@ export default function WarehouseAddProductPage() {
     setExpandedBrandId(brandId);
   };
 
+  const handleAddColor = (rawColor: string) => {
+    const colorName = rawColor.trim();
+    if (!colorName) return;
+
+    if (configuredColorKeys.has(colorName.toLowerCase())) {
+      toast.error(`Color "${colorName}" has already been added`);
+      return;
+    }
+
+    const syntheticId = -Date.now();
+    const newConfig: BrandConfig = {
+      brandId: syntheticId,
+      brandName: colorName,
+      colorName,
+      selectedVariantIds: [],
+      variantSettings: {},
+    };
+
+    setBrandConfigs((prev) => [...prev, newConfig]);
+    setExpandedBrandId(syntheticId);
+    setBrandSearch("");
+    setBrandModalOpen(false);
+  };
+
+  const handleAddExistingColorBrand = (brandId: number) => {
+    const brand = allBrands.find((b: any) => b.id === brandId);
+    if (!brand) return;
+
+    const colorName = String(brand.name || "").trim();
+    if (!colorName) return;
+
+    if (configuredColorKeys.has(colorName.toLowerCase())) {
+      toast.error(`Color "${colorName}" has already been added`);
+      return;
+    }
+
+    const newConfig: BrandConfig = {
+      brandId: brand.id,
+      brandName: brand.name,
+      colorName,
+      selectedVariantIds: [],
+      variantSettings: {},
+    };
+
+    setBrandConfigs((prev) => [...prev, newConfig]);
+    setExpandedBrandId(brand.id);
+    setBrandSearch("");
+    setBrandModalOpen(false);
+  };
+
   const handleRemoveBrand = (brandId: number) => {
     setBrandConfigs((prev) => prev.filter((bc) => bc.brandId !== brandId));
     if (expandedBrandId === brandId) setExpandedBrandId(null);
@@ -196,7 +271,9 @@ export default function WarehouseAddProductPage() {
         if (bc.brandId !== brandId) return bc;
         const isIncluded = bc.selectedVariantIds.includes(variantOptionId);
         if (isIncluded) {
-          const newIds = bc.selectedVariantIds.filter((id) => id !== variantOptionId);
+          const newIds = bc.selectedVariantIds.filter(
+            (id) => id !== variantOptionId,
+          );
           const { [variantOptionId]: _, ...rest } = bc.variantSettings;
           return { ...bc, selectedVariantIds: newIds, variantSettings: rest };
         } else {
@@ -249,14 +326,16 @@ export default function WarehouseAddProductPage() {
       return;
     }
     if (brandConfigs.length === 0) {
-      toast.error("Add at least one brand");
+      toast.error(`Add at least one ${primaryAttributeLabel.toLowerCase()}`);
       return;
     }
 
-    // Check that each brand has at least one variant with a price
+    // Check that each color/brand has at least one size/variant with a price
     for (const bc of brandConfigs) {
       if (bc.selectedVariantIds.length === 0) {
-        toast.error(`Brand "${bc.brandName}" needs at least one variant`);
+        toast.error(
+          `${primaryAttributeLabel} "${bc.brandName}" needs at least one ${variantDimensionLabel.toLowerCase()}`,
+        );
         return;
       }
       for (const voId of bc.selectedVariantIds) {
@@ -266,7 +345,9 @@ export default function WarehouseAddProductPage() {
         if (!isLoose) {
           const settings = bc.variantSettings[voId];
           if (!settings?.retailerPrice || Number(settings.retailerPrice) <= 0) {
-            toast.error(`Set a retailer price for all pack variants in "${bc.brandName}"`);
+            toast.error(
+              `Set a retailer price for all selected ${variantDimensionLabel.toLowerCase()} options in "${bc.brandName}"`,
+            );
             return;
           }
         }
@@ -282,26 +363,42 @@ export default function WarehouseAddProductPage() {
       image: mainImage,
       categoryId: coreProduct?.categoryId,
       subCategoryId: coreProduct?.subCategoryId || null,
-      brandConfigs: brandConfigs.map((bc) => ({
-        brandId: bc.brandId,
-        variants: bc.selectedVariantIds.map((voId) => {
-          const vo = allVariantOptions.find((v: any) => v.id === voId);
-          const isLoose = vo?.variantType === "loose";
-          const price = bc.variantSettings[voId]?.retailerPrice;
-          return {
-            variantOptionId: voId,
-            // Loose variants can have blank price — send "0" as fallback
-            retailerPrice: price || (isLoose ? "0" : "0"),
-          };
-        }),
-      })),
+      brandConfigs: isFashionProduct
+        ? []
+        : brandConfigs.map((bc) => ({
+            brandId: bc.brandId,
+            variants: bc.selectedVariantIds.map((voId) => {
+              const vo = allVariantOptions.find((v: any) => v.id === voId);
+              const isLoose = vo?.variantType === "loose";
+              const price = bc.variantSettings[voId]?.retailerPrice;
+              return {
+                variantOptionId: voId,
+                retailerPrice: price || (isLoose ? "0" : "0"),
+              };
+            }),
+          })),
+      colorConfigs: isFashionProduct
+        ? brandConfigs.map((bc) => ({
+            color: bc.colorName || bc.brandName,
+            variants: bc.selectedVariantIds.map((voId) => {
+              const vo = allVariantOptions.find((v: any) => v.id === voId);
+              const isLoose = vo?.variantType === "loose";
+              const price = bc.variantSettings[voId]?.retailerPrice;
+              return {
+                variantOptionId: voId,
+                retailerPrice: price || (isLoose ? "0" : "0"),
+              };
+            }),
+          }))
+        : [],
       trackingType,
       expiryEnabled,
       damageControlEnabled,
       isReturnablePack,
       status: submitStatus,
       visibility,
-      additionalImages: additionalImages.length > 0 ? additionalImages : undefined,
+      additionalImages:
+        additionalImages.length > 0 ? additionalImages : undefined,
       videoUrl: videoUrl || null,
     };
 
@@ -315,7 +412,9 @@ export default function WarehouseAddProductPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader className="h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Loading product template...</p>
+          <p className="text-sm text-muted-foreground">
+            Loading product template...
+          </p>
         </div>
       </div>
     );
@@ -326,7 +425,9 @@ export default function WarehouseAddProductPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-center">
           <Package className="h-12 w-12 text-muted-foreground/30" />
-          <p className="text-lg font-semibold text-muted-foreground">Core product not found</p>
+          <p className="text-lg font-semibold text-muted-foreground">
+            Core product not found
+          </p>
           <Button asChild variant="outline">
             <Link href="/warehouse/dashboard/catalog">← Back to Catalog</Link>
           </Button>
@@ -374,7 +475,10 @@ export default function WarehouseAddProductPage() {
                 <Save className="mr-2 h-4 w-4" />
                 Save Draft
               </Button>
-              <Button onClick={() => handleSubmit("active")} disabled={isPending}>
+              <Button
+                onClick={() => handleSubmit("active")}
+                disabled={isPending}
+              >
                 {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
                 <Save className="mr-2 h-4 w-4" />
                 Create Product
@@ -393,10 +497,13 @@ export default function WarehouseAddProductPage() {
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-2">
                   <Package className="h-4 w-4 text-muted-foreground" />
-                  <CardTitle className="text-base">Core Product Identity</CardTitle>
+                  <CardTitle className="text-base">
+                    Core Product Identity
+                  </CardTitle>
                 </div>
                 <CardDescription>
-                  This product is based on the following core identity (read-only)
+                  This product is based on the following core identity
+                  (read-only)
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -411,7 +518,9 @@ export default function WarehouseAddProductPage() {
                     />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-foreground">{coreProduct.name}</p>
+                    <p className="font-semibold text-foreground">
+                      {coreProduct.name}
+                    </p>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {coreProduct.category?.type && (
                         <Badge variant="outline" className="text-[10px]">
@@ -440,7 +549,8 @@ export default function WarehouseAddProductPage() {
                   <CardTitle className="text-base">Product Name</CardTitle>
                 </div>
                 <CardDescription>
-                  Set the display name for this product. Pre-filled from Core Identity but can be customized.
+                  Set the display name for this product. Pre-filled from Core
+                  Identity but can be customized.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -474,11 +584,15 @@ export default function WarehouseAddProductPage() {
                 <div className="flex items-center gap-2">
                   <Tag className="h-4 w-4 text-muted-foreground" />
                   <CardTitle className="text-base">
-                    Brand & Variant Configuration
+                    {isFashionProduct
+                      ? "Color & Size Configuration"
+                      : "Brand & Variant Configuration"}
                   </CardTitle>
                 </div>
                 <CardDescription>
-                  Select brands and configure variant pack sizes with retailer prices for each.
+                  {isFashionProduct
+                    ? "Add colors and configure size-based piece variants with retailer prices for each color."
+                    : "Select brands and configure variant pack sizes with retailer prices for each."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -488,18 +602,25 @@ export default function WarehouseAddProductPage() {
                     key={bc.brandId}
                     config={bc}
                     variantOptions={allVariantOptions}
-                    allBrands={allBrands}
+                    isFashion={isFashionProduct}
+                    variantDimensionLabel={variantDimensionLabel}
                     isExpanded={expandedBrandId === bc.brandId}
                     onToggleExpand={() =>
-                      setExpandedBrandId(expandedBrandId === bc.brandId ? null : bc.brandId)
+                      setExpandedBrandId(
+                        expandedBrandId === bc.brandId ? null : bc.brandId,
+                      )
                     }
                     onRemove={() => handleRemoveBrand(bc.brandId)}
-                    onToggleVariant={(voId) => handleToggleVariant(bc.brandId, voId)}
-                    onUpdatePrice={(voId, price) => updateRetailerPrice(bc.brandId, voId, price)}
+                    onToggleVariant={(voId) =>
+                      handleToggleVariant(bc.brandId, voId)
+                    }
+                    onUpdatePrice={(voId, price) =>
+                      updateRetailerPrice(bc.brandId, voId, price)
+                    }
                   />
                 ))}
 
-                {/* Add Brand Button */}
+                {/* Add Attribute Button */}
                 <div className="border border-dashed rounded-lg p-4">
                   <Button
                     type="button"
@@ -511,84 +632,182 @@ export default function WarehouseAddProductPage() {
                     }}
                   >
                     <Plus className="h-4 w-4" />
-                    Add a brand...
+                    Add {primaryAttributeLabel.toLowerCase()}...
                   </Button>
                   {brandConfigs.length === 0 && (
                     <p className="text-xs text-muted-foreground mt-2">
-                      Select a brand to begin configuring variants for this product.
+                      {isFashionProduct
+                        ? "Add a color to begin configuring size variants for this product."
+                        : "Select a brand to begin configuring variants for this product."}
                     </p>
                   )}
                 </div>
 
-                {/* Brand Selector Modal */}
+                {/* Attribute Selector Modal */}
                 <Dialog open={brandModalOpen} onOpenChange={setBrandModalOpen}>
                   <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                      <DialogTitle>Select Brand</DialogTitle>
+                      <DialogTitle>
+                        {isFashionProduct ? "Add Color" : "Select Brand"}
+                      </DialogTitle>
                       <DialogDescription>
-                        Search and select a brand to add to this product.
+                        {isFashionProduct
+                          ? "Type a color and add it as the primary Fashion attribute."
+                          : "Search and select a brand to add to this product."}
                       </DialogDescription>
                     </DialogHeader>
-                    <div className="space-y-3">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Search brands..."
-                          value={brandSearch}
-                          onChange={(e) => setBrandSearch(e.target.value)}
-                          className="pl-9"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="max-h-[300px] overflow-y-auto space-y-1 -mx-1 px-1">
-                        {(() => {
-                          const filtered = availableBrands.filter((b: any) =>
-                            b.name.toLowerCase().includes(brandSearch.toLowerCase()),
-                          );
-                          if (filtered.length === 0) {
-                            return (
-                              <div className="text-center py-8 text-sm text-muted-foreground">
-                                {availableBrands.length === 0
-                                  ? "All brands have been added."
-                                  : "No brands match your search."}
-                              </div>
-                            );
-                          }
-                          return filtered.map((b: any) => (
-                            <button
-                              key={b.id}
+                    {isFashionProduct ? (
+                      <div className="space-y-3">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Search saved colors or type a new one"
+                            value={brandSearch}
+                            onChange={(e) => setBrandSearch(e.target.value)}
+                            autoFocus
+                          />
+                          <Button
+                            type="button"
+                            onClick={() => handleAddColor(brandSearch)}
+                            disabled={
+                              !brandSearch.trim() ||
+                              configuredColorKeys.has(
+                                brandSearch.trim().toLowerCase(),
+                              )
+                            }
+                          >
+                            Add
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Saved brand/color options
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {availableBrands
+                              .filter((b: any) =>
+                                b.name
+                                  .toLowerCase()
+                                  .includes(brandSearch.toLowerCase()),
+                              )
+                              .slice(0, 24)
+                              .map((brand: any) => (
+                                <Button
+                                  key={brand.id}
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    handleAddExistingColorBrand(brand.id)
+                                  }
+                                >
+                                  {brand.name}
+                                </Button>
+                              ))}
+                          </div>
+                          {availableBrands.filter((b: any) =>
+                            b.name
+                              .toLowerCase()
+                              .includes(brandSearch.toLowerCase()),
+                          ).length === 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              No saved brand/color matched your search.
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            "Red",
+                            "Blue",
+                            "Green",
+                            "Black",
+                            "White",
+                            "Yellow",
+                          ].map((color) => (
+                            <Button
+                              key={color}
                               type="button"
-                              className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm text-left hover:bg-muted/80 transition-colors cursor-pointer"
-                              onClick={() => {
-                                handleAddBrand(b.id);
-                                setBrandModalOpen(false);
-                                setBrandSearch("");
-                              }}
-                            >
-                              {b.logo ? (
-                                <img
-                                  src={b.logo}
-                                  alt={b.name}
-                                  className="h-8 w-8 rounded-md object-cover border"
-                                />
-                              ) : (
-                                <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
-                                  {b.name.charAt(0).toUpperCase()}
-                                </div>
+                              variant="outline"
+                              size="sm"
+                              disabled={configuredColorKeys.has(
+                                color.toLowerCase(),
                               )}
-                              <span className="font-medium">{b.name}</span>
-                            </button>
-                          ));
-                        })()}
+                              onClick={() => handleAddColor(color)}
+                            >
+                              {color}
+                            </Button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search brands..."
+                            value={brandSearch}
+                            onChange={(e) => setBrandSearch(e.target.value)}
+                            className="pl-9"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="max-h-[300px] overflow-y-auto space-y-1 -mx-1 px-1">
+                          {(() => {
+                            const filtered = availableBrands.filter((b: any) =>
+                              b.name
+                                .toLowerCase()
+                                .includes(brandSearch.toLowerCase()),
+                            );
+                            if (filtered.length === 0) {
+                              return (
+                                <div className="text-center py-8 text-sm text-muted-foreground">
+                                  {availableBrands.length === 0
+                                    ? "All brands have been added."
+                                    : "No brands match your search."}
+                                </div>
+                              );
+                            }
+                            return filtered.map((b: any) => (
+                              <button
+                                key={b.id}
+                                type="button"
+                                className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm text-left hover:bg-muted/80 transition-colors cursor-pointer"
+                                onClick={() => {
+                                  handleAddBrand(b.id);
+                                  setBrandModalOpen(false);
+                                  setBrandSearch("");
+                                }}
+                              >
+                                {b.logo ? (
+                                  <Image
+                                    src={b.logo}
+                                    alt={b.name}
+                                    width={32}
+                                    height={32}
+                                    className="h-8 w-8 rounded-md object-cover border"
+                                    unoptimized={b.logo.startsWith("http")}
+                                  />
+                                ) : (
+                                  <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
+                                    {b.name.charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <span className="font-medium">{b.name}</span>
+                              </button>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                    )}
                   </DialogContent>
                 </Dialog>
 
                 {brandConfigs.length > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {brandConfigs.length} brand{brandConfigs.length > 1 ? "s" : ""} configured
-                    {" "} — one product will be created with all brands attached
+                    {brandConfigs.length} {primaryAttributeLabel.toLowerCase()}
+                    {brandConfigs.length > 1 ? "s" : ""} configured{" "}
+                    {isFashionProduct
+                      ? "with color-specific size options ready to create"
+                      : "and ready to create as one product with all brands attached"}
                   </p>
                 )}
               </CardContent>
@@ -598,7 +817,9 @@ export default function WarehouseAddProductPage() {
             <Card>
               <CardHeader className="pb-4">
                 <CardTitle className="text-base">Product Details</CardTitle>
-                <CardDescription>Additional product information</CardDescription>
+                <CardDescription>
+                  Additional product information
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Field>
@@ -757,7 +978,9 @@ export default function WarehouseAddProductPage() {
                     />
                     <div>
                       <p className="text-sm font-medium">Public</p>
-                      <p className="text-xs text-muted-foreground">Visible to all shops</p>
+                      <p className="text-xs text-muted-foreground">
+                        Visible to all shops
+                      </p>
                     </div>
                   </label>
                   <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
@@ -771,7 +994,9 @@ export default function WarehouseAddProductPage() {
                     />
                     <div>
                       <p className="text-sm font-medium">Private</p>
-                      <p className="text-xs text-muted-foreground">Only visible to you</p>
+                      <p className="text-xs text-muted-foreground">
+                        Only visible to you
+                      </p>
                     </div>
                   </label>
                 </div>
@@ -786,13 +1011,20 @@ export default function WarehouseAddProductPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Brands</span>
+                    <span className="text-muted-foreground">
+                      {primaryAttributeLabel}s
+                    </span>
                     <span className="font-medium">{brandConfigs.length}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Variants</span>
+                    <span className="text-muted-foreground">
+                      Total Variants
+                    </span>
                     <span className="font-medium">
-                      {brandConfigs.reduce((sum, bc) => sum + bc.selectedVariantIds.length, 0)}
+                      {brandConfigs.reduce(
+                        (sum, bc) => sum + bc.selectedVariantIds.length,
+                        0,
+                      )}
                     </span>
                   </div>
                   <Separator />
@@ -801,7 +1033,9 @@ export default function WarehouseAddProductPage() {
                       <div key={bc.brandId} className="text-xs">
                         <span className="font-medium">{bc.brandName}</span>
                         <span className="text-muted-foreground ml-1">
-                          ({bc.selectedVariantIds.length} variant{bc.selectedVariantIds.length !== 1 ? "s" : ""})
+                          ({bc.selectedVariantIds.length}{" "}
+                          {variantDimensionLabel.toLowerCase()}
+                          {bc.selectedVariantIds.length !== 1 ? "s" : ""})
                         </span>
                       </div>
                     ))}
@@ -823,7 +1057,8 @@ export default function WarehouseAddProductPage() {
 function BrandConfigCard({
   config,
   variantOptions,
-  allBrands,
+  isFashion,
+  variantDimensionLabel,
   isExpanded,
   onToggleExpand,
   onRemove,
@@ -832,7 +1067,8 @@ function BrandConfigCard({
 }: {
   config: BrandConfig;
   variantOptions: any[];
-  allBrands: any[];
+  isFashion: boolean;
+  variantDimensionLabel: string;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onRemove: () => void;
@@ -841,7 +1077,7 @@ function BrandConfigCard({
 }) {
   return (
     <div className="space-y-3">
-      {/* Brand header */}
+      {/* Attribute header */}
       <div
         className="flex items-center gap-3 cursor-pointer group"
         onClick={onToggleExpand}
@@ -853,7 +1089,8 @@ function BrandConfigCard({
         )}
         <span className="font-semibold text-sm">{config.brandName}</span>
         <Badge variant="outline" className="text-[10px] font-normal">
-          {config.selectedVariantIds.length} variant
+          {config.selectedVariantIds.length}{" "}
+          {variantDimensionLabel.toLowerCase()}
           {config.selectedVariantIds.length !== 1 ? "s" : ""}
         </Badge>
         <div className="flex-1" />
@@ -876,17 +1113,22 @@ function BrandConfigCard({
         <div className="pl-7 space-y-3">
           <div className="space-y-1.5">
             {(() => {
-              // Check if a loose variant is already selected for this brand
+              // Check if a loose variant is already selected for this config
               const hasLooseSelected = config.selectedVariantIds.some(
-                (id) => variantOptions.find((v: any) => v.id === id)?.variantType === "loose"
+                (id) =>
+                  variantOptions.find((v: any) => v.id === id)?.variantType ===
+                  "loose",
               );
 
               return variantOptions.map((v: any) => {
                 const isIncluded = config.selectedVariantIds.includes(v.id);
-                const settings = isIncluded ? config.variantSettings[v.id] : null;
+                const settings = isIncluded
+                  ? config.variantSettings[v.id]
+                  : null;
                 const isLoose = v.variantType === "loose";
                 // Disable this loose checkbox if another loose is already selected
-                const isDisabledLoose = isLoose && !isIncluded && hasLooseSelected;
+                const isDisabledLoose =
+                  isLoose && !isIncluded && hasLooseSelected;
 
                 return (
                   <div
@@ -894,7 +1136,9 @@ function BrandConfigCard({
                     className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
                       isDisabledLoose
                         ? "opacity-50 cursor-not-allowed"
-                        : isIncluded ? "bg-muted/50" : "hover:bg-muted/30"
+                        : isIncluded
+                          ? "bg-muted/50"
+                          : "hover:bg-muted/30"
                     }`}
                   >
                     <Checkbox
@@ -908,7 +1152,7 @@ function BrandConfigCard({
                       }`}
                     >
                       {v.name}
-                      {v.size && (
+                      {!isFashion && v.size && (
                         <span className="text-muted-foreground ml-1">
                           · {v.size} {v.unit}
                         </span>
@@ -935,7 +1179,12 @@ function BrandConfigCard({
                             type="text"
                             inputMode="numeric"
                             value={settings.retailerPrice}
-                            onChange={(e) => onUpdatePrice(v.id, e.target.value.replace(/[^0-9]/g, ''))}
+                            onChange={(e) =>
+                              onUpdatePrice(
+                                v.id,
+                                e.target.value.replace(/[^0-9]/g, ""),
+                              )
+                            }
                             placeholder={isLoose ? "Optional" : "Price"}
                           />
                         </div>
@@ -953,7 +1202,8 @@ function BrandConfigCard({
           </div>
           {variantOptions.some((v: any) => v.variantType === "loose") && (
             <p className="text-[11px] text-amber-600/80 pl-1">
-              💡 Loose variants don't require a price — leave blank if not applicable.
+              💡 Loose variants don't require a price — leave blank if not
+              applicable.
             </p>
           )}
         </div>

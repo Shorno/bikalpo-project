@@ -121,6 +121,22 @@ export async function requireWarehouseDeliveryman() {
   return session;
 }
 
+export async function requireWarehouseSalesman() {
+  const session = await requireRole(["salesman"]);
+  const warehouseId = (session.user as { warehouseId?: string | null })
+    .warehouseId;
+
+  if (!warehouseId) {
+    if (typeof window === "undefined") {
+      const { unauthorized } = await import("next/navigation");
+      return unauthorized();
+    }
+    throw new Error("Warehouse sales access required");
+  }
+
+  return session;
+}
+
 export async function requireShopOwner() {
   return requireRole(["shop_owner"]);
 }

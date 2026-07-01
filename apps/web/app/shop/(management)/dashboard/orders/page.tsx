@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   CalendarIcon,
@@ -15,18 +16,15 @@ import {
   ShoppingBag,
   ShoppingCart,
   Truck,
-  Wallet,
   XCircle,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { getRetailerOrderFulfillmentSummary } from "@/components/features/orders/retailer-order-fulfillment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -45,17 +43,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { usePurchaseOrders } from "@/hooks/use-shop-owner-api";
-import { useQuery } from "@tanstack/react-query";
 import { orpc } from "@/utils/orpc";
 
 // ─── Status Config ───────────────────────────────────────────
 
 type OrderStatus =
   | "pending"
-  | "approved"
-  | "ready_for_dispatch"
-  | "partially_invoiced"
-  | "invoiced"
+  | "confirmed"
   | "processing"
   | "delivered"
   | "cancelled";
@@ -65,74 +59,53 @@ const statusConfig: Record<
   { label: string; icon: React.ReactNode; className: string; dotColor: string }
 > = {
   pending: {
-    label: "Pending Approval",
+    label: "Pending",
     icon: <Clock className="w-3 h-3" />,
-    className: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-800",
+    className:
+      "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-800",
     dotColor: "bg-amber-500",
   },
-  approved: {
-    label: "Approved",
-    icon: <CheckCircle2 className="w-3 h-3" />,
-    className: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
-    dotColor: "bg-emerald-500",
-  },
-  ready_for_dispatch: {
-    label: "Ready for Dispatch",
-    icon: <Package className="w-3 h-3" />,
-    className: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30 dark:border-blue-800",
-    dotColor: "bg-blue-500",
-  },
-  partially_invoiced: {
-    label: "Partially Invoiced",
-    icon: <Wallet className="w-3 h-3" />,
-    className: "text-violet-700 bg-violet-50 border-violet-200 dark:text-violet-300 dark:bg-violet-950/30 dark:border-violet-800",
-    dotColor: "bg-violet-500",
-  },
-  invoiced: {
-    label: "Invoiced",
-    icon: <Wallet className="w-3 h-3" />,
-    className: "text-sky-700 bg-sky-50 border-sky-200 dark:text-sky-300 dark:bg-sky-950/30 dark:border-sky-800",
-    dotColor: "bg-sky-500",
-  },
   confirmed: {
-    label: "Approved",
+    label: "Accepted",
     icon: <CheckCircle2 className="w-3 h-3" />,
-    className: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
-    dotColor: "bg-emerald-500",
+    className:
+      "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30 dark:border-blue-800",
+    dotColor: "bg-blue-500",
   },
   processing: {
     label: "In Delivery",
     icon: <Truck className="w-3 h-3" />,
-    className: "text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/30 dark:border-indigo-800",
+    className:
+      "text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/30 dark:border-indigo-800",
     dotColor: "bg-indigo-500",
   },
   delivered: {
     label: "Received",
     icon: <PackageCheck className="w-3 h-3" />,
-    className: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
+    className:
+      "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
     dotColor: "bg-emerald-500",
   },
   returned: {
     label: "Returned",
     icon: <RotateCcw className="w-3 h-3" />,
-    className: "text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-300 dark:bg-orange-950/30 dark:border-orange-800",
+    className:
+      "text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-300 dark:bg-orange-950/30 dark:border-orange-800",
     dotColor: "bg-orange-500",
   },
   cancelled: {
     label: "Cancelled",
     icon: <XCircle className="w-3 h-3" />,
-    className: "text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950/30 dark:border-red-800",
+    className:
+      "text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950/30 dark:border-red-800",
     dotColor: "bg-red-500",
   },
 };
 
 const statusTabs: { value: OrderStatus | "all"; label: string }[] = [
   { value: "all", label: "All Orders" },
-  { value: "pending", label: "Pending Approval" },
-  { value: "approved", label: "Approved" },
-  { value: "ready_for_dispatch", label: "Ready for Dispatch" },
-  { value: "partially_invoiced", label: "Partially Invoiced" },
-  { value: "invoiced", label: "Invoiced" },
+  { value: "pending", label: "Pending" },
+  { value: "confirmed", label: "Accepted" },
   { value: "processing", label: "In Delivery" },
   { value: "delivered", label: "Received" },
   { value: "cancelled", label: "Cancelled" },
@@ -140,7 +113,13 @@ const statusTabs: { value: OrderStatus | "all"; label: string }[] = [
 
 // ─── OTP Badge ──────────────────────────────────────────────
 
-function DeliveryOtpBadge({ orderId, status }: { orderId: number; status: string }) {
+function DeliveryOtpBadge({
+  orderId,
+  status,
+}: {
+  orderId: number;
+  status: string;
+}) {
   const showForStatuses = ["confirmed", "processing"];
   const { data, isLoading } = useQuery({
     queryKey: ["delivery-otp", orderId],
@@ -151,7 +130,8 @@ function DeliveryOtpBadge({ orderId, status }: { orderId: number; status: string
 
   if (!showForStatuses.includes(status)) return null;
   if (isLoading) return <Skeleton className="h-6 w-16" />;
-  if (!data?.showOtp || !data.otp) return <span className="text-xs text-muted-foreground">Awaiting</span>;
+  if (!data?.showOtp || !data.otp)
+    return <span className="text-xs text-muted-foreground">Awaiting</span>;
 
   const tone =
     data.mode === "self_pickup"
@@ -159,7 +139,9 @@ function DeliveryOtpBadge({ orderId, status }: { orderId: number; status: string
       : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300";
 
   return (
-    <div className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 ${tone}`}>
+    <div
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 ${tone}`}
+    >
       <KeyRound className="w-3 h-3" />
       <span className="font-mono text-xs font-bold tracking-widest">
         {data.otp}
@@ -223,12 +205,14 @@ export default function PurchaseOrdersPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold tracking-tight flex items-center gap-2">
           🧾 Purchase Orders
-          <span className="text-[10px] text-muted-foreground font-normal">Track & manage wholesale orders</span>
+          <span className="text-[10px] text-muted-foreground font-normal">
+            Track & manage wholesale orders
+          </span>
         </h1>
         <Button asChild size="sm" className="h-8 text-xs">
           <Link href="/dashboard/order-from-warehouse">
-            <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
-            ➕ Create Purchase Order
+            <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />➕ Create Purchase
+            Order
           </Link>
         </Button>
       </div>
@@ -245,13 +229,8 @@ export default function PurchaseOrdersPage() {
           loading={isLoading}
         />
         <KpiCard
-          title="Active Flow"
-          value={
-            (kpi?.pendingCount ?? 0) +
-            (kpi?.approvedCount ?? kpi?.confirmedCount ?? 0) +
-            (kpi?.readyForDispatchCount ?? 0) +
-            (kpi?.partiallyInvoicedCount ?? 0)
-          }
+          title="Pending"
+          value={(kpi?.pendingCount ?? 0) + (kpi?.confirmedCount ?? 0)}
           subtitle={`৳ ${Number(kpi?.pendingAmount || 0).toLocaleString("en-BD")}`}
           icon={<Clock className="h-4 w-4" />}
           iconBg="bg-amber-50 dark:bg-amber-950/30"
@@ -277,96 +256,142 @@ export default function PurchaseOrdersPage() {
       </div>
 
       {/* ── 📊 Last Order Status 🔥 ── */}
-      {!isLoading && orders.length > 0 && (() => {
-        const latest = orders[0] as any;
-        const hasModifications = latest.items?.some((item: any) => item.modifiedQty !== null);
-        const statusSteps = [
-          { key: "submitted", label: "Submitted", icon: "🟢", done: true },
-          { key: "approved", label: hasModifications ? "Approved (Edited)" : "Approved", icon: hasModifications ? "🔁" : "✔", done: ["approved", "ready_for_dispatch", "partially_invoiced", "invoiced", "confirmed", "processing", "delivered"].includes(latest.status) },
-          { key: "ready", label: "Ready", icon: "📦", done: ["ready_for_dispatch", "partially_invoiced", "invoiced", "processing", "delivered"].includes(latest.status) },
-          { key: "invoice", label: latest.status === "partially_invoiced" ? "Part Invoice" : "Invoiced", icon: "🧾", done: ["partially_invoiced", "invoiced", "processing", "delivered"].includes(latest.status) },
-          { key: "delivery", label: "Delivery", icon: "🚚", done: ["processing", "delivered"].includes(latest.status) },
-          { key: "done", label: "Received", icon: "✅", done: latest.status === "delivered" },
-        ];
-        const currentIdx = latest.status === "cancelled"
-          ? -1
-          : latest.status === "delivered"
-            ? 5
-            : latest.status === "processing"
-              ? 4
-              : latest.status === "partially_invoiced" || latest.status === "invoiced"
-                ? 3
-                : latest.status === "ready_for_dispatch"
-                  ? 2
-                  : latest.status === "approved" || latest.status === "confirmed"
+      {!isLoading &&
+        orders.length > 0 &&
+        (() => {
+          const latest = orders[0] as any;
+          const hasModifications = latest.items?.some(
+            (item: any) => item.modifiedQty !== null,
+          );
+          const statusSteps = [
+            { key: "submitted", label: "Submitted", icon: "🟢", done: true },
+            {
+              key: "confirmed",
+              label: hasModifications ? "Accepted (Edited)" : "Accepted",
+              icon: hasModifications ? "🔁" : "✔",
+              done: ["confirmed", "processing", "delivered"].includes(
+                latest.status,
+              ),
+            },
+            {
+              key: "waiting",
+              label: "Waiting",
+              icon: "⏳",
+              done: ["processing", "delivered"].includes(latest.status),
+            },
+            {
+              key: "picked",
+              label: "Picked",
+              icon: "🚚",
+              done: ["processing", "delivered"].includes(latest.status),
+            },
+            {
+              key: "delivery",
+              label: "Delivery",
+              icon: "📍",
+              done: latest.status === "delivered",
+            },
+            {
+              key: "done",
+              label: "Done",
+              icon: "✅",
+              done: latest.status === "delivered",
+            },
+          ];
+          const currentIdx =
+            latest.status === "cancelled"
+              ? -1
+              : latest.status === "delivered"
+                ? 5
+                : latest.status === "processing"
+                  ? 3
+                  : latest.status === "confirmed"
                     ? 1
                     : 0;
 
-        return (
-          <Card className="border shadow-sm overflow-hidden">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-2.5">
-                <p className="text-xs font-semibold flex items-center gap-1.5">
-                  📊 Last Order Status
-                  <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0">{latest.orderNumber}</Badge>
-                </p>
-                <span className="text-[10px] text-muted-foreground tabular-nums">
-                  ৳ {Number(latest.total).toLocaleString("en-BD")}
-                </span>
-              </div>
-
-              {latest.status === "cancelled" ? (
-                <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
-                  <XCircle className="w-4 h-4 text-red-500" />
-                  <span className="text-xs font-medium text-red-700 dark:text-red-300">This order was cancelled</span>
+          return (
+            <Card className="border shadow-sm overflow-hidden">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-xs font-semibold flex items-center gap-1.5">
+                    📊 Last Order Status
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] font-mono px-1.5 py-0"
+                    >
+                      {latest.orderNumber}
+                    </Badge>
+                  </p>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                    ৳ {Number(latest.total).toLocaleString("en-BD")}
+                  </span>
                 </div>
-              ) : (
-                <div className="flex items-center gap-0 overflow-x-auto">
-                  {statusSteps.map((step, i) => {
-                    const isCurrent = i === currentIdx;
-                    const isLast = i === statusSteps.length - 1;
-                    return (
-                      <div key={step.key} className="flex items-center">
-                        <div className="flex flex-col items-center min-w-[56px]">
-                          <div
-                            className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-all ${
-                              step.done
-                                ? "bg-emerald-500 text-white shadow-sm"
-                                : isCurrent
-                                  ? "bg-primary text-primary-foreground ring-2 ring-primary/30 shadow-sm"
-                                  : "bg-muted border border-muted-foreground/20"
-                            }`}
-                          >
-                            {step.done ? "✓" : step.icon}
+
+                {latest.status === "cancelled" ? (
+                  <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
+                    <XCircle className="w-4 h-4 text-red-500" />
+                    <span className="text-xs font-medium text-red-700 dark:text-red-300">
+                      This order was cancelled
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-0 overflow-x-auto">
+                    {statusSteps.map((step, i) => {
+                      const isCurrent = i === currentIdx;
+                      const isLast = i === statusSteps.length - 1;
+                      return (
+                        <div key={step.key} className="flex items-center">
+                          <div className="flex flex-col items-center min-w-[56px]">
+                            <div
+                              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-all ${
+                                step.done
+                                  ? "bg-emerald-500 text-white shadow-sm"
+                                  : isCurrent
+                                    ? "bg-primary text-primary-foreground ring-2 ring-primary/30 shadow-sm"
+                                    : "bg-muted border border-muted-foreground/20"
+                              }`}
+                            >
+                              {step.done ? "✓" : step.icon}
+                            </div>
+                            <p
+                              className={`text-[9px] mt-1 font-medium text-center leading-tight ${
+                                step.done
+                                  ? "text-emerald-700 dark:text-emerald-400"
+                                  : isCurrent
+                                    ? "text-primary font-bold"
+                                    : "text-muted-foreground"
+                              }`}
+                            >
+                              {step.label}
+                            </p>
                           </div>
-                          <p className={`text-[9px] mt-1 font-medium text-center leading-tight ${
-                            step.done ? "text-emerald-700 dark:text-emerald-400"
-                              : isCurrent ? "text-primary font-bold"
-                              : "text-muted-foreground"
-                          }`}>
-                            {step.label}
-                          </p>
+                          {!isLast && (
+                            <div
+                              className={`w-5 h-0.5 -mt-3 ${
+                                statusSteps[i + 1]?.done
+                                  ? "bg-emerald-400"
+                                  : "bg-muted"
+                              }`}
+                            />
+                          )}
                         </div>
-                        {!isLast && (
-                          <div className={`w-5 h-0.5 -mt-3 ${
-                            statusSteps[i + 1]?.done ? "bg-emerald-400" : "bg-muted"
-                          }`} />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                )}
 
-              {currentIdx >= 0 && currentIdx < 5 && (
-                <p className="text-[10px] text-muted-foreground mt-2">
-                  Current: {statusSteps[currentIdx]?.icon} <span className="font-medium">{statusSteps[currentIdx]?.label}</span>
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        );
-      })()}
+                {currentIdx >= 0 && currentIdx < 5 && (
+                  <p className="text-[10px] text-muted-foreground mt-2">
+                    Current: {statusSteps[currentIdx]?.icon}{" "}
+                    <span className="font-medium">
+                      {statusSteps[currentIdx]?.label}
+                    </span>
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1 max-w-md">
@@ -378,7 +403,13 @@ export default function PurchaseOrdersPage() {
             className="pl-8 h-8 text-xs"
           />
         </div>
-        <Select value={dateRange} onValueChange={(v) => { setDateRange(v); setPage(1); }}>
+        <Select
+          value={dateRange}
+          onValueChange={(v) => {
+            setDateRange(v);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-[130px] h-8 text-xs">
             <CalendarIcon className="mr-1.5 h-3 w-3 text-muted-foreground" />
             <SelectValue />
@@ -395,41 +426,42 @@ export default function PurchaseOrdersPage() {
       <div className="flex gap-1 overflow-x-auto pb-0.5 -mx-1 px-1">
         {statusTabs.map((tab) => {
           const isActive = statusFilter === tab.value;
-          const count = tab.value === "all"
-            ? kpi?.totalOrders
-            : tab.value === "pending"
-              ? kpi?.pendingCount
-              : tab.value === "approved"
-                ? (kpi?.approvedCount ?? kpi?.confirmedCount)
-                : tab.value === "ready_for_dispatch"
-                  ? kpi?.readyForDispatchCount
-                  : tab.value === "partially_invoiced"
-                    ? kpi?.partiallyInvoicedCount
-                    : tab.value === "invoiced"
-                      ? kpi?.invoicedCount
-                      : tab.value === "processing"
-                        ? kpi?.processingCount
-                        : tab.value === "delivered"
-                          ? kpi?.deliveredCount
-                          : kpi?.cancelledCount;
+          const count =
+            tab.value === "all"
+              ? kpi?.totalOrders
+              : tab.value === "pending"
+                ? kpi?.pendingCount
+                : tab.value === "confirmed"
+                  ? kpi?.confirmedCount
+                  : tab.value === "processing"
+                    ? kpi?.processingCount
+                    : tab.value === "delivered"
+                      ? kpi?.deliveredCount
+                      : kpi?.cancelledCount;
           return (
             <button
               key={tab.value}
-              onClick={() => { setStatusFilter(tab.value); setPage(1); }}
+              onClick={() => {
+                setStatusFilter(tab.value);
+                setPage(1);
+              }}
               className={`
                 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all cursor-pointer
-                ${isActive
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ${
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                 }
               `}
             >
               {tab.label}
               {count !== undefined && count > 0 && (
-                <span className={`
+                <span
+                  className={`
                   text-[9px] px-1.5 py-0.5 rounded-full font-semibold
                   ${isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted-foreground/10 text-muted-foreground"}
-                `}>
+                `}
+                >
                   {count}
                 </span>
               )}
@@ -444,13 +476,19 @@ export default function PurchaseOrdersPage() {
       ) : isError ? (
         <div className="bg-card rounded-xl border shadow-sm p-12 text-center">
           <AlertCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
-          <p className="text-muted-foreground font-medium">Failed to load orders</p>
-          <p className="text-sm text-muted-foreground mt-1">Please try again later</p>
+          <p className="text-muted-foreground font-medium">
+            Failed to load orders
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Please try again later
+          </p>
         </div>
       ) : orders.length === 0 ? (
         <div className="bg-card rounded-xl border shadow-sm p-8 text-center">
           <ShoppingBag className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-foreground">No purchase orders found</p>
+          <p className="text-sm font-semibold text-foreground">
+            No purchase orders found
+          </p>
           <p className="text-xs text-muted-foreground mt-1 mb-4">
             {searchDebounced || statusFilter !== "all"
               ? "Try adjusting your search or filter criteria"
@@ -459,8 +497,8 @@ export default function PurchaseOrdersPage() {
           {!searchDebounced && statusFilter === "all" && (
             <Button asChild size="sm" className="h-8 text-xs">
               <Link href="/dashboard/order-from-warehouse">
-                <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
-                ➕ Create Purchase Order
+                <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />➕ Create
+                Purchase Order
               </Link>
             </Button>
           )}
@@ -474,18 +512,27 @@ export default function PurchaseOrdersPage() {
                   <TableHead className="font-bold py-2">PO ID</TableHead>
                   <TableHead className="font-bold py-2">Wholesaler</TableHead>
                   <TableHead className="font-bold py-2">Product</TableHead>
-                  <TableHead className="text-center font-bold py-2">Qty</TableHead>
-                  <TableHead className="text-right font-bold py-2">Amount</TableHead>
+                  <TableHead className="text-center font-bold py-2">
+                    Fulfillment
+                  </TableHead>
+                  <TableHead className="text-right font-bold py-2">
+                    Amount
+                  </TableHead>
                   <TableHead className="font-bold py-2">Status</TableHead>
                   <TableHead className="font-bold py-2">OTP</TableHead>
-                  <TableHead className="text-right font-bold py-2">Action</TableHead>
+                  <TableHead className="text-right font-bold py-2">
+                    Action
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {orders.map((o: any) => {
                   const config = statusConfig[o.status] || statusConfig.pending;
                   const hasModifications = o.items?.some(
-                    (item: any) => item.modifiedQty !== null
+                    (item: any) => item.modifiedQty !== null,
+                  );
+                  const fulfillment = getRetailerOrderFulfillmentSummary(
+                    o.items,
                   );
 
                   return (
@@ -500,7 +547,10 @@ export default function PurchaseOrdersPage() {
                             {o.orderNumber}
                           </span>
                           {hasModifications && (
-                            <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30">
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] px-1 py-0 text-orange-600 border-orange-200 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/30"
+                            >
                               Modified
                             </Badge>
                           )}
@@ -509,14 +559,16 @@ export default function PurchaseOrdersPage() {
 
                       {/* Wholesaler */}
                       <TableCell className="py-2">
-                        <span className="text-xs font-medium">{o.warehouseName}</span>
+                        <span className="text-xs font-medium">
+                          {o.warehouseName}
+                        </span>
                       </TableCell>
 
                       {/* Product */}
                       <TableCell className="py-2">
                         <div className="flex items-center gap-1.5">
                           <div className="flex -space-x-1.5 shrink-0">
-                            {o.items?.slice(0, 2).map((item: any, i: number) => (
+                            {o.items?.slice(0, 2).map((item: any, i: number) =>
                               item.productImage ? (
                                 <Image
                                   key={i}
@@ -533,8 +585,8 @@ export default function PurchaseOrdersPage() {
                                 >
                                   <Package className="w-2.5 h-2.5 text-muted-foreground" />
                                 </div>
-                              )
-                            ))}
+                              ),
+                            )}
                           </div>
                           <div className="min-w-0">
                             <p className="text-xs truncate max-w-[120px]">
@@ -545,15 +597,43 @@ export default function PurchaseOrdersPage() {
                                 +{o.items.length - 1} more
                               </p>
                             )}
+                            {fulfillment.badges.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {fulfillment.badges.slice(0, 2).map((label) => (
+                                  <Badge
+                                    key={label}
+                                    variant="outline"
+                                    className="px-1.5 py-0 text-[9px]"
+                                  >
+                                    {label}
+                                  </Badge>
+                                ))}
+                                {fulfillment.badges.length > 2 && (
+                                  <Badge
+                                    variant="outline"
+                                    className="px-1.5 py-0 text-[9px]"
+                                  >
+                                    +{fulfillment.badges.length - 2}
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </TableCell>
 
-                      {/* Qty */}
+                      {/* Fulfillment */}
                       <TableCell className="text-center py-2">
-                        <span className="text-xs tabular-nums font-medium">
-                          {o.items?.reduce((sum: number, item: any) => sum + (item.modifiedQty ?? item.quantity), 0) || 0} pcs
-                        </span>
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-medium tabular-nums">
+                            {fulfillment.primary}
+                          </p>
+                          {fulfillment.secondary && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {fulfillment.secondary}
+                            </p>
+                          )}
+                        </div>
                       </TableCell>
 
                       {/* Amount */}
@@ -587,9 +667,7 @@ export default function PurchaseOrdersPage() {
                           size="sm"
                           className="text-[10px] h-7 px-2 opacity-60 group-hover:opacity-100 transition-opacity"
                         >
-                          <Link href={`/dashboard/orders/${o.id}`}>
-                            View →
-                          </Link>
+                          <Link href={`/dashboard/orders/${o.id}`}>View →</Link>
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -604,7 +682,10 @@ export default function PurchaseOrdersPage() {
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
                 Page {pagination.page} of {pagination.totalPages}
-                <span className="hidden sm:inline"> · {pagination.totalCount} orders</span>
+                <span className="hidden sm:inline">
+                  {" "}
+                  · {pagination.totalCount} orders
+                </span>
               </p>
               <div className="flex gap-1">
                 <Button
@@ -660,9 +741,7 @@ function KpiCard({
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
             {title}
           </span>
-          <div className={`p-1 rounded-md ${iconBg} ${iconColor}`}>
-            {icon}
-          </div>
+          <div className={`p-1 rounded-md ${iconBg} ${iconColor}`}>{icon}</div>
         </div>
         {loading ? (
           <div className="space-y-1.5">
@@ -673,7 +752,9 @@ function KpiCard({
           <>
             <p className="text-xl font-bold tracking-tight">{value}</p>
             {subtitle && (
-              <p className="text-[10px] text-muted-foreground mt-0.5">{subtitle}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {subtitle}
+              </p>
             )}
           </>
         )}
@@ -703,19 +784,33 @@ function OrdersTableSkeleton() {
         <TableBody>
           {Array.from({ length: 6 }).map((_, i) => (
             <TableRow key={i}>
-              <TableCell className="py-2"><Skeleton className="h-3.5 w-20" /></TableCell>
-              <TableCell className="py-2"><Skeleton className="h-3.5 w-24" /></TableCell>
+              <TableCell className="py-2">
+                <Skeleton className="h-3.5 w-20" />
+              </TableCell>
+              <TableCell className="py-2">
+                <Skeleton className="h-3.5 w-24" />
+              </TableCell>
               <TableCell className="py-2">
                 <div className="flex items-center gap-1.5">
                   <Skeleton className="h-6 w-6 rounded" />
                   <Skeleton className="h-3.5 w-28" />
                 </div>
               </TableCell>
-              <TableCell className="py-2"><Skeleton className="h-3.5 w-10 mx-auto" /></TableCell>
-              <TableCell className="py-2"><Skeleton className="h-3.5 w-14 ml-auto" /></TableCell>
-              <TableCell className="py-2"><Skeleton className="h-4 w-18" /></TableCell>
-              <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
-              <TableCell className="py-2"><Skeleton className="h-6 w-10 ml-auto" /></TableCell>
+              <TableCell className="py-2">
+                <Skeleton className="h-3.5 w-10 mx-auto" />
+              </TableCell>
+              <TableCell className="py-2">
+                <Skeleton className="h-3.5 w-14 ml-auto" />
+              </TableCell>
+              <TableCell className="py-2">
+                <Skeleton className="h-4 w-18" />
+              </TableCell>
+              <TableCell className="py-2">
+                <Skeleton className="h-4 w-12" />
+              </TableCell>
+              <TableCell className="py-2">
+                <Skeleton className="h-6 w-10 ml-auto" />
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

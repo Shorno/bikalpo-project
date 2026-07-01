@@ -3,41 +3,277 @@
 import {
   AlertCircle,
   ArrowLeft,
-  ArrowUpRight,
-  CheckCircle2,
-  Clock,
-  Gauge,
-  Loader,
+  ArrowRight,
+  Building2,
   Mail,
   MapPin,
-  Package,
   Phone,
   ShoppingCart,
-  Target,
-  TrendingUp,
-  Truck,
-  Users,
   Wallet,
-  XCircle,
-  Zap,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useSupplierDetail } from "@/hooks/use-shop-owner-api";
 
-const statusCfg: Record<string, { label: string; cls: string }> = {
-  pending:    { label: "Pending",    cls: "text-amber-700 bg-amber-50 border-amber-200" },
-  confirmed:  { label: "Confirmed",  cls: "text-blue-700 bg-blue-50 border-blue-200" },
-  processing: { label: "Processing", cls: "text-indigo-700 bg-indigo-50 border-indigo-200" },
-  delivered:  { label: "Delivered",  cls: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-  cancelled:  { label: "Cancelled",  cls: "text-red-700 bg-red-50 border-red-200" },
+type SupplierDetailData = {
+  identity: {
+    warehouseId: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    address: string | null;
+    connectionStatus: string | null;
+    connectedAt: string | Date | null;
+    lastOrderedAt: string | Date | null;
+  };
+  business: {
+    name: string;
+    phone: string | null;
+    email: string | null;
+    location: string | null;
+    yourShopName: string | null;
+    yourAddress: string | null;
+  };
+  orderStats: {
+    total: number;
+    pending: number;
+    confirmed: number;
+    processing: number;
+    delivered: number;
+    cancelled: number;
+  };
+  salesman: {
+    name: string;
+    phone: string | null;
+    status: "active" | "inactive";
+  } | null;
+  delivery: {
+    scope: "matched_area" | "warehouse" | "none";
+    matchSource: string | null;
+    yourAddress: string | null;
+    areaHint: string | null;
+    matchedArea: {
+      id: number;
+      name: string;
+      description: string | null;
+    } | null;
+    availableAreas: string[];
+    weeklyDays: Array<{
+      dayOfWeek: number;
+      dayName: string;
+      areaNames: string[];
+      riderName: string | null;
+      riderPhone: string | null;
+    }>;
+    hasDeliveryToday: boolean;
+    todayDayName: string;
+    nextDelivery: {
+      dayOfWeek: number;
+      dayName: string;
+      date: string;
+      offsetDays: number;
+    } | null;
+    cutoffTime: string | null;
+  };
+  accountSummary: {
+    totalPurchase: number;
+    paid: number;
+    payable: number;
+    payableOrders: number;
+  };
+  purchaseHistory: Array<{
+    id: number;
+    orderNumber: string;
+    date: string | Date;
+    productSummary: string;
+    amount: number;
+    orderStatus: string;
+    paymentStatus: "paid" | "due" | "pending";
+    dueAmount: number;
+  }>;
+  quickInfo: {
+    lastOrderNumber: string | null;
+    lastOrderStatus: string | null;
+    pendingOrders: number;
+    activeOrders: number;
+    payableOrders: number;
+    lastDeliveredAt: string | Date | null;
+  };
+  pendingOrders: Array<{
+    id: number;
+    orderNumber: string;
+    status: string;
+    createdAt: string | Date;
+    total: string | number;
+    items: Array<{
+      id: number;
+      productName: string;
+      quantity: number;
+      modifiedQty: number | null;
+    }>;
+  }>;
 };
+
+const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+
+const orderStatusStyles: Record<string, string> = {
+  pending: "border-amber-200 bg-amber-50 text-amber-700",
+  confirmed: "border-sky-200 bg-sky-50 text-sky-700",
+  processing: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  delivered: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  cancelled: "border-rose-200 bg-rose-50 text-rose-700",
+  returned: "border-slate-200 bg-slate-100 text-slate-700",
+};
+
+const paymentStatusStyles: Record<string, string> = {
+  paid: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  due: "border-rose-200 bg-rose-50 text-rose-700",
+  pending: "border-amber-200 bg-amber-50 text-amber-700",
+};
+
+function formatCurrency(value: number) {
+  return `Tk ${value.toLocaleString("en-BD")}`;
+}
+
+function formatDate(value: string | Date | null) {
+  if (!value) return "Not available";
+
+  return new Date(value).toLocaleDateString("en-BD", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatShortDate(value: string | Date | null) {
+  if (!value) return "Not available";
+
+  return new Date(value).toLocaleDateString("en-BD", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function formatLabel(value: string | null | undefined) {
+  if (!value) return "Not available";
+
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function describeNextDelivery(
+  nextDelivery: SupplierDetailData["delivery"]["nextDelivery"],
+) {
+  if (!nextDelivery) return "No delivery scheduled";
+
+  if (nextDelivery.offsetDays === 1) {
+    return `${nextDelivery.dayName} (Tomorrow)`;
+  }
+
+  return `${nextDelivery.dayName} - ${formatDate(nextDelivery.date)}`;
+}
+
+function buildMonthCalendar(scheduleDays: number[]) {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const offset = (firstDay.getDay() + 6) % 7;
+  const cells: Array<{
+    day: number | null;
+    scheduled: boolean;
+    today: boolean;
+  }> = [];
+
+  for (let i = 0; i < offset; i += 1) {
+    cells.push({ day: null, scheduled: false, today: false });
+  }
+
+  for (let day = 1; day <= lastDay.getDate(); day += 1) {
+    const current = new Date(year, month, day);
+    cells.push({
+      day,
+      scheduled: scheduleDays.includes(current.getDay()),
+      today: day === today.getDate(),
+    });
+  }
+
+  return {
+    label: firstDay.toLocaleDateString("en-BD", {
+      month: "long",
+      year: "numeric",
+    }),
+    cells,
+  };
+}
+
+function StatCard({
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+  tone?: "default" | "success" | "danger";
+}) {
+  const valueClass =
+    tone === "danger"
+      ? "text-rose-600"
+      : tone === "success"
+        ? "text-emerald-600"
+        : "text-foreground";
+
+  return (
+    <Card className="border-border/70">
+      <CardContent className="space-y-1 p-5">
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+          {label}
+        </p>
+        <p className={`text-2xl font-semibold tracking-tight ${valueClass}`}>
+          {value}
+        </p>
+        {hint ? <p className="text-sm text-muted-foreground">{hint}</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | null | undefined;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-2xl border border-border/60 px-4 py-3">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="text-right font-medium">{value || "Not available"}</p>
+    </div>
+  );
+}
 
 export default function SupplierDetailPage() {
   const params = useParams();
@@ -45,260 +281,598 @@ export default function SupplierDetailPage() {
   const { data, isLoading, isError } = useSupplierDetail(warehouseId);
 
   if (isLoading) return <DetailSkeleton />;
-  if (isError || !data) return (
-    <div className="space-y-4">
-      <Button asChild variant="ghost" size="sm"><Link href="/dashboard/suppliers"><ArrowLeft className="mr-1.5 h-4 w-4" />Back</Link></Button>
-      <div className="bg-card rounded-xl border p-12 text-center">
-        <AlertCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
-        <p className="text-muted-foreground font-medium">Supplier not found</p>
-      </div>
-    </div>
-  );
 
-  const { identity, financial, orderStats, pendingOrders, recentHistory, topProducts, performance } = data;
+  if (isError || !data) {
+    return (
+      <div className="space-y-4">
+        <Button asChild size="sm" variant="ghost">
+          <Link href="/dashboard/suppliers">
+            <ArrowLeft className="mr-1.5 h-4 w-4" />
+            Back
+          </Link>
+        </Button>
+
+        <Card>
+          <CardContent className="p-12 text-center">
+            <AlertCircle className="mx-auto mb-3 h-12 w-12 text-rose-300" />
+            <p className="font-medium text-muted-foreground">
+              Supplier details could not be loaded.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const detail = data as SupplierDetailData;
+  const {
+    identity,
+    business,
+    orderStats,
+    salesman,
+    delivery,
+    accountSummary,
+    purchaseHistory,
+    quickInfo,
+    pendingOrders,
+  } = detail;
+
+  const calendar = buildMonthCalendar(
+    delivery.weeklyDays.map((day) => day.dayOfWeek),
+  );
+  const connectionLabel = formatLabel(identity.connectionStatus || "active");
+  const hasPaymentFlow = false;
 
   return (
     <div className="space-y-6">
-      {/* Back + Header */}
-      <Button asChild variant="ghost" size="sm"><Link href="/dashboard/suppliers"><ArrowLeft className="mr-1.5 h-4 w-4" />Back to Suppliers</Link></Button>
+      <Button asChild size="sm" variant="ghost">
+        <Link href="/dashboard/suppliers">
+          <ArrowLeft className="mr-1.5 h-4 w-4" />
+          Back to Suppliers
+        </Link>
+      </Button>
 
-      {/* Identity Card */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <Users className="w-7 h-7 text-primary" />
+      <Card className="border-border/70">
+        <CardContent className="space-y-5 p-6">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-tight">
+                  {identity.name}
+                </h1>
+                <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                  {connectionLabel}
+                </Badge>
+                {accountSummary.payable > 0 ? (
+                  <Badge className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-50">
+                    {formatCurrency(accountSummary.payable)} due
+                  </Badge>
+                ) : null}
               </div>
-              <div>
-                <h1 className="text-xl font-bold">{identity.name}</h1>
-                <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
-                  {identity.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" />{identity.phone}</span>}
-                  {identity.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" />{identity.email}</span>}
-                  {identity.address && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{identity.address}</span>}
-                </div>
+
+              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                {identity.phone ? (
+                  <span className="flex items-center gap-1.5">
+                    <Phone className="h-4 w-4" />
+                    {identity.phone}
+                  </span>
+                ) : null}
+                {identity.email ? (
+                  <span className="flex items-center gap-1.5">
+                    <Mail className="h-4 w-4" />
+                    {identity.email}
+                  </span>
+                ) : null}
+                {identity.address ? (
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4" />
+                    {identity.address}
+                  </span>
+                ) : null}
               </div>
             </div>
-            <div className="flex gap-2 shrink-0">
-              {identity.phone && (
-                <Button variant="outline" size="sm" asChild><a href={`tel:${identity.phone}`}><Phone className="mr-1.5 h-3.5 w-3.5" />Call</a></Button>
-              )}
-              <Button size="sm" asChild><Link href="/dashboard/order-from-warehouse"><ShoppingCart className="mr-1.5 h-3.5 w-3.5" />Create Order</Link></Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Financial Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-              <TrendingUp className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Purchase</p>
-              <p className="text-lg font-bold tabular-nums">৳ {financial.totalPurchased.toLocaleString("en-BD")}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/30 flex items-center justify-center shrink-0">
-              <Wallet className="w-5 h-5 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Paid</p>
-              <p className="text-lg font-bold tabular-nums text-emerald-600">৳ {financial.totalPaid.toLocaleString("en-BD")}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-950/30 flex items-center justify-center shrink-0">
-              <AlertCircle className="w-5 h-5 text-red-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Due</p>
-              <p className={`text-lg font-bold tabular-nums ${financial.totalDue > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-                ৳ {financial.totalDue.toLocaleString("en-BD")}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Order Stats */}
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Order Status</CardTitle></CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-            {([
-              { label: "Total", value: orderStats.total, color: "text-foreground" },
-              { label: "Pending", value: orderStats.pending, color: "text-amber-600" },
-              { label: "Confirmed", value: orderStats.confirmed, color: "text-blue-600" },
-              { label: "Processing", value: orderStats.processing, color: "text-indigo-600" },
-              { label: "Delivered", value: orderStats.delivered, color: "text-emerald-600" },
-              { label: "Cancelled", value: orderStats.cancelled, color: "text-red-600" },
-            ] as const).map((s) => (
-              <div key={s.label} className="text-center p-2 rounded-lg bg-muted/30">
-                <p className={`text-lg font-bold tabular-nums ${s.color}`}>{s.value}</p>
-                <p className="text-[10px] text-muted-foreground uppercase">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pending Orders */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-500" /> Pending Orders
-              {pendingOrders.length > 0 && <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">{pendingOrders.length}</Badge>}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {pendingOrders.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No pending orders</p>
-            ) : (
-              <div className="space-y-3">
-                {pendingOrders.map((po: any) => {
-                  const cfg = statusCfg[po.status] || statusCfg.pending;
-                  return (
-                    <Link key={po.id} href={`/dashboard/orders/${po.id}`} className="block p-3 rounded-lg border hover:bg-muted/30 transition-colors">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-mono text-sm font-semibold">{po.orderNumber}</span>
-                        <Badge variant="outline" className={`text-[10px] ${cfg.cls}`}>{cfg.label}</Badge>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{po.items?.map((i: any) => `${i.productName} × ${i.modifiedQty ?? i.quantity}`).join(", ")}</span>
-                        <span className="tabular-nums font-medium">৳ {Number(po.total).toLocaleString("en-BD")}</span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent History */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Recent History</CardTitle>
-              <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
-                <Link href="/dashboard/orders/history">View All <ArrowUpRight className="ml-1 w-3 h-3" /></Link>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm">
+                <Link href="/dashboard/order-from-warehouse">
+                  <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
+                  Place Order
+                </Link>
               </Button>
+              {identity.phone ? (
+                <Button asChild size="sm" variant="outline">
+                  <a href={`tel:${identity.phone}`}>
+                    <Phone className="mr-1.5 h-3.5 w-3.5" />
+                    Contact Supplier
+                  </a>
+                </Button>
+              ) : null}
+              {identity.email ? (
+                <Button asChild size="sm" variant="outline">
+                  <a href={`mailto:${identity.email}`}>
+                    <Mail className="mr-1.5 h-3.5 w-3.5" />
+                    Email
+                  </a>
+                </Button>
+              ) : null}
             </div>
-          </CardHeader>
-          <CardContent>
-            {recentHistory.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No completed orders yet</p>
-            ) : (
-              <div className="space-y-2">
-                {recentHistory.map((h: any) => {
-                  const cfg = statusCfg[h.status] || statusCfg.delivered;
-                  return (
-                    <Link key={h.id} href={`/dashboard/orders/${h.id}`} className="flex items-center justify-between p-2.5 rounded-lg border hover:bg-muted/30 transition-colors">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-semibold">{h.orderNumber}</span>
-                        <Badge variant="outline" className={`text-[10px] ${cfg.cls}`}>{cfg.label}</Badge>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs">
-                        <span className="font-medium tabular-nums">৳ {Number(h.total).toLocaleString("en-BD")}</span>
-                        <span className="text-muted-foreground tabular-nums">{new Date(h.createdAt).toLocaleDateString("en-BD", { day: "numeric", month: "short" })}</span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Products */}
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Top Purchased Products</CardTitle></CardHeader>
-          <CardContent>
-            {topProducts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No product data</p>
-            ) : (
-              <div className="space-y-2">
-                {topProducts.map((p: any, i: number) => (
-                  <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/20">
-                    {p.image ? (
-                      <Image src={p.image} alt="" width={32} height={32} className="w-8 h-8 rounded border object-cover" />
-                    ) : (
-                      <div className="w-8 h-8 rounded border bg-muted flex items-center justify-center"><Package className="w-3.5 h-3.5" /></div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{p.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{p.orderCount} order{p.orderCount > 1 ? "s" : ""}</p>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Total Purchase"
+              value={formatCurrency(accountSummary.totalPurchase)}
+              hint={`${orderStats.total} total orders`}
+            />
+            <StatCard
+              label="Paid"
+              value={formatCurrency(accountSummary.paid)}
+              tone="success"
+              hint={`${orderStats.delivered} delivered orders`}
+            />
+            <StatCard
+              label="Payable"
+              value={formatCurrency(accountSummary.payable)}
+              tone={accountSummary.payable > 0 ? "danger" : "success"}
+              hint={`${accountSummary.payableOrders} payable orders`}
+            />
+            <StatCard
+              label="Active Orders"
+              value={quickInfo.activeOrders}
+              hint={`${quickInfo.pendingOrders} pending or processing`}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="space-y-6">
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Business Info</CardTitle>
+              <CardDescription>
+                Primary supplier profile from the retailer side.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <DetailRow label="Supplier Name" value={business.name} />
+              <DetailRow label="Phone" value={business.phone} />
+              <DetailRow label="Email" value={business.email} />
+              <DetailRow label="Location" value={business.location} />
+              <DetailRow
+                label="Connected Since"
+                value={formatDate(identity.connectedAt)}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Purchase History</CardTitle>
+              <CardDescription>
+                Latest retailer purchases and payment condition.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {purchaseHistory.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No purchase history available yet.
+                </p>
+              ) : (
+                <>
+                  <div className="hidden overflow-hidden rounded-2xl border border-border/70 md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="px-4">Date</TableHead>
+                          <TableHead>Products</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="px-4">Payment</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {purchaseHistory.map((purchase) => (
+                          <TableRow key={purchase.id}>
+                            <TableCell className="px-4">
+                              {formatShortDate(purchase.date)}
+                            </TableCell>
+                            <TableCell className="max-w-[18rem] whitespace-normal">
+                              <div className="space-y-1">
+                                <p className="font-medium">
+                                  {purchase.productSummary}
+                                </p>
+                                <p className="font-mono text-xs text-muted-foreground">
+                                  {purchase.orderNumber}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {formatCurrency(purchase.amount)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                className={`${orderStatusStyles[purchase.orderStatus] || "border-border bg-muted text-foreground"} hover:bg-current/5`}
+                              >
+                                {formatLabel(purchase.orderStatus)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="px-4">
+                              <div className="space-y-1">
+                                <Badge
+                                  className={`${paymentStatusStyles[purchase.paymentStatus]} hover:bg-current/5`}
+                                >
+                                  {formatLabel(purchase.paymentStatus)}
+                                </Badge>
+                                {purchase.dueAmount > 0 ? (
+                                  <p className="text-xs text-rose-600">
+                                    Due {formatCurrency(purchase.dueAmount)}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <div className="grid gap-3 md:hidden">
+                    {purchaseHistory.map((purchase) => (
+                      <div
+                        key={purchase.id}
+                        className="rounded-2xl border border-border/70 px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium">
+                              {purchase.productSummary}
+                            </p>
+                            <p className="font-mono text-xs text-muted-foreground">
+                              {purchase.orderNumber}
+                            </p>
+                          </div>
+                          <p className="font-semibold">
+                            {formatCurrency(purchase.amount)}
+                          </p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Badge
+                            className={`${orderStatusStyles[purchase.orderStatus] || "border-border bg-muted text-foreground"} hover:bg-current/5`}
+                          >
+                            {formatLabel(purchase.orderStatus)}
+                          </Badge>
+                          <Badge
+                            className={`${paymentStatusStyles[purchase.paymentStatus]} hover:bg-current/5`}
+                          >
+                            {formatLabel(purchase.paymentStatus)}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {formatShortDate(purchase.date)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Pending Orders</CardTitle>
+              <CardDescription>
+                Active purchase orders waiting for completion.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {pendingOrders.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No active supplier orders right now.
+                </p>
+              ) : (
+                pendingOrders.map((pendingOrder) => (
+                  <div
+                    key={pendingOrder.id}
+                    className="rounded-2xl border border-border/70 px-4 py-3"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-mono text-sm font-semibold">
+                            {pendingOrder.orderNumber}
+                          </p>
+                          <Badge
+                            className={`${orderStatusStyles[pendingOrder.status] || "border-border bg-muted text-foreground"} hover:bg-current/5`}
+                          >
+                            {formatLabel(pendingOrder.status)}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {pendingOrder.items
+                            .map(
+                              (item) =>
+                                `${item.productName} x ${item.modifiedQty ?? item.quantity}`,
+                            )
+                            .join(", ")}
+                        </p>
+                      </div>
+                      <div className="text-sm">
+                        <p className="font-semibold">
+                          {formatCurrency(Number(pendingOrder.total))}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {formatShortDate(pendingOrder.createdAt)}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-sm font-semibold tabular-nums shrink-0">{p.totalQty} pcs</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Performance Score */}
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Performance Score</CardTitle></CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl bg-muted/30 text-center">
-                <div className={`w-10 h-10 mx-auto rounded-full flex items-center justify-center mb-2 ${
-                  performance.deliverySpeed === "Fast" ? "bg-emerald-100 text-emerald-600" :
-                  performance.deliverySpeed === "Normal" ? "bg-blue-100 text-blue-600" :
-                  "bg-red-100 text-red-600"
-                }`}>
-                  <Zap className="w-5 h-5" />
+        <div className="space-y-6">
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Assigned Salesman</CardTitle>
+              <CardDescription>
+                Retailer-facing contact if the warehouse has assigned one.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {salesman ? (
+                <>
+                  <DetailRow label="Name" value={salesman.name} />
+                  <DetailRow label="Phone" value={salesman.phone} />
+                  <DetailRow
+                    label="Status"
+                    value={salesman.status === "active" ? "Active" : "Inactive"}
+                  />
+                </>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
+                  No salesman is assigned to this retailer for the selected
+                  supplier yet.
                 </div>
-                <p className="text-sm font-bold">{performance.deliverySpeed}</p>
-                <p className="text-[10px] text-muted-foreground">Delivery Speed</p>
-                <p className="text-xs text-muted-foreground mt-0.5">~{performance.avgDeliveryDays} day{performance.avgDeliveryDays !== 1 ? "s" : ""}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-muted/30 text-center">
-                <div className={`w-10 h-10 mx-auto rounded-full flex items-center justify-center mb-2 ${
-                  performance.orderAccuracy >= 90 ? "bg-emerald-100 text-emerald-600" :
-                  performance.orderAccuracy >= 70 ? "bg-amber-100 text-amber-600" :
-                  "bg-red-100 text-red-600"
-                }`}>
-                  <Target className="w-5 h-5" />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Delivery Area Matching</CardTitle>
+              <CardDescription>
+                How the retailer address maps to the warehouse delivery setup.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <DetailRow
+                label="Your Address"
+                value={delivery.yourAddress || business.yourAddress}
+              />
+              <DetailRow label="Area Hint" value={delivery.areaHint} />
+              <DetailRow
+                label="Matched Delivery Zone"
+                value={
+                  delivery.matchedArea?.name || "No direct zone matched yet"
+                }
+              />
+              {delivery.scope === "warehouse" ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  A warehouse-wide schedule exists, but no delivery zone matches
+                  this retailer address yet.
                 </div>
-                <p className="text-sm font-bold">{performance.orderAccuracy}%</p>
-                <p className="text-[10px] text-muted-foreground">Order Accuracy</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{performance.modificationRate}% modified</p>
-              </div>
-              <div className="p-4 rounded-xl bg-muted/30 text-center col-span-2">
-                <div className="flex items-center justify-center gap-4">
-                  <div>
-                    <p className="text-[10px] text-muted-foreground uppercase">Reliability</p>
-                    <p className="text-sm font-bold">
-                      {performance.orderAccuracy >= 90 && performance.deliverySpeed === "Fast" ? "Excellent" :
-                       performance.orderAccuracy >= 70 ? "Good" : "Needs Improvement"}
-                    </p>
-                  </div>
-                  <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    performance.orderAccuracy >= 90 && performance.deliverySpeed === "Fast"
-                      ? "bg-emerald-100 text-emerald-700" : performance.orderAccuracy >= 70
-                      ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
-                  }`}>
-                    {performance.orderAccuracy >= 90 && performance.deliverySpeed === "Fast" ? "⭐ Top Supplier" :
-                     performance.orderAccuracy >= 70 ? "👍 Reliable" : "⚠ Review"}
-                  </div>
+              ) : null}
+              {!delivery.matchedArea && delivery.availableAreas.length > 0 ? (
+                <div className="rounded-2xl border border-border/60 px-4 py-3">
+                  <p className="text-sm font-medium">
+                    Available delivery zones
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {delivery.availableAreas.join(", ")}
+                  </p>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Delivery Schedule</CardTitle>
+              <CardDescription>
+                {delivery.scope === "matched_area"
+                  ? "Weekly schedule for the matched delivery zone."
+                  : delivery.scope === "warehouse"
+                    ? "General warehouse delivery schedule."
+                    : "No delivery schedule has been configured yet."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="font-medium">{calendar.label}</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Scheduled days highlighted
+                  </p>
+                </div>
+                <div className="grid grid-cols-7 gap-2 text-center text-xs text-muted-foreground">
+                  {WEEKDAY_LABELS.map((label) => (
+                    <div key={label} className="pb-1 font-medium">
+                      {label}
+                    </div>
+                  ))}
+                  {calendar.cells.map((cell, index) => (
+                    <div
+                      key={`${cell.day || "empty"}-${index}`}
+                      className={`flex h-10 items-center justify-center rounded-xl border text-sm ${
+                        cell.day === null
+                          ? "border-transparent bg-transparent"
+                          : cell.scheduled
+                            ? "border-emerald-200 bg-emerald-50 font-semibold text-emerald-700"
+                            : "border-border/70 bg-background text-muted-foreground"
+                      } ${cell.today ? "ring-2 ring-primary/30" : ""}`}
+                    >
+                      {cell.day || ""}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+
+              {delivery.weeklyDays.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {delivery.weeklyDays.map((day) => (
+                    <Badge
+                      key={`${day.dayOfWeek}-${day.dayName}`}
+                      className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+                    >
+                      {day.dayName}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
+                  No weekly delivery days are available for this supplier yet.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Delivery Status</CardTitle>
+              <CardDescription>
+                Today’s delivery signal and the next expected schedule.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <DetailRow
+                label={`Today (${delivery.todayDayName})`}
+                value={
+                  delivery.hasDeliveryToday
+                    ? "Delivery scheduled"
+                    : "No delivery"
+                }
+              />
+              <DetailRow
+                label="Next Delivery"
+                value={describeNextDelivery(delivery.nextDelivery)}
+              />
+              <DetailRow
+                label="Cut-off Time"
+                value={delivery.cutoffTime || "Not configured"}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Account Summary</CardTitle>
+              <CardDescription>
+                Retailer-side purchase and payable breakdown.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <DetailRow
+                label="Total Purchase"
+                value={formatCurrency(accountSummary.totalPurchase)}
+              />
+              <DetailRow
+                label="Paid"
+                value={formatCurrency(accountSummary.paid)}
+              />
+              <DetailRow
+                label="Payable"
+                value={formatCurrency(accountSummary.payable)}
+              />
+              <DetailRow
+                label="Payable Orders"
+                value={accountSummary.payableOrders}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Order Quick Info</CardTitle>
+              <CardDescription>
+                Useful retailer-side snapshot before reordering or following up.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <DetailRow
+                label="Last Order"
+                value={
+                  quickInfo.lastOrderNumber
+                    ? `${quickInfo.lastOrderNumber} • ${formatLabel(quickInfo.lastOrderStatus)}`
+                    : "No orders yet"
+                }
+              />
+              <DetailRow
+                label="Pending Orders"
+                value={quickInfo.pendingOrders}
+              />
+              <DetailRow
+                label="Last Delivered"
+                value={formatDate(quickInfo.lastDeliveredAt)}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader>
+              <CardTitle>Actions</CardTitle>
+              <CardDescription>
+                Shortcuts for the retailer team.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button asChild className="w-full justify-between">
+                <Link href="/dashboard/order-from-warehouse">
+                  <span className="flex items-center gap-2">
+                    <ShoppingCart className="h-4 w-4" />
+                    Place Order
+                  </span>
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+
+              <Button
+                className="w-full justify-between"
+                disabled={!hasPaymentFlow || accountSummary.payable <= 0}
+                variant="outline"
+              >
+                <span className="flex items-center gap-2">
+                  <Wallet className="h-4 w-4" />
+                  Make Payment
+                </span>
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+
+              <Button
+                asChild
+                className="w-full justify-between"
+                variant="outline"
+              >
+                <Link href="/dashboard/orders/history">
+                  <span className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    View Purchase Details
+                  </span>
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+
+              <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                Warehouse supplier payment posting is not configured in this
+                panel yet, so the payment action is visible but disabled for
+                now.
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
@@ -307,15 +881,38 @@ export default function SupplierDetailPage() {
 function DetailSkeleton() {
   return (
     <div className="space-y-6">
-      <Skeleton className="h-8 w-32" />
-      <Card><CardContent className="p-6"><div className="flex items-center gap-4">
-        <Skeleton className="w-14 h-14 rounded-xl" />
-        <div className="space-y-2"><Skeleton className="h-6 w-40" /><Skeleton className="h-4 w-60" /></div>
-      </div></CardContent></Card>
-      <div className="grid grid-cols-3 gap-4">
-        {[1,2,3].map(i => <Card key={i}><CardContent className="p-4"><Skeleton className="h-12 w-full" /></CardContent></Card>)}
+      <Skeleton className="h-8 w-36" />
+      <Card>
+        <CardContent className="space-y-4 p-6">
+          <Skeleton className="h-8 w-56" />
+          <Skeleton className="h-4 w-72" />
+          <div className="grid gap-4 md:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} className="h-24 w-full" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="space-y-6">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index}>
+              <CardContent className="p-5">
+                <Skeleton className="h-40 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="space-y-6">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Card key={index}>
+              <CardContent className="p-5">
+                <Skeleton className="h-28 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
-      <Card><CardContent className="p-4"><Skeleton className="h-24 w-full" /></CardContent></Card>
     </div>
   );
 }

@@ -3,22 +3,18 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  Droplets,
   Package,
   PackagePlus,
   Pencil,
   Plus,
   RefreshCw,
-  Tag,
-  Truck,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
-import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { orpc } from "@/utils/orpc";
 
 // ─── Helpers ───────────────────────────────────────────────────
 
@@ -56,6 +52,229 @@ function NotAvailable() {
   );
 }
 
+function formatUnitQty(value: number, isLoose: boolean) {
+  if (isLoose) {
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: value % 1 === 0 ? 0 : 1,
+      maximumFractionDigits: 1,
+    });
+  }
+  return Math.round(value).toLocaleString();
+}
+
+const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
+const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
+
+function normalizeUnit(unit?: string | null) {
+  return String(unit || "")
+    .trim()
+    .toUpperCase();
+}
+
+function formatDisplayUnit(unit?: string | null) {
+  const normalized = normalizeUnit(unit);
+  if (normalized === "PCS" || normalized === "PC" || normalized === "PIECES") {
+    return "Pc";
+  }
+  if (normalized === "PAIR") {
+    return "Pair";
+  }
+  if (normalized === "FIT") {
+    return "Fit";
+  }
+  if (normalized === "YARD") {
+    return "Yard";
+  }
+  if (normalized === "PACK") {
+    return "Pack";
+  }
+  if (normalized === "CARTON") {
+    return "Carton";
+  }
+  return normalized || "Unit";
+}
+
+function formatQtyByUnit(value: number, unit?: string | null) {
+  return formatUnitQty(value, normalizeUnit(unit) === "KG");
+}
+
+function isFashionType(typeName?: string | null) {
+  return (
+    String(typeName || "")
+      .trim()
+      .toLowerCase() === "fashion"
+  );
+}
+
+function getFashionOpenStockLabel(unit?: string | null) {
+  const normalized = normalizeUnit(unit);
+  if (normalized === "PCS" || normalized === "PC") {
+    return "open piece stock";
+  }
+  if (normalized === "FIT") {
+    return "open fit stock";
+  }
+  if (normalized === "YARD") {
+    return "open yard stock";
+  }
+  return `open ${formatDisplayUnit(unit).toLowerCase()} stock`;
+}
+
+function parseUnitLabelMeasure(label?: string | null) {
+  const normalizedLabel = String(label || "").trim();
+  if (!normalizedLabel) return null;
+
+  const pieceMatch = normalizedLabel.match(
+    /(\d+(?:\.\d+)?)\s*(pc|pcs|piece|pieces|pair|unit)\b/i,
+  );
+  if (pieceMatch) {
+    const value = Number(pieceMatch[1]);
+    if (value > 0) {
+      return {
+        quantityPerPack: value,
+        quantityUnit: normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
+      };
+    }
+  }
+
+  const weightMatch = normalizedLabel.match(
+    /(\d+(?:\.\d+)?)\s*(kg|kgs|kilogram|kilograms)\b/i,
+  );
+  if (weightMatch) {
+    const value = Number(weightMatch[1]);
+    if (value > 0) {
+      return {
+        quantityPerPack: value,
+        quantityUnit: "KG",
+      };
+    }
+  }
+
+  return null;
+}
+
+type VariantDisplayInventory = {
+  totalQty: number;
+  inCartonQty: number;
+  looseQty: number;
+  availableForCartonQty: number;
+  activeCartonCount: number;
+};
+
+type LooseVariantRow = {
+  key: string;
+  matchKey: string;
+  label: string;
+  totalQty: number;
+  looseQty: number;
+  inCartonQty: number;
+  activeCartonCount: number;
+  quantityUnit: string;
+  weightKg: number;
+};
+
+type StockVariantBrand = {
+  id: number | null;
+  name: string;
+  logo: string | null;
+};
+
+type StockVariantItem = {
+  variantId: number;
+  brand: StockVariantBrand | null;
+  color: string | null;
+  size: string | null;
+  availableQty: number;
+  totalQty: number;
+  inCartonQty: number;
+  availableForCartonQty: number;
+  reservedQty: number;
+  retailPrice: string | null;
+  sku: string | null;
+};
+
+type StockVariantGroup = {
+  packType: string;
+  unitLabel: string;
+  weightKg: string;
+  piecesPerUnit?: number | null;
+  orderUnit?: string | null;
+  innerPackSizeKg: string | null;
+  packCountInside: number | null;
+  items: StockVariantItem[];
+};
+
+type CartonSummary = {
+  variantId: number;
+  totalPacks: number;
+  totalWeightKg: string;
+  activeCartonCount: number;
+  cartonPrice: string | null;
+  deliveryCostPerUnit: string | null;
+  latestCartonId: string;
+  latestCartonDbId: number;
+};
+
+function getVariantIdentityKey(item: {
+  brand?: StockVariantBrand | null;
+  color?: string | null;
+  size?: string | null;
+}) {
+  return [
+    item.brand?.id ?? item.brand?.name ?? "no-brand",
+    String(item.color || "")
+      .trim()
+      .toLowerCase() || "no-color",
+    String(item.size || "")
+      .trim()
+      .toLowerCase() || "no-size",
+  ].join("|");
+}
+
+function getGroupMeasure(group?: StockVariantGroup | null) {
+  if (!group) {
+    return { quantityPerPack: 0, quantityUnit: "PACK" };
+  }
+
+  const normalizedUnit = normalizeUnit(group.orderUnit);
+  const weightKg = parseFloat(group.weightKg || "0");
+  const piecesPerUnit = Number(group.piecesPerUnit || 0);
+
+  if (group.packType === "loose") {
+    if (PIECE_UNITS.has(normalizedUnit)) {
+      return { quantityPerPack: 1, quantityUnit: "PCS" };
+    }
+    if (weightKg > 0 || WEIGHT_UNITS.has(normalizedUnit)) {
+      return { quantityPerPack: 1, quantityUnit: "KG" };
+    }
+    const parsedLoose = parseUnitLabelMeasure(group.unitLabel);
+    if (parsedLoose && parsedLoose.quantityUnit !== "KG") {
+      return { quantityPerPack: 1, quantityUnit: parsedLoose.quantityUnit };
+    }
+    return { quantityPerPack: 1, quantityUnit: normalizedUnit || "KG" };
+  }
+
+  if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
+    return { quantityPerPack: weightKg, quantityUnit: "KG" };
+  }
+
+  if (piecesPerUnit > 0) {
+    return {
+      quantityPerPack: piecesPerUnit,
+      quantityUnit: PIECE_UNITS.has(normalizedUnit)
+        ? "PCS"
+        : normalizedUnit || "UNIT",
+    };
+  }
+
+  const parsed = parseUnitLabelMeasure(group.unitLabel);
+  if (parsed) {
+    return parsed;
+  }
+
+  return { quantityPerPack: 1, quantityUnit: "PACK" };
+}
+
 // ─── Section Header ────────────────────────────────────────────
 
 function SectionHeader({ emoji, title }: { emoji: string; title: string }) {
@@ -91,11 +310,13 @@ export default function StockDetailPage() {
       });
       // Find our item
       const items = result?.items ?? [];
-      return items.find((item: any) =>
-        isCoreProduct
-          ? item.coreProductId === numericId
-          : item.productIds.includes(numericId)
-      ) ?? null;
+      return (
+        items.find((item: any) =>
+          isCoreProduct
+            ? item.coreProductId === numericId
+            : item.productIds.includes(numericId),
+        ) ?? null
+      );
     },
   });
 
@@ -112,8 +333,8 @@ export default function StockDetailPage() {
           orpc.stockOverview.getStockBreakdown.call({
             productId: pid,
             ownerType: "warehouse",
-          })
-        )
+          }),
+        ),
       );
       return results;
     },
@@ -123,7 +344,7 @@ export default function StockDetailPage() {
   // Merge all breakdowns into a single view
   const breakdownData = useMemo(() => {
     if (!allBreakdowns || allBreakdowns.length === 0) return null;
-    const mergedGroups: any[] = [];
+    const mergedGroups: StockVariantGroup[] = [];
     let mergedLooseOpen = 0;
     let mergedLooseDrum = 0;
     let mergedTotal = 0;
@@ -133,9 +354,14 @@ export default function StockDetailPage() {
       mergedLooseOpen += bd.loosePool?.openStock ?? 0;
       mergedLooseDrum += bd.loosePool?.fullDrum ?? 0;
       for (const group of bd.variantGroups) {
-        // Try to merge into existing group with same packType + weightKg
+        // Keep piece-based variants distinct even when their weightKg is 0.
         const existing = mergedGroups.find(
-          (g) => g.packType === group.packType && g.weightKg === group.weightKg
+          (g) =>
+            g.packType === group.packType &&
+            g.weightKg === group.weightKg &&
+            g.unitLabel === group.unitLabel &&
+            g.piecesPerUnit === group.piecesPerUnit &&
+            g.orderUnit === group.orderUnit,
         );
         if (existing) {
           existing.items.push(...group.items);
@@ -154,7 +380,7 @@ export default function StockDetailPage() {
   }, [allBreakdowns, productIds]);
 
   // Collect all variant IDs from breakdown
-  const variantGroups = breakdownData?.variantGroups ?? [];
+  const variantGroups: StockVariantGroup[] = breakdownData?.variantGroups ?? [];
   const allVariantIds = useMemo(() => {
     const ids: number[] = [];
     for (const g of variantGroups) {
@@ -165,13 +391,26 @@ export default function StockDetailPage() {
     return ids;
   }, [variantGroups]);
 
+  const packVariantGroups = useMemo(
+    () => variantGroups.filter((group) => group.packType !== "loose"),
+    [variantGroups],
+  );
+
+  const looseVariantGroups = useMemo(
+    () => variantGroups.filter((group) => group.packType === "loose"),
+    [variantGroups],
+  );
+
   // Fetch actual carton data for all variants (from the carton table, not deprecated cartonConfig)
   const { data: cartonSummaryData } = useQuery({
     queryKey: ["warehouse", "getCartonSummaryBatch", allVariantIds],
-    queryFn: () => (orpc.warehouse as any).getCartonSummaryBatch.call({ variantIds: allVariantIds }),
+    queryFn: () =>
+      (orpc.warehouse as any).getCartonSummaryBatch.call({
+        variantIds: allVariantIds,
+      }),
     enabled: allVariantIds.length > 0,
   });
-  const cartonSummaries: any[] = cartonSummaryData?.cartons ?? [];
+  const cartonSummaries: CartonSummary[] = cartonSummaryData?.cartons ?? [];
 
   // Build carton summary lookup: variantId → summary
   const cartonByVariant = useMemo(() => {
@@ -183,7 +422,12 @@ export default function StockDetailPage() {
   }, [cartonSummaries]);
 
   // Selected pack for the "SELECTED PACK" section
-  const [selectedPackIndex, setSelectedPackIndex] = useState<number | null>(null);
+  const [selectedPackIndex, setSelectedPackIndex] = useState<number | null>(
+    null,
+  );
+  const [selectedFashionVariantKey, setSelectedFashionVariantKey] = useState<
+    string | null
+  >(null);
 
   const isLoading = listLoading || breakdownLoading;
 
@@ -199,7 +443,9 @@ export default function StockDetailPage() {
         </Link>
         <div className="flex flex-col items-center justify-center py-20 border rounded-lg bg-gray-50/50">
           <div className="w-8 h-8 border-3 border-amber-200 border-t-amber-600 rounded-full animate-spin mb-4" />
-          <p className="text-sm text-muted-foreground">Loading stock details…</p>
+          <p className="text-sm text-muted-foreground">
+            Loading stock details…
+          </p>
         </div>
       </div>
     );
@@ -223,57 +469,251 @@ export default function StockDetailPage() {
     );
   }
 
-  const loosePool = breakdownData?.loosePool;
   const totalQty = item.totalQty;
+  const isFashion = isFashionType(item.typeName);
 
   // Build breakdown text from item.breakdown (now carton-aware from API)
   const breakdownText = item.breakdown
     .map((b: any) => {
       if (b.packagingType === "loose") {
-        return `${Math.round(b.qty).toLocaleString()} ${item.stdUnit} Loose`;
+        return isFashion
+          ? `${Math.round(b.qty).toLocaleString()} ${formatDisplayUnit(
+              item.stdUnit,
+            )} Open Stock`
+          : `${Math.round(b.qty).toLocaleString()} ${formatDisplayUnit(
+              item.stdUnit,
+            )} Loose`;
+      }
+      if (isFashion && b.packagingType !== "carton") {
+        return `${Math.round(b.qty).toLocaleString()} Bundle (Carton)`;
+      }
+      if (b.packagingType === "carton") {
+        return `${Math.round(b.qty).toLocaleString()} Carton`;
       }
       return `${Math.round(b.qty).toLocaleString()} ${b.label}`;
     })
     .join(" + ");
 
-  // Pack type groups (non-loose — for SUPPLY LEVEL section)
-  const packTypeGroups = variantGroups.filter(
-    (g: any) => g.packType !== "loose"
-  );
-
   // Get the selected pack details
   const selectedPack =
-    selectedPackIndex !== null ? packTypeGroups[selectedPackIndex] : null;
+    selectedPackIndex !== null ? packVariantGroups[selectedPackIndex] : null;
 
-  // Calculate loose convertible
-  const looseTotal = (loosePool?.openStock ?? 0) + (loosePool?.fullDrum ?? 0);
+  function buildVariantLabel(
+    group: StockVariantGroup,
+    item: StockVariantItem,
+    isLoose: boolean,
+  ) {
+    const weightKg = parseFloat(group.weightKg || "0");
+    let label = isLoose
+      ? weightKg > 0
+        ? `${weightKg} KG Loose`
+        : "Loose"
+      : group.unitLabel || "Pack";
+
+    if (item.brand?.name) {
+      label += ` (${item.brand.name})`;
+    }
+
+    if (item.color || item.size) {
+      label = [item.color, item.size].filter(Boolean).join(" - ");
+    }
+
+    return label;
+  }
+
+  function getVariantDisplayInventory(
+    item: StockVariantItem,
+    isLoose: boolean,
+  ): VariantDisplayInventory {
+    const summary = cartonByVariant.get(item.variantId);
+    const hasPhysicalCartons = (summary?.activeCartonCount ?? 0) > 0;
+    const summaryInCartonQty = summary
+      ? parseFloat(
+          isLoose
+            ? summary.totalWeightKg || "0"
+            : String(summary.totalPacks || 0),
+        )
+      : 0;
+
+    const useFashionOpenStockFallback =
+      isFashion && !isLoose && !hasPhysicalCartons;
+    const looseQty = useFashionOpenStockFallback
+      ? item.totalQty ?? item.availableQty ?? 0
+      : (item.availableForCartonQty ?? item.availableQty ?? 0);
+    const inCartonQty = summary
+      ? summaryInCartonQty
+      : useFashionOpenStockFallback
+        ? 0
+        : (item.inCartonQty ?? 0);
+    const totalQty = summary
+      ? looseQty + summaryInCartonQty
+      : (item.totalQty ?? looseQty);
+
+    return {
+      totalQty,
+      inCartonQty,
+      looseQty,
+      availableForCartonQty: looseQty,
+      activeCartonCount: summary?.activeCartonCount ?? 0,
+    };
+  }
 
   // Compute actual carton counts from real carton table data (not deprecated cartonConfig)
   function getCartonInfo(group: any) {
-    const weightKg = parseFloat(group.weightKg || "0");
+    const measure = getGroupMeasure(group);
     let totalActiveCartons = 0;
-    let totalWeightInCartons = 0;
+    let totalMeasureInCartons = 0;
 
     for (const it of group.items) {
       const summary = cartonByVariant.get(it.variantId);
       if (summary) {
         totalActiveCartons += summary.activeCartonCount;
-        totalWeightInCartons += parseFloat(summary.totalWeightKg || "0");
+        totalMeasureInCartons +=
+          measure.quantityUnit === "KG"
+            ? parseFloat(summary.totalWeightKg || "0")
+            : (summary.totalPacks || 0) * measure.quantityPerPack;
       }
     }
 
     const totalPacks = group.items.reduce(
-      (sum: number, i: any) => sum + i.availableQty, 0
+      (sum: number, i: any) => sum + i.availableQty,
+      0,
     );
-    const totalKg = totalPacks * weightKg;
+    const totalMeasure = totalPacks * measure.quantityPerPack;
 
     return {
       cartonCount: totalActiveCartons,
-      totalKg,
-      totalWeightInCartons,
+      totalMeasure,
+      totalMeasureInCartons,
+      quantityUnit: measure.quantityUnit,
       hasCartons: totalActiveCartons > 0,
     };
   }
+
+  const looseVariantRows: LooseVariantRow[] = [];
+
+  for (const group of looseVariantGroups) {
+    const measure = getGroupMeasure(group);
+    for (const item of group.items) {
+      const inventory = getVariantDisplayInventory(item, true);
+      if (
+        inventory.totalQty <= 0 &&
+        inventory.looseQty <= 0 &&
+        inventory.inCartonQty <= 0
+      ) {
+        continue;
+      }
+
+      looseVariantRows.push({
+        key: `${group.weightKg}-${item.variantId}`,
+        matchKey: getVariantIdentityKey(item),
+        label: buildVariantLabel(group, item, true),
+        totalQty: inventory.totalQty,
+        looseQty: inventory.looseQty,
+        inCartonQty: inventory.inCartonQty,
+        activeCartonCount: inventory.activeCartonCount,
+        quantityUnit: measure.quantityUnit,
+        weightKg: parseFloat(group.weightKg || "0"),
+      });
+    }
+  }
+
+  looseVariantRows.sort(
+    (a, b) => b.looseQty - a.looseQty || b.totalQty - a.totalQty,
+  );
+
+  const fashionLooseByIdentity = isFashion
+    ? looseVariantRows.reduce((map, row) => {
+        const current = map.get(row.matchKey);
+        if (current) {
+          current.totalQty += row.totalQty;
+          current.looseQty += row.looseQty;
+          current.inCartonQty += row.inCartonQty;
+          current.activeCartonCount += row.activeCartonCount;
+          return map;
+        }
+
+        map.set(row.matchKey, { ...row });
+        return map;
+      }, new Map<string, LooseVariantRow>())
+    : new Map<string, LooseVariantRow>();
+
+  const fashionVariantRows = isFashion
+    ? packVariantGroups.flatMap((group) => {
+        const measure = getGroupMeasure(group);
+        if (normalizeUnit(measure.quantityUnit) === "KG") {
+          return [];
+        }
+
+        return group.items.map((variantItem) => {
+          const inventory = getVariantDisplayInventory(variantItem, false);
+          const quantityPerPack = measure.quantityPerPack || 1;
+          const bundledQty = inventory.inCartonQty * quantityPerPack;
+          const openVariantStock =
+            Math.max(0, inventory.totalQty - inventory.inCartonQty) *
+            quantityPerPack;
+          const openLooseStock =
+            fashionLooseByIdentity.get(getVariantIdentityKey(variantItem))
+              ?.looseQty ?? 0;
+          const label =
+            [variantItem.color, variantItem.size].filter(Boolean).join(" - ") ||
+            buildVariantLabel(group, variantItem, false);
+
+          return {
+            key: `${group.unitLabel}-${variantItem.variantId}`,
+            label,
+            totalQty: bundledQty + openVariantStock + openLooseStock,
+            looseQty: openVariantStock + openLooseStock,
+            inCartonQty: bundledQty,
+            quantityUnit: measure.quantityUnit,
+            unitLabel: group.unitLabel,
+          };
+        });
+      })
+    : [];
+
+  const fashionBundleRows = isFashion
+    ? packVariantGroups
+        .map((group, index) => {
+          const measure = getGroupMeasure(group);
+          if (normalizeUnit(measure.quantityUnit) === "KG") {
+            return null;
+          }
+
+          const totalBundleCount = group.items.reduce(
+            (sum, variantItem) =>
+              sum +
+              (cartonByVariant.get(variantItem.variantId)?.activeCartonCount ??
+                0),
+            0,
+          );
+          const totalBundledQty = group.items.reduce((sum, variantItem) => {
+            const inventory = getVariantDisplayInventory(variantItem, false);
+            return sum + inventory.inCartonQty * (measure.quantityPerPack || 1);
+          }, 0);
+          if (totalBundleCount <= 0 && totalBundledQty <= 0) {
+            return null;
+          }
+
+          return {
+            key: `${group.unitLabel}-${index}`,
+            label: `Bundle / Carton (${group.unitLabel || `${measure.quantityPerPack} ${formatDisplayUnit(measure.quantityUnit)}`})`,
+            bundleQty: totalBundleCount,
+            totalQty: totalBundledQty,
+            quantityUnit: measure.quantityUnit,
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    : [];
+
+  const fashionLooseRows = isFashion
+    ? looseVariantRows.filter((row) => normalizeUnit(row.quantityUnit) !== "KG")
+    : [];
+
+  const selectedFashionVariant =
+    fashionVariantRows.find((row) => row.key === selectedFashionVariantKey) ??
+    fashionVariantRows[0] ??
+    null;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -314,8 +754,24 @@ export default function StockDetailPage() {
                 </span>
               )}
             </h1>
+            {(item.typeName || item.categoryName) && (
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                {item.typeName && (
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                    {item.typeName}
+                  </span>
+                )}
+                {item.categoryName && (
+                  <span className="text-[11px] text-gray-400">
+                    {item.categoryName}
+                  </span>
+                )}
+              </div>
+            )}
             <p className="text-xs text-gray-500 mt-0.5">
-              Core Identity Level Stock
+              {isFashion
+                ? "Fashion core stock view"
+                : "Core Identity Level Stock"}
             </p>
           </div>
         </div>
@@ -326,9 +782,9 @@ export default function StockDetailPage() {
               Total Stock
             </div>
             <div className="text-xl font-bold text-gray-900 tabular-nums mt-0.5">
-              {Math.round(totalQty).toLocaleString()}{" "}
+              {formatQtyByUnit(totalQty, item.stdUnit)}{" "}
               <span className="text-sm font-medium text-gray-500">
-                {item.stdUnit}
+                {formatDisplayUnit(item.stdUnit)}
               </span>
             </div>
           </div>
@@ -354,330 +810,527 @@ export default function StockDetailPage() {
       {/* ══════════════════════════════════════════════════════════════
           📊 VARIANT STOCK (PACK LEVEL)
           ══════════════════════════════════════════════════════════════ */}
-      <div>
-        <SectionHeader emoji="📊" title="Variant Stock (Pack Level)" />
-        {variantGroups.length === 0 ? (
-          <div className="py-6 text-center text-sm text-gray-400 border border-dashed rounded-lg bg-gray-50/50">
-            No variant breakdown available
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-            {variantGroups.map((group: any, gi: number) => {
-              const isLoose = group.packType === "loose";
-              return (
-                <Fragment key={gi}>
-                  {group.items.map((item: any, ii: number) => {
-                    const weightKg = parseFloat(group.weightKg || "0");
-                    // Build label: "20 KG Loose (Fresh)" or "Loose (Fresh)"
-                    let label = isLoose
-                      ? (weightKg > 0 ? `${weightKg} KG Loose` : "Loose")
-                      : group.unitLabel || "Pack";
-                    if (item.brand?.name) {
-                      label += ` (${item.brand.name})`;
-                    }
-                    if (item.color || item.size) {
-                      label = [item.color, item.size].filter(Boolean).join(" - ");
-                    }
-
-                    // For loose with known weight: show qty count
-                    const looseQtyCount = isLoose && weightKg > 0
-                      ? Math.round(item.availableQty / weightKg)
-                      : 0;
-
-                    return (
-                      <div
-                        key={`${gi}-${ii}`}
-                        className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
-                      >
-                        <span className="text-sm text-gray-800 font-medium">
-                          {label}
-                        </span>
-                        <div className="flex items-center gap-6">
-                          <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                            →{" "}
-                            {item.availableQty.toLocaleString()}{" "}
-                            <span className="text-xs font-normal text-gray-500">
-                              {isLoose ? "KG" : "Pack"}
-                            </span>
-                            {isLoose && weightKg > 0 && looseQtyCount > 0 && (
-                              <span className="text-xs font-normal text-gray-400 ml-1">
-                                ({looseQtyCount} × {weightKg} KG)
-                              </span>
-                            )}
-                          </span>
-                          <div className="min-w-[100px]">
-                            <StatusIndicator qty={item.availableQty} />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </Fragment>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ══════════════════════════════════════════════════════════════
-          📦 PACK TYPE STOCK (SUPPLY LEVEL)
-          ══════════════════════════════════════════════════════════════ */}
-      {packTypeGroups.length > 0 && (
-        <div>
-          <SectionHeader emoji="📦" title="Pack Type Stock (Supply Level)" />
-          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-            {packTypeGroups.map((group: any, gi: number) => {
-              // Build per-brand carton info for this weight group
-              const brandCartonRows: { brandName: string; cartonCount: number; totalKg: number; weightKg: number }[] = [];
-              const weightKg = parseFloat(group.weightKg || "0");
-
-              for (const it of group.items) {
-                const summary = cartonByVariant.get(it.variantId);
-                const brandName = it.brand?.name || "Unbranded";
-                const activeCount = summary?.activeCartonCount ?? 0;
-                const wtInCartons = parseFloat(summary?.totalWeightKg || "0");
-                brandCartonRows.push({ brandName, cartonCount: activeCount, totalKg: wtInCartons || (activeCount * weightKg * (it.availableQty > 0 ? 1 : 0)), weightKg });
-              }
-
-              // Group by brand — sum if same brand has multiple variant items
-              const brandMap = new Map<string, { cartonCount: number; totalKg: number }>();
-              for (const row of brandCartonRows) {
-                if (!brandMap.has(row.brandName)) {
-                  brandMap.set(row.brandName, { cartonCount: 0, totalKg: 0 });
-                }
-                const e = brandMap.get(row.brandName)!;
-                e.cartonCount += row.cartonCount;
-                e.totalKg += row.totalKg;
-              }
-              const brandEntries = Array.from(brandMap.entries());
-              const totalCartons = brandEntries.reduce((s, [, v]) => s + v.cartonCount, 0);
-              const totalKg = brandEntries.reduce((s, [, v]) => s + v.totalKg, 0);
-
-              return (
-                <div key={gi}>
-                  <div
-                    className={`flex items-center justify-between px-5 py-3 cursor-pointer transition-colors ${
-                      selectedPackIndex === gi
+      {isFashion && (
+        <>
+          <div>
+            <SectionHeader
+              emoji="🎨"
+              title="Variant Stock (Color + Size Level)"
+            />
+            {fashionVariantRows.length === 0 ? (
+              <div className="py-6 text-center text-sm text-gray-400 border border-dashed rounded-lg bg-gray-50/50">
+                No color or size level stock available
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {fashionVariantRows.map((row) => (
+                  <button
+                    key={row.key}
+                    type="button"
+                    onClick={() => setSelectedFashionVariantKey(row.key)}
+                    className={`w-full flex items-center justify-between px-5 py-3 text-left transition-colors ${
+                      selectedFashionVariant?.key === row.key
                         ? "bg-blue-50 border-l-2 border-l-blue-500"
                         : "hover:bg-gray-50/50"
                     }`}
-                    onClick={() =>
-                      setSelectedPackIndex(selectedPackIndex === gi ? null : gi)
-                    }
                   >
                     <span className="text-sm text-gray-800 font-medium">
-                      {group.unitLabel} Carton
+                      {row.label}
                     </span>
                     <div className="flex items-center gap-6">
-                      <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                        →{" "}
-                        {totalCartons.toLocaleString()}{" "}
-                        <span className="text-xs font-normal text-gray-500">
-                          Carton
-                        </span>
-                      </span>
-                      <div className="min-w-[120px]">
-                        {totalCartons > 0 ? (
-                          <span className="text-xs text-gray-500">
-                            ({Math.round(totalKg).toLocaleString()} KG)
+                      <div className="text-right min-w-[220px]">
+                        <div className="text-sm font-bold text-gray-900 tabular-nums">
+                          {formatQtyByUnit(row.totalQty, row.quantityUnit)}{" "}
+                          <span className="text-xs font-normal text-gray-500">
+                            {formatDisplayUnit(row.quantityUnit)}
                           </span>
-                        ) : (
-                          <NotAvailable />
-                        )}
+                        </div>
+                        <div className="text-xs text-blue-600 tabular-nums mt-1">
+                          {formatQtyByUnit(row.inCartonQty, row.quantityUnit)}{" "}
+                          inside bundle/carton stock
+                        </div>
+                        <div className="text-xs text-slate-500 tabular-nums mt-0.5">
+                          {formatQtyByUnit(row.looseQty, row.quantityUnit)}{" "}
+                          available as{" "}
+                          {getFashionOpenStockLabel(row.quantityUnit)}
+                        </div>
+                      </div>
+                      <div className="min-w-[100px]">
+                        <StatusIndicator qty={row.totalQty} />
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <SectionHeader
+              emoji="📦"
+              title="Bundle / Carton Stock (Supply Level)"
+            />
+            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+              {fashionBundleRows.length === 0 ? (
+                <div className="px-5 py-4 text-sm text-gray-500">
+                  No bundle/carton created yet
+                </div>
+              ) : (
+                fashionBundleRows.map((row) => (
+                  <div
+                    key={row.key}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                  >
+                    <span className="text-sm text-gray-800 font-medium">
+                      {row.label}
+                    </span>
+                    <div className="text-right min-w-[220px]">
+                      <div className="text-sm font-bold text-gray-900 tabular-nums">
+                        {formatUnitQty(row.bundleQty, false)}{" "}
+                        <span className="text-xs font-normal text-gray-500">
+                          Bundle / Carton
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 tabular-nums mt-1">
+                        ({formatQtyByUnit(row.totalQty, row.quantityUnit)}{" "}
+                        {formatDisplayUnit(row.quantityUnit)})
                       </div>
                     </div>
                   </div>
-                  {/* Per-brand breakdown */}
-                  {brandEntries.length > 1 && (
-                    <div className="px-8 pb-2 pt-0.5 space-y-1">
-                      {brandEntries.map(([brand, info], bi) => (
-                        <div key={bi} className="flex items-center justify-between text-xs text-gray-500">
-                          <span className="text-gray-600">{brand}</span>
-                          <span className="tabular-nums">
-                            {info.cartonCount > 0
-                              ? `${info.cartonCount} carton (${Math.round(info.totalKg)} KG)`
-                              : "—  no cartons"
-                            }
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {(() => {
-        // Show cartons created from loose variants, grouped by brand
-        const looseGroups = variantGroups.filter(
-          (g: any) => g.packType === "loose"
-        );
-        if (looseGroups.length === 0) return null;
-
-        // Build per-brand carton data from all loose items
-        const brandCartonMap = new Map<string, { brandName: string; cartons: number; weightKg: number }>();
-
-        for (const group of looseGroups) {
-          for (const it of group.items) {
-            const summary = cartonByVariant.get(it.variantId);
-            if (!summary || summary.activeCartonCount === 0) continue;
-
-            const brandKey = it.brand?.name || "Unknown";
-            if (!brandCartonMap.has(brandKey)) {
-              brandCartonMap.set(brandKey, { brandName: brandKey, cartons: 0, weightKg: 0 });
-            }
-            const entry = brandCartonMap.get(brandKey)!;
-            entry.cartons += summary.activeCartonCount;
-            entry.weightKg += parseFloat(summary.totalWeightKg || "0");
-          }
-        }
-
-        if (brandCartonMap.size === 0) return null;
-
-        const brandRows = Array.from(brandCartonMap.values());
-
-        return (
-          <div>
-            <SectionHeader emoji="📦" title="Loose Carton Stock" />
-            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-              {brandRows.map((row, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
-                >
+                ))
+              )}
+              {fashionLooseRows.length > 0 && (
+                <div className="flex items-center justify-between px-5 py-3 bg-emerald-50/40">
                   <span className="text-sm text-gray-800 font-medium">
-                    Loose Carton
-                    <span className="text-gray-500 ml-1">
-                      ({row.brandName})
-                    </span>
+                    Loose Open Stock
                   </span>
-                  <div className="flex items-center gap-6">
-                    <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                      →{" "}
-                      {row.cartons.toLocaleString()}{" "}
+                  <div className="text-right min-w-[220px]">
+                    <div className="text-sm font-bold text-emerald-700 tabular-nums">
+                      {formatQtyByUnit(
+                        fashionLooseRows.reduce(
+                          (sum, row) => sum + row.looseQty,
+                          0,
+                        ),
+                        fashionLooseRows[0]?.quantityUnit,
+                      )}{" "}
                       <span className="text-xs font-normal text-gray-500">
-                        Carton
+                        {formatDisplayUnit(fashionLooseRows[0]?.quantityUnit)}
                       </span>
-                    </span>
-                    <div className="min-w-[120px]">
-                      <span className="text-xs text-gray-500">
-                        ({row.weightKg.toFixed(1)} KG)
-                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Open quantity after breaking
                     </div>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           </div>
-        );
-      })()}
 
-      {/* ══════════════════════════════════════════════════════════════
-          📦 LOOSE / READY STOCK
-          ══════════════════════════════════════════════════════════════ */}
-      {loosePool && (loosePool.openStock > 0 || loosePool.fullDrum > 0) && (
-        <div>
-          <SectionHeader emoji="📦" title="Loose / Ready Stock" />
-          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-            {loosePool.openStock > 0 && (
-              <div className="flex items-center justify-between px-5 py-3">
-                <span className="text-sm text-gray-800 font-medium">
-                  Unpacked (Reserved)
-                </span>
-                <div className="flex items-center gap-6">
-                  <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                    → {loosePool.openStock.toLocaleString()}{" "}
-                    <span className="text-xs font-normal text-gray-500">KG</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 min-w-[120px]">
-                    <span className="w-2 h-2 bg-amber-500 rounded-full" />
-                    Ready for Packing
-                  </span>
-                </div>
+          {fashionLooseRows.length > 0 && (
+            <div>
+              <SectionHeader emoji="📦" title="Ready / Unpacked Stock" />
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {fashionLooseRows.map((row) => (
+                  <div
+                    key={row.key}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                  >
+                    <span className="text-sm text-gray-800 font-medium">
+                      {row.label}
+                    </span>
+                    <div className="text-right min-w-[240px]">
+                      <div className="text-sm font-bold text-gray-900 tabular-nums">
+                        {formatQtyByUnit(row.looseQty, row.quantityUnit)}{" "}
+                        <span className="text-xs font-normal text-gray-500">
+                          {formatDisplayUnit(row.quantityUnit)}
+                        </span>
+                      </div>
+                      <div className="text-xs text-amber-700 mt-1">
+                        Ready for sorting
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
-            {loosePool.fullDrum > 0 && (
-              <div className="flex items-center justify-between px-5 py-3">
-                <span className="text-sm text-gray-800 font-medium">
-                  Full Drum / Sealed
-                </span>
-                <div className="flex items-center gap-6">
-                  <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
-                    → {loosePool.fullDrum.toLocaleString()}{" "}
-                    <span className="text-xs font-normal text-gray-500">KG</span>
-                  </span>
-                  <StatusIndicator qty={loosePool.fullDrum} />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+            </div>
+          )}
 
-      {/* ══════════════════════════════════════════════════════════════
-          📊 SELECTED PACK (Interactive)
-          ══════════════════════════════════════════════════════════════ */}
-      {selectedPack && (() => {
-        const info = getCartonInfo(selectedPack);
-        return (
-          <div>
-            <SectionHeader
-              emoji="📊"
-              title={`Selected Pack: ${selectedPack.unitLabel} Carton`}
-            />
-            <div className="bg-blue-50/50 rounded-lg border border-blue-200 p-5">
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
-                  Available:
-                </div>
+          {selectedFashionVariant && (
+            <div>
+              <SectionHeader
+                emoji="📊"
+                title={`Selected Variant: ${selectedFashionVariant.label}`}
+              />
+              <div className="bg-blue-50/50 rounded-lg border border-blue-200 p-5 space-y-2">
                 <div className="text-sm text-gray-800">
                   →{" "}
                   <span className="font-bold tabular-nums">
-                    {info.cartonCount.toLocaleString()}
+                    {formatQtyByUnit(
+                      selectedFashionVariant.totalQty,
+                      selectedFashionVariant.quantityUnit,
+                    )}{" "}
+                    {formatDisplayUnit(selectedFashionVariant.quantityUnit)}
                   </span>{" "}
-                  Carton
+                  available
                 </div>
-                {looseTotal > 0 && (
-                  <div className="text-sm text-gray-800">
-                    →{" "}
-                    <span className="font-bold tabular-nums text-blue-700">
-                      +{looseTotal.toLocaleString()} KG
-                    </span>{" "}
-                    <span className="text-gray-500">
-                      (Convertible from Loose)
-                    </span>
-                  </div>
+                <div className="text-sm text-gray-800">
+                  → Open stock support:
+                  <span className="ml-1 text-blue-700 font-medium">
+                    {selectedFashionVariant.looseQty > 0
+                      ? `Has ${getFashionOpenStockLabel(selectedFashionVariant.quantityUnit)}`
+                      : "No open stock available"}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-800">
+                  → MOQ: 1{" "}
+                  {formatDisplayUnit(selectedFashionVariant.quantityUnit)}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {!isFashion && (
+        <>
+          <div>
+            <SectionHeader emoji="📊" title="Variant Stock (Pack Level)" />
+            {packVariantGroups.length === 0 ? (
+              <div className="py-6 text-center text-sm text-gray-400 border border-dashed rounded-lg bg-gray-50/50">
+                No pack variants available
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {packVariantGroups.map(
+                  (group: StockVariantGroup, gi: number) => {
+                    return (
+                      <Fragment key={gi}>
+                        {group.items.map(
+                          (item: StockVariantItem, ii: number) => {
+                            const { totalQty, inCartonQty, looseQty } =
+                              getVariantDisplayInventory(item, false);
+                            const label = buildVariantLabel(group, item, false);
+                            const isLoose = false;
+                            const weightKg = parseFloat(group.weightKg || "0");
+                            const looseQtyCount = 0;
+
+                            return (
+                              <div
+                                key={`${gi}-${ii}`}
+                                className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                              >
+                                <span className="text-sm text-gray-800 font-medium">
+                                  {label}
+                                </span>
+                                <div className="flex items-center gap-6">
+                                  <div className="text-right min-w-[220px]">
+                                    <div className="text-sm font-bold text-gray-900 tabular-nums">
+                                      {formatUnitQty(totalQty, false)}{" "}
+                                      <span className="text-xs font-normal text-gray-500">
+                                        Pack total
+                                      </span>
+                                      {isLoose &&
+                                        weightKg > 0 &&
+                                        looseQtyCount > 0 && (
+                                          <span className="text-xs font-normal text-gray-400 ml-1">
+                                            ({looseQtyCount} × {weightKg} KG)
+                                          </span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-blue-600 tabular-nums mt-1">
+                                      {formatUnitQty(inCartonQty, false)} Pack
+                                      inside cartons
+                                    </div>
+                                    <div className="text-xs text-slate-500 tabular-nums mt-0.5">
+                                      {formatUnitQty(looseQty, false)} Pack
+                                      outside cartons
+                                    </div>
+                                  </div>
+                                  <div className="min-w-[100px]">
+                                    <StatusIndicator qty={totalQty} />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          },
+                        )}
+                      </Fragment>
+                    );
+                  },
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════════
+          📦 PACK TYPE STOCK (SUPPLY LEVEL)
+          ══════════════════════════════════════════════════════════════ */}
+          {packVariantGroups.length > 0 && (
+            <div>
+              <SectionHeader
+                emoji="📦"
+                title="Pack Type Stock (Supply Level)"
+              />
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {packVariantGroups.map(
+                  (group: StockVariantGroup, gi: number) => {
+                    // Build per-brand carton info for this weight group
+                    const brandCartonRows: {
+                      brandName: string;
+                      cartonCount: number;
+                      totalMeasure: number;
+                    }[] = [];
+                    const measure = getGroupMeasure(group);
+
+                    for (const it of group.items) {
+                      const summary = cartonByVariant.get(it.variantId);
+                      const brandName = it.brand?.name || "Unbranded";
+                      const activeCount = summary?.activeCartonCount ?? 0;
+                      const measureInCartons =
+                        measure.quantityUnit === "KG"
+                          ? parseFloat(summary?.totalWeightKg || "0")
+                          : (summary?.totalPacks || 0) *
+                            measure.quantityPerPack;
+                      brandCartonRows.push({
+                        brandName,
+                        cartonCount: activeCount,
+                        totalMeasure: measureInCartons,
+                      });
+                    }
+
+                    // Group by brand — sum if same brand has multiple variant items
+                    const brandMap = new Map<
+                      string,
+                      { cartonCount: number; totalMeasure: number }
+                    >();
+                    for (const row of brandCartonRows) {
+                      if (!brandMap.has(row.brandName)) {
+                        brandMap.set(row.brandName, {
+                          cartonCount: 0,
+                          totalMeasure: 0,
+                        });
+                      }
+                      const e = brandMap.get(row.brandName)!;
+                      e.cartonCount += row.cartonCount;
+                      e.totalMeasure += row.totalMeasure;
+                    }
+                    const brandEntries = Array.from(brandMap.entries());
+                    const totalCartons = brandEntries.reduce(
+                      (s, [, v]) => s + v.cartonCount,
+                      0,
+                    );
+                    const totalMeasure = brandEntries.reduce(
+                      (s, [, v]) => s + v.totalMeasure,
+                      0,
+                    );
+
+                    return (
+                      <div key={gi}>
+                        <div
+                          className={`flex items-center justify-between px-5 py-3 cursor-pointer transition-colors ${
+                            selectedPackIndex === gi
+                              ? "bg-blue-50 border-l-2 border-l-blue-500"
+                              : "hover:bg-gray-50/50"
+                          }`}
+                          onClick={() =>
+                            setSelectedPackIndex(
+                              selectedPackIndex === gi ? null : gi,
+                            )
+                          }
+                        >
+                          <span className="text-sm text-gray-800 font-medium">
+                            {group.unitLabel} Carton
+                          </span>
+                          <div className="flex items-center gap-6">
+                            <span className="text-sm font-bold text-gray-900 tabular-nums text-right min-w-[100px]">
+                              → {totalCartons.toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-gray-500">
+                                Carton
+                              </span>
+                            </span>
+                            <div className="min-w-[120px]">
+                              {totalCartons > 0 ? (
+                                <span className="text-xs text-gray-500">
+                                  (
+                                  {formatUnitQty(
+                                    totalMeasure,
+                                    measure.quantityUnit === "KG",
+                                  )}{" "}
+                                  {formatDisplayUnit(measure.quantityUnit)})
+                                </span>
+                              ) : (
+                                <NotAvailable />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {/* Per-brand breakdown */}
+                        {brandEntries.length > 1 && (
+                          <div className="px-8 pb-2 pt-0.5 space-y-1">
+                            {brandEntries.map(([brand, info], bi) => (
+                              <div
+                                key={bi}
+                                className="flex items-center justify-between text-xs text-gray-500"
+                              >
+                                <span className="text-gray-600">{brand}</span>
+                                <span className="tabular-nums">
+                                  {info.cartonCount > 0
+                                    ? `${info.cartonCount} carton (${formatUnitQty(info.totalMeasure, measure.quantityUnit === "KG")} ${formatDisplayUnit(measure.quantityUnit)})`
+                                    : "—  no cartons"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  },
                 )}
               </div>
             </div>
-          </div>
-        );
-      })()}
+          )}
 
-      {/* ══════════════════════════════════════════════════════════════
+          {looseVariantRows.length > 0 && (
+            <div>
+              <SectionHeader emoji="💧" title="Loose Variant Availability" />
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {looseVariantRows.map((row) => {
+                  const totalUnitCount =
+                    row.weightKg > 0
+                      ? Math.round(row.totalQty / row.weightKg)
+                      : 0;
+
+                  return (
+                    <div
+                      key={row.key}
+                      className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-colors"
+                    >
+                      <span className="text-sm text-gray-800 font-medium">
+                        {row.label}
+                      </span>
+                      <div className="flex items-center gap-6">
+                        <div className="text-right min-w-[260px]">
+                          <div className="text-sm font-bold text-gray-900 tabular-nums">
+                            {formatUnitQty(row.totalQty, true)}{" "}
+                            <span className="text-xs font-normal text-gray-500">
+                              KG total
+                            </span>
+                            {row.weightKg > 0 && totalUnitCount > 0 && (
+                              <span className="text-xs font-normal text-gray-400 ml-1">
+                                ({totalUnitCount} × {row.weightKg} KG)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-blue-600 tabular-nums mt-1">
+                            {row.activeCartonCount.toLocaleString()} carton
+                            generated
+                            {" • "}
+                            {formatUnitQty(row.inCartonQty, true)} KG packed
+                            into cartons
+                          </div>
+                          <div className="text-xs text-emerald-700 tabular-nums mt-0.5">
+                            {formatUnitQty(row.looseQty, true)} KG available in
+                            loose
+                          </div>
+                        </div>
+                        <div className="min-w-[100px]">
+                          <StatusIndicator qty={row.looseQty} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════
+          📊 SELECTED PACK SNAPSHOT
+          ══════════════════════════════════════════════════════════════ */}
+          {selectedPack &&
+            (() => {
+              const info = getCartonInfo(selectedPack);
+              return (
+                <div>
+                  <SectionHeader
+                    emoji="📊"
+                    title={`Selected Pack Snapshot: ${selectedPack.unitLabel} Carton`}
+                  />
+                  <div className="bg-blue-50/50 rounded-lg border border-blue-200 p-5">
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
+                        Available:
+                      </div>
+                      <div className="text-sm text-gray-800">
+                        →{" "}
+                        <span className="font-bold tabular-nums">
+                          {info.cartonCount.toLocaleString()}
+                        </span>{" "}
+                        Carton
+                      </div>
+                      <div className="text-sm text-gray-800">
+                        →{" "}
+                        <span className="font-bold tabular-nums text-blue-700">
+                          {formatUnitQty(
+                            info.totalMeasureInCartons,
+                            info.quantityUnit === "KG",
+                          )}{" "}
+                          {formatDisplayUnit(info.quantityUnit)}
+                        </span>{" "}
+                        <span className="text-gray-500">
+                          currently packed into cartons
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+          {/* ══════════════════════════════════════════════════════════════
           ⚙ ACTION
           ══════════════════════════════════════════════════════════════ */}
+        </>
+      )}
+
       <div>
         <SectionHeader emoji="⚙" title="Action" />
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" disabled className="gap-1.5 text-xs">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className="gap-1.5 text-xs"
+          >
             <PackagePlus size={14} />
-            📦 Create Pack
+            {isFashion ? "📦 Break Bundle → Piece" : "📦 Create Pack"}
           </Button>
-          <Button variant="outline" size="sm" disabled className="gap-1.5 text-xs">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className="gap-1.5 text-xs"
+          >
             <RefreshCw size={14} />
-            🔄 Convert Loose → Pack
+            {isFashion
+              ? "🔄 Break Loose → Fit/Yard"
+              : "🔄 Convert Loose → Pack"}
           </Button>
-          <Button variant="outline" size="sm" disabled className="gap-1.5 text-xs">
-            <Plus size={14} />
-            ➕ Add Stock
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className="gap-1.5 text-xs"
+          >
+            <Plus size={14} />➕ Add Stock
           </Button>
-          <Button variant="outline" size="sm" disabled className="gap-1.5 text-xs">
-            <Pencil size={14} />
-            ✏ Adjust Stock
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className="gap-1.5 text-xs"
+          >
+            <Pencil size={14} />✏ Adjust Stock
           </Button>
         </div>
       </div>

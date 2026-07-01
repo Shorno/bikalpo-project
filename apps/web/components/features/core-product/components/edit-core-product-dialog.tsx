@@ -7,6 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -15,13 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -30,16 +25,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-
 
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 import type { CoreProductWithRelations } from "./core-product-columns";
-
-
-
-
 
 interface EditCoreProductDialogProps {
   coreProduct: CoreProductWithRelations;
@@ -52,9 +41,12 @@ export default function EditCoreProductDialog({
   open,
   onOpenChange,
 }: EditCoreProductDialogProps) {
-
-  const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(null);
-  const [selectedCategoryId, setSelectedCategoryId] = React.useState<number>(coreProduct.categoryId);
+  const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(
+    null,
+  );
+  const [selectedCategoryId, setSelectedCategoryId] = React.useState<number>(
+    coreProduct.categoryId,
+  );
 
   const queryClient = useQueryClient();
 
@@ -69,15 +61,17 @@ export default function EditCoreProductDialog({
   );
   const productTypes = typesData?.types ?? [];
 
-  const { data: categoriesData } = useQuery(orpc.category.getAll.queryOptions());
+  const { data: categoriesData } = useQuery(
+    orpc.category.getAll.queryOptions(),
+  );
   const allCategories = Array.isArray(categoriesData) ? categoriesData : [];
-
-
 
   const { data: subcategoriesData } = useQuery(
     orpc.adminSubcategory.getAllGlobal.queryOptions({ input: {} }),
   );
-  const allSubcategories = Array.isArray(subcategoriesData) ? subcategoriesData : [];
+  const allSubcategories = Array.isArray(subcategoriesData)
+    ? subcategoriesData
+    : [];
 
   const mutation = useMutation(
     orpc.adminCoreProduct.update.mutationOptions({
@@ -98,9 +92,9 @@ export default function EditCoreProductDialog({
   );
 
   // Determine initial typeId from category
-  const initialTypeId = allCategories.find(
-    (c: any) => c.id === coreProduct.categoryId,
-  )?.typeId ?? null;
+  const initialTypeId =
+    allCategories.find((c: any) => c.id === coreProduct.categoryId)?.typeId ??
+    null;
 
   const form = useForm({
     defaultValues: {
@@ -117,6 +111,11 @@ export default function EditCoreProductDialog({
       supportsLoose: coreProduct.supportsLoose ?? false,
     },
     onSubmit: async ({ value }) => {
+      if (!value.image.trim()) {
+        toast.error("Product image is required");
+        return;
+      }
+
       mutation.mutate({
         id: coreProduct.id,
         sku: value.sku,
@@ -145,10 +144,6 @@ export default function EditCoreProductDialog({
     ? allSubcategories.filter((sc: any) => sc.categoryId === selectedCategoryId)
     : [];
 
-
-
-
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -170,14 +165,19 @@ export default function EditCoreProductDialog({
           {/* Image */}
           <form.Field name="image">
             {(field) => (
-              <Field>
-                <FieldLabel htmlFor={field.name}>Product Image</FieldLabel>
+              <Field data-invalid={!field.state.value.trim()}>
+                <FieldLabel htmlFor={field.name}>Product Image *</FieldLabel>
                 <ImageUploader
                   value={field.state.value}
                   onChange={field.handleChange}
                   folder="core-products"
                   maxSizeMB={5}
                 />
+                {!field.state.value.trim() && (
+                  <p className="text-sm text-destructive">
+                    Product image is required
+                  </p>
+                )}
               </Field>
             )}
           </form.Field>
@@ -241,7 +241,9 @@ export default function EditCoreProductDialog({
                 <Field>
                   <FieldLabel>Type</FieldLabel>
                   <Select
-                    value={field.state.value ? String(field.state.value) : "none"}
+                    value={
+                      field.state.value ? String(field.state.value) : "none"
+                    }
                     onValueChange={(v) => {
                       const val = v === "none" ? null : Number(v);
                       field.handleChange(val);
@@ -251,11 +253,15 @@ export default function EditCoreProductDialog({
                       form.setFieldValue("subCategoryId", null);
                     }}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">All Types</SelectItem>
                       {productTypes.map((t: any) => (
-                        <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                        <SelectItem key={t.id} value={String(t.id)}>
+                          {t.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -276,11 +282,17 @@ export default function EditCoreProductDialog({
                       form.setFieldValue("subCategoryId", null);
                     }}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0" disabled>Select category</SelectItem>
+                      <SelectItem value="0" disabled>
+                        Select category
+                      </SelectItem>
                       {filteredCategories.map((c: any) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -293,15 +305,23 @@ export default function EditCoreProductDialog({
                 <Field>
                   <FieldLabel>Sub Category</FieldLabel>
                   <Select
-                    value={field.state.value ? String(field.state.value) : "none"}
-                    onValueChange={(v) => field.handleChange(v === "none" ? null : Number(v))}
+                    value={
+                      field.state.value ? String(field.state.value) : "none"
+                    }
+                    onValueChange={(v) =>
+                      field.handleChange(v === "none" ? null : Number(v))
+                    }
                     disabled={filteredSubcategories.length === 0}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">None</SelectItem>
                       {filteredSubcategories.map((sc: any) => (
-                        <SelectItem key={sc.id} value={String(sc.id)}>{sc.name}</SelectItem>
+                        <SelectItem key={sc.id} value={String(sc.id)}>
+                          {sc.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -333,7 +353,9 @@ export default function EditCoreProductDialog({
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={field.state.value}
-                      onCheckedChange={(checked) => field.handleChange(!!checked)}
+                      onCheckedChange={(checked) =>
+                        field.handleChange(!!checked)
+                      }
                     />
                     <span className="text-sm">Pack Based</span>
                   </label>
@@ -344,7 +366,9 @@ export default function EditCoreProductDialog({
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={field.state.value}
-                      onCheckedChange={(checked) => field.handleChange(!!checked)}
+                      onCheckedChange={(checked) =>
+                        field.handleChange(!!checked)
+                      }
                     />
                     <span className="text-sm">Loose</span>
                   </label>
@@ -352,19 +376,29 @@ export default function EditCoreProductDialog({
               </form.Field>
             </div>
             <p className="text-xs text-muted-foreground">
-              Select which variant types this product supports. Pack-based (e.g. 1KG, 5KG) and/or Loose (e.g. per KG).
+              Select which variant types this product supports. Pack-based (e.g.
+              1KG, 5KG) and/or Loose (e.g. per KG).
             </p>
           </div>
-
-
-
-
         </form>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
-          <Button type="submit" form="edit-core-product-form" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="edit-core-product-form"
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending && (
+              <Loader className="mr-2 h-4 w-4 animate-spin" />
+            )}
             Save Changes
           </Button>
         </DialogFooter>

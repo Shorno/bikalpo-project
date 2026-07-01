@@ -18,6 +18,13 @@ import { Button } from "@/components/ui/button";
 import { orpc } from "@/utils/orpc";
 
 type EmployeeRole = "salesman" | "deliveryman";
+type EmployeeFormValues = {
+  name: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  role: EmployeeRole;
+};
 
 import {
   Dialog,
@@ -53,6 +60,69 @@ function generatePassword(length = 10): string {
   return password;
 }
 
+const MIN_NAME_LENGTH = 2;
+const MIN_PASSWORD_LENGTH = 8;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function getNameError(value: string, showRequired: boolean) {
+  const name = value.trim();
+  if (!name) {
+    return showRequired ? "Name is required" : null;
+  }
+  if (name.length < MIN_NAME_LENGTH) {
+    return `Name must be at least ${MIN_NAME_LENGTH} characters`;
+  }
+  return null;
+}
+
+function getEmailError(value: string, showRequired: boolean) {
+  const email = value.trim();
+  if (!email) {
+    return showRequired ? "Email is required" : null;
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    return "Please enter a valid email address";
+  }
+  return null;
+}
+
+function getPasswordError(value: string, showRequired: boolean) {
+  if (!value) {
+    return showRequired ? "Password is required" : null;
+  }
+  if (value.length < MIN_PASSWORD_LENGTH) {
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  return null;
+}
+
+function shouldShowFieldError(isBlurred: boolean, submitAttempted: boolean) {
+  return submitAttempted || isBlurred;
+}
+
+function validateEmployeeForm(value: EmployeeFormValues) {
+  const nameError = getNameError(value.name, true);
+  if (nameError) return { message: nameError };
+
+  const emailError = getEmailError(value.email, true);
+  if (emailError) return { message: emailError };
+
+  const passwordError = getPasswordError(value.password, true);
+  if (passwordError) return { message: passwordError };
+
+  if (!value.role) return { message: "Please select a role" };
+
+  return {
+    payload: {
+      name: value.name.trim(),
+      email: value.email.trim(),
+      password: value.password,
+      phoneNumber: value.phoneNumber.trim() || undefined,
+      role: value.role,
+    },
+  };
+}
+
 export function CreateWarehouseEmployeeModal({
   defaultRole,
   trigger,
@@ -63,6 +133,7 @@ export function CreateWarehouseEmployeeModal({
   const [open, setOpen] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const [submitAttempted, setSubmitAttempted] = React.useState(false);
   const [createdCredentials, setCreatedCredentials] = React.useState<{
     email: string;
     password: string;
@@ -70,15 +141,16 @@ export function CreateWarehouseEmployeeModal({
 
   const mutation = useMutation({
     ...orpc.warehouseEmployee.create.mutationOptions(),
-    onSuccess: (result) => {
+    onSuccess: (result, variables) => {
       queryClient.invalidateQueries({ queryKey: orpc.warehouseEmployee.key() });
       toast.success(result.message || "Employee created successfully");
 
       setCreatedCredentials({
-        email: form.getFieldValue("email"),
-        password: form.getFieldValue("password"),
+        email: variables.email,
+        password: variables.password,
       });
 
+      setSubmitAttempted(false);
       form.reset();
       router.refresh();
       onSuccess?.();
@@ -97,29 +169,15 @@ export function CreateWarehouseEmployeeModal({
       role: defaultRole || ("salesman" as EmployeeRole),
     },
     onSubmit: async ({ value }) => {
-      if (value.name.length < 2) {
-        toast.error("Name must be at least 2 characters");
+      setSubmitAttempted(true);
+
+      const validation = validateEmployeeForm(value);
+      if ("message" in validation) {
+        toast.error(validation.message);
         return;
       }
-      if (!value.email.includes("@")) {
-        toast.error("Please enter a valid email address");
-        return;
-      }
-      if (value.password.length < 6) {
-        toast.error("Password must be at least 6 characters");
-        return;
-      }
-      if (!value.role) {
-        toast.error("Please select a role");
-        return;
-      }
-      mutation.mutate({
-        name: value.name,
-        email: value.email,
-        password: value.password,
-        phoneNumber: value.phoneNumber || undefined,
-        role: value.role,
-      });
+
+      mutation.mutate(validation.payload);
     },
   });
 
@@ -143,6 +201,7 @@ export function CreateWarehouseEmployeeModal({
     setOpen(false);
     setCreatedCredentials(null);
     setCopied(false);
+    setSubmitAttempted(false);
     form.reset();
   };
 
@@ -150,12 +209,12 @@ export function CreateWarehouseEmployeeModal({
     if (!open) {
       setCreatedCredentials(null);
       setCopied(false);
+      setSubmitAttempted(false);
       form.reset();
     }
   }, [open, form]);
 
-  const roleLabel =
-    defaultRole === "deliveryman" ? "Deliveryman" : "Salesman";
+  const roleLabel = defaultRole === "deliveryman" ? "Deliveryman" : "Salesman";
 
   // Credentials success screen
   if (createdCredentials) {
@@ -253,10 +312,14 @@ export function CreateWarehouseEmployeeModal({
           {/* Name */}
           <form.Field name="name">
             {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && field.state.meta.isBlurred && field.state.value.length < 2;
+              const error = shouldShowFieldError(
+                field.state.meta.isBlurred,
+                submitAttempted,
+              )
+                ? getNameError(field.state.value, submitAttempted)
+                : null;
               return (
-                <Field data-invalid={isInvalid}>
+                <Field data-invalid={!!error}>
                   <FieldLabel htmlFor={field.name}>Name *</FieldLabel>
                   <Input
                     id={field.name}
@@ -267,9 +330,7 @@ export function CreateWarehouseEmployeeModal({
                     placeholder="Enter employee name"
                     autoComplete="off"
                   />
-                  {isInvalid && (
-                    <FieldError>Name must be at least 2 characters</FieldError>
-                  )}
+                  {error && <FieldError>{error}</FieldError>}
                 </Field>
               );
             }}
@@ -278,10 +339,14 @@ export function CreateWarehouseEmployeeModal({
           {/* Email */}
           <form.Field name="email">
             {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && field.state.meta.isBlurred && !field.state.value.includes("@");
+              const error = shouldShowFieldError(
+                field.state.meta.isBlurred,
+                submitAttempted,
+              )
+                ? getEmailError(field.state.value, submitAttempted)
+                : null;
               return (
-                <Field data-invalid={isInvalid}>
+                <Field data-invalid={!!error}>
                   <FieldLabel htmlFor={field.name}>Email *</FieldLabel>
                   <Input
                     id={field.name}
@@ -293,9 +358,7 @@ export function CreateWarehouseEmployeeModal({
                     placeholder="employee@example.com"
                     autoComplete="off"
                   />
-                  {isInvalid && (
-                    <FieldError>Please enter a valid email address</FieldError>
-                  )}
+                  {error && <FieldError>{error}</FieldError>}
                 </Field>
               );
             }}
@@ -304,10 +367,14 @@ export function CreateWarehouseEmployeeModal({
           {/* Password */}
           <form.Field name="password">
             {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && field.state.meta.isBlurred && field.state.value.length < 6;
+              const error = shouldShowFieldError(
+                field.state.meta.isBlurred,
+                submitAttempted,
+              )
+                ? getPasswordError(field.state.value, submitAttempted)
+                : null;
               return (
-                <Field data-invalid={isInvalid}>
+                <Field data-invalid={!!error}>
                   <FieldLabel htmlFor={field.name}>Password *</FieldLabel>
                   <div className="flex gap-2">
                     <div className="relative flex-1">
@@ -346,11 +413,7 @@ export function CreateWarehouseEmployeeModal({
                       <RefreshCw className="size-4" />
                     </Button>
                   </div>
-                  {isInvalid && (
-                    <FieldError>
-                      Password must be at least 6 characters
-                    </FieldError>
-                  )}
+                  {error && <FieldError>{error}</FieldError>}
                 </Field>
               );
             }}
@@ -379,10 +442,12 @@ export function CreateWarehouseEmployeeModal({
           {!defaultRole && (
             <form.Field name="role">
               {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.value;
+                const error =
+                  submitAttempted && !field.state.value
+                    ? "Please select a role"
+                    : null;
                 return (
-                  <Field data-invalid={isInvalid}>
+                  <Field data-invalid={!!error}>
                     <FieldLabel htmlFor={field.name}>Role *</FieldLabel>
                     <Select
                       value={field.state.value}
@@ -398,7 +463,7 @@ export function CreateWarehouseEmployeeModal({
                         <SelectItem value="deliveryman">Deliveryman</SelectItem>
                       </SelectContent>
                     </Select>
-                    {isInvalid && <FieldError>Please select a role</FieldError>}
+                    {error && <FieldError>{error}</FieldError>}
                   </Field>
                 );
               }}

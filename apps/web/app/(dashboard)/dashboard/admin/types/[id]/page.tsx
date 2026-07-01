@@ -1,5 +1,8 @@
 "use client";
 
+import {
+  INVENTORY_BEHAVIOUR_LABELS,
+} from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -14,6 +17,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
+import { resolveProductTypeProfile } from "@/components/features/product-type/components/product-type-row";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -98,6 +103,7 @@ export default function TypeDetailPage() {
   }
 
   const t = data.type;
+  const profile = resolveProductTypeProfile(t);
   const categories = t.categories || [];
   const products = data.products || [];
   const sellerCount = data.sellerCount ?? 0;
@@ -164,6 +170,26 @@ export default function TypeDetailPage() {
       </div>
 
       {/* Categories Under This Type */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Fulfillment Profile</CardTitle>
+          <CardDescription>
+            Shared rules that later phases will use from admin setup through retailer conversion.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+            Inventory behaviour for this type is set to{" "}
+            <span className="font-medium text-foreground">
+              {INVENTORY_BEHAVIOUR_LABELS[t.inventoryBehaviour]}
+            </span>
+            . This shared profile will drive admin setup, retailer ordering, and stock conversion in later phases.
+          </div>
+
+          <FulfillmentProfilePreview profile={profile} />
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">
