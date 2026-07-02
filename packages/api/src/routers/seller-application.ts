@@ -254,6 +254,9 @@ export const sellerApplicationRouter = {
                             email: true,
                         },
                     },
+                    productType: {
+                        columns: { id: true, name: true },
+                    },
                 },
             });
 

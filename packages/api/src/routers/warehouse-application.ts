@@ -181,6 +181,9 @@ export const warehouseApplicationRouter = {
                             email: true,
                         },
                     },
+                    productType: {
+                        columns: { id: true, name: true },
+                    },
                 },
             });
 
