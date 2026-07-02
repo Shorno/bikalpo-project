@@ -129,7 +129,7 @@ export default function SellerApplicationDetailPage() {
             : "Application not found"}
         </p>
         <Link
-          href="/dashboard/admin/seller-applications"
+          href="/dashboard/admin/applications"
           className="flex items-center gap-2 text-sm font-semibold text-[#003178] hover:underline"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
@@ -180,7 +180,7 @@ export default function SellerApplicationDetailPage() {
       <div className="mx-auto max-w-6xl" style={{ fontFamily: "'Inter', sans-serif" }}>
         <Button
           variant="ghost"
-          onClick={() => router.push("/dashboard/admin/seller-applications")}
+          onClick={() => router.push("/dashboard/admin/applications")}
           className="mb-5 flex items-center gap-1.5 px-0 text-sm text-gray-500 hover:bg-transparent hover:text-[#003178]"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
