@@ -8,13 +8,11 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
-  ApplicantProfileSection,
-  ApplicantSummaryCard,
-  ApplicationDetailHeader,
-  ApplicationStatsTiles,
+  AdminReviewSection,
+  ApplicationReviewHero,
   APPLICATION_STATUS_CONFIG,
-  BankDetailsSection,
-  BusinessDetailsSection,
+  BankAndTaxSection,
+  BusinessInformationSection,
   BusinessLocationSection,
   LabeledDocumentsSection,
   PersonalLocationSection,
@@ -189,14 +187,11 @@ export default function SellerApplicationDetailPage() {
           All Applications
         </Button>
 
-        <ApplicationDetailHeader
-          title={application.shopName}
-          ownerName={application.ownerName}
+        <ApplicationReviewHero
+          data={detail}
+          pageTitle={application.shopName}
           createdAt={application.createdAt}
-          applicationNumber={detail.applicationNumber}
           status={status}
-          avatarInitial={application.shopName?.[0]?.toUpperCase() || "S"}
-          avatarClassName="bg-gradient-to-br from-[#003178] to-[#0d47a1]"
           isPending={isPending}
           onApprove={() => setActionType("approve")}
           onReject={() => setActionType("reject")}
@@ -204,10 +199,7 @@ export default function SellerApplicationDetailPage() {
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="space-y-5 lg:col-span-2">
-            <ApplicationStatsTiles data={detail} />
-            <ApplicantProfileSection data={detail} />
-            <PersonalLocationSection data={detail} />
-            <BusinessDetailsSection
+            <BusinessInformationSection
               data={detail}
               businessName={application.shopName}
               businessNameLabel="Shop Name"
@@ -218,20 +210,15 @@ export default function SellerApplicationDetailPage() {
               businessTypeLabel="Platform Type"
               sellingModeBadge={sellingModeBadge}
             />
+            <PersonalLocationSection data={detail} />
             <BusinessLocationSection data={detail} />
             <LabeledDocumentsSection data={detail} />
+            <BankAndTaxSection data={detail} />
+            <SocialProfilesSection data={detail} />
+            <ReferralSection data={detail} />
           </div>
 
           <div className="space-y-5 self-start lg:sticky lg:top-6">
-            <ApplicantSummaryCard
-              data={detail}
-              subtitle="Seller Applicant"
-              gradientClass="bg-gradient-to-br from-[#003178] to-[#0d47a1]"
-            />
-            <BankDetailsSection data={detail} />
-            <ReferralSection data={detail} />
-            <SocialProfilesSection data={detail} />
-
             {application.selectedPlan && (
               <div className="rounded-xl border border-gray-100 bg-white p-5">
                 <div className="mb-3 flex items-center gap-2">
@@ -321,31 +308,20 @@ export default function SellerApplicationDetailPage() {
               </div>
             </div>
 
-            {application.reviewedAt && application.adminNotes && (
-              <div className="rounded-xl border border-gray-100 bg-white p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <span
-                    className="material-symbols-outlined text-lg text-[#003178]"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    sticky_note_2
-                  </span>
-                  <h3 className="text-sm font-bold text-gray-900">Admin Notes</h3>
-                </div>
-                <p className="rounded-lg bg-gray-50 p-3 text-sm leading-relaxed text-gray-600">
-                  {application.adminNotes}
-                </p>
-              </div>
-            )}
+            <AdminReviewSection
+              isPending={isPending}
+              adminNotes={adminNotes}
+              onAdminNotesChange={setAdminNotes}
+              existingNotes={application.adminNotes}
+            />
           </div>
         </div>
       </div>
 
       <Dialog
         open={!!actionType}
-        onOpenChange={() => {
-          setActionType(null);
-          setAdminNotes("");
+        onOpenChange={(open) => {
+          if (!open) setActionType(null);
         }}
       >
         <DialogContent>
@@ -387,10 +363,7 @@ export default function SellerApplicationDetailPage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setActionType(null);
-                setAdminNotes("");
-              }}
+              onClick={() => setActionType(null)}
               disabled={isActionPending}
             >
               Cancel

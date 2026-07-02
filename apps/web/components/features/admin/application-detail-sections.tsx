@@ -9,6 +9,7 @@ import {
   type DocumentUrls,
 } from "@/constants/seller-registration";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 export const APPLICATION_STATUS_CONFIG = {
   pending: {
@@ -130,6 +131,34 @@ function hasCoords(lat?: string | null, lng?: string | null) {
   return Boolean(lat && lng && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lng)));
 }
 
+function maskBankAccount(accountNumber?: string | null) {
+  if (!accountNumber) return null;
+  const digits = accountNumber.replace(/\s/g, "");
+  if (digits.length <= 4) return accountNumber;
+  return `${"*".repeat(Math.max(digits.length - 4, 8))}${digits.slice(-4)}`;
+}
+
+function formatCoverage(data: ApplicationDetailData) {
+  return [data.area, data.district, data.division].filter(Boolean).join(", ") || null;
+}
+
+function formatPersonalLocationHint(data: ApplicationDetailData) {
+  if (data.personalDistrict || data.personalDivision) {
+    return [data.personalArea, data.personalDistrict, data.personalDivision]
+      .filter(Boolean)
+      .join(", ");
+  }
+  return data.personalAddress;
+}
+
+function hasTradeLicenseSubmitted(data: ApplicationDetailData) {
+  return Boolean(
+    data.tradeLicenseNumber ||
+      data.documentUrls?.tradeLicense ||
+      data.documents?.length,
+  );
+}
+
 export function DetailSection({
   title,
   icon,
@@ -163,50 +192,163 @@ export function DetailSection({
 export function DetailField({
   label,
   value,
+  alwaysShow,
 }: {
   label: string;
   value?: string | null;
+  alwaysShow?: boolean;
 }) {
-  if (!value) return null;
+  if (!value && !alwaysShow) return null;
   return (
     <div className="flex justify-between gap-4 text-sm">
-      <span className="text-gray-500">{label}</span>
-      <span className="text-right font-medium text-gray-900">{value}</span>
+      <span className="shrink-0 text-gray-500">{label}</span>
+      <span className="text-right font-medium text-gray-900">{value || "—"}</span>
     </div>
   );
 }
 
-export function ApplicantProfileSection({ data }: { data: ApplicationDetailData }) {
-  const hasProfile =
-    data.profilePhotoUrl ||
-    data.email ||
-    data.dateOfBirth ||
-    data.gender;
+function HeroFieldRow({
+  label,
+  value,
+  children,
+  valueClassName,
+}: {
+  label: string;
+  value?: string | null;
+  children?: React.ReactNode;
+  valueClassName?: string;
+}) {
+  if (!value && !children) return null;
+  return (
+    <div className="grid grid-cols-[5.5rem_1fr] items-baseline gap-x-4 text-sm">
+      <span className="text-gray-500">{label}</span>
+      {children ?? (
+        <span
+          className={`min-w-0 font-medium text-gray-900 ${valueClassName ?? "break-words"}`}
+        >
+          {value}
+        </span>
+      )}
+    </div>
+  );
+}
 
-  if (!hasProfile && !data.ownerName) return null;
+export function ApplicationReviewHero({
+  data,
+  pageTitle,
+  createdAt,
+  status,
+  isPending,
+  onApprove,
+  onReject,
+}: {
+  data: ApplicationDetailData;
+  pageTitle: string;
+  createdAt: Date | string;
+  status: ApplicationStatus;
+  isPending: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const config = APPLICATION_STATUS_CONFIG[status];
+  const locationHint = formatPersonalLocationHint(data);
 
   return (
-    <DetailSection title="Applicant Profile" icon="person">
-      {data.profilePhotoUrl && (
-        <div className="mb-3 flex items-center gap-3">
-          <div className="relative h-16 w-16 overflow-hidden rounded-lg border border-gray-200">
-            <Image
-              src={data.profilePhotoUrl}
-              alt={data.ownerName}
-              fill
-              className="object-cover"
-              sizes="64px"
-            />
-          </div>
-          <p className="text-sm text-gray-500">Profile photo</p>
+    <header className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div className="flex flex-col lg:flex-row">
+        <div className="flex shrink-0 items-start justify-center border-b border-gray-100 bg-gray-50/40 p-5 lg:w-[7.5rem] lg:border-b-0 lg:border-r lg:py-6">
+          {data.profilePhotoUrl ? (
+            <div className="relative h-24 w-24 overflow-hidden rounded-lg border border-gray-200">
+              <Image
+                src={data.profilePhotoUrl}
+                alt={data.ownerName}
+                fill
+                className="object-cover"
+                sizes="96px"
+              />
+            </div>
+          ) : (
+            <div className="flex h-24 w-24 items-center justify-center rounded-lg bg-[#003178]/10 text-2xl font-bold text-[#003178]">
+              {data.ownerName?.[0]?.toUpperCase() || "?"}
+            </div>
+          )}
         </div>
-      )}
-      <DetailField label="Full Name" value={data.ownerName} />
-      <DetailField label="Phone" value={data.phoneNumber} />
-      <DetailField label="Email" value={data.email} />
-      <DetailField label="Date of Birth" value={formatDateOfBirth(data.dateOfBirth)} />
-      <DetailField label="Gender" value={formatGender(data.gender)} />
-    </DetailSection>
+
+        <div className="min-w-0 flex-1 border-b border-gray-100 p-5 lg:border-b-0 lg:border-r lg:py-6">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            Applicant Profile
+          </p>
+          <h1 className="mb-3 text-base font-semibold text-gray-900">{pageTitle}</h1>
+          <div className="space-y-1">
+            <HeroFieldRow label="Full Name" value={data.ownerName} />
+            <HeroFieldRow label="Mobile" value={data.phoneNumber} />
+            <HeroFieldRow label="Email" value={data.email} />
+            <HeroFieldRow
+              label="DOB"
+              value={formatDateOfBirth(data.dateOfBirth)}
+            />
+            <HeroFieldRow label="Gender" value={formatGender(data.gender)} />
+          </div>
+          {locationHint && (
+            <p className="mt-3 flex items-start gap-1.5 border-t border-gray-100 pt-3 text-xs text-gray-500">
+              <span
+                className="material-symbols-outlined mt-px shrink-0 text-sm text-gray-400"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                location_on
+              </span>
+              <span className="min-w-0 break-words">{locationHint}</span>
+            </p>
+          )}
+        </div>
+
+        <div className="flex w-full shrink-0 flex-col p-5 lg:w-[22rem] lg:py-6">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            Application
+          </p>
+          <div className="space-y-1">
+            <HeroFieldRow
+              label="App ID"
+              value={data.applicationNumber || "—"}
+              valueClassName="text-xs font-mono leading-tight tracking-tight"
+            />
+            <HeroFieldRow label="Status">
+              <span
+                className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-tight ${config.bg} ${config.color} ${config.border}`}
+              >
+                {config.label}
+              </span>
+            </HeroFieldRow>
+            <HeroFieldRow
+              label="Submitted"
+              value={format(new Date(createdAt), "d MMM yyyy")}
+            />
+            {isPending && (
+              <HeroFieldRow label="Review" value="Typically 24–72 hrs" />
+            )}
+          </div>
+          {isPending && (
+            <div className="mt-4 flex gap-2">
+              <Button
+                size="sm"
+                onClick={onApprove}
+                className="h-8 flex-1 bg-green-600 text-xs hover:bg-green-700"
+              >
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onReject}
+                className="h-8 flex-1 border-red-200 text-xs text-red-600 hover:bg-red-50"
+              >
+                Reject
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
   );
 }
 
@@ -238,13 +380,14 @@ export function PersonalLocationSection({ data }: { data: ApplicationDetailData 
   );
 }
 
-export function BusinessDetailsSection({
+export function BusinessInformationSection({
   data,
   businessName,
   businessNameLabel,
   businessType,
   businessTypeLabel,
   sellingModeBadge,
+  applicantStatusLabel = "New Applicant",
 }: {
   data: ApplicationDetailData;
   businessName: string;
@@ -252,29 +395,41 @@ export function BusinessDetailsSection({
   businessType?: string | null;
   businessTypeLabel?: string;
   sellingModeBadge?: React.ReactNode;
+  applicantStatusLabel?: string;
 }) {
   const typeName = data.productTypeName || data.businessCategory;
+  const coverage = formatCoverage(data);
 
   return (
-    <DetailSection title="Business Details" icon="storefront">
-      <DetailField label={businessNameLabel} value={businessName} />
-      <DetailField
-        label="Business Nature"
-        value={formatBusinessNature(data.businessNature)}
-      />
-      <DetailField label="Business Type" value={typeName} />
-      {businessType && businessTypeLabel && (
-        <DetailField label={businessTypeLabel} value={businessType} />
-      )}
-      {sellingModeBadge}
-      <DetailField label="Years in Business" value={data.yearsInBusiness} />
-      <DetailField label="Monthly Revenue" value={data.monthlyRevenue} />
-      <DetailField
-        label="Trade License"
-        value={data.tradeLicenseNumber || "Not provided"}
-      />
-      <DetailField label="BIN Number" value={data.binNumber} />
-      <DetailField label="TIN Number" value={data.tinNumber} />
+    <DetailSection title="Business Information" icon="storefront">
+      <div className="grid gap-6 sm:grid-cols-2">
+        <div className="space-y-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Business Name
+          </p>
+          <DetailField label={businessNameLabel} value={businessName} alwaysShow />
+          <DetailField label="Business Type" value={typeName} alwaysShow />
+          <DetailField label="Coverage" value={coverage} alwaysShow />
+          <DetailField label="Address" value={data.businessAddress} alwaysShow />
+          {businessType && businessTypeLabel && (
+            <DetailField label={businessTypeLabel} value={businessType} alwaysShow />
+          )}
+          {sellingModeBadge}
+        </div>
+        <div className="space-y-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Business Overview
+          </p>
+          <DetailField
+            label="Nature"
+            value={formatBusinessNature(data.businessNature)}
+            alwaysShow
+          />
+          <DetailField label="Experience" value={data.yearsInBusiness} alwaysShow />
+          <DetailField label="Sales Volume" value={data.monthlyRevenue} alwaysShow />
+          <DetailField label="Status" value={applicantStatusLabel} alwaysShow />
+        </div>
+      </div>
     </DetailSection>
   );
 }
@@ -301,15 +456,26 @@ export function BusinessLocationSection({ data }: { data: ApplicationDetailData 
   );
 }
 
-function DocumentCard({ label, url }: { label: string; url: string }) {
+function DocumentCard({
+  label,
+  url,
+  optional,
+}: {
+  label: string;
+  url: string;
+  optional?: boolean;
+}) {
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group relative overflow-hidden rounded-xl border border-gray-200 transition-all hover:border-[#003178]/30"
-    >
-      <div className="relative aspect-[4/3]">
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/80 px-3 py-2">
+        <p className="text-xs font-semibold text-gray-700">{label}</p>
+        {optional && (
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+            Optional
+          </span>
+        )}
+      </div>
+      <div className="relative aspect-[4/3] bg-gray-50">
         <Image
           src={url}
           alt={label}
@@ -317,16 +483,30 @@ function DocumentCard({ label, url }: { label: string; url: string }) {
           className="object-cover"
           sizes="(max-width: 768px) 50vw, 25vw"
         />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/10">
-          <span className="material-symbols-outlined text-2xl text-white opacity-0 drop-shadow-lg transition-opacity group-hover:opacity-100">
-            open_in_new
-          </span>
-        </div>
       </div>
-      <div className="bg-gray-50/80 px-3 py-2">
-        <p className="text-xs font-medium text-gray-500">{label}</p>
+      <div className="flex gap-2 border-t border-gray-100 p-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 flex-1 text-xs"
+          asChild
+        >
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            View
+          </a>
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 flex-1 text-xs"
+          asChild
+        >
+          <a href={url} download target="_blank" rel="noopener noreferrer">
+            Download
+          </a>
+        </Button>
       </div>
-    </a>
+    </div>
   );
 }
 
@@ -359,10 +539,21 @@ export function LabeledDocumentsSection({ data }: { data: ApplicationDetailData 
           <p className="text-sm text-gray-400">No documents uploaded</p>
         </div>
       ) : labeledEntries.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {labeledEntries.map(([key, label]) => (
-            <DocumentCard key={key} label={label} url={documentUrls[key]!} />
-          ))}
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {labeledEntries
+              .filter(([key]) => key !== "warehouse")
+              .map(([key, label]) => (
+                <DocumentCard key={key} label={label} url={documentUrls[key]!} />
+              ))}
+          </div>
+          {documentUrls.warehouse && (
+            <DocumentCard
+              label={DOCUMENT_LABELS.warehouse}
+              url={documentUrls.warehouse}
+              optional
+            />
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -375,28 +566,42 @@ export function LabeledDocumentsSection({ data }: { data: ApplicationDetailData 
   );
 }
 
-export function BankDetailsSection({ data }: { data: ApplicationDetailData }) {
-  if (!data.bankName && !data.bankAccountName && !data.bankAccountNumber) {
-    return null;
-  }
+export function BankAndTaxSection({ data }: { data: ApplicationDetailData }) {
+  const hasBank =
+    data.bankName || data.bankAccountName || data.bankAccountNumber;
+  const hasTax = data.binNumber || data.tinNumber || hasTradeLicenseSubmitted(data);
+
+  if (!hasBank && !hasTax) return null;
+
+  const tradeLicenseStatus = hasTradeLicenseSubmitted(data)
+    ? "Submitted ✓"
+    : "Not provided";
 
   return (
-    <div className="rounded-xl border border-gray-100 bg-white p-5">
-      <div className="mb-3 flex items-center gap-2">
-        <span
-          className="material-symbols-outlined text-lg text-[#003178]"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          account_balance
-        </span>
-        <h3 className="text-sm font-bold text-gray-900">Bank Information</h3>
+    <DetailSection title="Bank Information" icon="account_balance">
+      <div className="grid gap-6 sm:grid-cols-2">
+        <div className="space-y-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Bank Details
+          </p>
+          <DetailField label="Bank Name" value={data.bankName} alwaysShow />
+          <DetailField label="Account Name" value={data.bankAccountName} alwaysShow />
+          <DetailField
+            label="Account Number"
+            value={maskBankAccount(data.bankAccountNumber)}
+            alwaysShow
+          />
+        </div>
+        <div className="space-y-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Tax Information
+          </p>
+          <DetailField label="BIN Number" value={data.binNumber} alwaysShow />
+          <DetailField label="TIN Number" value={data.tinNumber} alwaysShow />
+          <DetailField label="Trade License" value={tradeLicenseStatus} alwaysShow />
+        </div>
       </div>
-      <div className="space-y-2">
-        <DetailField label="Bank" value={data.bankName} />
-        <DetailField label="Account Name" value={data.bankAccountName} />
-        <DetailField label="Account Number" value={data.bankAccountNumber} />
-      </div>
-    </div>
+    </DetailSection>
   );
 }
 
@@ -406,22 +611,11 @@ export function ReferralSection({ data }: { data: ApplicationDetailData }) {
   }
 
   return (
-    <div className="rounded-xl border border-gray-100 bg-white p-5">
-      <div className="mb-3 flex items-center gap-2">
-        <span
-          className="material-symbols-outlined text-lg text-[#003178]"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          group_add
-        </span>
-        <h3 className="text-sm font-bold text-gray-900">Referral</h3>
-      </div>
-      <div className="space-y-2">
-        <DetailField label="Referral ID" value={data.referralId} />
-        <DetailField label="Referral Name" value={data.referralName} />
-        <DetailField label="Referral Phone" value={data.referralPhone} />
-      </div>
-    </div>
+    <DetailSection title="Referral Information" icon="group_add">
+      <DetailField label="Referral ID" value={data.referralId} alwaysShow />
+      <DetailField label="Referrer Name" value={data.referralName} alwaysShow />
+      <DetailField label="Mobile" value={data.referralPhone} alwaysShow />
+    </DetailSection>
   );
 }
 
@@ -438,233 +632,73 @@ export function SocialProfilesSection({ data }: { data: ApplicationDetailData })
   if (links.length === 0) return null;
 
   return (
+    <DetailSection title="Social Network" icon="share">
+      <div className="space-y-2">
+        {links.map((link) => (
+          <div key={link.label} className="flex justify-between gap-4 text-sm">
+            <span className="text-gray-500">{link.label}</span>
+            {link.value!.startsWith("http") ? (
+              <a
+                href={link.value!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="max-w-[60%] truncate text-right font-medium text-[#003178] hover:underline"
+              >
+                {link.value}
+              </a>
+            ) : (
+              <span className="max-w-[60%] truncate text-right font-medium text-gray-900">
+                {link.value}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </DetailSection>
+  );
+}
+
+export function AdminReviewSection({
+  isPending,
+  adminNotes,
+  onAdminNotesChange,
+  existingNotes,
+}: {
+  isPending: boolean;
+  adminNotes: string;
+  onAdminNotesChange: (value: string) => void;
+  existingNotes?: string | null;
+}) {
+  if (!isPending && !existingNotes) return null;
+
+  return (
     <div className="rounded-xl border border-gray-100 bg-white p-5">
       <div className="mb-3 flex items-center gap-2">
         <span
           className="material-symbols-outlined text-lg text-[#003178]"
           style={{ fontVariationSettings: "'FILL' 1" }}
         >
-          share
+          sticky_note_2
         </span>
-        <h3 className="text-sm font-bold text-gray-900">Social Profiles</h3>
+        <h3 className="text-sm font-bold text-gray-900">Admin Review</h3>
       </div>
-      <div className="space-y-2">
-        {links.map((link) => (
-          <div key={link.label} className="flex justify-between gap-4 text-sm">
-            <span className="text-gray-500">{link.label}</span>
-            <a
-              href={link.value!.startsWith("http") ? link.value! : undefined}
-              className="max-w-[60%] truncate text-right font-medium text-[#003178] hover:underline"
-            >
-              {link.value}
-            </a>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function ApplicationStatsTiles({ data }: { data: ApplicationDetailData }) {
-  const natureLabel = formatBusinessNature(data.businessNature) || "—";
-  const typeName = data.productTypeName || data.businessCategory || "—";
-
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div className="rounded-xl border border-gray-100 bg-white p-4 text-center">
-        <span
-          className="material-symbols-outlined mb-1 block text-2xl text-[#003178]"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          storefront
-        </span>
-        <p className="mb-0.5 text-xs text-gray-400">Business Nature</p>
-        <p className="text-sm font-bold text-gray-900">{natureLabel}</p>
-      </div>
-      <div className="rounded-xl border border-gray-100 bg-white p-4 text-center">
-        <span
-          className="material-symbols-outlined mb-1 block text-2xl text-[#003178]"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          category
-        </span>
-        <p className="mb-0.5 text-xs text-gray-400">Business Type</p>
-        <p className="text-sm font-bold text-gray-900">{typeName}</p>
-      </div>
-      <div className="rounded-xl border border-gray-100 bg-white p-4 text-center">
-        <span
-          className="material-symbols-outlined mb-1 block text-2xl text-[#003178]"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          schedule
-        </span>
-        <p className="mb-0.5 text-xs text-gray-400">Experience</p>
-        <p className="text-sm font-bold text-gray-900">
-          {data.yearsInBusiness || "—"}
-        </p>
-      </div>
-      <div className="rounded-xl border border-gray-100 bg-white p-4 text-center">
-        <span
-          className="material-symbols-outlined mb-1 block text-2xl text-[#003178]"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          payments
-        </span>
-        <p className="mb-0.5 text-xs text-gray-400">Revenue</p>
-        <p className="text-sm font-bold text-gray-900">
-          {data.monthlyRevenue || "—"}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-export function ApplicantSummaryCard({
-  data,
-  subtitle,
-  gradientClass,
-}: {
-  data: ApplicationDetailData;
-  subtitle: string;
-  gradientClass: string;
-}) {
-  return (
-    <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
-      <div className={`px-5 py-6 text-center ${gradientClass}`}>
-        {data.profilePhotoUrl ? (
-          <div className="relative mx-auto mb-3 h-14 w-14 overflow-hidden rounded-full border-2 border-white/30">
-            <Image
-              src={data.profilePhotoUrl}
-              alt={data.ownerName}
-              fill
-              className="object-cover"
-              sizes="56px"
-            />
-          </div>
-        ) : (
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/20 text-xl font-bold text-white">
-            {data.ownerName?.[0]?.toUpperCase() || "?"}
-          </div>
-        )}
-        <p className="text-sm font-bold text-white">{data.ownerName}</p>
-        <p className="mt-0.5 text-xs text-white/70">{subtitle}</p>
-      </div>
-      <div className="space-y-3 px-5 py-4">
-        <div className="flex items-center gap-3 text-sm">
-          <span
-            className="material-symbols-outlined text-lg text-gray-400"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            call
-          </span>
-          <span className="font-medium text-gray-700">{data.phoneNumber}</span>
+      {isPending ? (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">Internal note</p>
+          <Textarea
+            placeholder="Add review notes before approving or rejecting..."
+            value={adminNotes}
+            onChange={(e) => onAdminNotesChange(e.target.value)}
+            rows={4}
+            className="resize-none text-sm"
+          />
         </div>
-        {data.email && (
-          <div className="flex items-center gap-3 text-sm">
-            <span
-              className="material-symbols-outlined text-lg text-gray-400"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              mail
-            </span>
-            <span className="font-medium text-gray-700">{data.email}</span>
-          </div>
-        )}
-        {data.personalAddress && (
-          <div className="flex items-start gap-3 text-sm">
-            <span
-              className="material-symbols-outlined text-lg text-gray-400"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              home
-            </span>
-            <span className="text-gray-700">{data.personalAddress}</span>
-          </div>
-        )}
-      </div>
+      ) : (
+        <p className="rounded-lg bg-gray-50 p-3 text-sm leading-relaxed text-gray-600">
+          {existingNotes}
+        </p>
+      )}
     </div>
-  );
-}
-
-export function ApplicationDetailHeader({
-  title,
-  ownerName,
-  createdAt,
-  applicationNumber,
-  status,
-  avatarInitial,
-  avatarClassName,
-  isPending,
-  onApprove,
-  onReject,
-}: {
-  title: string;
-  ownerName: string;
-  createdAt: Date | string;
-  applicationNumber?: string | null;
-  status: ApplicationStatus;
-  avatarInitial: string;
-  avatarClassName: string;
-  isPending: boolean;
-  onApprove: () => void;
-  onReject: () => void;
-}) {
-  const config = APPLICATION_STATUS_CONFIG[status];
-
-  return (
-    <header className="mb-6 border-b border-gray-100 pb-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-white ${avatarClassName}`}
-          >
-            {avatarInitial}
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg">
-                {title}
-              </h1>
-              <span
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${config.bg} ${config.color} ${config.border}`}
-              >
-                <span
-                  className="material-symbols-outlined text-[12px]"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  {config.icon}
-                </span>
-                {config.label}
-              </span>
-            </div>
-            <p className="mt-0.5 truncate text-xs text-gray-500">
-              {ownerName} · {format(new Date(createdAt), "MMM d, yyyy")}
-              {applicationNumber && <> · {applicationNumber}</>}
-            </p>
-          </div>
-        </div>
-
-        {isPending && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              size="sm"
-              onClick={onApprove}
-              className="h-8 bg-green-600 px-3 text-xs font-medium hover:bg-green-700"
-            >
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onReject}
-              className="h-8 border-red-200 px-3 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
-            >
-              Reject
-            </Button>
-          </div>
-        )}
-      </div>
-    </header>
   );
 }
 
