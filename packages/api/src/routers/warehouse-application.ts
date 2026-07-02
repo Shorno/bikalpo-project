@@ -8,7 +8,7 @@
  */
 import { ORPCError } from "@orpc/server";
 import { db } from "@bikalpo-project/db";
-import { warehouseApplication, user } from "@bikalpo-project/db/schema";
+import { warehouseApplication } from "@bikalpo-project/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 
@@ -19,34 +19,8 @@ import {
     resolveActiveProductType,
     sharedApplicationFieldsSchema,
 } from "./helpers/application-fields";
-
-// ════════════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════════════
-
-/** Generate a URL-safe slug from a warehouse name, ensuring uniqueness */
-async function generateUniqueWarehouseSlug(warehouseName: string): Promise<string> {
-    const base = warehouseName
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .replace(/-+/g, "-")
-        .slice(0, 50);
-
-    // Check if slug already exists
-    const existing = await db
-        .select({ id: user.id })
-        .from(user)
-        .where(eq(user.warehouseSlug, base))
-        .limit(1);
-
-    if (existing.length === 0) return base;
-
-    // Append random suffix if slug collision
-    const suffix = Math.random().toString(36).slice(2, 6);
-    return `${base}-${suffix}`;
-}
+import { approveWarehouseApplicationById } from "./helpers/approve-application";
+import { createPendingKycForUser, deriveKycStatus, ensurePendingKycForUser, getLatestKycRecord } from "./helpers/kyc-verification";
 
 // ════════════════════════════════════════════════════════════════
 // SCHEMAS
@@ -113,6 +87,8 @@ export const warehouseApplicationRouter = {
                     ...sharedValues,
                 })
                 .returning();
+
+            await createPendingKycForUser(userId);
 
             return application;
         }),
@@ -191,7 +167,14 @@ export const warehouseApplicationRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Warehouse application not found" });
             }
 
-            return application;
+            const latestKyc = await getLatestKycRecord(application.userId);
+            const kycRecord =
+              latestKyc ?? (await ensurePendingKycForUser(application.userId));
+
+            return {
+                ...application,
+                kycStatus: deriveKycStatus(kycRecord.status),
+            };
         }),
 
     // ── Admin: List All Applications ────────────────────────────
@@ -249,49 +232,10 @@ export const warehouseApplicationRouter = {
         })
         .input(reviewApplicationSchema)
         .handler(async ({ input, context }) => {
-            const application = await db.query.warehouseApplication.findFirst({
-                where: eq(warehouseApplication.id, input.applicationId),
+            return approveWarehouseApplicationById(input.applicationId, {
+                adminId: context.session.user.id,
+                adminNotes: input.adminNotes,
             });
-
-            if (!application) {
-                throw new ORPCError("NOT_FOUND", { message: "Warehouse application not found" });
-            }
-
-            if (application.status !== "pending") {
-                throw new ORPCError("CONFLICT", {
-                    message: `Application is already ${application.status}`,
-                });
-            }
-
-            // Update application status
-            await db
-                .update(warehouseApplication)
-                .set({
-                    status: "approved",
-                    adminNotes: input.adminNotes || null,
-                    reviewedBy: context.session.user.id,
-                    reviewedAt: new Date(),
-                })
-                .where(eq(warehouseApplication.id, input.applicationId));
-
-            // Generate a unique warehouse slug
-            const warehouseSlug = await generateUniqueWarehouseSlug(application.warehouseName);
-
-            // Upgrade user role to warehouse and set warehouse fields
-            await db
-                .update(user)
-                .set({
-                    role: "warehouse",
-                    warehouseName: application.warehouseName,
-                    warehouseSlug,
-                    warehouseAddress: application.warehouseAddress,
-                    ownerName: application.ownerName,
-                    warehouseLat: application.latitude || undefined,
-                    warehouseLng: application.longitude || undefined,
-                })
-                .where(eq(user.id, application.userId));
-
-            return { success: true };
         }),
 
     // ── Admin: Reject Application ───────────────────────────────

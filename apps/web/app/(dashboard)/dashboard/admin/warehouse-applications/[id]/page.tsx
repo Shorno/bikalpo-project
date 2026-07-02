@@ -28,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { KycVerifyDialog } from "@/components/features/admin/kyc-verify-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { client, orpc } from "@/utils/orpc";
@@ -46,6 +47,8 @@ export default function WarehouseApplicationDetailPage() {
 
   const [actionType, setActionType] = useState<"approve" | "reject" | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
+  const [verifyKycOpen, setVerifyKycOpen] = useState(false);
+  const [verifyKycNotes, setVerifyKycNotes] = useState("");
 
   const {
     data: application,
@@ -83,6 +86,20 @@ export default function WarehouseApplicationDetailPage() {
     },
     onError: (error) => {
       toast.error(error.message || "Failed to reject");
+    },
+  });
+
+  const verifyKycMutation = useMutation({
+    mutationFn: (params: { userId: string; adminNotes?: string }) =>
+      client.adminUserManagement.verify(params),
+    onSuccess: () => {
+      toast.success("KYC verified");
+      queryClient.invalidateQueries();
+      setVerifyKycOpen(false);
+      setVerifyKycNotes("");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to verify KYC");
     },
   });
 
@@ -136,6 +153,14 @@ export default function WarehouseApplicationDetailPage() {
   const status = application.status as keyof typeof APPLICATION_STATUS_CONFIG;
   const config = APPLICATION_STATUS_CONFIG[status];
   const isPending = application.status === "pending";
+  const kycStatus =
+    (application.kycStatus as
+      | "verified"
+      | "pending"
+      | "failed"
+      | "unverified"
+      | undefined) ?? "unverified";
+  const canVerifyKyc = kycStatus !== "verified";
   const detail = toApplicationDetail(
     application as Record<string, unknown>,
     application.warehouseAddress,
@@ -170,8 +195,12 @@ export default function WarehouseApplicationDetailPage() {
           createdAt={application.createdAt}
           status={status}
           isPending={isPending}
+          kycStatus={kycStatus}
+          canVerifyKyc={canVerifyKyc}
+          isVerifyingKyc={verifyKycMutation.isPending}
           onApprove={() => setActionType("approve")}
           onReject={() => setActionType("reject")}
+          onVerifyKyc={() => setVerifyKycOpen(true)}
         />
 
         <div className="grid gap-6 lg:grid-cols-3">
@@ -344,6 +373,21 @@ export default function WarehouseApplicationDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <KycVerifyDialog
+        open={verifyKycOpen}
+        onOpenChange={setVerifyKycOpen}
+        subjectName={application.warehouseName}
+        notes={verifyKycNotes}
+        onNotesChange={setVerifyKycNotes}
+        isPending={verifyKycMutation.isPending}
+        onConfirm={() =>
+          verifyKycMutation.mutate({
+            userId: application.userId,
+            adminNotes: verifyKycNotes || undefined,
+          })
+        }
+      />
     </section>
   );
 }

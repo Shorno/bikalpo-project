@@ -8,7 +8,7 @@
  */
 import { ORPCError } from "@orpc/server";
 import { db } from "@bikalpo-project/db";
-import { sellerApplication, user, invite, adminInvite } from "@bikalpo-project/db/schema";
+import { sellerApplication, invite, adminInvite } from "@bikalpo-project/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -19,34 +19,8 @@ import {
     resolveActiveProductType,
     sharedApplicationFieldsSchema,
 } from "./helpers/application-fields";
-
-// ════════════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════════════
-
-/** Generate a URL-safe slug from a shop name, ensuring uniqueness */
-async function generateUniqueShopSlug(shopName: string): Promise<string> {
-    const base = shopName
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .replace(/-+/g, "-")
-        .slice(0, 50);
-
-    // Check if slug already exists
-    const existing = await db
-        .select({ id: user.id })
-        .from(user)
-        .where(eq(user.shopSlug, base))
-        .limit(1);
-
-    if (existing.length === 0) return base;
-
-    // Append random suffix if slug collision
-    const suffix = Math.random().toString(36).slice(2, 6);
-    return `${base}-${suffix}`;
-}
+import { approveSellerApplicationById } from "./helpers/approve-application";
+import { createPendingKycForUser, deriveKycStatus, ensurePendingKycForUser, getLatestKycRecord } from "./helpers/kyc-verification";
 
 // ════════════════════════════════════════════════════════════════
 // SCHEMAS
@@ -115,6 +89,8 @@ export const sellerApplicationRouter = {
                     ...sharedValues,
                 })
                 .returning();
+
+            await createPendingKycForUser(userId);
 
             // ── Referral Tracking ───────────────────────────────
             // Check if this user's phone matches any pending invite
@@ -264,7 +240,14 @@ export const sellerApplicationRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Application not found" });
             }
 
-            return application;
+            const latestKyc = await getLatestKycRecord(application.userId);
+            const kycRecord =
+              latestKyc ?? (await ensurePendingKycForUser(application.userId));
+
+            return {
+                ...application,
+                kycStatus: deriveKycStatus(kycRecord.status),
+            };
         }),
 
     // ── Admin: List All Applications ────────────────────────────
@@ -322,216 +305,10 @@ export const sellerApplicationRouter = {
         })
         .input(reviewApplicationSchema)
         .handler(async ({ input, context }) => {
-            const application = await db.query.sellerApplication.findFirst({
-                where: eq(sellerApplication.id, input.applicationId),
+            return approveSellerApplicationById(input.applicationId, {
+                adminId: context.session.user.id,
+                adminNotes: input.adminNotes,
             });
-
-            if (!application) {
-                throw new ORPCError("NOT_FOUND", { message: "Application not found" });
-            }
-
-            if (application.status !== "pending") {
-                throw new ORPCError("CONFLICT", {
-                    message: `Application is already ${application.status}`,
-                });
-            }
-
-            // Determine if seller-enabled based on business type
-            const isSeller = application.businessType === "retail";
-
-            // Update application status
-            await db
-                .update(sellerApplication)
-                .set({
-                    status: "approved",
-                    adminNotes: input.adminNotes || null,
-                    reviewedBy: context.session.user.id,
-                    reviewedAt: new Date(),
-                })
-                .where(eq(sellerApplication.id, input.applicationId));
-
-            // Generate a unique shop slug from the shop name
-            const shopSlug = await generateUniqueShopSlug(application.shopName);
-
-            // Upgrade user role to shop_owner and set capability flags
-            await db
-                .update(user)
-                .set({
-                    role: "shop_owner",
-                    isSeller,
-                    sellerStatus: "approved",
-                    businessType: application.businessType,
-                    shopAddress: application.shopAddress,
-                    shopName: application.shopName,
-                    shopSlug,
-                    ownerName: application.ownerName,
-                    shopLat: application.latitude || undefined,
-                    shopLng: application.longitude || undefined,
-                })
-                .where(eq(user.id, application.userId));
-
-            // ── Auto-Reward on Approval ─────────────────────────
-            // If this user was referred, create reward for the inviter
-            try {
-                const matchingInvite = await db.query.invite.findFirst({
-                    where: and(
-                        eq(invite.invitedUserId, application.userId),
-                        sql`${invite.status} IN ('joined', 'invited', 'subscribed', 'rewarded')`,
-                    ),
-                });
-
-                if (matchingInvite) {
-                    // Check if reward already exists for this invite (prevent duplicates)
-                    const existingRewardResult = await db.execute(
-                        sql`SELECT id FROM reward WHERE invite_id = ${matchingInvite.id} LIMIT 1`
-                    );
-                    const existingRewardRows = Array.isArray(existingRewardResult) ? existingRewardResult : (existingRewardResult as any).rows ?? [];
-                    
-                    if (existingRewardRows.length > 0) {
-                        // Reward already exists — skip
-                    } else {
-                    // Update invite status to subscribed
-                    await db
-                        .update(invite)
-                        .set({
-                            status: "subscribed",
-                            updatedAt: new Date(),
-                        })
-                        .where(eq(invite.id, matchingInvite.id));
-
-                    // Determine actual user type from the application's selected plan
-                    const actualUserType = (application.selectedPlan || "").toLowerCase().includes("wholesal") 
-                        ? "wholesaler" 
-                        : "retailer";
-
-                    // Update invite userType to match actual selection (in case admin chose "pending" or wrong type)
-                    await db
-                        .update(invite)
-                        .set({ userType: actualUserType })
-                        .where(eq(invite.id, matchingInvite.id));
-
-                    // Determine reward amount based on actual user type
-                    const rewardAmount = actualUserType === "wholesaler" ? 150 : 100;
-
-                    // ── Auto Fraud Detection ────────────────────────
-                    let fraudCheck = "pending";
-                    let fraudReason: string | null = null;
-
-                    // Check 1: Did the inviter and invited user register with very similar phones?
-                    const inviterPhoneResult = await db.execute(
-                        sql`SELECT phone_number FROM "user" WHERE id = ${matchingInvite.inviterUserId}`
-                    );
-                    const inviterRows = Array.isArray(inviterPhoneResult) ? inviterPhoneResult : (inviterPhoneResult as any).rows ?? [];
-                    const inviterPhone = (inviterRows[0]?.phone_number || "").replace(/^\+880/, "0");
-                    const invitedPhone = (application.phoneNumber || "").replace(/^\+880/, "0");
-
-                    if (inviterPhone && invitedPhone && inviterPhone === invitedPhone) {
-                        fraudCheck = "flagged";
-                        fraudReason = "Self-referral: inviter and invited user have the same phone number";
-                    }
-
-                    // Check 2: Did the invite happen suspiciously fast (within 2 minutes of account creation)?
-                    if (!fraudReason && matchingInvite.createdAt) {
-                        const inviteTime = new Date(matchingInvite.createdAt).getTime();
-                        const appTime = new Date(application.createdAt).getTime();
-                        const timeDiffMinutes = (appTime - inviteTime) / (1000 * 60);
-                        if (timeDiffMinutes < 2) {
-                            fraudCheck = "flagged";
-                            fraudReason = "Suspicious timing: registration happened within 2 minutes of invite";
-                        }
-                    }
-
-                    // Check 3: Does the inviter have too many rewards already? (>5 rewards = suspicious)
-                    if (!fraudReason) {
-                        const rewardCountResult = await db.execute(
-                            sql`SELECT count(*) as cnt FROM reward WHERE user_id = ${matchingInvite.inviterUserId}`
-                        );
-                        const rewardRows = Array.isArray(rewardCountResult) ? rewardCountResult : (rewardCountResult as any).rows ?? [];
-                        const existingRewards = Number(rewardRows[0]?.cnt ?? 0);
-                        if (existingRewards >= 5) {
-                            fraudCheck = "flagged";
-                            fraudReason = "Multiple accounts detected: inviter has excessive referral rewards";
-                        }
-                    }
-
-                    // Check 4: Same device/IP detection — compare session IPs
-                    if (!fraudReason) {
-                        const inviterSessionResult = await db.execute(
-                            sql`SELECT ip_address, "userAgent" FROM session WHERE "userId" = ${matchingInvite.inviterUserId} ORDER BY "createdAt" DESC LIMIT 1`
-                        );
-                        const inviterSessions = Array.isArray(inviterSessionResult) ? inviterSessionResult : (inviterSessionResult as any).rows ?? [];
-
-                        const invitedSessionResult = await db.execute(
-                            sql`SELECT ip_address, "userAgent" FROM session WHERE "userId" = ${application.userId} ORDER BY "createdAt" DESC LIMIT 1`
-                        );
-                        const invitedSessions = Array.isArray(invitedSessionResult) ? invitedSessionResult : (invitedSessionResult as any).rows ?? [];
-
-                        const inviterIP = inviterSessions[0]?.ip_address;
-                        const invitedIP = invitedSessions[0]?.ip_address;
-                        const inviterUA = inviterSessions[0]?.userAgent;
-                        const invitedUA = invitedSessions[0]?.userAgent;
-
-                        if (inviterIP && invitedIP && inviterIP === invitedIP) {
-                            fraudCheck = "flagged";
-                            fraudReason = `Same device detected: both accounts logged in from IP ${inviterIP}`;
-                            // Also check user agent for stronger signal
-                            if (inviterUA && invitedUA && inviterUA === invitedUA) {
-                                fraudReason = `Same device & browser: both accounts share IP ${inviterIP} and identical browser fingerprint`;
-                            }
-                        }
-                    }
-
-                    // Create reward with fraud status
-                    const rCode = "RWD-" + Math.random().toString(36).slice(2, 8).toUpperCase();
-                    const rewardStatus = fraudCheck === "flagged" ? "rejected" : "approved";
-                    await db.execute(
-                        sql`INSERT INTO reward (reward_code, user_id, invite_id, amount, reward_type, source, status, fraud_check, fraud_reason, created_at, updated_at)
-                            VALUES (
-                                ${rCode},
-                                ${matchingInvite.inviterUserId},
-                                ${matchingInvite.id},
-                                ${rewardAmount},
-                                'referral',
-                                'referral',
-                                ${rewardStatus},
-                                ${fraudCheck},
-                                ${fraudReason},
-                                NOW(),
-                                NOW()
-                            )`
-                    );
-
-                    // If reward is approved (no fraud), credit the wallet and mark as rewarded
-                    if (fraudCheck !== "flagged") {
-                        // Upsert wallet: add to balance or create new
-                        await db.execute(
-                            sql`INSERT INTO wallet (user_id, balance, created_at, updated_at)
-                                VALUES (${matchingInvite.inviterUserId}, ${rewardAmount}, NOW(), NOW())
-                                ON CONFLICT (user_id) DO UPDATE SET
-                                    balance = wallet.balance + ${rewardAmount},
-                                    updated_at = NOW()`
-                        );
-
-                        // Update invite status to "rewarded"
-                        await db
-                            .update(invite)
-                            .set({ status: "rewarded", updatedAt: new Date() })
-                            .where(eq(invite.id, matchingInvite.id));
-                    } else {
-                        // Fraud detected — mark invite as fraud (no money credited)
-                        await db
-                            .update(invite)
-                            .set({ status: "fraud", updatedAt: new Date() })
-                            .where(eq(invite.id, matchingInvite.id));
-                    }
-                    } // end else (no existing reward)
-                }
-            } catch (rewardError) {
-                console.error("[Auto-Reward] Error creating reward:", rewardError);
-                // Non-critical — don't fail approval if reward creation fails
-            }
-
-            return { success: true, isSeller };
         }),
 
     // ── Admin: Reject Application ───────────────────────────────

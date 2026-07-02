@@ -1,5 +1,7 @@
 import { db } from "@bikalpo-project/db";
 import {
+  kycVerification,
+  productType,
   sellerApplication,
   session,
   user,
@@ -13,18 +15,30 @@ import {
   eq,
   gte,
   ilike,
+  isNull,
   or,
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure } from "../index";
+import {
+  deriveKycStatus,
+  ensurePendingKycForUser,
+  verifyKycForUser,
+} from "./helpers/kyc-verification";
 
-// ─── Input schemas ─────────────────────────────────────────────
+// ─── Types & helpers ───────────────────────────────────────────
+
+type AccountStatus = "active" | "pending" | "suspended";
 
 const listInputSchema = z.object({
   role: z.enum(["warehouse", "shop_owner"]).optional(),
-  status: z.enum(["active", "suspended", "all"]).default("all"),
+  status: z.enum(["active", "pending", "suspended", "all"]).default("all"),
+  kyc: z
+    .enum(["all", "verified", "unverified", "pending", "failed"])
+    .default("all"),
+  district: z.string().optional(),
   search: z.string().optional(),
   page: z.number().min(1).default(1),
   pageSize: z.number().min(1).max(100).default(20),
@@ -39,12 +53,120 @@ const suspendInputSchema = z.object({
   reason: z.string().optional(),
 });
 
+const BUSINESS_NATURE_LABELS: Record<string, string> = {
+  retail_shop: "Retail Shop",
+  wholesaler: "Wholesaler",
+  distributor: "Distributor",
+  manufacturer: "Manufacturer",
+  importer: "Importer",
+};
+
+function isUserPending(
+  banned: boolean | null,
+  sellerStatus: string | null | undefined,
+  appStatus: string | null | undefined,
+): boolean {
+  if (banned) return false;
+  return sellerStatus === "pending" || appStatus === "pending";
+}
+
+function deriveAccountStatus(
+  banned: boolean | null,
+  sellerStatus: string | null | undefined,
+  appStatus: string | null | undefined,
+): AccountStatus {
+  if (banned) return "suspended";
+  if (isUserPending(banned, sellerStatus, appStatus)) return "pending";
+  return "active";
+}
+
+function formatBusinessNature(nature: string | null | undefined): string | null {
+  if (!nature) return null;
+  return BUSINESS_NATURE_LABELS[nature] ?? nature.replace(/_/g, " ");
+}
+
+function computeProfileCompletion(
+  app: Record<string, unknown> | null,
+  userRecord: {
+    name: string;
+    email: string;
+    phoneNumber: string | null;
+    shopName: string | null;
+    warehouseName: string | null;
+    ownerName: string | null;
+    image: string | null;
+  },
+): number {
+  const checks = [
+    userRecord.ownerName || app?.ownerName,
+    userRecord.phoneNumber || app?.phoneNumber,
+    userRecord.email || app?.email,
+    app?.profilePhotoUrl || userRecord.image,
+    userRecord.shopName || userRecord.warehouseName || app?.shopName || app?.warehouseName,
+    app?.businessNature || app?.businessCategory,
+    app?.district || app?.area,
+    app?.bankName,
+    app?.documentUrls || app?.documents,
+  ];
+  const filled = checks.filter(Boolean).length;
+  return Math.round((filled / checks.length) * 100);
+}
+
+async function countUsersWithLatestApp(
+  role: "warehouse" | "shop_owner",
+  extraWhere?: ReturnType<typeof sql>,
+) {
+  const table =
+    role === "shop_owner" ? "seller_application" : "warehouse_application";
+  const roleVal = role;
+
+  const result = await db.execute<{ count: number }>(sql`
+    SELECT COUNT(*)::int AS count
+    FROM "user" u
+    LEFT JOIN LATERAL (
+      SELECT status FROM ${sql.raw(table)}
+      WHERE user_id = u.id
+      ORDER BY created_at DESC
+      LIMIT 1
+    ) la ON true
+    WHERE u.role = ${roleVal}
+    ${extraWhere ? sql`AND ${extraWhere}` : sql``}
+  `);
+
+  const rows = Array.isArray(result)
+    ? result
+    : ((result as { rows?: { count: number }[] }).rows ?? []);
+  return Number(rows[0]?.count ?? 0);
+}
+
+async function countUsersWithLatestKyc(
+  role: "warehouse" | "shop_owner",
+  kycStatus: string,
+) {
+  const roleVal = role;
+
+  const result = await db.execute<{ count: number }>(sql`
+    SELECT COUNT(*)::int AS count
+    FROM "user" u
+    LEFT JOIN LATERAL (
+      SELECT status FROM kyc_verification
+      WHERE user_id = u.id
+      ORDER BY created_at DESC
+      LIMIT 1
+    ) lk ON true
+    WHERE u.role = ${roleVal}
+    AND lk.status = ${kycStatus}
+  `);
+
+  const rows = Array.isArray(result)
+    ? result
+    : ((result as { rows?: { count: number }[] }).rows ?? []);
+  return Number(rows[0]?.count ?? 0);
+}
+
 // ─── Router ────────────────────────────────────────────────────
 
 export const adminUserManagementRouter = {
-  /**
-   * List wholesaler/retailer users with pagination, search, and filters.
-   */
   list: adminProcedure
     .route({
       method: "GET",
@@ -54,28 +176,79 @@ export const adminUserManagementRouter = {
     })
     .input(listInputSchema)
     .handler(async ({ input }) => {
-      const { role, status, search, page, pageSize } = input;
+      const { role, status, kyc, district, search, page, pageSize } = input;
       const offset = (page - 1) * pageSize;
 
-      // Only list warehouse and shop_owner roles
-      const roleConditions = role
-        ? [eq(user.role, role)]
-        : [or(eq(user.role, "warehouse"), eq(user.role, "shop_owner"))!];
-
-      const conditions = [...roleConditions];
-
-      // Status filter
-      if (status === "active") {
-        conditions.push(
-          or(eq(user.banned, false), sql`${user.banned} IS NULL`)!,
-        );
-      } else if (status === "suspended") {
-        conditions.push(eq(user.banned, true));
+      if (!role) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "role is required for listing users",
+        });
       }
 
-      // Search
-      if (search) {
-        const term = `%${search}%`;
+      const isRetailer = role === "shop_owner";
+      const appTable = isRetailer ? sellerApplication : warehouseApplication;
+
+      const latestApp = db.$with("latest_app").as(
+        db
+          .selectDistinctOn([appTable.userId], {
+            userId: appTable.userId,
+            appId: appTable.id,
+            applicationNumber: appTable.applicationNumber,
+            appStatus: appTable.status,
+            district: appTable.district,
+            area: appTable.area,
+            businessNature: appTable.businessNature,
+            productTypeId: appTable.productTypeId,
+          })
+          .from(appTable)
+          .orderBy(appTable.userId, desc(appTable.createdAt)),
+      );
+
+      const latestKyc = db.$with("latest_kyc").as(
+        db
+          .selectDistinctOn([kycVerification.userId], {
+            userId: kycVerification.userId,
+            kycStatus: kycVerification.status,
+          })
+          .from(kycVerification)
+          .orderBy(kycVerification.userId, desc(kycVerification.createdAt)),
+      );
+
+      const conditions = [eq(user.role, role)];
+
+      if (status === "suspended") {
+        conditions.push(eq(user.banned, true));
+      } else if (status === "pending") {
+        conditions.push(
+          or(eq(user.banned, false), isNull(user.banned))!,
+          or(
+            eq(user.sellerStatus, "pending"),
+            eq(latestApp.appStatus, "pending"),
+          )!,
+        );
+      } else if (status === "active") {
+        conditions.push(or(eq(user.banned, false), isNull(user.banned))!);
+        conditions.push(
+          sql`NOT (${user.sellerStatus} = 'pending' OR ${latestApp.appStatus} = 'pending')`,
+        );
+      }
+
+      if (kyc === "verified") {
+        conditions.push(eq(latestKyc.kycStatus, "verified"));
+      } else if (kyc === "pending") {
+        conditions.push(eq(latestKyc.kycStatus, "pending"));
+      } else if (kyc === "failed") {
+        conditions.push(eq(latestKyc.kycStatus, "failed"));
+      } else if (kyc === "unverified") {
+        conditions.push(isNull(latestKyc.kycStatus));
+      }
+
+      if (district && district !== "all") {
+        conditions.push(eq(latestApp.district, district));
+      }
+
+      if (search?.trim()) {
+        const term = `%${search.trim()}%`;
         conditions.push(
           or(
             ilike(user.name, term),
@@ -84,13 +257,15 @@ export const adminUserManagementRouter = {
             ilike(user.shopName, term),
             ilike(user.warehouseName, term),
             ilike(user.ownerName, term),
+            ilike(latestApp.applicationNumber, term),
           )!,
         );
       }
 
       const whereClause = and(...conditions);
 
-      const users = await db
+      const rows = await db
+        .with(latestApp, latestKyc)
         .select({
           id: user.id,
           name: user.name,
@@ -98,33 +273,67 @@ export const adminUserManagementRouter = {
           phoneNumber: user.phoneNumber,
           role: user.role,
           banned: user.banned,
-          banReason: user.banReason,
-          // Shop fields
           shopName: user.shopName,
-          shopAddress: user.shopAddress,
-          ownerName: user.ownerName,
-          businessType: user.businessType,
-          isSeller: user.isSeller,
-          sellerStatus: user.sellerStatus,
-          // Warehouse fields
           warehouseName: user.warehouseName,
-          warehouseAddress: user.warehouseAddress,
-          // Dates
+          ownerName: user.ownerName,
+          sellerStatus: user.sellerStatus,
           createdAt: user.createdAt,
+          applicationNumber: latestApp.applicationNumber,
+          appStatus: latestApp.appStatus,
+          district: latestApp.district,
+          area: latestApp.area,
+          businessNature: latestApp.businessNature,
+          productTypeName: productType.name,
+          latestKycStatus: latestKyc.kycStatus,
         })
         .from(user)
+        .leftJoin(latestApp, eq(user.id, latestApp.userId))
+        .leftJoin(latestKyc, eq(user.id, latestKyc.userId))
+        .leftJoin(productType, eq(latestApp.productTypeId, productType.id))
         .where(whereClause)
         .orderBy(desc(user.createdAt))
         .limit(pageSize)
         .offset(offset);
 
-      // Total count
       const countResult = await db
+        .with(latestApp, latestKyc)
         .select({ count: count() })
         .from(user)
+        .leftJoin(latestApp, eq(user.id, latestApp.userId))
+        .leftJoin(latestKyc, eq(user.id, latestKyc.userId))
+        .leftJoin(productType, eq(latestApp.productTypeId, productType.id))
         .where(whereClause);
 
-      const totalCount = countResult[0]?.count || 0;
+      const totalCount = countResult[0]?.count ?? 0;
+
+      const users = rows.map((row) => {
+        const businessName = isRetailer
+          ? row.shopName || row.name
+          : row.warehouseName || row.name;
+        const location = row.district || row.area || null;
+        const kycStatus = deriveKycStatus(row.latestKycStatus);
+        const accountStatus = deriveAccountStatus(
+          row.banned,
+          row.sellerStatus,
+          row.appStatus,
+        );
+        const typeLabel = isRetailer
+          ? row.productTypeName || row.businessNature || null
+          : formatBusinessNature(row.businessNature);
+
+        return {
+          id: row.id,
+          applicationNumber: row.applicationNumber,
+          businessName,
+          ownerName: row.ownerName || row.name,
+          phoneNumber: row.phoneNumber,
+          location,
+          kycStatus,
+          accountStatus,
+          typeLabel,
+          createdAt: row.createdAt,
+        };
+      });
 
       return {
         users,
@@ -137,9 +346,6 @@ export const adminUserManagementRouter = {
       };
     }),
 
-  /**
-   * Get KPI stats for wholesalers and retailers.
-   */
   getStats: adminProcedure
     .route({
       method: "GET",
@@ -155,34 +361,36 @@ export const adminUserManagementRouter = {
     .handler(async ({ input }) => {
       const { role } = input;
 
-      const roleFilter = role
-        ? eq(user.role, role)
-        : or(eq(user.role, "warehouse"), eq(user.role, "shop_owner"))!;
+      if (!role) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "role is required for stats",
+        });
+      }
 
-      // Total
+      const roleFilter = eq(user.role, role);
+
       const totalResult = await db
         .select({ count: count() })
         .from(user)
         .where(roleFilter);
 
-      // Active (not banned)
-      const activeResult = await db
-        .select({ count: count() })
-        .from(user)
-        .where(
-          and(
-            roleFilter,
-            or(eq(user.banned, false), sql`${user.banned} IS NULL`)!,
-          ),
-        );
-
-      // Suspended
       const suspendedResult = await db
         .select({ count: count() })
         .from(user)
         .where(and(roleFilter, eq(user.banned, true)));
 
-      // New this month
+      const pendingCount = await countUsersWithLatestApp(
+        role,
+        sql`(u.banned IS NOT TRUE) AND (u.seller_status = 'pending' OR la.status = 'pending')`,
+      );
+
+      const activeCount = await countUsersWithLatestApp(
+        role,
+        sql`(u.banned IS NOT TRUE) AND NOT (u.seller_status = 'pending' OR la.status = 'pending')`,
+      );
+
+      const verifiedKycCount = await countUsersWithLatestKyc(role, "verified");
+
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
@@ -194,17 +402,49 @@ export const adminUserManagementRouter = {
 
       return {
         stats: {
-          total: totalResult[0]?.count || 0,
-          active: activeResult[0]?.count || 0,
-          suspended: suspendedResult[0]?.count || 0,
-          newThisMonth: newThisMonthResult[0]?.count || 0,
+          total: totalResult[0]?.count ?? 0,
+          active: activeCount,
+          pending: pendingCount,
+          suspended: suspendedResult[0]?.count ?? 0,
+          verifiedKyc: verifiedKycCount,
+          newThisMonth: newThisMonthResult[0]?.count ?? 0,
         },
       };
     }),
 
-  /**
-   * Get a single user's full details including login activity and KYC status.
-   */
+  getFilterOptions: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/users/filter-options",
+      tags: ["User Management"],
+      summary: "Get filter dropdown options for user list",
+    })
+    .input(
+      z.object({
+        role: z.enum(["warehouse", "shop_owner"]),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const appTable =
+        input.role === "shop_owner"
+          ? sellerApplication
+          : warehouseApplication;
+
+      const rows = await db
+        .selectDistinct({ district: appTable.district })
+        .from(appTable)
+        .where(
+          sql`${appTable.district} IS NOT NULL AND ${appTable.district} != ''`,
+        );
+
+      const districts = rows
+        .map((r) => r.district)
+        .filter((d): d is string => Boolean(d))
+        .sort((a, b) => a.localeCompare(b));
+
+      return { districts };
+    }),
+
   getById: adminProcedure
     .route({
       method: "GET",
@@ -222,7 +462,6 @@ export const adminUserManagementRouter = {
         throw new ORPCError("NOT_FOUND", { message: "User not found" });
       }
 
-      // Get latest session for login activity
       const latestSession = await db
         .select({
           createdAt: session.createdAt,
@@ -234,55 +473,57 @@ export const adminUserManagementRouter = {
         .orderBy(desc(session.createdAt))
         .limit(1);
 
-      // Get KYC / application status
-      let applicationStatus: {
-        type: string;
-        status: string;
-        appliedAt: Date | null;
-        reviewedAt: Date | null;
-      } | null = null;
+      let application: Record<string, unknown> | null = null;
+      let applicationId: string | null = null;
 
       if (found.role === "shop_owner") {
-        const app = await db
-          .select({
-            status: sellerApplication.status,
-            createdAt: sellerApplication.createdAt,
-            reviewedAt: sellerApplication.reviewedAt,
-          })
-          .from(sellerApplication)
-          .where(eq(sellerApplication.userId, input.userId))
-          .orderBy(desc(sellerApplication.createdAt))
-          .limit(1);
-
-        if (app[0]) {
-          applicationStatus = {
-            type: "seller",
-            status: app[0].status,
-            appliedAt: app[0].createdAt,
-            reviewedAt: app[0].reviewedAt,
-          };
+        const apps = await db.query.sellerApplication.findMany({
+          where: eq(sellerApplication.userId, input.userId),
+          orderBy: [desc(sellerApplication.createdAt)],
+          limit: 1,
+          with: {
+            productType: { columns: { id: true, name: true } },
+          },
+        });
+        const app = apps[0];
+        if (app) {
+          application = app as Record<string, unknown>;
+          applicationId = app.id;
         }
       } else if (found.role === "warehouse") {
-        const app = await db
-          .select({
-            status: warehouseApplication.status,
-            createdAt: warehouseApplication.createdAt,
-            reviewedAt: warehouseApplication.reviewedAt,
-          })
-          .from(warehouseApplication)
-          .where(eq(warehouseApplication.userId, input.userId))
-          .orderBy(desc(warehouseApplication.createdAt))
-          .limit(1);
-
-        if (app[0]) {
-          applicationStatus = {
-            type: "warehouse",
-            status: app[0].status,
-            appliedAt: app[0].createdAt,
-            reviewedAt: app[0].reviewedAt,
-          };
+        const apps = await db.query.warehouseApplication.findMany({
+          where: eq(warehouseApplication.userId, input.userId),
+          orderBy: [desc(warehouseApplication.createdAt)],
+          limit: 1,
+          with: {
+            productType: { columns: { id: true, name: true } },
+          },
+        });
+        const app = apps[0];
+        if (app) {
+          application = app as Record<string, unknown>;
+          applicationId = app.id;
         }
       }
+
+      const appStatus = application?.status as string | undefined;
+      let latestKyc = await db.query.kycVerification.findFirst({
+        where: eq(kycVerification.userId, input.userId),
+        orderBy: [desc(kycVerification.createdAt)],
+      });
+
+      if (
+        (found.role === "shop_owner" || found.role === "warehouse") &&
+        !latestKyc
+      ) {
+        latestKyc = await ensurePendingKycForUser(input.userId);
+      }
+
+      const kycStatus = deriveKycStatus(latestKyc?.status);
+      const applicationNumber = application?.applicationNumber as
+        | string
+        | null
+        | undefined;
 
       return {
         user: {
@@ -294,7 +535,6 @@ export const adminUserManagementRouter = {
           banned: found.banned,
           banReason: found.banReason,
           image: found.image,
-          // Shop fields
           shopName: found.shopName,
           shopSlug: found.shopSlug,
           shopAddress: found.shopAddress,
@@ -302,16 +542,13 @@ export const adminUserManagementRouter = {
           businessType: found.businessType,
           isSeller: found.isSeller,
           sellerStatus: found.sellerStatus,
-          // Warehouse fields
           warehouseName: found.warehouseName,
           warehouseSlug: found.warehouseSlug,
           warehouseAddress: found.warehouseAddress,
-          // Location coordinates
           shopLat: found.shopLat,
           shopLng: found.shopLng,
           warehouseLat: found.warehouseLat,
           warehouseLng: found.warehouseLng,
-          // Dates
           createdAt: found.createdAt,
           updatedAt: found.updatedAt,
         },
@@ -322,13 +559,74 @@ export const adminUserManagementRouter = {
               ipAddress: latestSession[0].ipAddress,
             }
           : null,
-        applicationStatus,
+        application,
+        applicationId,
+        accountMeta: {
+          displayId:
+            applicationNumber ||
+            `${found.role === "warehouse" ? "WH" : "SEL"}-${found.id.slice(0, 8).toUpperCase()}`,
+          kycStatus,
+          kycId: latestKyc?.id ?? null,
+          kycReviewedAt:
+            latestKyc?.status === "verified" ? latestKyc.reviewedAt : null,
+          canVerifyKyc: kycStatus !== "verified",
+          profileCompletion: computeProfileCompletion(application, found),
+          accountStatus: deriveAccountStatus(
+            found.banned,
+            found.sellerStatus,
+            appStatus,
+          ),
+        },
+        applicationStatus: application
+          ? {
+              type: found.role === "shop_owner" ? "seller" : "warehouse",
+              status: appStatus ?? "unknown",
+              appliedAt: application.createdAt as Date,
+              reviewedAt: (application.reviewedAt as Date | null) ?? null,
+            }
+          : null,
       };
     }),
 
-  /**
-   * Suspend a user (set banned = true).
-   */
+  verify: adminProcedure
+    .route({
+      method: "POST",
+      path: "/admin/users/{userId}/verify",
+      tags: ["User Management"],
+      summary: "Verify a user's KYC documents (independent of application approval)",
+    })
+    .input(
+      z.object({
+        userId: z.string().min(1),
+        adminNotes: z.string().optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const found = await db.query.user.findFirst({
+        where: eq(user.id, input.userId),
+      });
+
+      if (!found) {
+        throw new ORPCError("NOT_FOUND", { message: "User not found" });
+      }
+
+      if (found.role !== "shop_owner" && found.role !== "warehouse") {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Only retailer and wholesaler users can be KYC verified",
+        });
+      }
+
+      const updated = await verifyKycForUser(input.userId, {
+        adminId: context.session.user.id,
+        adminNotes: input.adminNotes,
+      });
+
+      return {
+        success: true,
+        kycStatus: updated.status,
+      };
+    }),
+
   suspend: adminProcedure
     .route({
       method: "POST",
@@ -355,9 +653,6 @@ export const adminUserManagementRouter = {
       return { success: true };
     }),
 
-  /**
-   * Activate a suspended user (set banned = false).
-   */
   activate: adminProcedure
     .route({
       method: "POST",
@@ -375,9 +670,6 @@ export const adminUserManagementRouter = {
       return { success: true };
     }),
 
-  /**
-   * Update basic user info (admin edit).
-   */
   updateInfo: adminProcedure
     .route({
       method: "PATCH",
@@ -400,7 +692,6 @@ export const adminUserManagementRouter = {
     .handler(async ({ input }) => {
       const { userId, ...updates } = input;
 
-      // Remove undefined values
       const cleanUpdates = Object.fromEntries(
         Object.entries(updates).filter(([_, v]) => v !== undefined),
       );

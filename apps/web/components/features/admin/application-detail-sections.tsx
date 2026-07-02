@@ -8,8 +8,13 @@ import {
   GENDERS,
   type DocumentUrls,
 } from "@/constants/seller-registration";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  KYC_STATUS_CONFIG,
+  type KycStatusKey,
+} from "@/components/features/admin/kyc-verify-dialog";
 
 export const APPLICATION_STATUS_CONFIG = {
   pending: {
@@ -239,18 +244,27 @@ export function ApplicationReviewHero({
   createdAt,
   status,
   isPending,
+  kycStatus = "unverified",
+  canVerifyKyc = false,
+  isVerifyingKyc = false,
   onApprove,
   onReject,
+  onVerifyKyc,
 }: {
   data: ApplicationDetailData;
   pageTitle: string;
   createdAt: Date | string;
   status: ApplicationStatus;
   isPending: boolean;
+  kycStatus?: KycStatusKey;
+  canVerifyKyc?: boolean;
+  isVerifyingKyc?: boolean;
   onApprove: () => void;
   onReject: () => void;
+  onVerifyKyc?: () => void;
 }) {
   const config = APPLICATION_STATUS_CONFIG[status];
+  const kycConfig = KYC_STATUS_CONFIG[kycStatus];
   const locationHint = formatPersonalLocationHint(data);
 
   return (
@@ -323,6 +337,13 @@ export function ApplicationReviewHero({
               label="Submitted"
               value={format(new Date(createdAt), "d MMM yyyy")}
             />
+            <HeroFieldRow label="KYC">
+              <span
+                className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-tight ${kycConfig.bg} ${kycConfig.color} ${kycConfig.border}`}
+              >
+                {kycConfig.label}
+              </span>
+            </HeroFieldRow>
             {isPending && (
               <HeroFieldRow label="Review" value="Typically 24–72 hrs" />
             )}
@@ -343,6 +364,22 @@ export function ApplicationReviewHero({
                 className="h-8 flex-1 border-red-200 text-xs text-red-600 hover:bg-red-50"
               >
                 Reject
+              </Button>
+            </div>
+          )}
+          {canVerifyKyc && onVerifyKyc && (
+            <div className={isPending ? "mt-2" : "mt-4"}>
+              <Button
+                size="sm"
+                onClick={onVerifyKyc}
+                disabled={isVerifyingKyc}
+                className="h-8 w-full bg-green-600 text-xs hover:bg-green-700"
+              >
+                {isVerifyingKyc ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  "Verify KYC"
+                )}
               </Button>
             </div>
           )}
