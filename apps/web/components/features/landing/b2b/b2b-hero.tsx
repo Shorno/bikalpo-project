@@ -3,6 +3,8 @@
 import Link from "next/link";
 
 export function B2bHero() {
+  const registrationRoles = ["Warehouse", "Retail shop", "Restaurant"];
+
   return (
     <section className="relative py-16 sm:py-24 overflow-hidden bg-gradient-to-br from-[#f8faff] via-[#eef2ff] to-[#f8f9fc]">
       {/* Decorative blurs */}
@@ -49,11 +51,15 @@ export function B2bHero() {
 
             {/* Subheadline */}
             <p className="text-lg text-slate-600 mb-2 max-w-xl leading-relaxed">
-              Bangladesh&apos;s Digital Wholesale Network — Warehouse, Shop & Restaurant
+              Bangladesh&apos;s Digital Wholesale Network — Warehouse, Shop &
+              Restaurant
             </p>
             <p
               className="text-base text-slate-500 mb-8 max-w-xl"
-              style={{ fontFamily: "'Hind Siliguri', sans-serif", lineHeight: 1.8 }}
+              style={{
+                fontFamily: "'Hind Siliguri', sans-serif",
+                lineHeight: 1.8,
+              }}
             >
               এক প্ল্যাটফর্মে সম্পূর্ণ ডিজিটাল ট্রেড ও অর্ডার সিস্টেম।
             </p>
@@ -62,10 +68,13 @@ export function B2bHero() {
             <div className="flex flex-wrap gap-4">
               <Link
                 href="/b2b/register"
+                aria-label="Register as a warehouse, retail shop, or restaurant"
                 className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-br from-[#003178] to-[#0d47a1] text-white font-bold text-[15px] rounded-xl shadow-[0_4px_24px_rgba(0,49,120,0.25)] hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(0,49,120,0.35)] transition-all"
               >
-                Apply for Free Trial
-                <span className="material-symbols-outlined text-lg">arrow_forward</span>
+                Register Your Business
+                <span className="material-symbols-outlined text-lg">
+                  arrow_forward
+                </span>
               </Link>
               <Link
                 href="#how-it-works"
@@ -73,6 +82,20 @@ export function B2bHero() {
               >
                 See How It Works
               </Link>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+              <span className="font-semibold text-[#003178]">
+                One registration for
+              </span>
+              {registrationRoles.map((role) => (
+                <span
+                  key={role}
+                  className="inline-flex items-center rounded-full border border-[#003178]/10 bg-white/70 px-3 py-1 text-xs font-bold text-slate-600 shadow-sm"
+                >
+                  {role}
+                </span>
+              ))}
             </div>
           </div>
 
@@ -99,13 +122,28 @@ export function B2bHero() {
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: "Orders", value: "1,247", color: "text-[#42a5f5]" },
-                    { label: "Revenue", value: "৳84K", color: "text-[#66bb6a]" },
+                    {
+                      label: "Orders",
+                      value: "1,247",
+                      color: "text-[#42a5f5]",
+                    },
+                    {
+                      label: "Revenue",
+                      value: "৳84K",
+                      color: "text-[#66bb6a]",
+                    },
                     { label: "Growth", value: "+23%", color: "text-[#ffa726]" },
                   ].map((stat) => (
-                    <div key={stat.label} className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06]">
-                      <div className="text-xs text-white/40 mb-1">{stat.label}</div>
-                      <div className={`text-lg font-bold ${stat.color}`}>{stat.value}</div>
+                    <div
+                      key={stat.label}
+                      className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06]"
+                    >
+                      <div className="text-xs text-white/40 mb-1">
+                        {stat.label}
+                      </div>
+                      <div className={`text-lg font-bold ${stat.color}`}>
+                        {stat.value}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -113,36 +151,59 @@ export function B2bHero() {
                 {/* Chart */}
                 <div className="rounded-xl p-4 bg-white/[0.03] border border-white/[0.05]">
                   <div className="flex items-end gap-2 h-24 justify-between px-2">
-                    {[40, 65, 45, 80, 60, 90, 75, 95, 70, 85, 92, 88].map((h, i) => (
-                      <div
-                        key={`bar-${i}`}
-                        className="flex-1 rounded-t-sm min-w-[6px]"
-                        style={{
-                          height: `${h}%`,
-                          background: `linear-gradient(180deg, rgba(66,165,245,${0.6 + (h / 100) * 0.4}) 0%, rgba(0,49,120,0.3) 100%)`,
-                        }}
-                      />
-                    ))}
+                    {[40, 65, 45, 80, 60, 90, 75, 95, 70, 85, 92, 88].map(
+                      (h, i) => (
+                        <div
+                          key={`bar-${i}`}
+                          className="flex-1 rounded-t-sm min-w-[6px]"
+                          style={{
+                            height: `${h}%`,
+                            background: `linear-gradient(180deg, rgba(66,165,245,${0.6 + (h / 100) * 0.4}) 0%, rgba(0,49,120,0.3) 100%)`,
+                          }}
+                        />
+                      ),
+                    )}
                   </div>
                 </div>
 
                 {/* Order list */}
                 <div className="space-y-2">
                   {[
-                    { name: "Rahim Store", amount: "৳12,500", status: "Completed" },
-                    { name: "Karim Mart", amount: "৳8,200", status: "Processing" },
-                    { name: "City Grocers", amount: "৳15,800", status: "Pending" },
+                    {
+                      name: "Rahim Store",
+                      amount: "৳12,500",
+                      status: "Completed",
+                    },
+                    {
+                      name: "Karim Mart",
+                      amount: "৳8,200",
+                      status: "Processing",
+                    },
+                    {
+                      name: "City Grocers",
+                      amount: "৳15,800",
+                      status: "Pending",
+                    },
                   ].map((order) => (
-                    <div key={order.name} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03]">
+                    <div
+                      key={order.name}
+                      className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03]"
+                    >
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-[#003178]/30 text-[#90caf9]">
                           {order.name[0]}
                         </div>
-                        <span className="text-sm font-medium text-white/70">{order.name}</span>
+                        <span className="text-sm font-medium text-white/70">
+                          {order.name}
+                        </span>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-semibold text-white/80">{order.amount}</div>
-                        <div className="text-xs text-white/35">{order.status}</div>
+                        <div className="text-sm font-semibold text-white/80">
+                          {order.amount}
+                        </div>
+                        <div className="text-xs text-white/35">
+                          {order.status}
+                        </div>
                       </div>
                     </div>
                   ))}

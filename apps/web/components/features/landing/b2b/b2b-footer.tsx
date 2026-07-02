@@ -25,54 +25,34 @@ const footerLinks = {
 
 export function B2bFooter() {
   return (
-    <footer className="bg-gradient-to-b from-[#0a0e27] to-[#060920] pt-20 pb-10">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-12 mb-16">
-          {/* Brand */}
+    <footer className="border-t border-border bg-card pt-16 pb-10">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="mb-16 grid grid-cols-2 gap-12 lg:grid-cols-5">
           <div className="col-span-2">
-            <div className="flex items-center gap-2 mb-6">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-extrabold text-sm bg-gradient-to-br from-[#1565c0] to-[#42a5f5]">
+            <div className="mb-6 flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
                 B
               </div>
-              <span
-                className="text-xl font-extrabold tracking-tight text-white"
-                style={{ fontFamily: "'Manrope', sans-serif" }}
-              >
+              <span className="text-xl font-semibold tracking-tight text-foreground">
                 Bikalpo Trade
               </span>
             </div>
-            <p className="text-sm text-white/40 mb-6 max-w-xs leading-relaxed">
+            <p className="mb-6 max-w-xs text-sm leading-relaxed text-muted-foreground">
               Bangladesh&apos;s digital wholesale trade network. Connecting warehouses, shops, and restaurants in one powerful platform.
             </p>
-            <div className="text-sm text-white/35 space-y-1.5 mb-6">
+            <div className="mb-6 space-y-1.5 text-sm text-muted-foreground">
               <p>38, Bangla Bazar, Barisal, Bangladesh</p>
               <p>Mob: +88 01XXXXXXXXX</p>
               <p>Email: support@bikalpo.com</p>
             </div>
-            <div className="flex gap-3">
-              {["language", "alternate_email", "forum"].map((icon) => (
-                <div
-                  key={icon}
-                  className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.06] border border-white/[0.08] text-white/50 hover:bg-[#003178]/50 hover:text-white cursor-pointer transition-all"
-                >
-                  <span className="material-symbols-outlined text-sm">{icon}</span>
-                </div>
-              ))}
-            </div>
           </div>
 
-          {/* For Business */}
           <div>
-            <h5
-              className="font-bold mb-6 text-sm text-white/90"
-              style={{ fontFamily: "'Manrope', sans-serif" }}
-            >
-              For Business
-            </h5>
+            <h5 className="mb-6 text-sm font-semibold text-foreground">For Business</h5>
             <ul className="space-y-3">
               {footerLinks.forBusiness.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="text-sm text-white/40 hover:text-white/80 transition-colors">
+                  <Link href={link.href} className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                     {link.label}
                   </Link>
                 </li>
@@ -80,18 +60,12 @@ export function B2bFooter() {
             </ul>
           </div>
 
-          {/* Resources */}
           <div>
-            <h5
-              className="font-bold mb-6 text-sm text-white/90"
-              style={{ fontFamily: "'Manrope', sans-serif" }}
-            >
-              Resources
-            </h5>
+            <h5 className="mb-6 text-sm font-semibold text-foreground">Resources</h5>
             <ul className="space-y-3">
               {footerLinks.resources.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="text-sm text-white/40 hover:text-white/80 transition-colors">
+                  <Link href={link.href} className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                     {link.label}
                   </Link>
                 </li>
@@ -99,18 +73,12 @@ export function B2bFooter() {
             </ul>
           </div>
 
-          {/* Company */}
           <div>
-            <h5
-              className="font-bold mb-6 text-sm text-white/90"
-              style={{ fontFamily: "'Manrope', sans-serif" }}
-            >
-              Company
-            </h5>
+            <h5 className="mb-6 text-sm font-semibold text-foreground">Company</h5>
             <ul className="space-y-3">
               {footerLinks.company.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="text-sm text-white/40 hover:text-white/80 transition-colors">
+                  <Link href={link.href} className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                     {link.label}
                   </Link>
                 </li>
@@ -119,13 +87,12 @@ export function B2bFooter() {
           </div>
         </div>
 
-        {/* Bottom */}
-        <div className="pt-8 border-t border-white/[0.06] flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-white/30">© 2026 Bikalpo. All Rights Reserved. Bangladesh.</p>
+        <div className="flex flex-col items-center justify-between gap-4 border-t border-border pt-8 md:flex-row">
+          <p className="text-xs text-muted-foreground">© 2026 Bikalpo. All Rights Reserved. Bangladesh.</p>
           <div className="flex gap-6">
-            <span className="text-xs text-white/30 cursor-pointer hover:text-white/60 transition-colors">Terms of Service</span>
-            <span className="text-xs text-white/30 cursor-pointer hover:text-white/60 transition-colors">Privacy Policy</span>
-            <span className="text-xs text-white/30 cursor-pointer hover:text-white/60 transition-colors">Cookie Settings</span>
+            <span className="cursor-pointer text-xs text-muted-foreground transition-colors hover:text-foreground">Terms of Service</span>
+            <span className="cursor-pointer text-xs text-muted-foreground transition-colors hover:text-foreground">Privacy Policy</span>
+            <span className="cursor-pointer text-xs text-muted-foreground transition-colors hover:text-foreground">Cookie Settings</span>
           </div>
         </div>
       </div>

@@ -80,10 +80,10 @@ export function InternalGroupModal({
     orpc.deliveryman.createGroup.mutationOptions({
       onSuccess: () => {
         void queryClient.invalidateQueries({
-          queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey({} as any),
+          queryKey: orpc.warehouse.getDeliveryManagementInvoices.key(),
         });
         void queryClient.invalidateQueries({
-          queryKey: orpc.warehouse.getOpenDeliveryGroups.queryKey(),
+          queryKey: orpc.warehouse.getOpenDeliveryGroups.key(),
         });
       },
     }),
@@ -93,10 +93,10 @@ export function InternalGroupModal({
     orpc.deliveryman.addInvoicesToGroup.mutationOptions({
       onSuccess: () => {
         void queryClient.invalidateQueries({
-          queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey({} as any),
+          queryKey: orpc.warehouse.getDeliveryManagementInvoices.key(),
         });
         void queryClient.invalidateQueries({
-          queryKey: orpc.warehouse.getOpenDeliveryGroups.queryKey(),
+          queryKey: orpc.warehouse.getOpenDeliveryGroups.key(),
         });
       },
     }),
@@ -148,7 +148,9 @@ export function InternalGroupModal({
       onOpenChange(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to save delivery group",
+        error instanceof Error
+          ? error.message
+          : "Failed to save delivery group",
       );
     }
   };

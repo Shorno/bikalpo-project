@@ -13,6 +13,12 @@ import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, adminProcedure } from "../index";
+import {
+    buildSharedApplicationValues,
+    generateApplicationNumber,
+    resolveActiveProductType,
+    sharedApplicationFieldsSchema,
+} from "./helpers/application-fields";
 
 // ════════════════════════════════════════════════════════════════
 // HELPERS
@@ -46,26 +52,9 @@ async function generateUniqueWarehouseSlug(warehouseName: string): Promise<strin
 // SCHEMAS
 // ════════════════════════════════════════════════════════════════
 
-const submitApplicationSchema = z.object({
+const submitApplicationSchema = sharedApplicationFieldsSchema.extend({
     warehouseName: z.string().min(2).max(100),
-    ownerName: z.string().min(2).max(100),
-    phoneNumber: z.string().min(10),
     warehouseAddress: z.string().min(5).max(500),
-    tradeLicenseNumber: z.string().optional(),
-    documents: z.array(z.string()).optional(),
-    // Business profile
-    businessCategory: z.string().optional(),
-    yearsInBusiness: z.string().optional(),
-    monthlyRevenue: z.string().optional(),
-    // Location
-    latitude: z.string().optional(),
-    longitude: z.string().optional(),
-    area: z.string().optional(),
-    district: z.string().optional(),
-    division: z.string().optional(),
-    postCode: z.string().optional(),
-    // Plan
-    selectedPlan: z.string().optional(),
 });
 
 const reviewApplicationSchema = z.object({
@@ -105,26 +94,23 @@ export const warehouseApplicationRouter = {
                 });
             }
 
+            const productTypeRecord = input.productTypeId
+                ? await resolveActiveProductType(input.productTypeId)
+                : null;
+            const applicationNumber = await generateApplicationNumber("WAREHOUSE");
+            const sharedValues = buildSharedApplicationValues(
+                input,
+                productTypeRecord?.name,
+            );
+
             const [application] = await db
                 .insert(warehouseApplication)
                 .values({
                     userId,
+                    applicationNumber,
                     warehouseName: input.warehouseName,
-                    ownerName: input.ownerName,
-                    phoneNumber: input.phoneNumber,
                     warehouseAddress: input.warehouseAddress,
-                    tradeLicenseNumber: input.tradeLicenseNumber || null,
-                    documents: input.documents || [],
-                    businessCategory: input.businessCategory || null,
-                    yearsInBusiness: input.yearsInBusiness || null,
-                    monthlyRevenue: input.monthlyRevenue || null,
-                    latitude: input.latitude || null,
-                    longitude: input.longitude || null,
-                    area: input.area || null,
-                    district: input.district || null,
-                    division: input.division || null,
-                    postCode: input.postCode || null,
-                    selectedPlan: input.selectedPlan || null,
+                    ...sharedValues,
                 })
                 .returning();
 
@@ -363,26 +349,23 @@ export const warehouseApplicationRouter = {
 
             // If no existing application, create a new one
             if (!existing) {
+                const productTypeRecord = input.productTypeId
+                    ? await resolveActiveProductType(input.productTypeId)
+                    : null;
+                const applicationNumber = await generateApplicationNumber("WAREHOUSE");
+                const sharedValues = buildSharedApplicationValues(
+                    input,
+                    productTypeRecord?.name,
+                );
+
                 const [application] = await db
                     .insert(warehouseApplication)
                     .values({
                         userId,
+                        applicationNumber,
                         warehouseName: input.warehouseName,
-                        ownerName: input.ownerName,
-                        phoneNumber: input.phoneNumber,
                         warehouseAddress: input.warehouseAddress,
-                        tradeLicenseNumber: input.tradeLicenseNumber || null,
-                        documents: input.documents || [],
-                        businessCategory: input.businessCategory || null,
-                        yearsInBusiness: input.yearsInBusiness || null,
-                        monthlyRevenue: input.monthlyRevenue || null,
-                        latitude: input.latitude || null,
-                        longitude: input.longitude || null,
-                        area: input.area || null,
-                        district: input.district || null,
-                        division: input.division || null,
-                        postCode: input.postCode || null,
-                        selectedPlan: input.selectedPlan || null,
+                        ...sharedValues,
                     })
                     .returning();
                 return application;
@@ -394,26 +377,21 @@ export const warehouseApplicationRouter = {
                 });
             }
 
+            const productTypeRecord = input.productTypeId
+                ? await resolveActiveProductType(input.productTypeId)
+                : null;
+            const sharedValues = buildSharedApplicationValues(
+                input,
+                productTypeRecord?.name,
+            );
+
             // Update the existing application and reset to pending
             const [updated] = await db
                 .update(warehouseApplication)
                 .set({
                     warehouseName: input.warehouseName,
-                    ownerName: input.ownerName,
-                    phoneNumber: input.phoneNumber,
                     warehouseAddress: input.warehouseAddress,
-                    tradeLicenseNumber: input.tradeLicenseNumber || null,
-                    documents: input.documents || [],
-                    businessCategory: input.businessCategory || null,
-                    yearsInBusiness: input.yearsInBusiness || null,
-                    monthlyRevenue: input.monthlyRevenue || null,
-                    latitude: input.latitude || null,
-                    longitude: input.longitude || null,
-                    area: input.area || null,
-                    district: input.district || null,
-                    division: input.division || null,
-                    postCode: input.postCode || null,
-                    selectedPlan: input.selectedPlan || null,
+                    ...sharedValues,
                     status: "pending",
                     adminNotes: null,
                     reviewedBy: null,

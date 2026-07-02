@@ -7,32 +7,50 @@ import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-export const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (error, query) => {
-      if (typeof window !== "undefined") {
-        toast.error(`Error: ${error.message}`, {
-          action: {
-            label: "retry",
-            onClick: query.invalidate,
+const queryCache = new QueryCache({
+  onError: (error, query) => {
+    if (typeof window !== "undefined") {
+      toast.error(`Error: ${error.message}`, {
+        id: `query-error-${query.queryHash}`,
+        action: {
+          label: "retry",
+          onClick: () => {
+            void queryClient.invalidateQueries({
+              queryKey: query.queryKey,
+              exact: true,
+            });
           },
-        });
-      }
-    },
-  }),
+        },
+      });
+    }
+  },
+});
+
+export const queryClient = new QueryClient({
+  queryCache,
 });
 
 export const link = new RPCLink({
   url: `${env.NEXT_PUBLIC_SERVER_URL}/rpc`,
-  async fetch(url, options: RequestInit | undefined) {
+  async fetch(request, init, _options, path) {
+    const requestInfo = {
+      method: request.method,
+      url: request.url,
+      path: path.join("."),
+    };
+
     try {
-      const response = await fetch(url, {
-        ...options,
+      const response = await fetch(request, {
+        ...init,
         credentials: "include",
       });
       if (!response.ok) {
         const errText = await response.clone().text();
-        console.error("orpc response error", { status: response.status, url, body: errText.substring(0, 500) });
+        console.error("orpc response error", {
+          ...requestInfo,
+          status: response.status,
+          body: errText.substring(0, 500),
+        });
       }
       return response;
     } catch (error: any) {
@@ -40,7 +58,7 @@ export const link = new RPCLink({
       if (error?.name === "AbortError" || error instanceof DOMException) {
         throw error;
       }
-      console.error("orpc fetch failed", { error, url });
+      console.error("orpc fetch failed", { ...requestInfo, error });
       if (error?.cause?.code === "ECONNREFUSED") {
         // During build / prerender when backend is not available, return a graceful 503.
         return new Response(null, {
