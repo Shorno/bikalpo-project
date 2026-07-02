@@ -1,10 +1,10 @@
 "use client";
 
-import { LogOut, Menu, X } from "lucide-react";
+import { ArrowRight, ChevronDown, LogOut, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
-
 const navLinks = [
   { label: "Home", href: "/" },
   { label: "For Warehouse", href: "#roles" },
@@ -39,27 +39,23 @@ export function B2bNavbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 bg-white/85 backdrop-blur-xl border-b border-[#003178]/[0.06]">
-      <div className="max-w-7xl mx-auto px-6 h-16 md:h-[72px] flex items-center justify-between">
-        {/* Left: Logo + Nav */}
+    <nav className="sticky top-0 z-50 border-b border-border bg-background">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 md:h-[72px]">
         <div className="flex items-center gap-10">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-extrabold text-sm bg-gradient-to-br from-[#003178] to-[#0d47a1]">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
               B
             </div>
-            <span
-              className="text-xl font-extrabold tracking-tight text-[#003178]"
-              style={{ fontFamily: "'Manrope', sans-serif" }}
-            >
+            <span className="text-xl font-semibold tracking-tight text-foreground">
               Bikalpo
             </span>
           </Link>
-          <div className="hidden lg:flex items-center gap-1">
+          <div className="hidden items-center gap-1 lg:flex">
             {navLinks.map((link) => (
               <Link
                 key={link.label}
                 href={link.href}
-                className="px-4 py-2 text-sm font-medium rounded-lg text-slate-600 hover:text-[#003178] hover:bg-[#003178]/[0.04] transition-all"
+                className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {link.label}
               </Link>
@@ -67,28 +63,25 @@ export function B2bNavbar() {
           </div>
         </div>
 
-        {/* Right: Auth + Language */}
         <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-black/[0.08] cursor-pointer">
+          <div className="hidden cursor-pointer items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground md:flex">
             EN
-            <span className="material-symbols-outlined text-xs">
-              expand_more
-            </span>
+            <ChevronDown className="h-3.5 w-3.5" />
           </div>
 
           {isPending ? (
-            <div className="w-9 h-9 rounded-full bg-slate-200 animate-pulse" />
+            <div className="h-9 w-9 animate-pulse rounded-full bg-muted" />
           ) : isLoggedIn ? (
             <>
               <Link
                 href="/b2b/status"
-                className="hidden sm:inline-flex px-4 py-2 text-sm font-medium text-slate-600 hover:text-[#003178] transition-colors"
+                className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
               >
                 Application Status
               </Link>
               <div className="flex items-center gap-2">
                 <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold bg-gradient-to-br from-[#003178] to-[#0d47a1]"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
                   title={userName}
                 >
                   {initials}
@@ -96,7 +89,7 @@ export function B2bNavbar() {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-red-500 transition-colors"
+                  className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-destructive sm:inline-flex"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
@@ -104,58 +97,46 @@ export function B2bNavbar() {
             </>
           ) : (
             <>
-              <Link
-                href="/b2b/login"
-                className="hidden md:inline-flex px-5 py-2.5 text-sm font-semibold rounded-lg text-[#003178] border-[1.5px] border-[#003178]/15 hover:bg-[#003178]/[0.04] hover:border-[#003178]/30 transition-all"
-              >
-                Sign In
-              </Link>
-              <Link
-                href="/b2b/register"
-                aria-label="Register your warehouse or retail business"
-                className="inline-flex items-center gap-1.5 px-3 py-2.5 sm:gap-2 sm:px-5 text-sm font-bold text-white rounded-lg bg-gradient-to-br from-[#003178] to-[#0d47a1] shadow-[0_4px_16px_rgba(0,49,120,0.25)] hover:-translate-y-0.5 hover:shadow-[0_6px_24px_rgba(0,49,120,0.35)] transition-all"
-              >
-                Register
-                <span className="material-symbols-outlined text-base hidden sm:inline">
-                  arrow_forward
-                </span>
-              </Link>
+              <Button variant="outline" size="sm" className="hidden md:inline-flex" asChild>
+                <Link href="/b2b/login">Sign In</Link>
+              </Button>
+              <Button size="sm" asChild>
+                <Link href="/b2b/register" aria-label="Register your warehouse or retail business">
+                  Register
+                  <ArrowRight className="hidden h-4 w-4 sm:inline" />
+                </Link>
+              </Button>
             </>
           )}
 
           <button
             type="button"
-            className="lg:hidden p-2 rounded-lg text-slate-600"
+            className="rounded-lg p-2 text-muted-foreground lg:hidden"
             onClick={() => setMobileOpen(!mobileOpen)}
           >
-            {mobileOpen ? (
-              <X className="h-5 w-5" />
-            ) : (
-              <Menu className="h-5 w-5" />
-            )}
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
 
-      {/* Mobile Menu */}
       {mobileOpen && (
-        <div className="lg:hidden px-6 py-5 space-y-1 border-t border-black/[0.06] bg-white">
+        <div className="space-y-1 border-t border-border bg-background px-6 py-5 lg:hidden">
           {navLinks.map((link) => (
             <Link
               key={link.label}
               href={link.href}
-              className="block px-4 py-3 text-sm font-medium rounded-lg text-slate-600 hover:text-[#003178]"
+              className="block rounded-lg px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground"
               onClick={() => setMobileOpen(false)}
             >
               {link.label}
             </Link>
           ))}
-          <div className="pt-4 mt-3 space-y-3 border-t border-black/[0.06]">
+          <div className="mt-3 space-y-3 border-t border-border pt-4">
             {isLoggedIn ? (
               <>
                 <Link
                   href="/b2b/status"
-                  className="block text-sm font-semibold text-[#003178] py-2"
+                  className="block py-2 text-sm font-semibold text-primary"
                   onClick={() => setMobileOpen(false)}
                 >
                   Application Status
@@ -166,20 +147,18 @@ export function B2bNavbar() {
                     setMobileOpen(false);
                     handleLogout();
                   }}
-                  className="flex items-center gap-2 text-sm font-medium text-red-500 py-2"
+                  className="flex items-center gap-2 py-2 text-sm font-medium text-destructive"
                 >
                   <LogOut className="h-4 w-4" />
                   Logout
                 </button>
               </>
             ) : (
-              <Link
-                href="/b2b/login"
-                className="block text-center text-sm font-semibold py-3 rounded-lg text-[#003178] border-[1.5px] border-[#003178]/20"
-                onClick={() => setMobileOpen(false)}
-              >
-                Sign In
-              </Link>
+              <Button variant="outline" className="w-full" asChild>
+                <Link href="/b2b/login" onClick={() => setMobileOpen(false)}>
+                  Sign In
+                </Link>
+              </Button>
             )}
           </div>
         </div>

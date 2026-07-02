@@ -2,9 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  type RowSelectionState,
   flexRender,
   getCoreRowModel,
+  type RowSelectionState,
   useReactTable,
 } from "@tanstack/react-table";
 import {
@@ -21,7 +21,14 @@ import {
   Truck,
 } from "lucide-react";
 import Link from "next/link";
-import { type ElementType, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ElementType,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import {
   DashboardKpiCard,
@@ -50,13 +57,13 @@ import { orpc } from "@/utils/orpc";
 import { getDeliveryColumns } from "./_components/delivery-columns";
 import { DeliveryInvoiceDrawer } from "./_components/delivery-invoice-drawer";
 import { DeliveryTypeModal } from "./_components/delivery-type-modal";
-import { InternalGroupModal } from "./_components/internal-group-modal";
-import {
-  type DeliveryDisplayStatus,
-  type DeliveryInvoiceRow,
-  type DeliveryKpiFilter,
-  type DeliveryTypeFilter,
+import type {
+  DeliveryDisplayStatus,
+  DeliveryInvoiceRow,
+  DeliveryKpiFilter,
+  DeliveryTypeFilter,
 } from "./_components/delivery-utils";
+import { InternalGroupModal } from "./_components/internal-group-modal";
 
 const PER_PAGE = 20;
 
@@ -228,7 +235,7 @@ export default function DeliveryManagementPage() {
 
   const invalidateList = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: orpc.warehouse.getDeliveryManagementInvoices.queryKey({} as any),
+      queryKey: orpc.warehouse.getDeliveryManagementInvoices.key(),
     });
   }, [queryClient]);
 
@@ -299,12 +306,18 @@ export default function DeliveryManagementPage() {
       invalidateList();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to choose delivery type",
+        error instanceof Error
+          ? error.message
+          : "Failed to choose delivery type",
       );
     }
   };
 
-  const handleGroupSuccess = ({ riderAssigned }: { riderAssigned: boolean }) => {
+  const handleGroupSuccess = ({
+    riderAssigned,
+  }: {
+    riderAssigned: boolean;
+  }) => {
     invalidateList();
     if (!riderAssigned) {
       toast.success("Delivery group saved", {
@@ -312,7 +325,8 @@ export default function DeliveryManagementPage() {
         action: {
           label: "Assign Orders",
           onClick: () => {
-            window.location.href = "/warehouse/dashboard/delivery-team/assignments";
+            window.location.href =
+              "/warehouse/dashboard/delivery-team/assignments";
           },
         },
       });
@@ -321,12 +335,15 @@ export default function DeliveryManagementPage() {
 
   const columns = useMemo(
     () =>
-      getDeliveryColumns({
-        rowSelection,
-        onToggleRow: handleToggleRow,
-        onToggleAll: handleToggleAll,
-        onView: (invoice) => setViewInvoiceId(invoice.id),
-      }, invoices),
+      getDeliveryColumns(
+        {
+          rowSelection,
+          onToggleRow: handleToggleRow,
+          onToggleAll: handleToggleAll,
+          onView: (invoice) => setViewInvoiceId(invoice.id),
+        },
+        invoices,
+      ),
     [rowSelection, handleToggleRow, handleToggleAll, invoices],
   );
 
@@ -382,7 +399,10 @@ export default function DeliveryManagementPage() {
               key={cfg.key}
               active={isActive}
               description={cfg.description}
-              footer={{ label: "Invoices", value: counts[cfg.key].toLocaleString() }}
+              footer={{
+                label: "Invoices",
+                value: counts[cfg.key].toLocaleString(),
+              }}
               icon={<Icon className="h-6 w-6" />}
               label={cfg.label}
               onClick={() => selectKpi(cfg.key)}
@@ -521,7 +541,9 @@ export default function DeliveryManagementPage() {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
                 <AlertCircle className="h-6 w-6 text-red-500" />
               </div>
-              <p className="mt-3 text-sm font-medium">Failed to load invoices</p>
+              <p className="mt-3 text-sm font-medium">
+                Failed to load invoices
+              </p>
               <Button
                 type="button"
                 variant="outline"
@@ -605,23 +627,27 @@ export default function DeliveryManagementPage() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            {generatePageNumbers(page, pagination.totalPages).map((item, index) =>
-              item === "..." ? (
-                <span key={`ellipsis-${index}`} className="px-1 text-muted-foreground">
-                  …
-                </span>
-              ) : (
-                <Button
-                  key={item}
-                  type="button"
-                  variant={page === item ? "default" : "outline"}
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setPage(item)}
-                >
-                  {item}
-                </Button>
-              ),
+            {generatePageNumbers(page, pagination.totalPages).map(
+              (item, index) =>
+                item === "..." ? (
+                  <span
+                    key={`ellipsis-${index}`}
+                    className="px-1 text-muted-foreground"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <Button
+                    key={item}
+                    type="button"
+                    variant={page === item ? "default" : "outline"}
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setPage(item)}
+                  >
+                    {item}
+                  </Button>
+                ),
             )}
             <Button
               type="button"

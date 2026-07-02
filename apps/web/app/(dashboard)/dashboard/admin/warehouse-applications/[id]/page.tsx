@@ -259,6 +259,8 @@ export default function WarehouseApplicationDetailPage() {
                 </h1>
                 <p className="text-xs text-gray-400">
                   by {application.ownerName} • {format(new Date(application.createdAt), "MMM d, yyyy")}
+                  {(application as { applicationNumber?: string }).applicationNumber &&
+                    ` • ${(application as { applicationNumber?: string }).applicationNumber}`}
                 </p>
               </div>
             </div>

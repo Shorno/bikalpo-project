@@ -266,6 +266,8 @@ export default function SellerApplicationDetailPage() {
                 </h1>
                 <p className="text-xs text-gray-400">
                   by {application.ownerName} • {format(new Date(application.createdAt), "MMM d, yyyy")}
+                  {(application as { applicationNumber?: string }).applicationNumber &&
+                    ` • ${(application as { applicationNumber?: string }).applicationNumber}`}
                 </p>
               </div>
             </div>
@@ -373,7 +375,15 @@ export default function SellerApplicationDetailPage() {
             <DetailSection title="Business Details" icon="storefront">
               <DetailField label="Shop Name" value={application.shopName} />
               <DetailField
+                label="Business Nature"
+                value={(application as { businessNature?: string }).businessNature?.replace(/_/g, " ")}
+              />
+              <DetailField
                 label="Business Type"
+                value={(application as { businessCategory?: string }).businessCategory}
+              />
+              <DetailField
+                label="Platform Type"
                 value={BUSINESS_TYPE_LABELS[application.businessType] || application.businessType}
               />
               {application.businessType === "retail" && (
@@ -395,6 +405,14 @@ export default function SellerApplicationDetailPage() {
               <DetailField
                 label="Trade License"
                 value={application.tradeLicenseNumber || "Not provided"}
+              />
+              <DetailField
+                label="BIN Number"
+                value={(application as { binNumber?: string }).binNumber}
+              />
+              <DetailField
+                label="TIN Number"
+                value={(application as { tinNumber?: string }).tinNumber}
               />
             </DetailSection>
 
@@ -499,6 +517,30 @@ export default function SellerApplicationDetailPage() {
                     className="material-symbols-outlined text-gray-400 text-lg"
                     style={{ fontVariationSettings: "'FILL' 1" }}
                   >
+                    mail
+                  </span>
+                  <span className="text-gray-700 font-medium">
+                    {(application as { email?: string }).email || "—"}
+                  </span>
+                </div>
+                {(application as { personalAddress?: string }).personalAddress && (
+                  <div className="flex items-start gap-3 text-sm">
+                    <span
+                      className="material-symbols-outlined text-gray-400 text-lg"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      home
+                    </span>
+                    <span className="text-gray-700">
+                      {(application as { personalAddress?: string }).personalAddress}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center gap-3 text-sm">
+                  <span
+                    className="material-symbols-outlined text-gray-400 text-lg"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
                     calendar_today
                   </span>
                   <span className="text-gray-700">
@@ -507,6 +549,36 @@ export default function SellerApplicationDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* Bank & Verification */}
+            {((application as { bankName?: string }).bankName ||
+              (application as { bankAccountNumber?: string }).bankAccountNumber) && (
+              <div className="bg-white rounded-xl border border-gray-100 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <span
+                    className="material-symbols-outlined text-[#003178] text-lg"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    account_balance
+                  </span>
+                  <h3 className="font-bold text-sm text-gray-900">Bank Information</h3>
+                </div>
+                <div className="space-y-2">
+                  <DetailField
+                    label="Bank"
+                    value={(application as { bankName?: string }).bankName}
+                  />
+                  <DetailField
+                    label="Account Name"
+                    value={(application as { bankAccountName?: string }).bankAccountName}
+                  />
+                  <DetailField
+                    label="Account Number"
+                    value={(application as { bankAccountNumber?: string }).bankAccountNumber}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Plan */}
             {(application as any).selectedPlan && (
