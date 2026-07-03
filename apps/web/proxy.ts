@@ -32,6 +32,31 @@ const AUTH_ROUTES = [
 // Dashboard routes that only internal staff can access
 const STAFF_ROUTES = ["/dashboard", "/deliveryman"];
 
+const PORTAL_SUBDOMAIN_PREFIXES = new Set([
+  "shop",
+  "b2b",
+  "warehouse",
+  "delivery",
+  "sales",
+]);
+
+function getRootDomainUrl(request: NextRequest) {
+  const host = request.headers.get("host") || request.nextUrl.host;
+  const [prefix, ...rest] = host.split(".");
+  const rootHost =
+    prefix && rest.length > 0 && PORTAL_SUBDOMAIN_PREFIXES.has(prefix)
+      ? rest.join(".")
+      : host;
+
+  return `${request.nextUrl.protocol}//${rootHost}`;
+}
+
+function getRootAuthRouteUrl(request: NextRequest) {
+  const url = new URL(request.nextUrl.pathname, getRootDomainUrl(request));
+  url.search = request.nextUrl.search;
+  return url;
+}
+
 export function proxy(request: NextRequest) {
   const hostname = request.headers.get("host") || "";
   const pathname = request.nextUrl.pathname;
@@ -103,12 +128,12 @@ export function proxy(request: NextRequest) {
 
   // === B2B SUBDOMAIN (Public marketing/landing page) ===
   if (isB2bSubdomain) {
-    // B2B is public — allow auth routes as normal
+    // Generic auth routes always live on the root domain.
     if (isAuthRoute) {
       if (token) {
         return NextResponse.redirect(new URL("/", request.url));
       }
-      return NextResponse.next();
+      return NextResponse.redirect(getRootAuthRouteUrl(request));
     }
 
     // Skip rewrite if already accessing /b2b routes internally
@@ -132,7 +157,7 @@ export function proxy(request: NextRequest) {
       if (token) {
         return NextResponse.redirect(new URL("/", request.url));
       }
-      return NextResponse.next();
+      return NextResponse.redirect(getRootAuthRouteUrl(request));
     }
 
     // Skip if already accessing shop routes
@@ -151,13 +176,13 @@ export function proxy(request: NextRequest) {
     // Redirect to main domain login if not authenticated
     if (!token) {
       // Use the frontend URL, not the auth/backend URL
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^(shop|b2b)\./, "")}`;
+      const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/login", mainDomain));
     }
 
     // If logged in but not a shop_owner, redirect to main domain
     if (role && role !== "shop_owner") {
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^(shop|b2b)\./, "")}`;
+      const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/", mainDomain));
     }
 
@@ -180,7 +205,7 @@ export function proxy(request: NextRequest) {
       if (token) {
         return NextResponse.redirect(new URL("/", request.url));
       }
-      return NextResponse.next();
+      return NextResponse.redirect(getRootAuthRouteUrl(request));
     }
 
     // Keep warehouse subdomain URLs scoped to /dashboard.
@@ -201,13 +226,13 @@ export function proxy(request: NextRequest) {
 
     // Redirect to main domain login if not authenticated
     if (!token) {
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^warehouse\./, "")}`;
+      const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/login", mainDomain));
     }
 
     // If logged in but not a warehouse user, redirect to main domain
     if (role && role !== "warehouse") {
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^warehouse\./, "")}`;
+      const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/", mainDomain));
     }
 
@@ -226,18 +251,18 @@ export function proxy(request: NextRequest) {
       if (token) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
-      return NextResponse.next();
+      return NextResponse.redirect(getRootAuthRouteUrl(request));
     }
 
     // Redirect to main domain login if not authenticated
     if (!token) {
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^delivery\./, "")}`;
+      const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/login", mainDomain));
     }
 
     // If logged in but not a deliveryman, redirect to main domain
     if (role && role !== "deliveryman") {
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^delivery\./, "")}`;
+      const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/", mainDomain));
     }
 
@@ -273,18 +298,18 @@ export function proxy(request: NextRequest) {
       if (token) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
-      return NextResponse.next();
+      return NextResponse.redirect(getRootAuthRouteUrl(request));
     }
 
     // Redirect to main domain login if not authenticated
     if (!token) {
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^sales\./, "")}`;
+      const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/login", mainDomain));
     }
 
     // If logged in but not a salesman, redirect to main domain
     if (role && role !== "salesman") {
-      const mainDomain = `${request.nextUrl.protocol}//${hostname.replace(/^sales\./, "")}`;
+      const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/", mainDomain));
     }
 

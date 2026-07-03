@@ -20,6 +20,7 @@ import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useCartQuery } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
+import { redirectToRootLogin } from "@/lib/auth-routing";
 import { cn } from "@/lib/utils";
 
 const sidebarItems = [
@@ -100,13 +101,7 @@ export function AccountSidebar() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          // Always redirect to main domain after logout (not shop/b2b subdomain)
-          const mainDomain =
-            process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL?.replace(
-              /^(https?:\/\/)(shop|b2b)\./,
-              "$1",
-            ) || window.location.origin;
-          window.location.href = `${mainDomain}/`;
+          redirectToRootLogin();
         },
       },
     });

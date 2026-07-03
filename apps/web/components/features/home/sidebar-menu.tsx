@@ -9,8 +9,9 @@ import {
   User,
 } from "lucide-react";
 import Link from "next/link";
-import { authClient } from "@/lib/auth-client";
 import { useCart } from "@/hooks/use-orpc-cart";
+import { authClient } from "@/lib/auth-client";
+import { redirectToRootLogin } from "@/lib/auth-routing";
 import { cn } from "@/lib/utils";
 
 export function SidebarMenu() {
@@ -20,7 +21,7 @@ export function SidebarMenu() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          window.location.href = "/";
+          redirectToRootLogin();
         },
       },
     });
