@@ -1,10 +1,12 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import {
   createContext,
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useState,
 } from "react";
 import { AuthModal } from "./auth-modal";
@@ -34,9 +36,23 @@ export function useLoginRequired() {
 
 export function LoginRequiredProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+  const pathname = usePathname();
+  const isLoginPage = pathname === "/login" || pathname === "/b2b/login";
 
-  const showLoginModal = useCallback(() => setIsOpen(true), []);
+  const showLoginModal = useCallback(() => {
+    if (isLoginPage) {
+      return;
+    }
+
+    setIsOpen(true);
+  }, [isLoginPage]);
   const hideLoginModal = useCallback(() => setIsOpen(false), []);
+
+  useEffect(() => {
+    if (isLoginPage) {
+      setIsOpen(false);
+    }
+  }, [isLoginPage]);
 
   return (
     <LoginRequiredContext.Provider value={{ showLoginModal, hideLoginModal }}>

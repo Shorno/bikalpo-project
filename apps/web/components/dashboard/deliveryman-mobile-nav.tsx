@@ -1,20 +1,21 @@
 "use client";
 
 import {
+  BarChart3Icon,
   ClipboardCheckIcon,
+  LogOutIcon,
   MapPinIcon,
+  MenuIcon,
   PackageIcon,
   TruckIcon,
   WalletIcon,
-  BarChart3Icon,
-  LogOutIcon,
-  MenuIcon,
   XIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { redirectToRootLogin } from "@/lib/auth-routing";
 
 const DM = "/deliveryman/dashboard";
 
@@ -30,6 +31,13 @@ export function DeliverymanMobileNav() {
   const pathname = usePathname();
   const { data, isPending } = authClient.useSession();
   const [open, setOpen] = useState(false);
+  const handleLogout = () => {
+    authClient.signOut({
+      fetchOptions: {
+        onSuccess: redirectToRootLogin,
+      },
+    });
+  };
 
   return (
     <>
@@ -92,7 +100,7 @@ export function DeliverymanMobileNav() {
             </div>
             <div className="border-t mt-auto absolute bottom-0 w-full p-4">
               <button
-                onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => { window.location.href = "/"; } } })}
+                onClick={handleLogout}
                 className="flex items-center gap-3 text-red-600 text-sm w-full px-2 py-2 hover:bg-red-50 rounded-lg transition-colors"
               >
                 <LogOutIcon className="w-5 h-5" />

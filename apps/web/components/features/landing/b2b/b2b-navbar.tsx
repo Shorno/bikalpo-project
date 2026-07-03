@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
+import { redirectToRootLogin } from "@/lib/auth-routing";
+
 const navLinks = [
   { label: "Home", href: "/" },
   { label: "For Warehouse", href: "#roles" },
@@ -32,7 +34,7 @@ export function B2bNavbar() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          window.location.href = "/";
+          redirectToRootLogin();
         },
       },
     });

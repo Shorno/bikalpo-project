@@ -200,6 +200,14 @@ export const dashboardRouter = {
                 return Number(r[0]?.count ?? 0);
             }, 0);
 
+            const pendingWarehouseApps = await safe(async () => {
+                const r = await db.select({ count: count() }).from(warehouseApplication)
+                    .where(eq(warehouseApplication.status, "pending"));
+                return Number(r[0]?.count ?? 0);
+            }, 0);
+
+            const pendingApplications = pendingSellerApps + pendingWarehouseApps;
+
             const lowStockProducts = await safe(async () => {
                 const r = await db.select({ count: count() }).from(product)
                     .where(sql`${product.reorderLevel} > 0 AND ${product.inStock} = true AND ${product.status}::text = 'active'`);
@@ -441,6 +449,8 @@ export const dashboardRouter = {
                     openTickets,
                     pendingItemRequests,
                     pendingSellerApps,
+                    pendingWarehouseApps,
+                    pendingApplications,
                     lowStockProducts,
                     outOfStockProducts,
                     totalProducts,

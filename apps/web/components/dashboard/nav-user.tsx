@@ -19,6 +19,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
+import { redirectToRootLogin } from "@/lib/auth-routing";
 
 export function NavUser({ session }: { session: Session | null }) {
   const { isMobile } = useSidebar();
@@ -30,10 +31,7 @@ export function NavUser({ session }: { session: Session | null }) {
       fetchOptions: {
         onSuccess: () => {
           toast.success("Logged out successfully");
-          // Use window.location.href to force full navigation to root domain.
-          // router.replace("/login") would trigger the @auth/(.)login route
-          // intercept and show the login modal on top of the dashboard.
-          window.location.href = "/";
+          redirectToRootLogin();
         },
       },
     });

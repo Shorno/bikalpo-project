@@ -30,6 +30,7 @@ export * from "./inventory";
 export * from "./invite";
 export * from "./invoice";
 export * from "./item-request";
+export * from "./kyc-verification";
 export * from "./landing-page";
 export * from "./marketing-material";
 export * from "./offer";

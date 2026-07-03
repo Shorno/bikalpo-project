@@ -11,6 +11,7 @@ import {
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import * as React from "react";
 import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -24,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
+import { redirectToRootLogin } from "@/lib/auth-routing";
 import { getSalesSubdomainUrl } from "@/lib/sales-routing";
 
 const DASHBOARD_PATHS: Record<string, string> = {
@@ -37,6 +39,7 @@ export function UserDropdown() {
   const { data: session, isPending } = authClient.useSession();
   const [isMounted, setIsMounted] = React.useState(false);
   const { showLoginModal } = useLoginRequired();
+  const pathname = usePathname();
 
   React.useEffect(() => {
     setIsMounted(true);
@@ -52,6 +55,10 @@ export function UserDropdown() {
   }
 
   if (!session) {
+    if (pathname === "/login" || pathname === "/b2b/login") {
+      return null;
+    }
+
     return <Button onClick={showLoginModal}>Login</Button>;
   }
 
@@ -89,12 +96,7 @@ export function UserDropdown() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          // Strip shop. or b2b. prefix to go back to main domain
-          const currentOrigin = window.location.origin;
-          const mainDomain = currentOrigin
-            .replace("://shop.", "://")
-            .replace("://b2b.", "://");
-          window.location.href = `${mainDomain}/`;
+          redirectToRootLogin();
         },
       },
     });
