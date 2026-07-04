@@ -97,6 +97,27 @@ const fixtures: Fixture[] = [
       firstMode: "cylinder",
     },
   },
+  {
+    name: "footwear pair flow",
+    type: {
+      name: "Footwear",
+      slug: "footwear",
+      inventoryBehaviour: "fixed_pack",
+    },
+    variant: {
+      unitLabel: "30 Pair",
+      weightKg: "0",
+      packType: "packet",
+      orderUnit: "Pair",
+      piecesPerUnit: 30,
+    },
+    expected: {
+      family: "footwear",
+      measureUnit: "PAIR",
+      quantityPerPack: 30,
+      firstMode: "pair",
+    },
+  },
 ];
 
 for (const fixture of fixtures) {
