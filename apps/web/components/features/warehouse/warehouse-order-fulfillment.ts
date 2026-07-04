@@ -7,6 +7,7 @@ import {
   type ProductTypeFulfillmentProfile,
   supportsFulfillmentMode,
 } from "@bikalpo-project/db/fulfillment";
+import { getStockMeasureInfo } from "@/lib/stock-measure";
 
 export type WarehouseCatalogCartonOption = {
   weightKg: number;
@@ -57,6 +58,20 @@ const DIRECT_MODE_PRIORITY: readonly FulfillmentMode[] = [
 
 function normalizePackType(value?: string | null) {
   return (value || "").trim().toLowerCase();
+}
+
+export function getWarehouseVariantMeasure(
+  profile: ProductTypeFulfillmentProfile,
+  variant: WarehouseCatalogVariantLike["variant"],
+) {
+  return getStockMeasureInfo({
+    packType: variant.packType,
+    orderUnit: variant.orderUnit,
+    unitLabel: variant.unitLabel,
+    weightKg: variant.weightKg,
+    piecesPerUnit: variant.piecesPerUnit,
+    family: profile.family,
+  });
 }
 
 function isPackStyleLabel(label?: string | null) {
