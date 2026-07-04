@@ -14,6 +14,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  formatStockDisplayUnit,
+  getStockMeasureInfo,
+  normalizeStockUnit,
+} from "@/lib/stock-measure";
 import { orpc } from "@/utils/orpc";
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -62,36 +67,12 @@ function formatUnitQty(value: number, isLoose: boolean) {
   return Math.round(value).toLocaleString();
 }
 
-const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
-const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
-
 function normalizeUnit(unit?: string | null) {
-  return String(unit || "")
-    .trim()
-    .toUpperCase();
+  return normalizeStockUnit(unit);
 }
 
 function formatDisplayUnit(unit?: string | null) {
-  const normalized = normalizeUnit(unit);
-  if (normalized === "PCS" || normalized === "PC" || normalized === "PIECES") {
-    return "Pc";
-  }
-  if (normalized === "PAIR") {
-    return "Pair";
-  }
-  if (normalized === "FIT") {
-    return "Fit";
-  }
-  if (normalized === "YARD") {
-    return "Yard";
-  }
-  if (normalized === "PACK") {
-    return "Pack";
-  }
-  if (normalized === "CARTON") {
-    return "Carton";
-  }
-  return normalized || "Unit";
+  return formatStockDisplayUnit(unit);
 }
 
 function formatQtyByUnit(value: number, unit?: string | null) {
@@ -118,39 +99,6 @@ function getFashionOpenStockLabel(unit?: string | null) {
     return "open yard stock";
   }
   return `open ${formatDisplayUnit(unit).toLowerCase()} stock`;
-}
-
-function parseUnitLabelMeasure(label?: string | null) {
-  const normalizedLabel = String(label || "").trim();
-  if (!normalizedLabel) return null;
-
-  const pieceMatch = normalizedLabel.match(
-    /(\d+(?:\.\d+)?)\s*(pc|pcs|piece|pieces|pair|unit)\b/i,
-  );
-  if (pieceMatch) {
-    const value = Number(pieceMatch[1]);
-    if (value > 0) {
-      return {
-        quantityPerPack: value,
-        quantityUnit: normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
-      };
-    }
-  }
-
-  const weightMatch = normalizedLabel.match(
-    /(\d+(?:\.\d+)?)\s*(kg|kgs|kilogram|kilograms)\b/i,
-  );
-  if (weightMatch) {
-    const value = Number(weightMatch[1]);
-    if (value > 0) {
-      return {
-        quantityPerPack: value,
-        quantityUnit: "KG",
-      };
-    }
-  }
-
-  return null;
 }
 
 type VariantDisplayInventory = {
@@ -235,44 +183,17 @@ function getGroupMeasure(group?: StockVariantGroup | null) {
   if (!group) {
     return { quantityPerPack: 0, quantityUnit: "PACK" };
   }
-
-  const normalizedUnit = normalizeUnit(group.orderUnit);
-  const weightKg = parseFloat(group.weightKg || "0");
-  const piecesPerUnit = Number(group.piecesPerUnit || 0);
-
-  if (group.packType === "loose") {
-    if (PIECE_UNITS.has(normalizedUnit)) {
-      return { quantityPerPack: 1, quantityUnit: "PCS" };
-    }
-    if (weightKg > 0 || WEIGHT_UNITS.has(normalizedUnit)) {
-      return { quantityPerPack: 1, quantityUnit: "KG" };
-    }
-    const parsedLoose = parseUnitLabelMeasure(group.unitLabel);
-    if (parsedLoose && parsedLoose.quantityUnit !== "KG") {
-      return { quantityPerPack: 1, quantityUnit: parsedLoose.quantityUnit };
-    }
-    return { quantityPerPack: 1, quantityUnit: normalizedUnit || "KG" };
-  }
-
-  if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
-    return { quantityPerPack: weightKg, quantityUnit: "KG" };
-  }
-
-  if (piecesPerUnit > 0) {
-    return {
-      quantityPerPack: piecesPerUnit,
-      quantityUnit: PIECE_UNITS.has(normalizedUnit)
-        ? "PCS"
-        : normalizedUnit || "UNIT",
-    };
-  }
-
-  const parsed = parseUnitLabelMeasure(group.unitLabel);
-  if (parsed) {
-    return parsed;
-  }
-
-  return { quantityPerPack: 1, quantityUnit: "PACK" };
+  const measure = getStockMeasureInfo({
+    packType: group.packType,
+    orderUnit: group.orderUnit,
+    unitLabel: group.unitLabel,
+    weightKg: group.weightKg,
+    piecesPerUnit: group.piecesPerUnit,
+  });
+  return {
+    quantityPerPack: measure.quantityPerPack,
+    quantityUnit: measure.quantityUnit,
+  };
 }
 
 // ─── Section Header ────────────────────────────────────────────
