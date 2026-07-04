@@ -48,9 +48,9 @@ const CONTAINER_MODE_PRIORITY: readonly FulfillmentMode[] = [
 
 const DIRECT_MODE_PRIORITY: readonly FulfillmentMode[] = [
   "loose",
+  "cylinder",
   "unit",
   "pair",
-  "cylinder",
 ] as const;
 
 function normalizePackType(value?: string | null) {
@@ -106,6 +106,10 @@ function getVariantDisplayUnit(
 
   if (profile.family === "fashion") {
     return FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
+  }
+
+  if (profile.family === "lpg") {
+    return FULFILLMENT_UNITS.cylinder.label;
   }
 
   return (
@@ -176,6 +180,7 @@ export function getWarehouseOrderModeOptions(
 
   return [...modes]
     .filter((mode) => !(isFashionAttributeDirect && mode === "pack"))
+    .filter((mode) => !(profile.family === "lpg" && mode === "unit"))
     .filter((mode) => supportsFulfillmentMode(profile, mode))
     .map((mode) => {
       const usesContainerStock = isContainerFulfillmentMode(mode) && hasCartons;
@@ -185,6 +190,8 @@ export function getWarehouseOrderModeOptions(
         : getVariantDisplayUnit(profile, variantRow.variant);
       const stockUnitLabel = usesContainerStock
         ? modeLabel
+        : profile.family === "lpg"
+          ? FULFILLMENT_UNITS.cylinder.label
         : isFashionAttributeDirect
           ? FULFILLMENT_UNITS.piece.shortLabel
           : FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
