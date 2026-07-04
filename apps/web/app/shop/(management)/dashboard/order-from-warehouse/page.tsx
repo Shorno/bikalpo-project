@@ -542,6 +542,46 @@ function VariantModal({
                     (s, v) => s + (v.variant.totalCartonCount || 0),
                     0,
                   );
+                  const totalBrandDirectQty = bg.variants.reduce((sum, v) => {
+                    const directOption = getWarehouseOrderModeOptions(
+                      profile,
+                      v,
+                    ).find((option) => !option.usesContainerStock);
+                    if (!directOption) {
+                      return sum;
+                    }
+
+                    const isLooseBrandVariant =
+                      (v.variant.packType || "").toLowerCase() === "loose";
+                    const brandVariantWeightKg =
+                      Number(v.variant.weightKg) || 0;
+                    const availableQty = Number(v.availableQty) || 0;
+
+                    if (isLooseBrandVariant && brandVariantWeightKg > 0) {
+                      return sum + Math.floor(availableQty / brandVariantWeightKg);
+                    }
+
+                    return sum + Math.floor(availableQty);
+                  }, 0);
+                  const brandDirectLabel =
+                    bg.variants
+                      .map((v) =>
+                        getWarehouseOrderModeOptions(profile, v).find(
+                          (option) => !option.usesContainerStock,
+                        )?.quantityUnitLabel,
+                      )
+                      .find(Boolean)
+                      ?.toLowerCase() || "unit";
+                  const brandStockSummary =
+                    totalBrandCartons > 0 && profile.family !== "lpg"
+                      ? {
+                          qty: totalBrandCartons,
+                          label: containerLabelLower,
+                        }
+                      : {
+                          qty: totalBrandDirectQty,
+                          label: brandDirectLabel,
+                        };
 
                   return (
                     <button
@@ -610,9 +650,9 @@ function VariantModal({
                         </span>
                         <span className="text-[10px] text-gray-300">•</span>
                         <span
-                          className={`text-[10px] ${totalBrandCartons > 5 ? "text-blue-500" : totalBrandCartons > 0 ? "text-amber-500" : "text-red-400"}`}
+                          className={`text-[10px] ${brandStockSummary.qty > 5 ? "text-blue-500" : brandStockSummary.qty > 0 ? "text-amber-500" : "text-red-400"}`}
                         >
-                          📦 {totalBrandCartons} {containerLabelLower}
+                          📦 {brandStockSummary.qty} {brandStockSummary.label}
                         </span>
                       </div>
                     </button>
