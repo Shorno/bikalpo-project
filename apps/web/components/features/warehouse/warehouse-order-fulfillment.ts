@@ -185,6 +185,38 @@ function getVariantDisplayUnit(
   );
 }
 
+function getDirectModeUnitLabel(
+  profile: ProductTypeFulfillmentProfile,
+  variant: WarehouseCatalogVariantLike["variant"],
+  mode: FulfillmentMode,
+) {
+  const measure = getWarehouseVariantMeasure(profile, variant);
+
+  if (mode === "pair") {
+    return FULFILLMENT_UNITS.pair.label;
+  }
+
+  if (mode === "cylinder") {
+    return FULFILLMENT_UNITS.cylinder.label;
+  }
+
+  if (mode === "drum") {
+    return FULFILLMENT_UNITS.drum.label;
+  }
+
+  if (mode === "unit") {
+    if (profile.family === "electronics" || measure.quantityUnit === "UNIT") {
+      return FULFILLMENT_UNITS.unit.label;
+    }
+
+    if (measure.quantityUnit === "PCS") {
+      return FULFILLMENT_UNITS.piece.shortLabel;
+    }
+  }
+
+  return getVariantDisplayUnit(profile, variant);
+}
+
 export function getFulfillmentFamilyLabel(
   profile: ProductTypeFulfillmentProfile,
 ) {
@@ -292,14 +324,20 @@ export function getWarehouseOrderModeOptions(
       const modeLabel = getWarehouseModeDisplayLabel(profile, mode);
       const quantityUnitLabel = usesContainerStock
         ? modeLabel
-        : getVariantDisplayUnit(profile, variantRow.variant);
+        : getDirectModeUnitLabel(profile, variantRow.variant, mode);
       const stockUnitLabel = usesContainerStock
         ? modeLabel
-        : profile.family === "lpg"
+        : mode === "pair"
+          ? FULFILLMENT_UNITS.pair.label
+        : mode === "cylinder"
           ? FULFILLMENT_UNITS.cylinder.label
+        : mode === "drum"
+          ? FULFILLMENT_UNITS.drum.label
+        : profile.family === "electronics" && mode === "unit"
+          ? FULFILLMENT_UNITS.unit.label
         : isFashionAttributeDirect
           ? FULFILLMENT_UNITS.piece.shortLabel
-          : FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
+        : FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
 
       return {
         mode,
