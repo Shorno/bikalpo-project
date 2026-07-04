@@ -23,6 +23,8 @@ export type WarehouseCatalogVariantLike = {
     unitLabel: string;
     weightKg: string;
     packType: string | null;
+    piecesPerUnit?: number | null;
+    orderUnit?: string | null;
     totalCartonCount?: number;
     cartonOptions?: WarehouseCatalogCartonOption[];
   };
