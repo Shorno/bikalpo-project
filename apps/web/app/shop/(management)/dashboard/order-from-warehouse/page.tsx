@@ -422,6 +422,8 @@ function VariantModal({
   const familyLabel = getFulfillmentFamilyLabel(profile);
   const behaviourLabel =
     INVENTORY_BEHAVIOUR_LABELS[product.type.inventoryBehaviour];
+  const isReturnableFlow =
+    product.type.isReturnablePack || profile.family === "lpg";
   const quantityUnitLabel =
     selectedModeOption?.quantityUnitLabel ??
     (isLooseVariant && variantWeightKg > 0
@@ -430,7 +432,16 @@ function VariantModal({
   const containerLabel = getWarehouseModeDisplayLabel(profile, "carton");
   const containerLabelLower = containerLabel.toLowerCase();
   const selectedModeLabel = selectedModeOption?.label ?? "Unit";
-  const selectedVariantLabel = selected.variant.unitLabel || quantityUnitLabel;
+  const selectedVariantLabel =
+    profile.family === "lpg"
+      ? Array.from(
+          new Set(
+            [selected.variant.unitLabel, quantityUnitLabel]
+              .filter(Boolean)
+              .map((value) => value.trim()),
+          ),
+        ).join(" ")
+      : selected.variant.unitLabel || quantityUnitLabel;
   const quantityDisplayLabel = usesContainerStock
     ? selectedModeLabel
     : quantityUnitLabel;
@@ -491,6 +502,11 @@ function VariantModal({
               <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">
                 {behaviourLabel}
               </span>
+              {isReturnableFlow && (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                  Returnable Pack
+                </span>
+              )}
             </div>
           </div>
 
@@ -675,6 +691,11 @@ function VariantModal({
             {selected.variant.sku && (
               <div className="text-[10px] text-gray-400 mt-1">
                 SKU: {selected.variant.sku}
+              </div>
+            )}
+            {isReturnableFlow && (
+              <div className="text-[10px] text-amber-700 mt-1">
+                Empty cylinder or pack return applies for this item.
               </div>
             )}
           </div>
