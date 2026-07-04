@@ -148,6 +148,27 @@ const fixtures: Fixture[] = [
       firstMode: "box",
     },
   },
+  {
+    name: "bulk liquid drum flow",
+    type: {
+      name: "Bulk Oil",
+      slug: "bulk-oil",
+      inventoryBehaviour: "loose_convert",
+      isReturnablePack: true,
+    },
+    variant: {
+      unitLabel: "200 Liter / Drum",
+      weightKg: "0",
+      packType: "drum",
+      orderUnit: "Drum",
+    },
+    expected: {
+      family: "bulk_liquid",
+      measureUnit: "DRUM",
+      quantityPerPack: 1,
+      firstMode: "drum",
+    },
+  },
 ];
 
 for (const fixture of fixtures) {
