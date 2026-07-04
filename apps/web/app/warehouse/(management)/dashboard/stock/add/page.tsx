@@ -543,9 +543,19 @@ export default function AddStockPage() {
     () =>
       entryType === "pack" &&
       tableRows.some((row) =>
-        isFashionTypeName(row.product.category?.type?.name),
+        isFashionTypeName(row.product.category?.type?.name) ||
+        isDirectCountUnit(getVariantMeasure(getRowVariant(row)).quantityUnit),
       ),
-    [entryType, tableRows],
+    [entryType, getRowVariant, tableRows],
+  );
+
+  const showGenericPackPriceLabel = useMemo(
+    () =>
+      entryType === "pack" &&
+      tableRows.some((row) =>
+        isDirectCountUnit(getVariantMeasure(getRowVariant(row)).quantityUnit),
+      ),
+    [entryType, getRowVariant, tableRows],
   );
 
   const getCartonCodeRange = useCallback(
@@ -715,6 +725,8 @@ export default function AddStockPage() {
     setIsSubmitting(true);
     try {
       const submitRow = (row: TableRow) => {
+        const rowVariant = getRowVariant(row);
+        const rowMeasure = getVariantMeasure(rowVariant);
         const totalLooseQty = getRowTotalQtyValue(row);
         const qty =
           entryType === "loose"
@@ -736,7 +748,9 @@ export default function AddStockPage() {
               ? "KG"
               : entryType === "carton"
                 ? "Carton"
-                : "Pack",
+                : isDirectCountUnit(rowMeasure.quantityUnit)
+                  ? formatStockDisplayUnit(rowMeasure.quantityUnit)
+                  : "Pack",
           supplierId: supplierId || undefined,
           costType:
             entryType === "loose"
@@ -1032,7 +1046,9 @@ export default function AddStockPage() {
                             ? "Total Price"
                             : entryType === "carton"
                               ? "Price/Carton"
-                              : "Price/Pack"}
+                              : showGenericPackPriceLabel
+                                ? "Price/Pack / Unit"
+                                : "Price/Pack"}
                         </th>
                         <th className="w-10 px-2"></th>
                       </tr>
