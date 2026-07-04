@@ -6142,6 +6142,7 @@ const warehouseConnectionEndpoints = {
                         productType.inventoryBehaviour,
                     variantUnitLabel: productVariant.unitLabel,
                     variantWeightKg: productVariant.weightKg,
+                    variantPiecesPerUnit: productVariant.piecesPerUnit,
                     variantSku: productVariant.sku,
                     variantPrice: productVariant.price,
                     variantPackType: productVariant.packType,
@@ -6236,6 +6237,7 @@ const warehouseConnectionEndpoints = {
                     variant: {
                         unitLabel: item.variantUnitLabel,
                         weightKg: item.variantWeightKg,
+                        piecesPerUnit: item.variantPiecesPerUnit,
                         sku: item.variantSku,
                         price: item.variantPrice,
                         packType: item.variantPackType,
