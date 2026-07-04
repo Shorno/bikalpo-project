@@ -1,7 +1,7 @@
 import { db } from "@bikalpo-project/db";
-import { customerAssignment, estimate, estimateItem, order, orderItem, user } from "@bikalpo-project/db/schema";
+import { customerAssignment, estimate, estimateItem, order, orderItem, shopWarehouseConnection, user, warehouseWarehouseConnection } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, salesmanProcedure } from "../index";
@@ -25,6 +25,220 @@ const unassignCustomerSchema = z.object({
 const upcomingOrdersSchema = z.object({
     limit: z.number().optional().default(50),
 });
+
+type AssignedShopType = "retailer" | "warehouse";
+
+type AssignedShopSource = {
+    id: string;
+    customerType: AssignedShopType;
+    connectionId: number;
+    displayName: string;
+    contactName: string;
+    email: string;
+    phoneNumber: string | null;
+    address: string | null;
+    locationLat: string | null;
+    locationLng: string | null;
+    shopName: string | null;
+    warehouseName: string | null;
+    ownerName: string | null;
+    image: string | null;
+    connectedAt: Date | null;
+    lastOrderedAt: Date | null;
+    assignedAt: Date;
+    createdAt: Date;
+};
+
+function getWarehouseSalesmanIds(context: { session: { user: unknown } }) {
+    const sessionUser = context.session.user as {
+        id: string;
+        warehouseId?: string | null;
+    };
+
+    if (!sessionUser.warehouseId) {
+        throw new ORPCError("FORBIDDEN", {
+            message: "Warehouse sales access required",
+        });
+    }
+
+    return {
+        salesmanId: sessionUser.id,
+        warehouseId: sessionUser.warehouseId,
+    };
+}
+
+async function getAssignedShopSources({
+    warehouseId,
+    salesmanId,
+    customerId,
+}: {
+    warehouseId: string;
+    salesmanId: string;
+    customerId?: string;
+}) {
+    const assignmentConditions: SQL[] = [
+        eq(customerAssignment.warehouseId, warehouseId),
+        eq(customerAssignment.salesmanId, salesmanId),
+    ];
+
+    if (customerId) {
+        assignmentConditions.push(eq(customerAssignment.customerId, customerId));
+    }
+
+    const [retailerShops, buyerWarehouses] = await Promise.all([
+        db
+            .select({
+                id: user.id,
+                customerType: sql<AssignedShopType>`'retailer'`,
+                connectionId: shopWarehouseConnection.id,
+                displayName: sql<string>`COALESCE(${user.shopName}, ${user.name})`,
+                contactName: user.name,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                address: user.shopAddress,
+                locationLat: user.shopLat,
+                locationLng: user.shopLng,
+                shopName: user.shopName,
+                warehouseName: sql<string | null>`NULL`,
+                ownerName: user.ownerName,
+                image: user.image,
+                connectedAt: shopWarehouseConnection.connectedAt,
+                lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                assignedAt: customerAssignment.assignedAt,
+                createdAt: user.createdAt,
+            })
+            .from(customerAssignment)
+            .innerJoin(
+                shopWarehouseConnection,
+                and(
+                    eq(customerAssignment.customerId, shopWarehouseConnection.shopId),
+                    eq(customerAssignment.warehouseId, shopWarehouseConnection.warehouseId),
+                    eq(shopWarehouseConnection.status, "active"),
+                ),
+            )
+            .innerJoin(user, eq(shopWarehouseConnection.shopId, user.id))
+            .where(and(...assignmentConditions)),
+        db
+            .select({
+                id: user.id,
+                customerType: sql<AssignedShopType>`'warehouse'`,
+                connectionId: warehouseWarehouseConnection.id,
+                displayName: sql<string>`COALESCE(${user.warehouseName}, ${user.name})`,
+                contactName: user.name,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                address: user.warehouseAddress,
+                locationLat: user.warehouseLat,
+                locationLng: user.warehouseLng,
+                shopName: sql<string | null>`NULL`,
+                warehouseName: user.warehouseName,
+                ownerName: user.ownerName,
+                image: user.image,
+                connectedAt: warehouseWarehouseConnection.connectedAt,
+                lastOrderedAt: warehouseWarehouseConnection.lastOrderedAt,
+                assignedAt: customerAssignment.assignedAt,
+                createdAt: user.createdAt,
+            })
+            .from(customerAssignment)
+            .innerJoin(
+                warehouseWarehouseConnection,
+                and(
+                    eq(
+                        customerAssignment.customerId,
+                        warehouseWarehouseConnection.buyerWarehouseId,
+                    ),
+                    eq(
+                        customerAssignment.warehouseId,
+                        warehouseWarehouseConnection.supplierWarehouseId,
+                    ),
+                    eq(warehouseWarehouseConnection.status, "active"),
+                ),
+            )
+            .innerJoin(user, eq(warehouseWarehouseConnection.buyerWarehouseId, user.id))
+            .where(and(...assignmentConditions)),
+    ]);
+
+    return ([...retailerShops, ...buyerWarehouses] as AssignedShopSource[]).sort(
+        (left, right) => right.assignedAt.getTime() - left.assignedAt.getTime(),
+    );
+}
+
+async function enrichAssignedShopSources({
+    sources,
+    warehouseId,
+    salesmanId,
+}: {
+    sources: AssignedShopSource[];
+    warehouseId: string;
+    salesmanId: string;
+}) {
+    if (sources.length === 0) return [];
+
+    const customerIds = sources.map((source) => source.id);
+
+    const [estimateStats, orderStats] = await Promise.all([
+        db
+            .select({
+                customerId: estimate.customerId,
+                totalEstimates: sql<number>`COUNT(*)::int`,
+                lastEstimateDate: sql<Date | null>`MAX(${estimate.createdAt})`,
+            })
+            .from(estimate)
+            .where(
+                and(
+                    eq(estimate.salesmanId, salesmanId),
+                    inArray(estimate.customerId, customerIds),
+                ),
+            )
+            .groupBy(estimate.customerId),
+        db
+            .select({
+                customerId: order.userId,
+                totalOrders: sql<number>`COUNT(*)::int`,
+                totalSpent: sql<string>`COALESCE(SUM(${order.total}::numeric), 0)::text`,
+                pendingAmount: sql<string>`COALESCE(SUM(CASE WHEN ${order.paymentStatus} = 'pending' THEN ${order.total}::numeric ELSE 0 END), 0)::text`,
+                lastOrderDate: sql<Date | null>`MAX(${order.createdAt})`,
+            })
+            .from(order)
+            .where(
+                and(
+                    eq(order.warehouseId, warehouseId),
+                    inArray(order.userId, customerIds),
+                ),
+            )
+            .groupBy(order.userId),
+    ]);
+
+    const estimateStatsByCustomer = new Map(
+        estimateStats.map((row) => [row.customerId, row]),
+    );
+    const orderStatsByCustomer = new Map(
+        orderStats.map((row) => [row.customerId, row]),
+    );
+
+    return sources.map((source) => {
+        const customerEstimateStats = estimateStatsByCustomer.get(source.id);
+        const customerOrderStats = orderStatsByCustomer.get(source.id);
+        const lastEstimateDate = customerEstimateStats?.lastEstimateDate ?? null;
+        const lastOrderDate = customerOrderStats?.lastOrderDate ?? null;
+        const lastActivityAt =
+            lastEstimateDate && lastOrderDate
+                ? lastEstimateDate > lastOrderDate
+                    ? lastEstimateDate
+                    : lastOrderDate
+                : lastEstimateDate || lastOrderDate;
+
+        return {
+            ...source,
+            name: source.contactName,
+            totalEstimates: customerEstimateStats?.totalEstimates ?? 0,
+            totalOrders: customerOrderStats?.totalOrders ?? 0,
+            totalSpent: customerOrderStats?.totalSpent ?? "0",
+            pendingAmount: customerOrderStats?.pendingAmount ?? "0",
+            lastActivityAt,
+        };
+    });
+}
 
 export const salesmanRouter = {
     /**
@@ -137,15 +351,14 @@ export const salesmanRouter = {
         })
         .input(upcomingOrdersSchema)
         .handler(async ({ input, context }) => {
-            const userId = context.session.user.id;
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
 
-            // Get assigned customer IDs
-            const assignments = await db
-                .select({ customerId: customerAssignment.customerId })
-                .from(customerAssignment)
-                .where(eq(customerAssignment.salesmanId, userId));
+            const assignedShops = await getAssignedShopSources({
+                warehouseId,
+                salesmanId,
+            });
+            const customerIds = assignedShops.map((shop) => shop.id);
 
-            const customerIds = assignments.map((a) => a.customerId);
             if (customerIds.length === 0) {
                 return { orders: [] };
             }
@@ -153,6 +366,7 @@ export const salesmanRouter = {
             // Get orders with status confirmed or processing from assigned customers
             const ordersList = await db.query.order.findMany({
                 where: and(
+                    eq(order.warehouseId, warehouseId),
                     inArray(order.status, ["confirmed", "processing"]),
                     inArray(order.userId, customerIds)
                 ),
@@ -186,111 +400,15 @@ export const salesmanRouter = {
             description: "Get list of customers assigned to the logged-in salesman",
         })
         .handler(async ({ context }) => {
-            const userId = context.session.user.id;
-
-            // Get assigned customer IDs
-            const assignments = await db
-                .select({ customerId: customerAssignment.customerId })
-                .from(customerAssignment)
-                .where(eq(customerAssignment.salesmanId, userId));
-
-            const customerIds = assignments.map((a) => a.customerId);
-
-            if (customerIds.length === 0) {
-                return { customers: [] };
-            }
-
-            // Get customers
-            const customers = await db
-                .select({
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    phoneNumber: user.phoneNumber,
-                    shopName: user.shopName,
-                    createdAt: user.createdAt,
-                })
-                .from(user)
-                .where(and(eq(user.role, "customer"), inArray(user.id, customerIds)))
-                .orderBy(desc(user.createdAt));
-
-            // Get estimate counts per customer
-            const estimateCounts = await db
-                .select({
-                    customerId: estimate.customerId,
-                    count: sql<number>`count(*)`.as("count"),
-                })
-                .from(estimate)
-                .where(inArray(estimate.customerId, customerIds))
-                .groupBy(estimate.customerId);
-
-            const estimateCountMap = new Map(
-                estimateCounts.map((e) => [e.customerId, e.count]),
-            );
-
-            // Get order counts and totals per customer
-            const orderStats = await db
-                .select({
-                    userId: order.userId,
-                    orderCount: sql<number>`count(*)`.as("orderCount"),
-                    totalSpent: sql<string>`COALESCE(SUM(${order.total}), 0)`.as("totalSpent"),
-                    lastOrderDate: sql<Date>`MAX(${order.createdAt})`.as("lastOrderDate"),
-                })
-                .from(order)
-                .where(inArray(order.userId, customerIds))
-                .groupBy(order.userId);
-
-            const orderStatsMap = new Map(
-                orderStats.map((o) => [
-                    o.userId,
-                    {
-                        count: o.orderCount,
-                        spent: o.totalSpent || "0",
-                        lastDate: o.lastOrderDate,
-                    },
-                ]),
-            );
-
-            // Get last estimate date per customer
-            const lastEstimates = await db
-                .select({
-                    customerId: estimate.customerId,
-                    lastDate: sql<Date>`MAX(${estimate.createdAt})`.as("lastDate"),
-                })
-                .from(estimate)
-                .where(inArray(estimate.customerId, customerIds))
-                .groupBy(estimate.customerId);
-
-            const lastEstimateMap = new Map(
-                lastEstimates.map((e) => [e.customerId, e.lastDate]),
-            );
-
-            const enrichedCustomers = customers.map((c) => {
-                const orderData = orderStatsMap.get(c.id);
-                const lastEstimateDate = lastEstimateMap.get(c.id);
-                const lastOrderDate = orderData?.lastDate;
-
-                // Determine last activity
-                let lastActivityAt: Date | null = null;
-                if (lastEstimateDate && lastOrderDate) {
-                    lastActivityAt =
-                        lastEstimateDate > lastOrderDate ? lastEstimateDate : lastOrderDate;
-                } else {
-                    lastActivityAt = lastEstimateDate || lastOrderDate || null;
-                }
-
-                return {
-                    id: c.id,
-                    name: c.name,
-                    email: c.email,
-                    phoneNumber: c.phoneNumber,
-                    shopName: c.shopName,
-                    totalEstimates: estimateCountMap.get(c.id) || 0,
-                    totalOrders: orderData?.count || 0,
-                    totalSpent: orderData?.spent || "0",
-                    lastActivityAt,
-                    createdAt: c.createdAt,
-                };
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
+            const assignedShops = await getAssignedShopSources({
+                warehouseId,
+                salesmanId,
+            });
+            const enrichedCustomers = await enrichAssignedShopSources({
+                sources: assignedShops,
+                warehouseId,
+                salesmanId,
             });
 
             return { customers: enrichedCustomers };
@@ -310,44 +428,30 @@ export const salesmanRouter = {
         })
         .input(z.object({ id: z.string() }))
         .handler(async ({ context, input }) => {
-            const userId = context.session.user.id;
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
+            const [assignedShop] = await getAssignedShopSources({
+                warehouseId,
+                salesmanId,
+                customerId: input.id,
+            });
 
-            // Verify customer is assigned to this salesman
-            const assignment = await db
-                .select()
-                .from(customerAssignment)
-                .where(
-                    and(
-                        eq(customerAssignment.salesmanId, userId),
-                        eq(customerAssignment.customerId, input.id),
-                    ),
-                )
-                .limit(1);
-
-            if (assignment.length === 0) {
-                throw new ORPCError("NOT_FOUND", { message: "Customer not found or not assigned to you" });
+            if (!assignedShop) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Shop not found or not assigned to you",
+                });
             }
 
-            // Get customer info
-            const customerData = await db
-                .select({
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    phoneNumber: user.phoneNumber,
-                    shopName: user.shopName,
-                    ownerName: user.ownerName,
-                    createdAt: user.createdAt,
-                })
-                .from(user)
-                .where(and(eq(user.id, input.id), eq(user.role, "customer")))
-                .limit(1);
+            const [enrichedShop] = await enrichAssignedShopSources({
+                sources: [assignedShop],
+                warehouseId,
+                salesmanId,
+            });
 
-            if (customerData.length === 0) {
-                throw new ORPCError("NOT_FOUND", { message: "Customer not found" });
+            if (!enrichedShop) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Shop not found or not assigned to you",
+                });
             }
-
-            const customerInfo = customerData[0];
 
             // Get customer estimates
             const customerEstimates = await db
@@ -359,7 +463,12 @@ export const salesmanRouter = {
                     createdAt: estimate.createdAt,
                 })
                 .from(estimate)
-                .where(eq(estimate.customerId, input.id))
+                .where(
+                    and(
+                        eq(estimate.customerId, input.id),
+                        eq(estimate.salesmanId, salesmanId),
+                    ),
+                )
                 .orderBy(desc(estimate.createdAt));
 
             // Get customer orders
@@ -373,7 +482,7 @@ export const salesmanRouter = {
                     createdAt: order.createdAt,
                 })
                 .from(order)
-                .where(eq(order.userId, input.id))
+                .where(and(eq(order.userId, input.id), eq(order.warehouseId, warehouseId)))
                 .orderBy(desc(order.createdAt));
 
             // Calculate stats
@@ -387,7 +496,7 @@ export const salesmanRouter = {
 
             return {
                 customer: {
-                    ...customerInfo,
+                    ...enrichedShop,
                     stats: {
                         totalEstimates: customerEstimates.length,
                         totalOrders: customerOrders.length,
