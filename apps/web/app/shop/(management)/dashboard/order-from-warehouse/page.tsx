@@ -152,6 +152,16 @@ function getCartItemKey(item: {
   return `${item.variantId}:${item.fulfillmentMode}:${item.targetVariantId ?? "none"}`;
 }
 
+function formatCartItemLine(item: Pick<CartItem, "modeLabel" | "unitLabel">) {
+  if (
+    item.modeLabel.trim().toLowerCase() === item.unitLabel.trim().toLowerCase()
+  ) {
+    return item.modeLabel;
+  }
+
+  return `${item.modeLabel} • ${item.unitLabel}`;
+}
+
 function buildWarehouseOrderUrl(warehouseSlug?: string | null) {
   if (!warehouseSlug) {
     return "/dashboard/order-from-warehouse";
@@ -1483,8 +1493,7 @@ export default function OrderFromWarehousePage() {
                               {item.productName}
                             </div>
                             <div className="text-[10px] text-gray-400">
-                              {item.modeLabel} • {item.unitLabel} ×{" "}
-                              {item.quantity}
+                              {formatCartItemLine(item)} × {item.quantity}
                             </div>
                             {item.targetVariantLabel && (
                               <div className="text-[10px] text-blue-500">
@@ -1621,7 +1630,7 @@ export default function OrderFromWarehousePage() {
                       {item.productName}
                     </span>
                     <span className="text-[10px] text-gray-400">
-                      {item.modeLabel} • {item.unitLabel} × {item.quantity}
+                      {formatCartItemLine(item)} × {item.quantity}
                     </span>
                     {item.targetVariantLabel && (
                       <span className="block text-[10px] text-blue-500">
