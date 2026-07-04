@@ -218,6 +218,15 @@ export function getPreferredDirectMode(
   variant?: WarehouseCatalogVariantLike["variant"],
 ): FulfillmentMode {
   if (variant) {
+    const variantMode = getWarehouseVariantMode(profile, variant);
+    if (
+      variantMode &&
+      ["loose", "cylinder", "unit", "pair", "drum"].includes(variantMode) &&
+      supportsFulfillmentMode(profile, variantMode)
+    ) {
+      return variantMode;
+    }
+
     const measure = getWarehouseVariantMeasure(profile, variant);
     if (
       profile.family === "footwear" &&
