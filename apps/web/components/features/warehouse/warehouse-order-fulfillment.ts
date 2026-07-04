@@ -193,7 +193,19 @@ export function getFulfillmentFamilyLabel(
 
 export function getPreferredContainerMode(
   profile: ProductTypeFulfillmentProfile,
+  variant?: WarehouseCatalogVariantLike["variant"],
 ): FulfillmentMode {
+  if (variant) {
+    const variantMode = getWarehouseVariantMode(profile, variant);
+    if (
+      variantMode &&
+      ["box", "bundle", "drum", "carton"].includes(variantMode) &&
+      supportsFulfillmentMode(profile, variantMode)
+    ) {
+      return variantMode;
+    }
+  }
+
   return (
     CONTAINER_MODE_PRIORITY.find((mode) =>
       supportsFulfillmentMode(profile, mode),
@@ -236,7 +248,10 @@ export function getWarehouseOrderModeOptions(
     (variantRow.variant.cartonOptions?.length || 0) > 0;
   const isLooseVariant =
     normalizePackType(variantRow.variant.packType) === "loose";
-  const preferredContainerMode = getPreferredContainerMode(profile);
+  const preferredContainerMode = getPreferredContainerMode(
+    profile,
+    variantRow.variant,
+  );
   const preferredDirectMode = getPreferredDirectMode(
     profile,
     variantRow.variant,
