@@ -118,6 +118,36 @@ const fixtures: Fixture[] = [
       firstMode: "pair",
     },
   },
+  {
+    name: "electronics box flow",
+    type: {
+      name: "Electronics",
+      slug: "electronics",
+      inventoryBehaviour: "fixed_pack",
+    },
+    variant: {
+      unitLabel: "10 pcs Box",
+      weightKg: "0",
+      packType: "box",
+      orderUnit: "Unit",
+      piecesPerUnit: 10,
+      totalCartonCount: 5,
+      cartonOptions: [
+        {
+          weightKg: 0,
+          count: 5,
+          totalKg: 0,
+          packsPerCarton: 10,
+        },
+      ],
+    },
+    expected: {
+      family: "electronics",
+      measureUnit: "UNIT",
+      quantityPerPack: 10,
+      firstMode: "box",
+    },
+  },
 ];
 
 for (const fixture of fixtures) {
