@@ -4,6 +4,18 @@ import { buildProductTypeFulfillmentProfile } from "../packages/db/src/fulfillme
 import * as stockMeasure from "../apps/web/lib/stock-measure.ts";
 import * as warehouseFulfillment from "../apps/web/components/features/warehouse/warehouse-order-fulfillment.ts";
 
+const stockMeasureModule = (
+  stockMeasure as typeof stockMeasure & {
+    default?: typeof stockMeasure;
+  }
+).default ?? stockMeasure;
+
+const warehouseFulfillmentModule = (
+  warehouseFulfillment as typeof warehouseFulfillment & {
+    default?: typeof warehouseFulfillment;
+  }
+).default ?? warehouseFulfillment;
+
 type Fixture = {
   name: string;
   type: {
@@ -89,7 +101,7 @@ const fixtures: Fixture[] = [
 
 for (const fixture of fixtures) {
   const profile = buildProductTypeFulfillmentProfile(fixture.type);
-  const measure = stockMeasure.getStockMeasureInfo({
+  const measure = stockMeasureModule.getStockMeasureInfo({
     packType: fixture.variant.packType,
     orderUnit: fixture.variant.orderUnit,
     unitLabel: fixture.variant.unitLabel,
@@ -98,10 +110,13 @@ for (const fixture of fixtures) {
     typeName: fixture.type.name,
     family: profile.family,
   });
-  const options = warehouseFulfillment.getWarehouseOrderModeOptions(profile, {
-    availableQty: "10",
-    variant: fixture.variant,
-  });
+  const options = warehouseFulfillmentModule.getWarehouseOrderModeOptions(
+    profile,
+    {
+      availableQty: "10",
+      variant: fixture.variant,
+    },
+  );
 
   assert.equal(profile.family, fixture.expected.family, `${fixture.name}: family`);
   assert.equal(
