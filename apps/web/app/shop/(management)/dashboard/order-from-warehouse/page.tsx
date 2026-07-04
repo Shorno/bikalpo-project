@@ -79,6 +79,7 @@ type VariantItem = {
   variant: {
     unitLabel: string;
     weightKg: string;
+    orderUnit?: string | null;
     sku: string;
     price: string;
     packType: string | null;
