@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 
 import { buildProductTypeFulfillmentProfile } from "../packages/db/src/fulfillment.ts";
-import {
-  getWarehouseOrderModeOptions,
-} from "../apps/web/components/features/warehouse/warehouse-order-fulfillment.ts";
 
+const warehouseFulfillment = (await import(
+  "../apps/web/components/features/warehouse/warehouse-order-fulfillment.ts"
+)).default as typeof import("../apps/web/components/features/warehouse/warehouse-order-fulfillment.ts");
 const stockMeasure = (await import("../apps/web/lib/stock-measure.ts"))
   .default as typeof import("../apps/web/lib/stock-measure.ts");
 
@@ -102,7 +102,7 @@ for (const fixture of fixtures) {
     typeName: fixture.type.name,
     family: profile.family,
   });
-  const options = getWarehouseOrderModeOptions(profile, {
+  const options = warehouseFulfillment.getWarehouseOrderModeOptions(profile, {
     availableQty: "10",
     variant: fixture.variant,
   });
