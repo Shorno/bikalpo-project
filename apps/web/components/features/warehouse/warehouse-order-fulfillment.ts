@@ -7,7 +7,7 @@ import {
   type ProductTypeFulfillmentProfile,
   supportsFulfillmentMode,
 } from "@bikalpo-project/db/fulfillment";
-import { getStockMeasureInfo } from "@/lib/stock-measure";
+import { getStockMeasureInfo } from "../../../lib/stock-measure";
 
 export type WarehouseCatalogCartonOption = {
   weightKg: number;
