@@ -78,6 +78,9 @@ function normalizeDisplayUnit(unit?: string | null) {
   if (normalized === "UNIT") {
     return "Unit";
   }
+  if (normalized === "CYLINDER") {
+    return "Cylinder";
+  }
   if (normalized === "PACK") {
     return "Pack";
   }
