@@ -112,6 +112,14 @@ function isFashionTypeName(typeName?: string | null) {
   );
 }
 
+function isLpgTypeName(typeName?: string | null) {
+  return (
+    String(typeName || "")
+      .trim()
+      .toLowerCase() === "lpg"
+  );
+}
+
 function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
   const measure = getStockMeasureInfo({
     packType: variant?.packType,
@@ -594,8 +602,11 @@ export default function AddStockPage() {
     const isFashionProduct = isFashionTypeName(
       modalSelectedProduct.category?.type?.name,
     );
-    if (isFashionProduct && entryType !== "pack") {
-      toast.error("Fashion stock should be added through Pack Entry.");
+    const isLpgProduct = isLpgTypeName(
+      modalSelectedProduct.category?.type?.name,
+    );
+    if ((isFashionProduct || isLpgProduct) && entryType !== "pack") {
+      toast.error("This product should be added through Pack Entry.");
       return;
     }
     if (!isFashionProduct && !modalSelectedBrandId) return;
