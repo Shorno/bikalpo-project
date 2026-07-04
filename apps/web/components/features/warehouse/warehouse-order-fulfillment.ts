@@ -203,7 +203,19 @@ export function getPreferredContainerMode(
 
 export function getPreferredDirectMode(
   profile: ProductTypeFulfillmentProfile,
+  variant?: WarehouseCatalogVariantLike["variant"],
 ): FulfillmentMode {
+  if (variant) {
+    const measure = getWarehouseVariantMeasure(profile, variant);
+    if (
+      profile.family === "footwear" &&
+      measure.quantityUnit === "PAIR" &&
+      supportsFulfillmentMode(profile, "pair")
+    ) {
+      return "pair";
+    }
+  }
+
   return (
     DIRECT_MODE_PRIORITY.find((mode) =>
       supportsFulfillmentMode(profile, mode),
@@ -225,7 +237,10 @@ export function getWarehouseOrderModeOptions(
   const isLooseVariant =
     normalizePackType(variantRow.variant.packType) === "loose";
   const preferredContainerMode = getPreferredContainerMode(profile);
-  const preferredDirectMode = getPreferredDirectMode(profile);
+  const preferredDirectMode = getPreferredDirectMode(
+    profile,
+    variantRow.variant,
+  );
   const modes = new Set<FulfillmentMode>();
 
   if (hasCartons) {
