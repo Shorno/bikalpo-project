@@ -427,7 +427,7 @@ function VariantModal({
       : 0;
   const directStockQty =
     !usesContainerStock && !isLooseVariant
-      ? Math.floor(Number(selected.availableQty) || 0)
+      ? getDirectStockQty(product, selected)
       : 0;
   const stockQty = usesContainerStock
     ? (selectedCarton?.count ?? selected.variant.totalCartonCount ?? 0)
