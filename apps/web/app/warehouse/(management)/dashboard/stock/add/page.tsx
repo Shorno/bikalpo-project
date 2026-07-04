@@ -54,6 +54,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import {
+  formatStockDisplayUnit,
+  getStockMeasureInfo,
+  isDirectCountUnit,
+} from "@/lib/stock-measure";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 
@@ -99,21 +104,6 @@ type ProductResult = {
   }[];
 };
 
-const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
-const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
-
-function normalizeUnit(unit?: string | null) {
-  return String(unit || "")
-    .trim()
-    .toUpperCase();
-}
-
-function formatUnit(unit?: string | null) {
-  const normalized = normalizeUnit(unit);
-  if (PIECE_UNITS.has(normalized)) return "PCS";
-  return normalized || "UNIT";
-}
-
 function isFashionTypeName(typeName?: string | null) {
   return (
     String(typeName || "")
@@ -122,76 +112,42 @@ function isFashionTypeName(typeName?: string | null) {
   );
 }
 
-function parseUnitLabelMeasure(label?: string | null) {
-  const normalizedLabel = String(label || "").trim();
-  if (!normalizedLabel) return null;
-
-  const pieceMatch = normalizedLabel.match(
-    /(\d+(?:\.\d+)?)\s*(pc|pcs|piece|pieces|pair|unit)\b/i,
-  );
-  if (pieceMatch) {
-    const value = Number(pieceMatch[1]);
-    if (value > 0) {
-      return {
-        quantityPerPack: value,
-        quantityUnit: normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
-      };
-    }
-  }
-
-  const weightMatch = normalizedLabel.match(
-    /(\d+(?:\.\d+)?)\s*(kg|kgs|kilogram|kilograms)\b/i,
-  );
-  if (weightMatch) {
-    const value = Number(weightMatch[1]);
-    if (value > 0) {
-      return {
-        quantityPerPack: value,
-        quantityUnit: "KG",
-      };
-    }
-  }
-
-  return null;
-}
-
 function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
-  const normalizedUnit = normalizeUnit(variant?.orderUnit);
-  const weightKg = parseFloat(variant?.weightKg || "0");
-  const piecesPerUnit = Number(variant?.piecesPerUnit || 0);
-  const parsedLabelMeasure = parseUnitLabelMeasure(variant?.unitLabel);
+  const measure = getStockMeasureInfo({
+    packType: variant?.packType,
+    orderUnit: variant?.orderUnit,
+    unitLabel: variant?.unitLabel,
+    weightKg: variant?.weightKg,
+    piecesPerUnit: variant?.piecesPerUnit,
+  });
 
-  if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
+  if (measure.quantityUnit === "KG" && measure.quantityPerPack > 0) {
     return {
-      quantityPerPack: weightKg,
-      quantityUnit: "KG",
-      displayLabel: `${variant?.unitLabel || "Unit"} (${weightKg} KG)`,
+      ...measure,
+      displayLabel: `${variant?.unitLabel || "Unit"} (${measure.quantityPerPack} KG)`,
     };
   }
 
-  if (piecesPerUnit > 0) {
-    const unitLabel = formatUnit(variant?.orderUnit);
+  if (
+    measure.quantityPerPack === 1 &&
+    isDirectCountUnit(measure.quantityUnit)
+  ) {
     return {
-      quantityPerPack: piecesPerUnit,
-      quantityUnit: unitLabel,
+      ...measure,
       displayLabel:
-        piecesPerUnit === 1
-          ? variant?.unitLabel || "Unit"
-          : `${variant?.unitLabel || "Unit"} (${piecesPerUnit} ${unitLabel})`,
+        variant?.unitLabel || formatStockDisplayUnit(measure.quantityUnit),
     };
   }
 
-  if (parsedLabelMeasure) {
+  if (measure.quantityPerPack > 1) {
     return {
-      quantityPerPack: parsedLabelMeasure.quantityPerPack,
-      quantityUnit: parsedLabelMeasure.quantityUnit,
-      displayLabel: variant?.unitLabel || "Unit",
+      ...measure,
+      displayLabel: `${variant?.unitLabel || "Unit"} (${measure.quantityPerPack} ${measure.quantityUnit})`,
     };
   }
 
   return {
-    quantityPerPack: 0,
-    quantityUnit: formatUnit(variant?.orderUnit),
+    ...measure,
     displayLabel: variant?.unitLabel || "Unit",
   };
 }
