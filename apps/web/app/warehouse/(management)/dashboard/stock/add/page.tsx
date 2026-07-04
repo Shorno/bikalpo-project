@@ -939,7 +939,7 @@ export default function AddStockPage() {
                     Pack Entry
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Enter number of packs
+                    Enter packs or direct units
                   </p>
                 </div>
               </button>
@@ -1271,6 +1271,12 @@ export default function AddStockPage() {
                     </tbody>
                   </table>
                 </div>
+                {showGenericPackPriceLabel && (
+                  <div className="border-t bg-blue-50/50 px-4 py-2 text-xs text-blue-700">
+                    Unit-based products like LPG are counted by cylinder or unit
+                    here, not by KG.
+                  </div>
+                )}
                 <div className="border-t p-3">
                   <Button
                     type="button"
