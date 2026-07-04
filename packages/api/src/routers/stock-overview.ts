@@ -46,6 +46,14 @@ const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
 const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
 const DIRECT_COUNT_UNITS = new Set(["CYLINDER", "UNIT", "PAIR"]);
 
+function isLpgTypeContext(typeName?: string | null) {
+    return (
+        String(typeName || "")
+            .trim()
+            .toLowerCase() === "lpg"
+    );
+}
+
 function normalizeMeasureUnit(unit?: string | null) {
     return String(unit || "")
         .trim()
@@ -101,11 +109,13 @@ function getVariantMeasureInfo(input: {
     orderUnit?: string | null;
     weightKg?: string | null;
     piecesPerUnit?: number | null;
+    typeName?: string | null;
 }) {
     const packType = input.packType || "other";
     const normalizedUnit = normalizeMeasureUnit(input.orderUnit);
     const weightKg = parseFloat(input.weightKg || "0");
     const piecesPerUnit = Number(input.piecesPerUnit || 0);
+    const isLpgContext = isLpgTypeContext(input.typeName);
 
     if (packType === "loose") {
         if (PIECE_UNITS.has(normalizedUnit)) {
@@ -123,6 +133,10 @@ function getVariantMeasureInfo(input: {
             };
         }
         return { quantityPerPack: 1, quantityUnit: normalizedUnit || "KG", isLoose: true };
+    }
+
+    if (isLpgContext) {
+        return { quantityPerPack: 1, quantityUnit: "CYLINDER", isLoose: false };
     }
 
     if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
@@ -571,10 +585,13 @@ export const stockOverviewRouter = {
                     brandId: brand.id,
                     brandName: brand.name,
                     brandLogo: brand.logo,
+                    typeName: productType.name,
                 })
                 .from(inventory)
                 .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
                 .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(category, eq(product.categoryId, category.id))
+                .leftJoin(productType, eq(category.typeId, productType.id))
                 // Prefer variant-level brand, fall back to product-level brand
                 .leftJoin(brand, eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`))
                 .where(
@@ -632,6 +649,7 @@ export const stockOverviewRouter = {
                     orderUnit: row.orderUnit,
                     weightKg: row.weightKg,
                     piecesPerUnit: row.piecesPerUnit,
+                    typeName: row.typeName,
                 });
                 const isLoose = measure.isLoose;
 
@@ -690,6 +708,7 @@ export const stockOverviewRouter = {
                     orderUnit: r.orderUnit,
                     weightKg: r.weightKg,
                     piecesPerUnit: r.piecesPerUnit,
+                    typeName: r.typeName,
                 });
                 const qty = parseFloat(r.availableQty || "0");
                 return sum + qty * measure.quantityPerPack;
@@ -910,6 +929,7 @@ export const stockOverviewRouter = {
                     orderUnit: row.orderUnit,
                     weightKg: row.weightKg,
                     piecesPerUnit: row.piecesPerUnit,
+                    typeName: row.typeName,
                 });
                 const isLoose = measure.isLoose;
                 const breakdownType = toBreakdownType(packType, measure.quantityUnit);

@@ -179,7 +179,10 @@ function getVariantIdentityKey(item: {
   ].join("|");
 }
 
-function getGroupMeasure(group?: StockVariantGroup | null) {
+function getGroupMeasure(
+  group?: StockVariantGroup | null,
+  typeName?: string | null,
+) {
   if (!group) {
     return { quantityPerPack: 0, quantityUnit: "PACK" };
   }
@@ -189,6 +192,7 @@ function getGroupMeasure(group?: StockVariantGroup | null) {
     unitLabel: group.unitLabel,
     weightKg: group.weightKg,
     piecesPerUnit: group.piecesPerUnit,
+    typeName,
   });
   return {
     quantityPerPack: measure.quantityPerPack,
@@ -481,7 +485,7 @@ export default function StockDetailPage() {
 
   // Compute actual carton counts from real carton table data (not deprecated cartonConfig)
   function getCartonInfo(group: any) {
-    const measure = getGroupMeasure(group);
+    const measure = getGroupMeasure(group, item.typeName);
     let totalActiveCartons = 0;
     let totalMeasureInCartons = 0;
 
@@ -514,7 +518,7 @@ export default function StockDetailPage() {
   const looseVariantRows: LooseVariantRow[] = [];
 
   for (const group of looseVariantGroups) {
-    const measure = getGroupMeasure(group);
+    const measure = getGroupMeasure(group, item.typeName);
     for (const item of group.items) {
       const inventory = getVariantDisplayInventory(item, true);
       if (
@@ -561,7 +565,7 @@ export default function StockDetailPage() {
 
   const fashionVariantRows = isFashion
     ? packVariantGroups.flatMap((group) => {
-        const measure = getGroupMeasure(group);
+        const measure = getGroupMeasure(group, item.typeName);
         if (normalizeUnit(measure.quantityUnit) === "KG") {
           return [];
         }
@@ -596,7 +600,7 @@ export default function StockDetailPage() {
   const fashionBundleRows = isFashion
     ? packVariantGroups
         .map((group, index) => {
-          const measure = getGroupMeasure(group);
+          const measure = getGroupMeasure(group, item.typeName);
           if (normalizeUnit(measure.quantityUnit) === "KG") {
             return null;
           }
@@ -1001,7 +1005,7 @@ export default function StockDetailPage() {
                       cartonCount: number;
                       totalMeasure: number;
                     }[] = [];
-                    const measure = getGroupMeasure(group);
+                    const measure = getGroupMeasure(group, item.typeName);
 
                     for (const it of group.items) {
                       const summary = cartonByVariant.get(it.variantId);

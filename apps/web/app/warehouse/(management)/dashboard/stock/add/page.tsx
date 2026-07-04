@@ -120,13 +120,17 @@ function isLpgTypeName(typeName?: string | null) {
   );
 }
 
-function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
+function getVariantMeasure(
+  variant?: ProductResult["variants"][number] | null,
+  typeName?: string | null,
+) {
   const measure = getStockMeasureInfo({
     packType: variant?.packType,
     orderUnit: variant?.orderUnit,
     unitLabel: variant?.unitLabel,
     weightKg: variant?.weightKg,
     piecesPerUnit: variant?.piecesPerUnit,
+    typeName,
   });
 
   if (measure.quantityUnit === "KG" && measure.quantityPerPack > 0) {
@@ -436,8 +440,9 @@ export default function AddStockPage() {
         })
         .sort(
           (a, b) =>
-            getVariantMeasure(a).quantityPerPack -
-            getVariantMeasure(b).quantityPerPack,
+            getVariantMeasure(a, row.product.category?.type?.name)
+              .quantityPerPack -
+            getVariantMeasure(b, row.product.category?.type?.name).quantityPerPack,
         );
     },
     [entryType],
@@ -466,7 +471,11 @@ export default function AddStockPage() {
       if (isFashionRow) {
         return qty;
       }
-      return qty * getVariantMeasure(variant).quantityPerPack;
+      return (
+        qty *
+        getVariantMeasure(variant, row.product.category?.type?.name)
+          .quantityPerPack
+      );
     },
     [getRowVariant, entryType],
   );
@@ -476,7 +485,8 @@ export default function AddStockPage() {
       const variant = getRowVariant(row);
       if (entryType === "loose" || entryType === "carton") return "KG";
       if (isFashionTypeName(row.product.category?.type?.name)) return "PCS";
-      return getVariantMeasure(variant).quantityUnit;
+      return getVariantMeasure(variant, row.product.category?.type?.name)
+        .quantityUnit;
     },
     [entryType, getRowVariant],
   );
@@ -545,7 +555,12 @@ export default function AddStockPage() {
       entryType === "pack" &&
       tableRows.some((row) =>
         isFashionTypeName(row.product.category?.type?.name) ||
-        isDirectCountUnit(getVariantMeasure(getRowVariant(row)).quantityUnit),
+        isDirectCountUnit(
+          getVariantMeasure(
+            getRowVariant(row),
+            row.product.category?.type?.name,
+          ).quantityUnit,
+        ),
       ),
     [entryType, getRowVariant, tableRows],
   );
@@ -554,7 +569,12 @@ export default function AddStockPage() {
     () =>
       entryType === "pack" &&
       tableRows.some((row) =>
-        isDirectCountUnit(getVariantMeasure(getRowVariant(row)).quantityUnit),
+        isDirectCountUnit(
+          getVariantMeasure(
+            getRowVariant(row),
+            row.product.category?.type?.name,
+          ).quantityUnit,
+        ),
       ),
     [entryType, getRowVariant, tableRows],
   );
@@ -638,8 +658,10 @@ export default function AddStockPage() {
       })
       .sort(
         (a, b) =>
-          getVariantMeasure(a).quantityPerPack -
-          getVariantMeasure(b).quantityPerPack,
+          getVariantMeasure(a, modalSelectedProduct.category?.type?.name)
+            .quantityPerPack -
+          getVariantMeasure(b, modalSelectedProduct.category?.type?.name)
+            .quantityPerPack,
       );
     const newRow: TableRow = {
       id: ++rowIdRef.current,
@@ -727,7 +749,10 @@ export default function AddStockPage() {
     try {
       const submitRow = (row: TableRow) => {
         const rowVariant = getRowVariant(row);
-        const rowMeasure = getVariantMeasure(rowVariant);
+        const rowMeasure = getVariantMeasure(
+          rowVariant,
+          row.product.category?.type?.name,
+        );
         const totalLooseQty = getRowTotalQtyValue(row);
         const qty =
           entryType === "loose"
@@ -1153,7 +1178,12 @@ export default function AddStockPage() {
                                           key={v.id}
                                           value={String(v.id)}
                                         >
-                                          {getVariantMeasure(v).displayLabel}
+                                          {
+                                            getVariantMeasure(
+                                              v,
+                                              row.product.category?.type?.name,
+                                            ).displayLabel
+                                          }
                                         </SelectItem>
                                       ))}
                                     </SelectContent>

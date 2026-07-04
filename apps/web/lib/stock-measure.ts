@@ -4,6 +4,17 @@ const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
 const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
 const DIRECT_COUNT_UNITS = new Set(["CYLINDER", "UNIT", "PAIR"]);
 
+function isLpgTypeContext(typeName?: string | null, family?: string | null) {
+  return (
+    String(family || "")
+      .trim()
+      .toLowerCase() === "lpg" ||
+    String(typeName || "")
+      .trim()
+      .toLowerCase() === "lpg"
+  );
+}
+
 export function normalizeStockUnit(unit?: string | null) {
   return String(unit || "")
     .trim()
@@ -80,12 +91,15 @@ export function getStockMeasureInfo(input: {
   unitLabel?: string | null;
   weightKg?: string | number | null;
   piecesPerUnit?: number | null;
+  typeName?: string | null;
+  family?: string | null;
 }) {
   const normalizedUnit = normalizeStockUnit(input.orderUnit);
   const packType = String(input.packType || "").trim().toLowerCase();
   const weightKg = Number(input.weightKg || 0);
   const piecesPerUnit = Number(input.piecesPerUnit || 0);
   const parsedLabelMeasure = parseStockUnitLabelMeasure(input.unitLabel);
+  const isLpgContext = isLpgTypeContext(input.typeName, input.family);
 
   if (packType === "loose") {
     if (PIECE_UNITS.has(normalizedUnit)) {
@@ -105,6 +119,14 @@ export function getStockMeasureInfo(input: {
       quantityPerPack: 1,
       quantityUnit: normalizedUnit || "KG",
       isLoose: true,
+    };
+  }
+
+  if (isLpgContext) {
+    return {
+      quantityPerPack: 1,
+      quantityUnit: "CYLINDER",
+      isLoose: false,
     };
   }
 
