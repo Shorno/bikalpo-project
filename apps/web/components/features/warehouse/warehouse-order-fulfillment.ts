@@ -60,6 +60,28 @@ function normalizePackType(value?: string | null) {
   return (value || "").trim().toLowerCase();
 }
 
+function normalizeVariantMode(
+  value?: string | null,
+): FulfillmentMode | null {
+  const normalized = normalizePackType(value);
+  switch (normalized) {
+    case "loose":
+    case "pack":
+    case "carton":
+    case "box":
+    case "pair":
+    case "unit":
+    case "cylinder":
+    case "drum":
+    case "bundle":
+      return normalized;
+    case "packet":
+      return "pack";
+    default:
+      return null;
+  }
+}
+
 export function getWarehouseVariantMeasure(
   profile: ProductTypeFulfillmentProfile,
   variant: WarehouseCatalogVariantLike["variant"],
@@ -72,6 +94,33 @@ export function getWarehouseVariantMeasure(
     piecesPerUnit: variant.piecesPerUnit,
     family: profile.family,
   });
+}
+
+export function getWarehouseVariantMode(
+  profile: ProductTypeFulfillmentProfile,
+  variant: WarehouseCatalogVariantLike["variant"],
+): FulfillmentMode | null {
+  if (profile.family === "lpg") {
+    return "cylinder";
+  }
+
+  const packMode = normalizeVariantMode(variant.packType);
+  if (packMode) {
+    return packMode;
+  }
+
+  const measure = getWarehouseVariantMeasure(profile, variant);
+  const normalizedMeasureUnit = measure.quantityUnit.toLowerCase();
+
+  if (normalizedMeasureUnit === "pair") {
+    return "pair";
+  }
+
+  if (normalizedMeasureUnit === "unit") {
+    return "unit";
+  }
+
+  return null;
 }
 
 function isPackStyleLabel(label?: string | null) {
