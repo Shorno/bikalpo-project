@@ -170,10 +170,37 @@ function ProductCard({
   cartQty: number;
   onClick: () => void;
 }) {
-  const totalCartons = product.variants.reduce(
+  const totalContainerQty = product.variants.reduce(
     (s, v) => s + (v.variant.totalCartonCount || 0),
     0,
   );
+  const firstDirectOption = product.variants
+    .map((variantRow) =>
+      getWarehouseOrderModeOptions(product.fulfillmentProfile, variantRow).find(
+        (option) => !option.usesContainerStock,
+      ),
+    )
+    .find(Boolean);
+  const totalDirectQty = product.variants.reduce((sum, variantRow) => {
+    const directOption = getWarehouseOrderModeOptions(
+      product.fulfillmentProfile,
+      variantRow,
+    ).find((option) => !option.usesContainerStock);
+    if (!directOption) {
+      return sum;
+    }
+
+    const isLooseVariant =
+      (variantRow.variant.packType || "").toLowerCase() === "loose";
+    const variantWeightKg = Number(variantRow.variant.weightKg) || 0;
+    const availableQty = Number(variantRow.availableQty) || 0;
+
+    if (isLooseVariant && variantWeightKg > 0) {
+      return sum + Math.floor(availableQty / variantWeightKg);
+    }
+
+    return sum + Math.floor(availableQty);
+  }, 0);
   const lowestPrice = Math.min(
     ...product.variants.map((v) => Number(v.price) || 0),
   );
@@ -186,7 +213,17 @@ function ProductCard({
     product.fulfillmentProfile,
     "carton",
   );
-  const containerLabelLower = containerLabel.toLowerCase();
+  const stockSummary =
+    totalContainerQty > 0 && product.fulfillmentProfile.family !== "lpg"
+      ? {
+          qty: totalContainerQty,
+          label: containerLabel,
+        }
+      : {
+          qty: totalDirectQty,
+          label: firstDirectOption?.quantityUnitLabel || "Unit",
+        };
+  const stockLabelLower = stockSummary.label.toLowerCase();
 
   return (
     <button
@@ -212,14 +249,14 @@ function ProductCard({
         <div className="absolute top-2 right-2">
           <span
             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-              totalCartons > 10
+              stockSummary.qty > 10
                 ? "text-blue-600 bg-blue-50 border-blue-200"
-                : totalCartons > 3
+                : stockSummary.qty > 3
                   ? "text-amber-600 bg-amber-50 border-amber-200"
                   : "text-red-600 bg-red-50 border-red-200"
             }`}
           >
-            📦 {totalCartons} {containerLabel}
+            📦 {stockSummary.qty} {stockSummary.label}
           </span>
         </div>
         {/* Brand badge */}
@@ -258,7 +295,7 @@ function ProductCard({
           )}
           {brandName && " • "}
           {variantCount} variant{variantCount > 1 ? "s" : ""} • 📦{" "}
-          {totalCartons} {containerLabelLower}
+          {stockSummary.qty} {stockLabelLower}
         </p>
         <div className="flex items-baseline gap-1 mt-1.5">
           <span className="text-base font-bold text-gray-900">
