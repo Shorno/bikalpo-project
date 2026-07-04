@@ -34,6 +34,7 @@ import {
   getFulfillmentFamilyLabel,
   getWarehouseModeDisplayLabel,
   getWarehouseOrderModeOptions,
+  getWarehouseVariantMeasure,
 } from "@/components/features/warehouse/warehouse-order-fulfillment";
 import {
   usePlaceWarehouseOrder,
@@ -172,6 +173,42 @@ function buildWarehouseOrderUrl(warehouseSlug?: string | null) {
   return `/dashboard/order-from-warehouse?warehouse=${encodeURIComponent(warehouseSlug)}`;
 }
 
+function getDirectModeOption(product: GroupedProduct, variantRow: VariantItem) {
+  return getWarehouseOrderModeOptions(product.fulfillmentProfile, variantRow).find(
+    (option) => !option.usesContainerStock,
+  );
+}
+
+function getDirectStockQty(product: GroupedProduct, variantRow: VariantItem) {
+  const directOption = getDirectModeOption(product, variantRow);
+  if (!directOption) {
+    return 0;
+  }
+
+  const measure = getWarehouseVariantMeasure(
+    product.fulfillmentProfile,
+    variantRow.variant,
+  );
+  const availableQty = Number(variantRow.availableQty) || 0;
+
+  if (measure.isLoose && measure.quantityPerPack > 0) {
+    return Math.floor(availableQty / measure.quantityPerPack);
+  }
+
+  if (directOption.mode === "pair") {
+    return Math.floor(availableQty * Math.max(1, measure.quantityPerPack));
+  }
+
+  if (
+    product.fulfillmentProfile.family === "electronics" &&
+    directOption.mode === "unit"
+  ) {
+    return Math.floor(availableQty * Math.max(1, measure.quantityPerPack));
+  }
+
+  return Math.floor(availableQty);
+}
+
 /* ─── Product Card (grid card) ─── */
 function ProductCard({
   product,
@@ -187,31 +224,10 @@ function ProductCard({
     0,
   );
   const firstDirectOption = product.variants
-    .map((variantRow) =>
-      getWarehouseOrderModeOptions(product.fulfillmentProfile, variantRow).find(
-        (option) => !option.usesContainerStock,
-      ),
-    )
+    .map((variantRow) => getDirectModeOption(product, variantRow))
     .find(Boolean);
   const totalDirectQty = product.variants.reduce((sum, variantRow) => {
-    const directOption = getWarehouseOrderModeOptions(
-      product.fulfillmentProfile,
-      variantRow,
-    ).find((option) => !option.usesContainerStock);
-    if (!directOption) {
-      return sum;
-    }
-
-    const isLooseVariant =
-      (variantRow.variant.packType || "").toLowerCase() === "loose";
-    const variantWeightKg = Number(variantRow.variant.weightKg) || 0;
-    const availableQty = Number(variantRow.availableQty) || 0;
-
-    if (isLooseVariant && variantWeightKg > 0) {
-      return sum + Math.floor(availableQty / variantWeightKg);
-    }
-
-    return sum + Math.floor(availableQty);
+    return sum + getDirectStockQty(product, variantRow);
   }, 0);
   const lowestPrice = Math.min(
     ...product.variants.map((v) => Number(v.price) || 0),
@@ -545,33 +561,11 @@ function VariantModal({
                     0,
                   );
                   const totalBrandDirectQty = bg.variants.reduce((sum, v) => {
-                    const directOption = getWarehouseOrderModeOptions(
-                      profile,
-                      v,
-                    ).find((option) => !option.usesContainerStock);
-                    if (!directOption) {
-                      return sum;
-                    }
-
-                    const isLooseBrandVariant =
-                      (v.variant.packType || "").toLowerCase() === "loose";
-                    const brandVariantWeightKg =
-                      Number(v.variant.weightKg) || 0;
-                    const availableQty = Number(v.availableQty) || 0;
-
-                    if (isLooseBrandVariant && brandVariantWeightKg > 0) {
-                      return sum + Math.floor(availableQty / brandVariantWeightKg);
-                    }
-
-                    return sum + Math.floor(availableQty);
+                    return sum + getDirectStockQty(product, v);
                   }, 0);
                   const brandDirectLabel =
                     bg.variants
-                      .map((v) =>
-                        getWarehouseOrderModeOptions(profile, v).find(
-                          (option) => !option.usesContainerStock,
-                        )?.quantityUnitLabel,
-                      )
+                      .map((v) => getDirectModeOption(product, v)?.quantityUnitLabel)
                       .find(Boolean)
                       ?.toLowerCase() || "unit";
                   const brandStockSummary =
