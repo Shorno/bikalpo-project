@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
 
 import { buildProductTypeFulfillmentProfile } from "../packages/db/src/fulfillment.ts";
-
-const warehouseFulfillment = (await import(
-  "../apps/web/components/features/warehouse/warehouse-order-fulfillment.ts"
-)).default as typeof import("../apps/web/components/features/warehouse/warehouse-order-fulfillment.ts");
-const stockMeasure = (await import("../apps/web/lib/stock-measure.ts"))
-  .default as typeof import("../apps/web/lib/stock-measure.ts");
+import * as stockMeasure from "../apps/web/lib/stock-measure.ts";
+import * as warehouseFulfillment from "../apps/web/components/features/warehouse/warehouse-order-fulfillment.ts";
 
 type Fixture = {
   name: string;
