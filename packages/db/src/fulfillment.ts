@@ -496,9 +496,10 @@ export function buildProductTypeFulfillmentProfile(
   };
 
   if (family === "lpg") {
+    const lpgModes = dedupeModes(["cylinder", "unit"]);
     return {
       ...profile,
-      supportedModes: dedupeModes(["cylinder", "unit", ...profile.supportedModes]),
+      supportedModes: lpgModes,
       defaultMode: "cylinder",
       orderUnit: "cylinder",
       stockUnit: "cylinder",
