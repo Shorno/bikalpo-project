@@ -488,7 +488,7 @@ export default function AddStockPage() {
       if (totalQty <= 0) return "—";
       const unit = getRowTotalQtyUnit(row);
       const decimals = unit === "KG" ? 1 : 0;
-      return `${totalQty.toFixed(decimals)} ${unit}`;
+      return `${totalQty.toFixed(decimals)} ${formatStockDisplayUnit(unit)}`;
     },
     [getRowTotalQtyUnit, getRowTotalQtyValue],
   );
@@ -524,7 +524,7 @@ export default function AddStockPage() {
       return {
         label: unit === "KG" ? "Total Weight" : "Total Quantity",
         value: total.toFixed(decimals),
-        unit,
+        unit: formatStockDisplayUnit(unit),
       };
     }
 
@@ -532,7 +532,8 @@ export default function AddStockPage() {
       label: "Total Quantity",
       value: Array.from(totals.entries())
         .map(
-          ([unit, total]) => `${total.toFixed(unit === "KG" ? 1 : 0)} ${unit}`,
+          ([unit, total]) =>
+            `${total.toFixed(unit === "KG" ? 1 : 0)} ${formatStockDisplayUnit(unit)}`,
         )
         .join(" + "),
       unit: "",
