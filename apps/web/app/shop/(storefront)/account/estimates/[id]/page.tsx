@@ -61,7 +61,6 @@ export default function EstimateDetailsPage() {
   const { data, isLoading, error } = useEstimateById(id);
   type EstimateData = NonNullable<typeof data>;
   type EstimateItem = EstimateData["estimate"]["items"][number];
-  type EstimateCustomer = EstimateData["estimate"]["customer"];
 
   if (isLoading) return <EstimateDetailSkeleton />;
 
@@ -208,7 +207,7 @@ export default function EstimateDetailsPage() {
             <div className="lg:sticky lg:top-4">
               <ConvertOrderForm
                 estimateId={estimate.id}
-                user={estimate.customer as EstimateCustomer}
+                redirectPath="/shop/account/orders"
               />
             </div>
           ) : (
@@ -222,7 +221,7 @@ export default function EstimateDetailsPage() {
                     This estimate has been converted to an order.
                   </p>
                   <Button asChild variant="outline" size="sm" className="mt-3">
-                    <Link href="/account/orders">View Orders</Link>
+                    <Link href="/shop/account/orders">View Orders</Link>
                   </Button>
                 </div>
               ) : estimate.status === "rejected" ? (

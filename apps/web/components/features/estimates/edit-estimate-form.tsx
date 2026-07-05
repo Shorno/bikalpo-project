@@ -103,7 +103,7 @@ export function EditEstimateForm({
 
       startTransition(async () => {
         try {
-          await client.salesman.updateEstimate({
+          await client.adminEstimate.update({
             id: estimate.id,
             customerId: value.customerId,
             items,

@@ -11,6 +11,7 @@ import { db } from "@bikalpo-project/db";
 import {
 	deliveryGroup,
 	deliveryGroupInvoice,
+	estimate,
 	inventory,
 	invoice,
 	order,
@@ -1875,6 +1876,77 @@ function getEffectiveItemPrice(item: {
 	return item.modifiedUnitPrice ?? item.unitPrice;
 }
 
+function toNumber(value: unknown) {
+	const parsed = Number(value ?? 0);
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function roundMoney(value: number) {
+	return Math.round(value * 100) / 100;
+}
+
+function formatMoneyValue(value: number) {
+	return roundMoney(Math.max(0, value)).toFixed(2);
+}
+
+function getOrderDiscountPercent(
+	orderData: {
+		orderSource: string | null;
+		subtotal: string;
+		discount: string;
+	},
+	sourceEstimate?: { discountPercent: string | null } | null,
+) {
+	const estimateDiscountPercent = toNumber(sourceEstimate?.discountPercent);
+	if (orderData.orderSource === "estimate" && estimateDiscountPercent > 0) {
+		return estimateDiscountPercent;
+	}
+
+	const orderSubtotal = toNumber(orderData.subtotal);
+	if (orderSubtotal <= 0) return 0;
+
+	return (toNumber(orderData.discount) / orderSubtotal) * 100;
+}
+
+function buildOrderPricingSummary({
+	orderData,
+	approvedSubtotal,
+	sourceEstimate,
+}: {
+	orderData: {
+		orderSource: string | null;
+		subtotal: string;
+		discount: string;
+		shippingCost: string;
+	};
+	approvedSubtotal: number;
+	sourceEstimate?: { discountPercent: string | null } | null;
+}) {
+	const subtotal = roundMoney(Math.max(0, approvedSubtotal));
+	const discountPercent = Math.max(
+		0,
+		getOrderDiscountPercent(orderData, sourceEstimate),
+	);
+	const discountAmount = Math.min(
+		subtotal,
+		roundMoney(subtotal * (discountPercent / 100)),
+	);
+	const shippingCost = roundMoney(Math.max(0, toNumber(orderData.shippingCost)));
+	const finalTotal = Math.max(
+		0,
+		roundMoney(subtotal - discountAmount + shippingCost),
+	);
+
+	return {
+		approvedSubtotal: subtotal.toFixed(2),
+		discountAmount: discountAmount.toFixed(2),
+		discountPercent: discountPercent.toFixed(2),
+		shippingCost: shippingCost.toFixed(2),
+		finalTotal: formatMoneyValue(finalTotal),
+		hasDiscount: discountAmount > 0,
+	};
+}
+
 const deliveryManagementKpiInput = z
 	.enum(["all", "pending", "in_delivery", "delivered"])
 	.default("all");
@@ -2286,6 +2358,21 @@ const orderQueries = {
 				throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 			}
 
+			const sourceEstimate =
+				orderData.orderSource === "estimate"
+					? await db.query.estimate.findFirst({
+							where: and(
+								eq(estimate.convertedOrderId, orderData.id),
+								eq(estimate.warehouseId, userId),
+							),
+							columns: {
+								id: true,
+								estimateNumber: true,
+								discountPercent: true,
+							},
+						})
+					: null;
+
 			const variantIds = orderData.items
 				.map((item) => item.variantId)
 				.filter((id): id is number => id !== null);
@@ -2376,6 +2463,29 @@ const orderQueries = {
 				(sumValue, item) => sumValue + Number(item.approvedTotal),
 				0,
 			);
+			const approvedQtyTotal = items.reduce(
+				(sumValue, item) => sumValue + item.approvedQty,
+				0,
+			);
+			const invoicedQty = invoices.reduce(
+				(sumValue, invoiceData) =>
+					sumValue +
+					invoiceData.items.reduce(
+						(itemSum, invoiceItem) => itemSum + Number(invoiceItem.quantity),
+						0,
+					),
+				0,
+			);
+			const pricingSummary = buildOrderPricingSummary({
+				orderData,
+				approvedSubtotal: finalApprovedTotal,
+				sourceEstimate,
+			});
+			const invoiceProgress = {
+				approvedQty: approvedQtyTotal,
+				invoicedQty,
+				remainingQty: Math.max(0, approvedQtyTotal - invoicedQty),
+			};
 
 			const requiresBuyerAcceptance =
 				!!orderData.modifiedByWarehouseAt &&
@@ -2402,10 +2512,21 @@ const orderQueries = {
 						orderData.shippingName,
 					customerPhone: orderData.user?.phoneNumber || orderData.shippingPhone,
 					items,
-					finalApprovedTotal: finalApprovedTotal.toFixed(2),
+					finalApprovedTotal: pricingSummary.finalTotal,
+					pricingSummary,
+					invoiceProgress,
 					requiresBuyerAcceptance,
 					canPrepareDispatch,
+					canOpenDispatch: canPrepareDispatch || !!currentInvoice,
 				},
+				pricingSummary,
+				sourceEstimate: sourceEstimate
+					? {
+							id: sourceEstimate.id,
+							estimateNumber: sourceEstimate.estimateNumber,
+							discountPercent: sourceEstimate.discountPercent,
+						}
+					: null,
 				invoice: currentInvoice
 					? {
 							id: currentInvoice.id,
@@ -2506,18 +2627,18 @@ const orderQueries = {
 				where: and(
 					eq(order.id, input.orderId),
 					eq(order.warehouseId, userId),
-					eq(order.orderSource, "direct"),
+					inArray(order.orderSource, ["direct", "estimate"]),
 				),
 				with: { items: true },
 			});
 
 			if (!existingOrder) {
-				throw new ORPCError("NOT_FOUND", { message: "Direct order not found" });
+				throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 			}
 
 			if (existingOrder.status !== "pending") {
 				throw new ORPCError("BAD_REQUEST", {
-					message: "Only pending direct orders can be reviewed",
+					message: "Only pending orders can be reviewed",
 				});
 			}
 
@@ -2606,6 +2727,23 @@ const orderQueries = {
 					sumValue + approvedQty * Number(getEffectiveItemPrice(item)),
 				0,
 			);
+			const sourceEstimate =
+				existingOrder.orderSource === "estimate"
+					? await db.query.estimate.findFirst({
+							where: and(
+								eq(estimate.convertedOrderId, existingOrder.id),
+								eq(estimate.warehouseId, userId),
+							),
+							columns: {
+								discountPercent: true,
+							},
+						})
+					: null;
+			const pricingSummary = buildOrderPricingSummary({
+				orderData: existingOrder,
+				approvedSubtotal,
+				sourceEstimate,
+			});
 
 			await db.transaction(async (tx) => {
 				for (const { item, approvedQty } of reviewItems) {
@@ -2638,10 +2776,11 @@ const orderQueries = {
 					.update(order)
 					.set({
 						status: "confirmed",
-						subtotal: approvedSubtotal.toFixed(2),
-						total: approvedSubtotal.toFixed(2),
-						confirmedSubtotal: approvedSubtotal.toFixed(2),
-						confirmedTotal: approvedSubtotal.toFixed(2),
+						subtotal: pricingSummary.approvedSubtotal,
+						discount: pricingSummary.discountAmount,
+						total: pricingSummary.finalTotal,
+						confirmedSubtotal: pricingSummary.approvedSubtotal,
+						confirmedTotal: pricingSummary.finalTotal,
 						confirmedAt: new Date(),
 						modifiedByWarehouseAt: hasModifications ? new Date() : null,
 						modificationAcceptedAt: null,
@@ -2678,12 +2817,12 @@ const orderQueries = {
 				where: and(
 					eq(order.id, input.orderId),
 					eq(order.warehouseId, userId),
-					eq(order.orderSource, "direct"),
+					inArray(order.orderSource, ["direct", "estimate"]),
 				),
 			});
 
 			if (!existingOrder) {
-				throw new ORPCError("NOT_FOUND", { message: "Direct order not found" });
+				throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 			}
 
 			if (existingOrder.status !== "confirmed") {

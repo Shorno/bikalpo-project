@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarClock,
   ClipboardList,
+  Eye,
   type LucideIcon,
   Mail,
   MapPin,
@@ -285,6 +286,14 @@ export default function AssignedShopDetailPage({
             </p>
           </div>
         </div>
+        <Button asChild className="w-fit gap-2">
+          <Link
+            href={`${SALES_PORTAL_BASE}/estimates/create?customerId=${shop.id}`}
+          >
+            <ClipboardList className="h-4 w-4" />
+            Create Estimate
+          </Link>
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -461,13 +470,19 @@ export default function AssignedShopDetailPage({
                         <TableHead>Status</TableHead>
                         <TableHead>Created</TableHead>
                         <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {latestEstimates.map((estimateItem) => (
                         <TableRow key={estimateItem.id}>
                           <TableCell className="font-medium">
-                            {estimateItem.estimateNumber}
+                            <Link
+                              href={`${SALES_PORTAL_BASE}/estimates/${estimateItem.id}`}
+                              className="hover:text-primary hover:underline"
+                            >
+                              {estimateItem.estimateNumber}
+                            </Link>
                           </TableCell>
                           <TableCell>
                             <StatusBadge value={estimateItem.status} />
@@ -477,6 +492,18 @@ export default function AssignedShopDetailPage({
                           </TableCell>
                           <TableCell className="text-right font-medium">
                             {formatMoney(estimateItem.total)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button asChild variant="ghost" size="icon">
+                              <Link
+                                href={`${SALES_PORTAL_BASE}/estimates/${estimateItem.id}`}
+                              >
+                                <Eye className="h-4 w-4" />
+                                <span className="sr-only">
+                                  View estimate details
+                                </span>
+                              </Link>
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
