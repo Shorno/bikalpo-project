@@ -1,7 +1,17 @@
 import { db } from "@bikalpo-project/db";
 import { estimate, order } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, gte, inArray, lte, or, type SQL } from "drizzle-orm";
+import {
+	and,
+	count,
+	desc,
+	eq,
+	gte,
+	inArray,
+	lte,
+	or,
+	type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 import { warehouseProcedure } from "../index";
 
@@ -35,6 +45,7 @@ const listEstimatesSchema = z.object({
 	status: z.union([estimateStatusSchema, z.literal("all")]).default("all"),
 	discountLevel: discountLevelSchema,
 	salesmanId: z.string().optional(),
+	counterpartyId: z.string().optional(),
 	customerId: z.string().optional(),
 	dateRange: dateRangeSchema,
 	sortBy: sortSchema,
@@ -149,6 +160,50 @@ function getDisplayName(
 	return value?.shopName ?? value?.warehouseName ?? value?.name ?? "";
 }
 
+function getCounterparty(
+	row: {
+		warehouseId: string | null;
+		customer?: {
+			id: string;
+			name?: string | null;
+			email?: string | null;
+			phoneNumber?: string | null;
+			shopName?: string | null;
+			warehouseName?: string | null;
+		} | null;
+		warehouse?: {
+			id: string;
+			name?: string | null;
+			email?: string | null;
+			phoneNumber?: string | null;
+			warehouseName?: string | null;
+		} | null;
+	},
+	warehouseId: string,
+) {
+	if (getDirection(row, warehouseId) === "sent") {
+		if (!row.customer) return null;
+		return {
+			id: row.customer.id,
+			name: getDisplayName(row.customer),
+			phoneNumber: row.customer.phoneNumber ?? null,
+			email: row.customer.email ?? null,
+			type: row.customer.warehouseName
+				? ("warehouse" as const)
+				: ("retailer" as const),
+		};
+	}
+
+	if (!row.warehouse) return null;
+	return {
+		id: row.warehouse.id,
+		name: getDisplayName(row.warehouse),
+		phoneNumber: row.warehouse.phoneNumber ?? null,
+		email: row.warehouse.email ?? null,
+		type: "warehouse" as const,
+	};
+}
+
 async function getWarehouseEstimate(
 	id: number,
 	warehouseId: string,
@@ -199,6 +254,31 @@ async function getWarehouseEstimate(
 }
 
 export const warehouseEstimateRouter = {
+	getPendingApprovalCount: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/estimates/pending-approval-count",
+			tags: ["Warehouse Estimates"],
+			summary: "Get pending estimate approval count",
+			description:
+				"Count salesman-created estimates waiting for warehouse approval",
+		})
+		.input(z.object({}))
+		.handler(async ({ context }) => {
+			const warehouseId = context.session.user.id;
+			const [result] = await db
+				.select({ count: count() })
+				.from(estimate)
+				.where(
+					and(
+						eq(estimate.warehouseId, warehouseId),
+						eq(estimate.status, "pending"),
+					),
+				);
+
+			return { pendingApprovalCount: Number(result?.count ?? 0) };
+		}),
+
 	listEstimates: warehouseProcedure
 		.route({
 			method: "GET",
@@ -221,8 +301,20 @@ export const warehouseEstimateRouter = {
 			if (input.salesmanId) {
 				conditions.push(eq(estimate.salesmanId, input.salesmanId));
 			}
-			if (input.customerId) {
-				conditions.push(eq(estimate.customerId, input.customerId));
+			const counterpartyId = input.counterpartyId ?? input.customerId;
+			if (counterpartyId) {
+				if (input.direction === "sent") {
+					conditions.push(eq(estimate.customerId, counterpartyId));
+				} else if (input.direction === "received") {
+					conditions.push(eq(estimate.warehouseId, counterpartyId));
+				} else {
+					conditions.push(
+						or(
+							eq(estimate.customerId, counterpartyId),
+							eq(estimate.warehouseId, counterpartyId),
+						) as SQL,
+					);
+				}
 			}
 			if (dateWindow?.start) {
 				conditions.push(gte(estimate.createdAt, dateWindow.start));
@@ -324,6 +416,14 @@ export const warehouseEstimateRouter = {
 				string,
 				{ id: string; name: string | null }
 			>();
+			const counterpartiesMap = new Map<
+				string,
+				{
+					id: string;
+					name: string | null;
+					type: "retailer" | "warehouse";
+				}
+			>();
 			for (const row of rows) {
 				if (row.salesman) {
 					salesmenMap.set(row.salesman.id, {
@@ -334,7 +434,18 @@ export const warehouseEstimateRouter = {
 				if (row.customer) {
 					customersMap.set(row.customer.id, {
 						id: row.customer.id,
-						name: row.customer.shopName ?? row.customer.name,
+						name:
+							row.customer.shopName ??
+							row.customer.warehouseName ??
+							row.customer.name,
+					});
+				}
+				const counterparty = getCounterparty(row, warehouseId);
+				if (counterparty) {
+					counterpartiesMap.set(counterparty.id, {
+						id: counterparty.id,
+						name: counterparty.name,
+						type: counterparty.type,
 					});
 				}
 			}
@@ -403,6 +514,7 @@ export const warehouseEstimateRouter = {
 					risk: getRisk(toNumber(row.discountPercent)),
 					direction: getDirection(row, warehouseId),
 					canManage: row.warehouseId === warehouseId,
+					counterparty: getCounterparty(row, warehouseId),
 				})),
 				summary,
 				filterOptions: {
@@ -410,6 +522,9 @@ export const warehouseEstimateRouter = {
 						(a.name ?? "").localeCompare(b.name ?? ""),
 					),
 					customers: Array.from(customersMap.values()).sort((a, b) =>
+						(a.name ?? "").localeCompare(b.name ?? ""),
+					),
+					counterparties: Array.from(counterpartiesMap.values()).sort((a, b) =>
 						(a.name ?? "").localeCompare(b.name ?? ""),
 					),
 				},
@@ -439,10 +554,7 @@ export const warehouseEstimateRouter = {
 					estimateNumber: row.estimateNumber,
 					date: row.createdAt,
 					direction: getDirection(row, warehouseId),
-					counterparty:
-						getDirection(row, warehouseId) === "sent"
-							? getDisplayName(row.customer)
-							: getDisplayName(row.warehouse),
+					counterparty: getCounterparty(row, warehouseId)?.name ?? "",
 					customer: getDisplayName(row.customer),
 					salesman: row.salesman?.name ?? "",
 					total: toNumber(row.total),
@@ -454,10 +566,7 @@ export const warehouseEstimateRouter = {
 					estimateNumber: row.estimateNumber,
 					date: row.createdAt,
 					direction: getDirection(row, warehouseId),
-					counterparty:
-						getDirection(row, warehouseId) === "sent"
-							? getDisplayName(row.customer)
-							: getDisplayName(row.warehouse),
+					counterparty: getCounterparty(row, warehouseId)?.name ?? "",
 					customer: getDisplayName(row.customer),
 					salesman: row.salesman?.name ?? "",
 					total: toNumber(row.total),
@@ -524,6 +633,7 @@ export const warehouseEstimateRouter = {
 					risk: getRisk(toNumber(estimateData.discountPercent)),
 					direction: getDirection(estimateData, warehouseId),
 					canManage: estimateData.warehouseId === warehouseId,
+					counterparty: getCounterparty(estimateData, warehouseId),
 				},
 				insights: {
 					customer: {

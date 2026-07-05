@@ -45,6 +45,8 @@ import { client } from "@/utils/orpc";
 
 interface EstimateCustomer {
   name?: string | null;
+  shopName?: string | null;
+  warehouseName?: string | null;
   phoneNumber?: string | null;
 }
 
@@ -59,6 +61,10 @@ interface EstimateActionButtonsProps {
   estimate: EstimateActionInput;
 }
 
+function getCustomerShippingName(customer?: EstimateCustomer | null) {
+  return customer?.shopName || customer?.warehouseName || customer?.name || "";
+}
+
 export function EstimateActionButtons({
   estimate,
 }: EstimateActionButtonsProps) {
@@ -71,7 +77,7 @@ export function EstimateActionButtons({
     resolver: zodResolver(convertEstimateSchema),
     defaultValues: {
       estimateId: estimate.id,
-      shippingName: estimate.customer?.name || "",
+      shippingName: getCustomerShippingName(estimate.customer),
       shippingPhone: estimate.customer?.phoneNumber || "",
       shippingAddress: "",
       shippingCity: "",
@@ -87,7 +93,7 @@ export function EstimateActionButtons({
     if (estimate) {
       form.reset({
         estimateId: estimate.id,
-        shippingName: estimate.customer?.name || "",
+        shippingName: getCustomerShippingName(estimate.customer),
         shippingPhone: estimate.customer?.phoneNumber || "",
         shippingAddress: "",
         shippingCity: "Dhaka",

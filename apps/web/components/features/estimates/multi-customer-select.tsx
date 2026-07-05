@@ -59,7 +59,11 @@ export function MultiCustomerSelect({
   const filteredCustomers = customers.filter(
     (customer) =>
       customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       customer.shopName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.warehouseName
+        ?.toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
       customer.phoneNumber?.includes(searchTerm),
   );
 
@@ -207,7 +211,7 @@ export function MultiCustomerSelect({
                       {customer.name &&
                         customer.name !== getCustomerLabel(customer) && (
                           <span className="font-medium text-muted-foreground truncate">
-                            {customer.name}
+                            Contact: {customer.name}
                           </span>
                         )}
                       {customer.phoneNumber && (

@@ -225,14 +225,21 @@ export default function SalesmanEstimateDetailPage() {
               <p className="mt-1 text-lg font-bold">{customerName}</p>
             </div>
             <div className="text-sm text-muted-foreground">
-              <p>{estimate.customer?.name}</p>
+              {estimate.customer?.name &&
+                estimate.customer.name !== customerName && (
+                  <p>Contact: {estimate.customer.name}</p>
+                )}
               <p>{estimate.customer?.phoneNumber ?? "No phone"}</p>
               <p className="truncate">{estimate.customer?.email}</p>
             </div>
             {estimate.notes && (
               <div className="border-t pt-3">
-                <p className="text-xs font-medium text-muted-foreground">Notes</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm">{estimate.notes}</p>
+                <p className="text-xs font-medium text-muted-foreground">
+                  Notes
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-sm">
+                  {estimate.notes}
+                </p>
               </div>
             )}
           </CardContent>
@@ -267,11 +274,13 @@ export default function SalesmanEstimateDetailPage() {
                       {item.productName}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {item.productSize || "Variant"} · {formatMoney(item.unitPrice)} x{" "}
-                      {item.quantity}
+                      {item.productSize || "Variant"} ·{" "}
+                      {formatMoney(item.unitPrice)} x {item.quantity}
                     </p>
                   </div>
-                  <p className="font-semibold">{formatMoney(item.totalPrice)}</p>
+                  <p className="font-semibold">
+                    {formatMoney(item.totalPrice)}
+                  </p>
                 </div>
               ))}
             </div>

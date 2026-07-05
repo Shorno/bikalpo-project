@@ -110,6 +110,14 @@ type EstimateRow = {
     name: string | null;
     phoneNumber?: string | null;
     warehouseName?: string | null;
+    email?: string | null;
+  } | null;
+  counterparty?: {
+    id: string;
+    name: string | null;
+    phoneNumber?: string | null;
+    email?: string | null;
+    type: "retailer" | "warehouse";
   } | null;
 };
 
@@ -281,9 +289,49 @@ function riskLabel(risk: Risk) {
 }
 
 function getCounterpartyPhone(estimate: EstimateRow) {
-  return estimate.direction === "sent"
-    ? estimate.customer?.phoneNumber
-    : estimate.warehouse?.phoneNumber;
+  return (
+    estimate.counterparty?.phoneNumber ??
+    (estimate.direction === "sent"
+      ? estimate.customer?.phoneNumber
+      : estimate.warehouse?.phoneNumber)
+  );
+}
+
+function getCounterpartyName(estimate: EstimateRow) {
+  if (estimate.counterparty?.name) return estimate.counterparty.name;
+  if (estimate.direction === "sent") {
+    return (
+      estimate.customer?.shopName ??
+      estimate.customer?.warehouseName ??
+      estimate.customer?.name ??
+      "Customer"
+    );
+  }
+  return (
+    estimate.warehouse?.warehouseName ??
+    estimate.warehouse?.name ??
+    "Seller Warehouse"
+  );
+}
+
+function getPartyColumnLabel(direction: DirectionFilter) {
+  if (direction === "sent") return "Customer";
+  if (direction === "received") return "From Warehouse";
+  return "Counterparty";
+}
+
+function getEstimateStatusLabel(estimate: EstimateRow) {
+  if (estimate.direction === "received" && estimate.status === "sent") {
+    return "Received";
+  }
+  return statusLabels[estimate.status];
+}
+
+function getExportStatusLabel(row: EstimateExportRow) {
+  if (row.direction === "received" && row.status === "sent") {
+    return "Received";
+  }
+  return statusLabels[row.status];
 }
 
 function matchesKpi(row: EstimateExportRow, key: KpiKey) {
@@ -384,7 +432,7 @@ export default function WarehouseEstimateManagementPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [discountLevel, setDiscountLevel] = useState<DiscountFilter>("all");
   const [salesmanId, setSalesmanId] = useState("all");
-  const [customerId, setCustomerId] = useState("all");
+  const [counterpartyId, setCounterpartyId] = useState("all");
   const [dateRange, setDateRange] = useState<DateFilter>("this_month");
   const [sortBy, setSortBy] = useState<SortBy>("latest");
   const [selectedEstimateId, setSelectedEstimateId] = useState<number | null>(
@@ -409,14 +457,14 @@ export default function WarehouseEstimateManagementPage() {
       status,
       discountLevel,
       salesmanId: salesmanId === "all" ? undefined : salesmanId,
-      customerId: customerId === "all" ? undefined : customerId,
+      counterpartyId: counterpartyId === "all" ? undefined : counterpartyId,
       dateRange,
       sortBy,
       page,
       limit: 20,
     }),
     [
-      customerId,
+      counterpartyId,
       dateRange,
       debouncedSearch,
       direction,
@@ -499,12 +547,14 @@ export default function WarehouseEstimateManagementPage() {
     pending: summary.pending,
   };
   const salesmen = data?.filterOptions?.salesmen ?? [];
-  const customers = data?.filterOptions?.customers ?? [];
+  const counterparties =
+    data?.filterOptions?.counterparties ?? data?.filterOptions?.customers ?? [];
   const pagination = data?.pagination;
   const totalPages = pagination?.totalPages ?? 1;
   const totalCount = pagination?.totalCount ?? 0;
   const showFrom = totalCount > 0 ? (page - 1) * 20 + 1 : 0;
   const showTo = Math.min(page * 20, totalCount);
+  const showRiskColumn = direction !== "received";
 
   const setFilter = (fn: () => void) => {
     fn();
@@ -535,7 +585,7 @@ export default function WarehouseEstimateManagementPage() {
     setStatus("all");
     setDiscountLevel("all");
     setSalesmanId("all");
-    setCustomerId("all");
+    setCounterpartyId("all");
     setDateRange("this_month");
     setSortBy("latest");
     setPage(1);
@@ -566,7 +616,7 @@ export default function WarehouseEstimateManagementPage() {
           row.salesman,
           row.total,
           row.discountPercent,
-          row.status,
+          getExportStatusLabel(row),
           row.risk,
         ]
           .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
@@ -586,15 +636,15 @@ export default function WarehouseEstimateManagementPage() {
   const handleFollowUp = async (estimate: EstimateRow) => {
     const phone = getCounterpartyPhone(estimate)?.trim();
     if (!phone) {
-      toast.info("No customer phone number is available");
+      toast.info("No counterparty phone number is available");
       return;
     }
 
     try {
       await navigator.clipboard.writeText(phone);
-      toast.success(`Customer phone copied: ${phone}`);
+      toast.success(`Counterparty phone copied: ${phone}`);
     } catch {
-      toast.info(`Call customer: ${phone}`);
+      toast.info(`Call counterparty: ${phone}`);
     }
   };
 
@@ -695,18 +745,18 @@ export default function WarehouseEstimateManagementPage() {
             </SelectContent>
           </Select>
           <Select
-            value={customerId}
-            onValueChange={(value) => setFilter(() => setCustomerId(value))}
+            value={counterpartyId}
+            onValueChange={(value) => setFilter(() => setCounterpartyId(value))}
           >
             <SelectTrigger className="h-9 w-[160px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Customers</SelectItem>
-              {customers.map(
-                (customer: { id: string; name: string | null }) => (
-                  <SelectItem key={customer.id} value={customer.id}>
-                    {customer.name ?? "Unnamed customer"}
+              <SelectItem value="all">All Counterparties</SelectItem>
+              {counterparties.map(
+                (counterparty: { id: string; name: string | null }) => (
+                  <SelectItem key={counterparty.id} value={counterparty.id}>
+                    {counterparty.name ?? "Unnamed counterparty"}
                   </SelectItem>
                 ),
               )}
@@ -809,7 +859,7 @@ export default function WarehouseEstimateManagementPage() {
                   Date
                 </TableHead>
                 <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
-                  Customer
+                  {getPartyColumnLabel(direction)}
                 </TableHead>
                 <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
                   Salesman
@@ -823,9 +873,11 @@ export default function WarehouseEstimateManagementPage() {
                 <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
                   Status
                 </TableHead>
-                <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
-                  Risk
-                </TableHead>
+                {showRiskColumn && (
+                  <TableHead className="px-4 text-xs font-semibold uppercase tracking-wider">
+                    Risk
+                  </TableHead>
+                )}
                 <TableHead className="px-4 text-right text-xs font-semibold uppercase tracking-wider">
                   Action
                 </TableHead>
@@ -845,13 +897,10 @@ export default function WarehouseEstimateManagementPage() {
                   <TableCell className="px-4 py-3">
                     <div className="min-w-0">
                       <p className="truncate font-medium">
-                        {estimate.customer?.shopName ??
-                          estimate.customer?.warehouseName ??
-                          estimate.customer?.name ??
-                          "Customer"}
+                        {getCounterpartyName(estimate)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {estimate.customer?.phoneNumber ?? ""}
+                        {getCounterpartyPhone(estimate) ?? ""}
                       </p>
                     </div>
                   </TableCell>
@@ -871,17 +920,19 @@ export default function WarehouseEstimateManagementPage() {
                       variant="outline"
                       className={cn("border", statusTone[estimate.status])}
                     >
-                      {statusLabels[estimate.status]}
+                      {getEstimateStatusLabel(estimate)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <Badge
-                      variant="outline"
-                      className={cn("border", riskTone[estimate.risk])}
-                    >
-                      {riskLabel(estimate.risk)}
-                    </Badge>
-                  </TableCell>
+                  {showRiskColumn && (
+                    <TableCell className="px-4 py-3">
+                      <Badge
+                        variant="outline"
+                        className={cn("border", riskTone[estimate.risk])}
+                      >
+                        {riskLabel(estimate.risk)}
+                      </Badge>
+                    </TableCell>
+                  )}
                   <TableCell className="px-4 py-3 text-right">
                     <RowActions
                       estimate={estimate}
@@ -1063,6 +1114,9 @@ function EstimateDetailPanel({
   const isPending = canManage && estimate.status === "pending";
   const isApproved = canManage && estimate.status === "approved";
   const isSubmitting = reviewMutation.isPending || sendMutation.isPending;
+  const isReceived = estimate.direction === "received";
+  const counterpartyName = getCounterpartyName(estimate);
+  const counterpartyPhone = getCounterpartyPhone(estimate);
 
   const approve = () => {
     const parsed = Number(discountInput);
@@ -1096,8 +1150,7 @@ function EstimateDetailPanel({
               {estimate.estimateNumber}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {estimate.customer?.shopName ?? estimate.customer?.name} ·{" "}
-              {formatDate(estimate.createdAt)}
+              {counterpartyName} · {formatDate(estimate.createdAt)}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1116,39 +1169,57 @@ function EstimateDetailPanel({
               variant="outline"
               className={cn("border", statusTone[estimate.status])}
             >
-              {statusLabels[estimate.status]}
+              {getEstimateStatusLabel(estimate)}
             </Badge>
-            <Badge
-              variant="outline"
-              className={cn("border", riskTone[estimate.risk])}
-            >
-              {riskLabel(estimate.risk)} Risk
-            </Badge>
+            {!isReceived && (
+              <Badge
+                variant="outline"
+                className={cn("border", riskTone[estimate.risk])}
+              >
+                {riskLabel(estimate.risk)} Risk
+              </Badge>
+            )}
           </div>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="divide-y divide-border">
-          <section className="px-6 py-5">
-            <StatusTimeline estimate={estimate} />
-          </section>
+          {!isReceived && (
+            <section className="px-6 py-5">
+              <StatusTimeline estimate={estimate} />
+            </section>
+          )}
 
           <section className="grid gap-x-10 gap-y-6 px-6 py-5 sm:grid-cols-2">
-            <InfoBlock title="Customer Information">
+            <InfoBlock
+              title={isReceived ? "Seller Warehouse" : "Customer Information"}
+            >
               <InfoLine
-                label="Customer"
-                value={estimate.customer?.shopName ?? estimate.customer?.name}
+                label={isReceived ? "From Warehouse" : "Customer"}
+                value={counterpartyName}
               />
-              <InfoLine label="Phone" value={estimate.customer?.phoneNumber} />
-              <InfoLine
-                label="Total Orders"
-                value={detail.insights.customer.totalOrders.toLocaleString()}
-              />
-              <InfoLine
-                label="Avg Value"
-                value={formatMoney(detail.insights.customer.averageValue)}
-              />
+              <InfoLine label="Phone" value={counterpartyPhone} />
+              {isReceived ? (
+                <>
+                  <InfoLine
+                    label="Email"
+                    value={estimate.counterparty?.email ?? "N/A"}
+                  />
+                  <InfoLine label="Type" value="Warehouse" />
+                </>
+              ) : (
+                <>
+                  <InfoLine
+                    label="Total Orders"
+                    value={detail.insights.customer.totalOrders.toLocaleString()}
+                  />
+                  <InfoLine
+                    label="Avg Value"
+                    value={formatMoney(detail.insights.customer.averageValue)}
+                  />
+                </>
+              )}
             </InfoBlock>
 
             <InfoBlock title="Salesman Information">

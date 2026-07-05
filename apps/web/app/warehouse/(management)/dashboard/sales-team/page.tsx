@@ -30,7 +30,13 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { CreateWarehouseEmployeeModal } from "@/components/features/warehouse/create-warehouse-employee-modal";
 import TableSkeleton from "@/components/table-skeleton";
@@ -240,6 +246,48 @@ function MetricCard({
   );
 }
 
+function DetailSectionTitle({ children }: { children: ReactNode }) {
+  return <h3 className="text-sm font-semibold">{children}</h3>;
+}
+
+function DetailInfoBlock({
+  title,
+  children,
+}: {
+  title: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <DetailSectionTitle>{title}</DetailSectionTitle>
+      <dl className="mt-3 space-y-2.5">{children}</dl>
+    </div>
+  );
+}
+
+function DetailInfoLine({
+  label,
+  value,
+  strong,
+}: {
+  label: string;
+  value: ReactNode;
+  strong?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd
+        className={`min-w-0 text-right tabular-nums ${
+          strong ? "font-semibold" : "font-medium"
+        }`}
+      >
+        {value || "N/A"}
+      </dd>
+    </div>
+  );
+}
+
 function SalesmanDetailsSheet({
   salesman,
   open,
@@ -370,16 +418,11 @@ function SalesmanDetailsSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl lg:max-w-3xl!"
       >
-        <SheetHeader className="shrink-0 border-b px-6 py-4 pr-12">
-          <SheetTitle className="flex items-center gap-2 text-base">
-            <UserCheck className="h-4 w-4 text-muted-foreground" />
-            {salesman?.name ?? "Salesman details"}
-          </SheetTitle>
-          <SheetDescription className="text-xs">
-            {salesman?.phoneNumber ?? salesman?.email ?? "Assignment overview"}
-          </SheetDescription>
+        <SheetHeader className="sr-only">
+          <SheetTitle>{salesman?.name ?? "Salesman details"}</SheetTitle>
+          <SheetDescription>Salesman assignment details</SheetDescription>
         </SheetHeader>
 
         {isLoading || !detail ? (
@@ -389,319 +432,365 @@ function SalesmanDetailsSheet({
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
-              <section className="rounded-lg border bg-muted/20 px-4 py-3">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="border-b px-6 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Salesman Detail
+                  </p>
+                  <h2 className="mt-1 flex items-center gap-2 text-xl font-semibold">
+                    <UserCheck className="h-5 w-5 text-muted-foreground" />
+                    {detail.name}
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {detail.phoneNumber ??
+                      detail.email ??
+                      "Assignment overview"}{" "}
+                    · Joined {format(new Date(detail.createdAt), "MMM d, yyyy")}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
                   {getStatusBadge(detail.banned)}
                   {getAreaBadge(detail.assignedArea)}
                 </div>
-                <div className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <p className="text-muted-foreground">Phone</p>
-                    <p className="mt-0.5 flex items-center gap-1 font-medium tabular-nums">
-                      <Phone className="h-3.5 w-3.5 shrink-0" />
-                      {detail.phoneNumber ?? "No phone"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Email</p>
-                    <p className="mt-0.5 flex min-w-0 items-center gap-1 font-medium">
-                      <Mail className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{detail.email}</span>
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Assigned area</p>
-                    <p className="mt-0.5 flex items-center gap-1 font-medium">
-                      <MapPin className="h-3.5 w-3.5 shrink-0" />
-                      {detail.assignedArea?.name ?? "Not Assigned"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Joined</p>
-                    <p className="mt-0.5 font-medium">
-                      {format(new Date(detail.createdAt), "MMM d, yyyy")}
-                    </p>
-                  </div>
-                </div>
-              </section>
+              </div>
+            </div>
 
-              <section>
-                <h3 className="mb-3 text-sm font-semibold">
-                  Performance Snapshot
-                </h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border bg-background p-3">
-                    <p className="text-xl font-bold tabular-nums">
-                      {detail.assignedCustomersCount}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Assigned customers
-                    </p>
-                  </div>
-                  <div className="rounded-lg border bg-background p-3">
-                    <p className="text-xl font-bold tabular-nums">
-                      {detail.estimatesCount}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Estimates</p>
-                  </div>
-                </div>
-              </section>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="divide-y divide-border">
+                <section className="grid gap-x-10 gap-y-6 px-6 py-5 sm:grid-cols-2">
+                  <DetailInfoBlock title="Contact Information">
+                    <DetailInfoLine
+                      label="Phone"
+                      value={
+                        <span className="inline-flex max-w-56 items-center justify-end gap-1">
+                          <Phone className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">
+                            {detail.phoneNumber ?? "No phone"}
+                          </span>
+                        </span>
+                      }
+                    />
+                    <DetailInfoLine
+                      label="Email"
+                      value={
+                        <span className="inline-flex max-w-56 items-center justify-end gap-1">
+                          <Mail className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{detail.email}</span>
+                        </span>
+                      }
+                    />
+                    <DetailInfoLine
+                      label="Assigned Area"
+                      value={
+                        <span className="inline-flex max-w-56 items-center justify-end gap-1">
+                          <MapPin className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">
+                            {detail.assignedArea?.name ?? "Not Assigned"}
+                          </span>
+                        </span>
+                      }
+                    />
+                    <DetailInfoLine
+                      label="Joined"
+                      value={format(new Date(detail.createdAt), "MMM d, yyyy")}
+                    />
+                  </DetailInfoBlock>
 
-              <section className="rounded-lg border bg-background">
-                <div className="border-b px-4 py-3">
-                  <h3 className="text-sm font-semibold">Assign Area</h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Select one delivery area for this salesman.
-                  </p>
-                </div>
-                <div className="space-y-3 p-4">
-                  <Select
-                    value={selectedAreaId}
-                    onValueChange={setSelectedAreaId}
-                    disabled={areasLoading || assignAreaMutation.isPending}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          areasLoading ? "Loading areas..." : "Select area"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {areas.map((area) => (
-                        <SelectItem
-                          key={area.id}
-                          value={String(area.id)}
-                          disabled={area.status !== "active"}
-                        >
-                          {area.name}
-                          {area.status !== "active" ? " (Inactive)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <DetailInfoBlock title="Performance Snapshot">
+                    <DetailInfoLine
+                      label="Assigned Customers"
+                      value={detail.assignedCustomersCount.toLocaleString()}
+                      strong
+                    />
+                    <DetailInfoLine
+                      label="Estimates"
+                      value={detail.estimatesCount.toLocaleString()}
+                      strong
+                    />
+                    <DetailInfoLine
+                      label="Status"
+                      value={detail.banned ? "Inactive" : "Active"}
+                    />
+                    <DetailInfoLine
+                      label="Area Status"
+                      value={detail.assignedArea?.status ?? "Unassigned"}
+                    />
+                  </DetailInfoBlock>
+                </section>
+
+                <section className="px-6 py-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <DetailSectionTitle>Assign Area</DetailSectionTitle>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Select one delivery area for this salesman.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1">
+                      <Select
+                        value={selectedAreaId}
+                        onValueChange={setSelectedAreaId}
+                        disabled={areasLoading || assignAreaMutation.isPending}
+                      >
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={
+                              areasLoading ? "Loading areas..." : "Select area"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {areas.map((area) => (
+                            <SelectItem
+                              key={area.id}
+                              value={String(area.id)}
+                              disabled={area.status !== "active"}
+                            >
+                              {area.name}
+                              {area.status !== "active" ? " (Inactive)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      className="w-full sm:w-auto"
+                      onClick={saveArea}
+                      disabled={!canSaveArea}
+                    >
+                      {assignAreaMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <MapPin className="mr-2 h-4 w-4" />
+                      )}
+                      Save Assignment
+                    </Button>
+                  </div>
+
                   {areas.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
                       No delivery areas found. Create areas from Delivery
                       Management first.
                     </p>
                   ) : null}
-                  <Button
-                    className="w-full"
-                    onClick={saveArea}
-                    disabled={!canSaveArea}
-                  >
-                    {assignAreaMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <MapPin className="mr-2 h-4 w-4" />
-                    )}
-                    Save Assignment
-                  </Button>
-                </div>
-              </section>
+                </section>
 
-              <section className="rounded-lg border bg-background">
-                <div className="border-b px-4 py-3">
-                  <h3 className="text-sm font-semibold">Assign Customers</h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Select active retailers or buyer warehouses connected to
-                    this warehouse.
-                  </p>
-                </div>
-                <div className="space-y-3 p-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={customerSearch}
-                      onChange={(event) =>
-                        setCustomerSearch(event.target.value)
-                      }
-                      placeholder="Search customers..."
-                      className="pl-9"
-                    />
+                <section className="px-6 py-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <DetailSectionTitle>Assign Customers</DetailSectionTitle>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Select active retailers or buyer warehouses connected to
+                        this warehouse.
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {selectedCustomerIds.length} selected
+                    </Badge>
                   </div>
 
-                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                    {assignableCustomersLoading ? (
-                      <div className="flex items-center justify-center rounded-lg border bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Loading customers...
-                      </div>
-                    ) : assignableCustomers.length === 0 ? (
-                      <div className="rounded-lg border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-                        No connected customers found
-                      </div>
-                    ) : (
-                      assignableCustomers.map((customer) => {
-                        const checkboxId = `assign-customer-${customer.id}`;
-                        const checked = selectedCustomerIdSet.has(customer.id);
-                        const disabled =
-                          !customer.isAssignable ||
-                          assignCustomersMutation.isPending;
-                        const assignmentLabel =
-                          customer.isAssignedToThisSalesman
-                            ? "Already assigned here"
-                            : customer.assignedSalesmanName
-                              ? `Assigned to ${customer.assignedSalesmanName}`
-                              : null;
+                  <div className="mt-4 space-y-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={customerSearch}
+                        onChange={(event) =>
+                          setCustomerSearch(event.target.value)
+                        }
+                        placeholder="Search customers..."
+                        className="pl-9"
+                      />
+                    </div>
+
+                    <div className="max-h-[360px] overflow-y-auto rounded-lg border bg-background">
+                      {assignableCustomersLoading ? (
+                        <div className="flex items-center justify-center px-4 py-10 text-sm text-muted-foreground">
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Loading customers...
+                        </div>
+                      ) : assignableCustomers.length === 0 ? (
+                        <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                          No connected customers found
+                        </div>
+                      ) : (
+                        assignableCustomers.map((customer) => {
+                          const checkboxId = `assign-customer-${customer.id}`;
+                          const checked = selectedCustomerIdSet.has(
+                            customer.id,
+                          );
+                          const disabled =
+                            !customer.isAssignable ||
+                            assignCustomersMutation.isPending;
+                          const assignmentLabel =
+                            customer.isAssignedToThisSalesman
+                              ? "Already assigned here"
+                              : customer.assignedSalesmanName
+                                ? `Assigned to ${customer.assignedSalesmanName}`
+                                : null;
+
+                          return (
+                            <label
+                              key={`${customer.customerType}-${customer.id}`}
+                              htmlFor={checkboxId}
+                              className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-3 border-b px-4 py-3 transition-colors last:border-b-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${
+                                disabled
+                                  ? "cursor-not-allowed opacity-65"
+                                  : "hover:bg-muted/50"
+                              }`}
+                            >
+                              <Checkbox
+                                id={checkboxId}
+                                checked={checked}
+                                disabled={disabled}
+                                onCheckedChange={() =>
+                                  toggleCustomerSelection(customer)
+                                }
+                                className="mt-0.5"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="min-w-0 truncate text-sm font-medium">
+                                    {customer.displayName}
+                                  </p>
+                                  <CustomerTypeBadge
+                                    type={customer.customerType}
+                                  />
+                                </div>
+                                <p className="mt-1 truncate text-xs text-muted-foreground">
+                                  Contact: {customer.contactName}
+                                  {customer.phoneNumber
+                                    ? ` - ${customer.phoneNumber}`
+                                    : ""}
+                                </p>
+                                {customer.address ? (
+                                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                    {customer.address}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="col-start-2 flex shrink-0 items-start sm:col-start-auto sm:pt-0.5">
+                                {assignmentLabel ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="max-w-36 truncate text-[11px]"
+                                    title={assignmentLabel}
+                                  >
+                                    {assignmentLabel}
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="secondary"
+                                    className="gap-1 text-[11px]"
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Available
+                                  </Badge>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <Button
+                        className="w-full sm:w-auto"
+                        onClick={saveCustomers}
+                        disabled={
+                          selectedCustomerIds.length === 0 ||
+                          assignCustomersMutation.isPending
+                        }
+                      >
+                        {assignCustomersMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Users className="mr-2 h-4 w-4" />
+                        )}
+                        Assign Selected Customers
+                        {selectedCustomerIds.length > 0
+                          ? ` (${selectedCustomerIds.length})`
+                          : ""}
+                      </Button>
+                      {assignableCustomersFetching &&
+                      !assignableCustomersLoading ? (
+                        <p className="text-xs text-muted-foreground">
+                          Refreshing customer results...
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="px-6 py-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <DetailSectionTitle>Assigned Customers</DetailSectionTitle>
+                    <Badge variant="outline" className="text-xs">
+                      {assignedCustomers.length}
+                    </Badge>
+                  </div>
+
+                  {assignedCustomers.length === 0 ? (
+                    <div className="mt-4 flex flex-col items-center justify-center rounded-lg border bg-muted/20 px-4 py-10 text-center">
+                      <Users className="mb-3 h-8 w-8 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        No customers assigned yet
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-4 overflow-hidden rounded-lg border bg-background">
+                      {assignedCustomers.map((customer) => {
+                        const CustomerIcon =
+                          customer.customerType === "warehouse"
+                            ? Building2
+                            : Store;
 
                         return (
-                          <label
-                            key={`${customer.customerType}-${customer.id}`}
-                            htmlFor={checkboxId}
-                            className={`flex cursor-pointer gap-3 rounded-lg border bg-background px-3 py-2.5 transition-colors ${
-                              disabled
-                                ? "cursor-not-allowed opacity-65"
-                                : "hover:bg-muted/50"
-                            }`}
+                          <div
+                            key={customer.id}
+                            className="border-b px-4 py-3 last:border-b-0"
                           >
-                            <Checkbox
-                              id={checkboxId}
-                              checked={checked}
-                              disabled={disabled}
-                              onCheckedChange={() =>
-                                toggleCustomerSelection(customer)
-                              }
-                              className="mt-1"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="min-w-0 truncate text-sm font-medium">
-                                  {customer.displayName}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <p className="truncate text-sm font-medium">
+                                    {customer.displayName ||
+                                      customer.warehouseName ||
+                                      customer.shopName ||
+                                      customer.name}
+                                  </p>
+                                  <CustomerTypeBadge
+                                    type={customer.customerType}
+                                  />
+                                </div>
+                                <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                                  <CustomerIcon className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">
+                                    Contact: {customer.name}
+                                  </span>
                                 </p>
-                                <CustomerTypeBadge
-                                  type={customer.customerType}
-                                />
                               </div>
-                              <p className="mt-1 truncate text-xs text-muted-foreground">
-                                {customer.contactName}
-                                {customer.phoneNumber
-                                  ? ` - ${customer.phoneNumber}`
-                                  : ""}
-                              </p>
-                              {customer.address ? (
-                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                  {customer.address}
-                                </p>
-                              ) : null}
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {format(
+                                  new Date(customer.assignedAt),
+                                  "MMM d, yyyy",
+                                )}
+                              </span>
                             </div>
-                            <div className="flex shrink-0 items-start pt-0.5">
-                              {assignmentLabel ? (
-                                <Badge
-                                  variant="outline"
-                                  className="max-w-36 truncate text-[11px]"
-                                  title={assignmentLabel}
-                                >
-                                  {assignmentLabel}
-                                </Badge>
-                              ) : (
-                                <Badge
-                                  variant="secondary"
-                                  className="gap-1 text-[11px]"
-                                >
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Available
-                                </Badge>
-                              )}
-                            </div>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <Button
-                    className="w-full"
-                    onClick={saveCustomers}
-                    disabled={
-                      selectedCustomerIds.length === 0 ||
-                      assignCustomersMutation.isPending
-                    }
-                  >
-                    {assignCustomersMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Users className="mr-2 h-4 w-4" />
-                    )}
-                    Assign Selected Customers
-                    {selectedCustomerIds.length > 0
-                      ? ` (${selectedCustomerIds.length})`
-                      : ""}
-                  </Button>
-                  {assignableCustomersFetching &&
-                  !assignableCustomersLoading ? (
-                    <p className="text-xs text-muted-foreground">
-                      Refreshing customer results...
-                    </p>
-                  ) : null}
-                </div>
-              </section>
-
-              <section>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold">Assigned Customers</h3>
-                  <Badge variant="outline" className="text-xs">
-                    {assignedCustomers.length}
-                  </Badge>
-                </div>
-                {assignedCustomers.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center rounded-lg border bg-muted/20 px-4 py-10 text-center">
-                    <Users className="mb-3 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      No customers assigned yet
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {assignedCustomers.map((customer) => {
-                      const CustomerIcon =
-                        customer.customerType === "warehouse"
-                          ? Building2
-                          : Store;
-
-                      return (
-                        <div
-                          key={customer.id}
-                          className="rounded-lg border bg-background px-3 py-2.5"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <p className="truncate text-sm font-medium">
-                                  {customer.displayName ||
-                                    customer.warehouseName ||
-                                    customer.shopName ||
-                                    customer.name}
-                                </p>
-                                <CustomerTypeBadge
-                                  type={customer.customerType}
-                                />
-                              </div>
-                              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                                <CustomerIcon className="h-3 w-3 shrink-0" />
-                                <span className="truncate">
-                                  {customer.name}
-                                </span>
-                              </p>
-                            </div>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {format(
-                                new Date(customer.assignedAt),
-                                "MMM d, yyyy",
-                              )}
-                            </span>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              {customer.phoneNumber ?? "No phone"}
+                            </p>
                           </div>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {customer.phoneNumber ?? "No phone"}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </div>
             </div>
           </div>
         )}

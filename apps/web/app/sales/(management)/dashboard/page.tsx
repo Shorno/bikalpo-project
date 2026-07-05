@@ -69,6 +69,7 @@ export default async function SalesDashboardPage() {
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
                           {estimate.customer?.shopName ||
+                            estimate.customer?.warehouseName ||
                             estimate.customer?.name ||
                             "Customer"}
                         </p>

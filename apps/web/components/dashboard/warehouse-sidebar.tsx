@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3Icon,
   BookOpenIcon,
@@ -33,7 +34,7 @@ import {
   WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
 import { NavUser } from "@/components/dashboard/nav-user";
 import UserNavSkeleton from "@/components/dashboard/user-nav-skeleton";
@@ -47,6 +48,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
+import { orpc } from "@/utils/orpc";
 
 const WH = "/warehouse/dashboard";
 
@@ -197,7 +199,11 @@ const warehouseNavGroups: NavGroup[] = [
         url: `${WH}/connected-stores`,
         icon: NetworkIcon,
       },
-      { title: "Store Requests", url: `${WH}/store-requests`, icon: InboxIcon },
+      {
+        title: "Store Requests",
+        url: `${WH}/store-requests`,
+        icon: InboxIcon,
+      },
       {
         title: "Warehouse Requests",
         url: `${WH}/supplier-requests`,
@@ -233,7 +239,11 @@ const warehouseNavGroups: NavGroup[] = [
         url: `${WH}/reports/inventory`,
         icon: ClipboardIcon,
       },
-      { title: "Supply Report", url: `${WH}/reports/supply`, icon: TruckIcon },
+      {
+        title: "Supply Report",
+        url: `${WH}/reports/supply`,
+        icon: TruckIcon,
+      },
       {
         title: "Purchase Report",
         url: `${WH}/reports/purchase`,
@@ -255,7 +265,11 @@ const warehouseNavGroups: NavGroup[] = [
         url: `${WH}/finance/expenses`,
         icon: TrendingDownIcon,
       },
-      { title: "Payable", url: `${WH}/finance/payable`, icon: CreditCardIcon },
+      {
+        title: "Payable",
+        url: `${WH}/finance/payable`,
+        icon: CreditCardIcon,
+      },
       {
         title: "Profit & Loss",
         url: `${WH}/finance/profit-loss`,
@@ -272,7 +286,11 @@ const warehouseNavGroups: NavGroup[] = [
   {
     label: "Settings",
     items: [
-      { title: "Warehouse Profile", url: `${WH}/settings`, icon: SettingsIcon },
+      {
+        title: "Warehouse Profile",
+        url: `${WH}/settings`,
+        icon: SettingsIcon,
+      },
       {
         title: "Payment Accounts",
         url: `${WH}/payment-accounts`,
@@ -298,6 +316,32 @@ const warehouseNavGroups: NavGroup[] = [
 export function WarehouseSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { data, isPending } = authClient.useSession();
   const [hasMounted, setHasMounted] = useState(false);
+  const { data: estimateApprovalData } = useQuery({
+    queryKey: ["warehouseEstimate", "pendingApprovalCount"],
+    queryFn: () => orpc.warehouseEstimate.getPendingApprovalCount.call({}),
+    enabled: hasMounted && !isPending && !!data?.user,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+
+  const pendingEstimateApprovalCount =
+    estimateApprovalData?.pendingApprovalCount ?? 0;
+  const warehouseNavGroupsWithBadges = useMemo(
+    () =>
+      warehouseNavGroups.map((group) => {
+        if (group.label !== "Sales Management") return group;
+
+        return {
+          ...group,
+          items: group.items.map((item) =>
+            item.title === "Estimate Management"
+              ? { ...item, badge: pendingEstimateApprovalCount }
+              : item,
+          ),
+        };
+      }),
+    [pendingEstimateApprovalCount],
+  );
 
   useEffect(() => {
     setHasMounted(true);
@@ -325,7 +369,7 @@ export function WarehouseSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent className="mt-4 thin-scrollbar">
-        <NavGrouped groups={warehouseNavGroups} />
+        <NavGrouped groups={warehouseNavGroupsWithBadges} />
       </SidebarContent>
       <SidebarFooter>
         {!hasMounted || isPending || !data ? (

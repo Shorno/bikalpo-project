@@ -526,6 +526,7 @@ export const salesmanRouter = {
                             id: true,
                             name: true,
                             shopName: true,
+                            warehouseName: true,
                         },
                     },
                 },
@@ -1027,6 +1028,7 @@ export const salesmanRouter = {
                             email: true,
                             phoneNumber: true,
                             shopName: true,
+                            warehouseName: true,
                         },
                     },
                 },
@@ -1063,6 +1065,7 @@ export const salesmanRouter = {
                             email: true,
                             phoneNumber: true,
                             shopName: true,
+                            warehouseName: true,
                         },
                     },
                     salesman: {
