@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   Loader2,
   Package,
@@ -17,12 +18,12 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { SALES_PORTAL_BASE } from "@/lib/sales-routing";
+import { cn } from "@/lib/utils";
 import { client, orpc } from "@/utils/orpc";
 
 type AssignedCustomer = {
@@ -150,7 +151,7 @@ export function SalesmanEstimateForm({
   const [notes, setNotes] = useState(estimate?.notes ?? "");
 
   const { data: customersData, isLoading: customersLoading } = useQuery(
-    orpc.salesman.getAssignedCustomers.queryOptions(),
+    orpc.salesman.getAssignedCustomers.queryOptions({ input: {} }),
   );
   const { data: catalogData, isLoading: catalogLoading } = useQuery({
     queryKey: ["salesman-estimate-catalog", productSearch],
@@ -363,7 +364,17 @@ export function SalesmanEstimateForm({
                       }}
                       className="flex w-full items-center gap-3 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/40"
                     >
-                      <Checkbox checked={checked} aria-label="Select customer" />
+                      <div
+                        aria-hidden
+                        className={cn(
+                          "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
+                          checked
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input bg-background",
+                        )}
+                      >
+                        {checked && <Check className="size-3.5" />}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">
                           {getCustomerLabel(customer)}
@@ -424,6 +435,7 @@ export function SalesmanEstimateForm({
                           src={product.image}
                           alt={product.name}
                           fill
+                          sizes="48px"
                           className="object-cover"
                         />
                       ) : (

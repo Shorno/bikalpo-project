@@ -255,6 +255,7 @@ export default function SalesmanEstimateDetailPage() {
                         src={item.productImage}
                         alt={item.productName}
                         fill
+                        sizes="48px"
                         className="object-cover"
                       />
                     ) : (
