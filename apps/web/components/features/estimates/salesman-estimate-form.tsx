@@ -10,6 +10,7 @@ import {
   Search,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -29,6 +30,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { SALES_PORTAL_BASE } from "@/lib/sales-routing";
@@ -47,10 +55,38 @@ type CatalogProduct = {
   image: string | null;
   availableQty: number;
   unitPrice: number;
+  typeId: number | null;
+  typeName: string | null;
+  categoryId: number | null;
+  categoryName: string | null;
+  subCategoryId: number | null;
+  subCategoryName: string | null;
+  coreProductId: number | null;
+  coreProductName: string | null;
 };
 
 type EstimateFormItem = CatalogProduct & {
   quantity: number;
+};
+
+type CatalogFilterState = {
+  productTypeId?: number;
+  coreProductId?: number;
+  categoryId?: number;
+  subCategoryId?: number;
+};
+
+type CatalogFilterOptions = {
+  types: Array<{ id: number; name: string }>;
+  coreProducts: Array<{
+    id: number;
+    name: string;
+    typeId: number | null;
+    categoryId: number | null;
+    subCategoryId: number | null;
+  }>;
+  categories: Array<{ id: number; name: string; typeId: number | null }>;
+  subCategories: Array<{ id: number; name: string; categoryId: number }>;
 };
 
 type ExistingEstimate = {
@@ -111,6 +147,7 @@ export function SalesmanEstimateForm({
   const router = useRouter();
   const queryClient = useQueryClient();
   const [productSearch, setProductSearch] = useState("");
+  const [catalogFilters, setCatalogFilters] = useState<CatalogFilterState>({});
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>(
     estimate?.customerId
       ? [estimate.customerId]
@@ -136,6 +173,14 @@ export function SalesmanEstimateForm({
             image: item.productImage ?? null,
             availableQty: item.quantity,
             unitPrice: Number(item.unitPrice),
+            typeId: null,
+            typeName: null,
+            categoryId: null,
+            categoryName: null,
+            subCategoryId: null,
+            subCategoryName: null,
+            coreProductId: null,
+            coreProductName: null,
             quantity: item.quantity,
           },
         ];
@@ -152,23 +197,49 @@ export function SalesmanEstimateForm({
   const [discountPercent, setDiscountPercent] = useState(
     Number(estimate?.discountPercent ?? 0),
   );
-  const [validUntil, setValidUntil] = useState(toDateInput(estimate?.validUntil));
+  const [validUntil, setValidUntil] = useState(
+    toDateInput(estimate?.validUntil),
+  );
   const [notes, setNotes] = useState(estimate?.notes ?? "");
 
   const { data: catalogData, isLoading: catalogLoading } = useQuery({
-    queryKey: ["salesman-estimate-catalog", productSearch],
+    queryKey: [
+      "salesman-estimate-catalog",
+      productSearch,
+      catalogFilters.productTypeId ?? null,
+      catalogFilters.coreProductId ?? null,
+      catalogFilters.categoryId ?? null,
+      catalogFilters.subCategoryId ?? null,
+    ],
     queryFn: () =>
       client.salesman.getEstimateCatalog({
         search: productSearch.trim() || undefined,
+        productTypeId: catalogFilters.productTypeId,
+        coreProductId: catalogFilters.coreProductId,
+        categoryId: catalogFilters.categoryId,
+        subCategoryId: catalogFilters.subCategoryId,
       }),
     staleTime: 1000 * 60 * 2,
   });
 
   const catalog = (catalogData?.products ?? []) as CatalogProduct[];
+  const filterOptions = (catalogData?.filterOptions ?? {
+    types: [],
+    coreProducts: [],
+    categories: [],
+    subCategories: [],
+  }) as CatalogFilterOptions;
 
   const selectedVariantIds = new Set(items.map((item) => item.variantId));
   const availableCatalog = catalog.filter(
     (product) => !selectedVariantIds.has(product.variantId),
+  );
+  const hasCatalogFilters = Boolean(
+    productSearch.trim() ||
+      catalogFilters.productTypeId ||
+      catalogFilters.coreProductId ||
+      catalogFilters.categoryId ||
+      catalogFilters.subCategoryId,
   );
 
   const subtotal = items.reduce(
@@ -232,6 +303,89 @@ export function SalesmanEstimateForm({
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
+  const updateProductTypeFilter = (productTypeId?: number) => {
+    setCatalogFilters({
+      productTypeId,
+    });
+  };
+
+  const updateCoreProductFilter = (coreProductId?: number) => {
+    setCatalogFilters((current) => ({
+      ...current,
+      coreProductId,
+    }));
+  };
+
+  const updateCategoryFilter = (categoryId?: number) => {
+    setCatalogFilters((current) => ({
+      productTypeId: current.productTypeId,
+      categoryId,
+    }));
+  };
+
+  const updateSubCategoryFilter = (subCategoryId?: number) => {
+    setCatalogFilters((current) => ({
+      productTypeId: current.productTypeId,
+      categoryId: current.categoryId,
+      subCategoryId,
+    }));
+  };
+
+  const clearCatalogFilters = () => {
+    setProductSearch("");
+    setCatalogFilters({});
+  };
+
+  const activeFilterChips = [
+    productSearch.trim() && {
+      key: "search",
+      group: "Search",
+      label: productSearch.trim(),
+      onRemove: () => setProductSearch(""),
+    },
+    catalogFilters.productTypeId && {
+      key: "type",
+      group: "Type",
+      label:
+        filterOptions.types.find(
+          (option) => option.id === catalogFilters.productTypeId,
+        )?.name ?? "Selected",
+      onRemove: () => updateProductTypeFilter(undefined),
+    },
+    catalogFilters.coreProductId && {
+      key: "core",
+      group: "Core product",
+      label:
+        filterOptions.coreProducts.find(
+          (option) => option.id === catalogFilters.coreProductId,
+        )?.name ?? "Selected",
+      onRemove: () => updateCoreProductFilter(undefined),
+    },
+    catalogFilters.categoryId && {
+      key: "category",
+      group: "Category",
+      label:
+        filterOptions.categories.find(
+          (option) => option.id === catalogFilters.categoryId,
+        )?.name ?? "Selected",
+      onRemove: () => updateCategoryFilter(undefined),
+    },
+    catalogFilters.subCategoryId && {
+      key: "subcategory",
+      group: "Subcategory",
+      label:
+        filterOptions.subCategories.find(
+          (option) => option.id === catalogFilters.subCategoryId,
+        )?.name ?? "Selected",
+      onRemove: () => updateSubCategoryFilter(undefined),
+    },
+  ].filter(Boolean) as Array<{
+    key: string;
+    group: string;
+    label: string;
+    onRemove: () => void;
+  }>;
+
   const addProduct = (product: CatalogProduct) => {
     setItems((current) => [...current, { ...product, quantity: 1 }]);
     setQuantityInputs((current) => ({
@@ -287,7 +441,9 @@ export function SalesmanEstimateForm({
   };
 
   const removeItem = (variantId: number) => {
-    setItems((current) => current.filter((item) => item.variantId !== variantId));
+    setItems((current) =>
+      current.filter((item) => item.variantId !== variantId),
+    );
     setQuantityInputs((current) => {
       const next = { ...current };
       delete next[variantId];
@@ -306,7 +462,9 @@ export function SalesmanEstimateForm({
       return;
     }
     if (hasLegacyItems) {
-      toast.error("This legacy estimate must be recreated from warehouse stock");
+      toast.error(
+        "This legacy estimate must be recreated from warehouse stock",
+      );
       return;
     }
     if (mode === "edit") updateMutation.mutate();
@@ -320,8 +478,8 @@ export function SalesmanEstimateForm({
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Legacy estimate</AlertTitle>
           <AlertDescription>
-            This estimate has products without warehouse variant snapshots. Create
-            a new estimate from warehouse stock instead.
+            This estimate has products without warehouse variant snapshots.
+            Create a new estimate from warehouse stock instead.
           </AlertDescription>
         </Alert>
       )}
@@ -352,6 +510,148 @@ export function SalesmanEstimateForm({
               />
             </div>
 
+            <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Type
+                </Label>
+                <Select
+                  value={catalogFilters.productTypeId?.toString() ?? "all"}
+                  onValueChange={(value) =>
+                    updateProductTypeFilter(
+                      value === "all" ? undefined : Number(value),
+                    )
+                  }
+                  disabled={filterOptions.types.length === 0}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {filterOptions.types.map((option) => (
+                      <SelectItem key={option.id} value={String(option.id)}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Core product
+                </Label>
+                <Select
+                  value={catalogFilters.coreProductId?.toString() ?? "all"}
+                  onValueChange={(value) =>
+                    updateCoreProductFilter(
+                      value === "all" ? undefined : Number(value),
+                    )
+                  }
+                  disabled={filterOptions.coreProducts.length === 0}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue placeholder="All core products" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All core products</SelectItem>
+                    {filterOptions.coreProducts.map((option) => (
+                      <SelectItem key={option.id} value={String(option.id)}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Category
+                </Label>
+                <Select
+                  value={catalogFilters.categoryId?.toString() ?? "all"}
+                  onValueChange={(value) =>
+                    updateCategoryFilter(
+                      value === "all" ? undefined : Number(value),
+                    )
+                  }
+                  disabled={filterOptions.categories.length === 0}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue placeholder="All categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All categories</SelectItem>
+                    {filterOptions.categories.map((option) => (
+                      <SelectItem key={option.id} value={String(option.id)}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Subcategory
+                </Label>
+                <Select
+                  value={catalogFilters.subCategoryId?.toString() ?? "all"}
+                  onValueChange={(value) =>
+                    updateSubCategoryFilter(
+                      value === "all" ? undefined : Number(value),
+                    )
+                  }
+                  disabled={filterOptions.subCategories.length === 0}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue placeholder="All subcategories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All subcategories</SelectItem>
+                    {filterOptions.subCategories.map((option) => (
+                      <SelectItem key={option.id} value={String(option.id)}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {activeFilterChips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {activeFilterChips.map((chip) => (
+                  <Badge
+                    key={chip.key}
+                    variant="secondary"
+                    className="gap-1 py-1 pr-1 pl-2 font-normal"
+                  >
+                    <span className="text-muted-foreground">{chip.group}:</span>
+                    <span className="max-w-[140px] truncate">{chip.label}</span>
+                    <button
+                      type="button"
+                      onClick={chip.onRemove}
+                      aria-label={`Remove ${chip.group} filter`}
+                      className="ml-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearCatalogFilters}
+                  className="h-6 px-2 text-xs text-muted-foreground"
+                >
+                  Clear all
+                </Button>
+              </div>
+            )}
+
             <div className="max-h-[60vh] overflow-y-auto pr-1">
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {catalogLoading ? (
@@ -361,7 +661,9 @@ export function SalesmanEstimateForm({
                   </div>
                 ) : availableCatalog.length === 0 ? (
                   <p className="col-span-full rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                    No stocked products found.
+                    {hasCatalogFilters
+                      ? "No products match the current filters."
+                      : "No stocked products found."}
                   </p>
                 ) : (
                   availableCatalog.map((product) => (
@@ -415,7 +717,9 @@ export function SalesmanEstimateForm({
               {mode === "edit" ? (
                 <CustomerSelect
                   value={selectedCustomerIds[0]}
-                  onSelect={(customerId) => setSelectedCustomerIds([customerId])}
+                  onSelect={(customerId) =>
+                    setSelectedCustomerIds([customerId])
+                  }
                 />
               ) : (
                 <MultiCustomerSelect
@@ -440,14 +744,18 @@ export function SalesmanEstimateForm({
               ) : (
                 <div className="max-h-[40vh] divide-y overflow-y-auto">
                   {items.map((item) => (
-                    <div key={item.variantId} className="py-3 first:pt-0 last:pb-0">
+                    <div
+                      key={item.variantId}
+                      className="py-3 first:pt-0 last:pb-0"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">
                             {item.name}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {formatMoney(item.unitPrice)} each · {item.variantLabel}
+                            {formatMoney(item.unitPrice)} each ·{" "}
+                            {item.variantLabel}
                           </p>
                         </div>
                         <Button
@@ -501,7 +809,10 @@ export function SalesmanEstimateForm({
             {/* Discount & validity */}
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="discountPercent" className="text-xs font-medium">
+                <Label
+                  htmlFor="discountPercent"
+                  className="text-xs font-medium"
+                >
                   Discount percent
                 </Label>
                 <Input
@@ -512,7 +823,9 @@ export function SalesmanEstimateForm({
                   step="0.01"
                   value={discountPercent}
                   onChange={(event) =>
-                    setDiscountPercent(Number.parseFloat(event.target.value) || 0)
+                    setDiscountPercent(
+                      Number.parseFloat(event.target.value) || 0,
+                    )
                   }
                 />
               </div>
@@ -624,7 +937,9 @@ export function SalesmanEstimateForm({
             </div>
 
             <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isSubmitting && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {mode === "edit" ? "Update Estimate" : "Create Estimate"}
             </Button>
           </CardContent>

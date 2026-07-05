@@ -28,6 +28,10 @@ const upcomingOrdersSchema = z.object({
 
 const estimateCatalogSchema = z.object({
     search: z.string().optional(),
+    productTypeId: z.number().int().positive().optional(),
+    coreProductId: z.number().int().positive().optional(),
+    categoryId: z.number().int().positive().optional(),
+    subCategoryId: z.number().int().positive().optional(),
 });
 
 const estimateLineInputSchema = z.object({
@@ -669,13 +673,40 @@ export const salesmanRouter = {
                                     id: true,
                                     name: true,
                                     image: true,
+                                    categoryId: true,
+                                    subCategoryId: true,
+                                    coreProductId: true,
                                 },
                                 with: {
+                                    category: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            typeId: true,
+                                        },
+                                        with: {
+                                            type: {
+                                                columns: {
+                                                    id: true,
+                                                    name: true,
+                                                },
+                                            },
+                                        },
+                                    },
+                                    subCategory: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            categoryId: true,
+                                        },
+                                    },
                                     coreProduct: {
                                         columns: {
                                             id: true,
                                             name: true,
                                             image: true,
+                                            categoryId: true,
+                                            subCategoryId: true,
                                         },
                                     },
                                 },
@@ -685,15 +716,25 @@ export const salesmanRouter = {
                 },
             });
 
-            const catalog = rows
+            const mappedCatalog = rows
                 .map((row) => {
                     const variant = row.variant;
                     const product = variant?.product;
                     if (!variant || !product) return null;
 
                     const variantLabel = formatPackLabel(variant);
+                    const typeId = product.category?.typeId ?? null;
+                    const typeName = product.category?.type?.name ?? null;
+                    const categoryId = product.category?.id ?? product.categoryId ?? null;
+                    const categoryName = product.category?.name ?? null;
+                    const subCategoryId =
+                        product.subCategory?.id ?? product.subCategoryId ?? null;
+                    const subCategoryName = product.subCategory?.name ?? null;
+                    const coreProductId =
+                        product.coreProduct?.id ?? product.coreProductId ?? null;
+                    const coreProductName = product.coreProduct?.name ?? null;
                     const nameParts = [
-                        product.coreProduct?.name || product.name,
+                        coreProductName || product.name,
                         variant.brand?.name,
                         variantLabel,
                     ].filter(Boolean);
@@ -701,7 +742,10 @@ export const salesmanRouter = {
                     const haystack = [
                         displayName,
                         product.name,
-                        product.coreProduct?.name,
+                        coreProductName,
+                        typeName,
+                        categoryName,
+                        subCategoryName,
                         variant.brand?.name,
                         variant.sku,
                     ]
@@ -709,14 +753,12 @@ export const salesmanRouter = {
                         .join(" ")
                         .toLowerCase();
 
-                    if (search && !haystack.includes(search)) return null;
-
                     return {
                         inventoryId: row.id,
                         variantId: row.variantId,
                         productId: product.id,
                         name: displayName,
-                        productName: product.coreProduct?.name || product.name,
+                        productName: coreProductName || product.name,
                         brandName: variant.brand?.name ?? null,
                         variantLabel,
                         sku: variant.sku,
@@ -726,11 +768,135 @@ export const salesmanRouter = {
                             toNumber(row.retailPrice) > 0
                                 ? toNumber(row.retailPrice)
                                 : toNumber(variant.price),
+                        typeId,
+                        typeName,
+                        categoryId,
+                        categoryName,
+                        subCategoryId,
+                        subCategoryName,
+                        coreProductId,
+                        coreProductName,
+                        searchText: haystack,
                     };
-                })
-                .filter(Boolean);
+                });
+            const catalog = mappedCatalog.filter(
+                (item): item is NonNullable<(typeof mappedCatalog)[number]> =>
+                    item !== null,
+            );
 
-            return { products: catalog };
+            const matchesSearch = (item: NonNullable<(typeof catalog)[number]>) =>
+                !search || item.searchText.includes(search);
+            const matchesSelectedFilters = (
+                item: NonNullable<(typeof catalog)[number]>,
+            ) => {
+                if (input.productTypeId && item.typeId !== input.productTypeId)
+                    return false;
+                if (input.coreProductId && item.coreProductId !== input.coreProductId)
+                    return false;
+                if (input.categoryId && item.categoryId !== input.categoryId)
+                    return false;
+                if (input.subCategoryId && item.subCategoryId !== input.subCategoryId)
+                    return false;
+                return true;
+            };
+
+            const searchRows = catalog.filter(matchesSearch);
+            const products = searchRows
+                .filter(matchesSelectedFilters)
+                .map(({ searchText: _searchText, ...item }) => item);
+
+            const sortByName = <T extends { name: string }>(items: T[]) =>
+                items.sort((left, right) => left.name.localeCompare(right.name));
+
+            const typeOptions = new Map<number, { id: number; name: string }>();
+            const categoryOptions = new Map<
+                number,
+                { id: number; name: string; typeId: number | null }
+            >();
+            const subCategoryOptions = new Map<
+                number,
+                { id: number; name: string; categoryId: number }
+            >();
+            const coreProductOptions = new Map<
+                number,
+                {
+                    id: number;
+                    name: string;
+                    typeId: number | null;
+                    categoryId: number | null;
+                    subCategoryId: number | null;
+                }
+            >();
+
+            for (const item of searchRows) {
+                if (item.typeId && item.typeName) {
+                    typeOptions.set(item.typeId, {
+                        id: item.typeId,
+                        name: item.typeName,
+                    });
+                }
+
+                const categoryMatches =
+                    (!input.productTypeId || item.typeId === input.productTypeId) &&
+                    (!input.coreProductId ||
+                        item.coreProductId === input.coreProductId);
+                if (categoryMatches && item.categoryId && item.categoryName) {
+                    categoryOptions.set(item.categoryId, {
+                        id: item.categoryId,
+                        name: item.categoryName,
+                        typeId: item.typeId,
+                    });
+                }
+
+                const subCategoryMatches =
+                    categoryMatches &&
+                    (!input.categoryId || item.categoryId === input.categoryId);
+                if (
+                    subCategoryMatches &&
+                    item.subCategoryId &&
+                    item.subCategoryName &&
+                    item.categoryId
+                ) {
+                    subCategoryOptions.set(item.subCategoryId, {
+                        id: item.subCategoryId,
+                        name: item.subCategoryName,
+                        categoryId: item.categoryId,
+                    });
+                }
+
+                const coreProductMatches =
+                    (!input.productTypeId || item.typeId === input.productTypeId) &&
+                    (!input.categoryId || item.categoryId === input.categoryId) &&
+                    (!input.subCategoryId ||
+                        item.subCategoryId === input.subCategoryId);
+                if (
+                    coreProductMatches &&
+                    item.coreProductId &&
+                    (item.coreProductName || item.productName)
+                ) {
+                    coreProductOptions.set(item.coreProductId, {
+                        id: item.coreProductId,
+                        name: item.coreProductName || item.productName,
+                        typeId: item.typeId,
+                        categoryId: item.categoryId,
+                        subCategoryId: item.subCategoryId,
+                    });
+                }
+            }
+
+            return {
+                products,
+                filterOptions: {
+                    types: sortByName(Array.from(typeOptions.values())),
+                    coreProducts: sortByName(
+                        Array.from(coreProductOptions.values()),
+                    ),
+                    categories: sortByName(Array.from(categoryOptions.values())),
+                    subCategories: sortByName(
+                        Array.from(subCategoryOptions.values()),
+                    ),
+                },
+            };
         }),
 
     /**
