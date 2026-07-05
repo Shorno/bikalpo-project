@@ -12,6 +12,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Download,
+  ExternalLink,
   FileText,
   Filter,
   Inbox,
@@ -21,8 +22,10 @@ import {
   RefreshCcw,
   Search,
   Send,
+  ShoppingBag,
   XCircle,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { type ElementType, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -89,6 +92,7 @@ type EstimateRow = {
   discount: string | number;
   discountPercent: string | number;
   total: string | number;
+  convertedOrderId?: number | null;
   itemCount: number;
   risk: Risk;
   direction: EstimateDirection;
@@ -1059,6 +1063,7 @@ function EstimateDetailPanel({
   detail: EstimateDetail;
   onDone: () => void;
 }) {
+  const router = useRouter();
   const estimate = detail.estimate;
   const [discountInput, setDiscountInput] = useState(
     Number(estimate.discountPercent).toFixed(2),
@@ -1106,6 +1111,28 @@ function EstimateDetailPanel({
     onError: (error) => toast.error(error.message || "Failed to send estimate"),
   });
 
+  const acceptMutation = useMutation({
+    mutationFn: () =>
+      orpc.warehouseEstimate.acceptEstimate.call({
+        id: estimate.id,
+      }),
+    onSuccess: (data) => {
+      toast.success(
+        data.alreadyConverted
+          ? "Estimate was already converted"
+          : "Estimate accepted and converted to order",
+      );
+      onDone();
+      const orderId = data.order?.id;
+      if (orderId) {
+        router.push(`/warehouse/dashboard/purchases/${orderId}`);
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to accept estimate");
+    },
+  });
+
   const discountPercent = Number(discountInput || 0);
   const subtotal = Number(estimate.subtotal || 0);
   const discountAmount = subtotal * (discountPercent / 100);
@@ -1113,8 +1140,20 @@ function EstimateDetailPanel({
   const canManage = estimate.canManage;
   const isPending = canManage && estimate.status === "pending";
   const isApproved = canManage && estimate.status === "approved";
-  const isSubmitting = reviewMutation.isPending || sendMutation.isPending;
+  const isSubmitting =
+    reviewMutation.isPending ||
+    sendMutation.isPending ||
+    acceptMutation.isPending;
   const isReceived = estimate.direction === "received";
+  const canAcceptReceived =
+    isReceived &&
+    (estimate.status === "sent" || estimate.status === "approved");
+  const convertedOrderHref =
+    estimate.status === "converted" && estimate.convertedOrderId
+      ? isReceived
+        ? `/warehouse/dashboard/purchases/${estimate.convertedOrderId}`
+        : `/warehouse/dashboard/order-management/${estimate.convertedOrderId}`
+      : null;
   const counterpartyName = getCounterpartyName(estimate);
   const counterpartyPhone = getCounterpartyPhone(estimate);
 
@@ -1304,6 +1343,47 @@ function EstimateDetailPanel({
               />
             </InfoBlock>
           </section>
+
+          {canAcceptReceived && (
+            <section className="bg-muted/30 px-6 py-5">
+              <SectionTitle>Accept & Place Order</SectionTitle>
+              <Button
+                className="mt-3 gap-2"
+                onClick={() => acceptMutation.mutate()}
+                disabled={isSubmitting}
+              >
+                {acceptMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ShoppingBag className="h-4 w-4" />
+                )}
+                Accept & Place Order
+              </Button>
+            </section>
+          )}
+
+          {convertedOrderHref && (
+            <section className="px-6 py-5">
+              <InfoBlock title="Converted Order">
+                <InfoLine
+                  label="Status"
+                  value={
+                    isReceived
+                      ? "This estimate was accepted and converted into your purchase order."
+                      : "This estimate was converted into a warehouse order."
+                  }
+                />
+                <Button
+                  variant="outline"
+                  className="mt-3 gap-2"
+                  onClick={() => router.push(convertedOrderHref)}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  View Order
+                </Button>
+              </InfoBlock>
+            </section>
+          )}
 
           {(isPending || isApproved) && (
             <section className="bg-muted/30 px-6 py-5">

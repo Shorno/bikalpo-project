@@ -20,8 +20,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { orpc } from "@/utils/orpc";
 import { Separator } from "@/components/ui/separator";
+import { orpc } from "@/utils/orpc";
 import { OrderFlowStepper } from "./_components/order-flow-stepper";
 import { OrderSourceBadge } from "./_components/order-source-badge";
 
@@ -29,6 +29,59 @@ import { OrderSourceBadge } from "./_components/order-source-badge";
 
 function formatMoney(value: unknown) {
   return `৳ ${Number(value || 0).toLocaleString("en-BD")}`;
+}
+
+function toNumber(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function formatPercent(value: unknown) {
+  const percent = toNumber(value);
+  return percent.toLocaleString("en-BD", {
+    maximumFractionDigits: percent % 1 === 0 ? 0 : 2,
+  });
+}
+
+function getLivePricingSummary(order: any, approvedQty: Record<number, number>) {
+  const approvedSubtotal = roundMoney(
+    order.items.reduce((sum: number, item: any) => {
+      const qty = approvedQty[item.id] ?? item.approvedQty ?? item.quantity;
+      const price = toNumber(item.modifiedUnitPrice ?? item.unitPrice);
+      return sum + qty * price;
+    }, 0),
+  );
+
+  const serverSummary = order.pricingSummary;
+  const storedSubtotal = toNumber(order.subtotal);
+  const storedDiscount = toNumber(order.discount);
+  const derivedDiscountPercent =
+    storedSubtotal > 0 ? (storedDiscount / storedSubtotal) * 100 : 0;
+  const discountPercent = toNumber(
+    serverSummary?.discountPercent ?? derivedDiscountPercent,
+  );
+  const discountAmount = Math.min(
+    approvedSubtotal,
+    roundMoney(approvedSubtotal * (discountPercent / 100)),
+  );
+  const shippingCost = roundMoney(toNumber(serverSummary?.shippingCost ?? order.shippingCost));
+  const finalTotal = Math.max(
+    0,
+    roundMoney(approvedSubtotal - discountAmount + shippingCost),
+  );
+
+  return {
+    approvedSubtotal,
+    discountAmount,
+    discountPercent,
+    shippingCost,
+    finalTotal,
+    hasDiscount: discountAmount > 0,
+  };
 }
 
 function formatDate(value?: string | Date | null) {
@@ -100,14 +153,19 @@ export default function OrderManagementDetailPage() {
   const status = order ? getStatus(order.status, order.requiresBuyerAcceptance) : null;
   const isPending = order?.status === "pending";
 
-  const finalApprovedTotal = useMemo(() => {
-    if (!order?.items) return 0;
-    return order.items.reduce((sum, item: any) => {
-      const qty = approvedQty[item.id] ?? item.approvedQty ?? item.quantity;
-      const price = Number(item.modifiedUnitPrice ?? item.unitPrice ?? 0);
-      return sum + qty * price;
-    }, 0);
-  }, [approvedQty, order?.items]);
+  const pricingSummary = useMemo(() => {
+    if (!order?.items) {
+      return {
+        approvedSubtotal: 0,
+        discountAmount: 0,
+        discountPercent: 0,
+        shippingCost: 0,
+        finalTotal: 0,
+        hasDiscount: false,
+      };
+    }
+    return getLivePricingSummary(order, approvedQty);
+  }, [approvedQty, order]);
 
   const totalRequestedQty = useMemo(() => {
     if (!order?.items) return 0;
@@ -226,6 +284,9 @@ export default function OrderManagementDetailPage() {
           </div>
           <div className="divide-y">
             <InfoRow label="Order ID" value={order.orderNumber} mono />
+            {data.sourceEstimate && (
+              <InfoRow label="Estimate" value={data.sourceEstimate.estimateNumber} mono />
+            )}
             <InfoRow label="Order Date" value={formatDate(order.createdAt)} />
             <InfoRow label="Status" value={status?.label ?? "—"} badge={status?.className} />
             <InfoRow label="Payment Method" value={String(order.paymentMethod ?? "—").replace(/_/g, " ")} capitalize />
@@ -390,9 +451,35 @@ export default function OrderManagementDetailPage() {
               </span>
             </div>
             <Separator className="my-2" />
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span className="font-semibold tabular-nums">
+                {formatMoney(pricingSummary.approvedSubtotal)}
+              </span>
+            </div>
+            {pricingSummary.hasDiscount && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">
+                  {order.orderSource === "estimate" ? "Estimate Discount" : "Discount"} (
+                  {formatPercent(pricingSummary.discountPercent)}%)
+                </span>
+                <span className="font-semibold tabular-nums text-red-600">
+                  -{formatMoney(pricingSummary.discountAmount)}
+                </span>
+              </div>
+            )}
+            {pricingSummary.shippingCost > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Shipping</span>
+                <span className="font-semibold tabular-nums">
+                  {formatMoney(pricingSummary.shippingCost)}
+                </span>
+              </div>
+            )}
+            <Separator className="my-2" />
             <div className="flex items-center justify-between text-base font-bold text-gray-950">
               <span>Final Order Value</span>
-              <span className="text-emerald-700">{formatMoney(finalApprovedTotal)}</span>
+              <span className="text-emerald-700">{formatMoney(pricingSummary.finalTotal)}</span>
             </div>
           </div>
         </div>

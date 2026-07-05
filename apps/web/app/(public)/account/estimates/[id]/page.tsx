@@ -61,7 +61,6 @@ export default function EstimateDetailsPage() {
   const { data, isLoading, error } = useEstimateById(id);
   type EstimateData = NonNullable<typeof data>;
   type EstimateItem = EstimateData["estimate"]["items"][number];
-  type EstimateCustomer = EstimateData["estimate"]["customer"];
 
   if (isLoading) return <EstimateDetailSkeleton />;
 
@@ -206,10 +205,7 @@ export default function EstimateDetailsPage() {
         <div className="lg:col-span-2">
           {canConvert ? (
             <div className="lg:sticky lg:top-4">
-              <ConvertOrderForm
-                estimateId={estimate.id}
-                user={estimate.customer as EstimateCustomer}
-              />
+              <ConvertOrderForm estimateId={estimate.id} />
             </div>
           ) : (
             <div className="bg-white rounded-lg border border-gray-200 p-4">

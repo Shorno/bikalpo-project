@@ -1,5 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import { customerAssignment, estimate, estimateItem, inventory, order, orderItem, shopWarehouseConnection, user, warehouseWarehouseConnection } from "@bikalpo-project/db/schema";
+import { customerAssignment, estimate, estimateItem, inventory, order, shopWarehouseConnection, user, warehouseWarehouseConnection } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -1662,7 +1662,7 @@ export const salesmanRouter = {
             path: "/salesmen/estimates/{id}/convert",
             tags: ["Salesman"],
             summary: "Convert estimate to order",
-            description: "Convert a sent/approved estimate into an order with stock deduction",
+            description: "Block seller-side estimate conversion; only the receiver can accept an estimate",
         })
         .input(z.object({
             id: z.number(),
@@ -1674,114 +1674,10 @@ export const salesmanRouter = {
             shippingPostalCode: z.string().optional().nullable(),
             customerNote: z.string().optional().nullable(),
         }))
-        .handler(async ({ context, input }) => {
-            const userRole = context.session.user.role;
-
-            if (userRole !== "admin" && userRole !== "salesman" && userRole !== "customer") {
-                throw new ORPCError("FORBIDDEN", { message: "Unauthorized" });
-            }
-
-            const estimateData = await db.query.estimate.findFirst({
-                where: eq(estimate.id, input.id),
-                with: { items: true },
+        .handler(() => {
+            throw new ORPCError("FORBIDDEN", {
+                message: "Only the estimate receiver can accept and convert estimates",
             });
-
-            if (!estimateData) {
-                throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
-            }
-
-            if (userRole === "customer" && estimateData.customerId !== context.session.user.id) {
-                throw new ORPCError("FORBIDDEN", { message: "You do not own this estimate" });
-            }
-
-            // Check if customer has an active order
-            const activeOrder = await db.query.order.findFirst({
-                where: sql`${order.userId} = ${estimateData.customerId} 
-                    AND ${order.status} NOT IN ('delivered', 'cancelled')`,
-            });
-
-            if (activeOrder) {
-                throw new ORPCError("BAD_REQUEST", {
-                    message: "Customer already has an active order. Please wait until it's delivered or cancelled.",
-                });
-            }
-
-            if (estimateData.status === "converted") {
-                throw new ORPCError("BAD_REQUEST", { message: "Estimate has already been converted" });
-            }
-
-            if (estimateData.status !== "approved" && estimateData.status !== "sent") {
-                throw new ORPCError("BAD_REQUEST", {
-                    message: `Only sent or approved estimates can be converted. Current status: ${estimateData.status}`,
-                });
-            }
-
-            // Generate order number
-            const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-            const result = await db.transaction(async (tx) => {
-                const [newOrder] = await tx
-                    .insert(order)
-                    .values({
-                        orderNumber,
-                        userId: estimateData.customerId,
-                        orderType: "b2b",
-                        orderSource: "estimate",
-                        warehouseId: estimateData.warehouseId ?? null,
-                        subtotal: estimateData.subtotal,
-                        discount: estimateData.discount,
-                        total: estimateData.total,
-                        shippingCost: "0",
-                        status: "pending",
-                        paymentStatus: "pending",
-                        paymentMethod: "cash_on_delivery",
-                        shippingName: input.shippingName,
-                        shippingPhone: input.shippingPhone,
-                        shippingEmail: null,
-                        shippingAddress: input.shippingAddress,
-                        shippingCity: input.shippingCity,
-                        shippingArea: input.shippingArea || null,
-                        shippingPostalCode: input.shippingPostalCode || null,
-                        customerNote: input.customerNote || null,
-                    })
-                    .returning();
-
-                if (!newOrder) {
-                    throw new Error("Failed to create order");
-                }
-
-                // Create order items
-                const orderItems = estimateData.items.map((item) => ({
-                    orderId: newOrder.id,
-                    productId: item.productId,
-                    variantId: item.variantId,
-                    productName: item.productName,
-                    productImage: item.productImage || "",
-                    productSize: item.productSize || "N/A",
-                    quantity: item.quantity,
-                    unitPrice: item.unitPrice,
-                    totalPrice: item.totalPrice,
-                }));
-
-                await tx.insert(orderItem).values(orderItems);
-
-
-                // Stock deduction removed — stock is now tracked via the inventory system
-
-                // Update estimate status
-                await tx
-                    .update(estimate)
-                    .set({
-                        status: "converted",
-                        convertedOrderId: newOrder.id,
-                        convertedAt: new Date(),
-                    })
-                    .where(eq(estimate.id, input.id));
-
-                return newOrder;
-            });
-
-            return { success: true, order: result };
         }),
 };
 

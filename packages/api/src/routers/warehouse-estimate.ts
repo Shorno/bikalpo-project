@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { warehouseProcedure } from "../index";
+import { convertEstimateToB2bOrder } from "./helpers/estimate-order-conversion";
 
 const estimateStatusSchema = z.enum([
 	"draft",
@@ -65,6 +66,10 @@ const reviewEstimateSchema = z.object({
 });
 
 const sendEstimateSchema = z.object({
+	id: z.number().int().positive(),
+});
+
+const acceptEstimateSchema = z.object({
 	id: z.number().int().positive(),
 });
 
@@ -763,5 +768,20 @@ export const warehouseEstimateRouter = {
 				);
 
 			return { success: true };
+		}),
+
+	acceptEstimate: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/estimates/{id}/accept",
+			tags: ["Warehouse Estimates"],
+			summary: "Accept a received estimate and convert it to an order",
+		})
+		.input(acceptEstimateSchema)
+		.handler(async ({ context, input }) => {
+			return convertEstimateToB2bOrder({
+				estimateId: input.id,
+				receiverId: context.session.user.id,
+			});
 		}),
 };

@@ -83,6 +83,10 @@ import {
   DEFAULT_BROADCAST_MINUTES,
   type CartItemForSplit,
 } from "../services/open-order-matching";
+import {
+  estimateOrderAcceptSchema,
+  convertEstimateToB2bOrder,
+} from "./helpers/estimate-order-conversion";
 
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
@@ -1880,7 +1884,7 @@ const queries = {
 
   // ── Estimates ─────────────────────────────────────────────────
 
-  /** Get customer's estimates (approved/converted only) */
+  /** Get customer's visible estimates */
   getEstimatesByCustomer: protectedProcedure
     .route({
       method: "GET",
@@ -4070,136 +4074,19 @@ const mutations = {
       summary: "Convert an approved estimate to an order",
     })
     .input(
-      z.object({
-        estimateId: z.number(),
-        shippingName: z.string().min(1),
-        shippingPhone: z.string().min(1),
-        shippingAddress: z.string().min(1),
-        shippingCity: z.string().min(1),
-        shippingArea: z.string().optional().nullable(),
-        shippingPostalCode: z.string().optional().nullable(),
-        customerNote: z.string().optional().nullable(),
+      estimateOrderAcceptSchema.extend({
+        estimateId: z.number().int().positive(),
       }),
     )
     .handler(async ({ input, context }) => {
       const userId = context.session.user.id;
-      const userRole = context.session.user.role;
+      const { estimateId, ...orderInput } = input;
 
-      if (
-        userRole !== "admin" &&
-        userRole !== "salesman" &&
-        userRole !== "customer"
-      ) {
-        throw new ORPCError("FORBIDDEN", { message: "Unauthorized" });
-      }
-
-      const estimateData = await db.query.estimate.findFirst({
-        where: eq(estimate.id, input.estimateId),
-        with: { items: true },
+      return convertEstimateToB2bOrder({
+        estimateId,
+        receiverId: userId,
+        order: orderInput,
       });
-
-      if (!estimateData) {
-        throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
-      }
-
-      // If customer, verify ownership
-      if (userRole === "customer" && estimateData.customerId !== userId) {
-        throw new ORPCError("FORBIDDEN", {
-          message: "You do not own this estimate",
-        });
-      }
-
-      // Check active orders
-      const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${estimateData.customerId}
-          AND ${order.status} NOT IN ('delivered', 'cancelled')`,
-      });
-
-      if (activeOrder) {
-        throw new ORPCError("CONFLICT", {
-          message:
-            "Customer already has an active order. Please wait until it's delivered or cancelled.",
-        });
-      }
-
-      if (estimateData.status === "converted") {
-        throw new ORPCError("CONFLICT", {
-          message: "Estimate has already been converted",
-        });
-      }
-
-      if (
-        estimateData.status !== "approved" &&
-        estimateData.status !== "sent"
-      ) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: `Only sent or approved estimates can be converted. Current status: ${estimateData.status}`,
-        });
-      }
-
-      // Convert in a transaction
-      const result = await db.transaction(async (tx) => {
-        const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-        const [newOrder] = await tx
-          .insert(order)
-          .values({
-                        orderNumber,
-                        userId: estimateData.customerId,
-                        orderType: "b2b",
-                        orderSource: "estimate",
-                        warehouseId: estimateData.warehouseId ?? null,
-                        subtotal: estimateData.subtotal,
-            discount: estimateData.discount,
-            total: estimateData.total,
-            shippingCost: "0",
-            status: "pending",
-            paymentStatus: "pending",
-            paymentMethod: "cash_on_delivery",
-            shippingName: input.shippingName,
-            shippingPhone: input.shippingPhone,
-            shippingEmail: null,
-            shippingAddress: input.shippingAddress,
-            shippingCity: input.shippingCity,
-            shippingArea: input.shippingArea || null,
-            shippingPostalCode: input.shippingPostalCode || null,
-            customerNote: input.customerNote || null,
-          })
-          .returning();
-
-        if (!newOrder) throw new Error("Failed to create order");
-
-        // Create order items from estimate items
-        const orderItems = estimateData.items.map((item) => ({
-          orderId: newOrder.id,
-          productId: item.productId,
-          variantId: item.variantId,
-          productName: item.productName,
-          productImage: item.productImage || "",
-          productSize: item.productSize || "N/A",
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
-        }));
-
-        await tx.insert(orderItem).values(orderItems);
-
-        // Stock deduction removed — stock is tracked via inventory
-
-        // Update estimate status
-        await tx
-          .update(estimate)
-          .set({
-            status: "converted",
-            convertedOrderId: newOrder.id,
-            convertedAt: new Date(),
-          })
-          .where(eq(estimate.id, input.estimateId));
-
-        return newOrder;
-      });
-
-      return { success: true, order: result };
     }),
 
   // ── Item Requests ───────────────────────────────────────────
