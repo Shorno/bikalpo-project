@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  Check,
+  CalendarIcon,
   CheckCircle2,
   Loader2,
   Package,
@@ -13,29 +13,27 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { CustomerSelect } from "@/components/features/estimates/customer-select";
+import { MultiCustomerSelect } from "@/components/features/estimates/multi-customer-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { SALES_PORTAL_BASE } from "@/lib/sales-routing";
 import { cn } from "@/lib/utils";
 import { client, orpc } from "@/utils/orpc";
-
-type AssignedCustomer = {
-  id: string;
-  displayName?: string;
-  name?: string;
-  contactName?: string;
-  phoneNumber?: string | null;
-  shopName?: string | null;
-  warehouseName?: string | null;
-  customerType?: "retailer" | "warehouse";
-};
 
 type CatalogProduct = {
   inventoryId: number;
@@ -93,15 +91,15 @@ function toDateInput(value: string | Date | null | undefined) {
   return date.toISOString().slice(0, 10);
 }
 
-function getCustomerLabel(customer: AssignedCustomer) {
-  return (
-    customer.displayName ||
-    customer.shopName ||
-    customer.warehouseName ||
-    customer.name ||
-    customer.contactName ||
-    "Customer"
-  );
+function formatDateLabel(value: string) {
+  if (!value) return "Select date";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "Select date";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 export function SalesmanEstimateForm({
@@ -112,7 +110,6 @@ export function SalesmanEstimateForm({
 }: SalesmanEstimateFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [customerSearch, setCustomerSearch] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>(
     estimate?.customerId
@@ -150,9 +147,6 @@ export function SalesmanEstimateForm({
   const [validUntil, setValidUntil] = useState(toDateInput(estimate?.validUntil));
   const [notes, setNotes] = useState(estimate?.notes ?? "");
 
-  const { data: customersData, isLoading: customersLoading } = useQuery(
-    orpc.salesman.getAssignedCustomers.queryOptions({ input: {} }),
-  );
   const { data: catalogData, isLoading: catalogLoading } = useQuery({
     queryKey: ["salesman-estimate-catalog", productSearch],
     queryFn: () =>
@@ -162,32 +156,12 @@ export function SalesmanEstimateForm({
     staleTime: 1000 * 60 * 2,
   });
 
-  const customers = (customersData?.customers ?? []) as AssignedCustomer[];
   const catalog = (catalogData?.products ?? []) as CatalogProduct[];
 
   const selectedVariantIds = new Set(items.map((item) => item.variantId));
   const availableCatalog = catalog.filter(
     (product) => !selectedVariantIds.has(product.variantId),
   );
-
-  const filteredCustomers = useMemo(() => {
-    const search = customerSearch.trim().toLowerCase();
-    if (!search) return customers;
-    return customers.filter((customer) =>
-      [
-        customer.displayName,
-        customer.name,
-        customer.contactName,
-        customer.shopName,
-        customer.warehouseName,
-        customer.phoneNumber,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(search),
-    );
-  }, [customers, customerSearch]);
 
   const subtotal = items.reduce(
     (sum, item) => sum + item.unitPrice * item.quantity,
@@ -250,15 +224,6 @@ export function SalesmanEstimateForm({
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
-  const toggleCustomer = (customerId: string) => {
-    setSelectedCustomerIds((current) => {
-      if (mode === "edit") return [customerId];
-      return current.includes(customerId)
-        ? current.filter((id) => id !== customerId)
-        : [...current, customerId];
-    });
-  };
-
   const addProduct = (product: CatalogProduct) => {
     setItems((current) => [...current, { ...product, quantity: 1 }]);
   };
@@ -299,109 +264,34 @@ export function SalesmanEstimateForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-4 xl:grid-cols-[1fr_360px]">
-      <div className="space-y-4">
-        {hasLegacyItems && (
-          <Alert className="border-amber-200 bg-amber-50 text-amber-900">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Legacy estimate</AlertTitle>
-            <AlertDescription>
-              This estimate has products without warehouse variant snapshots.
-              Create a new estimate from warehouse stock instead.
-            </AlertDescription>
-          </Alert>
-        )}
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {hasLegacyItems && (
+        <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Legacy estimate</AlertTitle>
+          <AlertDescription>
+            This estimate has products without warehouse variant snapshots. Create
+            a new estimate from warehouse stock instead.
+          </AlertDescription>
+        </Alert>
+      )}
 
-        <section className="rounded-lg border bg-background">
-          <div className="flex items-center justify-between border-b bg-muted/20 px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold">Customers</h2>
-              <p className="text-xs text-muted-foreground">
-                {mode === "edit"
-                  ? "One customer can be attached while editing."
-                  : "Select one or more assigned shops or warehouses."}
-              </p>
-            </div>
-            <Badge variant="outline" className="gap-1">
-              <Users className="h-3 w-3" />
-              {selectedCustomerIds.length}
-            </Badge>
-          </div>
-          <div className="space-y-3 p-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={customerSearch}
-                onChange={(event) => setCustomerSearch(event.target.value)}
-                placeholder="Search assigned customers..."
-                className="pl-9"
-              />
-            </div>
-            <div className="max-h-72 overflow-y-auto rounded-md border">
-              {customersLoading ? (
-                <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading customers
-                </div>
-              ) : filteredCustomers.length === 0 ? (
-                <p className="p-6 text-center text-sm text-muted-foreground">
-                  No assigned customers found.
+      <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+        {/* Main: warehouse product catalog */}
+        <Card className="shadow-none">
+          <CardContent className="space-y-4 p-4">
+            <div className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <h2 className="text-sm font-semibold leading-none">
+                  Warehouse Products
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tap a product to add it to the estimate.
                 </p>
-              ) : (
-                filteredCustomers.map((customer) => {
-                  const checked = selectedCustomerIds.includes(customer.id);
-                  return (
-                    <div
-                      key={customer.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => toggleCustomer(customer.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          toggleCustomer(customer.id);
-                        }
-                      }}
-                      className="flex w-full items-center gap-3 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/40"
-                    >
-                      <div
-                        aria-hidden
-                        className={cn(
-                          "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-                          checked
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-input bg-background",
-                        )}
-                      >
-                        {checked && <Check className="size-3.5" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
-                          {getCustomerLabel(customer)}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {customer.phoneNumber || customer.contactName || "No contact"}
-                        </p>
-                      </div>
-                      <Badge variant="outline">
-                        {customer.customerType === "warehouse" ? "Warehouse" : "Shop"}
-                      </Badge>
-                    </div>
-                  );
-                })
-              )}
+              </div>
             </div>
-          </div>
-        </section>
 
-        <section className="rounded-lg border bg-background">
-          <div className="border-b bg-muted/20 px-4 py-3">
-            <h2 className="text-sm font-semibold">Warehouse Products</h2>
-            <p className="text-xs text-muted-foreground">
-              Products come from the registered warehouse stock.
-            </p>
-          </div>
-          <div className="space-y-4 p-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -411,199 +301,279 @@ export function SalesmanEstimateForm({
                 className="pl-9"
               />
             </div>
-            <div className="grid gap-2 md:grid-cols-2">
-              {catalogLoading ? (
-                <div className="col-span-full flex items-center justify-center gap-2 rounded-md border p-6 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading products
-                </div>
-              ) : availableCatalog.length === 0 ? (
-                <p className="col-span-full rounded-md border p-6 text-center text-sm text-muted-foreground">
-                  No stocked products found.
-                </p>
+
+            <div className="max-h-[60vh] overflow-y-auto pr-1">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {catalogLoading ? (
+                  <div className="col-span-full flex items-center justify-center gap-2 rounded-md border p-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading products
+                  </div>
+                ) : availableCatalog.length === 0 ? (
+                  <p className="col-span-full rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    No stocked products found.
+                  </p>
+                ) : (
+                  availableCatalog.map((product) => (
+                    <button
+                      key={product.variantId}
+                      type="button"
+                      onClick={() => addProduct(product)}
+                      className="flex min-h-20 items-center gap-3 rounded-md border p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
+                    >
+                      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-muted">
+                        {product.image ? (
+                          <Image
+                            src={product.image}
+                            alt={product.name}
+                            fill
+                            sizes="48px"
+                            className="object-cover"
+                          />
+                        ) : (
+                          <Package className="m-3 h-6 w-6 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-1 text-sm font-medium">
+                          {product.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatMoney(product.unitPrice)} · Stock{" "}
+                          {product.availableQty}
+                        </p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Sidebar: estimate cart */}
+        <Card className="shadow-none lg:sticky lg:top-6">
+          <CardContent className="space-y-4 p-4">
+            {/* Customers */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold">
+                  {mode === "edit" ? "Customer" : "Customers"}
+                </h2>
+              </div>
+              {mode === "edit" ? (
+                <CustomerSelect
+                  value={selectedCustomerIds[0]}
+                  onSelect={(customerId) => setSelectedCustomerIds([customerId])}
+                />
               ) : (
-                availableCatalog.slice(0, 12).map((product) => (
-                  <button
-                    key={product.variantId}
-                    type="button"
-                    onClick={() => addProduct(product)}
-                    className="flex min-h-20 items-center gap-3 rounded-md border p-3 text-left transition-colors hover:bg-muted/40"
-                  >
-                    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-muted">
-                      {product.image ? (
-                        <Image
-                          src={product.image}
-                          alt={product.name}
-                          fill
-                          sizes="48px"
-                          className="object-cover"
-                        />
-                      ) : (
-                        <Package className="m-3 h-6 w-6 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="line-clamp-1 text-sm font-medium">
-                        {product.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatMoney(product.unitPrice)} · Stock {product.availableQty}
-                      </p>
-                    </div>
-                  </button>
-                ))
+                <MultiCustomerSelect
+                  value={selectedCustomerIds}
+                  onSelect={setSelectedCustomerIds}
+                />
               )}
             </div>
-          </div>
-        </section>
 
-        <section className="rounded-lg border bg-background">
-          <div className="border-b bg-muted/20 px-4 py-3">
-            <h2 className="text-sm font-semibold">Estimate Items</h2>
-          </div>
-          {items.length === 0 ? (
-            <p className="p-8 text-center text-sm text-muted-foreground">
-              Add products from warehouse stock to build the estimate.
-            </p>
-          ) : (
-            <div className="divide-y">
-              {items.map((item) => (
-                <div
-                  key={item.variantId}
-                  className="grid gap-3 p-4 md:grid-cols-[1fr_120px_120px_40px] md:items-center"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatMoney(item.unitPrice)} each · {item.variantLabel}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Qty</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={item.availableQty}
-                      value={item.quantity}
-                      onChange={(event) =>
-                        updateQuantity(
-                          item.variantId,
-                          Number.parseInt(event.target.value, 10) || 1,
-                        )
-                      }
-                    />
-                  </div>
-                  <div className="text-sm font-semibold md:text-right">
-                    {formatMoney(item.unitPrice * item.quantity)}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeItem(item.variantId)}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span className="sr-only">Remove</span>
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <aside className="space-y-4">
-        <section className="rounded-lg border bg-background p-4">
-          <h2 className="text-sm font-semibold">Discount & Validity</h2>
-          <div className="mt-4 space-y-4">
-            <div>
-              <Label htmlFor="discountPercent">Discount percent</Label>
-              <Input
-                id="discountPercent"
-                type="number"
-                min={0}
-                max={100}
-                step="0.01"
-                value={discountPercent}
-                onChange={(event) =>
-                  setDiscountPercent(Number.parseFloat(event.target.value) || 0)
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="validUntil">Valid until</Label>
-              <Input
-                id="validUntil"
-                type="date"
-                value={validUntil}
-                min={new Date().toISOString().slice(0, 10)}
-                onChange={(event) => setValidUntil(event.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="Optional note for the customer"
-                className="min-h-24"
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-lg border bg-background p-4">
-          <h2 className="text-sm font-semibold">Summary</h2>
-          <div className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span className="font-medium">{formatMoney(subtotal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">
-                Discount ({discountPercent || 0}%)
-              </span>
-              <span className="font-medium text-destructive">
-                -{formatMoney(discountAmount)}
-              </span>
-            </div>
             <Separator />
-            <div className="flex items-end justify-between">
-              <span className="text-muted-foreground">Total</span>
-              <span className="text-2xl font-bold">{formatMoney(total)}</span>
+
+            {/* Estimate items */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Estimate Items</h2>
+                <Badge variant="outline">{items.length}</Badge>
+              </div>
+              {items.length === 0 ? (
+                <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  Add products from the catalog to build the estimate.
+                </p>
+              ) : (
+                <div className="max-h-[40vh] divide-y overflow-y-auto">
+                  {items.map((item) => (
+                    <div key={item.variantId} className="py-3 first:pt-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {item.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatMoney(item.unitPrice)} each · {item.variantLabel}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeItem(item.variantId)}
+                          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Remove</span>
+                        </Button>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">
+                            Qty
+                          </Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={item.availableQty}
+                            value={item.quantity}
+                            onChange={(event) =>
+                              updateQuantity(
+                                item.variantId,
+                                Number.parseInt(event.target.value, 10) || 1,
+                              )
+                            }
+                            className="h-8 w-20"
+                          />
+                        </div>
+                        <span className="text-sm font-semibold tabular-nums">
+                          {formatMoney(item.unitPrice * item.quantity)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        </section>
 
-        <Alert
-          className={
-            needsApproval
-              ? "border-amber-200 bg-amber-50 text-amber-900"
-              : "border-emerald-200 bg-emerald-50 text-emerald-900"
-          }
-        >
-          {needsApproval ? (
-            <AlertTriangle className="h-4 w-4" />
-          ) : (
-            <CheckCircle2 className="h-4 w-4" />
-          )}
-          <AlertTitle>
-            {needsApproval ? "Warehouse approval needed" : "Auto sent"}
-          </AlertTitle>
-          <AlertDescription>
-            {needsApproval
-              ? "Discount is above 5%, so the estimate will wait for warehouse approval."
-              : "Discount is 5% or below, so the estimate will be sent to the customer."}
-          </AlertDescription>
-        </Alert>
+            <Separator />
 
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {mode === "edit" ? "Update Estimate" : "Create Estimate"}
-        </Button>
-      </aside>
+            {/* Discount & validity */}
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="discountPercent" className="text-xs font-medium">
+                  Discount percent
+                </Label>
+                <Input
+                  id="discountPercent"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  value={discountPercent}
+                  onChange={(event) =>
+                    setDiscountPercent(Number.parseFloat(event.target.value) || 0)
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="validUntil" className="text-xs font-medium">
+                  Valid until
+                </Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="validUntil"
+                      type="button"
+                      variant="outline"
+                      className={cn(
+                        "h-9 w-full justify-between px-3 text-left font-normal",
+                        !validUntil && "text-muted-foreground",
+                      )}
+                    >
+                      <span>{formatDateLabel(validUntil)}</span>
+                      <CalendarIcon className="h-4 w-4 opacity-60" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      captionLayout="dropdown"
+                      selected={
+                        validUntil
+                          ? new Date(`${validUntil}T00:00:00`)
+                          : undefined
+                      }
+                      defaultMonth={
+                        validUntil
+                          ? new Date(`${validUntil}T00:00:00`)
+                          : new Date()
+                      }
+                      startMonth={new Date()}
+                      endMonth={new Date(new Date().getFullYear() + 2, 11)}
+                      disabled={(date) => {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        return date < today;
+                      }}
+                      onSelect={(date) => setValidUntil(toDateInput(date))}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="notes" className="text-xs font-medium">
+                  Notes
+                </Label>
+                <Textarea
+                  id="notes"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="Optional note for the customer"
+                  className="min-h-24"
+                />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Summary */}
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium tabular-nums">
+                  {formatMoney(subtotal)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">
+                  Discount ({discountPercent || 0}%)
+                </span>
+                <span className="font-medium text-destructive tabular-nums">
+                  -{formatMoney(discountAmount)}
+                </span>
+              </div>
+              <Separator />
+              <div className="flex items-end justify-between">
+                <span className="text-muted-foreground">Total</span>
+                <span className="text-2xl font-bold tabular-nums">
+                  {formatMoney(total)}
+                </span>
+              </div>
+            </div>
+
+            {/* Approval hint */}
+            <div
+              className={cn(
+                "flex items-start gap-2 rounded-md border p-3 text-xs",
+                needsApproval
+                  ? "border-amber-200 bg-amber-50 text-amber-900"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-900",
+              )}
+            >
+              {needsApproval ? (
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+              <span>
+                {needsApproval
+                  ? "Discount is above 5%, so the estimate will wait for warehouse approval."
+                  : "Discount is 5% or below, so the estimate will be sent to the customer."}
+              </span>
+            </div>
+
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {mode === "edit" ? "Update Estimate" : "Create Estimate"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </form>
   );
 }

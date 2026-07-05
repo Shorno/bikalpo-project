@@ -18,6 +18,25 @@ interface MultiCustomerSelectProps {
   onSelect: (customerIds: string[]) => void;
 }
 
+type CustomerOption = {
+  id: string;
+  name: string;
+  displayName?: string | null;
+  shopName?: string | null;
+  warehouseName?: string | null;
+  phoneNumber?: string | null;
+};
+
+function getCustomerLabel(customer: CustomerOption) {
+  return (
+    customer.displayName ||
+    customer.shopName ||
+    customer.warehouseName ||
+    customer.name ||
+    "Customer"
+  );
+}
+
 export function MultiCustomerSelect({
   value = [],
   onSelect,
@@ -31,7 +50,9 @@ export function MultiCustomerSelect({
       const result = await client.salesman.getAssignedCustomers();
       return result.customers;
     },
-    enabled: open,
+    // Fetch when the dropdown is open, or when there are already-selected ids to
+    // resolve into chips (e.g. a preselected ?customerId= param or edit value).
+    enabled: open || value.length > 0,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
@@ -58,6 +79,16 @@ export function MultiCustomerSelect({
     onSelect(value.filter((id) => id !== customerId));
   };
 
+  const handleRemoveKeyDown = (
+    customerId: string,
+    event: React.KeyboardEvent<HTMLSpanElement>,
+  ) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect(value.filter((id) => id !== customerId));
+  };
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -77,19 +108,24 @@ export function MultiCustomerSelect({
                   className="pl-2 pr-1 h-7 bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 transition-colors rounded-md"
                 >
                   <span className="max-w-[150px] truncate">
-                    {customer.name}
+                    {getCustomerLabel(customer)}
                   </span>
-                  <button
-                    type="button"
-                    className="ml-1 text-primary/50 hover:text-primary transition-colors focus:outline-none"
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Remove ${getCustomerLabel(customer)}`}
+                    className="ml-1 inline-flex rounded-sm text-primary/50 transition-colors hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                     }}
                     onClick={(e) => handleRemove(customer.id, e)}
+                    onKeyDown={(event) =>
+                      handleRemoveKeyDown(customer.id, event)
+                    }
                   >
                     <X className="h-3 w-3" />
-                  </button>
+                  </span>
                 </Badge>
               ))}
             </div>
@@ -164,13 +200,16 @@ export function MultiCustomerSelect({
                     />
                   </div>
                   <div className="flex flex-col flex-1 overflow-hidden">
-                    <span className="font-semibold">{customer.name}</span>
+                    <span className="font-semibold truncate">
+                      {getCustomerLabel(customer)}
+                    </span>
                     <div className="flex items-center gap-3 text-xs opacity-70 mt-0.5">
-                      {customer.shopName && (
-                        <span className="font-medium text-muted-foreground">
-                          {customer.shopName}
-                        </span>
-                      )}
+                      {customer.name &&
+                        customer.name !== getCustomerLabel(customer) && (
+                          <span className="font-medium text-muted-foreground truncate">
+                            {customer.name}
+                          </span>
+                        )}
                       {customer.phoneNumber && (
                         <span className="text-muted-foreground">
                           {customer.phoneNumber}
