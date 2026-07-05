@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { product } from "./product";
+import { productVariant } from "./product-variant";
 
 export const estimateStatusEnum = pgEnum("estimate_status", [
     "draft",
@@ -35,10 +36,16 @@ export const estimate = pgTable(
         salesmanId: text("salesman_id")
             .notNull()
             .references(() => user.id, { onDelete: "cascade" }),
+        warehouseId: text("warehouse_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
 
         // Totals
         subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
         discount: decimal("discount", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        discountPercent: decimal("discount_percent", { precision: 5, scale: 2 })
             .default("0")
             .notNull(),
         total: decimal("total", { precision: 10, scale: 2 }).notNull(),
@@ -67,6 +74,7 @@ export const estimate = pgTable(
     (table) => [
         index("estimate_customerId_idx").on(table.customerId),
         index("estimate_salesmanId_idx").on(table.salesmanId),
+        index("estimate_warehouseId_idx").on(table.warehouseId),
         index("estimate_status_idx").on(table.status),
         index("estimate_estimateNumber_idx").on(table.estimateNumber),
     ],
@@ -82,10 +90,14 @@ export const estimateItem = pgTable(
         productId: integer("product_id")
             .notNull()
             .references(() => product.id, { onDelete: "restrict" }),
+        variantId: integer("variant_id").references(() => productVariant.id, {
+            onDelete: "set null",
+        }),
 
         // Product snapshot at time of estimate
         productName: text("product_name").notNull(),
         productImage: text("product_image"),
+        productSize: text("product_size"),
 
         // Pricing
         quantity: integer("quantity").notNull(),
@@ -100,6 +112,7 @@ export const estimateItem = pgTable(
     (table) => [
         index("estimateItem_estimateId_idx").on(table.estimateId),
         index("estimateItem_productId_idx").on(table.productId),
+        index("estimateItem_variantId_idx").on(table.variantId),
     ],
 );
 
@@ -115,6 +128,11 @@ export const estimateRelations = relations(estimate, ({ one, many }) => ({
         references: [user.id],
         relationName: "salesmanEstimates",
     }),
+    warehouse: one(user, {
+        fields: [estimate.warehouseId],
+        references: [user.id],
+        relationName: "warehouseEstimates",
+    }),
     items: many(estimateItem),
 }));
 
@@ -126,6 +144,10 @@ export const estimateItemRelations = relations(estimateItem, ({ one }) => ({
     product: one(product, {
         fields: [estimateItem.productId],
         references: [product.id],
+    }),
+    variant: one(productVariant, {
+        fields: [estimateItem.variantId],
+        references: [productVariant.id],
     }),
 }));
 

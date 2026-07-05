@@ -1894,7 +1894,7 @@ const queries = {
       const estimates = await db.query.estimate.findMany({
         where: and(
           eq(estimate.customerId, userId),
-          inArray(estimate.status, ["approved", "converted"]),
+          inArray(estimate.status, ["sent", "approved", "converted"]),
         ),
         with: {
           items: true,
@@ -4146,7 +4146,9 @@ const mutations = {
           .values({
                         orderNumber,
                         userId: estimateData.customerId,
+                        orderType: "b2b",
                         orderSource: "estimate",
+                        warehouseId: estimateData.warehouseId ?? null,
                         subtotal: estimateData.subtotal,
             discount: estimateData.discount,
             total: estimateData.total,
@@ -4171,9 +4173,10 @@ const mutations = {
         const orderItems = estimateData.items.map((item) => ({
           orderId: newOrder.id,
           productId: item.productId,
+          variantId: item.variantId,
           productName: item.productName,
           productImage: item.productImage || "",
-          productSize: "N/A",
+          productSize: item.productSize || "N/A",
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           totalPrice: item.totalPrice,

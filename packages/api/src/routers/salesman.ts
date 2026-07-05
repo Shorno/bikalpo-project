@@ -1,5 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import { customerAssignment, estimate, estimateItem, order, orderItem, shopWarehouseConnection, user, warehouseWarehouseConnection } from "@bikalpo-project/db/schema";
+import { customerAssignment, estimate, estimateItem, inventory, order, orderItem, shopWarehouseConnection, user, warehouseWarehouseConnection } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -26,6 +26,33 @@ const upcomingOrdersSchema = z.object({
     limit: z.number().optional().default(50),
 });
 
+const estimateCatalogSchema = z.object({
+    search: z.string().optional(),
+});
+
+const estimateLineInputSchema = z.object({
+    variantId: z.number().int().positive(),
+    quantity: z.number().int().min(1),
+});
+
+const writeEstimateSchema = z.object({
+    customerIds: z.array(z.string()).min(1, "At least one customer required"),
+    items: z.array(estimateLineInputSchema).min(1, "At least one item required"),
+    discountPercent: z.number().min(0).max(100).default(0),
+    notes: z.string().nullable().optional(),
+    validUntil: z.coerce.date().nullable().optional(),
+});
+
+const updateSalesmanEstimateSchema = z.object({
+    id: z.number(),
+    customerIds: z.array(z.string()).min(1).max(1).optional(),
+    customerId: z.string().optional(),
+    items: z.array(estimateLineInputSchema).min(1).optional(),
+    discountPercent: z.number().min(0).max(100).optional(),
+    validUntil: z.coerce.date().nullable().optional(),
+    notes: z.string().nullable().optional(),
+});
+
 type AssignedShopType = "retailer" | "warehouse";
 
 type AssignedShopSource = {
@@ -48,6 +75,181 @@ type AssignedShopSource = {
     assignedAt: Date;
     createdAt: Date;
 };
+
+type ResolvedEstimateLine = {
+    variantId: number;
+    productId: number;
+    productName: string;
+    productImage: string | null;
+    productSize: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+};
+
+function toNumber(value: string | number | null | undefined): number {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toMoney(value: number): string {
+    return Math.max(0, value).toFixed(2);
+}
+
+function formatPackLabel(variant: {
+    packWeightKg?: string | null;
+    weightKg?: string | null;
+    unitLabel?: string | null;
+    packType?: string | null;
+    packagingType?: string | null;
+}) {
+    const weight = toNumber(variant.packWeightKg || variant.weightKg);
+    const unit = variant.unitLabel || "Unit";
+    const packType = variant.packType || variant.packagingType || "";
+
+    if (weight > 0) {
+        const formattedWeight = Number.isInteger(weight) ? String(weight) : String(weight);
+        return [formattedWeight, unit, packType].filter(Boolean).join(" ");
+    }
+
+    return [unit, packType].filter(Boolean).join(" ") || "Variant";
+}
+
+async function ensureAssignedCustomers({
+    warehouseId,
+    salesmanId,
+    customerIds,
+}: {
+    warehouseId: string;
+    salesmanId: string;
+    customerIds: string[];
+}) {
+    const assignedShops = await getAssignedShopSources({ warehouseId, salesmanId });
+    const assignedIds = new Set(assignedShops.map((shop) => shop.id));
+    const missingId = customerIds.find((customerId) => !assignedIds.has(customerId));
+
+    if (missingId) {
+        throw new ORPCError("FORBIDDEN", {
+            message: "One or more selected customers are not assigned to you",
+        });
+    }
+}
+
+async function resolveEstimateLines({
+    warehouseId,
+    items,
+}: {
+    warehouseId: string;
+    items: Array<z.infer<typeof estimateLineInputSchema>>;
+}) {
+    const quantityByVariant = new Map<number, number>();
+    for (const item of items) {
+        quantityByVariant.set(
+            item.variantId,
+            (quantityByVariant.get(item.variantId) ?? 0) + item.quantity,
+        );
+    }
+
+    const variantIds = Array.from(quantityByVariant.keys());
+    const stockRows = await db.query.inventory.findMany({
+        where: and(
+            eq(inventory.ownerType, "warehouse"),
+            eq(inventory.ownerId, warehouseId),
+            inArray(inventory.variantId, variantIds),
+        ),
+        columns: {
+            variantId: true,
+            availableQty: true,
+            retailPrice: true,
+        },
+        with: {
+            variant: {
+                columns: {
+                    id: true,
+                    sku: true,
+                    unitLabel: true,
+                    price: true,
+                    weightKg: true,
+                    packWeightKg: true,
+                    packType: true,
+                    packagingType: true,
+                },
+                with: {
+                    brand: {
+                        columns: {
+                            name: true,
+                        },
+                    },
+                    product: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            image: true,
+                            size: true,
+                        },
+                        with: {
+                            coreProduct: {
+                                columns: {
+                                    name: true,
+                                    image: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    });
+
+    const stockByVariant = new Map(stockRows.map((row) => [row.variantId, row]));
+    const lines: ResolvedEstimateLine[] = [];
+
+    for (const [variantId, quantity] of quantityByVariant) {
+        const stock = stockByVariant.get(variantId);
+        if (!stock?.variant?.product) {
+            throw new ORPCError("BAD_REQUEST", {
+                message: `Variant ${variantId} is not available in this warehouse`,
+            });
+        }
+
+        const availableQty = toNumber(stock.availableQty);
+        if (availableQty < quantity) {
+            throw new ORPCError("BAD_REQUEST", {
+                message: `Insufficient stock for ${stock.variant.product.name}. Available ${availableQty}, requested ${quantity}`,
+            });
+        }
+
+        const product = stock.variant.product;
+        const unitPrice =
+            toNumber(stock.retailPrice) > 0
+                ? toNumber(stock.retailPrice)
+                : toNumber(stock.variant.price);
+        const productSize = formatPackLabel(stock.variant);
+        const brandName = stock.variant.brand?.name;
+        const productName = [
+            product.coreProduct?.name || product.name,
+            brandName,
+            productSize,
+        ]
+            .filter(Boolean)
+            .join(" - ");
+
+        lines.push({
+            variantId,
+            productId: product.id,
+            productName,
+            productImage: product.coreProduct?.image || product.image || null,
+            productSize,
+            quantity,
+            unitPrice,
+            totalPrice: unitPrice * quantity,
+        });
+    }
+
+    return lines;
+}
 
 function getWarehouseSalesmanIds(context: { session: { user: unknown } }) {
     const sessionUser = context.session.user as {
@@ -415,6 +617,123 @@ export const salesmanRouter = {
         }),
 
     /**
+     * Get estimate catalog from the salesman's registered warehouse stock.
+     * REST: GET /salesmen/estimate-catalog
+     */
+    getEstimateCatalog: salesmanProcedure
+        .route({
+            method: "GET",
+            path: "/salesmen/estimate-catalog",
+            tags: ["Salesman"],
+            summary: "Get warehouse stock catalog for estimates",
+            description: "Get stocked variants available for salesman estimates",
+        })
+        .input(estimateCatalogSchema)
+        .handler(async ({ context, input }) => {
+            const { warehouseId } = getWarehouseSalesmanIds(context);
+            const search = input.search?.trim().toLowerCase();
+
+            const rows = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, warehouseId),
+                    sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                ),
+                columns: {
+                    id: true,
+                    variantId: true,
+                    availableQty: true,
+                    retailPrice: true,
+                },
+                with: {
+                    variant: {
+                        columns: {
+                            id: true,
+                            sku: true,
+                            unitLabel: true,
+                            price: true,
+                            weightKg: true,
+                            packWeightKg: true,
+                            packType: true,
+                            packagingType: true,
+                        },
+                        with: {
+                            brand: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                },
+                            },
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                },
+                                with: {
+                                    coreProduct: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            image: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            const catalog = rows
+                .map((row) => {
+                    const variant = row.variant;
+                    const product = variant?.product;
+                    if (!variant || !product) return null;
+
+                    const variantLabel = formatPackLabel(variant);
+                    const nameParts = [
+                        product.coreProduct?.name || product.name,
+                        variant.brand?.name,
+                        variantLabel,
+                    ].filter(Boolean);
+                    const displayName = nameParts.join(" - ");
+                    const haystack = [
+                        displayName,
+                        product.name,
+                        product.coreProduct?.name,
+                        variant.brand?.name,
+                        variant.sku,
+                    ]
+                        .filter(Boolean)
+                        .join(" ")
+                        .toLowerCase();
+
+                    if (search && !haystack.includes(search)) return null;
+
+                    return {
+                        inventoryId: row.id,
+                        variantId: row.variantId,
+                        productId: product.id,
+                        name: displayName,
+                        productName: product.coreProduct?.name || product.name,
+                        brandName: variant.brand?.name ?? null,
+                        variantLabel,
+                        sku: variant.sku,
+                        image: product.coreProduct?.image || product.image,
+                        availableQty: toNumber(row.availableQty),
+                        unitPrice:
+                            toNumber(row.retailPrice) > 0
+                                ? toNumber(row.retailPrice)
+                                : toNumber(variant.price),
+                    };
+                })
+                .filter(Boolean);
+
+            return { products: catalog };
+        }),
+
+    /**
      * Get customer details with order and estimate history
      * REST: GET /salesmen/customers/:id
      */
@@ -614,24 +933,20 @@ export const salesmanRouter = {
             summary: "Create estimate",
             description: "Create a new estimate for one or more customers",
         })
-        .input(z.object({
-            customerIds: z.array(z.string()).min(1, "At least one customer required"),
-            items: z.array(z.object({
-                productId: z.number(),
-                productName: z.string(),
-                productImage: z.string().nullable().optional(),
-                quantity: z.number().min(1),
-                unitPrice: z.number(),
-                discount: z.number().optional().default(0),
-                totalPrice: z.number(),
-            })).min(1, "At least one item required"),
-            discount: z.number().default(0),
-            notes: z.string().nullable().optional(),
-            validUntil: z.coerce.date().nullable().optional(),
-        }))
+        .input(writeEstimateSchema)
         .handler(async ({ context, input }) => {
-            const userId = context.session.user.id;
-            const { customerIds, items, discount, notes, validUntil } = input;
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
+            const { customerIds, items, discountPercent, notes, validUntil } = input;
+
+            await ensureAssignedCustomers({ warehouseId, salesmanId, customerIds });
+
+            const resolvedLines = await resolveEstimateLines({ warehouseId, items });
+            const subtotal = resolvedLines.reduce((sum, item) => sum + item.totalPrice, 0);
+            const discountAmount = subtotal * (discountPercent / 100);
+            const total = subtotal - discountAmount;
+            const status = discountPercent > 5 ? "pending" : "sent";
+            const approvedAt = status === "sent" ? new Date() : null;
+            const sentAt = status === "sent" ? new Date() : null;
 
             // Generate estimate number: EST-YYYYMMDD-XXXX
             const generateEstimateNumber = () => {
@@ -645,25 +960,7 @@ export const salesmanRouter = {
 
             await db.transaction(async (tx) => {
                 for (const customerId of customerIds) {
-                    // Verify customer exists
-                    const customer = await tx.query.user.findFirst({
-                        where: eq(user.id, customerId),
-                    });
-
-                    if (!customer) {
-                        continue;
-                    }
-
                     const estimateNumber = generateEstimateNumber();
-
-                    // Calculate totals
-                    const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-                    const total = subtotal - discount;
-
-                    // Check if any price modifications require admin approval
-                    const hasItemDiscounts = items.some((item) => (item.discount ?? 0) > 0);
-                    const needsApproval = discount > 0 || hasItemDiscounts;
-                    const status = needsApproval ? "pending" : "approved";
 
                     // Create estimate
                     const [newEstimate] = await tx
@@ -671,14 +968,17 @@ export const salesmanRouter = {
                         .values({
                             estimateNumber,
                             customerId,
-                            salesmanId: userId,
-                            subtotal: subtotal.toString(),
-                            discount: discount.toString(),
-                            total: total.toString(),
+                            salesmanId,
+                            warehouseId,
+                            subtotal: toMoney(subtotal),
+                            discount: toMoney(discountAmount),
+                            discountPercent: discountPercent.toFixed(2),
+                            total: toMoney(total),
                             status,
                             validUntil: validUntil ? validUntil.toISOString().split("T")[0] : null,
                             notes: notes || null,
-                            approvedAt: status === "approved" ? new Date() : null,
+                            approvedAt,
+                            sentAt,
                         })
                         .returning();
 
@@ -687,15 +987,17 @@ export const salesmanRouter = {
                     }
 
                     // Insert items
-                    const itemsToInsert = items.map((item) => ({
+                    const itemsToInsert = resolvedLines.map((item) => ({
                         estimateId: newEstimate.id,
                         productId: item.productId,
+                        variantId: item.variantId,
                         productName: item.productName,
-                        productImage: item.productImage || null,
+                        productImage: item.productImage,
+                        productSize: item.productSize,
                         quantity: item.quantity,
-                        unitPrice: item.unitPrice.toString(),
-                        discount: (item.discount || 0).toString(),
-                        totalPrice: item.totalPrice.toString(),
+                        unitPrice: toMoney(item.unitPrice),
+                        discount: "0",
+                        totalPrice: toMoney(item.totalPrice),
                     }));
 
                     await tx.insert(estimateItem).values(itemsToInsert);
@@ -993,26 +1295,9 @@ export const salesmanRouter = {
             summary: "Update estimate",
             description: "Update an existing estimate's items, discount, or metadata",
         })
-        .input(z.object({
-            id: z.number(),
-            customerId: z.string().optional(),
-            items: z.array(z.object({
-                productId: z.number(),
-                productName: z.string(),
-                productImage: z.string().nullable().optional(),
-                quantity: z.number().min(1),
-                unitPrice: z.number(),
-                discount: z.number().optional().default(0),
-                totalPrice: z.number(),
-            })).optional(),
-            discount: z.number().min(0).optional(),
-            validUntil: z.coerce.date().nullable().optional(),
-            notes: z.string().nullable().optional(),
-            status: z.enum(["draft", "pending", "sent", "approved", "rejected", "converted"]).optional(),
-        }))
+        .input(updateSalesmanEstimateSchema)
         .handler(async ({ context, input }) => {
-            const userId = context.session.user.id;
-            const userRole = context.session.user.role;
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
 
             const existingEstimate = await db.query.estimate.findFirst({
                 where: eq(estimate.id, input.id),
@@ -1023,63 +1308,91 @@ export const salesmanRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
             }
 
-            const isCreator = existingEstimate.salesmanId === userId;
-            const isAdmin = userRole === "admin";
-
-            if (!isCreator && !isAdmin) {
+            if (existingEstimate.salesmanId !== salesmanId) {
                 throw new ORPCError("FORBIDDEN", { message: "Not authorized to update this estimate" });
             }
 
-            if (existingEstimate.status === "converted") {
-                throw new ORPCError("BAD_REQUEST", { message: "Cannot update converted estimates" });
+            if (existingEstimate.status === "converted" || existingEstimate.status === "rejected") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Cannot update converted or rejected estimates",
+                });
             }
 
-            const updateData: Record<string, unknown> = {};
+            if (
+                existingEstimate.items.some((item) => item.variantId === null) &&
+                !input.items
+            ) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Legacy estimates must be updated with warehouse-stock variants",
+                });
+            }
 
-            if (input.customerId) updateData.customerId = input.customerId;
-            if (input.validUntil !== undefined) updateData.validUntil = input.validUntil;
+            const nextCustomerId = input.customerIds?.[0] ?? input.customerId;
+            if (nextCustomerId) {
+                await ensureAssignedCustomers({
+                    warehouseId,
+                    salesmanId,
+                    customerIds: [nextCustomerId],
+                });
+            }
+
+            const discountPercent =
+                input.discountPercent ?? Number(existingEstimate.discountPercent || 0);
+            const resolvedLines = input.items
+                ? await resolveEstimateLines({ warehouseId, items: input.items })
+                : null;
+            const subtotal = resolvedLines
+                ? resolvedLines.reduce((sum, item) => sum + item.totalPrice, 0)
+                : Number(existingEstimate.subtotal);
+            const discountAmount = subtotal * (discountPercent / 100);
+            const total = subtotal - discountAmount;
+            const status = discountPercent > 5 ? "pending" : "sent";
+            const now = new Date();
+
+            const updateData: Record<string, unknown> = {
+                warehouseId: existingEstimate.warehouseId ?? warehouseId,
+                subtotal: toMoney(subtotal),
+                discount: toMoney(discountAmount),
+                discountPercent: discountPercent.toFixed(2),
+                total: toMoney(total),
+                status,
+                approvedAt: status === "sent" ? (existingEstimate.approvedAt ?? now) : null,
+                sentAt: status === "sent" ? (existingEstimate.sentAt ?? now) : null,
+            };
+
+            if (nextCustomerId) updateData.customerId = nextCustomerId;
+            if (input.validUntil !== undefined) {
+                updateData.validUntil = input.validUntil
+                    ? input.validUntil.toISOString().split("T")[0]
+                    : null;
+            }
             if (input.notes !== undefined) updateData.notes = input.notes;
-            if (input.status) {
-                updateData.status = input.status;
-                if (input.status === "sent" && existingEstimate.status !== "sent") {
-                    updateData.sentAt = new Date();
-                }
-            }
 
-            if (input.items && input.items.length > 0) {
-                const subtotal = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
-                const finalDiscount = input.discount ?? Number(existingEstimate.discount);
-                const total = subtotal - finalDiscount;
-
-                updateData.subtotal = subtotal.toString();
-                updateData.discount = finalDiscount.toString();
-                updateData.total = total.toString();
-
+            if (resolvedLines) {
                 await db.transaction(async (tx) => {
                     await tx.update(estimate).set(updateData).where(eq(estimate.id, input.id));
                     await tx.delete(estimateItem).where(eq(estimateItem.estimateId, input.id));
 
-                    const itemsToInsert = input.items!.map((item) => ({
+                    const itemsToInsert = resolvedLines.map((item) => ({
                         estimateId: input.id,
                         productId: item.productId,
+                        variantId: item.variantId,
                         productName: item.productName,
-                        productImage: item.productImage || null,
+                        productImage: item.productImage,
+                        productSize: item.productSize,
                         quantity: item.quantity,
-                        unitPrice: item.unitPrice.toString(),
-                        discount: (item.discount || 0).toString(),
-                        totalPrice: item.totalPrice.toString(),
+                        unitPrice: toMoney(item.unitPrice),
+                        discount: "0",
+                        totalPrice: toMoney(item.totalPrice),
                     }));
 
                     await tx.insert(estimateItem).values(itemsToInsert);
                 });
-            } else if (input.discount !== undefined) {
-                const subtotal = Number(existingEstimate.subtotal);
-                const total = subtotal - input.discount;
-                updateData.discount = input.discount.toString();
-                updateData.total = total.toString();
-                await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
-            } else if (Object.keys(updateData).length > 0) {
-                await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
+            } else {
+                await db
+                    .update(estimate)
+                    .set(updateData)
+                    .where(eq(estimate.id, input.id));
             }
 
             return { success: true };
@@ -1118,13 +1431,13 @@ export const salesmanRouter = {
                 throw new ORPCError("BAD_REQUEST", { message: "Only draft estimates can be sent" });
             }
 
-            const discount = Number(existingEstimate.discount || 0);
-            const hasDiscount = discount > 0;
-            const newStatus = hasDiscount ? "pending" : "sent";
+            const discountPercent = Number(existingEstimate.discountPercent || 0);
+            const newStatus = discountPercent > 5 ? "pending" : "sent";
 
             const updateData: Record<string, unknown> = { status: newStatus };
             if (newStatus === "sent") {
                 updateData.sentAt = new Date();
+                updateData.approvedAt = existingEstimate.approvedAt ?? new Date();
             }
 
             await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
@@ -1243,7 +1556,9 @@ export const salesmanRouter = {
                     .values({
                         orderNumber,
                         userId: estimateData.customerId,
+                        orderType: "b2b",
                         orderSource: "estimate",
+                        warehouseId: estimateData.warehouseId ?? null,
                         subtotal: estimateData.subtotal,
                         discount: estimateData.discount,
                         total: estimateData.total,
@@ -1270,9 +1585,10 @@ export const salesmanRouter = {
                 const orderItems = estimateData.items.map((item) => ({
                     orderId: newOrder.id,
                     productId: item.productId,
+                    variantId: item.variantId,
                     productName: item.productName,
                     productImage: item.productImage || "",
-                    productSize: "N/A",
+                    productSize: item.productSize || "N/A",
                     quantity: item.quantity,
                     unitPrice: item.unitPrice,
                     totalPrice: item.totalPrice,

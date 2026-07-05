@@ -285,6 +285,14 @@ export default function AssignedShopDetailPage({
             </p>
           </div>
         </div>
+        <Button asChild className="w-fit gap-2">
+          <Link
+            href={`${SALES_PORTAL_BASE}/estimates/create?customerId=${shop.id}`}
+          >
+            <ClipboardList className="h-4 w-4" />
+            Create Estimate
+          </Link>
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

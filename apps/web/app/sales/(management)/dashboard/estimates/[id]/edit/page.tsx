@@ -8,18 +8,18 @@ import { SalesmanEstimateForm } from "@/components/features/estimates/salesman-e
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SALES_BASE } from "@/lib/routes";
+import { SALES_PORTAL_BASE } from "@/lib/sales-routing";
 import { orpc } from "@/utils/orpc";
 
-export default function EditEstimatePage() {
+export default function EditSalesmanEstimatePage() {
   const params = useParams();
-  const estimateId = Number(params.id as string);
+  const estimateId = Number(params.id);
 
   const { data, isLoading, error } = useQuery({
     ...orpc.salesman.getEstimateById.queryOptions({
       input: { id: estimateId },
     }),
-    enabled: !Number.isNaN(estimateId),
+    enabled: Number.isFinite(estimateId),
   });
 
   if (isLoading) {
@@ -34,15 +34,15 @@ export default function EditEstimatePage() {
   if (error || !data?.estimate) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" className="gap-2" asChild>
-          <Link href={`${SALES_BASE}/estimates`}>
+        <Button asChild variant="ghost" className="gap-2">
+          <Link href={`${SALES_PORTAL_BASE}/estimates`}>
             <ArrowLeft className="h-4 w-4" />
             Back to Estimates
           </Link>
         </Button>
-        <p className="text-sm text-muted-foreground">
-          This estimate could not be found or you do not have access.
-        </p>
+        <div className="rounded-lg border bg-muted/30 p-8 text-center text-sm text-muted-foreground">
+          Estimate not found or you do not have access.
+        </div>
       </div>
     );
   }
@@ -56,14 +56,14 @@ export default function EditEstimatePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" asChild>
-          <Link href={`${SALES_BASE}/estimates/${estimate.id}`}>
+        <Button asChild variant="ghost" size="icon" className="shrink-0">
+          <Link href={`${SALES_PORTAL_BASE}/estimates/${estimate.id}`}>
             <ArrowLeft className="h-5 w-5" />
             <span className="sr-only">Back</span>
           </Link>
         </Button>
         <div>
-          <h1 className="text-xl font-bold tracking-tight">
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
             Edit {estimate.estimateNumber}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -85,7 +85,7 @@ export default function EditEstimatePage() {
           </AlertDescription>
         </Alert>
       ) : (
-        <SalesmanEstimateForm mode="edit" estimate={estimate} basePath={SALES_BASE} />
+        <SalesmanEstimateForm mode="edit" estimate={estimate} />
       )}
     </div>
   );
