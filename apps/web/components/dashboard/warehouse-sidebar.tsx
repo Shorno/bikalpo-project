@@ -131,6 +131,11 @@ const warehouseNavGroups: NavGroup[] = [
     items: [
       { title: "POS", url: `${WH}/pos`, icon: CalculatorIcon },
       { title: "Sales", url: `${WH}/sales`, icon: ShoppingCartIcon },
+      {
+        title: "Estimate Management",
+        url: `${WH}/estimates`,
+        icon: FileTextIcon,
+      },
       { title: "Customer", url: `${WH}/customers`, icon: UsersIcon },
       {
         title: "Sales History",
