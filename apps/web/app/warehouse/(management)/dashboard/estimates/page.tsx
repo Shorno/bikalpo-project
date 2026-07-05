@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -1058,7 +1059,6 @@ function EstimateDetailPanel({
   const subtotal = Number(estimate.subtotal || 0);
   const discountAmount = subtotal * (discountPercent / 100);
   const newTotal = Math.max(0, subtotal - discountAmount);
-  const exceededBy = Math.max(0, discountPercent - 5);
   const canManage = estimate.canManage;
   const isPending = canManage && estimate.status === "pending";
   const isApproved = canManage && estimate.status === "approved";
@@ -1128,12 +1128,14 @@ function EstimateDetailPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-        <div className="space-y-6">
-          <StatusTimeline estimate={estimate} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="divide-y divide-border">
+          <section className="px-6 py-5">
+            <StatusTimeline estimate={estimate} />
+          </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <InfoPanel title="Customer Information">
+          <section className="grid gap-x-10 gap-y-6 px-6 py-5 sm:grid-cols-2">
+            <InfoBlock title="Customer Information">
               <InfoLine
                 label="Customer"
                 value={estimate.customer?.shopName ?? estimate.customer?.name}
@@ -1147,9 +1149,9 @@ function EstimateDetailPanel({
                 label="Avg Value"
                 value={formatMoney(detail.insights.customer.averageValue)}
               />
-            </InfoPanel>
+            </InfoBlock>
 
-            <InfoPanel title="Salesman Information">
+            <InfoBlock title="Salesman Information">
               <InfoLine label="Salesman" value={estimate.salesman?.name} />
               <InfoLine
                 label="Total Estimates"
@@ -1167,48 +1169,54 @@ function EstimateDetailPanel({
                 label="Insight"
                 value={detail.insights.salesman.behavior}
               />
-            </InfoPanel>
-          </div>
+            </InfoBlock>
+          </section>
 
-          <div>
-            <h3 className="mb-3 text-sm font-semibold">Product Breakdown</h3>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="text-center">Qty</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+          <section className="px-6 py-5">
+            <SectionTitle>Product Breakdown</SectionTitle>
+            <Table className="mt-2">
+              <TableHeader>
+                <TableRow className="border-b hover:bg-transparent">
+                  <TableHead className="h-8 px-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Product
+                  </TableHead>
+                  <TableHead className="h-8 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Qty
+                  </TableHead>
+                  <TableHead className="h-8 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Price
+                  </TableHead>
+                  <TableHead className="h-8 px-0 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Total
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {estimate.items.map((item) => (
+                  <TableRow key={item.id} className="hover:bg-transparent">
+                    <TableCell className="px-0">
+                      <p className="font-medium">{item.productName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.productSize ?? "Variant"}
+                      </p>
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums">
+                      {item.quantity}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatMoney(item.unitPrice)}
+                    </TableCell>
+                    <TableCell className="px-0 text-right font-medium tabular-nums">
+                      {formatMoney(item.totalPrice)}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {estimate.items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <p className="font-medium">{item.productName}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {item.productSize ?? "Variant"}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {item.quantity}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatMoney(item.unitPrice)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatMoney(item.totalPrice)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
+                ))}
+              </TableBody>
+            </Table>
+          </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <InfoPanel title="Pricing Summary">
+          <section className="px-6 py-5">
+            <InfoBlock title="Pricing Summary">
               <InfoLine
                 label="Subtotal"
                 value={formatMoney(estimate.subtotal)}
@@ -1217,125 +1225,114 @@ function EstimateDetailPanel({
                 label={`Discount (${Number(estimate.discountPercent).toFixed(2)}%)`}
                 value={`-${formatMoney(estimate.discount)}`}
               />
-              <Separator />
+              <Separator className="my-1" />
               <InfoLine
                 label="Final Amount"
                 value={formatMoney(estimate.total)}
                 strong
               />
-            </InfoPanel>
-
-            <InfoPanel title="Discount & Risk Analysis">
-              <InfoLine label="Allowed Discount" value="5%" />
-              <InfoLine
-                label="Given Discount"
-                value={`${Number(estimate.discountPercent).toFixed(2)}%`}
-              />
-              <InfoLine
-                label="Exceeded By"
-                value={`+${exceededBy.toFixed(2)}%`}
-              />
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                {estimate.risk === "high"
-                  ? "High risk discount detected. Manual approval required."
-                  : estimate.risk === "medium"
-                    ? "Medium risk discount. Review before sending."
-                    : "Low risk discount."}
-              </div>
-            </InfoPanel>
-          </div>
+            </InfoBlock>
+          </section>
 
           {(isPending || isApproved) && (
-            <InfoPanel title="Action Control">
-              {isPending && (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="discountPercent">Modify Discount (%)</Label>
-                    <Input
-                      id="discountPercent"
-                      type="number"
-                      min={0}
-                      max={100}
-                      step="0.01"
-                      value={discountInput}
-                      onChange={(event) => setDiscountInput(event.target.value)}
-                    />
-                  </div>
-                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        New Discount
-                      </span>
-                      <span>{formatMoney(discountAmount)}</span>
-                    </div>
-                    <div className="mt-2 flex justify-between font-semibold">
-                      <span>New Total</span>
-                      <span>{formatMoney(newTotal)}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+            <section className="bg-muted/30 px-6 py-5">
+              <SectionTitle>
+                {isPending ? "Review & Approve" : "Send Estimate"}
+              </SectionTitle>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="internalNote">Internal Note</Label>
+              <div className="mt-3 space-y-3">
+                {isPending && (
+                  <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+                    <div className="w-28 space-y-1.5">
+                      <Label htmlFor="discountPercent">Discount (%)</Label>
+                      <Input
+                        id="discountPercent"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={discountInput}
+                        onChange={(event) =>
+                          setDiscountInput(event.target.value)
+                        }
+                      />
+                    </div>
+                    <p className="pb-2 text-sm text-muted-foreground">
+                      New total{" "}
+                      <span className="font-semibold text-foreground tabular-nums">
+                        {formatMoney(newTotal)}
+                      </span>
+                      {discountAmount > 0 && (
+                        <span className="tabular-nums">
+                          {" "}
+                          · −{formatMoney(discountAmount)} off
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+
                 <Textarea
                   id="internalNote"
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
-                  placeholder="Add approval or rejection note"
+                  placeholder="Internal note (optional)"
+                  rows={2}
+                  className="resize-none"
                 />
-              </div>
 
-              <div className="flex flex-wrap gap-2">
-                {isPending && (
-                  <>
+                <div className="flex flex-wrap gap-2">
+                  {isPending && (
+                    <>
+                      <Button
+                        onClick={approve}
+                        disabled={isSubmitting}
+                        className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        {reviewMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        Approve
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={reject}
+                        disabled={isSubmitting}
+                        className="gap-2"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        Reject
+                      </Button>
+                    </>
+                  )}
+                  {isApproved && (
                     <Button
-                      onClick={approve}
-                      disabled={isSubmitting}
-                      className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-                    >
-                      {reviewMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4" />
-                      )}
-                      Approve
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={reject}
+                      onClick={() => sendMutation.mutate()}
                       disabled={isSubmitting}
                       className="gap-2"
                     >
-                      <XCircle className="h-4 w-4" />
-                      Reject
+                      {sendMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Send to Customer
                     </Button>
-                  </>
-                )}
-                {isApproved && (
-                  <Button
-                    onClick={() => sendMutation.mutate()}
-                    disabled={isSubmitting}
-                    className="gap-2"
-                  >
-                    {sendMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                    Send to Customer
-                  </Button>
-                )}
+                  )}
+                </div>
               </div>
-            </InfoPanel>
+            </section>
           )}
 
           {estimate.notes && (
-            <InfoPanel title="Notes">
-              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+            <section className="px-6 py-5">
+              <SectionTitle>Notes</SectionTitle>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
                 {estimate.notes}
               </p>
-            </InfoPanel>
+            </section>
           )}
         </div>
       </div>
@@ -1354,31 +1351,56 @@ function StatusTimeline({
     { key: "sent", label: "Sent", date: estimate.sentAt },
     { key: "converted", label: "Converted", date: estimate.convertedAt },
   ];
+  const isComplete = (index: number) =>
+    index === 0 || Boolean(steps[index].date);
 
   return (
-    <div className="rounded-md border bg-muted/20 p-4">
-      <div className="grid grid-cols-4 gap-2">
-        {steps.map((step, index) => {
-          const complete = Boolean(step.date) || index === 0;
-          return (
-            <div key={step.key} className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "h-2.5 w-2.5 rounded-full",
-                    complete ? "bg-primary" : "bg-muted-foreground/30",
-                  )}
-                />
-                <span className="text-xs font-medium">{step.label}</span>
-              </div>
-              <p className="mt-1 truncate text-xs text-muted-foreground">
-                {formatDate(step.date)}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <ol className="grid grid-cols-4">
+      {steps.map((step, index) => {
+        const complete = isComplete(index);
+        const isLast = index === steps.length - 1;
+        return (
+          <li
+            key={step.key}
+            className="relative flex flex-col items-center px-1 text-center"
+          >
+            {!isLast && (
+              <span
+                className={cn(
+                  "absolute left-1/2 top-3 -z-0 h-0.5 w-full",
+                  isComplete(index + 1) ? "bg-primary" : "bg-border",
+                )}
+              />
+            )}
+            <span
+              className={cn(
+                "relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 bg-background transition-colors",
+                complete
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-transparent",
+              )}
+            >
+              {complete ? (
+                <Check className="h-3 w-3" strokeWidth={3} />
+              ) : (
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+              )}
+            </span>
+            <span
+              className={cn(
+                "mt-2 text-xs font-medium",
+                complete ? "text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {step.label}
+            </span>
+            <span className="mt-0.5 text-[11px] text-muted-foreground">
+              {formatDate(step.date)}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -1582,17 +1604,21 @@ function PageButton({
   );
 }
 
-function InfoPanel({
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-sm font-semibold">{children}</h3>;
+}
+
+function InfoBlock({
   title,
   children,
 }: {
-  title: string;
+  title: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-3 rounded-md border p-4">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <div className="space-y-2">{children}</div>
+    <div>
+      <SectionTitle>{title}</SectionTitle>
+      <dl className="mt-3 space-y-2.5">{children}</dl>
     </div>
   );
 }
@@ -1607,11 +1633,16 @@ function InfoLine({
   strong?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("text-right", strong && "font-semibold")}>
+    <div className="flex items-baseline justify-between gap-4 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd
+        className={cn(
+          "text-right tabular-nums",
+          strong ? "font-semibold" : "font-medium",
+        )}
+      >
         {value || "N/A"}
-      </span>
+      </dd>
     </div>
   );
 }
