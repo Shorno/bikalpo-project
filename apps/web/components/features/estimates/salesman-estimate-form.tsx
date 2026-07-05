@@ -141,6 +141,14 @@ export function SalesmanEstimateForm({
         ];
       }) ?? [],
   );
+  const [quantityInputs, setQuantityInputs] = useState<Record<number, string>>(
+    () =>
+      Object.fromEntries(
+        (estimate?.items ?? [])
+          .filter((item) => item.variantId != null)
+          .map((item) => [item.variantId as number, String(item.quantity)]),
+      ),
+  );
   const [discountPercent, setDiscountPercent] = useState(
     Number(estimate?.discountPercent ?? 0),
   );
@@ -226,23 +234,65 @@ export function SalesmanEstimateForm({
 
   const addProduct = (product: CatalogProduct) => {
     setItems((current) => [...current, { ...product, quantity: 1 }]);
+    setQuantityInputs((current) => ({
+      ...current,
+      [product.variantId]: "1",
+    }));
   };
 
   const updateQuantity = (variantId: number, quantity: number) => {
+    const nextQuantity = Math.max(1, quantity);
     setItems((current) =>
       current.map((item) =>
         item.variantId === variantId
           ? {
               ...item,
-              quantity: Math.min(Math.max(1, quantity), item.availableQty),
+              quantity: Math.min(nextQuantity, item.availableQty),
             }
           : item,
       ),
     );
   };
 
+  const handleQuantityChange = (
+    variantId: number,
+    value: string,
+    availableQty: number,
+  ) => {
+    const digitsOnly = value.replace(/[^\d]/g, "");
+    setQuantityInputs((current) => ({
+      ...current,
+      [variantId]: digitsOnly,
+    }));
+
+    if (!digitsOnly) return;
+
+    const parsed = Number.parseInt(digitsOnly, 10);
+    if (!Number.isFinite(parsed)) return;
+    updateQuantity(variantId, Math.min(parsed, availableQty));
+  };
+
+  const commitQuantity = (variantId: number, availableQty: number) => {
+    const rawValue = quantityInputs[variantId] ?? "";
+    const parsed = Number.parseInt(rawValue, 10);
+    const nextQuantity = Number.isFinite(parsed)
+      ? Math.min(Math.max(1, parsed), availableQty)
+      : 1;
+
+    updateQuantity(variantId, nextQuantity);
+    setQuantityInputs((current) => ({
+      ...current,
+      [variantId]: String(nextQuantity),
+    }));
+  };
+
   const removeItem = (variantId: number) => {
     setItems((current) => current.filter((item) => item.variantId !== variantId));
+    setQuantityInputs((current) => {
+      const next = { ...current };
+      delete next[variantId];
+      return next;
+    });
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -417,15 +467,21 @@ export function SalesmanEstimateForm({
                             Qty
                           </Label>
                           <Input
-                            type="number"
-                            min={1}
-                            max={item.availableQty}
-                            value={item.quantity}
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={
+                              quantityInputs[item.variantId] ??
+                              String(item.quantity)
+                            }
                             onChange={(event) =>
-                              updateQuantity(
+                              handleQuantityChange(
                                 item.variantId,
-                                Number.parseInt(event.target.value, 10) || 1,
+                                event.target.value,
+                                item.availableQty,
                               )
+                            }
+                            onBlur={() =>
+                              commitQuantity(item.variantId, item.availableQty)
                             }
                             className="h-8 w-20"
                           />
