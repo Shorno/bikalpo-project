@@ -72,11 +72,10 @@ type BrandConfig = {
 };
 
 function isFashionTypeName(typeName?: string | null) {
-  return (
-    String(typeName || "")
-      .trim()
-      .toLowerCase() === "fashion"
-  );
+  const normalized = String(typeName || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "fashion" || normalized === "footwear";
 }
 
 // ============================================================
@@ -127,9 +126,11 @@ export default function WarehouseAddProductPage() {
   });
 
   const coreProduct = coreProductData?.coreProduct;
-  const isFashionProduct = isFashionTypeName(coreProduct?.category?.type?.name);
-  const primaryAttributeLabel = isFashionProduct ? "Color" : "Brand";
-  const variantDimensionLabel = isFashionProduct ? "Size" : "Variant";
+  const usesColorSizeConfiguration = isFashionTypeName(
+    coreProduct?.category?.type?.name,
+  );
+  const primaryAttributeLabel = usesColorSizeConfiguration ? "Color" : "Brand";
+  const variantDimensionLabel = usesColorSizeConfiguration ? "Size" : "Variant";
 
   // Auto-fill from core product on load (once)
   if (coreProduct && !initialized) {
@@ -363,7 +364,7 @@ export default function WarehouseAddProductPage() {
       image: mainImage,
       categoryId: coreProduct?.categoryId,
       subCategoryId: coreProduct?.subCategoryId || null,
-      brandConfigs: isFashionProduct
+      brandConfigs: usesColorSizeConfiguration
         ? []
         : brandConfigs.map((bc) => ({
             brandId: bc.brandId,
@@ -377,7 +378,7 @@ export default function WarehouseAddProductPage() {
               };
             }),
           })),
-      colorConfigs: isFashionProduct
+      colorConfigs: usesColorSizeConfiguration
         ? brandConfigs.map((bc) => ({
             color: bc.colorName || bc.brandName,
             variants: bc.selectedVariantIds.map((voId) => {
@@ -584,14 +585,14 @@ export default function WarehouseAddProductPage() {
                 <div className="flex items-center gap-2">
                   <Tag className="h-4 w-4 text-muted-foreground" />
                   <CardTitle className="text-base">
-                    {isFashionProduct
+                    {usesColorSizeConfiguration
                       ? "Color & Size Configuration"
                       : "Brand & Variant Configuration"}
                   </CardTitle>
                 </div>
                 <CardDescription>
-                  {isFashionProduct
-                    ? "Add colors and configure size-based piece variants with retailer prices for each color."
+                  {usesColorSizeConfiguration
+                    ? "Add colors and configure size-based variants with retailer prices for each color."
                     : "Select brands and configure variant pack sizes with retailer prices for each."}
                 </CardDescription>
               </CardHeader>
@@ -602,7 +603,7 @@ export default function WarehouseAddProductPage() {
                     key={bc.brandId}
                     config={bc}
                     variantOptions={allVariantOptions}
-                    isFashion={isFashionProduct}
+                    isFashion={usesColorSizeConfiguration}
                     variantDimensionLabel={variantDimensionLabel}
                     isExpanded={expandedBrandId === bc.brandId}
                     onToggleExpand={() =>
@@ -636,7 +637,7 @@ export default function WarehouseAddProductPage() {
                   </Button>
                   {brandConfigs.length === 0 && (
                     <p className="text-xs text-muted-foreground mt-2">
-                      {isFashionProduct
+                      {usesColorSizeConfiguration
                         ? "Add a color to begin configuring size variants for this product."
                         : "Select a brand to begin configuring variants for this product."}
                     </p>
@@ -648,15 +649,15 @@ export default function WarehouseAddProductPage() {
                   <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                       <DialogTitle>
-                        {isFashionProduct ? "Add Color" : "Select Brand"}
+                        {usesColorSizeConfiguration ? "Add Color" : "Select Brand"}
                       </DialogTitle>
                       <DialogDescription>
-                        {isFashionProduct
-                          ? "Type a color and add it as the primary Fashion attribute."
+                        {usesColorSizeConfiguration
+                          ? "Type a color and add it as the primary color attribute."
                           : "Search and select a brand to add to this product."}
                       </DialogDescription>
                     </DialogHeader>
-                    {isFashionProduct ? (
+                    {usesColorSizeConfiguration ? (
                       <div className="space-y-3">
                         <div className="flex gap-2">
                           <Input
@@ -805,7 +806,7 @@ export default function WarehouseAddProductPage() {
                   <p className="text-xs text-muted-foreground">
                     {brandConfigs.length} {primaryAttributeLabel.toLowerCase()}
                     {brandConfigs.length > 1 ? "s" : ""} configured{" "}
-                    {isFashionProduct
+                    {usesColorSizeConfiguration
                       ? "with color-specific size options ready to create"
                       : "and ready to create as one product with all brands attached"}
                   </p>

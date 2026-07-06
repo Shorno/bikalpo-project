@@ -6096,6 +6096,15 @@ import {
 	productImage,
 	variantOption,
 } from "@bikalpo-project/db/schema";
+import { buildProductTypeFulfillmentProfile } from "@bikalpo-project/db/fulfillment";
+
+function slugifyWarehouseColorToken(value: string) {
+	return value
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+}
 
 const warehouseProductCreation = {
 	/**
@@ -6159,17 +6168,32 @@ const warehouseProductCreation = {
 				categoryId: z.number().int(),
 				subCategoryId: z.number().int().optional().nullable(),
 				// Brand + variant configs
-				brandConfigs: z.array(
-					z.object({
-						brandId: z.number().int(),
-						variants: z.array(
-							z.object({
-								variantOptionId: z.number().int(),
-								retailerPrice: z.string().default("0"),
-							}),
-						),
-					}),
-				),
+				brandConfigs: z
+					.array(
+						z.object({
+							brandId: z.number().int(),
+							variants: z.array(
+								z.object({
+									variantOptionId: z.number().int(),
+									retailerPrice: z.string().default("0"),
+								}),
+							),
+						}),
+					)
+					.default([]),
+				colorConfigs: z
+					.array(
+						z.object({
+							color: z.string().min(1).max(50).trim(),
+							variants: z.array(
+								z.object({
+									variantOptionId: z.number().int(),
+									retailerPrice: z.string().default("0"),
+								}),
+							),
+						}),
+					)
+					.default([]),
 				// Supply rules
 				trackingType: z.enum(["none", "batch", "serial"]).default("none"),
 				expiryEnabled: z.boolean().default(false),
@@ -6191,11 +6215,42 @@ const warehouseProductCreation = {
 			// Verify core product exists
 			const coreProduct = await db.query.coreProductIdentity.findFirst({
 				where: eq(coreProductIdentity.id, input.coreProductId),
+				with: {
+					category: {
+						columns: { id: true, name: true, typeId: true },
+						with: {
+							type: { columns: { id: true, name: true, slug: true } },
+						},
+					},
+				},
 			});
 
 			if (!coreProduct) {
 				throw new ORPCError("NOT_FOUND", {
 					message: "Core product identity not found",
+				});
+			}
+
+			const fulfillmentProfile = buildProductTypeFulfillmentProfile({
+				name: coreProduct.category?.type?.name ?? coreProduct.name,
+				slug: coreProduct.category?.type?.slug ?? null,
+			});
+			const usesColorSizeConfigs =
+				fulfillmentProfile.family === "fashion" ||
+				fulfillmentProfile.family === "footwear";
+			const selectedBrandConfigs = input.brandConfigs ?? [];
+			const selectedColorConfigs = input.colorConfigs ?? [];
+
+			if (usesColorSizeConfigs && selectedColorConfigs.length === 0) {
+				throw new ORPCError("BAD_REQUEST", {
+					message:
+						"This product type requires at least one color with size variants",
+				});
+			}
+
+			if (!usesColorSizeConfigs && selectedBrandConfigs.length === 0) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "At least one brand is required for this product type",
 				});
 			}
 
@@ -6223,8 +6278,8 @@ const warehouseProductCreation = {
 						subCategoryId: input.subCategoryId || null,
 						coreProductId: input.coreProductId,
 						brandId:
-							input.brandConfigs.length > 0
-								? input.brandConfigs[0]!.brandId
+							!usesColorSizeConfigs && selectedBrandConfigs.length > 0
+								? selectedBrandConfigs[0]!.brandId
 								: null,
 						image: input.image,
 						size: "—",
@@ -6253,7 +6308,9 @@ const warehouseProductCreation = {
 				}
 
 				// 3. Insert brand links + variant prices + auto-generate variants + inventory
-				const allBrandIds = input.brandConfigs.map((bc) => bc.brandId);
+				const allBrandIds = usesColorSizeConfigs
+					? []
+					: selectedBrandConfigs.map((bc) => bc.brandId);
 
 				if (allBrandIds.length > 0) {
 					await tx.insert(productBrand).values(
@@ -6267,8 +6324,12 @@ const warehouseProductCreation = {
 				// Fetch variant option metadata
 				const allVoIds = [
 					...new Set(
-						input.brandConfigs.flatMap((bc) =>
-							bc.variants.map((v) => v.variantOptionId),
+						(
+							usesColorSizeConfigs
+								? selectedColorConfigs
+								: selectedBrandConfigs
+						).flatMap((config) =>
+							config.variants.map((v) => v.variantOptionId),
 						),
 					),
 				];
@@ -6283,7 +6344,7 @@ const warehouseProductCreation = {
 				}
 
 				// Validate: each brand can have at most one loose variant
-				for (const bc of input.brandConfigs) {
+				for (const bc of selectedBrandConfigs) {
 					const looseCount = bc.variants.filter(
 						(v) => voMap[v.variantOptionId]?.variantType === "loose",
 					).length;
@@ -6295,87 +6356,144 @@ const warehouseProductCreation = {
 				}
 
 				let sortIdx = 0;
-				for (const bc of input.brandConfigs) {
-					for (const v of bc.variants) {
-						const vo = voMap[v.variantOptionId];
-						const isLoose = vo?.variantType === "loose";
-						const packType = isLoose ? "loose" : "packet";
-						const normalizedUnit = String(vo?.unit || "")
-							.trim()
-							.toUpperCase();
-						const numericSize =
-							vo?.size && !Number.isNaN(Number(vo.size))
-								? Number(vo.size)
-								: null;
-						const isWeightBasedUnit = normalizedUnit === "KG";
-						const isPieceBasedUnit = [
-							"PC",
-							"PCS",
-							"PIECE",
-							"PIECES",
-							"PAIR",
-							"UNIT",
-						].includes(normalizedUnit);
-						const weightKg =
-							isWeightBasedUnit && numericSize !== null
-								? String(numericSize)
-								: "0";
-						const piecesPerUnit =
-							!isLoose && isPieceBasedUnit && numericSize !== null
-								? Math.round(numericSize)
-								: null;
+				if (usesColorSizeConfigs) {
+					for (const colorConfig of selectedColorConfigs) {
+						for (const v of colorConfig.variants) {
+							const vo = voMap[v.variantOptionId];
+							const sizeLabel = String(vo?.name || vo?.size || "Size").trim();
+							const colorLabel = colorConfig.color.trim();
 
-						// Insert variant price row
-						const [insertedPrice] = await tx
-							.insert(productVariantPrice)
-							.values({
-								productId,
-								variantOptionId: v.variantOptionId,
-								brandId: bc.brandId,
-								consumerPrice: v.retailerPrice,
-								sortOrder: sortIdx,
-							})
-							.returning();
+							const [insertedPrice] = await tx
+								.insert(productVariantPrice)
+								.values({
+									productId,
+									variantOptionId: v.variantOptionId,
+									brandId: null,
+									consumerPrice: v.retailerPrice,
+									sortOrder: sortIdx,
+								})
+								.returning();
 
-						// Auto-generate product_variant row
-						const [insertedVariant] = await tx
-							.insert(productVariant)
-							.values({
-								productId,
-								brandId: bc.brandId,
-								sku: `WH-${productId}-B${bc.brandId}-VO${v.variantOptionId}`,
-								unitLabel: vo?.name || "Unit",
-								quantitySelectorLabel: vo?.name || "Unit",
-								packagingType: packType,
-								weightKg,
-								piecesPerUnit,
-								price: v.retailerPrice,
-								orderUnit: vo?.unit || "piece",
-								packType: (packType as any) || null,
-								packWeightKg:
-									isWeightBasedUnit && numericSize !== null
-										? String(numericSize)
-										: null,
-								sellUnit: vo?.name || null,
-								sourceVariantPriceId: insertedPrice!.id,
-								sourceVariantOptionId: v.variantOptionId,
-								stockQuantity: 0,
-								reorderLevel: 0,
-								sortOrder: sortIdx,
-								isActive: true,
-							})
-							.returning();
+							const colorToken =
+								slugifyWarehouseColorToken(colorLabel) || "color";
+							const [insertedVariant] = await tx
+								.insert(productVariant)
+								.values({
+									productId,
+									brandId: null,
+									color: colorLabel,
+									size: sizeLabel,
+									sku: `WH-${productId}-C${colorToken}-VO${v.variantOptionId}`,
+									unitLabel: sizeLabel,
+									quantitySelectorLabel: sizeLabel,
+									packagingType: "packet",
+									weightKg: "0",
+									piecesPerUnit: 1,
+									price: v.retailerPrice,
+									orderUnit: "Pc",
+									packType: "packet",
+									packWeightKg: null,
+									sellUnit: "Pc",
+									sourceVariantPriceId: insertedPrice!.id,
+									sourceVariantOptionId: v.variantOptionId,
+									stockQuantity: 0,
+									reorderLevel: 0,
+									sortOrder: sortIdx,
+									isActive: true,
+								})
+								.returning();
 
-						// Auto-create inventory row (qty=0, ready to stock)
-						await tx.insert(inventory).values({
-							ownerType: "warehouse",
-							ownerId: userId,
-							variantId: insertedVariant!.id,
-							availableQty: "0",
-							retailPrice: v.retailerPrice,
-						});
+							await tx.insert(inventory).values({
+								ownerType: "warehouse",
+								ownerId: userId,
+								variantId: insertedVariant!.id,
+								availableQty: "0",
+								retailPrice: v.retailerPrice,
+							});
 
-						sortIdx++;
+							sortIdx++;
+						}
+					}
+				} else {
+					for (const bc of selectedBrandConfigs) {
+						for (const v of bc.variants) {
+							const vo = voMap[v.variantOptionId];
+							const isLoose = vo?.variantType === "loose";
+							const packType = isLoose ? "loose" : "packet";
+							const normalizedUnit = String(vo?.unit || "")
+								.trim()
+								.toUpperCase();
+							const numericSize =
+								vo?.size && !Number.isNaN(Number(vo.size))
+									? Number(vo.size)
+									: null;
+							const isWeightBasedUnit = normalizedUnit === "KG";
+							const isPieceBasedUnit = [
+								"PC",
+								"PCS",
+								"PIECE",
+								"PIECES",
+								"PAIR",
+								"UNIT",
+							].includes(normalizedUnit);
+							const weightKg =
+								isWeightBasedUnit && numericSize !== null
+									? String(numericSize)
+									: "0";
+							const piecesPerUnit =
+								!isLoose && isPieceBasedUnit && numericSize !== null
+									? Math.round(numericSize)
+									: null;
+
+							const [insertedPrice] = await tx
+								.insert(productVariantPrice)
+								.values({
+									productId,
+									variantOptionId: v.variantOptionId,
+									brandId: bc.brandId,
+									consumerPrice: v.retailerPrice,
+									sortOrder: sortIdx,
+								})
+								.returning();
+
+							const [insertedVariant] = await tx
+								.insert(productVariant)
+								.values({
+									productId,
+									brandId: bc.brandId,
+									sku: `WH-${productId}-B${bc.brandId}-VO${v.variantOptionId}`,
+									unitLabel: vo?.name || "Unit",
+									quantitySelectorLabel: vo?.name || "Unit",
+									packagingType: packType,
+									weightKg,
+									piecesPerUnit,
+									price: v.retailerPrice,
+									orderUnit: vo?.unit || "piece",
+									packType: (packType as any) || null,
+									packWeightKg:
+										isWeightBasedUnit && numericSize !== null
+											? String(numericSize)
+											: null,
+									sellUnit: vo?.name || null,
+									sourceVariantPriceId: insertedPrice!.id,
+									sourceVariantOptionId: v.variantOptionId,
+									stockQuantity: 0,
+									reorderLevel: 0,
+									sortOrder: sortIdx,
+									isActive: true,
+								})
+								.returning();
+
+							await tx.insert(inventory).values({
+								ownerType: "warehouse",
+								ownerId: userId,
+								variantId: insertedVariant!.id,
+								availableQty: "0",
+								retailPrice: v.retailerPrice,
+							});
+
+							sortIdx++;
+						}
 					}
 				}
 

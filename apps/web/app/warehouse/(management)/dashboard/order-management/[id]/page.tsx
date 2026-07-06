@@ -138,7 +138,7 @@ function getStatus(status: string, requiresBuyerAcceptance?: boolean) {
     };
   if (status === "confirmed")
     return {
-      label: "Approved",
+      label: "Accepted",
       icon: CheckCircle2,
       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
     };
@@ -194,6 +194,39 @@ export default function OrderManagementDetailPage() {
       });
     },
     onError: (error) => toast.error(error.message || "Failed to review order"),
+  });
+
+  const prepareMutation = useMutation({
+    mutationFn: () => orpc.warehouse.prepareOrderForDispatch.call({ orderId }),
+    onSuccess: (result) => {
+      toast.success(result.message);
+      queryClient.invalidateQueries({
+        queryKey: ["warehouse", "order-management"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["warehouse", "order-management-detail", orderId],
+      });
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to prepare dispatch"),
+  });
+
+  const statusUpdateMutation = useMutation({
+    mutationFn: () =>
+      orpc.warehouse.updateIncomingOrderStatus.call({
+        orderId,
+        status: "delivered",
+      }),
+    onSuccess: (result) => {
+      toast.success(result.message);
+      queryClient.invalidateQueries({
+        queryKey: ["warehouse", "order-management"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["warehouse", "order-management-detail", orderId],
+      });
+    },
+    onError: (error) => toast.error(error.message || "Failed to update status"),
   });
 
   const order = data?.order;
@@ -311,8 +344,7 @@ export default function OrderManagementDetailPage() {
             <OrderSourceBadge source={order.orderSource ?? "direct"} />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {data.warehouse?.label ?? "Warehouse"} · Approval and invoice
-            readiness
+            {data.warehouse?.label ?? "Warehouse"} · Order Review
           </p>
         </div>
       </div>
@@ -626,6 +658,21 @@ export default function OrderManagementDetailPage() {
             (isPending || data.invoice?.fulfillmentMode) && "border-t pt-4",
           )}
         >
+          {order.canPrepareDispatch && (
+            <button
+              type="button"
+              onClick={() => prepareMutation.mutate()}
+              disabled={prepareMutation.isPending}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-60"
+            >
+              {prepareMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4" />
+              )}
+              Prepare Dispatch
+            </button>
+          )}
           {order.canOpenDispatch && (
             <Link
               href="/warehouse/dashboard/dispatch-orders"
@@ -642,6 +689,31 @@ export default function OrderManagementDetailPage() {
             <Phone className="h-4 w-4" />
             Contact Customer
           </Link>
+          {!isPending &&
+            order.status !== "delivered" &&
+            order.status !== "cancelled" && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Are you sure you want to mark this order as delivered? This will add stock to the retailer.",
+                    )
+                  ) {
+                    statusUpdateMutation.mutate();
+                  }
+                }}
+                disabled={statusUpdateMutation.isPending}
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {statusUpdateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Mark as Delivered (Temp)
+              </button>
+            )}
 
           <div className="ml-auto flex flex-wrap items-center gap-2.5">
             {isPending ? (
@@ -666,7 +738,7 @@ export default function OrderManagementDetailPage() {
                   ) : (
                     <CheckCircle2 className="h-4 w-4" />
                   )}
-                  Approve Order
+                  Accept Order
                 </button>
               </>
             ) : (

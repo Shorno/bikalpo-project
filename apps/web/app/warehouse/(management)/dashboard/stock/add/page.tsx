@@ -104,12 +104,19 @@ type ProductResult = {
   }[];
 };
 
+function normalizeTypeName(typeName?: string | null) {
+  return String(typeName || "")
+    .trim()
+    .toLowerCase();
+}
+
 function isFashionTypeName(typeName?: string | null) {
-  return (
-    String(typeName || "")
-      .trim()
-      .toLowerCase() === "fashion"
-  );
+  return normalizeTypeName(typeName) === "fashion";
+}
+
+function usesColorAttributeType(typeName?: string | null) {
+  const normalized = normalizeTypeName(typeName);
+  return normalized === "fashion" || normalized === "footwear";
 }
 
 function isLpgTypeName(typeName?: string | null) {
@@ -354,7 +361,7 @@ export default function AddStockPage() {
     return Math.abs(packs - roundedPacks) < 0.001 ? roundedPacks : 0;
   }, []);
 
-  const modalIsFashionProduct = isFashionTypeName(
+  const modalUsesColorAttribute = usesColorAttributeType(
     modalSelectedProduct?.category?.type?.name,
   );
 
@@ -362,7 +369,7 @@ export default function AddStockPage() {
   const modalAvailableAttributes = useMemo(() => {
     if (!modalSelectedProduct) return [];
 
-    if (modalIsFashionProduct) {
+    if (modalUsesColorAttribute) {
       const colorSet = new Set<string>();
       modalSelectedProduct.variants.forEach((v) => {
         const isLoose = v.packType === "loose";
@@ -390,7 +397,7 @@ export default function AddStockPage() {
       }
     });
     return Array.from(brandMap.values());
-  }, [entryType, modalIsFashionProduct, modalSelectedProduct]);
+  }, [entryType, modalSelectedProduct, modalUsesColorAttribute]);
 
   // Check if all rows are complete
   const allRowsComplete = useMemo(() => {
@@ -630,6 +637,9 @@ export default function AddStockPage() {
 
   const handleAddFromModal = useCallback(() => {
     if (!modalSelectedProduct) return;
+    const usesColorAttribute = usesColorAttributeType(
+      modalSelectedProduct.category?.type?.name,
+    );
     const isFashionProduct = isFashionTypeName(
       modalSelectedProduct.category?.type?.name,
     );
@@ -640,15 +650,15 @@ export default function AddStockPage() {
       toast.error("This product should be added through Pack Entry.");
       return;
     }
-    if (!isFashionProduct && !modalSelectedBrandId) return;
-    if (isFashionProduct && !modalSelectedColor) return;
+    if (!usesColorAttribute && !modalSelectedBrandId) return;
+    if (usesColorAttribute && !modalSelectedColor) return;
 
     const brand = modalSelectedProduct.variants.find(
       (v) => v.brandId === modalSelectedBrandId,
     )?.brand;
     const availableVariants = modalSelectedProduct.variants
       .filter((v) => {
-        if (isFashionProduct) {
+        if (usesColorAttribute) {
           if (String(v.color || "").trim() !== modalSelectedColor) return false;
         } else if (v.brandId !== modalSelectedBrandId) {
           return false;
@@ -666,11 +676,11 @@ export default function AddStockPage() {
     const newRow: TableRow = {
       id: ++rowIdRef.current,
       product: modalSelectedProduct,
-      brandId: isFashionProduct ? null : modalSelectedBrandId,
-      brandName: isFashionProduct
+      brandId: usesColorAttribute ? null : modalSelectedBrandId,
+      brandName: usesColorAttribute
         ? modalSelectedColor || ""
         : brand?.name || "",
-      attributeKind: isFashionProduct ? "color" : "brand",
+      attributeKind: usesColorAttribute ? "color" : "brand",
       variantId:
         (entryType === "loose" || entryType === "carton") &&
         availableVariants.length > 0
@@ -1743,17 +1753,18 @@ export default function AddStockPage() {
 
               {/* Attribute selection */}
               <div>
-                {modalIsFashionProduct && entryType !== "pack" && (
+                {isFashionTypeName(modalSelectedProduct?.category?.type?.name) &&
+                  entryType !== "pack" && (
                   <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                     Fashion products should be added with Pack Entry only.
                   </p>
                 )}
                 <p className="text-sm font-medium mb-2">
-                  Select {modalIsFashionProduct ? "Color" : "Brand"}
+                  Select {modalUsesColorAttribute ? "Color" : "Brand"}
                 </p>
                 {modalAvailableAttributes.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4 text-center">
-                    No {modalIsFashionProduct ? "colors" : "brands"} available{" "}
+                    No {modalUsesColorAttribute ? "colors" : "brands"} available{" "}
                     for this entry type
                   </p>
                 ) : (
@@ -1763,7 +1774,7 @@ export default function AddStockPage() {
                         key={attribute.key}
                         type="button"
                         onClick={() => {
-                          if (modalIsFashionProduct) {
+                          if (modalUsesColorAttribute) {
                             setModalSelectedColor(attribute.label);
                             setModalSelectedBrandId(null);
                           } else {
@@ -1773,7 +1784,7 @@ export default function AddStockPage() {
                         }}
                         className={`p-3 rounded-lg border-2 text-left transition-all cursor-pointer ${
                           (
-                            modalIsFashionProduct
+                            modalUsesColorAttribute
                               ? modalSelectedColor === attribute.label
                               : modalSelectedBrandId === Number(attribute.key)
                           )
@@ -1798,7 +1809,7 @@ export default function AddStockPage() {
                 <Button
                   onClick={handleAddFromModal}
                   disabled={
-                    modalIsFashionProduct
+                    modalUsesColorAttribute
                       ? !modalSelectedColor
                       : !modalSelectedBrandId
                   }
