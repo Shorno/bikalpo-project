@@ -8,64 +8,27 @@
  */
 import { ORPCError } from "@orpc/server";
 import { db } from "@bikalpo-project/db";
-import { warehouseApplication, user } from "@bikalpo-project/db/schema";
+import { warehouseApplication } from "@bikalpo-project/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, adminProcedure } from "../index";
-
-// ════════════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════════════
-
-/** Generate a URL-safe slug from a warehouse name, ensuring uniqueness */
-async function generateUniqueWarehouseSlug(warehouseName: string): Promise<string> {
-    const base = warehouseName
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .replace(/-+/g, "-")
-        .slice(0, 50);
-
-    // Check if slug already exists
-    const existing = await db
-        .select({ id: user.id })
-        .from(user)
-        .where(eq(user.warehouseSlug, base))
-        .limit(1);
-
-    if (existing.length === 0) return base;
-
-    // Append random suffix if slug collision
-    const suffix = Math.random().toString(36).slice(2, 6);
-    return `${base}-${suffix}`;
-}
+import {
+    buildSharedApplicationValues,
+    generateApplicationNumber,
+    resolveActiveProductType,
+    sharedApplicationFieldsSchema,
+} from "./helpers/application-fields";
+import { approveWarehouseApplicationById } from "./helpers/approve-application";
+import { createPendingKycForUser, deriveKycStatus, ensurePendingKycForUser, getLatestKycRecord } from "./helpers/kyc-verification";
 
 // ════════════════════════════════════════════════════════════════
 // SCHEMAS
 // ════════════════════════════════════════════════════════════════
 
-const submitApplicationSchema = z.object({
+const submitApplicationSchema = sharedApplicationFieldsSchema.extend({
     warehouseName: z.string().min(2).max(100),
-    ownerName: z.string().min(2).max(100),
-    phoneNumber: z.string().min(10),
     warehouseAddress: z.string().min(5).max(500),
-    tradeLicenseNumber: z.string().optional(),
-    documents: z.array(z.string()).optional(),
-    // Business profile
-    businessCategory: z.string().optional(),
-    yearsInBusiness: z.string().optional(),
-    monthlyRevenue: z.string().optional(),
-    // Location
-    latitude: z.string().optional(),
-    longitude: z.string().optional(),
-    area: z.string().optional(),
-    district: z.string().optional(),
-    division: z.string().optional(),
-    postCode: z.string().optional(),
-    // Plan
-    selectedPlan: z.string().optional(),
 });
 
 const reviewApplicationSchema = z.object({
@@ -105,28 +68,27 @@ export const warehouseApplicationRouter = {
                 });
             }
 
+            const productTypeRecord = input.productTypeId
+                ? await resolveActiveProductType(input.productTypeId)
+                : null;
+            const applicationNumber = await generateApplicationNumber("WAREHOUSE");
+            const sharedValues = buildSharedApplicationValues(
+                input,
+                productTypeRecord?.name,
+            );
+
             const [application] = await db
                 .insert(warehouseApplication)
                 .values({
                     userId,
+                    applicationNumber,
                     warehouseName: input.warehouseName,
-                    ownerName: input.ownerName,
-                    phoneNumber: input.phoneNumber,
                     warehouseAddress: input.warehouseAddress,
-                    tradeLicenseNumber: input.tradeLicenseNumber || null,
-                    documents: input.documents || [],
-                    businessCategory: input.businessCategory || null,
-                    yearsInBusiness: input.yearsInBusiness || null,
-                    monthlyRevenue: input.monthlyRevenue || null,
-                    latitude: input.latitude || null,
-                    longitude: input.longitude || null,
-                    area: input.area || null,
-                    district: input.district || null,
-                    division: input.division || null,
-                    postCode: input.postCode || null,
-                    selectedPlan: input.selectedPlan || null,
+                    ...sharedValues,
                 })
                 .returning();
+
+            await createPendingKycForUser(userId);
 
             return application;
         }),
@@ -195,6 +157,9 @@ export const warehouseApplicationRouter = {
                             email: true,
                         },
                     },
+                    productType: {
+                        columns: { id: true, name: true },
+                    },
                 },
             });
 
@@ -202,7 +167,14 @@ export const warehouseApplicationRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Warehouse application not found" });
             }
 
-            return application;
+            const latestKyc = await getLatestKycRecord(application.userId);
+            const kycRecord =
+              latestKyc ?? (await ensurePendingKycForUser(application.userId));
+
+            return {
+                ...application,
+                kycStatus: deriveKycStatus(kycRecord.status),
+            };
         }),
 
     // ── Admin: List All Applications ────────────────────────────
@@ -260,49 +232,10 @@ export const warehouseApplicationRouter = {
         })
         .input(reviewApplicationSchema)
         .handler(async ({ input, context }) => {
-            const application = await db.query.warehouseApplication.findFirst({
-                where: eq(warehouseApplication.id, input.applicationId),
+            return approveWarehouseApplicationById(input.applicationId, {
+                adminId: context.session.user.id,
+                adminNotes: input.adminNotes,
             });
-
-            if (!application) {
-                throw new ORPCError("NOT_FOUND", { message: "Warehouse application not found" });
-            }
-
-            if (application.status !== "pending") {
-                throw new ORPCError("CONFLICT", {
-                    message: `Application is already ${application.status}`,
-                });
-            }
-
-            // Update application status
-            await db
-                .update(warehouseApplication)
-                .set({
-                    status: "approved",
-                    adminNotes: input.adminNotes || null,
-                    reviewedBy: context.session.user.id,
-                    reviewedAt: new Date(),
-                })
-                .where(eq(warehouseApplication.id, input.applicationId));
-
-            // Generate a unique warehouse slug
-            const warehouseSlug = await generateUniqueWarehouseSlug(application.warehouseName);
-
-            // Upgrade user role to warehouse and set warehouse fields
-            await db
-                .update(user)
-                .set({
-                    role: "warehouse",
-                    warehouseName: application.warehouseName,
-                    warehouseSlug,
-                    warehouseAddress: application.warehouseAddress,
-                    ownerName: application.ownerName,
-                    warehouseLat: application.latitude || undefined,
-                    warehouseLng: application.longitude || undefined,
-                })
-                .where(eq(user.id, application.userId));
-
-            return { success: true };
         }),
 
     // ── Admin: Reject Application ───────────────────────────────
@@ -363,26 +296,23 @@ export const warehouseApplicationRouter = {
 
             // If no existing application, create a new one
             if (!existing) {
+                const productTypeRecord = input.productTypeId
+                    ? await resolveActiveProductType(input.productTypeId)
+                    : null;
+                const applicationNumber = await generateApplicationNumber("WAREHOUSE");
+                const sharedValues = buildSharedApplicationValues(
+                    input,
+                    productTypeRecord?.name,
+                );
+
                 const [application] = await db
                     .insert(warehouseApplication)
                     .values({
                         userId,
+                        applicationNumber,
                         warehouseName: input.warehouseName,
-                        ownerName: input.ownerName,
-                        phoneNumber: input.phoneNumber,
                         warehouseAddress: input.warehouseAddress,
-                        tradeLicenseNumber: input.tradeLicenseNumber || null,
-                        documents: input.documents || [],
-                        businessCategory: input.businessCategory || null,
-                        yearsInBusiness: input.yearsInBusiness || null,
-                        monthlyRevenue: input.monthlyRevenue || null,
-                        latitude: input.latitude || null,
-                        longitude: input.longitude || null,
-                        area: input.area || null,
-                        district: input.district || null,
-                        division: input.division || null,
-                        postCode: input.postCode || null,
-                        selectedPlan: input.selectedPlan || null,
+                        ...sharedValues,
                     })
                     .returning();
                 return application;
@@ -394,26 +324,21 @@ export const warehouseApplicationRouter = {
                 });
             }
 
+            const productTypeRecord = input.productTypeId
+                ? await resolveActiveProductType(input.productTypeId)
+                : null;
+            const sharedValues = buildSharedApplicationValues(
+                input,
+                productTypeRecord?.name,
+            );
+
             // Update the existing application and reset to pending
             const [updated] = await db
                 .update(warehouseApplication)
                 .set({
                     warehouseName: input.warehouseName,
-                    ownerName: input.ownerName,
-                    phoneNumber: input.phoneNumber,
                     warehouseAddress: input.warehouseAddress,
-                    tradeLicenseNumber: input.tradeLicenseNumber || null,
-                    documents: input.documents || [],
-                    businessCategory: input.businessCategory || null,
-                    yearsInBusiness: input.yearsInBusiness || null,
-                    monthlyRevenue: input.monthlyRevenue || null,
-                    latitude: input.latitude || null,
-                    longitude: input.longitude || null,
-                    area: input.area || null,
-                    district: input.district || null,
-                    division: input.division || null,
-                    postCode: input.postCode || null,
-                    selectedPlan: input.selectedPlan || null,
+                    ...sharedValues,
                     status: "pending",
                     adminNotes: null,
                     reviewedBy: null,

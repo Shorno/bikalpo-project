@@ -16,12 +16,24 @@ interface Customer {
   name: string;
   email: string;
   phoneNumber?: string | null;
+  displayName?: string | null;
   shopName?: string | null;
+  warehouseName?: string | null;
 }
 
 interface CustomerSelectProps {
   value?: string;
   onSelect: (customerId: string) => void;
+}
+
+function getCustomerLabel(customer: Customer) {
+  return (
+    customer.displayName ||
+    customer.shopName ||
+    customer.warehouseName ||
+    customer.name ||
+    "Customer"
+  );
 }
 
 export function CustomerSelect({ value, onSelect }: CustomerSelectProps) {
@@ -34,7 +46,11 @@ export function CustomerSelect({ value, onSelect }: CustomerSelectProps) {
   const filteredCustomers = customers.filter(
     (customer) =>
       customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       customer.shopName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.warehouseName
+        ?.toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
       customer.phoneNumber?.includes(searchTerm),
   );
 
@@ -70,7 +86,9 @@ export function CustomerSelect({ value, onSelect }: CustomerSelectProps) {
           className="w-full justify-between"
         >
           {value
-            ? selectedCustomer?.name || "Customer selected"
+            ? selectedCustomer
+              ? getCustomerLabel(selectedCustomer)
+              : "Customer selected"
             : "Select customer..."}
           <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
@@ -115,9 +133,12 @@ export function CustomerSelect({ value, onSelect }: CustomerSelectProps) {
                     )}
                   />
                   <div className="flex flex-col">
-                    <span>{customer.name}</span>
+                    <span>{getCustomerLabel(customer)}</span>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      {customer.shopName && <span>{customer.shopName}</span>}
+                      {customer.name &&
+                        customer.name !== getCustomerLabel(customer) && (
+                          <span>Contact: {customer.name}</span>
+                        )}
                       <span>{customer.phoneNumber}</span>
                     </div>
                   </div>

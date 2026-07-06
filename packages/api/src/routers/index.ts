@@ -2,6 +2,7 @@ import type { RouterClient } from "@orpc/server";
 
 import { protectedProcedure, publicProcedure } from "../index";
 import { adminAnnouncementRouter } from "./admin-announcement";
+import { adminApplicationRouter } from "./admin-application";
 import { adminAreaRouter } from "./admin-area";
 import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
 import { adminAssistedInviteRouter } from "./admin-assisted-invite";
@@ -68,6 +69,7 @@ import { warehouseRouter } from "./warehouse";
 import { warehouseApplicationRouter } from "./warehouse-application";
 import { warehouseDeliveryRouter } from "./warehouse-delivery";
 import { warehouseEmployeeRouter } from "./warehouse-employee";
+import { warehouseEstimateRouter } from "./warehouse-estimate";
 import { warehousePosRouter } from "./warehouse-pos";
 import { warehouseSalesRouter } from "./warehouse-sales";
 
@@ -89,6 +91,7 @@ export const appRouter = {
   adminEmployeeReport: adminEmployeeReportRouter,
   adminBrandUpdate: adminBrandUpdateRouter,
   adminAnnouncement: adminAnnouncementRouter,
+  adminApplication: adminApplicationRouter,
   adminCustomerHomeTab: adminCustomerHomeTabRouter,
   adminEstimate: adminEstimateRouter,
   adminInvoice: adminInvoiceRouter,
@@ -145,6 +148,7 @@ export const appRouter = {
   userComplaint: userComplaintRouter,
   adminComplaint: adminComplaintRouter,
   warehouseEmployee: warehouseEmployeeRouter,
+  warehouseEstimate: warehouseEstimateRouter,
   warehouseDelivery: warehouseDeliveryRouter,
   stockAdjustment: stockAdjustmentRouter,
   warehousePos: warehousePosRouter,

@@ -4,6 +4,7 @@ import { AuthModal } from "@/components/features/auth/auth-modal";
 import { Navbar } from "@/components/layout/navbar";
 import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
+import { getSalesSubdomainUrl } from "@/lib/sales-routing";
 
 export function LoginPageClient() {
   const handleComplete = async () => {
@@ -27,13 +28,11 @@ export function LoginPageClient() {
 
     if (role === "shop_owner") {
       window.location.href = "http://shop.bikalpo.localhost:3001/dashboard";
+    } else if (role === "salesman") {
+      window.location.href = `${getSalesSubdomainUrl()}/dashboard`;
     } else if (role === "deliveryman" && warehouseId) {
       window.location.href = `${getDeliverySubdomainUrl()}/dashboard`;
-    } else if (
-      role === "admin" ||
-      role === "salesman" ||
-      role === "deliveryman"
-    ) {
+    } else if (role === "admin" || role === "deliveryman") {
       window.location.href = "/dashboard";
     } else {
       window.location.href = "/";

@@ -1,5 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import { estimate } from "@bikalpo-project/db/schema";
+import { estimate, estimateItem } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, count, desc, eq, gte, lte, sum } from "drizzle-orm";
 import { z } from "zod";
@@ -27,6 +27,29 @@ const bulkApproveSchema = z.object({
 const estimateIdSchema = z.object({
     id: z.number().int().positive(),
 });
+
+const updateAdminEstimateSchema = z.object({
+    id: z.number().int().positive(),
+    customerId: z.string().optional().nullable(),
+    discount: z.union([z.number(), z.string()]).optional().nullable(),
+    notes: z.string().optional().nullable(),
+    validUntil: z.coerce.date().optional().nullable(),
+    status: z.enum(["draft", "pending", "sent", "approved", "rejected", "converted"]).optional(),
+    items: z.array(z.object({
+        productId: z.number().int().positive(),
+        productName: z.string().min(1),
+        productImage: z.string().optional().nullable(),
+        quantity: z.union([z.number(), z.string()]),
+        unitPrice: z.union([z.number(), z.string()]),
+        discount: z.union([z.number(), z.string()]).optional(),
+        totalPrice: z.union([z.number(), z.string()]),
+    })).min(1),
+});
+
+function asMoney(value: unknown) {
+    const parsed = Number(value ?? 0);
+    return (Number.isFinite(parsed) ? Math.max(0, parsed) : 0).toFixed(2);
+}
 
 export const adminEstimateRouter = {
     /**
@@ -203,6 +226,75 @@ export const adminEstimateRouter = {
             }
 
             return { estimate: estimateData };
+        }),
+
+    /**
+     * Update estimate from the admin dashboard.
+     * REST: PUT /admin-estimates/:id
+     */
+    update: adminProcedure
+        .route({
+            method: "PUT",
+            path: "/admin-estimates/{id}",
+            tags: ["Admin Estimates"],
+            summary: "Update estimate",
+            description: "Update an estimate from the admin dashboard",
+        })
+        .input(updateAdminEstimateSchema)
+        .handler(async ({ input }) => {
+            const existingEstimate = await db.query.estimate.findFirst({
+                where: eq(estimate.id, input.id),
+            });
+
+            if (!existingEstimate) {
+                throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
+            }
+
+            if (existingEstimate.status === "converted") {
+                throw new ORPCError("BAD_REQUEST", { message: "Cannot update converted estimates" });
+            }
+
+            const subtotal = input.items.reduce(
+                (sum, item) => sum + Number(item.totalPrice || 0),
+                0,
+            );
+            const discountAmount = Number(input.discount || 0);
+            const discountPercent = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
+            const total = Math.max(0, subtotal - discountAmount);
+
+            await db.transaction(async (tx) => {
+                await tx
+                    .update(estimate)
+                    .set({
+                        customerId: input.customerId ?? existingEstimate.customerId,
+                        subtotal: asMoney(subtotal),
+                        discount: asMoney(discountAmount),
+                        discountPercent: asMoney(discountPercent),
+                        total: asMoney(total),
+                        notes: input.notes ?? null,
+                        validUntil: input.validUntil
+                            ? input.validUntil.toISOString().split("T")[0]
+                            : null,
+                        status: input.status ?? existingEstimate.status,
+                    })
+                    .where(eq(estimate.id, input.id));
+
+                await tx.delete(estimateItem).where(eq(estimateItem.estimateId, input.id));
+                await tx.insert(estimateItem).values(
+                    input.items.map((item) => ({
+                        estimateId: input.id,
+                        productId: item.productId,
+                        productName: item.productName,
+                        productImage: item.productImage || null,
+                        quantity: Number(item.quantity || 1),
+                        unitPrice: asMoney(item.unitPrice),
+                        discount: asMoney(item.discount),
+                        totalPrice: asMoney(item.totalPrice),
+                    })),
+                );
+            });
+
+            return { success: true };
         }),
 
     /**

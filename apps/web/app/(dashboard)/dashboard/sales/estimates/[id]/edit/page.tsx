@@ -4,27 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { EditEstimateForm } from "@/components/features/estimates/edit-estimate-form";
+import { SalesmanEstimateForm } from "@/components/features/estimates/salesman-estimate-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SALES_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
-
-function EditEstimatePageSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Skeleton className="h-9 w-9" />
-        <div className="space-y-2">
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-      </div>
-      <Skeleton className="h-64 w-full" />
-    </div>
-  );
-}
 
 export default function EditEstimatePage() {
   const params = useParams();
@@ -38,69 +23,70 @@ export default function EditEstimatePage() {
   });
 
   if (isLoading) {
-    return <EditEstimatePageSkeleton />;
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-72" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
   }
 
   if (error || !data?.estimate) {
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="h-9 w-9" asChild>
-            <Link href={`${SALES_BASE}/estimates`}>
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <h1 className="text-lg sm:text-xl font-bold">Estimate Not Found</h1>
-        </div>
-        <p className="text-muted-foreground">
-          This estimate could not be found or you don't have access to it.
-        </p>
-        <Button asChild>
-          <Link href={`${SALES_BASE}/estimates`}>Back to Estimates</Link>
+        <Button variant="ghost" className="gap-2" asChild>
+          <Link href={`${SALES_BASE}/estimates`}>
+            <ArrowLeft className="h-4 w-4" />
+            Back to Estimates
+          </Link>
         </Button>
+        <p className="text-sm text-muted-foreground">
+          This estimate could not be found or you do not have access.
+        </p>
       </div>
     );
   }
 
-  const { estimate } = data;
-  const isReadOnly =
+  const estimate = data.estimate;
+  const isClosed =
     estimate.status === "converted" || estimate.status === "rejected";
+  const hasLegacyItems = estimate.items.some((item) => item.variantId == null);
+  const isReadOnly = isClosed || hasLegacyItems;
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="h-9 w-9" asChild>
-          <Link href={`${SALES_BASE}/estimates`}>
-            <ArrowLeft className="h-4 w-4" />
+    <div className="space-y-6">
+      <div className="flex items-start gap-3">
+        <Button variant="ghost" size="icon" className="shrink-0" asChild>
+          <Link href={`${SALES_BASE}/estimates/${estimate.id}`}>
+            <ArrowLeft className="h-5 w-5" />
+            <span className="sr-only">Back</span>
           </Link>
         </Button>
         <div>
-          <h1 className="text-lg sm:text-xl font-bold">
-            Edit Estimate {estimate.estimateNumber}
+          <h1 className="text-xl font-bold tracking-tight">
+            Edit {estimate.estimateNumber}
           </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            Update the estimate details and items.
+          <p className="mt-1 text-sm text-muted-foreground">
+            Update products, customer, validity, and discount percentage.
           </p>
         </div>
       </div>
 
-      {isReadOnly && (
-        <Alert
-          variant="destructive"
-          className="border-amber-500/50 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-        >
+      {isReadOnly ? (
+        <Alert className="border-amber-200 bg-amber-50 text-amber-900">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle className="text-sm font-semibold">
-            Read-only Mode
+          <AlertTitle>
+            {hasLegacyItems ? "Legacy estimate" : "Read-only estimate"}
           </AlertTitle>
-          <AlertDescription className="text-xs">
-            This estimate has been {estimate.status} and cannot be modified.
+          <AlertDescription>
+            {hasLegacyItems
+              ? "This older estimate has products without warehouse variant snapshots. Create a new estimate from warehouse stock instead."
+              : "Converted and rejected estimates cannot be edited."}
           </AlertDescription>
         </Alert>
+      ) : (
+        <SalesmanEstimateForm mode="edit" estimate={estimate} basePath={SALES_BASE} />
       )}
-
-      <EditEstimateForm estimate={estimate} isReadOnly={isReadOnly} />
     </div>
   );
 }

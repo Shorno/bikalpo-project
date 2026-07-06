@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,
   Boxes,
@@ -23,6 +24,7 @@ import {
   WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useMemo } from "react";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
 import { NavUser } from "@/components/dashboard/nav-user";
 import UserNavSkeleton from "@/components/dashboard/user-nav-skeleton";
@@ -37,8 +39,10 @@ import {
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { ADMIN_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 
-const adminNavGroups: NavGroup[] = [
+function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
+  return [
   {
     label: "Overview",
     items: [
@@ -191,17 +195,13 @@ const adminNavGroups: NavGroup[] = [
       },
       {
         title: "Applications",
-        url: `${ADMIN_BASE}/seller-applications`,
+        url: `${ADMIN_BASE}/applications`,
         icon: StoreIcon,
-        items: [
-          {
-            title: "Seller Applications",
-            url: `${ADMIN_BASE}/seller-applications`,
-          },
-          {
-            title: "Warehouse Applications",
-            url: `${ADMIN_BASE}/warehouse-applications`,
-          },
+        badge: pendingApplications,
+        activePrefixes: [
+          `${ADMIN_BASE}/applications`,
+          `${ADMIN_BASE}/seller-applications`,
+          `${ADMIN_BASE}/warehouse-applications`,
         ],
       },
       {
@@ -298,10 +298,20 @@ const adminNavGroups: NavGroup[] = [
       },
     ],
   },
-];
+  ];
+}
 
 export function AdminSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { data, isPending } = authClient.useSession();
+  const { data: dashboardData } = useQuery({
+    ...orpc.dashboard.getStats.queryOptions(),
+    staleTime: 60_000,
+  });
+
+  const adminNavGroups = useMemo(
+    () => getAdminNavGroups(dashboardData?.stats?.pendingApplications ?? 0),
+    [dashboardData?.stats?.pendingApplications],
+  );
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>

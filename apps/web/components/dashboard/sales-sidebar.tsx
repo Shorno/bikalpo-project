@@ -1,35 +1,25 @@
 "use client";
 
-import {
-  FileTextIcon,
-  LayoutDashboardIcon,
-  Package,
-  Users,
-} from "lucide-react";
+import { FileTextIcon, LayoutDashboardIcon, StoreIcon } from "lucide-react";
 import { BaseSidebar, type NavItem } from "@/components/dashboard/base-sidebar";
 import type { Sidebar } from "@/components/ui/sidebar";
-import { SALES_BASE } from "@/lib/routes";
+import { SALES_PORTAL_BASE } from "@/lib/sales-routing";
 
 const salesNavLinks: NavItem[] = [
   {
     title: "Dashboard",
-    url: SALES_BASE,
+    url: SALES_PORTAL_BASE,
     icon: LayoutDashboardIcon,
   },
   {
-    title: "Customers",
-    url: `${SALES_BASE}/customers`,
-    icon: Users,
+    title: "Assign Shops",
+    url: `${SALES_PORTAL_BASE}/assign-shops`,
+    icon: StoreIcon,
   },
   {
     title: "Estimates",
-    url: `${SALES_BASE}/estimates`,
+    url: `${SALES_PORTAL_BASE}/estimates`,
     icon: FileTextIcon,
-  },
-  {
-    title: "Orders",
-    url: `${SALES_BASE}/orders`,
-    icon: Package,
   },
 ];
 

@@ -1,291 +1,460 @@
 "use client";
 
+
+
+import { useEffect, useState } from "react";
+
 import {
+
   Select,
+
   SelectContent,
+
   SelectItem,
+
   SelectTrigger,
+
   SelectValue,
+
 } from "@/components/ui/select";
 
-interface StepBusinessProfileProps {
-  data: {
-    businessType: string;
-    shopName: string;
-    businessCategory: string;
-    yearsInBusiness: string;
-    monthlyRevenue: string;
-  };
-  onUpdate: (data: StepBusinessProfileProps["data"]) => void;
-  onNext: () => void;
-  onBack: () => void;
-  lockedBusinessType?: string | null;
+import { Field, FieldGroup } from "@/components/ui/field";
+
+import { Input } from "@/components/ui/input";
+
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+
+import {
+
+  BUSINESS_NATURES,
+
+  MONTHLY_SALES_VOLUME,
+
+  YEARS_IN_BUSINESS,
+
+} from "@/constants/seller-registration";
+
+import type { LocationData } from "@/constants/seller-registration";
+
+import { client } from "@/utils/orpc";
+
+import {
+
+  RegistrationActions,
+
+  RegistrationFieldLabel,
+
+  RegistrationSection,
+
+} from "./registration-primitives";
+
+import {
+
+  LocationPickerSection,
+
+  isLocationComplete,
+
+} from "./location-picker-section";
+
+
+
+export interface StepBusinessData {
+
+  shopName: string;
+
+  businessNature: string;
+
+  productTypeId: number | null;
+
+  productTypeName: string;
+
+  businessLocation: LocationData;
+
+  yearsInBusiness: string;
+
+  monthlyRevenue: string;
+
 }
 
-const BUSINESS_TYPES = [
-  {
-    id: "retail",
-    label: "Retail Shop",
-    description: "Sell products directly to consumers",
-    icon: "storefront",
-  },
-  {
-    id: "restaurant",
-    label: "Restaurant",
-    description: "Food service & wholesale purchasing",
-    icon: "restaurant",
-  },
-  {
-    id: "warehouse",
-    label: "Warehouse",
-    description: "Bulk storage & distribution",
-    icon: "warehouse",
-  },
-];
 
-const BUSINESS_CATEGORIES = [
-  "Grocery & FMCG",
-  "Electronics",
-  "Fashion & Clothing",
-  "Pharmacy & Health",
-  "Hardware & Tools",
-  "Stationery & Books",
-  "Food & Beverage",
-  "Cosmetics & Beauty",
-  "Mobile & Accessories",
-  "Other",
-];
+
+interface StepBusinessProfileProps {
+
+  data: StepBusinessData;
+
+  onUpdate: (data: StepBusinessData) => void;
+
+  onNext: () => void;
+
+  onBack: () => void;
+
+}
+
+
 
 export function StepBusinessProfile({
+
   data,
+
   onUpdate,
+
   onNext,
+
   onBack,
-  lockedBusinessType,
+
 }: StepBusinessProfileProps) {
-  const isLocked = !!lockedBusinessType;
-  const canProceed = data.businessType && data.shopName && data.businessCategory;
+
+  const [productTypes, setProductTypes] = useState<
+
+    { id: number; name: string }[]
+
+  >([]);
+
+  const [loadingTypes, setLoadingTypes] = useState(true);
+
+
+
+  useEffect(() => {
+
+    client.adminProductType
+
+      .getActiveTypes()
+
+      .then((result) => {
+
+        setProductTypes(result.types.map((t) => ({ id: t.id, name: t.name })));
+
+      })
+
+      .catch(() => setProductTypes([]))
+
+      .finally(() => setLoadingTypes(false));
+
+  }, []);
+
+
+
+  const canProceed =
+
+    data.shopName &&
+
+    data.businessNature &&
+
+    data.productTypeId &&
+
+    isLocationComplete(data.businessLocation);
+
+
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#003178]/5 mb-4">
-          <span
-            className="material-symbols-outlined text-3xl text-[#003178]"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            business_center
-          </span>
-        </div>
-        <h2
-          className="text-2xl font-bold text-gray-900 mb-2"
-          style={{ fontFamily: "'Manrope', sans-serif" }}
-        >
-          Tell Us About Your Business
-        </h2>
-        <p className="text-gray-500">
-          Select your business type to personalize your experience
-        </p>
-      </div>
 
-      {/* Business Type Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        {BUSINESS_TYPES.map((type) => (
-          <button
-            key={type.id}
-            onClick={() => !isLocked && onUpdate({ ...data, businessType: type.id })}
-            disabled={isLocked}
-            className={`
-              relative p-5 rounded-xl border-2 text-left transition-all duration-200
-              ${isLocked ? "cursor-not-allowed opacity-60" : "hover:shadow-md group"}
-              ${
-                data.businessType === type.id
-                  ? "border-[#003178] bg-[#003178]/5 shadow-md"
-                  : "border-gray-200 bg-white hover:border-gray-300"
-              }
-            `}
-          >
-            {/* Selected indicator */}
-            {data.businessType === type.id && (
-              <div className="absolute top-3 right-3">
-                <span
-                  className="material-symbols-outlined text-[#003178] text-lg"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  check_circle
-                </span>
-              </div>
-            )}
+    <div className="w-full">
 
-            <span
-              className={`
-                material-symbols-outlined text-3xl mb-3 block
-                transition-colors duration-200
-                ${
-                  data.businessType === type.id
-                    ? "text-[#003178]"
-                    : "text-gray-400 group-hover:text-gray-600"
+      <RegistrationSection title="Business identity">
+
+        <FieldGroup>
+
+          <Field>
+
+            <RegistrationFieldLabel required htmlFor="shopName">
+
+              Business name
+
+            </RegistrationFieldLabel>
+
+            <Input
+
+              id="shopName"
+
+              type="text"
+
+              value={data.shopName}
+
+              onChange={(e) => onUpdate({ ...data, shopName: e.target.value })}
+
+              placeholder="Enter business name"
+
+              className="h-9"
+
+            />
+
+          </Field>
+
+
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
+            <Field>
+
+              <RegistrationFieldLabel required>Business nature</RegistrationFieldLabel>
+
+              <Select
+
+                value={data.businessNature}
+
+                onValueChange={(value) =>
+
+                  onUpdate({ ...data, businessNature: value })
+
                 }
-              `}
-              style={{
-                fontVariationSettings:
-                  data.businessType === type.id ? "'FILL' 1" : "'FILL' 0",
-              }}
-            >
-              {type.icon}
-            </span>
-            <h3
-              className={`font-bold text-sm mb-1 ${
-                data.businessType === type.id
-                  ? "text-[#003178]"
-                  : "text-gray-900"
-              }`}
-            >
-              {type.label}
-            </h3>
-            <p className="text-xs text-gray-500">{type.description}</p>
-          </button>
-        ))}
-      </div>
 
-      {/* Locked notice */}
-      {isLocked && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 mb-4">
-          <span className="material-symbols-outlined text-amber-600 text-base">lock</span>
-          <p className="text-xs text-amber-700">
-            Your business type was pre-selected by the admin who invited you and cannot be changed.
-          </p>
-        </div>
-      )}
+              >
 
-      {/* Form Fields */}
-      <div className="space-y-4">
-        {/* Business Name */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-            Business Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={data.shopName}
-            onChange={(e) => onUpdate({ ...data, shopName: e.target.value })}
-            placeholder="Enter your business name"
-            className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#003178]/20 focus:border-[#003178] transition-all"
-          />
-        </div>
+                <SelectTrigger className="h-9 w-full">
 
-        {/* Business Category */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-            Business Category <span className="text-red-500">*</span>
-          </label>
-          <Select
-            value={data.businessCategory}
-            onValueChange={(value) =>
-              onUpdate({ ...data, businessCategory: value })
-            }
-          >
-            <SelectTrigger className="w-full px-4 py-3 h-auto border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#003178]/20 focus:border-[#003178] transition-all">
-              <SelectValue placeholder="Select category" />
-            </SelectTrigger>
-            <SelectContent>
-              {BUSINESS_CATEGORIES.map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+                  <SelectValue placeholder="Select nature" />
 
-        {/* Optional: Years in Business + Revenue */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Years in Business{" "}
-              <span className="text-xs text-gray-400 font-normal">
-                (Optional)
-              </span>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {["New", "1-3 years", "3+ years"].map((option) => (
-                <button
-                  key={option}
-                  onClick={() =>
-                    onUpdate({ ...data, yearsInBusiness: option })
-                  }
-                  className={`
-                    px-3 py-2 rounded-lg text-xs font-medium border transition-all
-                    ${
-                      data.yearsInBusiness === option
-                        ? "border-[#003178] bg-[#003178]/5 text-[#003178]"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    }
-                  `}
+                </SelectTrigger>
+
+                <SelectContent>
+
+                  {BUSINESS_NATURES.map((nature) => (
+
+                    <SelectItem key={nature.id} value={nature.id}>
+
+                      {nature.label}
+
+                    </SelectItem>
+
+                  ))}
+
+                </SelectContent>
+
+              </Select>
+
+            </Field>
+
+
+
+            <Field>
+
+              <RegistrationFieldLabel required>Business type</RegistrationFieldLabel>
+
+              {loadingTypes ? (
+
+                <div className="h-9 w-full animate-pulse rounded-lg bg-muted" />
+
+              ) : (
+
+                <Select
+
+                  value={data.productTypeId ? String(data.productTypeId) : ""}
+
+                  onValueChange={(value) => {
+
+                    const selected = productTypes.find(
+
+                      (t) => t.id === Number(value),
+
+                    );
+
+                    onUpdate({
+
+                      ...data,
+
+                      productTypeId: Number(value),
+
+                      productTypeName: selected?.name || "",
+
+                    });
+
+                  }}
+
+                  disabled={productTypes.length === 0}
+
                 >
-                  {option}
-                </button>
-              ))}
-            </div>
+
+                  <SelectTrigger className="h-9 w-full">
+
+                    <SelectValue
+
+                      placeholder={
+
+                        productTypes.length === 0
+
+                          ? "No types available"
+
+                          : "Select type"
+
+                      }
+
+                    />
+
+                  </SelectTrigger>
+
+                  <SelectContent>
+
+                    {productTypes.map((type) => (
+
+                      <SelectItem key={type.id} value={String(type.id)}>
+
+                        {type.name}
+
+                      </SelectItem>
+
+                    ))}
+
+                  </SelectContent>
+
+                </Select>
+
+              )}
+
+            </Field>
+
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Monthly Revenue{" "}
-              <span className="text-xs text-gray-400 font-normal">
-                (Optional)
-              </span>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {["< ৳50K", "৳50K-2L", "৳2L+"].map((option) => (
-                <button
-                  key={option}
-                  onClick={() =>
-                    onUpdate({ ...data, monthlyRevenue: option })
-                  }
-                  className={`
-                    px-3 py-2 rounded-lg text-xs font-medium border transition-all
-                    ${
-                      data.monthlyRevenue === option
-                        ? "border-[#003178] bg-[#003178]/5 text-[#003178]"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    }
-                  `}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+        </FieldGroup>
 
-      {/* Navigation */}
-      <div className="flex gap-3 mt-8">
-        <button
-          onClick={onBack}
-          className="px-6 py-3.5 rounded-lg border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-all flex items-center gap-2"
-        >
-          <span className="material-symbols-outlined text-lg">
-            arrow_back
-          </span>
-          Back
-        </button>
-        <button
-          onClick={onNext}
-          disabled={!canProceed}
-          className="flex-1 py-3.5 rounded-lg text-white font-bold shadow-lg shadow-[#003178]/20 hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all flex items-center justify-center gap-2"
-          style={{
-            background: "linear-gradient(135deg, #003178 0%, #0d47a1 100%)",
-          }}
-        >
-          Continue
-          <span className="material-symbols-outlined text-lg">
-            arrow_forward
-          </span>
-        </button>
-      </div>
+      </RegistrationSection>
+
+
+
+      <RegistrationSection
+
+        title="Business location"
+
+        description="Where is your business located?"
+
+      >
+
+        <LocationPickerSection
+
+          label="Business address"
+
+          data={data.businessLocation}
+
+          onUpdate={(businessLocation) =>
+
+            onUpdate({ ...data, businessLocation })
+
+          }
+
+        />
+
+      </RegistrationSection>
+
+
+
+      <RegistrationSection title="Business history">
+
+        <FieldGroup>
+
+          <Field>
+
+            <RegistrationFieldLabel optional>Business age</RegistrationFieldLabel>
+
+            <ToggleGroup
+
+              type="single"
+
+              variant="outline"
+
+              size="sm"
+
+              value={data.yearsInBusiness}
+
+              onValueChange={(value) =>
+
+                value && onUpdate({ ...data, yearsInBusiness: value })
+
+              }
+
+              className="flex flex-wrap gap-2"
+
+            >
+
+              {YEARS_IN_BUSINESS.map((option) => (
+
+                <ToggleGroupItem
+
+                  key={option}
+
+                  value={option}
+
+                  className="min-h-9 px-3 text-xs"
+
+                >
+
+                  {option}
+
+                </ToggleGroupItem>
+
+              ))}
+
+            </ToggleGroup>
+
+          </Field>
+
+
+
+          <Field>
+
+            <RegistrationFieldLabel optional>Monthly sales volume</RegistrationFieldLabel>
+
+            <ToggleGroup
+
+              type="single"
+
+              variant="outline"
+
+              size="sm"
+
+              value={data.monthlyRevenue}
+
+              onValueChange={(value) =>
+
+                value && onUpdate({ ...data, monthlyRevenue: value })
+
+              }
+
+              className="flex flex-wrap gap-2"
+
+            >
+
+              {MONTHLY_SALES_VOLUME.map((option) => (
+
+                <ToggleGroupItem
+
+                  key={option}
+
+                  value={option}
+
+                  className="min-h-9 px-3 text-xs"
+
+                >
+
+                  {option}
+
+                </ToggleGroupItem>
+
+              ))}
+
+            </ToggleGroup>
+
+          </Field>
+
+        </FieldGroup>
+
+      </RegistrationSection>
+
+
+
+      <RegistrationActions
+
+        onBack={onBack}
+
+        onPrimary={onNext}
+
+        primaryLabel="Continue"
+
+        primaryDisabled={!canProceed}
+
+      />
+
     </div>
+
   );
+
 }
+

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
-import { ADMIN_BASE, SALES_BASE } from "@/lib/routes";
+import { ADMIN_BASE } from "@/lib/routes";
+import { getSalesSubdomainUrl } from "@/lib/sales-routing";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -26,8 +27,8 @@ export default function DashboardPage() {
         router.replace(ADMIN_BASE);
         break;
       case "salesman":
-        router.replace(SALES_BASE);
-        break;
+        window.location.href = `${getSalesSubdomainUrl()}/dashboard`;
+        return;
       case "deliveryman":
         if ((session.user as { warehouseId?: string | null }).warehouseId) {
           window.location.href = `${getDeliverySubdomainUrl()}/dashboard`;

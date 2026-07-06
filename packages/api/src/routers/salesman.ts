@@ -1,7 +1,7 @@
 import { db } from "@bikalpo-project/db";
-import { customerAssignment, estimate, estimateItem, order, orderItem, product, user } from "@bikalpo-project/db/schema";
+import { customerAssignment, estimate, estimateItem, inventory, order, shopWarehouseConnection, user, warehouseWarehouseConnection } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, salesmanProcedure } from "../index";
@@ -25,6 +25,426 @@ const unassignCustomerSchema = z.object({
 const upcomingOrdersSchema = z.object({
     limit: z.number().optional().default(50),
 });
+
+const estimateCatalogSchema = z.object({
+    search: z.string().optional(),
+    productTypeId: z.number().int().positive().optional(),
+    coreProductId: z.number().int().positive().optional(),
+    categoryId: z.number().int().positive().optional(),
+    subCategoryId: z.number().int().positive().optional(),
+});
+
+const estimateLineInputSchema = z.object({
+    variantId: z.number().int().positive(),
+    quantity: z.number().int().min(1),
+});
+
+const writeEstimateSchema = z.object({
+    customerIds: z.array(z.string()).min(1, "At least one customer required"),
+    items: z.array(estimateLineInputSchema).min(1, "At least one item required"),
+    discountPercent: z.number().min(0).max(100).default(0),
+    notes: z.string().nullable().optional(),
+    validUntil: z.coerce.date().nullable().optional(),
+});
+
+const updateSalesmanEstimateSchema = z.object({
+    id: z.number(),
+    customerIds: z.array(z.string()).min(1).max(1).optional(),
+    customerId: z.string().optional(),
+    items: z.array(estimateLineInputSchema).min(1).optional(),
+    discountPercent: z.number().min(0).max(100).optional(),
+    validUntil: z.coerce.date().nullable().optional(),
+    notes: z.string().nullable().optional(),
+});
+
+type AssignedShopType = "retailer" | "warehouse";
+
+type AssignedShopSource = {
+    id: string;
+    customerType: AssignedShopType;
+    connectionId: number;
+    displayName: string;
+    contactName: string;
+    email: string;
+    phoneNumber: string | null;
+    address: string | null;
+    locationLat: string | null;
+    locationLng: string | null;
+    shopName: string | null;
+    warehouseName: string | null;
+    ownerName: string | null;
+    image: string | null;
+    connectedAt: Date | null;
+    lastOrderedAt: Date | null;
+    assignedAt: Date;
+    createdAt: Date;
+};
+
+type ResolvedEstimateLine = {
+    variantId: number;
+    productId: number;
+    productName: string;
+    productImage: string | null;
+    productSize: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+};
+
+function toNumber(value: string | number | null | undefined): number {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toMoney(value: number): string {
+    return Math.max(0, value).toFixed(2);
+}
+
+function formatPackLabel(variant: {
+    packWeightKg?: string | null;
+    weightKg?: string | null;
+    unitLabel?: string | null;
+    packType?: string | null;
+    packagingType?: string | null;
+}) {
+    const weight = toNumber(variant.packWeightKg || variant.weightKg);
+    const unit = variant.unitLabel || "Unit";
+    const packType = variant.packType || variant.packagingType || "";
+
+    if (weight > 0) {
+        const formattedWeight = Number.isInteger(weight) ? String(weight) : String(weight);
+        return [formattedWeight, unit, packType].filter(Boolean).join(" ");
+    }
+
+    return [unit, packType].filter(Boolean).join(" ") || "Variant";
+}
+
+async function ensureAssignedCustomers({
+    warehouseId,
+    salesmanId,
+    customerIds,
+}: {
+    warehouseId: string;
+    salesmanId: string;
+    customerIds: string[];
+}) {
+    const assignedShops = await getAssignedShopSources({ warehouseId, salesmanId });
+    const assignedIds = new Set(assignedShops.map((shop) => shop.id));
+    const missingId = customerIds.find((customerId) => !assignedIds.has(customerId));
+
+    if (missingId) {
+        throw new ORPCError("FORBIDDEN", {
+            message: "One or more selected customers are not assigned to you",
+        });
+    }
+}
+
+async function resolveEstimateLines({
+    warehouseId,
+    items,
+}: {
+    warehouseId: string;
+    items: Array<z.infer<typeof estimateLineInputSchema>>;
+}) {
+    const quantityByVariant = new Map<number, number>();
+    for (const item of items) {
+        quantityByVariant.set(
+            item.variantId,
+            (quantityByVariant.get(item.variantId) ?? 0) + item.quantity,
+        );
+    }
+
+    const variantIds = Array.from(quantityByVariant.keys());
+    const stockRows = await db.query.inventory.findMany({
+        where: and(
+            eq(inventory.ownerType, "warehouse"),
+            eq(inventory.ownerId, warehouseId),
+            inArray(inventory.variantId, variantIds),
+        ),
+        columns: {
+            variantId: true,
+            availableQty: true,
+            retailPrice: true,
+        },
+        with: {
+            variant: {
+                columns: {
+                    id: true,
+                    sku: true,
+                    unitLabel: true,
+                    price: true,
+                    weightKg: true,
+                    packWeightKg: true,
+                    packType: true,
+                    packagingType: true,
+                },
+                with: {
+                    brand: {
+                        columns: {
+                            name: true,
+                        },
+                    },
+                    product: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            image: true,
+                            size: true,
+                        },
+                        with: {
+                            coreProduct: {
+                                columns: {
+                                    name: true,
+                                    image: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    });
+
+    const stockByVariant = new Map(stockRows.map((row) => [row.variantId, row]));
+    const lines: ResolvedEstimateLine[] = [];
+
+    for (const [variantId, quantity] of quantityByVariant) {
+        const stock = stockByVariant.get(variantId);
+        if (!stock?.variant?.product) {
+            throw new ORPCError("BAD_REQUEST", {
+                message: `Variant ${variantId} is not available in this warehouse`,
+            });
+        }
+
+        const availableQty = toNumber(stock.availableQty);
+        if (availableQty < quantity) {
+            throw new ORPCError("BAD_REQUEST", {
+                message: `Insufficient stock for ${stock.variant.product.name}. Available ${availableQty}, requested ${quantity}`,
+            });
+        }
+
+        const product = stock.variant.product;
+        const unitPrice =
+            toNumber(stock.retailPrice) > 0
+                ? toNumber(stock.retailPrice)
+                : toNumber(stock.variant.price);
+        const productSize = formatPackLabel(stock.variant);
+        const brandName = stock.variant.brand?.name;
+        const productName = [
+            product.coreProduct?.name || product.name,
+            brandName,
+            productSize,
+        ]
+            .filter(Boolean)
+            .join(" - ");
+
+        lines.push({
+            variantId,
+            productId: product.id,
+            productName,
+            productImage: product.coreProduct?.image || product.image || null,
+            productSize,
+            quantity,
+            unitPrice,
+            totalPrice: unitPrice * quantity,
+        });
+    }
+
+    return lines;
+}
+
+function getWarehouseSalesmanIds(context: { session: { user: unknown } }) {
+    const sessionUser = context.session.user as {
+        id: string;
+        warehouseId?: string | null;
+    };
+
+    if (!sessionUser.warehouseId) {
+        throw new ORPCError("FORBIDDEN", {
+            message: "Warehouse sales access required",
+        });
+    }
+
+    return {
+        salesmanId: sessionUser.id,
+        warehouseId: sessionUser.warehouseId,
+    };
+}
+
+async function getAssignedShopSources({
+    warehouseId,
+    salesmanId,
+    customerId,
+}: {
+    warehouseId: string;
+    salesmanId: string;
+    customerId?: string;
+}) {
+    const assignmentConditions: SQL[] = [
+        eq(customerAssignment.warehouseId, warehouseId),
+        eq(customerAssignment.salesmanId, salesmanId),
+    ];
+
+    if (customerId) {
+        assignmentConditions.push(eq(customerAssignment.customerId, customerId));
+    }
+
+    const [retailerShops, buyerWarehouses] = await Promise.all([
+        db
+            .select({
+                id: user.id,
+                customerType: sql<AssignedShopType>`'retailer'`,
+                connectionId: shopWarehouseConnection.id,
+                displayName: sql<string>`COALESCE(${user.shopName}, ${user.name})`,
+                contactName: user.name,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                address: user.shopAddress,
+                locationLat: user.shopLat,
+                locationLng: user.shopLng,
+                shopName: user.shopName,
+                warehouseName: sql<string | null>`NULL`,
+                ownerName: user.ownerName,
+                image: user.image,
+                connectedAt: shopWarehouseConnection.connectedAt,
+                lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                assignedAt: customerAssignment.assignedAt,
+                createdAt: user.createdAt,
+            })
+            .from(customerAssignment)
+            .innerJoin(
+                shopWarehouseConnection,
+                and(
+                    eq(customerAssignment.customerId, shopWarehouseConnection.shopId),
+                    eq(customerAssignment.warehouseId, shopWarehouseConnection.warehouseId),
+                    eq(shopWarehouseConnection.status, "active"),
+                ),
+            )
+            .innerJoin(user, eq(shopWarehouseConnection.shopId, user.id))
+            .where(and(...assignmentConditions)),
+        db
+            .select({
+                id: user.id,
+                customerType: sql<AssignedShopType>`'warehouse'`,
+                connectionId: warehouseWarehouseConnection.id,
+                displayName: sql<string>`COALESCE(${user.warehouseName}, ${user.name})`,
+                contactName: user.name,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                address: user.warehouseAddress,
+                locationLat: user.warehouseLat,
+                locationLng: user.warehouseLng,
+                shopName: sql<string | null>`NULL`,
+                warehouseName: user.warehouseName,
+                ownerName: user.ownerName,
+                image: user.image,
+                connectedAt: warehouseWarehouseConnection.connectedAt,
+                lastOrderedAt: warehouseWarehouseConnection.lastOrderedAt,
+                assignedAt: customerAssignment.assignedAt,
+                createdAt: user.createdAt,
+            })
+            .from(customerAssignment)
+            .innerJoin(
+                warehouseWarehouseConnection,
+                and(
+                    eq(
+                        customerAssignment.customerId,
+                        warehouseWarehouseConnection.buyerWarehouseId,
+                    ),
+                    eq(
+                        customerAssignment.warehouseId,
+                        warehouseWarehouseConnection.supplierWarehouseId,
+                    ),
+                    eq(warehouseWarehouseConnection.status, "active"),
+                ),
+            )
+            .innerJoin(user, eq(warehouseWarehouseConnection.buyerWarehouseId, user.id))
+            .where(and(...assignmentConditions)),
+    ]);
+
+    return ([...retailerShops, ...buyerWarehouses] as AssignedShopSource[]).sort(
+        (left, right) => right.assignedAt.getTime() - left.assignedAt.getTime(),
+    );
+}
+
+async function enrichAssignedShopSources({
+    sources,
+    warehouseId,
+    salesmanId,
+}: {
+    sources: AssignedShopSource[];
+    warehouseId: string;
+    salesmanId: string;
+}) {
+    if (sources.length === 0) return [];
+
+    const customerIds = sources.map((source) => source.id);
+
+    const [estimateStats, orderStats] = await Promise.all([
+        db
+            .select({
+                customerId: estimate.customerId,
+                totalEstimates: sql<number>`COUNT(*)::int`,
+                lastEstimateDate: sql<Date | null>`MAX(${estimate.createdAt})`,
+            })
+            .from(estimate)
+            .where(
+                and(
+                    eq(estimate.salesmanId, salesmanId),
+                    inArray(estimate.customerId, customerIds),
+                ),
+            )
+            .groupBy(estimate.customerId),
+        db
+            .select({
+                customerId: order.userId,
+                totalOrders: sql<number>`COUNT(*)::int`,
+                totalSpent: sql<string>`COALESCE(SUM(${order.total}::numeric), 0)::text`,
+                pendingAmount: sql<string>`COALESCE(SUM(CASE WHEN ${order.paymentStatus} = 'pending' THEN ${order.total}::numeric ELSE 0 END), 0)::text`,
+                lastOrderDate: sql<Date | null>`MAX(${order.createdAt})`,
+            })
+            .from(order)
+            .where(
+                and(
+                    eq(order.warehouseId, warehouseId),
+                    inArray(order.userId, customerIds),
+                ),
+            )
+            .groupBy(order.userId),
+    ]);
+
+    const estimateStatsByCustomer = new Map(
+        estimateStats.map((row) => [row.customerId, row]),
+    );
+    const orderStatsByCustomer = new Map(
+        orderStats.map((row) => [row.customerId, row]),
+    );
+
+    return sources.map((source) => {
+        const customerEstimateStats = estimateStatsByCustomer.get(source.id);
+        const customerOrderStats = orderStatsByCustomer.get(source.id);
+        const lastEstimateDate = customerEstimateStats?.lastEstimateDate ?? null;
+        const lastOrderDate = customerOrderStats?.lastOrderDate ?? null;
+        const lastActivityAt =
+            lastEstimateDate && lastOrderDate
+                ? lastEstimateDate > lastOrderDate
+                    ? lastEstimateDate
+                    : lastOrderDate
+                : lastEstimateDate || lastOrderDate;
+
+        return {
+            ...source,
+            name: source.contactName,
+            totalEstimates: customerEstimateStats?.totalEstimates ?? 0,
+            totalOrders: customerOrderStats?.totalOrders ?? 0,
+            totalSpent: customerOrderStats?.totalSpent ?? "0",
+            pendingAmount: customerOrderStats?.pendingAmount ?? "0",
+            lastActivityAt,
+        };
+    });
+}
 
 export const salesmanRouter = {
     /**
@@ -106,6 +526,7 @@ export const salesmanRouter = {
                             id: true,
                             name: true,
                             shopName: true,
+                            warehouseName: true,
                         },
                     },
                 },
@@ -137,15 +558,14 @@ export const salesmanRouter = {
         })
         .input(upcomingOrdersSchema)
         .handler(async ({ input, context }) => {
-            const userId = context.session.user.id;
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
 
-            // Get assigned customer IDs
-            const assignments = await db
-                .select({ customerId: customerAssignment.customerId })
-                .from(customerAssignment)
-                .where(eq(customerAssignment.salesmanId, userId));
+            const assignedShops = await getAssignedShopSources({
+                warehouseId,
+                salesmanId,
+            });
+            const customerIds = assignedShops.map((shop) => shop.id);
 
-            const customerIds = assignments.map((a) => a.customerId);
             if (customerIds.length === 0) {
                 return { orders: [] };
             }
@@ -153,6 +573,7 @@ export const salesmanRouter = {
             // Get orders with status confirmed or processing from assigned customers
             const ordersList = await db.query.order.findMany({
                 where: and(
+                    eq(order.warehouseId, warehouseId),
                     inArray(order.status, ["confirmed", "processing"]),
                     inArray(order.userId, customerIds)
                 ),
@@ -186,114 +607,297 @@ export const salesmanRouter = {
             description: "Get list of customers assigned to the logged-in salesman",
         })
         .handler(async ({ context }) => {
-            const userId = context.session.user.id;
-
-            // Get assigned customer IDs
-            const assignments = await db
-                .select({ customerId: customerAssignment.customerId })
-                .from(customerAssignment)
-                .where(eq(customerAssignment.salesmanId, userId));
-
-            const customerIds = assignments.map((a) => a.customerId);
-
-            if (customerIds.length === 0) {
-                return { customers: [] };
-            }
-
-            // Get customers
-            const customers = await db
-                .select({
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    phoneNumber: user.phoneNumber,
-                    shopName: user.shopName,
-                    createdAt: user.createdAt,
-                })
-                .from(user)
-                .where(and(eq(user.role, "customer"), inArray(user.id, customerIds)))
-                .orderBy(desc(user.createdAt));
-
-            // Get estimate counts per customer
-            const estimateCounts = await db
-                .select({
-                    customerId: estimate.customerId,
-                    count: sql<number>`count(*)`.as("count"),
-                })
-                .from(estimate)
-                .where(inArray(estimate.customerId, customerIds))
-                .groupBy(estimate.customerId);
-
-            const estimateCountMap = new Map(
-                estimateCounts.map((e) => [e.customerId, e.count]),
-            );
-
-            // Get order counts and totals per customer
-            const orderStats = await db
-                .select({
-                    userId: order.userId,
-                    orderCount: sql<number>`count(*)`.as("orderCount"),
-                    totalSpent: sql<string>`COALESCE(SUM(${order.total}), 0)`.as("totalSpent"),
-                    lastOrderDate: sql<Date>`MAX(${order.createdAt})`.as("lastOrderDate"),
-                })
-                .from(order)
-                .where(inArray(order.userId, customerIds))
-                .groupBy(order.userId);
-
-            const orderStatsMap = new Map(
-                orderStats.map((o) => [
-                    o.userId,
-                    {
-                        count: o.orderCount,
-                        spent: o.totalSpent || "0",
-                        lastDate: o.lastOrderDate,
-                    },
-                ]),
-            );
-
-            // Get last estimate date per customer
-            const lastEstimates = await db
-                .select({
-                    customerId: estimate.customerId,
-                    lastDate: sql<Date>`MAX(${estimate.createdAt})`.as("lastDate"),
-                })
-                .from(estimate)
-                .where(inArray(estimate.customerId, customerIds))
-                .groupBy(estimate.customerId);
-
-            const lastEstimateMap = new Map(
-                lastEstimates.map((e) => [e.customerId, e.lastDate]),
-            );
-
-            const enrichedCustomers = customers.map((c) => {
-                const orderData = orderStatsMap.get(c.id);
-                const lastEstimateDate = lastEstimateMap.get(c.id);
-                const lastOrderDate = orderData?.lastDate;
-
-                // Determine last activity
-                let lastActivityAt: Date | null = null;
-                if (lastEstimateDate && lastOrderDate) {
-                    lastActivityAt =
-                        lastEstimateDate > lastOrderDate ? lastEstimateDate : lastOrderDate;
-                } else {
-                    lastActivityAt = lastEstimateDate || lastOrderDate || null;
-                }
-
-                return {
-                    id: c.id,
-                    name: c.name,
-                    email: c.email,
-                    phoneNumber: c.phoneNumber,
-                    shopName: c.shopName,
-                    totalEstimates: estimateCountMap.get(c.id) || 0,
-                    totalOrders: orderData?.count || 0,
-                    totalSpent: orderData?.spent || "0",
-                    lastActivityAt,
-                    createdAt: c.createdAt,
-                };
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
+            const assignedShops = await getAssignedShopSources({
+                warehouseId,
+                salesmanId,
+            });
+            const enrichedCustomers = await enrichAssignedShopSources({
+                sources: assignedShops,
+                warehouseId,
+                salesmanId,
             });
 
             return { customers: enrichedCustomers };
+        }),
+
+    /**
+     * Get estimate catalog from the salesman's registered warehouse stock.
+     * REST: GET /salesmen/estimate-catalog
+     */
+    getEstimateCatalog: salesmanProcedure
+        .route({
+            method: "GET",
+            path: "/salesmen/estimate-catalog",
+            tags: ["Salesman"],
+            summary: "Get warehouse stock catalog for estimates",
+            description: "Get stocked variants available for salesman estimates",
+        })
+        .input(estimateCatalogSchema)
+        .handler(async ({ context, input }) => {
+            const { warehouseId } = getWarehouseSalesmanIds(context);
+            const search = input.search?.trim().toLowerCase();
+
+            const rows = await db.query.inventory.findMany({
+                where: and(
+                    eq(inventory.ownerType, "warehouse"),
+                    eq(inventory.ownerId, warehouseId),
+                    sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                ),
+                columns: {
+                    id: true,
+                    variantId: true,
+                    availableQty: true,
+                    retailPrice: true,
+                },
+                with: {
+                    variant: {
+                        columns: {
+                            id: true,
+                            sku: true,
+                            unitLabel: true,
+                            price: true,
+                            weightKg: true,
+                            packWeightKg: true,
+                            packType: true,
+                            packagingType: true,
+                        },
+                        with: {
+                            brand: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                },
+                            },
+                            product: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                    categoryId: true,
+                                    subCategoryId: true,
+                                    coreProductId: true,
+                                },
+                                with: {
+                                    category: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            typeId: true,
+                                        },
+                                        with: {
+                                            type: {
+                                                columns: {
+                                                    id: true,
+                                                    name: true,
+                                                },
+                                            },
+                                        },
+                                    },
+                                    subCategory: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            categoryId: true,
+                                        },
+                                    },
+                                    coreProduct: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            image: true,
+                                            categoryId: true,
+                                            subCategoryId: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            const mappedCatalog = rows
+                .map((row) => {
+                    const variant = row.variant;
+                    const product = variant?.product;
+                    if (!variant || !product) return null;
+
+                    const variantLabel = formatPackLabel(variant);
+                    const typeId = product.category?.typeId ?? null;
+                    const typeName = product.category?.type?.name ?? null;
+                    const categoryId = product.category?.id ?? product.categoryId ?? null;
+                    const categoryName = product.category?.name ?? null;
+                    const subCategoryId =
+                        product.subCategory?.id ?? product.subCategoryId ?? null;
+                    const subCategoryName = product.subCategory?.name ?? null;
+                    const coreProductId =
+                        product.coreProduct?.id ?? product.coreProductId ?? null;
+                    const coreProductName = product.coreProduct?.name ?? null;
+                    const nameParts = [
+                        coreProductName || product.name,
+                        variant.brand?.name,
+                        variantLabel,
+                    ].filter(Boolean);
+                    const displayName = nameParts.join(" - ");
+                    const haystack = [
+                        displayName,
+                        product.name,
+                        coreProductName,
+                        typeName,
+                        categoryName,
+                        subCategoryName,
+                        variant.brand?.name,
+                        variant.sku,
+                    ]
+                        .filter(Boolean)
+                        .join(" ")
+                        .toLowerCase();
+
+                    return {
+                        inventoryId: row.id,
+                        variantId: row.variantId,
+                        productId: product.id,
+                        name: displayName,
+                        productName: coreProductName || product.name,
+                        brandName: variant.brand?.name ?? null,
+                        variantLabel,
+                        sku: variant.sku,
+                        image: product.coreProduct?.image || product.image,
+                        availableQty: toNumber(row.availableQty),
+                        unitPrice:
+                            toNumber(row.retailPrice) > 0
+                                ? toNumber(row.retailPrice)
+                                : toNumber(variant.price),
+                        typeId,
+                        typeName,
+                        categoryId,
+                        categoryName,
+                        subCategoryId,
+                        subCategoryName,
+                        coreProductId,
+                        coreProductName,
+                        searchText: haystack,
+                    };
+                });
+            const catalog = mappedCatalog.filter(
+                (item): item is NonNullable<(typeof mappedCatalog)[number]> =>
+                    item !== null,
+            );
+
+            const matchesSearch = (item: NonNullable<(typeof catalog)[number]>) =>
+                !search || item.searchText.includes(search);
+            const matchesSelectedFilters = (
+                item: NonNullable<(typeof catalog)[number]>,
+            ) => {
+                if (input.productTypeId && item.typeId !== input.productTypeId)
+                    return false;
+                if (input.coreProductId && item.coreProductId !== input.coreProductId)
+                    return false;
+                if (input.categoryId && item.categoryId !== input.categoryId)
+                    return false;
+                if (input.subCategoryId && item.subCategoryId !== input.subCategoryId)
+                    return false;
+                return true;
+            };
+
+            const searchRows = catalog.filter(matchesSearch);
+            const products = searchRows
+                .filter(matchesSelectedFilters)
+                .map(({ searchText: _searchText, ...item }) => item);
+
+            const sortByName = <T extends { name: string }>(items: T[]) =>
+                items.sort((left, right) => left.name.localeCompare(right.name));
+
+            const typeOptions = new Map<number, { id: number; name: string }>();
+            const categoryOptions = new Map<
+                number,
+                { id: number; name: string; typeId: number | null }
+            >();
+            const subCategoryOptions = new Map<
+                number,
+                { id: number; name: string; categoryId: number }
+            >();
+            const coreProductOptions = new Map<
+                number,
+                {
+                    id: number;
+                    name: string;
+                    typeId: number | null;
+                    categoryId: number | null;
+                    subCategoryId: number | null;
+                }
+            >();
+
+            for (const item of searchRows) {
+                if (item.typeId && item.typeName) {
+                    typeOptions.set(item.typeId, {
+                        id: item.typeId,
+                        name: item.typeName,
+                    });
+                }
+
+                const categoryMatches =
+                    (!input.productTypeId || item.typeId === input.productTypeId) &&
+                    (!input.coreProductId ||
+                        item.coreProductId === input.coreProductId);
+                if (categoryMatches && item.categoryId && item.categoryName) {
+                    categoryOptions.set(item.categoryId, {
+                        id: item.categoryId,
+                        name: item.categoryName,
+                        typeId: item.typeId,
+                    });
+                }
+
+                const subCategoryMatches =
+                    categoryMatches &&
+                    (!input.categoryId || item.categoryId === input.categoryId);
+                if (
+                    subCategoryMatches &&
+                    item.subCategoryId &&
+                    item.subCategoryName &&
+                    item.categoryId
+                ) {
+                    subCategoryOptions.set(item.subCategoryId, {
+                        id: item.subCategoryId,
+                        name: item.subCategoryName,
+                        categoryId: item.categoryId,
+                    });
+                }
+
+                const coreProductMatches =
+                    (!input.productTypeId || item.typeId === input.productTypeId) &&
+                    (!input.categoryId || item.categoryId === input.categoryId) &&
+                    (!input.subCategoryId ||
+                        item.subCategoryId === input.subCategoryId);
+                if (
+                    coreProductMatches &&
+                    item.coreProductId &&
+                    (item.coreProductName || item.productName)
+                ) {
+                    coreProductOptions.set(item.coreProductId, {
+                        id: item.coreProductId,
+                        name: item.coreProductName || item.productName,
+                        typeId: item.typeId,
+                        categoryId: item.categoryId,
+                        subCategoryId: item.subCategoryId,
+                    });
+                }
+            }
+
+            return {
+                products,
+                filterOptions: {
+                    types: sortByName(Array.from(typeOptions.values())),
+                    coreProducts: sortByName(
+                        Array.from(coreProductOptions.values()),
+                    ),
+                    categories: sortByName(Array.from(categoryOptions.values())),
+                    subCategories: sortByName(
+                        Array.from(subCategoryOptions.values()),
+                    ),
+                },
+            };
         }),
 
     /**
@@ -310,44 +914,30 @@ export const salesmanRouter = {
         })
         .input(z.object({ id: z.string() }))
         .handler(async ({ context, input }) => {
-            const userId = context.session.user.id;
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
+            const [assignedShop] = await getAssignedShopSources({
+                warehouseId,
+                salesmanId,
+                customerId: input.id,
+            });
 
-            // Verify customer is assigned to this salesman
-            const assignment = await db
-                .select()
-                .from(customerAssignment)
-                .where(
-                    and(
-                        eq(customerAssignment.salesmanId, userId),
-                        eq(customerAssignment.customerId, input.id),
-                    ),
-                )
-                .limit(1);
-
-            if (assignment.length === 0) {
-                throw new ORPCError("NOT_FOUND", { message: "Customer not found or not assigned to you" });
+            if (!assignedShop) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Shop not found or not assigned to you",
+                });
             }
 
-            // Get customer info
-            const customerData = await db
-                .select({
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    phoneNumber: user.phoneNumber,
-                    shopName: user.shopName,
-                    ownerName: user.ownerName,
-                    createdAt: user.createdAt,
-                })
-                .from(user)
-                .where(and(eq(user.id, input.id), eq(user.role, "customer")))
-                .limit(1);
+            const [enrichedShop] = await enrichAssignedShopSources({
+                sources: [assignedShop],
+                warehouseId,
+                salesmanId,
+            });
 
-            if (customerData.length === 0) {
-                throw new ORPCError("NOT_FOUND", { message: "Customer not found" });
+            if (!enrichedShop) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Shop not found or not assigned to you",
+                });
             }
-
-            const customerInfo = customerData[0];
 
             // Get customer estimates
             const customerEstimates = await db
@@ -359,7 +949,12 @@ export const salesmanRouter = {
                     createdAt: estimate.createdAt,
                 })
                 .from(estimate)
-                .where(eq(estimate.customerId, input.id))
+                .where(
+                    and(
+                        eq(estimate.customerId, input.id),
+                        eq(estimate.salesmanId, salesmanId),
+                    ),
+                )
                 .orderBy(desc(estimate.createdAt));
 
             // Get customer orders
@@ -373,7 +968,7 @@ export const salesmanRouter = {
                     createdAt: order.createdAt,
                 })
                 .from(order)
-                .where(eq(order.userId, input.id))
+                .where(and(eq(order.userId, input.id), eq(order.warehouseId, warehouseId)))
                 .orderBy(desc(order.createdAt));
 
             // Calculate stats
@@ -387,7 +982,7 @@ export const salesmanRouter = {
 
             return {
                 customer: {
-                    ...customerInfo,
+                    ...enrichedShop,
                     stats: {
                         totalEstimates: customerEstimates.length,
                         totalOrders: customerOrders.length,
@@ -433,6 +1028,7 @@ export const salesmanRouter = {
                             email: true,
                             phoneNumber: true,
                             shopName: true,
+                            warehouseName: true,
                         },
                     },
                 },
@@ -469,6 +1065,7 @@ export const salesmanRouter = {
                             email: true,
                             phoneNumber: true,
                             shopName: true,
+                            warehouseName: true,
                         },
                     },
                     salesman: {
@@ -505,24 +1102,20 @@ export const salesmanRouter = {
             summary: "Create estimate",
             description: "Create a new estimate for one or more customers",
         })
-        .input(z.object({
-            customerIds: z.array(z.string()).min(1, "At least one customer required"),
-            items: z.array(z.object({
-                productId: z.number(),
-                productName: z.string(),
-                productImage: z.string().nullable().optional(),
-                quantity: z.number().min(1),
-                unitPrice: z.number(),
-                discount: z.number().optional().default(0),
-                totalPrice: z.number(),
-            })).min(1, "At least one item required"),
-            discount: z.number().default(0),
-            notes: z.string().nullable().optional(),
-            validUntil: z.coerce.date().nullable().optional(),
-        }))
+        .input(writeEstimateSchema)
         .handler(async ({ context, input }) => {
-            const userId = context.session.user.id;
-            const { customerIds, items, discount, notes, validUntil } = input;
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
+            const { customerIds, items, discountPercent, notes, validUntil } = input;
+
+            await ensureAssignedCustomers({ warehouseId, salesmanId, customerIds });
+
+            const resolvedLines = await resolveEstimateLines({ warehouseId, items });
+            const subtotal = resolvedLines.reduce((sum, item) => sum + item.totalPrice, 0);
+            const discountAmount = subtotal * (discountPercent / 100);
+            const total = subtotal - discountAmount;
+            const status = discountPercent > 5 ? "pending" : "sent";
+            const approvedAt = status === "sent" ? new Date() : null;
+            const sentAt = status === "sent" ? new Date() : null;
 
             // Generate estimate number: EST-YYYYMMDD-XXXX
             const generateEstimateNumber = () => {
@@ -536,25 +1129,7 @@ export const salesmanRouter = {
 
             await db.transaction(async (tx) => {
                 for (const customerId of customerIds) {
-                    // Verify customer exists
-                    const customer = await tx.query.user.findFirst({
-                        where: eq(user.id, customerId),
-                    });
-
-                    if (!customer) {
-                        continue;
-                    }
-
                     const estimateNumber = generateEstimateNumber();
-
-                    // Calculate totals
-                    const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-                    const total = subtotal - discount;
-
-                    // Check if any price modifications require admin approval
-                    const hasItemDiscounts = items.some((item) => (item.discount ?? 0) > 0);
-                    const needsApproval = discount > 0 || hasItemDiscounts;
-                    const status = needsApproval ? "pending" : "approved";
 
                     // Create estimate
                     const [newEstimate] = await tx
@@ -562,14 +1137,17 @@ export const salesmanRouter = {
                         .values({
                             estimateNumber,
                             customerId,
-                            salesmanId: userId,
-                            subtotal: subtotal.toString(),
-                            discount: discount.toString(),
-                            total: total.toString(),
+                            salesmanId,
+                            warehouseId,
+                            subtotal: toMoney(subtotal),
+                            discount: toMoney(discountAmount),
+                            discountPercent: discountPercent.toFixed(2),
+                            total: toMoney(total),
                             status,
                             validUntil: validUntil ? validUntil.toISOString().split("T")[0] : null,
                             notes: notes || null,
-                            approvedAt: status === "approved" ? new Date() : null,
+                            approvedAt,
+                            sentAt,
                         })
                         .returning();
 
@@ -578,15 +1156,17 @@ export const salesmanRouter = {
                     }
 
                     // Insert items
-                    const itemsToInsert = items.map((item) => ({
+                    const itemsToInsert = resolvedLines.map((item) => ({
                         estimateId: newEstimate.id,
                         productId: item.productId,
+                        variantId: item.variantId,
                         productName: item.productName,
-                        productImage: item.productImage || null,
+                        productImage: item.productImage,
+                        productSize: item.productSize,
                         quantity: item.quantity,
-                        unitPrice: item.unitPrice.toString(),
-                        discount: (item.discount || 0).toString(),
-                        totalPrice: item.totalPrice.toString(),
+                        unitPrice: toMoney(item.unitPrice),
+                        discount: "0",
+                        totalPrice: toMoney(item.totalPrice),
                     }));
 
                     await tx.insert(estimateItem).values(itemsToInsert);
@@ -821,9 +1401,20 @@ export const salesmanRouter = {
         })
         .input(assignCustomersSchema)
         .handler(async ({ input, context }) => {
+            const [salesman] = await db
+                .select({ warehouseId: user.warehouseId })
+                .from(user)
+                .where(and(eq(user.id, input.salesmanId), eq(user.role, "salesman")));
+
+            if (!salesman?.warehouseId) {
+                throw new ORPCError("NOT_FOUND", { message: "Salesman not found" });
+            }
+            const warehouseId = salesman.warehouseId;
+
             // Insert assignments
             await db.insert(customerAssignment).values(
                 input.customerIds.map((customerId) => ({
+                    warehouseId,
                     customerId,
                     salesmanId: input.salesmanId,
                     assignedBy: context.session.user.id,
@@ -873,26 +1464,9 @@ export const salesmanRouter = {
             summary: "Update estimate",
             description: "Update an existing estimate's items, discount, or metadata",
         })
-        .input(z.object({
-            id: z.number(),
-            customerId: z.string().optional(),
-            items: z.array(z.object({
-                productId: z.number(),
-                productName: z.string(),
-                productImage: z.string().nullable().optional(),
-                quantity: z.number().min(1),
-                unitPrice: z.number(),
-                discount: z.number().optional().default(0),
-                totalPrice: z.number(),
-            })).optional(),
-            discount: z.number().min(0).optional(),
-            validUntil: z.coerce.date().nullable().optional(),
-            notes: z.string().nullable().optional(),
-            status: z.enum(["draft", "pending", "sent", "approved", "rejected", "converted"]).optional(),
-        }))
+        .input(updateSalesmanEstimateSchema)
         .handler(async ({ context, input }) => {
-            const userId = context.session.user.id;
-            const userRole = context.session.user.role;
+            const { salesmanId, warehouseId } = getWarehouseSalesmanIds(context);
 
             const existingEstimate = await db.query.estimate.findFirst({
                 where: eq(estimate.id, input.id),
@@ -903,63 +1477,91 @@ export const salesmanRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
             }
 
-            const isCreator = existingEstimate.salesmanId === userId;
-            const isAdmin = userRole === "admin";
-
-            if (!isCreator && !isAdmin) {
+            if (existingEstimate.salesmanId !== salesmanId) {
                 throw new ORPCError("FORBIDDEN", { message: "Not authorized to update this estimate" });
             }
 
-            if (existingEstimate.status === "converted") {
-                throw new ORPCError("BAD_REQUEST", { message: "Cannot update converted estimates" });
+            if (existingEstimate.status === "converted" || existingEstimate.status === "rejected") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Cannot update converted or rejected estimates",
+                });
             }
 
-            const updateData: Record<string, unknown> = {};
+            if (
+                existingEstimate.items.some((item) => item.variantId === null) &&
+                !input.items
+            ) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Legacy estimates must be updated with warehouse-stock variants",
+                });
+            }
 
-            if (input.customerId) updateData.customerId = input.customerId;
-            if (input.validUntil !== undefined) updateData.validUntil = input.validUntil;
+            const nextCustomerId = input.customerIds?.[0] ?? input.customerId;
+            if (nextCustomerId) {
+                await ensureAssignedCustomers({
+                    warehouseId,
+                    salesmanId,
+                    customerIds: [nextCustomerId],
+                });
+            }
+
+            const discountPercent =
+                input.discountPercent ?? Number(existingEstimate.discountPercent || 0);
+            const resolvedLines = input.items
+                ? await resolveEstimateLines({ warehouseId, items: input.items })
+                : null;
+            const subtotal = resolvedLines
+                ? resolvedLines.reduce((sum, item) => sum + item.totalPrice, 0)
+                : Number(existingEstimate.subtotal);
+            const discountAmount = subtotal * (discountPercent / 100);
+            const total = subtotal - discountAmount;
+            const status = discountPercent > 5 ? "pending" : "sent";
+            const now = new Date();
+
+            const updateData: Record<string, unknown> = {
+                warehouseId: existingEstimate.warehouseId ?? warehouseId,
+                subtotal: toMoney(subtotal),
+                discount: toMoney(discountAmount),
+                discountPercent: discountPercent.toFixed(2),
+                total: toMoney(total),
+                status,
+                approvedAt: status === "sent" ? (existingEstimate.approvedAt ?? now) : null,
+                sentAt: status === "sent" ? (existingEstimate.sentAt ?? now) : null,
+            };
+
+            if (nextCustomerId) updateData.customerId = nextCustomerId;
+            if (input.validUntil !== undefined) {
+                updateData.validUntil = input.validUntil
+                    ? input.validUntil.toISOString().split("T")[0]
+                    : null;
+            }
             if (input.notes !== undefined) updateData.notes = input.notes;
-            if (input.status) {
-                updateData.status = input.status;
-                if (input.status === "sent" && existingEstimate.status !== "sent") {
-                    updateData.sentAt = new Date();
-                }
-            }
 
-            if (input.items && input.items.length > 0) {
-                const subtotal = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
-                const finalDiscount = input.discount ?? Number(existingEstimate.discount);
-                const total = subtotal - finalDiscount;
-
-                updateData.subtotal = subtotal.toString();
-                updateData.discount = finalDiscount.toString();
-                updateData.total = total.toString();
-
+            if (resolvedLines) {
                 await db.transaction(async (tx) => {
                     await tx.update(estimate).set(updateData).where(eq(estimate.id, input.id));
                     await tx.delete(estimateItem).where(eq(estimateItem.estimateId, input.id));
 
-                    const itemsToInsert = input.items!.map((item) => ({
+                    const itemsToInsert = resolvedLines.map((item) => ({
                         estimateId: input.id,
                         productId: item.productId,
+                        variantId: item.variantId,
                         productName: item.productName,
-                        productImage: item.productImage || null,
+                        productImage: item.productImage,
+                        productSize: item.productSize,
                         quantity: item.quantity,
-                        unitPrice: item.unitPrice.toString(),
-                        discount: (item.discount || 0).toString(),
-                        totalPrice: item.totalPrice.toString(),
+                        unitPrice: toMoney(item.unitPrice),
+                        discount: "0",
+                        totalPrice: toMoney(item.totalPrice),
                     }));
 
                     await tx.insert(estimateItem).values(itemsToInsert);
                 });
-            } else if (input.discount !== undefined) {
-                const subtotal = Number(existingEstimate.subtotal);
-                const total = subtotal - input.discount;
-                updateData.discount = input.discount.toString();
-                updateData.total = total.toString();
-                await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
-            } else if (Object.keys(updateData).length > 0) {
-                await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
+            } else {
+                await db
+                    .update(estimate)
+                    .set(updateData)
+                    .where(eq(estimate.id, input.id));
             }
 
             return { success: true };
@@ -998,13 +1600,13 @@ export const salesmanRouter = {
                 throw new ORPCError("BAD_REQUEST", { message: "Only draft estimates can be sent" });
             }
 
-            const discount = Number(existingEstimate.discount || 0);
-            const hasDiscount = discount > 0;
-            const newStatus = hasDiscount ? "pending" : "sent";
+            const discountPercent = Number(existingEstimate.discountPercent || 0);
+            const newStatus = discountPercent > 5 ? "pending" : "sent";
 
             const updateData: Record<string, unknown> = { status: newStatus };
             if (newStatus === "sent") {
                 updateData.sentAt = new Date();
+                updateData.approvedAt = existingEstimate.approvedAt ?? new Date();
             }
 
             await db.update(estimate).set(updateData).where(eq(estimate.id, input.id));
@@ -1060,7 +1662,7 @@ export const salesmanRouter = {
             path: "/salesmen/estimates/{id}/convert",
             tags: ["Salesman"],
             summary: "Convert estimate to order",
-            description: "Convert a sent/approved estimate into an order with stock deduction",
+            description: "Block seller-side estimate conversion; only the receiver can accept an estimate",
         })
         .input(z.object({
             id: z.number(),
@@ -1072,111 +1674,10 @@ export const salesmanRouter = {
             shippingPostalCode: z.string().optional().nullable(),
             customerNote: z.string().optional().nullable(),
         }))
-        .handler(async ({ context, input }) => {
-            const userRole = context.session.user.role;
-
-            if (userRole !== "admin" && userRole !== "salesman" && userRole !== "customer") {
-                throw new ORPCError("FORBIDDEN", { message: "Unauthorized" });
-            }
-
-            const estimateData = await db.query.estimate.findFirst({
-                where: eq(estimate.id, input.id),
-                with: { items: true },
+        .handler(() => {
+            throw new ORPCError("FORBIDDEN", {
+                message: "Only the estimate receiver can accept and convert estimates",
             });
-
-            if (!estimateData) {
-                throw new ORPCError("NOT_FOUND", { message: "Estimate not found" });
-            }
-
-            if (userRole === "customer" && estimateData.customerId !== context.session.user.id) {
-                throw new ORPCError("FORBIDDEN", { message: "You do not own this estimate" });
-            }
-
-            // Check if customer has an active order
-            const activeOrder = await db.query.order.findFirst({
-                where: sql`${order.userId} = ${estimateData.customerId} 
-                    AND ${order.status} NOT IN ('delivered', 'cancelled')`,
-            });
-
-            if (activeOrder) {
-                throw new ORPCError("BAD_REQUEST", {
-                    message: "Customer already has an active order. Please wait until it's delivered or cancelled.",
-                });
-            }
-
-            if (estimateData.status === "converted") {
-                throw new ORPCError("BAD_REQUEST", { message: "Estimate has already been converted" });
-            }
-
-            if (estimateData.status !== "approved" && estimateData.status !== "sent") {
-                throw new ORPCError("BAD_REQUEST", {
-                    message: `Only sent or approved estimates can be converted. Current status: ${estimateData.status}`,
-                });
-            }
-
-            // Generate order number
-            const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-            const result = await db.transaction(async (tx) => {
-                const [newOrder] = await tx
-                    .insert(order)
-                    .values({
-                        orderNumber,
-                        userId: estimateData.customerId,
-                        orderSource: "estimate",
-                        subtotal: estimateData.subtotal,
-                        discount: estimateData.discount,
-                        total: estimateData.total,
-                        shippingCost: "0",
-                        status: "pending",
-                        paymentStatus: "pending",
-                        paymentMethod: "cash_on_delivery",
-                        shippingName: input.shippingName,
-                        shippingPhone: input.shippingPhone,
-                        shippingEmail: null,
-                        shippingAddress: input.shippingAddress,
-                        shippingCity: input.shippingCity,
-                        shippingArea: input.shippingArea || null,
-                        shippingPostalCode: input.shippingPostalCode || null,
-                        customerNote: input.customerNote || null,
-                    })
-                    .returning();
-
-                if (!newOrder) {
-                    throw new Error("Failed to create order");
-                }
-
-                // Create order items
-                const orderItems = estimateData.items.map((item) => ({
-                    orderId: newOrder.id,
-                    productId: item.productId,
-                    productName: item.productName,
-                    productImage: item.productImage || "",
-                    productSize: "N/A",
-                    quantity: item.quantity,
-                    unitPrice: item.unitPrice,
-                    totalPrice: item.totalPrice,
-                }));
-
-                await tx.insert(orderItem).values(orderItems);
-
-
-                // Stock deduction removed — stock is now tracked via the inventory system
-
-                // Update estimate status
-                await tx
-                    .update(estimate)
-                    .set({
-                        status: "converted",
-                        convertedOrderId: newOrder.id,
-                        convertedAt: new Date(),
-                    })
-                    .where(eq(estimate.id, input.id));
-
-                return newOrder;
-            });
-
-            return { success: true, order: result };
         }),
 };
 

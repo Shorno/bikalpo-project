@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -25,13 +26,29 @@ export type NavItem = {
   title: string;
   url: string;
   icon?: LucideIcon;
-  items?: { title: string; url: string }[];
+  badge?: number;
+  activePrefixes?: string[];
+  items?: { title: string; url: string; badge?: number }[];
 };
 
 export type NavGroup = {
   label: string;
   items: NavItem[];
 };
+
+function isNavItemActive(pathname: string, item: NavItem) {
+  if (pathname === item.url) return true;
+  return item.activePrefixes?.some((prefix) => pathname.startsWith(prefix)) ?? false;
+}
+
+function NavBadge({ count }: { count?: number }) {
+  if (!count || count <= 0) return null;
+  return (
+    <Badge className="ml-auto h-5 min-w-5 justify-center bg-amber-100 px-1.5 text-[10px] text-amber-800 hover:bg-amber-100">
+      {count > 99 ? "99+" : count}
+    </Badge>
+  );
+}
 
 export function NavGrouped({ groups }: { groups: NavGroup[] }) {
   const { setOpenMobile } = useSidebar();
@@ -51,7 +68,7 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
                 const isChildActive = item.items.some(
                   (sub) => pathname === sub.url,
                 );
-                const isParentActive = pathname === item.url;
+                const isParentActive = isNavItemActive(pathname, item);
 
                 return (
                   <Collapsible
@@ -69,6 +86,7 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
                         >
                           {item.icon && <item.icon size={18} />}
                           <span>{item.title}</span>
+                          <NavBadge count={item.badge} />
                           <ChevronRight className="ml-auto h-4 w-4 shrink-0 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                         </SidebarMenuButton>
                       </CollapsibleTrigger>
@@ -100,7 +118,7 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
               }
 
               // Simple items → direct link (no sub-items)
-              const isActive = pathname === item.url;
+              const isActive = isNavItemActive(pathname, item);
               return (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
@@ -113,6 +131,7 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
                     <Link href={item.url}>
                       {item.icon && <item.icon size={18} />}
                       <span>{item.title}</span>
+                      <NavBadge count={item.badge} />
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

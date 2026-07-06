@@ -161,6 +161,7 @@ export const auth = betterAuth({
           "exp://192.168.*.*:*/**",
           "http://localhost:8081",
           "http://delivery.bikalpo.localhost:3001",
+          "http://sales.bikalpo.localhost:3001",
         ]
       : []),
   ].filter(Boolean) as string[],

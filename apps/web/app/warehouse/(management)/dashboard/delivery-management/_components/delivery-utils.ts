@@ -9,6 +9,8 @@ export type DeliveryDisplayStatus =
   | "locked"
   | "in_delivery"
   | "delivered";
+export type DeliveryInvoiceDeliveryType = Exclude<DeliveryTypeFilter, "all">;
+export type DeliveryInvoiceKpiBucket = Exclude<DeliveryKpiFilter, "all">;
 
 export type DeliveryInvoiceRow = {
   id: number;
@@ -17,14 +19,17 @@ export type DeliveryInvoiceRow = {
   fulfillmentMode: string | null;
   deliveryStatus: string | null;
   createdAt: string | Date;
-  deliveryType: DeliveryTypeFilter extends "all" ? string : DeliveryTypeFilter;
+  deliveryType: DeliveryInvoiceDeliveryType;
   displayStatus: DeliveryDisplayStatus;
-  kpiBucket: DeliveryKpiFilter;
+  kpiBucket: DeliveryInvoiceKpiBucket;
   isSelectable: boolean;
   group: {
     id: number;
     groupName: string;
     status: string;
+    deliverymanId: string | null;
+    deliverymanName?: string | null;
+    deliverymanPhone?: string | null;
     hasRider: boolean;
   } | null;
   customer: {

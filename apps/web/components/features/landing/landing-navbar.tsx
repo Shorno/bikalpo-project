@@ -4,6 +4,7 @@ import { LogOut, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { redirectToRootLogin } from "@/lib/auth-routing";
 
 const navLinks = [
   { label: "Home", href: "/" },
@@ -31,7 +32,7 @@ export function LandingNavbar() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          window.location.href = "/";
+          redirectToRootLogin();
         },
       },
     });
