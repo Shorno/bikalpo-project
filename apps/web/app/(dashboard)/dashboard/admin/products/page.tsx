@@ -12,56 +12,27 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import {
-  Activity,
   ArrowUpDown,
-  BarChart3,
-  Box,
   ChevronRight,
-  CircleDot,
-  Clock,
   Edit3,
-  ExternalLink,
   Eye,
-  FileText,
-  Globe,
-  History,
-  ImageIcon,
   Layers3,
   Loader2,
-  MoreHorizontal,
   Package,
-  Pause,
   Plus,
   Search,
-  Settings,
-  ShoppingBag,
-  Store,
-  Tags,
-  Trash2,
-  TrendingUp,
-  Users,
-  Video,
-  X,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -72,7 +43,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -82,12 +52,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { ADMIN_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
 
@@ -137,6 +101,16 @@ type FilterOption = { id: number; name: string };
 
 const ALL = "all";
 
+type EditableProductCandidate = {
+  id: number;
+  name: string;
+  coreProductId?: number | null;
+  createdByWarehouseId?: string | null;
+  createdAt?: string | Date | null;
+  productBrands?: unknown[];
+  variantPrices?: Array<{ brandId?: number | null }>;
+};
+
 function uniqueOptions(items: Array<FilterOption | null | undefined>) {
   const map = new Map<number, string>();
   for (const item of items) {
@@ -149,6 +123,28 @@ function uniqueOptions(items: Array<FilterOption | null | undefined>) {
 
 function matchesText(value: string | null | undefined, search: string) {
   return (value ?? "").toLowerCase().includes(search);
+}
+
+function normalizeName(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function getCreatedAtTime(value: string | Date | null | undefined) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function hasMultiBrandConfiguration(product: EditableProductCandidate) {
+  if ((product.productBrands?.length ?? 0) > 1) return true;
+
+  const variantBrandIds = new Set(
+    (product.variantPrices ?? [])
+      .map((variantPrice) => variantPrice.brandId)
+      .filter((brandId): brandId is number => typeof brandId === "number"),
+  );
+
+  return variantBrandIds.size > 1;
 }
 
 function formatDate(value: string | Date | null | undefined) {
@@ -679,55 +675,68 @@ function ProductDetailDialog({
     }),
   );
   const priceItems = priceQuery.data?.items ?? [];
+
   const productsQuery = useQuery({
     ...orpc.product.getAll.queryOptions({ input: {} }),
     queryKey: ["admin-products"],
   });
 
-  const priceBrands = useMemo(() => {
-    const map = new Map<string, string>();
+  const editableProduct = useMemo(() => {
+    const candidates = (productsQuery.data?.products ?? [])
+      .map((created) => created as EditableProductCandidate)
+      .filter(
+        (created) =>
+          created.coreProductId === product.id && !created.createdByWarehouseId,
+      );
+
+    if (candidates.length === 0) return null;
+
+    return [...candidates].sort((left, right) => {
+      const leftNameMatch =
+        normalizeName(left.name) === normalizeName(product.name);
+      const rightNameMatch =
+        normalizeName(right.name) === normalizeName(product.name);
+      if (leftNameMatch !== rightNameMatch) return leftNameMatch ? -1 : 1;
+
+      const leftMultiBrand = hasMultiBrandConfiguration(left);
+      const rightMultiBrand = hasMultiBrandConfiguration(right);
+      if (leftMultiBrand !== rightMultiBrand) return leftMultiBrand ? -1 : 1;
+
+      const createdAtDiff =
+        getCreatedAtTime(left.createdAt) - getCreatedAtTime(right.createdAt);
+      if (createdAtDiff !== 0) return createdAtDiff;
+
+      return left.id - right.id;
+    })[0];
+  }, [product.id, product.name, productsQuery.data?.products]);
+
+  const isResolvingEdit = productsQuery.isLoading;
+  const editHref = editableProduct
+    ? `${ADMIN_BASE}/products/${editableProduct.id}/edit`
+    : `${ADMIN_BASE}/products/new?coreProductId=${product.id}`;
+
+  const priceGroups = useMemo(() => {
+    const map = new Map<string, typeof priceItems>();
     for (const item of priceItems) {
-      if (item.brandDisplay && item.brandDisplay !== "—") {
-        map.set(item.brandDisplay, item.brandDisplay);
-      }
+      const brandName =
+        item.brandDisplay && item.brandDisplay !== "—"
+          ? item.brandDisplay
+          : "Unbranded";
+      const brandItems = map.get(brandName) ?? [];
+      brandItems.push(item);
+      map.set(brandName, brandItems);
     }
-    return Array.from(map.values());
+
+    return Array.from(map.entries()).map(([brandName, items]) => {
+      return {
+        brandName,
+        variantCount: items.length,
+        items,
+      };
+    });
   }, [priceItems]);
 
-  const editableProducts = useMemo(() => {
-    const map = new Map<number, string>();
-    const createdProducts = productsQuery.data?.products ?? [];
-
-    for (const createdProduct of createdProducts) {
-      if ((createdProduct as any).coreProductId === product.id) {
-        map.set(createdProduct.id, createdProduct.name);
-      }
-    }
-
-    for (const item of priceItems) {
-      map.set(item.productId, item.productName);
-    }
-
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [priceItems, product.id, productsQuery.data?.products]);
-
-  const primaryEditableProduct = editableProducts[0];
-  const isResolvingEditableProduct =
-    productsQuery.isLoading || priceQuery.isLoading;
-  const primaryActionHref = primaryEditableProduct
-    ? `${ADMIN_BASE}/products/${primaryEditableProduct.id}/edit`
-    : `${ADMIN_BASE}/products/new?coreProductId=${product.id}`;
-  const primaryActionLabel = primaryEditableProduct ? "Edit" : "Add";
-
-  const [selectedPriceBrand, setSelectedPriceBrand] = useState<string>("");
-
-  const activePriceBrand =
-    selectedPriceBrand || (priceBrands.length > 0 ? priceBrands[0] : "");
-
-  const filteredPrices = useMemo(() => {
-    if (!activePriceBrand) return priceItems;
-    return priceItems.filter((item) => item.brandDisplay === activePriceBrand);
-  }, [priceItems, activePriceBrand]);
+  const configuredVariantCount = priceItems.length;
 
   const packVariants = variants.filter(
     (variant) => variant.variantType === "pack",
@@ -735,877 +744,288 @@ function ProductDetailDialog({
   const looseVariants = variants.filter(
     (variant) => variant.variantType === "loose",
   );
+  const hasLoose = product.supportsLoose || looseVariants.length > 0;
   const variantTypes = [
     product.supportsPack !== false || packVariants.length > 0 ? "Pack" : null,
-    product.supportsLoose || looseVariants.length > 0 ? "Loose" : null,
-  ].filter(Boolean);
+    hasLoose ? "Loose" : null,
+  ].filter(Boolean) as string[];
+
+  const hasImage =
+    !!product.image &&
+    (product.image.startsWith("http") || product.image.startsWith("/"));
+
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[95vh] gap-0 overflow-hidden p-0 sm:max-w-6xl">
-        {/* Product Header */}
-        <div className="relative border-b bg-gradient-to-br from-slate-50 via-white to-slate-50/80">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-50/40 via-transparent to-transparent" />
-          <div className="relative px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25">
-                  <Package className="h-7 w-7" />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-                      {product.name}
-                    </h2>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <span className="font-medium text-slate-600">
-                      {product.category.type?.name || "Unassigned"}
-                    </span>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                    <span>{product.category.name}</span>
-                    {product.subCategory && (
-                      <>
-                        <ChevronRight className="h-3.5 w-3.5" />
-                        <span>{product.subCategory.name}</span>
-                      </>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-400">SKU: {product.sku}</p>
-                </div>
-              </div>
+      <DialogContent className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogTitle className="sr-only">{product.name}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Core product details for {product.name}
+        </DialogDescription>
 
-              <div className="flex items-center gap-2">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link
-                          href={`/products/${product.category.slug}/${product.slug}`}
-                        >
-                          <Eye className="mr-1.5 h-4 w-4" />
-                          Preview
-                        </Link>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>View as Customer</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                {isResolvingEditableProduct ? (
-                  <Button variant="outline" size="sm" disabled>
-                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                    Loading
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={primaryActionHref}>
-                      {primaryEditableProduct ? (
-                        <Edit3 className="mr-1.5 h-4 w-4" />
-                      ) : (
-                        <Plus className="mr-1.5 h-4 w-4" />
-                      )}
-                      {primaryActionLabel}
-                    </Link>
-                  </Button>
-                )}
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    {editableProducts.length > 1 ? (
-                      editableProducts.map((editableProduct) => (
-                        <DropdownMenuItem key={editableProduct.id} asChild>
-                          <Link
-                            href={`${ADMIN_BASE}/products/${editableProduct.id}/edit`}
-                          >
-                            <Edit3 className="mr-2 h-4 w-4" />
-                            Edit {editableProduct.name}
-                          </Link>
-                        </DropdownMenuItem>
-                      ))
-                    ) : isResolvingEditableProduct ? (
-                      <DropdownMenuItem disabled>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Loading product
-                      </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem asChild>
-                        <Link href={primaryActionHref}>
-                          {primaryEditableProduct ? (
-                            <Edit3 className="mr-2 h-4 w-4" />
-                          ) : (
-                            <Plus className="mr-2 h-4 w-4" />
-                          )}
-                          {primaryEditableProduct
-                            ? "Edit Product"
-                            : "Add Product"}
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem>
-                      <Activity className="mr-2 h-4 w-4" />
-                      Update Now
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem>
-                      <Pause className="mr-2 h-4 w-4" />
-                      Disable Product
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive focus:text-destructive">
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete Product
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b px-6 py-5 pr-14">
+          <div className="flex items-start gap-4">
+            <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
+              {hasImage ? (
+                <Image
+                  src={product.image}
+                  alt={product.name}
+                  fill
+                  sizes="56px"
+                  className="object-contain"
+                  unoptimized={product.image.startsWith("http")}
+                />
+              ) : (
+                <Package className="h-6 w-6 text-muted-foreground" />
+              )}
             </div>
+            <div className="space-y-1">
+              <h2 className="font-heading text-lg font-semibold tracking-tight text-foreground">
+                {product.name}
+              </h2>
+              <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                <span>{product.category.type?.name || "Unassigned"}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                <span>{product.category.name}</span>
+                {product.subCategory && (
+                  <>
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                    <span>{product.subCategory.name}</span>
+                  </>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">SKU {product.sku}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/products/${product.category.slug}/${product.slug}`}>
+                <Eye className="mr-1.5 h-4 w-4" />
+                Preview
+              </Link>
+            </Button>
+
+            {isResolvingEdit ? (
+              <Button size="sm" disabled>
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                Edit
+              </Button>
+            ) : (
+              <Button size="sm" asChild>
+                <Link href={editHref}>
+                  {editableProduct ? (
+                    <Edit3 className="mr-1.5 h-4 w-4" />
+                  ) : (
+                    <Plus className="mr-1.5 h-4 w-4" />
+                  )}
+                  {editableProduct ? "Edit" : "Add"}
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
 
         {/* Tabbed Content */}
         <Tabs defaultValue="overview" className="flex-1">
-          <div className="border-b bg-slate-50/50 px-6">
+          <div className="border-b px-6">
             <TabsList variant="line" className="h-11">
-              <TabsTrigger value="overview" className="gap-1.5">
-                <Layers3 className="h-4 w-4" />
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="variants" className="gap-1.5">
-                <Box className="h-4 w-4" />
-                Variants & Pricing
-              </TabsTrigger>
-              <TabsTrigger value="settings" className="gap-1.5">
-                <Settings className="h-4 w-4" />
-                Settings
-              </TabsTrigger>
-              <TabsTrigger value="media" className="gap-1.5">
-                <ImageIcon className="h-4 w-4" />
-                Media & SEO
-              </TabsTrigger>
-              <TabsTrigger value="analytics" className="gap-1.5">
-                <BarChart3 className="h-4 w-4" />
-                Analytics
-              </TabsTrigger>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="variants">Variants &amp; Pricing</TabsTrigger>
             </TabsList>
           </div>
 
-          <ScrollArea className="h-[calc(95vh-180px)]">
+          <ScrollArea className="h-[calc(92vh-160px)]">
             {/* Overview Tab */}
-            <TabsContent value="overview" className="m-0 p-6">
-              <div className="space-y-6">
-                {/* Core Identity Card */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
-                          <Layers3 className="h-4 w-4 text-slate-600" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">
-                            Core Product Identity
-                          </CardTitle>
-                          <CardDescription>
-                            Fundamental product classification
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Badge variant="secondary" className="text-xs">
-                        <CircleDot className="mr-1 h-3 w-3 text-amber-500" />
-                        Locked
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                      <DataField
-                        label="Type"
-                        value={product.category.type?.name || "--"}
-                      />
-                      <DataField
-                        label="Category"
-                        value={product.category.name}
-                      />
-                      <DataField
-                        label="Sub Category"
-                        value={product.subCategory?.name || "None"}
-                      />
-                      <DataField label="Core Name" value={product.name} />
-                    </div>
-                  </CardContent>
-                </Card>
+            <TabsContent value="overview" className="m-0 space-y-8 p-6">
+              {/* Product Information */}
+              <section className="space-y-4">
+                <SectionHeading title="Product Information" />
+                <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <DataField
+                    label="Type"
+                    value={product.category.type?.name || "—"}
+                  />
+                  <DataField label="Category" value={product.category.name} />
+                  <DataField
+                    label="Sub Category"
+                    value={product.subCategory?.name || "—"}
+                  />
+                  <DataField label="Core Name" value={product.name} />
+                  <DataField label="SKU" value={product.sku} />
+                  <DataField label="Product ID" value={`#${product.id}`} />
+                </dl>
 
-                {/* Product Information Card */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
-                          <FileText className="h-4 w-4 text-blue-600" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">
-                            Product Information
-                          </CardTitle>
-                          <CardDescription>
-                            Descriptions and brand associations
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="sm" className="h-8 gap-1.5">
-                        <Edit3 className="h-3.5 w-3.5" />
-                        Edit
-                      </Button>
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Brands
+                  </p>
+                  {brands.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {brands.map((brand) => (
+                        <Badge
+                          key={brand.id}
+                          variant="secondary"
+                          className="font-normal"
+                        >
+                          {brand.name}
+                        </Badge>
+                      ))}
                     </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <Label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Available Brands
-                      </Label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {brands.length > 0 ? (
-                          brands.map((brand) => (
-                            <Badge
-                              key={brand.id}
-                              variant="secondary"
-                              className="font-normal"
-                            >
-                              {brand.name}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-sm text-slate-500">
-                            No brands available
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <Separator />
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div>
-                        <Label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                          Short Description
-                        </Label>
-                        <p className="mt-1.5 text-sm text-slate-700">
-                          {product.description || "--"}
-                        </p>
-                      </div>
-                      <div>
-                        <Label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                          Full Description
-                        </Label>
-                        <p className="mt-1.5 line-clamp-3 text-sm text-slate-600">
-                          {product.description || "--"}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Quick Stats */}
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <QuickStatCard
-                    icon={Store}
-                    label="Assigned Retailers"
-                    value="--"
-                    subtext=""
-                    iconColor="text-violet-600"
-                    iconBg="bg-violet-50"
-                  />
-                  <QuickStatCard
-                    icon={Users}
-                    label="Assigned Wholesalers"
-                    value="--"
-                    subtext=""
-                    iconColor="text-cyan-600"
-                    iconBg="bg-cyan-50"
-                  />
-                  <QuickStatCard
-                    icon={ShoppingBag}
-                    label="Order Series"
-                    value="--"
-                    subtext=""
-                    iconColor="text-amber-600"
-                    iconBg="bg-amber-50"
-                  />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No brands linked
+                    </p>
+                  )}
                 </div>
 
-                {/* Change History */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
-                        <History className="h-4 w-4 text-slate-600" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">
-                          Change History
-                        </CardTitle>
-                        <CardDescription>Recent modifications</CardDescription>
-                      </div>
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Variant Types
+                  </p>
+                  {variantTypes.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {variantTypes.map((type) => (
+                        <Badge
+                          key={type}
+                          variant="outline"
+                          className="font-normal"
+                        >
+                          {type}
+                        </Badge>
+                      ))}
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="rounded-lg border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="hover:bg-transparent">
-                            <TableHead className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                              Date
-                            </TableHead>
-                            <TableHead className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                              Action
-                            </TableHead>
-                            <TableHead className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                              By
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          <TableRow>
-                            <TableCell className="text-sm">
-                              <div className="flex items-center gap-2">
-                                <Clock className="h-3.5 w-3.5 text-slate-400" />
-                                {formatDate(product.createdAt)}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className="border-emerald-200 bg-emerald-50 text-emerald-700"
-                              >
-                                Created
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm text-slate-600">
-                              Admin
-                            </TableCell>
-                          </TableRow>
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No variants configured
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              {/* Description */}
+              <section className="space-y-4">
+                <SectionHeading title="Description" />
+                {product.description?.trim() ? (
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
+                    {product.description}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No description added
+                  </p>
+                )}
+              </section>
+
+              {/* History */}
+              <section className="space-y-4">
+                <SectionHeading title="History" />
+                <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <DataField
+                    label="Created"
+                    value={formatDate(product.createdAt)}
+                  />
+                  <DataField
+                    label="Last Updated"
+                    value={formatDate(product.updatedAt)}
+                  />
+                </dl>
+              </section>
             </TabsContent>
 
             {/* Variants & Pricing Tab */}
             <TabsContent value="variants" className="m-0 p-6">
-              <div className="space-y-6">
-                {/* Variant Structure */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
-                          <Box className="h-4 w-4 text-indigo-600" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">
-                            Variant Structure
-                          </CardTitle>
-                          <CardDescription>
-                            Available product configurations
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" className="gap-1.5">
-                        <Eye className="h-3.5 w-3.5" />
-                        View Setup
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="mb-4">
-                      <Label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Variant Types
-                      </Label>
-                      <div className="mt-2 flex gap-2">
-                        {variantTypes.length > 0 ? (
-                          variantTypes.map((type) => (
-                            <Badge key={type} className="bg-indigo-600">
-                              {type}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-sm text-slate-500">
-                            No variants configured
-                          </span>
-                        )}
-                      </div>
+              <section className="space-y-4">
+                <SectionHeading
+                  title="Consumer Pricing"
+                  description="Configured brand and variant prices"
+                />
+                {priceQuery.isLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading prices…
+                  </div>
+                ) : priceItems.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No prices configured for this product yet.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="secondary" className="font-normal">
+                        {priceGroups.length}{" "}
+                        {priceGroups.length === 1 ? "brand" : "brands"}
+                      </Badge>
+                      <Badge variant="outline" className="font-normal">
+                        {configuredVariantCount} configured{" "}
+                        {configuredVariantCount === 1 ? "variant" : "variants"}
+                      </Badge>
                     </div>
 
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      {/* Pack Variants */}
-                      <div className="rounded-xl border bg-gradient-to-br from-slate-50 to-white p-4">
-                        <div className="mb-3 flex items-center justify-between">
-                          <h4 className="font-medium text-slate-900">
-                            Pack Variants
-                          </h4>
-                          <Badge variant="outline" className="text-xs">
-                            {packVariants.length} options
-                          </Badge>
-                        </div>
-                        {packVariants.length > 0 ? (
-                          <div className="space-y-2">
-                            {packVariants.map((variant) => (
+                    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(18rem,100%),1fr))]">
+                      {priceGroups.map((group) => (
+                        <div
+                          key={group.brandName}
+                          className="overflow-hidden rounded-lg border bg-background"
+                        >
+                          <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-3">
+                            <h4 className="truncate text-sm font-semibold text-foreground">
+                              {group.brandName}
+                            </h4>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {group.variantCount}{" "}
+                              {group.variantCount === 1
+                                ? "variant"
+                                : "variants"}
+                            </span>
+                          </div>
+
+                          <div className="divide-y">
+                            {group.items.map((item) => (
                               <div
-                                key={variant.id}
-                                className="flex items-center justify-between rounded-lg bg-white px-3 py-2 shadow-sm ring-1 ring-slate-200/60"
+                                key={item.variantPriceId}
+                                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5"
                               >
-                                <span className="text-sm font-medium text-slate-700">
-                                  {variant.name}
-                                </span>
-                                <span className="text-xs text-slate-500">
-                                  {variant.unit}
-                                </span>
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="truncate text-sm font-medium text-foreground">
+                                      {item.variantName}
+                                    </span>
+                                    {item.variantUnit ? (
+                                      <Badge
+                                        variant="outline"
+                                        className="h-5 rounded-sm px-1.5 text-[11px] font-normal"
+                                      >
+                                        {item.variantUnit}
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="text-right text-sm tabular-nums">
+                                  {item.consumerPrice &&
+                                  item.consumerPrice !== "0" ? (
+                                    <span className="font-semibold text-foreground">
+                                      ৳ {item.consumerPrice}
+                                    </span>
+                                  ) : (
+                                    <span className="font-medium text-muted-foreground">
+                                      ৳ 0.00
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>
-                        ) : (
-                          <p className="text-sm text-slate-500">
-                            No pack variants
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Loose Variant */}
-                      <div className="rounded-xl border bg-gradient-to-br from-slate-50 to-white p-4">
-                        <div className="mb-3 flex items-center justify-between">
-                          <h4 className="font-medium text-slate-900">
-                            Loose Variant
-                          </h4>
-                          <Badge
-                            variant={
-                              product.supportsLoose || looseVariants.length > 0
-                                ? "default"
-                                : "secondary"
-                            }
-                            className={
-                              product.supportsLoose || looseVariants.length > 0
-                                ? "bg-emerald-600"
-                                : ""
-                            }
-                          >
-                            {product.supportsLoose || looseVariants.length > 0
-                              ? "Enabled"
-                              : "Disabled"}
-                          </Badge>
                         </div>
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500">Sale Unit</span>
-                            <span className="font-medium text-slate-700">
-                              {looseVariants[0]?.unit || "--"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  </CardContent>
-                </Card>
 
-                {/* Pricing */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
-                          <Tags className="h-4 w-4 text-emerald-600" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">
-                            Consumer Pricing
-                          </CardTitle>
-                          <CardDescription>
-                            Price configuration by brand
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" className="gap-1.5">
-                        <Edit3 className="h-3.5 w-3.5" />
-                        Edit Prices
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {priceQuery.isLoading ? (
-                      <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading prices...
-                      </div>
-                    ) : priceItems.length === 0 ? (
-                      <div className="py-8 text-center text-sm text-slate-500">
-                        No prices configured for this product yet.
-                      </div>
-                    ) : (
-                      <>
-                        {priceBrands.length > 1 && (
-                          <div className="mb-4 max-w-xs">
-                            <Label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                              Select Brand
-                            </Label>
-                            <Select
-                              value={activePriceBrand}
-                              onValueChange={setSelectedPriceBrand}
-                            >
-                              <SelectTrigger className="mt-1.5">
-                                <SelectValue placeholder="Select brand" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {priceBrands.map((brandName) => (
-                                  <SelectItem key={brandName} value={brandName}>
-                                    {brandName}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
-
-                        {priceBrands.length === 1 && (
-                          <p className="mb-3 text-sm text-slate-600">
-                            Brand:{" "}
-                            <span className="font-medium">
-                              {priceBrands[0]}
-                            </span>
-                          </p>
-                        )}
-
-                        <div className="rounded-lg border">
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="hover:bg-transparent">
-                                <TableHead className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                  Variant
-                                </TableHead>
-                                <TableHead className="text-right text-xs font-medium uppercase tracking-wide text-slate-500">
-                                  Price (BDT)
-                                </TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {filteredPrices.map((item) => (
-                                <TableRow key={item.variantPriceId}>
-                                  <TableCell className="font-medium">
-                                    {item.variantName}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {item.consumerPrice &&
-                                    item.consumerPrice !== "0" ? (
-                                      <span className="rounded-md bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">
-                                        ৳ {item.consumerPrice}
-                                      </span>
-                                    ) : (
-                                      <span className="text-sm text-slate-400">
-                                        --
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-
-                        <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
-                          <CircleDot className="h-3 w-3 text-amber-500" />
-                          Sellers can override these prices
-                        </p>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            {/* Settings Tab */}
-            <TabsContent value="settings" className="m-0 p-6">
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50">
-                          <Settings className="h-4 w-4 text-orange-600" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">
-                            Product Behavior Settings
-                          </CardTitle>
-                          <CardDescription>
-                            Operational configurations
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" className="gap-1.5">
-                        <Settings className="h-3.5 w-3.5" />
-                        Update Settings
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <SettingRow label="Empty Pack Return" value="--" />
-                      <SettingRow label="Tracking System" value="--" />
-                      <SettingRow label="Expiry Tracking" value="--" />
-                      <SettingRow label="Damage Control" value="--" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            {/* Media & SEO Tab */}
-            <TabsContent value="media" className="m-0 p-6">
-              <div className="space-y-6">
-                {/* Media */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pink-50">
-                          <ImageIcon className="h-4 w-4 text-pink-600" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">
-                            Product Media
-                          </CardTitle>
-                          <CardDescription>
-                            Images and video content
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" className="gap-1.5">
-                        <Edit3 className="h-3.5 w-3.5" />
-                        Update Media
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <MediaCard
-                        icon={ImageIcon}
-                        label="Thumbnail"
-                        action="View Image"
-                        href={product.image}
-                      />
-                      <MediaCard
-                        icon={ImageIcon}
-                        label="Gallery"
-                        action="View Images"
-                      />
-                      <MediaCard
-                        icon={Video}
-                        label="Video"
-                        action="View Video"
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* SEO */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50">
-                          <Globe className="h-4 w-4 text-teal-600" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">
-                            Visibility & SEO
-                          </CardTitle>
-                          <CardDescription>
-                            Search optimization settings
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" className="gap-1.5">
-                        <Edit3 className="h-3.5 w-3.5" />
-                        Edit SEO
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between rounded-lg border bg-slate-50/50 p-3">
-                        <div>
-                          <Label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Visibility
-                          </Label>
-                          <p className="mt-1 text-sm font-medium text-slate-700">
-                            --
-                          </p>
-                        </div>
-                      </div>
-                      <div className="rounded-lg border bg-slate-50/50 p-3">
-                        <Label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                          SEO Title
-                        </Label>
-                        <p className="mt-1 text-sm font-medium text-slate-700">
-                          --
-                        </p>
-                      </div>
-                      <div className="rounded-lg border bg-slate-50/50 p-3">
-                        <Label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                          SEO Tags
-                        </Label>
-                        <p className="mt-2 text-sm text-slate-500">--</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            {/* Analytics Tab */}
-            <TabsContent value="analytics" className="m-0 p-6">
-              <div className="space-y-6">
-                {/* Performance Stats */}
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <Card className="relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent" />
-                    <CardContent className="relative pt-5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Total Sales
-                          </p>
-                          <p className="mt-1 text-2xl font-bold text-slate-900">
-                            --
-                          </p>
-                        </div>
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
-                          <TrendingUp className="h-6 w-6 text-emerald-600" />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent" />
-                    <CardContent className="relative pt-5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Total Orders
-                          </p>
-                          <p className="mt-1 text-2xl font-bold text-slate-900">
-                            --
-                          </p>
-                        </div>
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
-                          <ShoppingBag className="h-6 w-6 text-blue-600" />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent" />
-                    <CardContent className="relative pt-5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Top Variant
-                          </p>
-                          <p className="mt-1 text-2xl font-bold text-slate-900">
-                            {packVariants[0]?.name ||
-                              variants[0]?.name ||
-                              "--"}
-                          </p>
-                        </div>
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100">
-                          <BarChart3 className="h-6 w-6 text-violet-600" />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Usage Stats */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
-                        <Activity className="h-4 w-4 text-slate-600" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">
-                          Product Usage
-                        </CardTitle>
-                        <CardDescription>
-                          Distribution and assignment metrics
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <div className="rounded-xl border bg-gradient-to-br from-violet-50 to-white p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100">
-                            <Store className="h-5 w-5 text-violet-600" />
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold text-slate-900">
-                              --
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              Active Retailers
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="rounded-xl border bg-gradient-to-br from-cyan-50 to-white p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-100">
-                            <Users className="h-5 w-5 text-cyan-600" />
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold text-slate-900">
-                              --
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              Active Wholesalers
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="rounded-xl border bg-gradient-to-br from-amber-50 to-white p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
-                            <ShoppingBag className="h-5 w-5 text-amber-600" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-900">
-                              --
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              Order Series
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                    <p className="text-xs text-muted-foreground">
+                      Reference prices only — sellers can override these.
+                    </p>
+                  </>
+                )}
+              </section>
             </TabsContent>
           </ScrollArea>
         </Tabs>
@@ -1614,115 +1034,30 @@ function ProductDetailDialog({
   );
 }
 
+function SectionHeading({
+  title,
+  description,
+}: {
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="border-b pb-2">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      {description ? (
+        <p className="text-xs text-muted-foreground">{description}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function DataField({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
-      </p>
-      <p className="text-sm font-medium text-slate-900">{value}</p>
-    </div>
-  );
-}
-
-function QuickStatCard({
-  icon: Icon,
-  label,
-  value,
-  subtext,
-  iconColor,
-  iconBg,
-}: {
-  icon: typeof Store;
-  label: string;
-  value: string;
-  subtext: string;
-  iconColor: string;
-  iconBg: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="pt-5">
-        <div className="flex items-start gap-3">
-          <div
-            className={`flex h-10 w-10 items-center justify-center rounded-lg ${iconBg}`}
-          >
-            <Icon className={`h-5 w-5 ${iconColor}`} />
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              {label}
-            </p>
-            <p className="text-xl font-bold text-slate-900">{value}</p>
-            <p className="text-xs text-slate-500">{subtext}</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function SettingRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border bg-gradient-to-br from-slate-50 to-white p-4">
-      <p className="text-sm font-medium text-slate-900">{label}</p>
-      <span className="text-sm text-slate-500">{value}</span>
-    </div>
-  );
-}
-
-function MediaCard({
-  icon: Icon,
-  label,
-  action,
-  href,
-}: {
-  icon: typeof ImageIcon;
-  label: string;
-  action: string;
-  href?: string | null;
-}) {
-  const hasImage = href && (href.startsWith("http") || href.startsWith("/"));
-
-  return (
-    <div className="group relative overflow-hidden rounded-xl border bg-gradient-to-br from-slate-100 to-slate-50 transition-all hover:shadow-md">
-      {hasImage ? (
-        <div className="relative aspect-square w-full overflow-hidden bg-white">
-          <img
-            src={href}
-            alt={label}
-            className="h-full w-full object-contain p-2"
-          />
-        </div>
-      ) : (
-        <div className="flex aspect-square w-full items-center justify-center bg-white/50">
-          <Icon className="h-10 w-10 text-slate-300" />
-        </div>
-      )}
-      <div className="border-t bg-white p-3 text-center">
-        <p className="text-sm font-medium text-slate-700">{label}</p>
-        {href ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-1 h-7 gap-1.5 text-xs"
-            asChild
-          >
-            <a href={href} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-3 w-3" />
-              {action}
-            </a>
-          </Button>
-        ) : (
-          <p className="mt-1 text-xs text-slate-400">Not uploaded</p>
-        )}
-      </div>
+      </dt>
+      <dd className="text-sm font-medium text-foreground">{value}</dd>
     </div>
   );
 }

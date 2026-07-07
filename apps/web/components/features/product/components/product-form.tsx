@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  FULFILLMENT_UNITS,
+  type FulfillmentUnitCode,
+  type ProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   ImageIcon,
+  Info,
   Loader,
   Package,
   Plus,
@@ -19,7 +25,13 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
@@ -53,6 +65,11 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   createProductSchema,
   updateProductSchema,
 } from "@/schema/product.schema";
@@ -81,6 +98,154 @@ type BrandConfig = {
   /** Per-variant settings keyed by variantOptionId */
   variantSettings: Record<number, VariantPriceSettings>;
 };
+
+type ProductRuleTrackingType = "none" | "batch" | "serial";
+
+type ProductRuleSettings = {
+  trackingTypes: ProductRuleTrackingType[];
+  trackingAvailable: boolean;
+  defaultTrackingType: ProductRuleTrackingType;
+  returnPolicyAvailable: boolean;
+  returnPolicyDefault: boolean;
+  expiryAvailable: boolean;
+  expiryDefault: boolean;
+  damageAvailable: boolean;
+  damageDefault: boolean;
+  stockTrackingAvailable: boolean;
+  stockTrackingDefault: boolean;
+  minimumOrderAvailable: boolean;
+  minimumOrderDefault: boolean;
+  minimumOrderQtyDefault: string;
+  inventoryUnitOptions: FulfillmentUnitCode[];
+  inventoryUnitAvailable: boolean;
+  defaultInventoryUnit: FulfillmentUnitCode;
+  conversionAvailable: boolean;
+  conversionDefault: boolean;
+  inventoryLooseUnitAvailable: boolean;
+  inventoryLooseUnitDefault: boolean;
+  inventoryLooseUnitOptions: FulfillmentUnitCode[];
+  defaultInventoryLooseUnit: FulfillmentUnitCode;
+  returnablePackAvailable: boolean;
+  returnablePackDefault: boolean;
+  defaultPackDepositAmount: string;
+};
+
+type ProductRuleDefaults = {
+  trackingType: ProductRuleTrackingType;
+  expiryEnabled: boolean;
+  damageControlEnabled: boolean;
+  isReturnablePack: boolean;
+  returnPolicyEnabled: boolean;
+  stockTrackingEnabled: boolean;
+  minimumOrderEnabled: boolean;
+  minimumOrderQty: string;
+  inventoryUnit: FulfillmentUnitCode;
+  conversionEnabled: boolean;
+  inventoryLooseUnitEnabled: boolean;
+  inventoryLooseUnit: FulfillmentUnitCode;
+  defaultPackDepositAmount: string;
+};
+
+const FALLBACK_RULE_SETTINGS: ProductRuleSettings = {
+  trackingTypes: ["none"],
+  trackingAvailable: true,
+  defaultTrackingType: "none",
+  returnPolicyAvailable: true,
+  returnPolicyDefault: true,
+  expiryAvailable: true,
+  expiryDefault: false,
+  damageAvailable: true,
+  damageDefault: true,
+  stockTrackingAvailable: true,
+  stockTrackingDefault: true,
+  minimumOrderAvailable: true,
+  minimumOrderDefault: true,
+  minimumOrderQtyDefault: "1",
+  inventoryUnitOptions: ["unit"],
+  inventoryUnitAvailable: true,
+  defaultInventoryUnit: "unit",
+  conversionAvailable: true,
+  conversionDefault: false,
+  inventoryLooseUnitAvailable: false,
+  inventoryLooseUnitDefault: false,
+  inventoryLooseUnitOptions: ["kg"],
+  defaultInventoryLooseUnit: "kg",
+  returnablePackAvailable: true,
+  returnablePackDefault: false,
+  defaultPackDepositAmount: "0",
+};
+
+function normalizeRuleSettings(
+  settings?: ProductRuleSettings | null,
+): ProductRuleSettings {
+  const source = settings ?? FALLBACK_RULE_SETTINGS;
+  const trackingTypes = source.trackingTypes?.length
+    ? source.trackingTypes
+    : FALLBACK_RULE_SETTINGS.trackingTypes;
+  const inventoryUnitOptions = source.inventoryUnitOptions?.length
+    ? source.inventoryUnitOptions
+    : FALLBACK_RULE_SETTINGS.inventoryUnitOptions;
+  const inventoryLooseUnitOptions = source.inventoryLooseUnitOptions?.length
+    ? source.inventoryLooseUnitOptions
+    : FALLBACK_RULE_SETTINGS.inventoryLooseUnitOptions;
+
+  return {
+    ...FALLBACK_RULE_SETTINGS,
+    ...source,
+    trackingTypes,
+    trackingAvailable: source.trackingAvailable ?? true,
+    defaultTrackingType: trackingTypes.includes(source.defaultTrackingType)
+      ? source.defaultTrackingType
+      : trackingTypes[0]!,
+    inventoryUnitOptions,
+    defaultInventoryUnit: inventoryUnitOptions.includes(
+      source.defaultInventoryUnit,
+    )
+      ? source.defaultInventoryUnit
+      : inventoryUnitOptions[0]!,
+    inventoryUnitAvailable: source.inventoryUnitAvailable ?? true,
+    inventoryLooseUnitOptions,
+    defaultInventoryLooseUnit: inventoryLooseUnitOptions.includes(
+      source.defaultInventoryLooseUnit,
+    )
+      ? source.defaultInventoryLooseUnit
+      : inventoryLooseUnitOptions[0]!,
+    minimumOrderQtyDefault: String(source.minimumOrderQtyDefault ?? "1"),
+    defaultPackDepositAmount: String(source.defaultPackDepositAmount ?? "0"),
+  };
+}
+
+function getRuleDefaultsFromSettings(
+  settings?: ProductRuleSettings | null,
+): ProductRuleDefaults {
+  const normalized = normalizeRuleSettings(settings);
+
+  return {
+    trackingType: normalized.trackingAvailable
+      ? normalized.defaultTrackingType
+      : "none",
+    expiryEnabled: normalized.expiryAvailable && normalized.expiryDefault,
+    damageControlEnabled:
+      normalized.damageAvailable && normalized.damageDefault,
+    isReturnablePack:
+      normalized.returnablePackAvailable && normalized.returnablePackDefault,
+    returnPolicyEnabled:
+      normalized.returnPolicyAvailable && normalized.returnPolicyDefault,
+    stockTrackingEnabled:
+      normalized.stockTrackingAvailable && normalized.stockTrackingDefault,
+    minimumOrderEnabled:
+      normalized.minimumOrderAvailable && normalized.minimumOrderDefault,
+    minimumOrderQty: normalized.minimumOrderQtyDefault,
+    inventoryUnit: normalized.defaultInventoryUnit,
+    conversionEnabled:
+      normalized.conversionAvailable && normalized.conversionDefault,
+    inventoryLooseUnitEnabled:
+      normalized.inventoryLooseUnitAvailable &&
+      normalized.inventoryLooseUnitDefault,
+    inventoryLooseUnit: normalized.defaultInventoryLooseUnit,
+    defaultPackDepositAmount: normalized.defaultPackDepositAmount,
+  };
+}
 
 // ============================================================
 // Main Component
@@ -120,6 +285,9 @@ export default function ProductForm({
     number | null
   >((product as any)?.coreProductId ?? initialCoreProductIdForCreate);
   const [initializedCoreProductId, setInitializedCoreProductId] = useState<
+    number | null
+  >(null);
+  const [ruleDefaultsAppliedTypeId, setRuleDefaultsAppliedTypeId] = useState<
     number | null
   >(null);
   const [draftVariants] = useState<DraftVariant[]>([]);
@@ -229,11 +397,25 @@ export default function ProductForm({
     isCoreIdentityLocked &&
     lockedCoreProductQuery.isLoading &&
     !activeCoreProduct;
+  const activeTypeId =
+    (activeCoreProduct as any)?.category?.typeId ?? selectedTypeId;
+  const activeProductType = productTypes.find(
+    (type: any) => type.id === activeTypeId,
+  );
+  const activeFulfillmentProfile = activeProductType?.fulfillmentProfile as
+    | ProductTypeFulfillmentProfile
+    | undefined;
+  const activeRuleSettings = useMemo(
+    () =>
+      normalizeRuleSettings(
+        activeProductType?.ruleSettings as ProductRuleSettings | undefined,
+      ),
+    [activeProductType?.ruleSettings],
+  );
+  const activeRuleDefaults = getRuleDefaultsFromSettings(activeRuleSettings);
   const activeTypeName =
     (activeCoreProduct as any)?.category?.type?.name ??
-    productTypes.find(
-      (type: any) => type.id === (activeCoreProduct as any)?.category?.typeId,
-    )?.name ??
+    activeProductType?.name ??
     "Unassigned";
 
   // Filter cascades
@@ -326,10 +508,46 @@ export default function ProductForm({
         (product as any)?.coreProductId ?? initialCoreProductIdForCreate,
       shortDescription: (product as any)?.shortDescription ?? "",
       videoUrl: (product as any)?.videoUrl ?? "",
-      trackingType: (product as any)?.trackingType ?? "none",
-      expiryEnabled: (product as any)?.expiryEnabled ?? false,
-      damageControlEnabled: (product as any)?.damageControlEnabled ?? false,
-      isReturnablePack: (product as any)?.isReturnablePack ?? false,
+      trackingType:
+        (product as any)?.trackingType ?? activeRuleDefaults.trackingType,
+      expiryEnabled:
+        (product as any)?.expiryEnabled ?? activeRuleDefaults.expiryEnabled,
+      damageControlEnabled:
+        (product as any)?.damageControlEnabled ??
+        activeRuleDefaults.damageControlEnabled,
+      isReturnablePack:
+        (product as any)?.isReturnablePack ??
+        activeRuleDefaults.isReturnablePack,
+      defaultPackDepositAmount: String(
+        (product as any)?.defaultPackDepositAmount ??
+          activeRuleDefaults.defaultPackDepositAmount,
+      ),
+      allowedPackBrands:
+        (product as any)?.allowedPackBrands ?? ([] as string[]),
+      allowedPackSizes: (product as any)?.allowedPackSizes ?? ([] as string[]),
+      stockTrackingEnabled:
+        (product as any)?.stockTrackingEnabled ??
+        activeRuleDefaults.stockTrackingEnabled,
+      returnPolicyEnabled:
+        (product as any)?.returnPolicyEnabled ??
+        activeRuleDefaults.returnPolicyEnabled,
+      minimumOrderEnabled:
+        (product as any)?.minimumOrderEnabled ??
+        activeRuleDefaults.minimumOrderEnabled,
+      minimumOrderQty: String(
+        (product as any)?.minimumOrderQty ?? activeRuleDefaults.minimumOrderQty,
+      ),
+      inventoryUnit:
+        (product as any)?.inventoryUnit ?? activeRuleDefaults.inventoryUnit,
+      conversionEnabled:
+        (product as any)?.conversionEnabled ??
+        activeRuleDefaults.conversionEnabled,
+      inventoryLooseUnitEnabled:
+        (product as any)?.inventoryLooseUnitEnabled ??
+        activeRuleDefaults.inventoryLooseUnitEnabled,
+      inventoryLooseUnit:
+        (product as any)?.inventoryLooseUnit ??
+        activeRuleDefaults.inventoryLooseUnit,
       visibility: (product as any)?.visibility ?? "public",
       status: (product as any)?.status ?? "active",
     },
@@ -419,6 +637,46 @@ export default function ProductForm({
     isCoreIdentityLocked,
   ]);
 
+  useEffect(() => {
+    if (
+      isEdit ||
+      !activeTypeId ||
+      !activeProductType ||
+      ruleDefaultsAppliedTypeId === activeTypeId
+    ) {
+      return;
+    }
+
+    const defaults = getRuleDefaultsFromSettings(activeRuleSettings);
+    form.setFieldValue("trackingType", defaults.trackingType);
+    form.setFieldValue("expiryEnabled", defaults.expiryEnabled);
+    form.setFieldValue("damageControlEnabled", defaults.damageControlEnabled);
+    form.setFieldValue("isReturnablePack", defaults.isReturnablePack);
+    form.setFieldValue("returnPolicyEnabled", defaults.returnPolicyEnabled);
+    form.setFieldValue("stockTrackingEnabled", defaults.stockTrackingEnabled);
+    form.setFieldValue("minimumOrderEnabled", defaults.minimumOrderEnabled);
+    form.setFieldValue("minimumOrderQty", defaults.minimumOrderQty);
+    form.setFieldValue("inventoryUnit", defaults.inventoryUnit);
+    form.setFieldValue("conversionEnabled", defaults.conversionEnabled);
+    form.setFieldValue(
+      "inventoryLooseUnitEnabled",
+      defaults.inventoryLooseUnitEnabled,
+    );
+    form.setFieldValue("inventoryLooseUnit", defaults.inventoryLooseUnit);
+    form.setFieldValue(
+      "defaultPackDepositAmount",
+      defaults.defaultPackDepositAmount,
+    );
+    setRuleDefaultsAppliedTypeId(activeTypeId);
+  }, [
+    activeProductType,
+    activeRuleSettings,
+    activeTypeId,
+    form,
+    isEdit,
+    ruleDefaultsAppliedTypeId,
+  ]);
+
   // Add a brand configuration
   const handleAddBrand = (brandId: number) => {
     const brand = allBrands.find((b: any) => b.id === brandId);
@@ -496,6 +754,32 @@ export default function ProductForm({
       }),
     );
   };
+
+  const isLpgRules = activeFulfillmentProfile?.family === "lpg";
+  const supportsLooseInventory = activeRuleSettings.inventoryLooseUnitAvailable;
+  const inventoryUnitOptions = activeRuleSettings.inventoryUnitOptions.map(
+    (code) => ({
+      value: code,
+      label: FULFILLMENT_UNITS[code]?.label ?? code,
+    }),
+  );
+  const looseUnitOptions = activeRuleSettings.inventoryLooseUnitOptions.map(
+    (code) => ({
+      value: code,
+      label: FULFILLMENT_UNITS[code]?.label ?? code,
+    }),
+  );
+  const returnableRuleLabel = isLpgRules
+    ? "Empty Cylinder Exchange"
+    : "Empty Pack Return";
+  const returnableRuleDescription = isLpgRules
+    ? "Require empty cylinder exchange for refill-style sales"
+    : "Require returnable packaging such as jars, drums, or packs";
+  const depositLabel = isLpgRules
+    ? "Exchange Value (BDT)"
+    : "Deposit Amount (BDT)";
+  const conversionDescription =
+    "Enable unit conversion for products that need pack-to-loose or carton-to-pack handling.";
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -1021,95 +1305,290 @@ export default function ProductForm({
                 </CardContent>
               </Card>
 
-              {/* ── 6. Behavior Settings ── */}
+              {/* ── 6. Inventory & Product Rules ── */}
               <Card>
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-2">
                     <Settings className="h-4 w-4 text-muted-foreground" />
                     <CardTitle className="text-base">
-                      Behavior Settings
+                      Inventory &amp; Product Rules
                     </CardTitle>
                   </div>
+                  <CardDescription>
+                    Database-backed stock, return, order, and conversion rules.
+                  </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <form.Field name="isReturnablePack">
-                      {(field) => (
-                        <div className="flex items-center justify-between border rounded-lg p-3">
-                          <div>
-                            <FieldLabel className="text-sm font-medium">
-                              Empty Pack Return
-                            </FieldLabel>
-                            <p className="text-xs text-muted-foreground">
-                              Require empty pack return
-                            </p>
-                          </div>
-                          <Switch
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </div>
-                      )}
-                    </form.Field>
-
-                    <form.Field name="expiryEnabled">
-                      {(field) => (
-                        <div className="flex items-center justify-between border rounded-lg p-3">
-                          <div>
-                            <FieldLabel className="text-sm font-medium">
-                              Expiry Tracking
-                            </FieldLabel>
-                            <p className="text-xs text-muted-foreground">
-                              Track product expiry dates
-                            </p>
-                          </div>
-                          <Switch
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </div>
-                      )}
-                    </form.Field>
-
-                    <form.Field name="damageControlEnabled">
-                      {(field) => (
-                        <div className="flex items-center justify-between border rounded-lg p-3">
-                          <div>
-                            <FieldLabel className="text-sm font-medium">
-                              Damage Control
-                            </FieldLabel>
-                            <p className="text-xs text-muted-foreground">
-                              Enable damage reporting
-                            </p>
-                          </div>
-                          <Switch
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </div>
-                      )}
-                    </form.Field>
-
-                    <form.Field name="trackingType">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel>Tracking Type</FieldLabel>
-                          <Select
-                            value={field.state.value}
-                            onValueChange={(v) => field.handleChange(v as any)}
+                <CardContent>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {activeRuleSettings.trackingAvailable && (
+                      <form.Field name="trackingType">
+                        {(field) => (
+                          <RuleControlRow
+                            description="Choose how this product is tracked in inventory."
+                            label="Batch Tracking"
                           >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No Tracking</SelectItem>
-                              <SelectItem value="batch">Batch</SelectItem>
-                              <SelectItem value="serial">Serial</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                      )}
-                    </form.Field>
+                            <Select
+                              value={field.state.value}
+                              onValueChange={(value) =>
+                                field.handleChange(value as any)
+                              }
+                            >
+                              <SelectTrigger className="h-9 w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {activeRuleSettings.trackingTypes.map(
+                                  (type) => (
+                                    <SelectItem key={type} value={type}>
+                                      {type === "none"
+                                        ? "Disable"
+                                        : type === "batch"
+                                          ? "Enable"
+                                          : "Serial Tracking"}
+                                    </SelectItem>
+                                  ),
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {activeRuleSettings.returnPolicyAvailable && (
+                      <form.Field name="returnPolicyEnabled">
+                        {(field) => (
+                          <RuleControlRow
+                            description="Allow standard product returns."
+                            label="Return Policy"
+                          >
+                            <Switch
+                              aria-label="Return Policy"
+                              checked={field.state.value}
+                              onCheckedChange={field.handleChange}
+                            />
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {activeRuleSettings.expiryAvailable && (
+                      <form.Field name="expiryEnabled">
+                        {(field) => (
+                          <RuleControlRow
+                            description="Track product expiry dates."
+                            label="Expiry Tracking"
+                          >
+                            <Switch
+                              aria-label="Expiry Tracking"
+                              checked={field.state.value}
+                              onCheckedChange={field.handleChange}
+                            />
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {activeRuleSettings.damageAvailable && (
+                      <form.Field name="damageControlEnabled">
+                        {(field) => (
+                          <RuleControlRow
+                            description="Enable damage reporting for this product."
+                            label="Damage Control"
+                          >
+                            <Switch
+                              aria-label="Damage Control"
+                              checked={field.state.value}
+                              onCheckedChange={field.handleChange}
+                            />
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {activeRuleSettings.stockTrackingAvailable && (
+                      <form.Field name="stockTrackingEnabled">
+                        {(field) => (
+                          <RuleControlRow
+                            description="Track inventory movement for this product."
+                            label="Stock Tracking"
+                          >
+                            <Switch
+                              aria-label="Stock Tracking"
+                              checked={field.state.value}
+                              onCheckedChange={field.handleChange}
+                            />
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {activeRuleSettings.minimumOrderAvailable && (
+                      <form.Field name="minimumOrderEnabled">
+                        {(enabledField) => (
+                          <RuleControlRow
+                            description="Apply a minimum order to generated variants."
+                            label="Minimum Order Qty"
+                          >
+                            <div className="flex w-full items-center justify-end gap-3">
+                              <Switch
+                                aria-label="Minimum Order Qty"
+                                checked={enabledField.state.value}
+                                onCheckedChange={enabledField.handleChange}
+                              />
+                              <form.Field name="minimumOrderQty">
+                                {(qtyField) => (
+                                  <Input
+                                    aria-label="Minimum Qty"
+                                    className="h-9 flex-1 text-right"
+                                    disabled={!enabledField.state.value}
+                                    min="0"
+                                    onChange={(event) =>
+                                      qtyField.handleChange(event.target.value)
+                                    }
+                                    step="0.01"
+                                    type="number"
+                                    value={qtyField.state.value}
+                                  />
+                                )}
+                              </form.Field>
+                            </div>
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {activeRuleSettings.inventoryUnitAvailable && (
+                      <form.Field name="inventoryUnit">
+                        {(field) => (
+                          <RuleControlRow
+                            description="Saved to the product and applied to generated variants."
+                            label="Inventory Unit"
+                          >
+                            <Select
+                              value={field.state.value}
+                              onValueChange={(value) =>
+                                field.handleChange(value as FulfillmentUnitCode)
+                              }
+                            >
+                              <SelectTrigger className="h-9 w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {inventoryUnitOptions.map((unit) => (
+                                  <SelectItem
+                                    key={unit.value}
+                                    value={unit.value}
+                                  >
+                                    {unit.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {activeRuleSettings.conversionAvailable && (
+                      <form.Field name="conversionEnabled">
+                        {(field) => (
+                          <RuleControlRow
+                            description={conversionDescription}
+                            label="Conversion"
+                          >
+                            <Switch
+                              aria-label="Conversion"
+                              checked={field.state.value}
+                              onCheckedChange={field.handleChange}
+                            />
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {supportsLooseInventory && (
+                      <form.Field name="inventoryLooseUnitEnabled">
+                        {(enabledField) => (
+                          <RuleControlRow
+                            description="Enable loose inventory for weight or volume based sales."
+                            label="Inventory Loose Unit"
+                          >
+                            <div className="flex w-full items-center justify-end gap-3">
+                              <Switch
+                                aria-label="Inventory Loose Unit"
+                                checked={enabledField.state.value}
+                                onCheckedChange={enabledField.handleChange}
+                              />
+                              <form.Field name="inventoryLooseUnit">
+                                {(unitField) => (
+                                  <Select
+                                    disabled={!enabledField.state.value}
+                                    value={unitField.state.value}
+                                    onValueChange={(value) =>
+                                      unitField.handleChange(
+                                        value as FulfillmentUnitCode,
+                                      )
+                                    }
+                                  >
+                                    <SelectTrigger className="h-9 flex-1">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {looseUnitOptions.map((unit) => (
+                                        <SelectItem
+                                          key={unit.value}
+                                          value={unit.value}
+                                        >
+                                          {unit.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </form.Field>
+                            </div>
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
+
+                    {activeRuleSettings.returnablePackAvailable && (
+                      <form.Field name="isReturnablePack">
+                        {(returnableField) => (
+                          <RuleControlRow
+                            description={returnableRuleDescription}
+                            label={returnableRuleLabel}
+                          >
+                            <div className="flex w-full items-center justify-end gap-3">
+                              <Switch
+                                aria-label={returnableRuleLabel}
+                                checked={returnableField.state.value}
+                                onCheckedChange={returnableField.handleChange}
+                              />
+                              <form.Field name="defaultPackDepositAmount">
+                                {(depositField) => (
+                                  <Input
+                                    aria-label={depositLabel}
+                                    className="h-9 flex-1 text-right"
+                                    disabled={!returnableField.state.value}
+                                    min="0"
+                                    onChange={(event) =>
+                                      depositField.handleChange(
+                                        event.target.value,
+                                      )
+                                    }
+                                    step="0.01"
+                                    type="number"
+                                    value={depositField.state.value}
+                                  />
+                                )}
+                              </form.Field>
+                            </div>
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1320,6 +1799,41 @@ function getAvailableVariantsForCoreProduct(
       return isGlobal || isTypeWide || isCategoryScoped;
     })
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function RuleControlRow({
+  children,
+  description,
+  label,
+}: {
+  children: ReactNode;
+  description: string;
+  label: string;
+}) {
+  return (
+    <div className="grid min-h-14 grid-cols-1 items-center gap-3 rounded-md border bg-background px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="flex min-w-0 items-center gap-2">
+        <FieldLabel className="text-sm font-medium">{label}</FieldLabel>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              aria-label={`${label} details`}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              type="button"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-64 text-xs" side="top">
+            {description}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      <div className="flex min-w-0 justify-start sm:w-[190px] sm:justify-end">
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function ReadOnlyIdentityField({

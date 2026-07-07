@@ -11,10 +11,11 @@ import {
   timestamp,
   varchar,
 } from "drizzle-orm/pg-core";
-import { timestamps } from "./columns.helpers";
 import { brand } from "./brand";
 import { category, subCategory } from "./category";
+import { timestamps } from "./columns.helpers";
 import { coreProductIdentity } from "./core-product";
+import { trackingTypeEnum } from "./tracking-type";
 import { variantOption } from "./variant-option";
 
 // Type for product features
@@ -35,12 +36,7 @@ export const productStatusEnum = pgEnum("product_status", [
   "draft",
 ]);
 
-// Tracking type enum
-export const trackingTypeEnum = pgEnum("tracking_type", [
-  "none",
-  "batch",
-  "serial",
-]);
+export { trackingTypeEnum };
 
 // Visibility enum
 export const visibilityEnum = pgEnum("product_visibility", [
@@ -100,7 +96,10 @@ export const product = pgTable("product", {
   allowedPackBrands: jsonb("allowed_pack_brands").$type<string[]>().default([]),
   allowedPackSizes: jsonb("allowed_pack_sizes").$type<string[]>().default([]),
 
-  // === Behavior Settings (from docs) ===
+  // === Inventory & Product Rules (from docs) ===
+
+  /** Whether normal product returns are allowed */
+  returnPolicyEnabled: boolean("return_policy_enabled").default(true).notNull(),
 
   /** Tracking type: none, batch, serial */
   trackingType: trackingTypeEnum("tracking_type").default("none").notNull(),
@@ -118,8 +117,34 @@ export const product = pgTable("product", {
     .default(true)
     .notNull(),
 
-  /** Whether this product is available for sale */
-  availableForSale: boolean("available_for_sale").default(true).notNull(),
+  /** Whether minimum order quantity is enforced */
+  minimumOrderEnabled: boolean("minimum_order_enabled").default(true).notNull(),
+
+  /** Product-level minimum order quantity applied to generated variants */
+  minimumOrderQty: decimal("minimum_order_qty", {
+    precision: 12,
+    scale: 2,
+  })
+    .default("1")
+    .notNull(),
+
+  /** Product-level inventory/order unit applied to generated variants */
+  inventoryUnit: varchar("inventory_unit", { length: 20 })
+    .default("unit")
+    .notNull(),
+
+  /** Product-level conversion flag, defaulted from product type behavior */
+  conversionEnabled: boolean("conversion_enabled").default(false).notNull(),
+
+  /** Whether this product supports loose inventory units */
+  inventoryLooseUnitEnabled: boolean("inventory_loose_unit_enabled")
+    .default(false)
+    .notNull(),
+
+  /** Loose inventory unit used when loose mode is enabled */
+  inventoryLooseUnit: varchar("inventory_loose_unit", { length: 20 })
+    .default("kg")
+    .notNull(),
 
   /** Product visibility: public or private */
   visibility: visibilityEnum("visibility").default("public").notNull(),

@@ -1,3 +1,4 @@
+import { FULFILLMENT_UNIT_CODES } from "@bikalpo-project/db/fulfillment";
 import * as z from "zod";
 
 // Feature item schema (key-value pair)
@@ -73,6 +74,21 @@ export const createProductSchema = z.object({
   expiryEnabled: z.boolean().default(false),
   damageControlEnabled: z.boolean().default(false),
   isReturnablePack: z.boolean().default(false),
+  defaultPackDepositAmount: z.string().default("0").optional(),
+  allowedPackBrands: z.array(z.string()).default([]).optional(),
+  allowedPackSizes: z.array(z.string()).default([]).optional(),
+  stockTrackingEnabled: z.boolean().default(true),
+  returnPolicyEnabled: z.boolean().default(true),
+  minimumOrderEnabled: z.boolean().default(true),
+  minimumOrderQty: z
+    .string()
+    .min(1, "Minimum order is required")
+    .regex(/^\d+(\.\d{1,2})?$/, "Use a valid quantity")
+    .default("1"),
+  inventoryUnit: z.enum(FULFILLMENT_UNIT_CODES).default("unit"),
+  conversionEnabled: z.boolean().default(false),
+  inventoryLooseUnitEnabled: z.boolean().default(false),
+  inventoryLooseUnit: z.enum(FULFILLMENT_UNIT_CODES).default("kg"),
   // Visibility / publish
   visibility: z.enum(["public", "private"]).default("public"),
   status: z.enum(["active", "inactive", "draft"]).default("active"),

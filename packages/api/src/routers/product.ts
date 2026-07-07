@@ -1,20 +1,20 @@
-import { db } from "@bikalpo-project/db";
+import { db, FULFILLMENT_UNIT_CODES } from "@bikalpo-project/db";
 import {
     brand as brandTable,
     category as categoryTable,
     coreProductIdentity,
     product,
-    productImage,
     productBrand,
+    productImage,
     productType,
-    productVariantPrice,
     productVariant,
+    productVariantPrice,
+    stockChangeLog,
     subCategory,
     variantOption,
-    stockChangeLog,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, desc, eq, gt, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, isNull, lte, or, type SQL, sql } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { z } from "zod";
 
@@ -57,7 +57,7 @@ const createProductSchema = z.object({
     additionalImages: z.array(z.string()).optional(),
     // B2B + B2C Pack Return fields
     isReturnablePack: z.boolean().default(false),
-    defaultPackDepositAmount: z.string().optional(),
+    defaultPackDepositAmount: z.string().optional().default("0"),
     allowedPackBrands: z.array(z.string()).optional(),
     allowedPackSizes: z.array(z.string()).optional(),
     status: z.enum(["active", "inactive", "draft"]).default("active"),
@@ -70,6 +70,14 @@ const createProductSchema = z.object({
     trackingType: z.enum(["none", "batch", "serial"]).default("none"),
     expiryEnabled: z.boolean().default(false),
     damageControlEnabled: z.boolean().default(false),
+    stockTrackingEnabled: z.boolean().default(true),
+    returnPolicyEnabled: z.boolean().default(true),
+    minimumOrderEnabled: z.boolean().default(true),
+    minimumOrderQty: z.string().min(1).regex(/^\d+(\.\d{1,2})?$/).default("1"),
+    inventoryUnit: z.enum(FULFILLMENT_UNIT_CODES).default("unit"),
+    conversionEnabled: z.boolean().default(false),
+    inventoryLooseUnitEnabled: z.boolean().default(false),
+    inventoryLooseUnit: z.enum(FULFILLMENT_UNIT_CODES).default("kg"),
     // Delivery
     deliveryCostPerCarton: z.string().optional().nullable(),
     /** Total unit size in KG (e.g. 50 for 50KG carton). Used for conversion. */
@@ -88,6 +96,30 @@ const createProductSchema = z.object({
 const updateProductSchema = createProductSchema.extend({
     id: z.number(),
 });
+
+function getGeneratedVariantOrderMin(productData: {
+    minimumOrderEnabled?: boolean;
+    minimumOrderQty?: string | null;
+}) {
+    return productData.minimumOrderEnabled === false
+        ? "1"
+        : productData.minimumOrderQty || "1";
+}
+
+function getGeneratedVariantOrderUnit(
+    productData: {
+        inventoryUnit?: string | null;
+        inventoryLooseUnitEnabled?: boolean;
+        inventoryLooseUnit?: string | null;
+    },
+    option: { unit?: string | null; variantType?: "pack" | "loose" | string | null } | undefined,
+) {
+    if (option?.variantType === "loose" && productData.inventoryLooseUnitEnabled) {
+        return productData.inventoryLooseUnit || productData.inventoryUnit || option.unit || "piece";
+    }
+
+    return productData.inventoryUnit || option?.unit || "piece";
+}
 
 const stockListParamsSchema = z.object({
     search: z.string().optional(),
@@ -135,6 +167,7 @@ type ConsumerPriceListInput = z.infer<typeof consumerPriceListParamsSchema>;
 async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
     const conditions: SQL[] = [
         eq(productVariantPrice.isActive, true),
+        isNull(product.createdByWarehouseId),
     ];
 
     if (input.search?.trim()) {
@@ -226,8 +259,8 @@ async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
 
     const items = rows.map((r) => {
         const brandDisplay =
-            (r.variantPriceBrandName && r.variantPriceBrandName.trim()) ||
-            (r.primaryBrandName && r.primaryBrandName.trim()) ||
+            r.variantPriceBrandName?.trim() ||
+            r.primaryBrandName?.trim() ||
             brandsByProduct.get(r.productId) ||
             "—";
         const identityLabel = r.coreProductName ?? r.productName;
@@ -291,7 +324,10 @@ async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
 async function fetchConsumerReferencePricePage(
     input: z.infer<typeof consumerPriceListPagedSchema>,
 ) {
-    const conditions: SQL[] = [eq(productVariantPrice.isActive, true)];
+    const conditions: SQL[] = [
+        eq(productVariantPrice.isActive, true),
+        isNull(product.createdByWarehouseId),
+    ];
 
     if (input.search?.trim()) {
         const s = `%${input.search.trim()}%`;
@@ -458,8 +494,8 @@ async function fetchConsumerReferencePricePage(
 
     const items = rows.map((r) => {
         const brandDisplay =
-            (r.variantPriceBrandName && r.variantPriceBrandName.trim()) ||
-            (r.primaryBrandName && r.primaryBrandName.trim()) ||
+            r.variantPriceBrandName?.trim() ||
+            r.primaryBrandName?.trim() ||
             brandsByProduct.get(r.productId) ||
             "—";
         const identityLabel = r.coreProductName ?? r.productName;
@@ -517,6 +553,7 @@ export const productRouter = {
             const { additionalImages, variantPrices, brandIds, ...productData } = input;
 
             const primaryBrandId = (brandIds && brandIds.length > 0) ? brandIds[0] : null;
+            const generatedOrderMin = getGeneratedVariantOrderMin(productData);
 
             // Use a transaction for atomicity
             const result = await db.transaction(async (tx) => {
@@ -610,6 +647,7 @@ export const productRouter = {
                     const autoVariantRows: any[] = [];
                     for (let idx = 0; idx < insertedPrices.length; idx++) {
                         const pvp = insertedPrices[idx];
+                        if (!pvp) continue;
                         const originalVp = variantPrices[idx];
                         const vo = voMap[pvp.variantOptionId];
                         const isLoose = vo?.variantType === "loose";
@@ -625,7 +663,8 @@ export const productRouter = {
                             packagingType: packType,
                             weightKg,
                             price: pvp.consumerPrice || "0",
-                            orderUnit: vo?.unit || "piece",
+                            orderMin: generatedOrderMin,
+                            orderUnit: getGeneratedVariantOrderUnit(productData, vo),
                             packType: (packType as any) || null,
                             packWeightKg: weightKg || null,
                             sellUnit: vo?.name || null,
@@ -670,6 +709,7 @@ export const productRouter = {
 
             // Set brandId at product level
             const productBrandId = (brandIds && brandIds.length > 0) ? brandIds[0] : null;
+            const generatedOrderMin = getGeneratedVariantOrderMin(updateData);
 
             const [updatedProduct] = await db
                 .update(product)
@@ -754,19 +794,22 @@ export const productRouter = {
                 // 3. Auto-generate new product_variant rows
                 const autoVariantRows = insertedPrices.map((pvp, idx) => {
                     const vo = voMap[pvp.variantOptionId];
+                    const originalVp = variantPrices[idx];
                     const isLoose = vo?.variantType === "loose";
                     const packType = isLoose ? "loose" : "packet";
                     const weightKg = vo?.size || "0";
 
                     return {
                         productId: id,
-                        sku: `CP-${id}-VO-${pvp.variantOptionId}`,
+                        brandId: originalVp?.brandId || null,
+                        sku: `CP-${id}-B${originalVp?.brandId ?? 0}-VO-${pvp.variantOptionId}`,
                         unitLabel: vo?.name || "Unit",
                         quantitySelectorLabel: vo?.name || "Unit",
                         packagingType: packType,
                         weightKg,
                         price: pvp.consumerPrice || "0",
-                        orderUnit: vo?.unit || "piece",
+                        orderMin: generatedOrderMin,
+                        orderUnit: getGeneratedVariantOrderUnit(updateData, vo),
                         packType: (packType as any) || null,
                         packWeightKg: weightKg || null,
                         sellUnit: vo?.name || null,
@@ -1185,12 +1228,22 @@ export const productRouter = {
         .input(updateConsumerReferencePriceSchema)
         .handler(async ({ input }) => {
             const [existing] = await db
-                .select({ id: productVariantPrice.id })
+                .select({
+                    id: productVariantPrice.id,
+                    createdByWarehouseId: product.createdByWarehouseId,
+                })
                 .from(productVariantPrice)
+                .innerJoin(product, eq(productVariantPrice.productId, product.id))
                 .where(eq(productVariantPrice.id, input.variantPriceId));
 
             if (!existing) {
                 throw new ORPCError("NOT_FOUND", { message: "Variant price row not found" });
+            }
+
+            if (existing.createdByWarehouseId) {
+                throw new ORPCError("FORBIDDEN", {
+                    message: "Only admin-created product prices can be updated here",
+                });
             }
 
             await db
@@ -1231,7 +1284,7 @@ export const productRouter = {
                 "UpdatedAt",
                 "VariantPriceId",
             ];
-            const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+            const escapeCsv = (v: string) => `"${v.replace(/"/g, '""')}"`;
             const lines = [
                 header.join(","),
                 ...items.map((i) =>
@@ -1247,7 +1300,7 @@ export const productRouter = {
                         i.updatedAt ? i.updatedAt.toISOString() : "",
                         String(i.variantPriceId),
                     ]
-                        .map((c) => escape(String(c)))
+                        .map((c) => escapeCsv(String(c)))
                         .join(","),
                 ),
             ];

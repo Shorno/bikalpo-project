@@ -82,6 +82,7 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
           { title: "Core Products", url: `${ADMIN_BASE}/core-products` },
           { title: "Variants", url: `${ADMIN_BASE}/variant-options` },
           { title: "Brands", url: `${ADMIN_BASE}/brands` },
+          { title: "Rule Settings", url: `${ADMIN_BASE}/product-rule-settings` },
         ],
       },
       {
