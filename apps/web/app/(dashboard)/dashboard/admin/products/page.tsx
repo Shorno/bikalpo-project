@@ -2,7 +2,18 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  type Column,
+  type ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  type SortingState,
+  useReactTable,
+} from "@tanstack/react-table";
+import {
   Activity,
+  ArrowUpDown,
   BarChart3,
   Box,
   ChevronRight,
@@ -170,6 +181,39 @@ function getAvailableVariants(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function sortableHeader(label: string) {
+  return function SortableHeader({
+    column,
+  }: {
+    column: Column<CatalogCoreProduct, unknown>;
+  }) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-2 h-8 data-[state=open]:bg-accent"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      >
+        {label}
+        <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+      </Button>
+    );
+  };
+}
+
+function CatalogStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="px-4 py-3.5 text-center">
+      <p className="text-lg font-semibold leading-none tabular-nums">
+        {value.toLocaleString("en-BD")}
+      </p>
+      <p className="mt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+    </div>
+  );
+}
+
 export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState(ALL);
@@ -293,38 +337,152 @@ export default function ProductsPage() {
 
   const isLoading = productsQuery.isLoading || optionsQuery.isLoading;
 
+  const [sorting, setSorting] = useState<SortingState>([]);
+
+  const columns = useMemo<ColumnDef<CatalogCoreProduct>[]>(
+    () => [
+      {
+        id: "index",
+        header: () => <span className="pl-1 text-muted-foreground">#</span>,
+        enableSorting: false,
+        cell: ({ row, table }) => {
+          const seq =
+            table.getSortedRowModel().rows.findIndex((r) => r.id === row.id) + 1;
+          return (
+            <span className="pl-1 tabular-nums text-muted-foreground">
+              {seq}
+            </span>
+          );
+        },
+        size: 48,
+      },
+      {
+        id: "type",
+        accessorFn: (product) => product.category.type?.name ?? "",
+        header: sortableHeader("Type"),
+        cell: ({ row }) => (
+          <Badge variant="outline">
+            {row.original.category.type?.name || "Unassigned"}
+          </Badge>
+        ),
+      },
+      {
+        id: "category",
+        accessorFn: (product) => product.category.name,
+        header: sortableHeader("Category"),
+        cell: ({ row }) => row.original.category.name,
+      },
+      {
+        id: "subCategory",
+        accessorFn: (product) => product.subCategory?.name ?? "",
+        header: sortableHeader("Sub Category"),
+        cell: ({ row }) =>
+          row.original.subCategory?.name || (
+            <span className="text-muted-foreground">None</span>
+          ),
+      },
+      {
+        id: "core",
+        accessorFn: (product) => product.name,
+        header: sortableHeader("Core Identity"),
+        cell: ({ row }) => (
+          <div>
+            <div className="font-medium">{row.original.name}</div>
+            <div className="text-xs text-muted-foreground">
+              SKU {row.original.sku}
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Action</div>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div
+            className="flex justify-end gap-1.5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSelectedProduct(row.original)}
+            >
+              <Eye className="h-4 w-4" />
+              View
+            </Button>
+            <Button size="sm" asChild>
+              <Link
+                href={`${ADMIN_BASE}/products/new?coreProductId=${row.original.id}`}
+              >
+                <Plus className="h-4 w-4" />
+                Add
+              </Link>
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const table = useReactTable({
+    data: filteredProducts,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+  });
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="flex items-center gap-3 text-2xl font-bold">
-          <span className="rounded-lg border bg-white p-2 text-slate-700">
+    <div className="space-y-5">
+      {/* Header */}
+      <header className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="flex items-center gap-3.5 p-5">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
             <Layers3 className="h-5 w-5" />
           </span>
-          Public Product Catalog
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Browse core identities by type, category, and sub category before
-          viewing brands and variants.
-        </p>
-      </div>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">
+              Public Product Catalog
+            </h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Browse core identities by type, category, and sub category before
+              viewing brands and variants.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 divide-x border-t bg-muted/30">
+          <CatalogStat label="Core Identities" value={coreProducts.length} />
+          <CatalogStat label="Types" value={typeOptions.length} />
+          <CatalogStat label="Categories" value={categoryOptions.length} />
+        </div>
+      </header>
 
-      <section className="rounded-lg border bg-white shadow-sm">
+      {/* Catalog */}
+      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="border-b p-4">
-          <div className="grid gap-3 lg:grid-cols-[1.2fr_repeat(4,1fr)]">
-            <div className="space-y-2">
-              <Label htmlFor="product-catalog-search">Search</Label>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.5fr_repeat(4,1fr)]">
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="product-catalog-search"
+                className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+              >
+                Search
+              </Label>
               <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="product-catalog-search"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Product Name"
-                  className="pl-8"
+                  placeholder="Product name or SKU…"
+                  className="pl-9"
                 />
               </div>
             </div>
-
             <FilterSelect
               label="Type"
               value={typeFilter}
@@ -362,108 +520,95 @@ export default function ProductsPage() {
               onValueChange={setCoreFilter}
             />
           </div>
-
-          <div className="mt-4 flex justify-end text-xs text-muted-foreground">
-            <span>
-              {filteredProducts.length} of {coreProducts.length} core identities
-            </span>
-          </div>
         </div>
 
-        <div className="p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Product Catalog</h2>
-          </div>
-
-          <div className="overflow-hidden rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">#</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Sub Category</TableHead>
-                  <TableHead>Core Identity</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-36 text-center">
-                      <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading catalog...
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : filteredProducts.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-36 text-center">
-                      <div className="space-y-1">
-                        <p className="font-medium">No products found</p>
-                        <p className="text-sm text-muted-foreground">
-                          Try different search
-                        </p>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredProducts.map((product, index) => (
-                    <TableRow
-                      key={product.id}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedProduct(product)}
-                    >
-                      <TableCell className="text-muted-foreground">
-                        {index + 1}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {product.category.type?.name || "Unassigned"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{product.category.name}</TableCell>
-                      <TableCell>
-                        {product.subCategory?.name || (
-                          <span className="text-muted-foreground">None</span>
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id} className="hover:bg-transparent">
+                {headerGroup.headers.map((header) => (
+                  <TableHead key={header.id}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{product.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          SKU {product.sku}
-                        </div>
-                      </TableCell>
-                      <TableCell
-                        className="text-right"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <div className="flex justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setSelectedProduct(product)}
-                          >
-                            <Eye className="h-4 w-4" />
-                            View
-                          </Button>
-                          <Button size="sm" asChild>
-                            <Link
-                              href={`${ADMIN_BASE}/products/new?coreProductId=${product.id}`}
-                            >
-                              <Plus className="h-4 w-4" />
-                              Add
-                            </Link>
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-36 text-center">
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading catalog...
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-36 text-center">
+                  <div className="space-y-1">
+                    <p className="font-medium">No products found</p>
+                    <p className="text-sm text-muted-foreground">
+                      Try a different search or filter.
+                    </p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer"
+                  onClick={() => setSelectedProduct(row.original)}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+
+        <div className="flex flex-col items-center justify-between gap-3 border-t p-4 text-sm sm:flex-row">
+          <span className="text-muted-foreground">
+            {filteredProducts.length} of {coreProducts.length} core identities
+          </span>
+          {table.getPageCount() > 1 ? (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">
+                Page {table.getState().pagination.pageIndex + 1} of{" "}
+                {table.getPageCount()}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+              >
+                Next
+              </Button>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -496,10 +641,12 @@ function FilterSelect({
   onValueChange: (value: string) => void;
 }) {
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
+    <div className="space-y-1.5">
+      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Label>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger>
+        <SelectTrigger className="w-full">
           <SelectValue placeholder={label} />
         </SelectTrigger>
         <SelectContent>

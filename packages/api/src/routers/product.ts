@@ -113,6 +113,11 @@ const consumerPriceListParamsSchema = z.object({
     coreProductId: z.number().int().optional(),
 });
 
+const consumerPriceListPagedSchema = consumerPriceListParamsSchema.extend({
+    page: z.number().int().min(1).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+});
+
 const updateConsumerReferencePriceSchema = z.object({
     variantPriceId: z.number().int(),
     consumerPrice: z.string().min(1).regex(/^\d+(\.\d{1,2})?$/),
@@ -274,6 +279,220 @@ async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
             totalVariants,
             lastUpdated: lastUpdated ? lastUpdated.toISOString() : null,
         },
+    };
+}
+
+/**
+ * Server-side paginated consumer reference prices.
+ * Pages by "group" (core product, or standalone product when it has no core
+ * identity) so a group's brand/variant rows are never split across pages.
+ * Stats are aggregated over the full filtered set, independent of the page.
+ */
+async function fetchConsumerReferencePricePage(
+    input: z.infer<typeof consumerPriceListPagedSchema>,
+) {
+    const conditions: SQL[] = [eq(productVariantPrice.isActive, true)];
+
+    if (input.search?.trim()) {
+        const s = `%${input.search.trim()}%`;
+        conditions.push(
+            or(
+                ilike(product.name, s),
+                ilike(product.sku, s),
+                ilike(variantOption.name, s),
+                ilike(brandTable.name, s),
+                ilike(coreProductIdentity.name, s),
+            )!,
+        );
+    }
+    if (input.typeId != null) conditions.push(eq(categoryTable.typeId, input.typeId));
+    if (input.categoryId != null) conditions.push(eq(product.categoryId, input.categoryId));
+    if (input.subCategoryId != null) conditions.push(eq(product.subCategoryId, input.subCategoryId));
+    if (input.coreProductId != null) conditions.push(eq(product.coreProductId, input.coreProductId));
+
+    const where = and(...conditions);
+
+    const page = input.page && input.page > 0 ? input.page : 1;
+    const limit = input.limit && input.limit > 0 ? Math.min(input.limit, 100) : 15;
+    const offset = (page - 1) * limit;
+
+    const groupKeyExpr = sql<string>`coalesce('c:' || ${coreProductIdentity.id}::text, 'p:' || ${product.id}::text)`;
+
+    // ── Stats over the full filtered set (one aggregate query) ──
+    const [statsRow] = await db
+        .select({
+            totalGroups: sql<number>`count(distinct coalesce('c:' || ${coreProductIdentity.id}::text, 'p:' || ${product.id}::text))::int`,
+            totalVariants: sql<number>`count(*)::int`,
+            lastUpdated: sql<Date | null>`max(${productVariantPrice.updatedAt})`,
+        })
+        .from(productVariantPrice)
+        .innerJoin(product, eq(productVariantPrice.productId, product.id))
+        .innerJoin(variantOption, eq(productVariantPrice.variantOptionId, variantOption.id))
+        .innerJoin(categoryTable, eq(product.categoryId, categoryTable.id))
+        .leftJoin(productType, eq(categoryTable.typeId, productType.id))
+        .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
+        .leftJoin(coreProductIdentity, eq(product.coreProductId, coreProductIdentity.id))
+        .leftJoin(brandTable, eq(product.brandId, brandTable.id))
+        .where(where);
+
+    const totalGroups = statsRow?.totalGroups ?? 0;
+    const totalPages = Math.max(1, Math.ceil(totalGroups / limit));
+
+    // ── Page of group keys (ordered the same way as the row query) ──
+    const pagedGroups = await db
+        .select({ gk: groupKeyExpr })
+        .from(productVariantPrice)
+        .innerJoin(product, eq(productVariantPrice.productId, product.id))
+        .innerJoin(variantOption, eq(productVariantPrice.variantOptionId, variantOption.id))
+        .innerJoin(categoryTable, eq(product.categoryId, categoryTable.id))
+        .leftJoin(productType, eq(categoryTable.typeId, productType.id))
+        .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
+        .leftJoin(coreProductIdentity, eq(product.coreProductId, coreProductIdentity.id))
+        .leftJoin(brandTable, eq(product.brandId, brandTable.id))
+        .where(where)
+        .groupBy(groupKeyExpr)
+        .orderBy(
+            sql`min(${productType.name}) asc nulls last`,
+            sql`min(${categoryTable.name}) asc nulls last`,
+            sql`min(${coreProductIdentity.name}) asc nulls last`,
+            sql`min(${product.name}) asc nulls last`,
+        )
+        .limit(limit)
+        .offset(offset);
+
+    const coreIds: number[] = [];
+    const standaloneProductIds: number[] = [];
+    for (const g of pagedGroups) {
+        const key = g.gk;
+        if (!key) continue;
+        const sep = key.indexOf(":");
+        const kind = key.slice(0, sep);
+        const id = Number(key.slice(sep + 1));
+        if (!Number.isFinite(id)) continue;
+        if (kind === "c") coreIds.push(id);
+        else standaloneProductIds.push(id);
+    }
+
+    const emptyStats = {
+        totalCoreProducts: totalGroups,
+        totalVariants: statsRow?.totalVariants ?? 0,
+        lastUpdated: statsRow?.lastUpdated
+            ? new Date(statsRow.lastUpdated).toISOString()
+            : null,
+    };
+
+    if (coreIds.length === 0 && standaloneProductIds.length === 0) {
+        return {
+            items: [],
+            stats: emptyStats,
+            pagination: { page, limit, totalGroups, totalPages },
+        };
+    }
+
+    const groupFilter = or(
+        coreIds.length ? inArray(product.coreProductId, coreIds) : undefined,
+        standaloneProductIds.length
+            ? and(isNull(product.coreProductId), inArray(product.id, standaloneProductIds))
+            : undefined,
+    );
+
+    const rows = await db
+        .select({
+            variantPriceId: productVariantPrice.id,
+            consumerPrice: productVariantPrice.consumerPrice,
+            updatedAt: productVariantPrice.updatedAt,
+            sortOrder: productVariantPrice.sortOrder,
+            productId: product.id,
+            productName: product.name,
+            productSku: product.sku,
+            variantOptionId: variantOption.id,
+            variantName: variantOption.name,
+            variantUnit: variantOption.unit,
+            categoryId: categoryTable.id,
+            categoryName: categoryTable.name,
+            typeId: productType.id,
+            typeName: productType.name,
+            subCategoryId: subCategory.id,
+            subCategoryName: subCategory.name,
+            coreProductId: coreProductIdentity.id,
+            coreProductName: coreProductIdentity.name,
+            coreProductSku: coreProductIdentity.sku,
+            primaryBrandName: brandTable.name,
+            variantPriceBrandId: productVariantPrice.brandId,
+            variantPriceBrandName: sql<string | null>`(SELECT b2.name FROM brand b2 WHERE b2.id = ${productVariantPrice.brandId})`.as("variant_price_brand_name"),
+        })
+        .from(productVariantPrice)
+        .innerJoin(product, eq(productVariantPrice.productId, product.id))
+        .innerJoin(variantOption, eq(productVariantPrice.variantOptionId, variantOption.id))
+        .innerJoin(categoryTable, eq(product.categoryId, categoryTable.id))
+        .leftJoin(productType, eq(categoryTable.typeId, productType.id))
+        .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
+        .leftJoin(coreProductIdentity, eq(product.coreProductId, coreProductIdentity.id))
+        .leftJoin(brandTable, eq(product.brandId, brandTable.id))
+        .where(and(where, groupFilter))
+        .orderBy(
+            asc(productType.name),
+            asc(categoryTable.name),
+            asc(coreProductIdentity.name),
+            asc(product.name),
+            asc(productVariantPrice.sortOrder),
+            asc(variantOption.name),
+        );
+
+    const productIds = [...new Set(rows.map((r) => r.productId))];
+    const brandLinks =
+        productIds.length === 0
+            ? []
+            : await db.query.productBrand.findMany({
+                  where: inArray(productBrand.productId, productIds),
+                  with: { brand: { columns: { name: true } } },
+              });
+
+    const brandsByProduct = new Map<number, string>();
+    for (const link of brandLinks) {
+        const name = link.brand?.name;
+        if (!name) continue;
+        const prev = brandsByProduct.get(link.productId);
+        brandsByProduct.set(link.productId, prev ? `${prev}, ${name}` : name);
+    }
+
+    const items = rows.map((r) => {
+        const brandDisplay =
+            (r.variantPriceBrandName && r.variantPriceBrandName.trim()) ||
+            (r.primaryBrandName && r.primaryBrandName.trim()) ||
+            brandsByProduct.get(r.productId) ||
+            "—";
+        const identityLabel = r.coreProductName ?? r.productName;
+        const skuLabel = r.coreProductSku ?? r.productSku ?? "—";
+        const coreLine = `${identityLabel} (${skuLabel}) • ${r.categoryName ?? "—"} → ${r.subCategoryName ?? "—"} → ${identityLabel}`;
+
+        return {
+            variantPriceId: r.variantPriceId,
+            consumerPrice: String(r.consumerPrice),
+            updatedAt: r.updatedAt,
+            productId: r.productId,
+            productName: r.productName,
+            productSku: r.productSku,
+            variantOptionId: r.variantOptionId,
+            variantName: r.variantName,
+            variantUnit: r.variantUnit,
+            brandDisplay,
+            typeId: r.typeId,
+            typeName: r.typeName ?? "Uncategorized",
+            categoryId: r.categoryId,
+            categoryName: r.categoryName ?? "—",
+            subCategoryName: r.subCategoryName ?? "—",
+            coreProductId: r.coreProductId,
+            coreProductName: r.coreProductName,
+            coreProductSku: r.coreProductSku,
+            coreLine,
+        };
+    });
+
+    return {
+        items,
+        stats: emptyStats,
+        pagination: { page, limit, totalGroups, totalPages },
     };
 }
 
@@ -949,8 +1168,8 @@ export const productRouter = {
             description:
                 "Admin view of retail (or unset-type) variant prices with taxonomy for consumer price management.",
         })
-        .input(consumerPriceListParamsSchema)
-        .handler(async ({ input }) => fetchConsumerReferencePriceData(input)),
+        .input(consumerPriceListPagedSchema)
+        .handler(async ({ input }) => fetchConsumerReferencePricePage(input)),
 
     /**
      * Update a single consumer reference price (product_variant_price + linked product_variant)
