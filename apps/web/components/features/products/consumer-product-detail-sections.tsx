@@ -3,6 +3,16 @@
 type ConsumerDetailProps = {
   detail: {
     family?: { label?: string | null } | null;
+    fulfillment?: {
+      defaultMode?: string | null;
+      supportedModes?: Array<{ code?: string | null; label?: string | null }>;
+      units?: {
+        order?: { shortLabel?: string | null };
+        stock?: { shortLabel?: string | null };
+        conversion?: { shortLabel?: string | null };
+        display?: { shortLabel?: string | null };
+      } | null;
+    } | null;
     productInformation?: {
       productId?: number | null;
       sku?: string | null;
@@ -93,6 +103,7 @@ export function ConsumerProductDetailSections({
   if (!detail) return null;
 
   const info = detail.productInformation;
+  const fulfillment = detail.fulfillment;
   const rules = detail.rules;
   const pricingRows = detail.pricing?.rows ?? [];
   const stockRows = detail.stock?.rows ?? [];
@@ -165,6 +176,19 @@ export function ConsumerProductDetailSections({
                 {info?.minimumOrder?.quantity ?? 1} {info?.minimumOrder?.unit ?? "unit"}
               </p>
             </div>
+            <div className="sm:col-span-2">
+              <span className="text-gray-500">Supported Modes</span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(fulfillment?.supportedModes ?? []).map((mode, index) => (
+                  <span
+                    key={`${mode.code}-${index}`}
+                    className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
+                  >
+                    {mode.label ?? mode.code ?? "Mode"}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -216,9 +240,23 @@ export function ConsumerProductDetailSections({
               </p>
             </div>
             <div>
+              <span className="text-gray-500">Default Mode</span>
+              <p className="font-medium text-gray-900">
+                {fulfillment?.defaultMode ?? "N/A"}
+              </p>
+            </div>
+            <div>
               <span className="text-gray-500">Available For Sale</span>
               <p className="font-medium text-gray-900">
                 {rules?.availableForSale ? "Yes" : "No"}
+              </p>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-gray-500">Unit Flow</span>
+              <p className="font-medium text-gray-900">
+                {(fulfillment?.units?.order?.shortLabel ?? "N/A").toUpperCase()} →{" "}
+                {(fulfillment?.units?.stock?.shortLabel ?? "N/A").toUpperCase()} →{" "}
+                {(fulfillment?.units?.display?.shortLabel ?? "N/A").toUpperCase()}
               </p>
             </div>
             <div className="sm:col-span-2">
