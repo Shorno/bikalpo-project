@@ -95,6 +95,35 @@ function getRowDisplayLabel(row: DetailPricingRow) {
   return row.unitLabel || row.label || "Default";
 }
 
+function getSelectionValueLabel(value?: string | number | null) {
+  if (value == null) return "Default";
+  const text = String(value).trim();
+  return text.length > 0 ? text : "Default";
+}
+
+function getConsumerFamilyCode(detail: ConsumerDetail) {
+  return detail?.family?.code ?? detail?.fulfillment?.family ?? "generic";
+}
+
+function getVariantSectionTitle(familyCode: string) {
+  switch (familyCode) {
+    case "grocery":
+      return "Select Pack";
+    case "bulk_liquid":
+      return "Select Supply";
+    case "fashion":
+      return "Select Style";
+    case "footwear":
+      return "Select Pair / Pack";
+    case "electronics":
+      return "Select Model";
+    case "lpg":
+      return "Select Capacity";
+    default:
+      return "Select Variant";
+  }
+}
+
 function matchesStockRow(row: DetailPricingRow, stockRow: DetailStockRow) {
   if (row.variantId != null) {
     return stockRow.variantId === row.variantId;
@@ -199,10 +228,118 @@ export function ConsumerProductPurchasePanel({
     return null;
   }
 
+  const familyCode = getConsumerFamilyCode(detail);
   const familyLabel =
     detail?.family?.label ?? detail?.fulfillment?.familyLabel ?? "Generic";
   const supportedModes = detail?.fulfillment?.supportedModes ?? [];
   const displayUnit = detail?.stock?.displayUnit ?? selectedRow.orderUnit ?? "unit";
+  const useBrandSelector = !["fashion", "footwear"].includes(familyCode);
+  const scopedBrandId = useBrandSelector ? selectedRow.brandId ?? null : null;
+  const brandScopedRows =
+    scopedBrandId != null
+      ? aggregatedRows.filter((row) => row.brandId === scopedBrandId)
+      : aggregatedRows;
+  const colorScopedRows = selectedRow.color
+    ? brandScopedRows.filter((row) => row.color === selectedRow.color)
+    : brandScopedRows;
+  const sizeScopedRows = selectedRow.size
+    ? colorScopedRows.filter((row) => row.size === selectedRow.size)
+    : colorScopedRows;
+  const brandOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          aggregatedRows
+            .filter((row) => row.brandId != null)
+            .map((row) => [
+              row.brandId!,
+              {
+                id: row.brandId!,
+                name: row.brandName ?? "Brand",
+                rowId: row.id,
+              },
+            ]),
+        ).values(),
+      ),
+    [aggregatedRows],
+  );
+  const colorOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          brandScopedRows
+            .filter((row) => row.color)
+            .map((row) => [
+              row.color!,
+              {
+                value: row.color!,
+                rowId: row.id,
+              },
+            ]),
+        ).values(),
+      ),
+    [brandScopedRows],
+  );
+  const sizeOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          colorScopedRows
+            .filter((row) => row.size)
+            .map((row) => [
+              row.size!,
+              {
+                value: row.size!,
+                rowId: row.id,
+              },
+            ]),
+        ).values(),
+      ),
+    [colorScopedRows],
+  );
+  const variantRows = (() => {
+    if (familyCode === "fashion" || familyCode === "footwear") {
+      return sizeScopedRows.length > 0 ? sizeScopedRows : colorScopedRows;
+    }
+
+    if (familyCode === "electronics") {
+      return colorScopedRows.length > 0 ? colorScopedRows : brandScopedRows;
+    }
+
+    return brandScopedRows;
+  })();
+  const showVariantSelector =
+    variantRows.length > 1 ||
+    (variantRows.length === 1 &&
+      (familyCode === "grocery" ||
+        familyCode === "bulk_liquid" ||
+        familyCode === "lpg"));
+  const ruleLabel = [
+    selectedRow.orderMin != null
+      ? `Min ${selectedRow.orderMin} ${selectedRow.orderUnit ?? displayUnit}`
+      : null,
+    selectedRow.orderIncrement != null && selectedRow.orderIncrement > 1
+      ? `Step ${selectedRow.orderIncrement}`
+      : null,
+    selectedRow.orderMax != null
+      ? `Max ${selectedRow.orderMax}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+  const stockBreakdown = [
+    selectedRow.openQuantity > 0
+      ? `${selectedRow.openQuantity} open`
+      : null,
+    selectedRow.insideContainerQuantity > 0
+      ? `${selectedRow.insideContainerQuantity} inside container`
+      : null,
+    selectedRow.sellerCount > 0
+      ? `${selectedRow.sellerCount} seller${selectedRow.sellerCount > 1 ? "s" : ""}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" • ");
 
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-6">
@@ -234,27 +371,121 @@ export function ConsumerProductPurchasePanel({
           <span>Available: {selectedRow.stockQuantity} {displayUnit}</span>
           <span>Status: {selectedRow.inStock ? "In Stock" : "Out of Stock"}</span>
         </div>
+        {stockBreakdown && (
+          <div className="mt-2 text-sm text-gray-500">{stockBreakdown}</div>
+        )}
+        {ruleLabel && <div className="mt-1 text-sm text-gray-500">{ruleLabel}</div>}
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-2">
-        {aggregatedRows.map((row) => {
-          const isSelected = row.id === selectedRow.id;
-          return (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => setSelectedRowId(row.id)}
-              className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                isSelected
-                  ? "border-blue-600 bg-blue-50 text-blue-700"
-                  : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              <div className="text-sm font-semibold">{getRowDisplayLabel(row)}</div>
-              <div className="text-xs opacity-80">{formatMoney(row.consumerPrice)}</div>
-            </button>
-          );
-        })}
+      <div className="mt-6 space-y-5">
+        {brandOptions.length > 1 && useBrandSelector && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700">Select Brand</p>
+            <div className="flex flex-wrap gap-2">
+              {brandOptions.map((brandOption) => {
+                const isSelected = brandOption.id === selectedRow.brandId;
+                return (
+                  <button
+                    key={brandOption.id}
+                    type="button"
+                    onClick={() => setSelectedRowId(brandOption.rowId)}
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    {brandOption.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {colorOptions.length > 0 && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700">Select Color</p>
+            <div className="flex flex-wrap gap-2">
+              {colorOptions.map((colorOption) => {
+                const isSelected = colorOption.value === selectedRow.color;
+                return (
+                  <button
+                    key={colorOption.value}
+                    type="button"
+                    onClick={() => setSelectedRowId(colorOption.rowId)}
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    {getSelectionValueLabel(colorOption.value)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {sizeOptions.length > 0 && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700">
+              {familyCode === "lpg" ? "Select Capacity" : "Select Size"}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {sizeOptions.map((sizeOption) => {
+                const isSelected = sizeOption.value === selectedRow.size;
+                return (
+                  <button
+                    key={sizeOption.value}
+                    type="button"
+                    onClick={() => setSelectedRowId(sizeOption.rowId)}
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    {getSelectionValueLabel(sizeOption.value)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {showVariantSelector && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700">
+              {getVariantSectionTitle(familyCode)}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {variantRows.map((row) => {
+                const isSelected = row.id === selectedRow.id;
+                return (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => setSelectedRowId(row.id)}
+                    className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold">
+                      {getRowDisplayLabel(row)}
+                    </div>
+                    <div className="text-xs opacity-80">
+                      {formatMoney(row.consumerPrice)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-6">
