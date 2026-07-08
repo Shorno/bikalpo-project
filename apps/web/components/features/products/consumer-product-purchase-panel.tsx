@@ -343,6 +343,23 @@ export function ConsumerProductPurchasePanel({
     .filter(Boolean)
     .join(" • ");
   const hasVisiblePrice = Number(selectedRow.consumerPrice ?? 0) > 0;
+  const selectedAttributes = [
+    selectedRow.brandName
+      ? { label: "Brand", value: selectedRow.brandName }
+      : null,
+    selectedRow.color
+      ? { label: "Color", value: selectedRow.color }
+      : null,
+    selectedRow.size
+      ? {
+          label: familyCode === "lpg" ? "Capacity" : "Size",
+          value: selectedRow.size,
+        }
+      : null,
+    selectedRow.packType
+      ? { label: "Pack", value: selectedRow.packType }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
 
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-6">
@@ -378,6 +395,18 @@ export function ConsumerProductPurchasePanel({
           <div className="mt-2 text-sm text-gray-500">{stockBreakdown}</div>
         )}
         {ruleLabel && <div className="mt-1 text-sm text-gray-500">{ruleLabel}</div>}
+        {selectedAttributes.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {selectedAttributes.map((attribute) => (
+              <span
+                key={`${attribute.label}-${attribute.value}`}
+                className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700"
+              >
+                {attribute.label}: {attribute.value}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-6 space-y-5">
