@@ -654,6 +654,13 @@ const queries = {
         sellerCountMap,
       );
       const referenceCatalog = buildReferenceCatalogData(productRows);
+      const detail = buildPublicProductDetailPayload({
+        coreProduct: found,
+        productRows,
+        primaryProduct,
+        summary,
+        referenceCatalog,
+      });
       const returnableProducts = productRows.filter(
         (productRow) => productRow.isReturnablePack,
       );
@@ -694,6 +701,7 @@ const queries = {
             ),
           },
         },
+        detail,
       };
     }),
 
