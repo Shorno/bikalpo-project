@@ -25,6 +25,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { StarRating } from "@/components/features/reviews/star-rating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,6 +54,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ADMIN_BASE } from "@/lib/routes";
+import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 
 type CatalogCoreProduct = {
@@ -101,14 +103,43 @@ type FilterOption = { id: number; name: string };
 
 const ALL = "all";
 
+type ProductFeatureGroup = {
+  title: string;
+  items: Array<{ key: string; value: string }>;
+};
+
 type EditableProductCandidate = {
   id: number;
   name: string;
   coreProductId?: number | null;
   createdByWarehouseId?: string | null;
   createdAt?: string | Date | null;
-  productBrands?: unknown[];
+  updatedAt?: string | Date | null;
+  productBrands?: Array<{
+    brandId?: number | null;
+    brand?: { id: number; name: string } | null;
+  }>;
   variantPrices?: Array<{ brandId?: number | null }>;
+
+  // Inventory & product rules (product-row fields from getAll)
+  status?: "active" | "inactive" | "draft" | null;
+  trackingType?: "none" | "batch" | "serial" | null;
+  expiryEnabled?: boolean | null;
+  damageControlEnabled?: boolean | null;
+  returnPolicyEnabled?: boolean | null;
+  conversionEnabled?: boolean | null;
+  minimumOrderEnabled?: boolean | null;
+  minimumOrderQty?: string | number | null;
+  inventoryUnit?: string | null;
+  inventoryLooseUnitEnabled?: boolean | null;
+  inventoryLooseUnit?: string | null;
+  isReturnablePack?: boolean | null;
+  defaultPackDepositAmount?: string | number | null;
+
+  // Description content (product-row fields)
+  shortDescription?: string | null;
+  description?: string | null;
+  features?: ProductFeatureGroup[] | null;
 };
 
 function uniqueOptions(items: Array<FilterOption | null | undefined>) {
@@ -127,6 +158,25 @@ function matchesText(value: string | null | undefined, search: string) {
 
 function normalizeName(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
+}
+
+function formatQuantity(value: string | number | null | undefined) {
+  if (value == null || value === "") return "1";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return num.toLocaleString("en-BD", { maximumFractionDigits: 2 });
+}
+
+function formatCurrency(value: string | number | null | undefined) {
+  if (value == null || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return `৳${num.toLocaleString("en-BD", { maximumFractionDigits: 2 })}`;
+}
+
+function statusLabel(status: string | null | undefined) {
+  if (!status) return "Active";
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function getCreatedAtTime(value: string | Date | null | undefined) {
@@ -611,7 +661,6 @@ export default function ProductsPage() {
       {selectedProduct && (
         <ProductDetailDialog
           product={selectedProduct}
-          brands={options?.brands ?? []}
           variants={getAvailableVariants(
             selectedProduct,
             options?.variantOptions,
@@ -660,12 +709,10 @@ function FilterSelect({
 
 function ProductDetailDialog({
   product,
-  brands,
   variants,
   onOpenChange,
 }: {
   product: CatalogCoreProduct;
-  brands: Array<{ id: number; name: string; slug: string }>;
   variants: NonNullable<CatalogOptions["variantOptions"]>;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -711,6 +758,31 @@ function ProductDetailDialog({
   }, [product.id, product.name, productsQuery.data?.products]);
 
   const isResolvingEdit = productsQuery.isLoading;
+
+  // Admin-scoped brands: only the brands this admin product was configured with,
+  // not the global catalog brand list (which also includes warehouse/retailer brands).
+  const configuredBrands = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const link of editableProduct?.productBrands ?? []) {
+      const id = link.brand?.id ?? link.brandId;
+      const name = link.brand?.name;
+      if (id != null && name) map.set(id, name);
+    }
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [editableProduct]);
+
+  const reviewsQuery = useQuery({
+    ...orpc.customer.getProductReviews.queryOptions({
+      input: { productId: editableProduct?.id ?? 0 },
+    }),
+    enabled: !!editableProduct?.id,
+  });
+  const reviews = reviewsQuery.data?.reviews ?? [];
+  const reviewStats = reviewsQuery.data?.stats ?? {
+    averageRating: 0,
+    totalReviews: 0,
+  };
+
   const editHref = editableProduct
     ? `${ADMIN_BASE}/products/${editableProduct.id}/edit`
     : `${ADMIN_BASE}/products/new?coreProductId=${product.id}`;
@@ -753,6 +825,67 @@ function ProductDetailDialog({
   const hasImage =
     !!product.image &&
     (product.image.startsWith("http") || product.image.startsWith("/"));
+
+  // Inventory & product rules — sourced from the resolved admin product row.
+  const inventoryUnitLabel = editableProduct?.inventoryUnit?.trim() || null;
+  const minimumOrderLabel =
+    editableProduct && editableProduct.minimumOrderEnabled !== false
+      ? `${formatQuantity(editableProduct.minimumOrderQty)}${
+          inventoryUnitLabel ? ` ${inventoryUnitLabel}` : ""
+        }`
+      : null;
+  const packDepositLabel = formatCurrency(
+    editableProduct?.defaultPackDepositAmount,
+  );
+
+  const ruleEntries: Array<{
+    label: string;
+    enabled: boolean;
+    onLabel?: string;
+    offLabel?: string;
+    detail?: string | null;
+  }> = editableProduct
+    ? [
+        {
+          label: "Batch Tracking",
+          enabled: editableProduct.trackingType === "batch",
+        },
+        { label: "Expiry Tracking", enabled: !!editableProduct.expiryEnabled },
+        {
+          label: "Damage Tracking",
+          enabled: !!editableProduct.damageControlEnabled,
+        },
+        {
+          label: "Return Policy",
+          enabled: editableProduct.returnPolicyEnabled !== false,
+          onLabel: "Allowed",
+          offLabel: "Not allowed",
+        },
+        {
+          label: "Minimum Order",
+          enabled: editableProduct.minimumOrderEnabled !== false,
+          detail: minimumOrderLabel,
+        },
+        { label: "Conversion", enabled: !!editableProduct.conversionEnabled },
+        {
+          label: "Empty Pack Exchange",
+          enabled: !!editableProduct.isReturnablePack,
+          detail: editableProduct.isReturnablePack ? packDepositLabel : null,
+        },
+      ]
+    : [];
+
+  // Description content — prefer the admin product row, fall back to the core.
+  const descriptionFeatures = (editableProduct?.features ?? []).filter(
+    (group) => group?.items?.length,
+  );
+  const shortDescription = editableProduct?.shortDescription?.trim() || null;
+  const longDescription =
+    editableProduct?.description?.trim() || product.description?.trim() || null;
+  const hasDescriptionContent =
+    !!shortDescription || descriptionFeatures.length > 0 || !!longDescription;
+
+  const lastUpdated = editableProduct?.updatedAt ?? product.updatedAt;
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -832,6 +965,14 @@ function ProductDetailDialog({
             <TabsList variant="line" className="h-11">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="variants">Variants &amp; Pricing</TabsTrigger>
+              <TabsTrigger value="reviews">
+                Reviews
+                {reviewStats.totalReviews > 0 ? (
+                  <span className="ml-1 text-muted-foreground">
+                    ({reviewStats.totalReviews})
+                  </span>
+                ) : null}
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -854,15 +995,38 @@ function ProductDetailDialog({
                   <DataField label="Core Name" value={product.name} />
                   <DataField label="SKU" value={product.sku} />
                   <DataField label="Product ID" value={`#${product.id}`} />
+                  {inventoryUnitLabel ? (
+                    <DataField
+                      label="Inventory Unit"
+                      value={inventoryUnitLabel}
+                    />
+                  ) : null}
+                  {minimumOrderLabel ? (
+                    <DataField
+                      label="Minimum Order"
+                      value={minimumOrderLabel}
+                    />
+                  ) : null}
+                  {editableProduct ? (
+                    <DataField
+                      label="Status"
+                      value={statusLabel(editableProduct.status)}
+                    />
+                  ) : null}
                 </dl>
 
                 <div className="space-y-2">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Brands
                   </p>
-                  {brands.length > 0 ? (
+                  {isResolvingEdit ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading brands…
+                    </div>
+                  ) : configuredBrands.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
-                      {brands.map((brand) => (
+                      {configuredBrands.map((brand) => (
                         <Badge
                           key={brand.id}
                           variant="secondary"
@@ -903,13 +1067,54 @@ function ProductDetailDialog({
                 </div>
               </section>
 
+              {/* Inventory & Product Rules */}
+              {isResolvingEdit ? (
+                <section className="space-y-4">
+                  <SectionHeading title="Inventory & Product Rules" />
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading rules…
+                  </div>
+                </section>
+              ) : ruleEntries.length > 0 ? (
+                <section className="space-y-4">
+                  <SectionHeading
+                    title="Inventory & Product Rules"
+                    description="Configured inventory behaviour for this product"
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {ruleEntries.map((rule) => (
+                      <RuleRow key={rule.label} rule={rule} />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
               {/* Description */}
               <section className="space-y-4">
                 <SectionHeading title="Description" />
-                {product.description?.trim() ? (
-                  <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
-                    {product.description}
-                  </p>
+                {hasDescriptionContent ? (
+                  <div className="space-y-5">
+                    {shortDescription ? (
+                      <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
+                        {shortDescription}
+                      </p>
+                    ) : null}
+
+                    {descriptionFeatures.length > 0 ? (
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {descriptionFeatures.map((group) => (
+                          <SpecGroup key={group.title} group={group} />
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {longDescription ? (
+                      <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
+                        {longDescription}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     No description added
@@ -927,7 +1132,7 @@ function ProductDetailDialog({
                   />
                   <DataField
                     label="Last Updated"
-                    value={formatDate(product.updatedAt)}
+                    value={formatDate(lastUpdated)}
                   />
                 </dl>
               </section>
@@ -1027,10 +1232,137 @@ function ProductDetailDialog({
                 )}
               </section>
             </TabsContent>
+
+            {/* Reviews Tab */}
+            <TabsContent value="reviews" className="m-0 p-6">
+              <section className="space-y-4">
+                <SectionHeading
+                  title="Reviews"
+                  description="Customer reviews for this product"
+                />
+                {!editableProduct ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No published product to collect reviews yet.
+                  </p>
+                ) : reviewsQuery.isLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading reviews…
+                  </div>
+                ) : reviews.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No reviews yet.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl font-bold leading-none tabular-nums">
+                        {reviewStats.averageRating.toFixed(1)}
+                      </span>
+                      <div>
+                        <StarRating
+                          rating={Math.round(reviewStats.averageRating)}
+                          size="sm"
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {reviewStats.totalReviews}{" "}
+                          {reviewStats.totalReviews === 1 ? "review" : "reviews"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="divide-y">
+                      {reviews.map((review) => (
+                        <div key={review.id} className="py-4 first:pt-0">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-medium text-foreground">
+                              {review.user?.name?.trim() || "Anonymous"}
+                            </span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {formatDate(review.createdAt)}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <StarRating rating={review.rating} size="sm" />
+                            {review.title ? (
+                              <span className="text-sm font-medium">
+                                {review.title}
+                              </span>
+                            ) : null}
+                          </div>
+                          {review.comment ? (
+                            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                              {review.comment}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </section>
+            </TabsContent>
           </ScrollArea>
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function RuleRow({
+  rule,
+}: {
+  rule: {
+    label: string;
+    enabled: boolean;
+    onLabel?: string;
+    offLabel?: string;
+    detail?: string | null;
+  };
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-foreground">
+          {rule.label}
+        </p>
+        {rule.detail ? (
+          <p className="text-xs text-muted-foreground">{rule.detail}</p>
+        ) : null}
+      </div>
+      <Badge
+        variant={rule.enabled ? "secondary" : "outline"}
+        className={cn(
+          "shrink-0 font-normal",
+          rule.enabled
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : "text-muted-foreground",
+        )}
+      >
+        {rule.enabled ? (rule.onLabel ?? "Enabled") : (rule.offLabel ?? "Disabled")}
+      </Badge>
+    </div>
+  );
+}
+
+function SpecGroup({ group }: { group: ProductFeatureGroup }) {
+  return (
+    <div className="overflow-hidden rounded-lg border">
+      <div className="border-b bg-muted/40 px-4 py-2.5 text-sm font-medium">
+        {group.title}
+      </div>
+      <dl className="divide-y">
+        {group.items.map((item) => (
+          <div
+            key={`${item.key}-${item.value}`}
+            className="flex justify-between gap-4 px-4 py-2.5 text-sm"
+          >
+            <dt className="text-muted-foreground">{item.key}</dt>
+            <dd className="text-right font-medium">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 

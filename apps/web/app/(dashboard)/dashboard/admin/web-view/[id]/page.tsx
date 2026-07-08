@@ -4,15 +4,24 @@ import { WebViewDetailClient } from "./web-view-detail-client";
 
 export default async function AdminWebViewDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ brandId?: string }>;
 }) {
   const { id } = await params;
+  const { brandId: brandIdParam } = await searchParams;
   const productId = Number(id);
 
   if (Number.isNaN(productId)) {
     notFound();
   }
+
+  const parsedBrandId = Number(brandIdParam);
+  const brandId =
+    brandIdParam != null && brandIdParam !== "" && !Number.isNaN(parsedBrandId)
+      ? parsedBrandId
+      : null;
 
   let product;
   try {
@@ -37,6 +46,7 @@ export default async function AdminWebViewDetailPage({
     <WebViewDetailClient
       // biome-ignore lint/suspicious/noExplicitAny: getById output is a superset of the fields the view needs
       product={product as any}
+      brandId={brandId}
       reviews={reviewData.reviews}
       stats={reviewData.stats}
     />

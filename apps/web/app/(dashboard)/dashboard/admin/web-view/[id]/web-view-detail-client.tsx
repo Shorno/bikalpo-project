@@ -24,6 +24,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { resolveBrandScope, scopeVariantPrices } from "../_lib/brand-scope";
 
 type FeatureItem = { key: string; value: string };
 type FeatureGroup = { title: string; items: FeatureItem[] };
@@ -38,9 +39,15 @@ type VariantOption = {
 
 type VariantPrice = {
   id: number;
+  brandId?: number | null;
   consumerPrice?: string | number | null;
   isActive?: boolean | null;
   variantOption?: VariantOption | null;
+};
+
+type ProductBrandLink = {
+  brandId?: number | null;
+  brand?: { id?: number | null; name: string } | null;
 };
 
 type DetailProduct = {
@@ -59,8 +66,8 @@ type DetailProduct = {
   isFeatured?: boolean;
   category?: { name: string; slug: string } | null;
   subCategory?: { name: string } | null;
-  brand?: { name: string } | null;
-  productBrands?: { brand?: { name: string } | null }[];
+  brand?: { id?: number | null; name: string } | null;
+  productBrands?: ProductBrandLink[];
   variantPrices?: VariantPrice[];
 };
 
@@ -93,19 +100,38 @@ function variantLabel(option?: VariantOption | null) {
 
 export function WebViewDetailClient({
   product,
+  brandId = null,
   reviews,
   stats,
 }: {
   product: DetailProduct;
+  brandId?: number | null;
   reviews: Review[];
   stats: ReviewStats;
 }) {
+  const { brands, hasSingleBrand, defaultBrandId } = useMemo(
+    () => resolveBrandScope(product),
+    [product],
+  );
+
+  // Resolve the brand this page is scoped to. Honour a valid ?brandId= deep
+  // link, but never depend on it: a missing or unknown brand falls back to the
+  // product's primary brand so the page can never leak another brand's variants.
+  const effectiveBrandId =
+    brandId != null && brands.some((brand) => brand.id === brandId)
+      ? brandId
+      : defaultBrandId;
+
+  // Only the variants configured for the resolved brand — matches the
+  // brand-scoped listing card rather than showing every brand's variants.
   const activeVariants = useMemo(
     () =>
-      (product.variantPrices ?? []).filter(
-        (variant) => variant.isActive !== false,
+      scopeVariantPrices(
+        product.variantPrices ?? [],
+        effectiveBrandId,
+        hasSingleBrand,
       ),
-    [product.variantPrices],
+    [product.variantPrices, effectiveBrandId, hasSingleBrand],
   );
 
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(
@@ -125,8 +151,8 @@ export function WebViewDetailClient({
   }, [product.image, product.images]);
 
   const brandName =
+    brands.find((brand) => brand.id === effectiveBrandId)?.name ??
     product.brand?.name ??
-    product.productBrands?.find((link) => link.brand?.name)?.brand?.name ??
     "Unbranded";
 
   const sku = product.sku?.trim() || `PRD-${product.id}`;

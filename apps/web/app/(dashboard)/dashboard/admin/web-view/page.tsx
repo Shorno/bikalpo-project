@@ -32,6 +32,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
+import {
+  getProductBrands,
+  scopeByBrand,
+  scopeVariantPrices,
+} from "./_lib/brand-scope";
 
 const ALL = "all";
 const UNBRANDED = "unbranded";
@@ -174,26 +179,6 @@ function uniqueOptions(items: FilterOption[]) {
   );
 }
 
-function getProductBrands(product: AdminProduct): BrandSummary[] {
-  const brands = new Map<number, BrandSummary>();
-
-  for (const link of product.productBrands ?? []) {
-    const brandId = link.brand?.id ?? link.brandId;
-    if (!brandId) continue;
-    brands.set(brandId, {
-      id: brandId,
-      name: link.brand?.name ?? `Brand #${brandId}`,
-      slug: link.brand?.slug,
-    });
-  }
-
-  if (brands.size === 0 && product.brand?.id) {
-    brands.set(product.brand.id, product.brand);
-  }
-
-  return Array.from(brands.values());
-}
-
 function getVariantLabel(variantPrice: ProductVariantPriceSummary) {
   const option = variantPrice.variantOption;
   const label = option?.name?.trim() || "Variant";
@@ -204,43 +189,6 @@ function getVariantLabel(variantPrice: ProductVariantPriceSummary) {
     label,
     detail,
   };
-}
-
-function getScopedVariantPrices(
-  product: AdminProduct,
-  brandId: number | null,
-  hasSingleBrand: boolean,
-) {
-  const activePrices = (product.variantPrices ?? []).filter(
-    (variantPrice) => variantPrice.isActive !== false,
-  );
-
-  if (brandId == null) return activePrices;
-
-  const exactMatches = activePrices.filter(
-    (variantPrice) => variantPrice.brandId === brandId,
-  );
-
-  if (exactMatches.length > 0 || !hasSingleBrand) return exactMatches;
-
-  return activePrices.filter((variantPrice) => variantPrice.brandId == null);
-}
-
-function getScopedFallbackVariants(
-  product: AdminProduct,
-  brandId: number | null,
-  hasSingleBrand: boolean,
-) {
-  const variants = product.variants ?? [];
-
-  if (brandId == null) return variants;
-
-  const exactMatches = variants.filter(
-    (variant) => variant.brandId === brandId,
-  );
-  if (exactMatches.length > 0 || !hasSingleBrand) return exactMatches;
-
-  return variants.filter((variant) => variant.brandId == null);
 }
 
 function buildListingCards(products: AdminProduct[]) {
@@ -256,8 +204,8 @@ function buildListingCards(products: AdminProduct[]) {
 
     for (const brand of cardBrands) {
       const brandId = brands.length > 0 ? brand.id : null;
-      const scopedPrices = getScopedVariantPrices(
-        product,
+      const scopedPrices = scopeVariantPrices(
+        product.variantPrices ?? [],
         brandId,
         hasSingleBrand,
       );
@@ -274,14 +222,16 @@ function buildListingCards(products: AdminProduct[]) {
       const fallbackVariants =
         priceVariants.length > 0
           ? []
-          : getScopedFallbackVariants(product, brandId, hasSingleBrand).map(
-              (variant) => ({
-                id: `variant-${variant.id}`,
-                label: variant.unitLabel?.trim() || "Variant",
-                detail: variant.variantType ?? null,
-                priceLabel: null,
-              }),
-            );
+          : scopeByBrand(
+              product.variants ?? [],
+              brandId,
+              hasSingleBrand,
+            ).map((variant) => ({
+              id: `variant-${variant.id}`,
+              label: variant.unitLabel?.trim() || "Variant",
+              detail: variant.variantType ?? null,
+              priceLabel: null,
+            }));
 
       cards.push({
         id: `${product.id}-${brandId ?? UNBRANDED}`,
@@ -783,7 +733,11 @@ function ProductBrandCard({ card }: { card: ProductListingCard }) {
           Created {formatDate(card.createdAt)}
         </p>
         <Button asChild size="sm" variant="outline">
-          <Link href={`/dashboard/admin/web-view/${card.productId}`}>
+          <Link
+            href={`/dashboard/admin/web-view/${card.productId}${
+              card.brandId != null ? `?brandId=${card.brandId}` : ""
+            }`}
+          >
             <Eye className="h-4 w-4" />
             View Details
           </Link>
