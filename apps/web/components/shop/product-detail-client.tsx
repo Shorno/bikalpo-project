@@ -11,6 +11,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
+import { ConsumerProductDetailSections } from "@/components/features/products/consumer-product-detail-sections";
 import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/product-detail-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
@@ -29,6 +30,8 @@ export function ProductDetailClient({
   category,
 }: ShopProductDetailProps) {
   const { data, isLoading, isError } = useRoleAwareProductDetails(slug);
+  const publicDetail =
+    data && "detail" in data && data.detail ? data.detail : null;
 
   useEffect(() => {
     if (isError) {
@@ -218,6 +221,8 @@ export function ProductDetailClient({
             </div>
           </div>
         </div>
+
+        <ConsumerProductDetailSections detail={publicDetail} />
 
         {/* Description Section */}
         {product.description && (
