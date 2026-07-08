@@ -198,6 +198,38 @@ export function uniqueStrings(values: Array<string | null | undefined>) {
   );
 }
 
+function matchesStockEntry(
+  pricingRow: {
+    productId: number;
+    variantId?: number | null;
+    variantOptionId?: number | null;
+    brandId?: number | null;
+  },
+  stockRow: {
+    productId: number;
+    variantId: number;
+    variantOptionId?: number | null;
+    brandId?: number | null;
+  },
+) {
+  if (pricingRow.variantId != null) {
+    return stockRow.variantId === pricingRow.variantId;
+  }
+
+  if (
+    pricingRow.variantOptionId != null &&
+    stockRow.variantOptionId != null &&
+    pricingRow.productId === stockRow.productId
+  ) {
+    return (
+      stockRow.variantOptionId === pricingRow.variantOptionId &&
+      (pricingRow.brandId == null || stockRow.brandId === pricingRow.brandId)
+    );
+  }
+
+  return false;
+}
+
 export function buildReferenceCatalogData(productRows: any[]) {
   const activeConsumerVariants = productRows.flatMap((productRow) =>
     (productRow.variants ?? []).filter(isConsumerVisibleVariant),
@@ -452,7 +484,16 @@ export function buildPublicProductDetailPayload(args: {
     openQty: Math.max(row.availableQty - row.inCartonQty, 0),
   }));
   const selectableBrands = referenceCatalog.brands.filter((brand) => brand.id != null);
-  const defaultPriceRow = pricingRows[0] ?? null;
+  const defaultPriceRow =
+    pricingRows.find((row) =>
+      stockTableRows.some(
+        (stockRow) =>
+          matchesStockEntry(row, stockRow) && Number(stockRow.availableQty) > 0,
+      ),
+    ) ??
+    pricingRows.find((row) => row.consumerPrice > 0) ??
+    pricingRows[0] ??
+    null;
 
   return {
     summary,
