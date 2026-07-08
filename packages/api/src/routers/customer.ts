@@ -93,6 +93,7 @@ import {
   buildPublicProductDetailPayload,
   getPrimaryWebViewProduct,
   getScopedWebViewProductRows,
+  isConsumerVisibleVariant,
   serializeWebViewCoreProduct,
   uniqueStrings,
 } from "./helpers/customer-product-detail";
@@ -1002,6 +1003,11 @@ const queries = {
       const reviewStats = summary.reviewStats;
       const referenceCatalog = buildReferenceCatalogData(productRows);
       const productIds = productRows.map((productRow) => productRow.id);
+      const activeRetailVariantIds = productRows.flatMap((productRow) =>
+        (productRow.variants ?? [])
+          .filter(isConsumerVisibleVariant)
+          .map((variant: any) => variant.id),
+      );
       const fulfilledStatuses = [
         "approved",
         "confirmed",
@@ -1011,7 +1017,7 @@ const queries = {
         "invoiced",
         "delivered",
       ] as const;
-      const [cartRows, orderRows] =
+      const [cartRows, orderRows, stockRows] =
         productIds.length > 0
           ? await Promise.all([
               db
@@ -1044,14 +1050,70 @@ const queries = {
                     inArray(order.status, fulfilledStatuses),
                   ),
                 ),
+              activeRetailVariantIds.length > 0
+                ? db
+                    .select({
+                      variantId: productVariant.id,
+                      variantOptionId: productVariant.sourceVariantOptionId,
+                      brandId: productVariant.brandId,
+                      brandName: brand.name,
+                      color: productVariant.color,
+                      size: productVariant.size,
+                      unitLabel: productVariant.unitLabel,
+                      orderUnit: productVariant.orderUnit,
+                      packType: productVariant.packType,
+                      availableQty:
+                        sql<number>`COALESCE(SUM(CAST(${inventory.availableQty} AS numeric)), 0)`.mapWith(
+                          Number,
+                        ),
+                      inCartonQty:
+                        sql<number>`COALESCE(SUM(CAST(${inventory.inCartonQty} AS numeric)), 0)`.mapWith(
+                          Number,
+                        ),
+                      activeCartonCount:
+                        sql<number>`COALESCE(SUM(${inventory.activeCartonCount}), 0)`.mapWith(
+                          Number,
+                        ),
+                      sellerCount:
+                        sql<number>`COUNT(DISTINCT ${inventory.ownerId})`.mapWith(
+                          Number,
+                        ),
+                    })
+                    .from(inventory)
+                    .innerJoin(
+                      productVariant,
+                      eq(inventory.variantId, productVariant.id),
+                    )
+                    .leftJoin(brand, eq(productVariant.brandId, brand.id))
+                    .where(
+                      and(
+                        eq(inventory.ownerType, "shop"),
+                        inArray(inventory.variantId, activeRetailVariantIds),
+                        eq(productVariant.isActive, true),
+                        sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                      ),
+                    )
+                    .groupBy(
+                      productVariant.id,
+                      productVariant.sourceVariantOptionId,
+                      productVariant.brandId,
+                      brand.name,
+                      productVariant.color,
+                      productVariant.size,
+                      productVariant.unitLabel,
+                      productVariant.orderUnit,
+                      productVariant.packType,
+                    )
+                : Promise.resolve([]),
             ])
-          : [[{ cartCount: 0 }], []];
+          : [[{ cartCount: 0 }], [], []];
       const detail = buildPublicProductDetailPayload({
         coreProduct,
         productRows,
         primaryProduct,
         summary,
         referenceCatalog,
+        stockRows,
         cartCount: cartRows[0]?.cartCount ?? 0,
         orderMetrics: {
           totalOrders: orderRows[0]?.totalOrders ?? 0,

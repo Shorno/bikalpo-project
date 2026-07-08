@@ -342,6 +342,21 @@ export function buildPublicProductDetailPayload(args: {
   primaryProduct: any;
   summary: ReturnType<typeof serializeWebViewCoreProduct>;
   referenceCatalog: ReturnType<typeof buildReferenceCatalogData>;
+  stockRows?: Array<{
+    variantId: number;
+    variantOptionId: number | null;
+    brandId: number | null;
+    brandName: string | null;
+    color: string | null;
+    size: string | null;
+    unitLabel: string | null;
+    orderUnit: string | null;
+    packType: string | null;
+    availableQty: number;
+    inCartonQty: number;
+    activeCartonCount: number;
+    sellerCount: number;
+  }>;
   cartCount?: number;
   orderMetrics?: {
     totalOrders?: number;
@@ -356,6 +371,7 @@ export function buildPublicProductDetailPayload(args: {
     primaryProduct,
     summary,
     referenceCatalog,
+    stockRows = [],
     cartCount = 0,
     orderMetrics,
   } = args;
@@ -385,6 +401,22 @@ export function buildPublicProductDetailPayload(args: {
   const variantDescriptor = profile.variantDimensions
     .map((dimension) => VARIANT_DIMENSION_LABELS[dimension])
     .join(" / ");
+  const pricingRows = referenceCatalog.referencePrices.map((row) => ({
+    brandId: row.brandId ?? null,
+    brandName: row.brandName ?? null,
+    variantOptionId: row.variantOptionId,
+    variantId: row.variantId ?? null,
+    label: row.variantLabel,
+    unitLabel: row.unitLabel,
+    color: row.color ?? null,
+    size: row.size ?? null,
+    packType: row.packType ?? null,
+    consumerPrice: row.consumerPrice,
+  }));
+  const stockTableRows = stockRows.map((row) => ({
+    ...row,
+    openQty: Math.max(row.availableQty - row.inCartonQty, 0),
+  }));
 
   return {
     summary,
@@ -478,6 +510,23 @@ export function buildPublicProductDetailPayload(args: {
       },
     },
     referenceCatalog,
+    pricing: {
+      currency: "BDT",
+      rows: pricingRows,
+    },
+    stock: {
+      displayUnit: displayUnit.shortLabel,
+      quantityKind: displayUnit.quantityKind,
+      totalAvailableQty: stockTableRows.reduce(
+        (sum, row) => sum + row.availableQty,
+        0,
+      ),
+      totalInsideContainerQty: stockTableRows.reduce(
+        (sum, row) => sum + row.inCartonQty,
+        0,
+      ),
+      rows: stockTableRows,
+    },
     history: {
       createdAt: coreProduct.createdAt ?? primaryProduct?.createdAt ?? null,
       updatedAt: primaryProduct?.updatedAt ?? null,
