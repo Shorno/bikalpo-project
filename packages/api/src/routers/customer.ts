@@ -90,6 +90,7 @@ import {
 import {
   asNumber,
   buildReferenceCatalogData,
+  buildPublicProductDetailPayload,
   getPrimaryWebViewProduct,
   getScopedWebViewProductRows,
   serializeWebViewCoreProduct,
@@ -999,12 +1000,73 @@ const queries = {
         sellerCountMap,
       );
       const reviewStats = summary.reviewStats;
+      const referenceCatalog = buildReferenceCatalogData(productRows);
+      const productIds = productRows.map((productRow) => productRow.id);
+      const fulfilledStatuses = [
+        "approved",
+        "confirmed",
+        "processing",
+        "ready_for_dispatch",
+        "partially_invoiced",
+        "invoiced",
+        "delivered",
+      ] as const;
+      const [cartRows, orderRows] =
+        productIds.length > 0
+          ? await Promise.all([
+              db
+                .select({
+                  cartCount: count(cartItem.id),
+                })
+                .from(cartItem)
+                .where(inArray(cartItem.productId, productIds)),
+              db
+                .select({
+                  totalOrders:
+                    sql<number>`COUNT(DISTINCT ${orderItem.orderId})`.mapWith(
+                      Number,
+                    ),
+                  totalUnitsSold:
+                    sql<number>`COALESCE(SUM(${orderItem.quantity}), 0)`.mapWith(
+                      Number,
+                    ),
+                  totalSalesValue:
+                    sql<number>`COALESCE(SUM(${orderItem.totalPrice}), 0)`.mapWith(
+                      Number,
+                    ),
+                  lastOrderedAt: sql<Date | null>`MAX(${order.createdAt})`,
+                })
+                .from(orderItem)
+                .innerJoin(order, eq(orderItem.orderId, order.id))
+                .where(
+                  and(
+                    inArray(orderItem.productId, productIds),
+                    inArray(order.status, fulfilledStatuses),
+                  ),
+                ),
+            ])
+          : [[{ cartCount: 0 }], []];
+      const detail = buildPublicProductDetailPayload({
+        coreProduct,
+        productRows,
+        primaryProduct,
+        summary,
+        referenceCatalog,
+        cartCount: cartRows[0]?.cartCount ?? 0,
+        orderMetrics: {
+          totalOrders: orderRows[0]?.totalOrders ?? 0,
+          totalUnitsSold: orderRows[0]?.totalUnitsSold ?? 0,
+          totalSalesValue: orderRows[0]?.totalSalesValue ?? 0,
+          lastOrderedAt: orderRows[0]?.lastOrderedAt ?? null,
+        },
+      });
 
       return {
         product: foundSerialized,
         variants: variantsSerialized,
         reviewStats,
         summary,
+        detail,
       };
     }),
 

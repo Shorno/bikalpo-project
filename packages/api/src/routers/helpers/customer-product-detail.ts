@@ -1,3 +1,11 @@
+import {
+  FULFILLMENT_MODE_LABELS,
+  FULFILLMENT_UNITS,
+  PRODUCT_TYPE_FAMILY_LABELS,
+  VARIANT_DIMENSION_LABELS,
+  buildProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
+
 export function asNumber(value: unknown): number {
   const parsed =
     typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
@@ -304,5 +312,185 @@ export function buildReferenceCatalogData(productRows: any[]) {
         : [{ id: null, name: "Default", slug: null, logo: null }],
     variants: Array.from(variantMap.values()),
     referencePrices,
+  };
+}
+
+function getReferenceSku(
+  primaryProduct: any,
+  summary: ReturnType<typeof serializeWebViewCoreProduct>,
+) {
+  return primaryProduct?.sku ?? summary.coreIdentity.sku ?? null;
+}
+
+function getMinimumOrder(activeConsumerVariants: any[], fallbackUnitLabel: string) {
+  const ordered = [...activeConsumerVariants].sort(
+    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+  );
+  const first = ordered[0] ?? null;
+
+  return {
+    quantity: first?.orderMin != null ? asNumber(first.orderMin) : 1,
+    unit: first?.orderUnit || fallbackUnitLabel || "unit",
+    increment: first?.orderIncrement != null ? asNumber(first.orderIncrement) : 1,
+    max: first?.orderMax != null ? asNumber(first.orderMax) : null,
+  };
+}
+
+export function buildPublicProductDetailPayload(args: {
+  coreProduct: any;
+  productRows: any[];
+  primaryProduct: any;
+  summary: ReturnType<typeof serializeWebViewCoreProduct>;
+  referenceCatalog: ReturnType<typeof buildReferenceCatalogData>;
+  cartCount?: number;
+  orderMetrics?: {
+    totalOrders?: number;
+    totalUnitsSold?: number;
+    totalSalesValue?: number;
+    lastOrderedAt?: Date | string | null;
+  };
+}) {
+  const {
+    coreProduct,
+    productRows,
+    primaryProduct,
+    summary,
+    referenceCatalog,
+    cartCount = 0,
+    orderMetrics,
+  } = args;
+  const activeConsumerVariants = productRows.flatMap((productRow) =>
+    (productRow.variants ?? []).filter(isConsumerVisibleVariant),
+  );
+  const typeInput = coreProduct.category?.type ?? null;
+  const profile = buildProductTypeFulfillmentProfile({
+    slug: typeInput?.slug ?? coreProduct.category?.slug ?? coreProduct.slug,
+    name: typeInput?.name ?? coreProduct.category?.name ?? coreProduct.name,
+    inventoryBehaviour: typeInput?.inventoryBehaviour ?? null,
+    trackingType: primaryProduct?.trackingType ?? null,
+    isReturnablePack: productRows.some((productRow) => productRow.isReturnablePack),
+  });
+  const displayUnit = FULFILLMENT_UNITS[profile.displayUnit];
+  const orderUnit = FULFILLMENT_UNITS[profile.orderUnit];
+  const stockUnit = FULFILLMENT_UNITS[profile.stockUnit];
+  const conversionUnit = FULFILLMENT_UNITS[profile.conversionUnit];
+  const minimumOrder = getMinimumOrder(activeConsumerVariants, orderUnit.shortLabel);
+  const returnableProducts = productRows.filter(
+    (productRow) => productRow.isReturnablePack,
+  );
+  const packDepositAmount =
+    returnableProducts
+      .map((productRow) => asNumber(productRow.defaultPackDepositAmount))
+      .find((value) => value > 0) ?? 0;
+  const variantDescriptor = profile.variantDimensions
+    .map((dimension) => VARIANT_DIMENSION_LABELS[dimension])
+    .join(" / ");
+
+  return {
+    summary,
+    family: {
+      code: profile.family,
+      label: PRODUCT_TYPE_FAMILY_LABELS[profile.family],
+    },
+    fulfillment: {
+      family: profile.family,
+      familyLabel: PRODUCT_TYPE_FAMILY_LABELS[profile.family],
+      inventoryBehaviour: profile.inventoryBehaviour,
+      defaultMode: profile.defaultMode,
+      defaultModeLabel: FULFILLMENT_MODE_LABELS[profile.defaultMode],
+      supportedModes: profile.supportedModes.map((mode) => ({
+        code: mode,
+        label: FULFILLMENT_MODE_LABELS[mode],
+      })),
+      supportsModeSwitching: profile.supportsModeSwitching,
+      supportsTrackedAssets: profile.supportsTrackedAssets,
+      supportsEmptyReturn: profile.supportsEmptyReturn,
+      units: {
+        order: orderUnit,
+        stock: stockUnit,
+        conversion: conversionUnit,
+        display: displayUnit,
+      },
+      variantDimensions: profile.variantDimensions.map((dimension) => ({
+        key: dimension,
+        label: VARIANT_DIMENSION_LABELS[dimension],
+      })),
+      notes: profile.notes,
+    },
+    productInformation: {
+      productId: primaryProduct?.id ?? null,
+      sku: getReferenceSku(primaryProduct, summary),
+      status: primaryProduct?.status ?? null,
+      category: coreProduct.category?.name ?? null,
+      subCategory: coreProduct.subCategory?.name ?? null,
+      productName: coreProduct.name,
+      brand:
+        referenceCatalog.brands.length === 1
+          ? referenceCatalog.brands[0]?.name ?? null
+          : null,
+      variantDescriptor,
+      inventoryUnit: displayUnit.shortLabel,
+      minimumOrder,
+    },
+    gallery: {
+      coverImage: summary.image,
+      videoUrl: primaryProduct?.videoUrl ?? null,
+      images: uniqueStrings([
+        coreProduct.image,
+        ...productRows.flatMap((productRow) => [
+          productRow.image,
+          ...((productRow.images ?? []).map((image: any) => image.imageUrl) ?? []),
+        ]),
+      ]),
+    },
+    content: {
+      shortDescription:
+        primaryProduct?.shortDescription ?? coreProduct.description ?? null,
+      description: primaryProduct?.description ?? coreProduct.description ?? null,
+      featureGroups: primaryProduct?.features ?? [],
+    },
+    rules: {
+      trackingType: primaryProduct?.trackingType ?? "none",
+      expiryEnabled: Boolean(primaryProduct?.expiryEnabled),
+      damageControlEnabled: Boolean(primaryProduct?.damageControlEnabled),
+      availableForSale: Boolean(primaryProduct?.availableForSale),
+      visibility: primaryProduct?.visibility ?? "public",
+      supportsPack: Boolean(coreProduct.supportsPack),
+      supportsLoose: Boolean(coreProduct.supportsLoose),
+      minimumOrder,
+      inventoryUnit: displayUnit.shortLabel,
+      stockUnit: stockUnit.shortLabel,
+      conversionUnit: conversionUnit.shortLabel,
+      conversionEnabled: profile.supportsModeSwitching,
+      emptyPackReturn: {
+        enabled: returnableProducts.length > 0,
+        depositAmount: packDepositAmount,
+        companies: uniqueStrings(
+          returnableProducts.flatMap(
+            (productRow) => productRow.allowedPackBrands ?? [],
+          ),
+        ),
+        packSizes: uniqueStrings(
+          returnableProducts.flatMap(
+            (productRow) => productRow.allowedPackSizes ?? [],
+          ),
+        ),
+      },
+    },
+    referenceCatalog,
+    history: {
+      createdAt: coreProduct.createdAt ?? primaryProduct?.createdAt ?? null,
+      updatedAt: primaryProduct?.updatedAt ?? null,
+      lastOrderedAt: orderMetrics?.lastOrderedAt ?? null,
+    },
+    performance: {
+      averageRating: summary.reviewStats.averageRating,
+      totalReviews: summary.reviewStats.totalReviews,
+      sellerCount: summary.sellerCount,
+      cartCount,
+      totalOrders: orderMetrics?.totalOrders ?? 0,
+      totalUnitsSold: orderMetrics?.totalUnitsSold ?? 0,
+      totalSalesValue: orderMetrics?.totalSalesValue ?? 0,
+    },
   };
 }
