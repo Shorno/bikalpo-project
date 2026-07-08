@@ -35,7 +35,7 @@ export interface DetailVariant {
   isActive: boolean | null;
 }
 
-interface ProductDetailClientProps {
+interface TradeProductDetailClientProps {
   product: {
     id: number;
     name: string;
@@ -55,7 +55,7 @@ interface ProductDetailClientProps {
 
 /* ── Component ────────────────────────────────────── */
 
-export function ProductDetailClient({
+export function TradeProductDetailClient({
   product,
   variants,
   categoryName,
@@ -63,7 +63,7 @@ export function ProductDetailClient({
   subCategoryName,
   productSize,
   features,
-}: ProductDetailClientProps) {
+}: TradeProductDetailClientProps) {
   const { data: session } = authClient.useSession();
   const userRole = session?.user?.role as string | undefined;
 

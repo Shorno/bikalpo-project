@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { ConsumerProductDetailSections } from "@/components/features/products/consumer-product-detail-sections";
 import { ConsumerProductPurchasePanel } from "@/components/features/products/consumer-product-purchase-panel";
-import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/product-detail-client";
+import { TradeProductDetailClient } from "@/components/features/products/trade-product-detail-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
 import {
@@ -155,7 +155,7 @@ export function ProductDetailClient({
                   detail={publicDetail}
                 />
               ) : (
-                <VariantDetailClient
+                <TradeProductDetailClient
                   product={{
                     id: product.id,
                     name: product.name,
