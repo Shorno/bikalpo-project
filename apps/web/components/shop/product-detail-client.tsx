@@ -24,11 +24,17 @@ import {
 interface ShopProductDetailProps {
   slug: string;
   category: string;
+  homeLabel?: string;
+  homeHref?: string;
+  productsHref?: string;
 }
 
 export function ProductDetailClient({
   slug,
   category,
+  homeLabel = "Dashboard",
+  homeHref = "/",
+  productsHref = "/products",
 }: ShopProductDetailProps) {
   const { data, isLoading, isError } = useRoleAwareProductDetails(slug);
   const publicDetail =
@@ -73,12 +79,12 @@ export function ProductDetailClient({
       <div className="bg-white border-b">
         <div className="container mx-auto px-4 py-3">
           <nav className="flex items-center gap-2 text-sm">
-            <Link href="/" className="text-gray-600 hover:text-gray-900">
-              Dashboard
+            <Link href={homeHref} className="text-gray-600 hover:text-gray-900">
+              {homeLabel}
             </Link>
             <ChevronRight className="h-4 w-4 text-gray-400" />
             <Link
-              href="/products"
+              href={productsHref}
               className="text-gray-600 hover:text-gray-900"
             >
               Products
