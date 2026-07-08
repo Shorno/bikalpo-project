@@ -19,6 +19,8 @@ interface ConsumerProductCardProps {
     price: string | number;
     image: string;
     size?: string | null;
+    variantLabel?: string | null;
+    unitLabel?: string | null;
     inStock?: boolean;
     category?: { name?: string; slug?: string } | null;
     reviewStats?: { averageRating: number; totalReviews: number } | null;
@@ -37,6 +39,7 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
 
   const rawPrice = typeof product.price === "string" ? parseFloat(product.price) : Number(product.price);
   const price = isNaN(rawPrice) ? 0 : rawPrice;
+  const variantSummary = product.size || product.variantLabel || product.unitLabel || null;
 
   const rating = product.reviewStats?.averageRating ?? 0;
   const reviewCount = product.reviewStats?.totalReviews ?? 0;
@@ -96,6 +99,11 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
           <h3 className="text-xs sm:text-sm font-semibold text-gray-900 line-clamp-2 leading-snug">
             {product.name}
           </h3>
+          {variantSummary && (
+            <p className="text-[11px] text-gray-500 line-clamp-1">
+              {variantSummary}
+            </p>
+          )}
 
           {/* Starting Price */}
           <div className="flex items-baseline gap-1 flex-wrap">
@@ -106,7 +114,7 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
             </span>
             {price > 0 && (
               <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap">
-                Starting From
+                {variantSummary ? `From ${variantSummary}` : "Starting From"}
               </span>
             )}
           </div>
