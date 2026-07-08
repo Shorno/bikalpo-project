@@ -340,6 +340,7 @@ export function ConsumerProductPurchasePanel({
   ]
     .filter(Boolean)
     .join(" • ");
+  const hasVisiblePrice = Number(selectedRow.consumerPrice ?? 0) > 0;
 
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-6">
@@ -489,24 +490,30 @@ export function ConsumerProductPurchasePanel({
       </div>
 
       <div className="mt-6">
-        <ProductActions
-          key={selectedRow.id}
-          product={{
-            id: selectedRow.productId,
-            name: selectedRow.productName || product.name,
-            price: Number(selectedRow.consumerPrice ?? 0),
-            image: product.image,
-            size: getRowDisplayLabel(selectedRow),
-            inStock: selectedRow.inStock,
-            stockQuantity: selectedRow.stockQuantity,
-          }}
-          variantId={selectedRow.variantId ?? undefined}
-          orderMin={selectedRow.orderMin ?? undefined}
-          orderMax={selectedRow.orderMax ?? undefined}
-          orderIncrement={selectedRow.orderIncrement ?? undefined}
-          categoryName={product.category?.name ?? undefined}
-          brandName={selectedRow.brandName ?? undefined}
-        />
+        {hasVisiblePrice ? (
+          <ProductActions
+            key={selectedRow.id}
+            product={{
+              id: selectedRow.productId,
+              name: selectedRow.productName || product.name,
+              price: Number(selectedRow.consumerPrice ?? 0),
+              image: product.image,
+              size: getRowDisplayLabel(selectedRow),
+              inStock: selectedRow.inStock,
+              stockQuantity: selectedRow.stockQuantity,
+            }}
+            variantId={selectedRow.variantId ?? undefined}
+            orderMin={selectedRow.orderMin ?? undefined}
+            orderMax={selectedRow.orderMax ?? undefined}
+            orderIncrement={selectedRow.orderIncrement ?? undefined}
+            categoryName={product.category?.name ?? undefined}
+            brandName={selectedRow.brandName ?? undefined}
+          />
+        ) : (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Price is not available for the selected option yet.
+          </div>
+        )}
       </div>
     </section>
   );
