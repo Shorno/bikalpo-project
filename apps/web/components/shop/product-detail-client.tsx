@@ -49,6 +49,12 @@ export function ProductDetailClient({
     ...variant,
     price: String(variant.price),
   }));
+  const descriptionHtml =
+    product.description ?? publicDetail?.content?.description ?? null;
+  const featureGroups =
+    product.features && Array.isArray(product.features) && product.features.length > 0
+      ? product.features
+      : publicDetail?.content?.featureGroups ?? [];
 
   // Combine main image with additional images
   const allImages =
@@ -229,29 +235,27 @@ export function ProductDetailClient({
         <ConsumerProductDetailSections detail={publicDetail} />
 
         {/* Description Section */}
-        {product.description && (
+        {descriptionHtml && (
           <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8 mt-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">
               Product Description
             </h2>
             <div
               className="prose prose-gray max-w-none"
-              dangerouslySetInnerHTML={{ __html: product.description }}
+              dangerouslySetInnerHTML={{ __html: descriptionHtml }}
             />
           </div>
         )}
 
         {/* Features Section */}
-        {product.features &&
-          Array.isArray(product.features) &&
-          product.features.length > 0 && (
+        {featureGroups.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8 mt-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-6">
                 Product Features
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {(
-                  product.features as {
+                  featureGroups as {
                     title: string;
                     items: { key: string; value: string }[];
                   }[]
