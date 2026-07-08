@@ -233,6 +233,8 @@ export function ConsumerProductPurchasePanel({
     detail?.family?.label ?? detail?.fulfillment?.familyLabel ?? "Generic";
   const supportedModes = detail?.fulfillment?.supportedModes ?? [];
   const displayUnit = detail?.stock?.displayUnit ?? selectedRow.orderUnit ?? "unit";
+  const stockUnitLabel =
+    selectedRow.orderUnit || selectedRow.unitLabel || displayUnit;
   const useBrandSelector = !["fashion", "footwear"].includes(familyCode);
   const scopedBrandId = useBrandSelector ? selectedRow.brandId ?? null : null;
   const brandScopedRows =
@@ -329,7 +331,7 @@ export function ConsumerProductPurchasePanel({
     .join(" • ");
   const stockBreakdown = [
     selectedRow.openQuantity > 0
-      ? `${selectedRow.openQuantity} open`
+      ? `${selectedRow.openQuantity} open ${stockUnitLabel}`
       : null,
     selectedRow.insideContainerQuantity > 0
       ? `${selectedRow.insideContainerQuantity} inside container`
@@ -369,7 +371,7 @@ export function ConsumerProductPurchasePanel({
         </div>
         <div className="mt-2 flex flex-wrap gap-3 text-sm text-gray-600">
           <span>SKU: {selectedRow.sku ?? "N/A"}</span>
-          <span>Available: {selectedRow.stockQuantity} {displayUnit}</span>
+          <span>Available: {selectedRow.stockQuantity} {stockUnitLabel}</span>
           <span>Status: {selectedRow.inStock ? "In Stock" : "Out of Stock"}</span>
         </div>
         {stockBreakdown && (
