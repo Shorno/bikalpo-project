@@ -51,10 +51,14 @@ export function ProductDetailClient({
   }));
 
   // Combine main image with additional images
-  const allImages = [
-    product.image,
-    ...(product.images?.map((img: { imageUrl: string }) => img.imageUrl) || []),
-  ];
+  const allImages =
+    publicDetail?.gallery?.images && publicDetail.gallery.images.length > 0
+      ? publicDetail.gallery.images
+      : [
+          product.image,
+          ...(product.images?.map((img: { imageUrl: string }) => img.imageUrl) ||
+            []),
+        ];
 
   return (
     <div className="min-h-screen bg-gray-50">
