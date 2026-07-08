@@ -12,6 +12,7 @@ import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { ConsumerProductDetailSections } from "@/components/features/products/consumer-product-detail-sections";
+import { ConsumerProductPurchasePanel } from "@/components/features/products/consumer-product-purchase-panel";
 import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/product-detail-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
@@ -133,23 +134,39 @@ export function ProductDetailClient({
               </div>
 
               {/* Variant-aware price, selector, specs, and cart */}
-              <VariantDetailClient
-                product={{
-                  id: product.id,
-                  name: product.name,
-                  price: String(product.price),
-                  image: product.image,
-                  size: product.size,
-                  inStock: product.inStock,
-                  stockQuantity: product.stockQuantity,
-                }}
-                variants={normalizedVariants}
-                categoryName={product.category?.name || ""}
-                brandName={undefined}
-                subCategoryName={product.subCategory?.name}
-                productSize={product.size}
-                features={product.features}
-              />
+              {publicDetail ? (
+                <ConsumerProductPurchasePanel
+                  product={{
+                    id: product.id,
+                    name: product.name,
+                    image: product.image,
+                    size: product.size,
+                    inStock: product.inStock,
+                    stockQuantity: product.stockQuantity,
+                    category: product.category,
+                    subCategory: product.subCategory,
+                  }}
+                  detail={publicDetail}
+                />
+              ) : (
+                <VariantDetailClient
+                  product={{
+                    id: product.id,
+                    name: product.name,
+                    price: String(product.price),
+                    image: product.image,
+                    size: product.size,
+                    inStock: product.inStock,
+                    stockQuantity: product.stockQuantity,
+                  }}
+                  variants={normalizedVariants}
+                  categoryName={product.category?.name || ""}
+                  brandName={undefined}
+                  subCategoryName={product.subCategory?.name}
+                  productSize={product.size}
+                  features={product.features}
+                />
+              )}
 
               {/* Trust Badges */}
               <div className="mt-8 pt-6 border-t">
