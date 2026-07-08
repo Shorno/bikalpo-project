@@ -417,6 +417,8 @@ export function buildPublicProductDetailPayload(args: {
     ...row,
     openQty: Math.max(row.availableQty - row.inCartonQty, 0),
   }));
+  const selectableBrands = referenceCatalog.brands.filter((brand) => brand.id != null);
+  const defaultPriceRow = pricingRows[0] ?? null;
 
   return {
     summary,
@@ -510,6 +512,14 @@ export function buildPublicProductDetailPayload(args: {
       },
     },
     referenceCatalog,
+    selection: {
+      defaultBrandId:
+        defaultPriceRow?.brandId ?? selectableBrands[0]?.id ?? null,
+      defaultVariantOptionId:
+        defaultPriceRow?.variantOptionId ?? referenceCatalog.variants[0]?.id ?? null,
+      hasMultipleBrands: selectableBrands.length > 1,
+      hasMultipleVariants: referenceCatalog.variants.length > 1,
+    },
     pricing: {
       currency: "BDT",
       rows: pricingRows,
