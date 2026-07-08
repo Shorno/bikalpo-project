@@ -140,6 +140,9 @@ export function serializeWebViewCoreProduct(
     },
     image: coreProduct.image || primaryProduct?.image || null,
     price: displayPrice,
+    size: referenceRow
+      ? getVariantOptionLabel(referenceRow.variantOption)
+      : primaryProduct?.size,
     unitLabel: referenceRow
       ? getVariantUnitLabel(referenceRow.variantOption)
       : primaryProduct?.size,
