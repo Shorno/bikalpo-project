@@ -322,6 +322,104 @@ async function getCoreSellerCountMap(coreProductIds: number[]) {
   return sellerCountMap;
 }
 
+async function resolveWebViewProductDetailContext(input: {
+  id?: number;
+  slug?: string;
+}) {
+  const identityCondition = input.id
+    ? eq(coreProductIdentity.id, input.id)
+    : eq(coreProductIdentity.slug, input.slug?.trim() ?? "");
+
+  let found = await db.query.coreProductIdentity.findFirst({
+    where: identityCondition,
+    with: {
+      category: {
+        columns: { id: true, name: true, slug: true, typeId: true },
+        with: {
+          type: {
+            columns: {
+              id: true,
+              name: true,
+              slug: true,
+              inventoryBehaviour: true,
+            },
+          },
+        },
+      },
+      subCategory: { columns: { id: true, name: true, slug: true } },
+    },
+  });
+
+  if (!found) {
+    const productIdentityCondition = input.id
+      ? eq(product.id, input.id)
+      : eq(product.slug, input.slug?.trim() ?? "");
+    const foundProduct = await db.query.product.findFirst({
+      where: and(...getWebViewProductConditions(), productIdentityCondition),
+      columns: { coreProductId: true },
+    });
+
+    if (foundProduct?.coreProductId) {
+      found = await db.query.coreProductIdentity.findFirst({
+        where: eq(coreProductIdentity.id, foundProduct.coreProductId),
+        with: {
+          category: {
+            columns: { id: true, name: true, slug: true, typeId: true },
+            with: {
+              type: {
+                columns: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  inventoryBehaviour: true,
+                },
+              },
+            },
+          },
+          subCategory: { columns: { id: true, name: true, slug: true } },
+        },
+      });
+    }
+  }
+
+  if (!found) {
+    throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+  }
+
+  const allProductRows = await db.query.product.findMany({
+    where: and(...getWebViewProductConditions(), eq(product.coreProductId, found.id)),
+    with: {
+      category: { columns: { id: true, name: true, slug: true } },
+      subCategory: { columns: { id: true, name: true, slug: true } },
+      coreProduct: true,
+      images: true,
+      productBrands: { with: { brand: true } },
+      variantPrices: {
+        with: {
+          brand: true,
+          variantOption: true,
+        },
+      },
+      variants: {
+        with: {
+          brand: true,
+          sourceVariantOption: true,
+        },
+      },
+    },
+    orderBy: [desc(product.createdAt)],
+  });
+  const productRows = getScopedWebViewProductRows(allProductRows);
+  const primaryProduct = getPrimaryWebViewProduct(productRows);
+
+  return {
+    coreProduct: found,
+    allProductRows,
+    productRows,
+    primaryProduct,
+  };
+}
+
 // ════════════════════════════════════════════════════════════════
 // QUERIES (read-only, customer-facing)
 // ════════════════════════════════════════════════════════════════
@@ -544,71 +642,8 @@ const queries = {
     })
     .input(webViewProductDetailSchema)
     .handler(async ({ input }) => {
-      const identityCondition = input.id
-        ? eq(coreProductIdentity.id, input.id)
-        : eq(coreProductIdentity.slug, input.slug?.trim() ?? "");
-
-      let found = await db.query.coreProductIdentity.findFirst({
-        where: identityCondition,
-        with: {
-          category: { columns: { name: true, slug: true } },
-          subCategory: { columns: { name: true, slug: true } },
-        },
-      });
-
-      if (!found) {
-        const productIdentityCondition = input.id
-          ? eq(product.id, input.id)
-          : eq(product.slug, input.slug?.trim() ?? "");
-        const foundProduct = await db.query.product.findFirst({
-          where: and(
-            ...getWebViewProductConditions(),
-            productIdentityCondition,
-          ),
-          columns: { coreProductId: true },
-        });
-
-        if (foundProduct?.coreProductId) {
-          found = await db.query.coreProductIdentity.findFirst({
-            where: eq(coreProductIdentity.id, foundProduct.coreProductId),
-            with: {
-              category: { columns: { name: true, slug: true } },
-              subCategory: { columns: { name: true, slug: true } },
-            },
-          });
-        }
-      }
-
-      if (!found) {
-        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
-      }
-
-      const allProductRows = await db.query.product.findMany({
-        where: and(
-          ...getWebViewProductConditions(),
-          eq(product.coreProductId, found.id),
-        ),
-        with: {
-          images: true,
-          productBrands: { with: { brand: true } },
-          variantPrices: {
-            with: {
-              brand: true,
-              variantOption: true,
-            },
-          },
-          variants: {
-            with: {
-              brand: true,
-              sourceVariantOption: true,
-            },
-          },
-        },
-        orderBy: [desc(product.createdAt)],
-      });
-      const productRows = getScopedWebViewProductRows(allProductRows);
-
-      const primaryProduct = getPrimaryWebViewProduct(productRows);
+      const { coreProduct: found, productRows, primaryProduct } =
+        await resolveWebViewProductDetailContext(input);
       const [reviewStatsMap, sellerCountMap] = await Promise.all([
         getCoreReviewStatsMap([found.id]),
         getCoreSellerCountMap([found.id]),
@@ -1035,22 +1070,18 @@ const queries = {
     })
     .input(z.object({ slug: z.string() }))
     .handler(async ({ input }) => {
-      const found = await db.query.product.findFirst({
-        where: eq(product.slug, input.slug),
-        with: {
-          category: { columns: { name: true, slug: true } },
-          subCategory: { columns: { name: true } },
-          images: true,
-        },
-      });
-      if (!found)
+      const { coreProduct, productRows, primaryProduct } =
+        await resolveWebViewProductDetailContext({ slug: input.slug });
+
+      if (!primaryProduct) {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
 
       // Get RETAIL variants only for consumer-facing detail page
       // (TRADE variants are for shop owners / B2B)
       const variants = await db.query.productVariant.findMany({
         where: and(
-          eq(productVariant.productId, found.id),
+          eq(productVariant.productId, primaryProduct.id),
           or(
             eq(productVariant.variantType, "retail"),
             isNull(productVariant.variantType),
@@ -1061,32 +1092,32 @@ const queries = {
 
       // Serialize product and variants with proper price conversion
       const foundSerialized = {
-        ...found,
-        price: parseFloat(found.price),
+        ...primaryProduct,
+        slug: coreProduct.slug,
+        price: asNumber(primaryProduct.price),
       };
       const variantsSerialized = variants.map((v) => ({
         ...v,
-        price: parseFloat(v.price),
+        price: asNumber(v.price),
       }));
 
-      // Get review stats
-      const reviewStats = await db
-        .select({
-          averageRating: avg(productReview.rating),
-          totalReviews: count(productReview.id),
-        })
-        .from(productReview)
-        .where(eq(productReview.productId, found.id));
+      const [reviewStatsMap, sellerCountMap] = await Promise.all([
+        getCoreReviewStatsMap([coreProduct.id]),
+        getCoreSellerCountMap([coreProduct.id]),
+      ]);
+      const summary = serializeWebViewCoreProduct(
+        coreProduct,
+        productRows,
+        reviewStatsMap,
+        sellerCountMap,
+      );
+      const reviewStats = summary.reviewStats;
 
       return {
         product: foundSerialized,
         variants: variantsSerialized,
-        reviewStats: {
-          averageRating: reviewStats[0]?.averageRating
-            ? parseFloat(reviewStats[0].averageRating)
-            : 0,
-          totalReviews: reviewStats[0]?.totalReviews || 0,
-        },
+        reviewStats,
+        summary,
       };
     }),
 
