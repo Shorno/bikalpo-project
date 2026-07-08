@@ -593,6 +593,9 @@ export function buildPublicProductDetailPayload(args: {
       defaultVariantId: defaultPriceRow?.variantId ?? null,
       defaultBrandId:
         defaultPriceRow?.brandId ?? selectableBrands[0]?.id ?? null,
+      defaultColor: defaultPriceRow?.color ?? null,
+      defaultSize: defaultPriceRow?.size ?? null,
+      defaultLabel: defaultPriceRow?.label ?? null,
       defaultVariantOptionId:
         defaultPriceRow?.variantOptionId ?? referenceCatalog.variants[0]?.id ?? null,
       hasMultipleBrands: selectableBrands.length > 1,
