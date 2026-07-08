@@ -270,6 +270,9 @@ export function ConsumerProductPurchasePanel({
                 id: row.brandId!,
                 name: row.brandName ?? "Brand",
                 rowId: row.id,
+                qty: aggregatedRows
+                  .filter((entry) => entry.brandId === row.brandId)
+                  .reduce((sum, entry) => sum + entry.stockQuantity, 0),
               },
             ]),
         ).values(),
@@ -287,6 +290,9 @@ export function ConsumerProductPurchasePanel({
               {
                 value: row.color!,
                 rowId: row.id,
+                qty: brandScopedRows
+                  .filter((entry) => entry.color === row.color)
+                  .reduce((sum, entry) => sum + entry.stockQuantity, 0),
               },
             ]),
         ).values(),
@@ -304,6 +310,9 @@ export function ConsumerProductPurchasePanel({
               {
                 value: row.size!,
                 rowId: row.id,
+                qty: colorScopedRows
+                  .filter((entry) => entry.size === row.size)
+                  .reduce((sum, entry) => sum + entry.stockQuantity, 0),
               },
             ]),
         ).values(),
@@ -444,7 +453,10 @@ export function ConsumerProductPurchasePanel({
                         : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
                     }`}
                   >
-                    {brandOption.name}
+                    <div>{brandOption.name}</div>
+                    <div className="text-xs opacity-70">
+                      {brandOption.qty} available
+                    </div>
                   </button>
                 );
               })}
@@ -469,7 +481,10 @@ export function ConsumerProductPurchasePanel({
                         : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
                     }`}
                   >
-                    {getSelectionValueLabel(colorOption.value)}
+                    <div>{getSelectionValueLabel(colorOption.value)}</div>
+                    <div className="text-xs opacity-70">
+                      {colorOption.qty} available
+                    </div>
                   </button>
                 );
               })}
@@ -496,7 +511,10 @@ export function ConsumerProductPurchasePanel({
                         : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
                     }`}
                   >
-                    {getSelectionValueLabel(sizeOption.value)}
+                    <div>{getSelectionValueLabel(sizeOption.value)}</div>
+                    <div className="text-xs opacity-70">
+                      {sizeOption.qty} available
+                    </div>
                   </button>
                 );
               })}
@@ -528,6 +546,9 @@ export function ConsumerProductPurchasePanel({
                     </div>
                     <div className="text-xs opacity-80">
                       {formatMoney(row.consumerPrice)}
+                    </div>
+                    <div className="text-xs opacity-70">
+                      {row.stockQuantity} available
                     </div>
                   </button>
                 );
