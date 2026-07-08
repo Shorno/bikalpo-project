@@ -2,7 +2,7 @@
 
 type ConsumerDetailProps = {
   detail: {
-    family?: { label?: string | null } | null;
+    family?: { code?: string | null; label?: string | null } | null;
     fulfillment?: {
       defaultMode?: string | null;
       supportedModes?: Array<{ code?: string | null; label?: string | null }>;
@@ -48,6 +48,7 @@ type ConsumerDetailProps = {
       rows?: Array<{
         brandName?: string | null;
         label?: string | null;
+        unitLabel?: string | null;
         color?: string | null;
         size?: string | null;
         consumerPrice?: number | null;
@@ -82,19 +83,150 @@ type ConsumerDetailProps = {
   } | null;
 };
 
+type PricingRow = NonNullable<
+  NonNullable<NonNullable<ConsumerDetailProps["detail"]>["pricing"]>["rows"]
+>[number];
+
+type StockRow = NonNullable<
+  NonNullable<NonNullable<ConsumerDetailProps["detail"]>["stock"]>["rows"]
+>[number];
+
 function formatDate(value?: string | Date | null) {
   if (!value) return "N/A";
   const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString("en-BD");
+  return Number.isNaN(date.getTime())
+    ? "N/A"
+    : date.toLocaleDateString("en-BD");
 }
 
 function formatMoney(value?: number | null) {
   const amount = Number(value ?? 0);
-  return `৳${amount.toLocaleString("en-BD")}`;
+  return `Tk ${amount.toLocaleString("en-BD")}`;
 }
 
 function formatLabel(parts: Array<string | null | undefined>) {
-  return parts.filter(Boolean).join(" • ") || "Default";
+  return parts.filter(Boolean).join(" / ") || "Default";
+}
+
+function formatUnitValue(value?: number | null, unit?: string | null) {
+  return `${Number(value ?? 0).toLocaleString("en-BD")} ${unit ?? ""}`.trim();
+}
+
+function getFamilyCode(detail: ConsumerDetailProps["detail"]) {
+  return detail?.family?.code ?? "generic";
+}
+
+function getPricingColumnLabels(familyCode: string) {
+  switch (familyCode) {
+    case "grocery":
+    case "bulk_liquid":
+      return { primary: "Brand", secondary: "Pack / Supply" };
+    case "fashion":
+      return { primary: "Color", secondary: "Size / Style" };
+    case "footwear":
+      return { primary: "Color", secondary: "Size / Pair" };
+    case "electronics":
+      return { primary: "Color / Brand", secondary: "Model / Pack" };
+    case "lpg":
+      return { primary: "Capacity", secondary: "Type / Option" };
+    default:
+      return { primary: "Variant", secondary: "Details" };
+  }
+}
+
+function getStockColumnLabels(familyCode: string) {
+  switch (familyCode) {
+    case "grocery":
+    case "bulk_liquid":
+      return { primary: "Brand", secondary: "Pack / Supply" };
+    case "fashion":
+      return { primary: "Color", secondary: "Size / Piece" };
+    case "footwear":
+      return { primary: "Color", secondary: "Size / Pair" };
+    case "electronics":
+      return { primary: "Color / Brand", secondary: "Model / Unit" };
+    case "lpg":
+      return { primary: "Capacity", secondary: "Type / Cylinder" };
+    default:
+      return { primary: "Variant", secondary: "Details" };
+  }
+}
+
+function getPricingPrimaryValue(row: PricingRow, familyCode: string) {
+  switch (familyCode) {
+    case "grocery":
+    case "bulk_liquid":
+      return row.brandName ?? "Default";
+    case "fashion":
+    case "footwear":
+      return row.color ?? "Default";
+    case "electronics":
+      return row.color ?? row.brandName ?? "Default";
+    case "lpg":
+      return row.size ?? row.unitLabel ?? row.label ?? "Default";
+    default:
+      return row.label ?? "Default";
+  }
+}
+
+function getPricingSecondaryValue(row: PricingRow, familyCode: string) {
+  switch (familyCode) {
+    case "grocery":
+    case "bulk_liquid":
+      return row.label ?? row.size ?? "Default";
+    case "fashion":
+    case "footwear":
+      return row.size ?? row.label ?? "Default";
+    case "electronics":
+    case "lpg":
+      return row.label ?? row.unitLabel ?? "Default";
+    default:
+      return formatLabel([row.brandName, row.color, row.size]);
+  }
+}
+
+function getStockPrimaryValue(row: StockRow, familyCode: string) {
+  switch (familyCode) {
+    case "grocery":
+    case "bulk_liquid":
+      return row.brandName ?? "Default";
+    case "fashion":
+    case "footwear":
+      return row.color ?? "Default";
+    case "electronics":
+      return row.color ?? row.brandName ?? "Default";
+    case "lpg":
+      return row.size ?? row.unitLabel ?? "Default";
+    default:
+      return formatLabel([row.brandName, row.color, row.size]);
+  }
+}
+
+function getStockSecondaryValue(row: StockRow, familyCode: string) {
+  switch (familyCode) {
+    case "grocery":
+    case "bulk_liquid":
+      return row.unitLabel ?? row.size ?? "Default";
+    case "fashion":
+    case "footwear":
+      return row.size ?? row.unitLabel ?? "Default";
+    case "electronics":
+    case "lpg":
+      return row.unitLabel ?? "Default";
+    default:
+      return row.unitLabel ?? "Default";
+  }
+}
+
+function getReturnRuleLabel(familyCode: string) {
+  switch (familyCode) {
+    case "lpg":
+      return "Empty Cylinder Exchange";
+    case "bulk_liquid":
+      return "Empty Drum Return";
+    default:
+      return "Empty Pack Return";
+  }
 }
 
 export function ConsumerProductDetailSections({
@@ -109,15 +241,20 @@ export function ConsumerProductDetailSections({
   const stockRows = detail.stock?.rows ?? [];
   const performance = detail.performance;
   const history = detail.history;
+  const familyCode = getFamilyCode(detail);
+  const pricingColumns = getPricingColumnLabels(familyCode);
+  const stockColumns = getStockColumnLabels(familyCode);
+  const displayUnit = detail.stock?.displayUnit ?? info?.inventoryUnit ?? "unit";
+  const soldUnit = info?.minimumOrder?.unit ?? displayUnit;
 
   return (
-    <div className="space-y-6 mt-6">
+    <div className="mt-6 space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <section className="rounded-lg bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">
             Product Information
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
               <span className="text-gray-500">Family</span>
               <p className="font-medium text-gray-900">
@@ -173,7 +310,8 @@ export function ConsumerProductDetailSections({
             <div className="sm:col-span-2">
               <span className="text-gray-500">Minimum Order</span>
               <p className="font-medium text-gray-900">
-                {info?.minimumOrder?.quantity ?? 1} {info?.minimumOrder?.unit ?? "unit"}
+                {info?.minimumOrder?.quantity ?? 1}{" "}
+                {info?.minimumOrder?.unit ?? "unit"}
               </p>
             </div>
             <div className="sm:col-span-2">
@@ -181,7 +319,7 @@ export function ConsumerProductDetailSections({
               <div className="mt-2 flex flex-wrap gap-2">
                 {(fulfillment?.supportedModes ?? []).map((mode, index) => (
                   <span
-                    key={`${mode.code}-${index}`}
+                    key={`${mode.code ?? mode.label}-${index}`}
                     className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
                   >
                     {mode.label ?? mode.code ?? "Mode"}
@@ -192,11 +330,11 @@ export function ConsumerProductDetailSections({
           </div>
         </section>
 
-        <section className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <section className="rounded-lg bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">
             Inventory & Rules
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
               <span className="text-gray-500">Tracking</span>
               <p className="font-medium text-gray-900">
@@ -254,13 +392,17 @@ export function ConsumerProductDetailSections({
             <div className="sm:col-span-2">
               <span className="text-gray-500">Unit Flow</span>
               <p className="font-medium text-gray-900">
-                {(fulfillment?.units?.order?.shortLabel ?? "N/A").toUpperCase()} →{" "}
-                {(fulfillment?.units?.stock?.shortLabel ?? "N/A").toUpperCase()} →{" "}
+                {(fulfillment?.units?.order?.shortLabel ?? "N/A").toUpperCase()}{" "}
+                -&gt;{" "}
+                {(fulfillment?.units?.stock?.shortLabel ?? "N/A").toUpperCase()}{" "}
+                -&gt;{" "}
                 {(fulfillment?.units?.display?.shortLabel ?? "N/A").toUpperCase()}
               </p>
             </div>
             <div className="sm:col-span-2">
-              <span className="text-gray-500">Empty Pack Return</span>
+              <span className="text-gray-500">
+                {getReturnRuleLabel(familyCode)}
+              </span>
               <p className="font-medium text-gray-900">
                 {rules?.emptyPackReturn?.enabled
                   ? `${formatMoney(rules.emptyPackReturn.depositAmount)} deposit`
@@ -272,15 +414,19 @@ export function ConsumerProductDetailSections({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Pricing</h2>
+        <section className="rounded-lg bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">Pricing</h2>
           {pricingRows.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-gray-500">
-                    <th className="py-2 pr-3 font-medium">Variant</th>
-                    <th className="py-2 pr-3 font-medium">Brand</th>
+                    <th className="py-2 pr-3 font-medium">
+                      {pricingColumns.primary}
+                    </th>
+                    <th className="py-2 pr-3 font-medium">
+                      {pricingColumns.secondary}
+                    </th>
                     <th className="py-2 font-medium">Price</th>
                   </tr>
                 </thead>
@@ -288,10 +434,10 @@ export function ConsumerProductDetailSections({
                   {pricingRows.slice(0, 8).map((row, index) => (
                     <tr key={`${row.label}-${index}`} className="border-b last:border-0">
                       <td className="py-3 pr-3 text-gray-900">
-                        {formatLabel([row.label, row.color, row.size])}
+                        {getPricingPrimaryValue(row, familyCode)}
                       </td>
                       <td className="py-3 pr-3 text-gray-600">
-                        {row.brandName ?? "Default"}
+                        {getPricingSecondaryValue(row, familyCode)}
                       </td>
                       <td className="py-3 font-medium text-gray-900">
                         {formatMoney(row.consumerPrice)}
@@ -306,8 +452,8 @@ export function ConsumerProductDetailSections({
           )}
         </section>
 
-        <section className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <section className="rounded-lg bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">
             Variant Stock
           </h2>
           {stockRows.length > 0 ? (
@@ -315,7 +461,12 @@ export function ConsumerProductDetailSections({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-gray-500">
-                    <th className="py-2 pr-3 font-medium">Variant</th>
+                    <th className="py-2 pr-3 font-medium">
+                      {stockColumns.primary}
+                    </th>
+                    <th className="py-2 pr-3 font-medium">
+                      {stockColumns.secondary}
+                    </th>
                     <th className="py-2 pr-3 font-medium">Available</th>
                     <th className="py-2 pr-3 font-medium">Open</th>
                     <th className="py-2 font-medium">Sellers</th>
@@ -328,20 +479,16 @@ export function ConsumerProductDetailSections({
                       className="border-b last:border-0"
                     >
                       <td className="py-3 pr-3 text-gray-900">
-                        {formatLabel([
-                          row.brandName,
-                          row.color,
-                          row.size,
-                          row.unitLabel,
-                        ])}
+                        {getStockPrimaryValue(row, familyCode)}
                       </td>
                       <td className="py-3 pr-3 text-gray-600">
-                        {(row.availableQty ?? 0).toLocaleString("en-BD")}{" "}
-                        {detail.stock?.displayUnit ?? ""}
+                        {getStockSecondaryValue(row, familyCode)}
                       </td>
                       <td className="py-3 pr-3 text-gray-600">
-                        {(row.openQty ?? 0).toLocaleString("en-BD")}{" "}
-                        {detail.stock?.displayUnit ?? ""}
+                        {formatUnitValue(row.availableQty, displayUnit)}
+                      </td>
+                      <td className="py-3 pr-3 text-gray-600">
+                        {formatUnitValue(row.openQty, displayUnit)}
                       </td>
                       <td className="py-3 font-medium text-gray-900">
                         {row.sellerCount ?? 0}
@@ -352,16 +499,18 @@ export function ConsumerProductDetailSections({
               </table>
             </div>
           ) : (
-            <p className="text-sm text-gray-500">No public stock rows available yet.</p>
+            <p className="text-sm text-gray-500">
+              No public stock rows available yet.
+            </p>
           )}
         </section>
       </div>
 
-      <section className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+      <section className="rounded-lg bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">
           History & Performance
         </h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <div className="rounded-lg bg-gray-50 p-4">
             <p className="text-xs uppercase tracking-wide text-gray-500">
               Created
@@ -412,10 +561,10 @@ export function ConsumerProductDetailSections({
           </div>
           <div className="rounded-lg bg-gray-50 p-4">
             <p className="text-xs uppercase tracking-wide text-gray-500">
-              Orders
+              Sold
             </p>
             <p className="mt-1 font-semibold text-gray-900">
-              {performance?.totalOrders ?? 0}
+              {formatUnitValue(performance?.totalUnitsSold, soldUnit)}
             </p>
           </div>
           <div className="rounded-lg bg-gray-50 p-4">
