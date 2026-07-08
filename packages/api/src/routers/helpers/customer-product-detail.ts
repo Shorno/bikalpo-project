@@ -263,7 +263,7 @@ export function buildReferenceCatalogData(productRows: any[]) {
   }
 
   const referencePrices = getUniqueReferencePriceEntries(productRows).map(
-    ({ row: priceRow }) => {
+    ({ productRow, row: priceRow }) => {
       if (priceRow.brand) {
         brandMap.set(priceRow.brand.id, {
           id: priceRow.brand.id,
@@ -289,6 +289,10 @@ export function buildReferenceCatalogData(productRows: any[]) {
 
       return {
         id: priceRow.id,
+        productId: productRow.id,
+        productName: productRow.name ?? null,
+        productSlug: productRow.slug ?? null,
+        sku: productRow.sku ?? null,
         brandId: priceRow.brandId,
         brandName: priceRow.brand?.name ?? null,
         variantOptionId: priceRow.variantOptionId,
@@ -300,6 +304,25 @@ export function buildReferenceCatalogData(productRows: any[]) {
         color: generatedVariant?.color ?? null,
         size: generatedVariant?.size ?? variantOption?.size ?? null,
         packType: generatedVariant?.packType ?? null,
+        orderMin:
+          generatedVariant?.orderMin != null
+            ? asNumber(generatedVariant.orderMin)
+            : 1,
+        orderMax:
+          generatedVariant?.orderMax != null
+            ? asNumber(generatedVariant.orderMax)
+            : null,
+        orderIncrement:
+          generatedVariant?.orderIncrement != null
+            ? asNumber(generatedVariant.orderIncrement)
+            : 1,
+        orderUnit:
+          generatedVariant?.orderUnit ??
+          generatedVariant?.unitLabel ??
+          getVariantUnitLabel(variantOption) ??
+          null,
+        sortOrder:
+          generatedVariant?.sortOrder ?? priceRow.sortOrder ?? 0,
       };
     },
   );
@@ -343,6 +366,7 @@ export function buildPublicProductDetailPayload(args: {
   summary: ReturnType<typeof serializeWebViewCoreProduct>;
   referenceCatalog: ReturnType<typeof buildReferenceCatalogData>;
   stockRows?: Array<{
+    productId: number;
     variantId: number;
     variantOptionId: number | null;
     brandId: number | null;
@@ -402,6 +426,11 @@ export function buildPublicProductDetailPayload(args: {
     .map((dimension) => VARIANT_DIMENSION_LABELS[dimension])
     .join(" / ");
   const pricingRows = referenceCatalog.referencePrices.map((row) => ({
+    id: row.id,
+    productId: row.productId,
+    productName: row.productName,
+    productSlug: row.productSlug,
+    sku: row.sku,
     brandId: row.brandId ?? null,
     brandName: row.brandName ?? null,
     variantOptionId: row.variantOptionId,
@@ -412,6 +441,11 @@ export function buildPublicProductDetailPayload(args: {
     size: row.size ?? null,
     packType: row.packType ?? null,
     consumerPrice: row.consumerPrice,
+    orderMin: row.orderMin,
+    orderMax: row.orderMax,
+    orderIncrement: row.orderIncrement,
+    orderUnit: row.orderUnit,
+    sortOrder: row.sortOrder,
   }));
   const stockTableRows = stockRows.map((row) => ({
     ...row,
@@ -513,6 +547,9 @@ export function buildPublicProductDetailPayload(args: {
     },
     referenceCatalog,
     selection: {
+      defaultPriceRowId: defaultPriceRow?.id ?? null,
+      defaultProductId: defaultPriceRow?.productId ?? primaryProduct?.id ?? null,
+      defaultVariantId: defaultPriceRow?.variantId ?? null,
       defaultBrandId:
         defaultPriceRow?.brandId ?? selectableBrands[0]?.id ?? null,
       defaultVariantOptionId:

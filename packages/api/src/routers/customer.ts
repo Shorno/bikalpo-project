@@ -1061,6 +1061,7 @@ const queries = {
               activeRetailVariantIds.length > 0
                 ? db
                     .select({
+                      productId: productVariant.productId,
                       variantId: productVariant.id,
                       variantOptionId: productVariant.sourceVariantOptionId,
                       brandId: productVariant.brandId,
@@ -1102,6 +1103,7 @@ const queries = {
                       ),
                     )
                     .groupBy(
+                      productVariant.productId,
                       productVariant.id,
                       productVariant.sourceVariantOptionId,
                       productVariant.brandId,
