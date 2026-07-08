@@ -177,6 +177,214 @@ function generateOrderNumber(): string {
   return `ORD-${yy}${mm}${dd}-${rand}`;
 }
 
+type CustomerPurchaseMode = "standard" | "exchange" | "new";
+
+type CustomerVariantPricingContext = {
+  id: number;
+  unitLabel?: string | null;
+  quantitySelectorLabel?: string | null;
+  price?: string | number | null;
+  weightKg?: string | number | null;
+  sku?: string | null;
+  isPackReturnRequired?: boolean | null;
+  packDepositAmount?: string | number | null;
+};
+
+type ResolvedConsumerPricing = {
+  basePrice: number;
+  depositAmount: number;
+  purchaseMode: CustomerPurchaseMode;
+  purchaseModeLabel: string | null;
+  finalPrice: number;
+  variant: CustomerVariantPricingContext | null;
+};
+
+function getCustomerPurchaseModeLabel(
+  purchaseMode: CustomerPurchaseMode,
+): string | null {
+  switch (purchaseMode) {
+    case "exchange":
+      return "Exchange Cylinder";
+    case "new":
+      return "New Cylinder";
+    default:
+      return null;
+  }
+}
+
+function normalizeCustomerPurchaseMode(args: {
+  variant?: CustomerVariantPricingContext | null;
+  requestedMode?: CustomerPurchaseMode | null;
+}): {
+  purchaseMode: CustomerPurchaseMode;
+  purchaseModeLabel: string | null;
+  depositAmount: number;
+} {
+  const isReturnable = Boolean(args.variant?.isPackReturnRequired);
+  const depositAmount = isReturnable
+    ? Number(args.variant?.packDepositAmount ?? 0)
+    : 0;
+
+  if (!isReturnable || depositAmount <= 0) {
+    return {
+      purchaseMode: "standard" as const,
+      purchaseModeLabel: null,
+      depositAmount: 0,
+    };
+  }
+
+  const purchaseMode = args.requestedMode === "new" ? "new" : "exchange";
+  return {
+    purchaseMode,
+    purchaseModeLabel: getCustomerPurchaseModeLabel(purchaseMode),
+    depositAmount,
+  };
+}
+
+function inferStoredCustomerPurchaseMode(args: {
+  variant?: CustomerVariantPricingContext | null;
+  basePrice: number;
+  linePrice: number;
+}): {
+  purchaseMode: CustomerPurchaseMode;
+  purchaseModeLabel: string | null;
+  depositAmount: number;
+} {
+  const normalized = normalizeCustomerPurchaseMode({
+    variant: args.variant,
+    requestedMode: "exchange",
+  });
+
+  if (normalized.purchaseMode === "standard") {
+    return normalized;
+  }
+
+  const roundedBase = Number(args.basePrice.toFixed(2));
+  const roundedLine = Number(args.linePrice.toFixed(2));
+  const roundedWithDeposit = Number(
+    (args.basePrice + normalized.depositAmount).toFixed(2),
+  );
+
+  if (roundedLine === roundedWithDeposit && roundedWithDeposit !== roundedBase) {
+    return {
+      purchaseMode: "new" as const,
+      purchaseModeLabel: getCustomerPurchaseModeLabel("new"),
+      depositAmount: normalized.depositAmount,
+    };
+  }
+
+  return normalized;
+}
+
+function buildCustomerPurchaseDisplaySize(args: {
+  variant?: CustomerVariantPricingContext | null;
+  productSize?: string | null;
+  purchaseModeLabel?: string | null;
+}) {
+  const baseLabel =
+    args.variant?.quantitySelectorLabel ||
+    args.variant?.unitLabel ||
+    args.productSize ||
+    "Default";
+
+  return args.purchaseModeLabel
+    ? `${baseLabel} - ${args.purchaseModeLabel}`
+    : baseLabel;
+}
+
+async function resolveConsumerPricing(args: {
+  productId: number;
+  variantId?: number | null;
+  shopId?: string | null;
+  productPrice: string | number | null;
+  variant?: CustomerVariantPricingContext | null;
+  requestedMode?: CustomerPurchaseMode | null;
+}) {
+  let variant = args.variant ?? null;
+
+  if (!variant && args.variantId != null) {
+    variant =
+      (await db.query.productVariant.findFirst({
+        where: eq(productVariant.id, args.variantId),
+        columns: {
+          id: true,
+          unitLabel: true,
+          quantitySelectorLabel: true,
+          price: true,
+          weightKg: true,
+          sku: true,
+          isPackReturnRequired: true,
+          packDepositAmount: true,
+        },
+      })) ?? null;
+  }
+
+  let basePrice = Number(args.productPrice ?? 0);
+
+  if (args.variantId != null && args.shopId) {
+    let shopInventoryRecord = await db.query.inventory.findFirst({
+      where: and(
+        eq(inventory.ownerType, "shop"),
+        eq(inventory.ownerId, args.shopId),
+        eq(inventory.variantId, args.variantId),
+      ),
+      columns: {
+        retailPrice: true,
+      },
+    });
+
+    if (!shopInventoryRecord) {
+      const productVariants = await db.query.productVariant.findMany({
+        where: eq(productVariant.productId, args.productId),
+        columns: { id: true },
+      });
+      const variantIds = productVariants.map((entry) => entry.id);
+      if (variantIds.length > 0) {
+        shopInventoryRecord = await db.query.inventory.findFirst({
+          where: and(
+            eq(inventory.ownerType, "shop"),
+            eq(inventory.ownerId, args.shopId),
+            inArray(inventory.variantId, variantIds),
+            sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+          ),
+          columns: {
+            retailPrice: true,
+          },
+        });
+      }
+    }
+
+    if (shopInventoryRecord?.retailPrice) {
+      basePrice = Number(shopInventoryRecord.retailPrice);
+    }
+  }
+
+  if (args.variantId != null && variant?.price != null) {
+    const fallbackProductPrice = Number(args.productPrice ?? 0);
+    if (basePrice === fallbackProductPrice || !Number.isFinite(basePrice)) {
+      basePrice = Number(variant.price);
+    }
+  }
+
+  const normalized = normalizeCustomerPurchaseMode({
+    variant,
+    requestedMode: args.requestedMode,
+  });
+  const finalPrice =
+    normalized.purchaseMode === "new"
+      ? basePrice + normalized.depositAmount
+      : basePrice;
+
+  return {
+    basePrice,
+    depositAmount: normalized.depositAmount,
+    purchaseMode: normalized.purchaseMode,
+    purchaseModeLabel: normalized.purchaseModeLabel,
+    finalPrice,
+    variant,
+  } satisfies ResolvedConsumerPricing;
+}
+
 // Simple in-memory delivery cost calculation (re-uses delivery rules from DB)
 async function calculateDeliveryCost(
   totalWeightKg: number,
@@ -1598,9 +1806,12 @@ const queries = {
                 columns: {
                   id: true,
                   unitLabel: true,
+                  quantitySelectorLabel: true,
                   price: true,
                   weightKg: true,
                   sku: true,
+                  isPackReturnRequired: true,
+                  packDepositAmount: true,
                 },
               },
             },
@@ -1629,34 +1840,54 @@ const queries = {
         }
       }
 
-      const items = userCart.items.map((item) => {
-        const variant = item.variant;
-        // Use variant-specific data when available
-        const displayName = variant
-          ? `${item.product.name} — ${variant.unitLabel}`
-          : item.product.name;
-        const displaySize = variant ? variant.unitLabel : item.product.size;
-        const currentPrice = variant
-          ? Number(variant.price)
-          : Number(item.product.price);
+      const items = await Promise.all(
+        userCart.items.map(async (item) => {
+          const pricing = await resolveConsumerPricing({
+            productId: item.productId,
+            variantId: item.variantId,
+            shopId: item.shopId,
+            productPrice: item.product.price,
+            variant: item.variant,
+          });
+          const storedMode = inferStoredCustomerPurchaseMode({
+            variant: pricing.variant,
+            basePrice: pricing.basePrice,
+            linePrice: Number(item.price),
+          });
+          const displayName = pricing.variant?.unitLabel
+            ? `${item.product.name} - ${pricing.variant.unitLabel}`
+            : item.product.name;
+          const displaySize = buildCustomerPurchaseDisplaySize({
+            variant: pricing.variant,
+            productSize: item.product.size,
+            purchaseModeLabel: storedMode.purchaseModeLabel,
+          });
+          const currentPrice =
+            storedMode.purchaseMode === "new"
+              ? pricing.basePrice + storedMode.depositAmount
+              : pricing.basePrice;
 
-        return {
-          id: item.id,
-          productId: item.productId,
-          variantId: item.variantId,
-          name: displayName,
-          slug: item.product.slug,
-          categorySlug: undefined as string | undefined,
-          image: item.product.image,
-          size: displaySize,
-          price: Number(item.price),
-          currentPrice,
-          quantity: item.quantity,
-          inStock: item.product.inStock,
-          shopId: item.shopId,
-          shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
-        };
-      });
+          return {
+            id: item.id,
+            productId: item.productId,
+            variantId: item.variantId,
+            name: displayName,
+            slug: item.product.slug,
+            categorySlug: undefined as string | undefined,
+            image: item.product.image,
+            size: displaySize,
+            price: Number(item.price),
+            currentPrice,
+            quantity: item.quantity,
+            inStock: item.product.inStock,
+            shopId: item.shopId,
+            shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
+            purchaseMode: storedMode.purchaseMode,
+            purchaseModeLabel: storedMode.purchaseModeLabel,
+            depositAmount: storedMode.depositAmount,
+          };
+        }),
+      );
 
       const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
       const totalPrice = items.reduce(
@@ -2908,6 +3139,7 @@ const mutations = {
         quantity: z.number().min(1).default(1),
         variantId: z.number().optional(),
         shopId: z.string().optional(), // B2C: which shop to buy from
+        purchaseMode: z.enum(["standard", "exchange", "new"]).optional(),
       }),
     )
     .handler(async ({ context, input }) => {
@@ -2923,58 +3155,14 @@ const mutations = {
           message: "Product is out of stock",
         });
 
-      // Determine price: shop retail price (B2C) > variant base price > product price
-      let itemPrice = productData.price;
-
-      if (input.variantId) {
-        // First: check if there's a shop-specific retail price (B2C)
-        if (input.shopId) {
-          // Try exact variant match first
-          let shopInv = await db.query.inventory.findFirst({
-            where: and(
-              eq(inventory.ownerType, "shop"),
-              eq(inventory.ownerId, input.shopId),
-              eq(inventory.variantId, input.variantId),
-            ),
-          });
-
-          // If not found, the shop's inventory might be on a different variant
-          // (e.g. TRADE variant when consumer browsed RETAIL variant)
-          // Search by product: find any inventory this shop has for this product
-          if (!shopInv) {
-            const productVariants = await db.query.productVariant.findMany({
-              where: eq(productVariant.productId, input.productId),
-              columns: { id: true },
-            });
-            const variantIds = productVariants.map((v) => v.id);
-            if (variantIds.length > 0) {
-              shopInv = await db.query.inventory.findFirst({
-                where: and(
-                  eq(inventory.ownerType, "shop"),
-                  eq(inventory.ownerId, input.shopId),
-                  inArray(inventory.variantId, variantIds),
-                  sql`CAST(${inventory.availableQty} AS numeric) > 0`,
-                ),
-              });
-            }
-          }
-
-          if (shopInv?.retailPrice) {
-            itemPrice = shopInv.retailPrice;
-          }
-        }
-
-        // If no shop price was found, use the variant's own base price
-        if (itemPrice === productData.price) {
-          const variantData = await db.query.productVariant.findFirst({
-            where: eq(productVariant.id, input.variantId),
-            columns: { price: true },
-          });
-          if (variantData?.price) {
-            itemPrice = variantData.price;
-          }
-        }
-      }
+      const pricing = await resolveConsumerPricing({
+        productId: input.productId,
+        variantId: input.variantId,
+        shopId: input.shopId,
+        productPrice: productData.price,
+        requestedMode: input.purchaseMode,
+      });
+      const itemPrice = pricing.finalPrice.toFixed(2);
 
       // Get or create cart
       let userCart = await db.query.cart.findFirst({
@@ -2997,10 +3185,16 @@ const mutations = {
       }
       if (input.shopId) {
         dupConditions.push(eq(cartItem.shopId, input.shopId));
+      } else {
+        dupConditions.push(isNull(cartItem.shopId));
       }
-      const existing = await db.query.cartItem.findFirst({
+      const existingItems = await db.query.cartItem.findMany({
         where: and(...dupConditions),
       });
+      const existing =
+        existingItems.find(
+          (item) => Number(item.price) === Number(Number(itemPrice).toFixed(2)),
+        ) ?? null;
 
       if (existing) {
         await db
@@ -3217,6 +3411,23 @@ const mutations = {
           ? Number(item.variant.weightKg)
           : parseWeightFromSize(item.product.size);
         totalWeightKg += weightPerUnit * item.quantity;
+        const pricing = await resolveConsumerPricing({
+          productId: item.productId,
+          variantId: item.variantId,
+          shopId: item.shopId,
+          productPrice: item.product.price,
+          variant: item.variant,
+        });
+        const storedMode = inferStoredCustomerPurchaseMode({
+          variant: pricing.variant,
+          basePrice: pricing.basePrice,
+          linePrice: Number(item.price),
+        });
+        const productSizeLabel = buildCustomerPurchaseDisplaySize({
+          variant: pricing.variant,
+          productSize: item.product.size,
+          purchaseModeLabel: storedMode.purchaseModeLabel,
+        });
 
         orderItems.push({
           productId: item.productId,
@@ -3224,7 +3435,7 @@ const mutations = {
           shopId: item.shopId ?? null,
           productName: item.product.name,
           productImage: item.product.image,
-          productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
+          productSize: productSizeLabel,
           quantity: item.quantity,
           unitPrice: item.price,
           totalPrice: itemTotal.toFixed(2),
@@ -4081,6 +4292,23 @@ const openOrderEndpoints = {
 
         const itemTotal = Number(item.price) * item.quantity;
         subtotal += itemTotal;
+        const pricing = await resolveConsumerPricing({
+          productId: item.productId,
+          variantId: item.variantId,
+          shopId: item.shopId,
+          productPrice: item.product.price,
+          variant: item.variant,
+        });
+        const storedMode = inferStoredCustomerPurchaseMode({
+          variant: pricing.variant,
+          basePrice: pricing.basePrice,
+          linePrice: Number(item.price),
+        });
+        const productSizeLabel = buildCustomerPurchaseDisplaySize({
+          variant: pricing.variant,
+          productSize: item.product.size,
+          purchaseModeLabel: storedMode.purchaseModeLabel,
+        });
 
         cartItemsForSplit.push({
           productId: item.productId,
@@ -4088,7 +4316,7 @@ const openOrderEndpoints = {
           shopId: null, // Open order: no shop selected
           productName: item.product.name,
           productImage: item.product.image,
-          productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
+          productSize: productSizeLabel,
           quantity: item.quantity,
           unitPrice: item.price,
           totalPrice: itemTotal.toFixed(2),

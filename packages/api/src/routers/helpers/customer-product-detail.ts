@@ -339,6 +339,12 @@ export function buildReferenceCatalogData(productRows: any[]) {
         color: generatedVariant?.color ?? null,
         size: generatedVariant?.size ?? variantOption?.size ?? null,
         packType: generatedVariant?.packType ?? null,
+        isPackReturnRequired: Boolean(
+          generatedVariant?.isPackReturnRequired ?? productRow.isReturnablePack,
+        ),
+        packDepositAmount: generatedVariant
+          ? asNumber(generatedVariant.packDepositAmount)
+          : asNumber(productRow.defaultPackDepositAmount),
         orderMin:
           generatedVariant?.orderMin != null
             ? asNumber(generatedVariant.orderMin)
@@ -475,6 +481,8 @@ export function buildPublicProductDetailPayload(args: {
     color: row.color ?? null,
     size: row.size ?? null,
     packType: row.packType ?? null,
+    isPackReturnRequired: Boolean(row.isPackReturnRequired),
+    packDepositAmount: row.packDepositAmount ?? 0,
     consumerPrice: row.consumerPrice,
     orderMin: row.orderMin,
     orderMax: row.orderMax,

@@ -24,6 +24,7 @@ interface ProductActionsProps {
   categoryName?: string;
   brandName?: string;
   shopId?: string;
+  purchaseMode?: "standard" | "exchange" | "new";
 }
 
 export function ProductActions({
@@ -36,6 +37,7 @@ export function ProductActions({
   categoryName,
   brandName,
   shopId,
+  purchaseMode,
 }: ProductActionsProps) {
   const effectiveMin = Math.max(1, orderMin);
   const effectiveMax = orderMax
@@ -65,7 +67,7 @@ export function ProductActions({
   const handleAddToCart = async () => {
     setIsAdding(true);
     try {
-      await addItem(product.id, quantity, variantId, shopId);
+      await addItem(product.id, quantity, variantId, shopId, purchaseMode);
     } finally {
       setIsAdding(false);
     }

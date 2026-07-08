@@ -18,6 +18,8 @@ type DetailPricingRow = {
   color?: string | null;
   size?: string | null;
   packType?: string | null;
+  isPackReturnRequired?: boolean | null;
+  packDepositAmount?: number | null;
   consumerPrice?: number | null;
   orderMin?: number | null;
   orderMax?: number | null;
@@ -86,6 +88,8 @@ type AggregatedPurchaseRow = DetailPricingRow & {
   sellerCount: number;
   inStock: boolean;
 };
+
+type ConsumerPurchaseMode = "standard" | "exchange" | "new";
 
 function formatMoney(value?: number | null) {
   return `৳${Number(value ?? 0).toLocaleString("en-BD")}`;
@@ -240,12 +244,34 @@ export function ConsumerProductPurchasePanel({
   }
 
   const familyCode = getConsumerFamilyCode(detail);
+  const supportsReturnMode =
+    familyCode === "lpg" &&
+    Boolean(selectedRow.isPackReturnRequired) &&
+    Number(selectedRow.packDepositAmount ?? 0) > 0;
+  const [purchaseMode, setPurchaseMode] = useState<ConsumerPurchaseMode>(
+    supportsReturnMode ? "exchange" : "standard",
+  );
+
+  useEffect(() => {
+    setPurchaseMode(supportsReturnMode ? "exchange" : "standard");
+  }, [supportsReturnMode, selectedRow.id]);
+
   const familyLabel =
     detail?.family?.label ?? detail?.fulfillment?.familyLabel ?? "Generic";
   const supportedModes = detail?.fulfillment?.supportedModes ?? [];
   const displayUnit = detail?.stock?.displayUnit ?? selectedRow.orderUnit ?? "unit";
   const stockUnitLabel =
     selectedRow.orderUnit || selectedRow.unitLabel || displayUnit;
+  const baseUnitPrice = Number(selectedRow.consumerPrice ?? 0);
+  const depositAmount = Number(selectedRow.packDepositAmount ?? 0);
+  const effectiveUnitPrice =
+    purchaseMode === "new" ? baseUnitPrice + depositAmount : baseUnitPrice;
+  const purchaseModeLabel =
+    purchaseMode === "new"
+      ? "New Cylinder"
+      : purchaseMode === "exchange"
+        ? "Exchange Cylinder"
+        : null;
   const useBrandSelector = !["fashion", "footwear"].includes(familyCode);
   const scopedBrandId = useBrandSelector ? selectedRow.brandId ?? null : null;
   const brandScopedRows =
@@ -368,7 +394,7 @@ export function ConsumerProductPurchasePanel({
   ]
     .filter(Boolean)
     .join(" • ");
-  const hasVisiblePrice = Number(selectedRow.consumerPrice ?? 0) > 0;
+  const hasVisiblePrice = baseUnitPrice > 0;
   const selectedAttributes = [
     selectedRow.brandName
       ? { label: "Brand", value: selectedRow.brandName }
@@ -385,6 +411,7 @@ export function ConsumerProductPurchasePanel({
     selectedRow.packType
       ? { label: "Pack", value: selectedRow.packType }
       : null,
+    purchaseModeLabel ? { label: "Type", value: purchaseModeLabel } : null,
   ].filter(Boolean) as Array<{ label: string; value: string }>;
 
   return (
@@ -406,7 +433,7 @@ export function ConsumerProductPurchasePanel({
       <div className="mt-4">
         <div className="flex items-end gap-2">
           <span className="text-3xl font-bold text-gray-900">
-            {formatMoney(selectedRow.consumerPrice)}
+            {formatMoney(effectiveUnitPrice)}
           </span>
           <span className="pb-1 text-sm text-gray-500">
             / {getRowDisplayLabel(selectedRow)}
@@ -419,6 +446,13 @@ export function ConsumerProductPurchasePanel({
         </div>
         {stockBreakdown && (
           <div className="mt-2 text-sm text-gray-500">{stockBreakdown}</div>
+        )}
+        {supportsReturnMode && hasVisiblePrice && (
+          <div className="mt-2 text-sm text-amber-700">
+            {purchaseMode === "new"
+              ? `Includes ${formatMoney(depositAmount)} cylinder deposit`
+              : "Return an empty cylinder to keep the refill price"}
+          </div>
         )}
         {ruleLabel && <div className="mt-1 text-sm text-gray-500">{ruleLabel}</div>}
         {selectedAttributes.length > 0 && (
@@ -436,6 +470,52 @@ export function ConsumerProductPurchasePanel({
       </div>
 
       <div className="mt-6 space-y-5">
+        {supportsReturnMode && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700">
+              Select Purchase Type
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                {
+                  mode: "exchange" as const,
+                  title: "Exchange Cylinder",
+                  description: "Bring an empty cylinder",
+                  price: baseUnitPrice,
+                },
+                {
+                  mode: "new" as const,
+                  title: "New Cylinder",
+                  description: `Includes ${formatMoney(depositAmount)} deposit`,
+                  price: baseUnitPrice + depositAmount,
+                },
+              ].map((option) => {
+                const isSelected = option.mode === purchaseMode;
+                return (
+                  <button
+                    key={option.mode}
+                    type="button"
+                    onClick={() => setPurchaseMode(option.mode)}
+                    className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold">{option.title}</div>
+                    <div className="text-xs opacity-80">
+                      {formatMoney(option.price)}
+                    </div>
+                    <div className="text-xs opacity-70">
+                      {option.description}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {brandOptions.length > 1 && useBrandSelector && (
           <div>
             <p className="mb-2 text-sm font-medium text-gray-700">Select Brand</p>
@@ -565,9 +645,11 @@ export function ConsumerProductPurchasePanel({
             product={{
               id: selectedRow.productId,
               name: selectedRow.productName || product.name,
-              price: Number(selectedRow.consumerPrice ?? 0),
+              price: effectiveUnitPrice,
               image: product.image,
-              size: getRowDisplayLabel(selectedRow),
+              size: purchaseModeLabel
+                ? `${getRowDisplayLabel(selectedRow)} - ${purchaseModeLabel}`
+                : getRowDisplayLabel(selectedRow),
               inStock: selectedRow.inStock,
               stockQuantity: selectedRow.stockQuantity,
             }}
@@ -577,6 +659,7 @@ export function ConsumerProductPurchasePanel({
             orderIncrement={selectedRow.orderIncrement ?? undefined}
             categoryName={product.category?.name ?? undefined}
             brandName={selectedRow.brandName ?? undefined}
+            purchaseMode={purchaseMode}
           />
         ) : (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

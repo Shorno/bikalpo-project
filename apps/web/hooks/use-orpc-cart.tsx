@@ -33,6 +33,9 @@ export interface CartItem {
   inStock: boolean;
   shopId?: string | null;
   shopName?: string | null;
+  purchaseMode?: "standard" | "exchange" | "new";
+  purchaseModeLabel?: string | null;
+  depositAmount?: number;
 }
 
 export interface CartContextType {
@@ -42,6 +45,7 @@ export interface CartContextType {
     quantity?: number,
     variantId?: number,
     shopId?: string,
+    purchaseMode?: "standard" | "exchange" | "new",
   ) => Promise<void>;
   removeItem: (cartItemId: number) => Promise<void>;
   updateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
@@ -96,6 +100,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
     quantity = 1,
     variantId?: number,
     shopId?: string,
+    purchaseMode?: "standard" | "exchange" | "new",
   ) => {
     if (!session) {
       showLoginModal();
@@ -106,6 +111,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
       quantity,
       variantId,
       shopId,
+      purchaseMode,
     });
   };
 
