@@ -101,6 +101,17 @@ function getSelectionValueLabel(value?: string | number | null) {
   return text.length > 0 ? text : "Default";
 }
 
+function getSortRank(value?: string | number | null) {
+  const label = getSelectionValueLabel(value).toLowerCase();
+  const numeric = Number.parseFloat(label);
+
+  if (Number.isFinite(numeric)) {
+    return { bucket: 0, numeric, label };
+  }
+
+  return { bucket: 1, numeric: Number.POSITIVE_INFINITY, label };
+}
+
 function getConsumerFamilyCode(detail: ConsumerDetail) {
   return detail?.family?.code ?? detail?.fulfillment?.family ?? "generic";
 }
@@ -262,7 +273,7 @@ export function ConsumerProductPurchasePanel({
               },
             ]),
         ).values(),
-      ),
+      ).sort((a, b) => a.name.localeCompare(b.name)),
     [aggregatedRows],
   );
   const colorOptions = useMemo(
@@ -279,7 +290,7 @@ export function ConsumerProductPurchasePanel({
               },
             ]),
         ).values(),
-      ),
+      ).sort((a, b) => a.value.localeCompare(b.value)),
     [brandScopedRows],
   );
   const sizeOptions = useMemo(
@@ -296,7 +307,13 @@ export function ConsumerProductPurchasePanel({
               },
             ]),
         ).values(),
-      ),
+      ).sort((a, b) => {
+        const left = getSortRank(a.value);
+        const right = getSortRank(b.value);
+        if (left.bucket !== right.bucket) return left.bucket - right.bucket;
+        if (left.numeric !== right.numeric) return left.numeric - right.numeric;
+        return left.label.localeCompare(right.label);
+      }),
     [colorScopedRows],
   );
   const variantRows = (() => {
