@@ -87,6 +87,14 @@ function isFashionType(typeName?: string | null) {
   );
 }
 
+function isLpgType(typeName?: string | null, stdUnit?: string | null) {
+  return (
+    String(typeName || "")
+      .trim()
+      .toLowerCase() === "lpg" || normalizeUnit(stdUnit) === "CYLINDER"
+  );
+}
+
 function getFashionOpenStockLabel(unit?: string | null) {
   const normalized = normalizeUnit(unit);
   if (normalized === "PCS" || normalized === "PC") {
@@ -396,6 +404,7 @@ export default function StockDetailPage() {
 
   const totalQty = item.totalQty;
   const isFashion = isFashionType(item.typeName);
+  const isLpg = isLpgType(item.typeName, item.stdUnit);
 
   // Build breakdown text from item.breakdown (now carton-aware from API)
   const breakdownText = item.breakdown
@@ -696,7 +705,9 @@ export default function StockDetailPage() {
             <p className="text-xs text-gray-500 mt-0.5">
               {isFashion
                 ? "Fashion core stock view"
-                : "Core Identity Level Stock"}
+                : isLpg
+                  ? "LPG cylinder stock view"
+                  : "Core Identity Level Stock"}
             </p>
           </div>
         </div>
@@ -919,7 +930,14 @@ export default function StockDetailPage() {
       {!isFashion && (
         <>
           <div>
-            <SectionHeader emoji="📊" title="Variant Stock (Pack Level)" />
+            <SectionHeader
+              emoji="📊"
+              title={
+                isLpg
+                  ? "Variant Stock (Cylinder Level)"
+                  : "Variant Stock (Pack Level)"
+              }
+            />
             {packVariantGroups.length === 0 ? (
               <div className="py-6 text-center text-sm text-gray-400 border border-dashed rounded-lg bg-gray-50/50">
                 No pack variants available
@@ -934,6 +952,10 @@ export default function StockDetailPage() {
                           (item: StockVariantItem, ii: number) => {
                             const { totalQty, inCartonQty, looseQty } =
                               getVariantDisplayInventory(item, false);
+                            const measure = getGroupMeasure(group);
+                            const countUnitLabel = formatDisplayUnit(
+                              measure.quantityUnit,
+                            );
                             const label = buildVariantLabel(group, item, false);
                             const isLoose = false;
                             const weightKg = parseFloat(group.weightKg || "0");
@@ -952,7 +974,9 @@ export default function StockDetailPage() {
                                     <div className="text-sm font-bold text-gray-900 tabular-nums">
                                       {formatUnitQty(totalQty, false)}{" "}
                                       <span className="text-xs font-normal text-gray-500">
-                                        Pack total
+                                        {isLpg
+                                          ? `${countUnitLabel} total`
+                                          : "Pack total"}
                                       </span>
                                       {isLoose &&
                                         weightKg > 0 &&
@@ -963,12 +987,16 @@ export default function StockDetailPage() {
                                         )}
                                     </div>
                                     <div className="text-xs text-blue-600 tabular-nums mt-1">
-                                      {formatUnitQty(inCartonQty, false)} Pack
-                                      inside cartons
+                                      {formatUnitQty(inCartonQty, false)}{" "}
+                                      {isLpg
+                                        ? `${countUnitLabel} inside supplier cartons`
+                                        : "Pack inside cartons"}
                                     </div>
                                     <div className="text-xs text-slate-500 tabular-nums mt-0.5">
-                                      {formatUnitQty(looseQty, false)} Pack
-                                      outside cartons
+                                      {formatUnitQty(looseQty, false)}{" "}
+                                      {isLpg
+                                        ? `${countUnitLabel} available as direct stock`
+                                        : "Pack outside cartons"}
                                     </div>
                                   </div>
                                   <div className="min-w-[100px]">
@@ -990,7 +1018,7 @@ export default function StockDetailPage() {
           {/* ══════════════════════════════════════════════════════════════
           📦 PACK TYPE STOCK (SUPPLY LEVEL)
           ══════════════════════════════════════════════════════════════ */}
-          {packVariantGroups.length > 0 && (
+          {packVariantGroups.length > 0 && !isLpg && (
             <div>
               <SectionHeader
                 emoji="📦"
@@ -1172,7 +1200,8 @@ export default function StockDetailPage() {
           {/* ══════════════════════════════════════════════════════════════
           📊 SELECTED PACK SNAPSHOT
           ══════════════════════════════════════════════════════════════ */}
-          {selectedPack &&
+          {!isLpg &&
+            selectedPack &&
             (() => {
               const info = getCartonInfo(selectedPack);
               return (
@@ -1221,26 +1250,30 @@ export default function StockDetailPage() {
       <div>
         <SectionHeader emoji="⚙" title="Action" />
         <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className="gap-1.5 text-xs"
-          >
-            <PackagePlus size={14} />
-            {isFashion ? "📦 Break Bundle → Piece" : "📦 Create Pack"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className="gap-1.5 text-xs"
-          >
-            <RefreshCw size={14} />
-            {isFashion
-              ? "🔄 Break Loose → Fit/Yard"
-              : "🔄 Convert Loose → Pack"}
-          </Button>
+          {!isLpg && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              className="gap-1.5 text-xs"
+            >
+              <PackagePlus size={14} />
+              {isFashion ? "📦 Break Bundle → Piece" : "📦 Create Pack"}
+            </Button>
+          )}
+          {!isLpg && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              className="gap-1.5 text-xs"
+            >
+              <RefreshCw size={14} />
+              {isFashion
+                ? "🔄 Break Loose → Fit/Yard"
+                : "🔄 Convert Loose → Pack"}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
