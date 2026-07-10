@@ -5,6 +5,9 @@ import {
   brand as brandTable,
   category as categoryTable,
   coreProductIdentity,
+  estimateItem,
+  invoiceItem,
+  orderItem,
   product,
   productBrand,
   productImage,
@@ -668,14 +671,9 @@ export const productRouter = {
           });
         }
 
-        const existingTemplate =
-          await tx.query.adminProductGenerationTemplate.findFirst({
-            where: eq(
-              adminProductGenerationTemplate.coreProductId,
-              coreProductId,
-            ),
-            columns: { coreProductId: true },
-          });
+        // Product existence is the single source of truth for "already
+        // created". A leftover generation template does not block Add — it is
+        // overwritten by the upsert below.
         const existingProduct = await tx.query.product.findFirst({
           where: and(
             eq(product.coreProductId, coreProductId),
@@ -683,7 +681,7 @@ export const productRouter = {
           ),
           columns: { id: true },
         });
-        if (existingTemplate || existingProduct) {
+        if (existingProduct) {
           throw new ORPCError("CONFLICT", {
             message:
               "This core product has already been created. Use Edit instead.",
@@ -767,12 +765,25 @@ export const productRouter = {
           status: productData.status,
         } satisfies AdminProductGenerationTemplateDetails;
 
-        await tx.insert(adminProductGenerationTemplate).values({
-          coreProductId,
-          version: 1,
-          details: templateDetails,
-          createdById: context.session.user.id,
-        });
+        // Upsert: overwrite any stale template left over from a previous
+        // setup that was fully deleted, so re-adding a core always works.
+        await tx
+          .insert(adminProductGenerationTemplate)
+          .values({
+            coreProductId,
+            version: 1,
+            details: templateDetails,
+            createdById: context.session.user.id,
+          })
+          .onConflictDoUpdate({
+            target: adminProductGenerationTemplate.coreProductId,
+            set: {
+              version: 1,
+              details: templateDetails,
+              createdById: context.session.user.id,
+              updatedAt: new Date(),
+            },
+          });
 
         const [countResult] = await tx
           .select({ count: sql<number>`count(*)::int` })
@@ -1150,7 +1161,17 @@ export const productRouter = {
       summary: "Delete product",
       description: "Delete a product by ID",
     })
-    .input(productIdSchema)
+    .input(
+      productIdSchema.extend({
+        /**
+         * Force a permanent hard delete instead of the default deactivate
+         * behaviour for admin brand products. Also removes order/invoice/
+         * estimate line items that would otherwise block the delete. Intended
+         * for cleaning up test data.
+         */
+        force: z.boolean().optional(),
+      }),
+    )
     .handler(async ({ input }) => {
       const existing = await db.query.product.findFirst({
         where: eq(product.id, input.id),
@@ -1165,7 +1186,10 @@ export const productRouter = {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
       }
 
+      // Admin brand products are deactivated (not deleted) to preserve the
+      // core identity — unless a force delete is explicitly requested.
       if (
+        !input.force &&
         existing.coreProductId !== null &&
         existing.createdByWarehouseId === null
       ) {
@@ -1182,10 +1206,50 @@ export const productRouter = {
         return { success: true, deactivated: true };
       }
 
-      const [deletedProduct] = await db
-        .delete(product)
-        .where(eq(product.id, input.id))
-        .returning();
+      const deletedProduct = await db.transaction(async (tx) => {
+        if (input.force) {
+          // Clear "restrict" FKs that would otherwise block deletion. Everything
+          // else product-owned (variants, prices, images, brands, cart items,
+          // reviews, stock logs, pack rules) cascades automatically.
+          await tx.delete(orderItem).where(eq(orderItem.productId, input.id));
+          await tx
+            .delete(invoiceItem)
+            .where(eq(invoiceItem.productId, input.id));
+          await tx
+            .delete(estimateItem)
+            .where(eq(estimateItem.productId, input.id));
+        }
+        const [deleted] = await tx
+          .delete(product)
+          .where(eq(product.id, input.id))
+          .returning();
+
+        // If this was an admin brand product and no admin products remain for
+        // its core, drop the now-orphaned generation template so the core
+        // reverts to "unconfigured" (core list shows Add again, and the Add
+        // flow no longer rejects it as already-created).
+        if (input.force && existing.coreProductId !== null) {
+          const remaining = await tx.query.product.findFirst({
+            where: and(
+              eq(product.coreProductId, existing.coreProductId),
+              isNull(product.createdByWarehouseId),
+            ),
+            columns: { id: true },
+          });
+          if (!remaining) {
+            await tx
+              .delete(adminProductGenerationTemplate)
+              .where(
+                eq(
+                  adminProductGenerationTemplate.coreProductId,
+                  existing.coreProductId,
+                ),
+              );
+          }
+        }
+
+        return deleted;
+      });
 
       if (!deletedProduct) {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });

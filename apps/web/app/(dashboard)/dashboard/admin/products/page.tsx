@@ -964,7 +964,7 @@ function ProductDetailDialog({
                   />
                   <DataField label="Core Name" value={product.name} />
                   <DataField label="SKU" value={product.sku} />
-                  <DataField label="Product ID" value={`#${product.id}`} />
+                  <DataField label="Core ID" value={`#${product.id}`} />
                   {inventoryUnitLabel ? (
                     <DataField
                       label="Inventory Unit"

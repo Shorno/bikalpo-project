@@ -1,9 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import {
-  adminProductGenerationTemplate,
-  coreProductIdentity,
-  product,
-} from "@bikalpo-project/db/schema";
+import { coreProductIdentity, product } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
   and,
@@ -116,12 +112,6 @@ export const adminCoreProductRouter = {
       const configMap = new Map(
         configRows.map((row) => [row.coreProductId, row]),
       );
-      const templateRows = await db
-        .select({ coreProductId: adminProductGenerationTemplate.coreProductId })
-        .from(adminProductGenerationTemplate);
-      const configuredCoreIds = new Set(
-        templateRows.map((row) => row.coreProductId),
-      );
 
       // Compose full hierarchical SKU for each core product
       const coreProducts = results.map((cp) => {
@@ -134,7 +124,9 @@ export const adminCoreProductRouter = {
         return {
           ...cp,
           composedSku,
-          hasConfiguration: configuredCoreIds.has(cp.id),
+          // "Configured" = at least one admin product exists (any status),
+          // which is the true source of truth for the Add vs Edit action.
+          hasConfiguration: (config?.totalBrandCount ?? 0) > 0,
           configuredBrandCount: config?.activeBrandCount ?? 0,
         };
       });
@@ -173,15 +165,20 @@ export const adminCoreProductRouter = {
         });
       }
 
-      const template = await db.query.adminProductGenerationTemplate.findFirst({
-        where: eq(adminProductGenerationTemplate.coreProductId, result.id),
-        columns: { coreProductId: true },
+      // "Configured" = at least one admin product exists for this core
+      // (any status), matching the Add vs Edit rule used in the list.
+      const existingProduct = await db.query.product.findFirst({
+        where: and(
+          eq(product.coreProductId, result.id),
+          isNull(product.createdByWarehouseId),
+        ),
+        columns: { id: true },
       });
 
       return {
         coreProduct: {
           ...result,
-          hasConfiguration: Boolean(template),
+          hasConfiguration: Boolean(existingProduct),
         },
       };
     }),

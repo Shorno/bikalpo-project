@@ -16,11 +16,20 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import {
   Select,
   SelectContent,
@@ -40,6 +49,7 @@ import {
 
 const ALL = "all";
 const UNBRANDED = "unbranded";
+const PAGE_SIZE = 12;
 
 type ProductStatus = "active" | "inactive" | "draft";
 type ProductVisibility = "public" | "private";
@@ -303,6 +313,7 @@ export default function AdminWebViewPage() {
   const [brandFilter, setBrandFilter] = useState(ALL);
   const [variantFilter, setVariantFilter] = useState(ALL);
   const [sortMode, setSortMode] = useState<SortMode>("newest");
+  const [page, setPage] = useState(1);
 
   const productsQuery = useQuery({
     ...orpc.product.getAll.queryOptions({ input: {} }),
@@ -393,6 +404,30 @@ export default function AdminWebViewPage() {
     statusFilter,
     variantFilter,
   ]);
+
+  // Reset to the first page whenever the result set changes via filters/search.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on filter changes, not on filteredCards identity
+  useEffect(() => {
+    setPage(1);
+  }, [
+    searchText,
+    statusFilter,
+    categoryFilter,
+    brandFilter,
+    variantFilter,
+    sortMode,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCards.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedCards = useMemo(
+    () =>
+      filteredCards.slice(
+        (currentPage - 1) * PAGE_SIZE,
+        currentPage * PAGE_SIZE,
+      ),
+    [filteredCards, currentPage],
+  );
 
   const stats = useMemo(() => {
     const productIds = new Set(listingCards.map((card) => card.productId));
@@ -527,21 +562,14 @@ export default function AdminWebViewPage() {
           />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm text-muted-foreground">
-          <span>
-            Showing{" "}
-            <span className="font-medium text-foreground">
-              {filteredCards.length.toLocaleString("en-BD")}
-            </span>{" "}
-            of {listingCards.length.toLocaleString("en-BD")} brand listings
-          </span>
-          {hasActiveFilters ? (
+        {hasActiveFilters ? (
+          <div className="flex items-center justify-end border-t pt-3">
             <Button variant="ghost" size="sm" onClick={clearFilters}>
               <X className="h-4 w-4" />
               Clear Filters
             </Button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </section>
 
       {productsQuery.isLoading ? (
@@ -553,13 +581,110 @@ export default function AdminWebViewPage() {
       ) : filteredCards.length === 0 ? (
         <NoResultsState onClear={clearFilters} />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredCards.map((card) => (
-            <ProductBrandCard key={card.id} card={card} />
-          ))}
+        <div className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {pagedCards.map((card) => (
+              <ProductBrandCard key={card.id} card={card} />
+            ))}
+          </div>
+          <ListingPagination
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </div>
+  );
+}
+
+function ListingPagination({
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const goTo = (next: number) => {
+    onPageChange(next);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const pages: (number | "ellipsis")[] = [];
+  const showPages = 5;
+  if (totalPages <= showPages) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (page > 3) pages.push("ellipsis");
+    const start = Math.max(2, page - 1);
+    const end = Math.min(totalPages - 1, page + 1);
+    for (let i = start; i <= end; i++) pages.push(i);
+    if (page < totalPages - 2) pages.push("ellipsis");
+    pages.push(totalPages);
+  }
+
+  return (
+    <Pagination>
+      <PaginationContent>
+        <PaginationItem>
+          <PaginationPrevious
+            href="#"
+            onClick={(event) => {
+              event.preventDefault();
+              if (page > 1) goTo(page - 1);
+            }}
+            aria-disabled={page <= 1}
+            className={
+              page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"
+            }
+          />
+        </PaginationItem>
+
+        {pages.map((pageNum, index) => (
+          <PaginationItem
+            key={pageNum === "ellipsis" ? `ellipsis-${index}` : pageNum}
+          >
+            {pageNum === "ellipsis" ? (
+              <PaginationEllipsis />
+            ) : (
+              <PaginationLink
+                href="#"
+                isActive={pageNum === page}
+                onClick={(event) => {
+                  event.preventDefault();
+                  goTo(pageNum);
+                }}
+              >
+                {pageNum}
+              </PaginationLink>
+            )}
+          </PaginationItem>
+        ))}
+
+        <PaginationItem>
+          <PaginationNext
+            href="#"
+            onClick={(event) => {
+              event.preventDefault();
+              if (page < totalPages) goTo(page + 1);
+            }}
+            aria-disabled={page >= totalPages}
+            className={
+              page >= totalPages
+                ? "pointer-events-none opacity-50"
+                : "cursor-pointer"
+            }
+          />
+        </PaginationItem>
+      </PaginationContent>
+    </Pagination>
   );
 }
 
@@ -628,14 +753,14 @@ function ProductBrandCard({ card }: { card: ProductListingCard }) {
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <div className="relative aspect-[16/10] overflow-hidden border-b bg-muted/40">
+      <div className="relative aspect-[4/3] overflow-hidden border-b bg-muted/40">
         {hasImage ? (
           <Image
             src={card.image ?? ""}
             alt={card.productName}
             fill
             sizes="(min-width: 768px) 50vw, 100vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+            className="object-contain p-3 transition-transform duration-300 group-hover:scale-[1.03]"
             onError={() => setImageError(true)}
             unoptimized={card.image?.startsWith("http") ?? false}
           />
@@ -667,21 +792,21 @@ function ProductBrandCard({ card }: { card: ProductListingCard }) {
         ) : null}
       </div>
 
-      <div className="flex flex-1 flex-col gap-4 p-5">
+      <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="min-w-0">
           <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-primary">
             {card.brandName}
           </p>
-          <h2 className="mt-1 line-clamp-2 min-h-[2.75rem] text-base font-semibold leading-snug">
+          <h2 className="mt-1 line-clamp-2 text-base font-semibold leading-snug">
             {card.productName}
           </h2>
-          <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
+          <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-muted-foreground">
             {card.shortDescription ?? "No short description"}
           </p>
         </div>
 
         <div className="flex flex-1 flex-col">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Variants
             {card.variants.length > 0 ? (
               <span className="ml-1 text-muted-foreground/70">
@@ -691,32 +816,25 @@ function ProductBrandCard({ card }: { card: ProductListingCard }) {
           </p>
 
           {card.variants.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-dashed bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
               No variants configured for this brand.
             </div>
           ) : (
-            <div className="thin-scrollbar max-h-36 space-y-2 overflow-y-auto pr-1">
+            <div className="thin-scrollbar max-h-32 divide-y overflow-y-auto rounded-lg border bg-background">
               {card.variants.map((variant) => (
                 <div
                   key={variant.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2"
+                  className="flex items-center justify-between gap-3 px-3 py-1.5"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {variant.label}
-                    </p>
-                    {variant.detail ? (
-                      <p className="text-xs text-muted-foreground">
-                        {variant.detail}
-                      </p>
-                    ) : null}
-                  </div>
+                  <p className="truncate text-sm font-medium">
+                    {variant.label}
+                  </p>
                   <span
                     className={cn(
-                      "shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold",
+                      "shrink-0 text-sm font-semibold tabular-nums",
                       variant.priceLabel
-                        ? "bg-primary/10 text-primary"
-                        : "bg-muted text-muted-foreground",
+                        ? "text-primary"
+                        : "text-muted-foreground",
                     )}
                   >
                     {variant.priceLabel ?? "No price"}

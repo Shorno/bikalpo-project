@@ -79,7 +79,7 @@ export default function CoreProductConfigForm({
   coreProductId,
 }: CoreProductConfigFormProps) {
   const queryClient = useQueryClient();
-  const initializedCoreId = useRef<number | null>(null);
+  const lastSyncedSignature = useRef<string | null>(null);
   const [brandDialogOpen, setBrandDialogOpen] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
   const [collapsedBrands, setCollapsedBrands] = useState<Set<number>>(
@@ -145,22 +145,32 @@ export default function CoreProductConfigForm({
   );
 
   useEffect(() => {
-    if (!configuration || initializedCoreId.current === coreProductId) return;
+    if (!configuration) return;
 
-    form.reset({
-      brands: configuration.brands
-        .filter((brand) => brand.status !== "inactive")
-        .map((brand) => ({
-          brandId: brand.brandId,
-          variants: brand.variantOptions
-            .filter((option) => option.isActive)
-            .map((option) => ({
-              variantOptionId: option.variantOptionId,
-              consumerPrice: option.consumerPrice || "0",
-            })),
-        })),
-    });
-    initializedCoreId.current = coreProductId;
+    const nextBrands = configuration.brands
+      .filter((brand) => brand.status !== "inactive")
+      .map((brand) => ({
+        brandId: brand.brandId,
+        variants: brand.variantOptions
+          .filter((option) => option.isActive)
+          .map((option) => ({
+            variantOptionId: option.variantOptionId,
+            consumerPrice: option.consumerPrice || "0",
+          })),
+      }));
+
+    // Signature of the server state we'd seed the form from. Re-sync whenever
+    // it changes — e.g. an instantly-served stale/empty cache being replaced by
+    // a fresh background refetch — so the editor never stays stuck on an
+    // outdated snapshot (which previously required a full page reload to fix).
+    // Never clobber the user's unsaved edits once they've started changing
+    // things: only the very first sync is unconditional.
+    const signature = `${coreProductId}:${JSON.stringify(nextBrands)}`;
+    if (signature === lastSyncedSignature.current) return;
+    if (lastSyncedSignature.current !== null && form.state.isDirty) return;
+
+    form.reset({ brands: nextBrands });
+    lastSyncedSignature.current = signature;
   }, [configuration, coreProductId, form]);
 
   const toggleCollapsed = (brandId: number) => {

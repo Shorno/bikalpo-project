@@ -210,6 +210,22 @@ export function WebViewDetailClient({
             <p className="text-xs text-muted-foreground">{sku}</p>
           </div>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/dashboard/admin/products/${product.id}/edit`}>
+              <Pencil className="h-4 w-4" />
+              Edit
+            </Link>
+          </Button>
+          {storefrontHref ? (
+            <Button asChild size="sm">
+              <a href={storefrontHref} target="_blank" rel="noreferrer">
+                <ExternalLink className="h-4 w-4" />
+                View on Storefront
+              </a>
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {/* Main */}
@@ -375,24 +391,6 @@ export function WebViewDetailClient({
               <Wallet className="h-4 w-4" />
               Cash on Delivery
             </span>
-          </div>
-
-          {/* Actions */}
-          <div className="mt-auto flex flex-wrap gap-2 pt-6">
-            {storefrontHref ? (
-              <Button asChild>
-                <a href={storefrontHref} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" />
-                  View on Storefront
-                </a>
-              </Button>
-            ) : null}
-            <Button asChild variant="outline">
-              <Link href={`/dashboard/admin/products/${product.id}/edit`}>
-                <Pencil className="h-4 w-4" />
-                Edit Product
-              </Link>
-            </Button>
           </div>
         </div>
       </div>

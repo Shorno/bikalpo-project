@@ -62,6 +62,7 @@ import {
 } from "@/schema/product.schema";
 import { generateSlug } from "@/utils/generate-slug";
 import { client, orpc } from "@/utils/orpc";
+import DeleteProductDialog from "./delete-product-dialog";
 import type { ProductWithRelations } from "./product-columns";
 import {
   ProductEditorSection as FormSection,
@@ -876,6 +877,15 @@ export default function ProductForm({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {isEdit && product?.id ? (
+              <DeleteProductDialog
+                productId={product.id}
+                productName={product.name}
+                force
+                compact
+                onSuccess={() => router.push("/dashboard/admin/products")}
+              />
+            ) : null}
             <Button
               type="button"
               variant="ghost"
