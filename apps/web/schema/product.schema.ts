@@ -94,11 +94,18 @@ export const createProductSchema = z.object({
   status: z.enum(["active", "inactive", "draft"]).default("active"),
   scheduledAt: z.string().optional().nullable(),
   // Variant prices (brand + variant + consumer reference price)
-  variantPrices: z.array(z.object({
-    variantOptionId: z.number().int(),
-    brandId: z.number().int().optional().nullable(),
-    consumerPrice: z.string().default("0"),
-  })).optional(),
+  variantPrices: z
+    .array(
+      z.object({
+        variantOptionId: z.number().int(),
+        brandId: z.number().int().optional().nullable(),
+        consumerPrice: z
+          .string()
+          .regex(/^\d+(\.\d{1,2})?$/, "Enter a valid reference price")
+          .default("0"),
+      }),
+    )
+    .optional(),
 });
 
 export const updateProductSchema = createProductSchema.extend({

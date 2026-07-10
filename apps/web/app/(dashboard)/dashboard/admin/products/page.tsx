@@ -68,6 +68,8 @@ type CatalogCoreProduct = {
   subCategoryId: number | null;
   supportsPack?: boolean;
   supportsLoose?: boolean;
+  hasConfiguration?: boolean;
+  configuredBrandCount?: number;
   createdAt?: string | Date;
   updatedAt?: string | Date;
   category: {
@@ -156,10 +158,6 @@ function matchesText(value: string | null | undefined, search: string) {
   return (value ?? "").toLowerCase().includes(search);
 }
 
-function normalizeName(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
-
 function formatQuantity(value: string | number | null | undefined) {
   if (value == null || value === "") return "1";
   const num = Number(value);
@@ -177,24 +175,6 @@ function formatCurrency(value: string | number | null | undefined) {
 function statusLabel(status: string | null | undefined) {
   if (!status) return "Active";
   return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function getCreatedAtTime(value: string | Date | null | undefined) {
-  if (!value) return 0;
-  const time = new Date(value).getTime();
-  return Number.isNaN(time) ? 0 : time;
-}
-
-function hasMultiBrandConfiguration(product: EditableProductCandidate) {
-  if ((product.productBrands?.length ?? 0) > 1) return true;
-
-  const variantBrandIds = new Set(
-    (product.variantPrices ?? [])
-      .map((variantPrice) => variantPrice.brandId)
-      .filter((brandId): brandId is number => typeof brandId === "number"),
-  );
-
-  return variantBrandIds.size > 1;
 }
 
 function formatDate(value: string | Date | null | undefined) {
@@ -393,7 +373,8 @@ export default function ProductsPage() {
         enableSorting: false,
         cell: ({ row, table }) => {
           const seq =
-            table.getSortedRowModel().rows.findIndex((r) => r.id === row.id) + 1;
+            table.getSortedRowModel().rows.findIndex((r) => r.id === row.id) +
+            1;
           return (
             <span className="pl-1 tabular-nums text-muted-foreground">
               {seq}
@@ -459,10 +440,18 @@ export default function ProductsPage() {
             </Button>
             <Button size="sm" asChild>
               <Link
-                href={`${ADMIN_BASE}/products/new?coreProductId=${row.original.id}`}
+                href={
+                  row.original.hasConfiguration
+                    ? `${ADMIN_BASE}/products/core/${row.original.id}/edit`
+                    : `${ADMIN_BASE}/products/new?coreProductId=${row.original.id}`
+                }
               >
-                <Plus className="h-4 w-4" />
-                Add
+                {row.original.hasConfiguration ? (
+                  <Edit3 className="h-4 w-4" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                {row.original.hasConfiguration ? "Edit" : "Add"}
               </Link>
             </Button>
           </div>
@@ -588,7 +577,10 @@ export default function ProductsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-36 text-center">
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-36 text-center"
+                >
                   <div className="flex items-center justify-center gap-2 text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Loading catalog...
@@ -597,7 +589,10 @@ export default function ProductsPage() {
               </TableRow>
             ) : table.getRowModel().rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-36 text-center">
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-36 text-center"
+                >
                   <div className="space-y-1">
                     <p className="font-medium">No products found</p>
                     <p className="text-sm text-muted-foreground">
@@ -723,53 +718,28 @@ function ProductDetailDialog({
   );
   const priceItems = priceQuery.data?.items ?? [];
 
-  const productsQuery = useQuery({
-    ...orpc.product.getAll.queryOptions({ input: {} }),
-    queryKey: ["admin-products"],
-  });
+  const configurationQuery = useQuery(
+    orpc.adminProductConfig.get.queryOptions({
+      input: { coreProductId: product.id },
+    }),
+  );
+  const configuredProducts = configurationQuery.data?.brands ?? [];
+  const editableProduct = (configuredProducts.find(
+    (configured) => configured.status === "active",
+  )?.product ??
+    configuredProducts[0]?.product ??
+    null) as EditableProductCandidate | null;
 
-  const editableProduct = useMemo(() => {
-    const candidates = (productsQuery.data?.products ?? [])
-      .map((created) => created as EditableProductCandidate)
-      .filter(
-        (created) =>
-          created.coreProductId === product.id && !created.createdByWarehouseId,
-      );
-
-    if (candidates.length === 0) return null;
-
-    return [...candidates].sort((left, right) => {
-      const leftNameMatch =
-        normalizeName(left.name) === normalizeName(product.name);
-      const rightNameMatch =
-        normalizeName(right.name) === normalizeName(product.name);
-      if (leftNameMatch !== rightNameMatch) return leftNameMatch ? -1 : 1;
-
-      const leftMultiBrand = hasMultiBrandConfiguration(left);
-      const rightMultiBrand = hasMultiBrandConfiguration(right);
-      if (leftMultiBrand !== rightMultiBrand) return leftMultiBrand ? -1 : 1;
-
-      const createdAtDiff =
-        getCreatedAtTime(left.createdAt) - getCreatedAtTime(right.createdAt);
-      if (createdAtDiff !== 0) return createdAtDiff;
-
-      return left.id - right.id;
-    })[0];
-  }, [product.id, product.name, productsQuery.data?.products]);
-
-  const isResolvingEdit = productsQuery.isLoading;
+  const isResolvingEdit = configurationQuery.isLoading;
 
   // Admin-scoped brands: only the brands this admin product was configured with,
   // not the global catalog brand list (which also includes warehouse/retailer brands).
-  const configuredBrands = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const link of editableProduct?.productBrands ?? []) {
-      const id = link.brand?.id ?? link.brandId;
-      const name = link.brand?.name;
-      if (id != null && name) map.set(id, name);
-    }
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [editableProduct]);
+  const configuredBrands = configuredProducts.map((configured) => ({
+    id: configured.brandId,
+    name: configured.brandName,
+    status: configured.status,
+    productId: configured.productId,
+  }));
 
   const reviewsQuery = useQuery({
     ...orpc.customer.getProductReviews.queryOptions({
@@ -783,8 +753,8 @@ function ProductDetailDialog({
     totalReviews: 0,
   };
 
-  const editHref = editableProduct
-    ? `${ADMIN_BASE}/products/${editableProduct.id}/edit`
+  const editHref = product.hasConfiguration
+    ? `${ADMIN_BASE}/products/core/${product.id}/edit`
     : `${ADMIN_BASE}/products/new?coreProductId=${product.id}`;
 
   const priceGroups = useMemo(() => {
@@ -947,12 +917,12 @@ function ProductDetailDialog({
             ) : (
               <Button size="sm" asChild>
                 <Link href={editHref}>
-                  {editableProduct ? (
+                  {product.hasConfiguration ? (
                     <Edit3 className="mr-1.5 h-4 w-4" />
                   ) : (
                     <Plus className="mr-1.5 h-4 w-4" />
                   )}
-                  {editableProduct ? "Edit" : "Add"}
+                  {product.hasConfiguration ? "Edit" : "Add"}
                 </Link>
               </Button>
             )}
@@ -1030,9 +1000,14 @@ function ProductDetailDialog({
                         <Badge
                           key={brand.id}
                           variant="secondary"
-                          className="font-normal"
+                          className="gap-1.5 font-normal"
                         >
                           {brand.name}
+                          {brand.status === "inactive" ? (
+                            <span className="text-[10px] opacity-60">
+                              inactive
+                            </span>
+                          ) : null}
                         </Badge>
                       ))}
                     </div>
@@ -1266,7 +1241,9 @@ function ProductDetailDialog({
                         />
                         <p className="mt-1 text-xs text-muted-foreground">
                           {reviewStats.totalReviews}{" "}
-                          {reviewStats.totalReviews === 1 ? "review" : "reviews"}
+                          {reviewStats.totalReviews === 1
+                            ? "review"
+                            : "reviews"}
                         </p>
                       </div>
                     </div>
@@ -1339,7 +1316,9 @@ function RuleRow({
             : "text-muted-foreground",
         )}
       >
-        {rule.enabled ? (rule.onLabel ?? "Enabled") : (rule.offLabel ?? "Disabled")}
+        {rule.enabled
+          ? (rule.onLabel ?? "Enabled")
+          : (rule.offLabel ?? "Disabled")}
       </Badge>
     </div>
   );

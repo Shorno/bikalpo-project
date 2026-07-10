@@ -89,6 +89,11 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                     / {product.subCategory.name}
                   </span>
                 )}
+                {product.brand && (
+                  <span className="ml-2 inline-block text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded-full">
+                    {product.brand.name}
+                  </span>
+                )}
               </div>
 
               {/* Product Name */}
@@ -111,7 +116,7 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                 }}
                 variants={normalizedVariants}
                 categoryName={product.category.name}
-                brandName={undefined}
+                brandName={product.brand?.name}
                 subCategoryName={product.subCategory?.name}
                 productSize={product.size}
                 features={product.features}

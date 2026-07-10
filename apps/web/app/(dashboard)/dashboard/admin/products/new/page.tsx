@@ -11,13 +11,10 @@ export default async function NewProductPage({
 }: NewProductPageProps) {
   const params = await searchParams;
   const coreProductId = Number(params.coreProductId);
+  const initialCoreProductId =
+    Number.isInteger(coreProductId) && coreProductId > 0 ? coreProductId : null;
 
   return (
-    <ProductForm
-      initialCoreProductId={
-        Number.isFinite(coreProductId) ? coreProductId : null
-      }
-      mode="create"
-    />
+    <ProductForm mode="create" initialCoreProductId={initialCoreProductId} />
   );
 }

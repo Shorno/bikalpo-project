@@ -148,6 +148,34 @@
       "when": 1783800000000,
       "tag": "0021_rule_setting_visibility_flags",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1783900000000,
+      "tag": "0022_core_product_creator_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784000000000,
+      "tag": "0023_split_multibrand_admin_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784100000000,
+      "tag": "0024_repair_sourced_variant_product_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784200000000,
+      "tag": "0025_high_vengeance",
+      "breakpoints": true
     }
   ]
 }

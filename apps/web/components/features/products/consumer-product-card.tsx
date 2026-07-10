@@ -21,6 +21,7 @@ interface ConsumerProductCardProps {
     size?: string | null;
     inStock?: boolean;
     category?: { name?: string; slug?: string } | null;
+    brand?: { name?: string; slug?: string; logo?: string | null } | null;
     reviewStats?: { averageRating: number; totalReviews: number } | null;
     sellerCount?: number | null;
   };
@@ -35,7 +36,10 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
   const hasValidImage =
     product.image && !imageError && product.image.trim() !== "";
 
-  const rawPrice = typeof product.price === "string" ? parseFloat(product.price) : Number(product.price);
+  const rawPrice =
+    typeof product.price === "string"
+      ? parseFloat(product.price)
+      : Number(product.price);
   const price = isNaN(rawPrice) ? 0 : rawPrice;
 
   const rating = product.reviewStats?.averageRating ?? 0;
@@ -92,6 +96,13 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
 
         {/* Product Info */}
         <div className="p-3 sm:p-4 space-y-2 flex-1 flex flex-col">
+          {/* Brand */}
+          {product.brand?.name && (
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+              {product.brand.name}
+            </span>
+          )}
+
           {/* Product Name */}
           <h3 className="text-xs sm:text-sm font-semibold text-gray-900 line-clamp-2 leading-snug">
             {product.name}
@@ -139,11 +150,13 @@ export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
               <span className="text-xs text-gray-600">
                 <span className="font-semibold text-gray-800">
                   {sellerCount}
-                </span>
-                {" "}{sellerCount === 1 ? "Seller" : "Sellers"} Available
+                </span>{" "}
+                {sellerCount === 1 ? "Seller" : "Sellers"} Available
               </span>
             ) : (
-              <span className="text-xs text-gray-400">No Sellers Available</span>
+              <span className="text-xs text-gray-400">
+                No Sellers Available
+              </span>
             )}
           </div>
 

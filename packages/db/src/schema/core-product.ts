@@ -1,14 +1,25 @@
 import { relations } from "drizzle-orm";
 import {
-    boolean,
-    integer,
-    pgTable,
-    serial,
-    text,
-    varchar,
+  boolean,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  serial,
+  text,
+  varchar,
 } from "drizzle-orm/pg-core";
-import { timestamps } from "./columns.helpers";
+import { user } from "./auth-schema";
 import { category, subCategory } from "./category";
+import { timestamps } from "./columns.helpers";
+import type { ProductFeatureGroup } from "./product";
+
+/** Who created a catalog entity (core product identity) */
+export const catalogCreatorSourceEnum = pgEnum("catalog_creator_source", [
+  "admin",
+  "warehouse",
+  "shop",
+]);
 
 // === Core Product Identity ===
 
@@ -22,60 +33,147 @@ import { category, subCategory } from "./category";
  * Hierarchy: Type → Category → SubCategory → Core Product Identity
  */
 export const coreProductIdentity = pgTable("core_product_identity", {
-    id: serial("id").primaryKey(),
+  id: serial("id").primaryKey(),
 
-    /** Auto-generated SKU code (e.g. "001", "002") — unique within subcategory scope */
-    sku: varchar("sku", { length: 20 }).notNull(),
+  /** Auto-generated SKU code (e.g. "001", "002") — unique within subcategory scope */
+  sku: varchar("sku", { length: 20 }).notNull(),
 
-    /** Global product name (e.g. "Miniket Rice") — must be unique */
-    name: varchar("name", { length: 150 }).notNull().unique(),
+  /** Global product name (e.g. "Miniket Rice") — must be unique */
+  name: varchar("name", { length: 150 }).notNull().unique(),
 
-    /** URL-friendly slug */
-    slug: varchar("slug", { length: 150 }).notNull().unique(),
+  /** URL-friendly slug */
+  slug: varchar("slug", { length: 150 }).notNull().unique(),
 
-    /** Optional description */
-    description: text("description"),
+  /** Optional description */
+  description: text("description"),
 
-    /** Representative product image */
-    image: varchar("image", { length: 255 }).notNull(),
+  /** Representative product image */
+  image: varchar("image", { length: 255 }).notNull(),
 
-    /** Parent category */
-    categoryId: integer("category_id")
-        .notNull()
-        .references(() => category.id, { onDelete: "restrict" }),
+  /** Parent category */
+  categoryId: integer("category_id")
+    .notNull()
+    .references(() => category.id, { onDelete: "restrict" }),
 
-    /** Optional sub-category */
-    subCategoryId: integer("sub_category_id").references(
-        () => subCategory.id,
-        { onDelete: "set null" },
-    ),
+  /** Optional sub-category */
+  subCategoryId: integer("sub_category_id").references(() => subCategory.id, {
+    onDelete: "set null",
+  }),
 
-    /** Whether this core product supports pack-based variants (e.g. 1KG Pack, 5KG Sack) */
-    supportsPack: boolean("supports_pack").default(true).notNull(),
+  /** Whether this core product supports pack-based variants (e.g. 1KG Pack, 5KG Sack) */
+  supportsPack: boolean("supports_pack").default(true).notNull(),
 
-    /** Whether this core product supports loose variants (e.g. per KG, per Piece) */
-    supportsLoose: boolean("supports_loose").default(false).notNull(),
+  /** Whether this core product supports loose variants (e.g. per KG, per Piece) */
+  supportsLoose: boolean("supports_loose").default(false).notNull(),
 
-    ...timestamps,
+  /** User who created this core product. NULL = unknown historic creator. */
+  createdById: text("created_by_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+
+  /** Which actor type created this core product (admin | warehouse | shop) */
+  creatorSource: catalogCreatorSourceEnum("creator_source")
+    .default("admin")
+    .notNull(),
+
+  ...timestamps,
 });
+
+/**
+ * Brand-neutral details captured during the first admin product creation.
+ * Generated brand products can diverge later; this immutable snapshot remains
+ * the source for products added to the core product in the future.
+ */
+export type AdminProductGenerationTemplateDetails = {
+  name: string;
+  slug: string;
+  description?: string | null;
+  shortDescription?: string | null;
+  videoUrl?: string | null;
+  size: string;
+  price: string;
+  image: string;
+  additionalImages: string[];
+  features: ProductFeatureGroup[];
+  inStock: boolean;
+  isFeatured: boolean;
+  reorderLevel: number;
+  supplier?: string | null;
+  isReturnablePack: boolean;
+  defaultPackDepositAmount: string;
+  allowedPackBrands: string[];
+  allowedPackSizes: string[];
+  returnPolicyEnabled: boolean;
+  trackingType: "none" | "batch" | "serial";
+  expiryEnabled: boolean;
+  damageControlEnabled: boolean;
+  stockTrackingEnabled: boolean;
+  minimumOrderEnabled: boolean;
+  minimumOrderQty: string;
+  inventoryUnit: string;
+  conversionEnabled: boolean;
+  inventoryLooseUnitEnabled: boolean;
+  inventoryLooseUnit: string;
+  visibility: "public" | "private";
+  scheduledAt?: string | null;
+  status: "active" | "inactive" | "draft";
+};
+
+export const adminProductGenerationTemplate = pgTable(
+  "admin_product_generation_template",
+  {
+    coreProductId: integer("core_product_id")
+      .primaryKey()
+      .references(() => coreProductIdentity.id, { onDelete: "cascade" }),
+    version: integer("version").default(1).notNull(),
+    details: jsonb("details")
+      .$type<AdminProductGenerationTemplateDetails>()
+      .notNull(),
+    createdById: text("created_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    ...timestamps,
+  },
+);
 
 // === Relations ===
 
 export const coreProductIdentityRelations = relations(
-    coreProductIdentity,
-    ({ one }) => ({
-        category: one(category, {
-            fields: [coreProductIdentity.categoryId],
-            references: [category.id],
-        }),
-        subCategory: one(subCategory, {
-            fields: [coreProductIdentity.subCategoryId],
-            references: [subCategory.id],
-        }),
+  coreProductIdentity,
+  ({ one }) => ({
+    category: one(category, {
+      fields: [coreProductIdentity.categoryId],
+      references: [category.id],
     }),
+    subCategory: one(subCategory, {
+      fields: [coreProductIdentity.subCategoryId],
+      references: [subCategory.id],
+    }),
+    createdBy: one(user, {
+      fields: [coreProductIdentity.createdById],
+      references: [user.id],
+    }),
+    adminProductGenerationTemplate: one(adminProductGenerationTemplate),
+  }),
+);
+
+export const adminProductGenerationTemplateRelations = relations(
+  adminProductGenerationTemplate,
+  ({ one }) => ({
+    coreProduct: one(coreProductIdentity, {
+      fields: [adminProductGenerationTemplate.coreProductId],
+      references: [coreProductIdentity.id],
+    }),
+    createdBy: one(user, {
+      fields: [adminProductGenerationTemplate.createdById],
+      references: [user.id],
+    }),
+  }),
 );
 
 // === Types ===
 
 export type CoreProductIdentity = typeof coreProductIdentity.$inferSelect;
 export type NewCoreProductIdentity = typeof coreProductIdentity.$inferInsert;
+export type AdminProductGenerationTemplate =
+  typeof adminProductGenerationTemplate.$inferSelect;

@@ -14,7 +14,6 @@ import {
   ChevronRight,
   Info,
   Loader,
-  Package,
   Plus,
   Search,
   X,
@@ -64,6 +63,10 @@ import {
 import { generateSlug } from "@/utils/generate-slug";
 import { client, orpc } from "@/utils/orpc";
 import type { ProductWithRelations } from "./product-columns";
+import {
+  ProductEditorSection as FormSection,
+  ProductEditorIdentity as IdentitySummaryRow,
+} from "./product-editor-ui";
 import ProductFeaturesInput from "./product-features-input";
 import type { DraftVariant } from "./variant-form-dialog";
 
@@ -249,12 +252,14 @@ interface ProductFormProps {
   mode: "create" | "edit";
   product?: ProductWithRelations;
   initialCoreProductId?: number | null;
+  structureLocked?: boolean;
 }
 
 export default function ProductForm({
   mode,
   product,
   initialCoreProductId = null,
+  structureLocked = false,
 }: ProductFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -278,6 +283,8 @@ export default function ProductForm({
   const [selectedCoreProductId, setSelectedCoreProductId] = useState<
     number | null
   >((product as any)?.coreProductId ?? initialCoreProductIdForCreate);
+  const isStructureLocked =
+    structureLocked && isEdit && selectedCoreProductId !== null;
   const [initializedCoreProductId, setInitializedCoreProductId] = useState<
     number | null
   >(null);
@@ -300,8 +307,9 @@ export default function ProductForm({
       // Find variant prices for this brand
       const brandVPs = (existingVPs || []).filter(
         (vp: any) =>
-          (vp.brandId ?? null) === pb.brandId ||
-          (!vp.brandId && pbs.length === 1),
+          vp.isActive !== false &&
+          ((vp.brandId ?? null) === pb.brandId ||
+            (!vp.brandId && pbs.length === 1)),
       );
 
       const variantSettings: Record<number, VariantPriceSettings> = {};
@@ -373,6 +381,9 @@ export default function ProductForm({
     }),
   );
   const coreProducts = coreProductsData?.coreProducts ?? [];
+  const selectableCoreProducts = coreProducts.filter(
+    (coreProduct: any) => !coreProduct.hasConfiguration,
+  );
 
   const lockedCoreProductQuery = useQuery({
     ...orpc.adminCoreProduct.getById.queryOptions({
@@ -566,6 +577,17 @@ export default function ProductForm({
       onSubmit: isEdit ? updateProductSchema : createProductSchema,
     },
     onSubmit: async ({ value }) => {
+      if (brandConfigs.length === 0) {
+        toast.error("Add at least one brand");
+        return;
+      }
+      if (
+        brandConfigs.some((config) => config.selectedVariantIds.length === 0)
+      ) {
+        toast.error("Select at least one variant for every brand");
+        return;
+      }
+
       // Build variant prices array from brand configs
       const vpArray: any[] = [];
       for (const bc of brandConfigs) {
@@ -584,8 +606,12 @@ export default function ProductForm({
 
       const payload = {
         ...value,
-        coreProductId: selectedCoreProductId,
-        brandIds: brandIds.length > 0 ? brandIds : undefined,
+        coreProductId: isStructureLocked ? undefined : selectedCoreProductId,
+        brandIds: isStructureLocked
+          ? undefined
+          : brandIds.length > 0
+            ? brandIds
+            : undefined,
         variantPrices: vpArray.length > 0 ? vpArray : undefined,
       };
 
@@ -646,6 +672,18 @@ export default function ProductForm({
     initializedCoreProductId,
     isCoreIdentityLocked,
   ]);
+
+  useEffect(() => {
+    if (
+      !isEdit &&
+      isCoreIdentityLocked &&
+      lockedCoreProduct?.hasConfiguration
+    ) {
+      router.replace(
+        `/dashboard/admin/products/core/${lockedCoreProduct.id}/edit`,
+      );
+    }
+  }, [isCoreIdentityLocked, isEdit, lockedCoreProduct, router]);
 
   useEffect(() => {
     if (
@@ -1070,7 +1108,7 @@ export default function ProductForm({
                             <SelectItem value="0" disabled>
                               Select core identity
                             </SelectItem>
-                            {coreProducts.map((cp: any) => (
+                            {selectableCoreProducts.map((cp: any) => (
                               <SelectItem key={cp.id} value={String(cp.id)}>
                                 {cp.name}
                               </SelectItem>
@@ -1118,12 +1156,12 @@ export default function ProductForm({
               </FormSection>
 
               {/* ── Brands and variants ── */}
-              {(selectedCoreProductId || isEdit) && (
-                <FormSection
-                  title="Brands and variants"
-                  description="Pick which variants each brand offers. Prices are set in the Product Price space."
-                >
-                  <div className="space-y-3">
+              {(selectedCoreProductId || isEdit) &&
+                (isStructureLocked ? (
+                  <FormSection
+                    title="Brand and variants"
+                    description="The brand is fixed for this generated product. Prices are managed in Product Price."
+                  >
                     {brandConfigs.map((bc) => (
                       <BrandConfigCard
                         key={bc.brandId}
@@ -1131,106 +1169,133 @@ export default function ProductForm({
                         variantOptions={availableVariantOptions}
                         isExpanded={!collapsedBrandIds.has(bc.brandId)}
                         onToggleExpand={() => toggleBrandExpanded(bc.brandId)}
-                        onRemove={() => handleRemoveBrand(bc.brandId)}
+                        onRemove={() => undefined}
                         onToggleVariant={(voId) =>
                           handleToggleVariant(bc.brandId, voId)
                         }
                         onSetVariants={(voIds) =>
                           handleSetVariants(bc.brandId, voIds)
                         }
+                        canRemove={false}
                       />
                     ))}
+                  </FormSection>
+                ) : (
+                  <FormSection
+                    title="Brands and variants"
+                    description="Pick the variants each brand offers. Prices are managed in Product Price."
+                  >
+                    <div className="space-y-3">
+                      {brandConfigs.map((bc) => (
+                        <BrandConfigCard
+                          key={bc.brandId}
+                          config={bc}
+                          variantOptions={availableVariantOptions}
+                          isExpanded={!collapsedBrandIds.has(bc.brandId)}
+                          onToggleExpand={() => toggleBrandExpanded(bc.brandId)}
+                          onRemove={() => handleRemoveBrand(bc.brandId)}
+                          onToggleVariant={(voId) =>
+                            handleToggleVariant(bc.brandId, voId)
+                          }
+                          onSetVariants={(voIds) =>
+                            handleSetVariants(bc.brandId, voIds)
+                          }
+                        />
+                      ))}
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full justify-center gap-2 border-dashed text-muted-foreground"
-                      onClick={() => {
-                        setBrandSearch("");
-                        setBrandModalOpen(true);
-                      }}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-center gap-2 border-dashed text-muted-foreground"
+                        onClick={() => {
+                          setBrandSearch("");
+                          setBrandModalOpen(true);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add a brand
+                      </Button>
+
+                      {brandConfigs.length === 0 && (
+                        <p className="text-center text-xs text-muted-foreground">
+                          Add a brand to start configuring variants.
+                        </p>
+                      )}
+                    </div>
+
+                    <Dialog
+                      open={brandModalOpen}
+                      onOpenChange={setBrandModalOpen}
                     >
-                      <Plus className="h-4 w-4" />
-                      Add a brand
-                    </Button>
-
-                    {brandConfigs.length === 0 && (
-                      <p className="text-center text-xs text-muted-foreground">
-                        Add a brand to start configuring variants.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Brand selector modal */}
-                  <Dialog open={brandModalOpen} onOpenChange={setBrandModalOpen}>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle>Select brand</DialogTitle>
-                        <DialogDescription>
-                          Search and select a brand to add to this product.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-3">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            placeholder="Search brands..."
-                            value={brandSearch}
-                            onChange={(e) => setBrandSearch(e.target.value)}
-                            className="pl-9"
-                            autoFocus
-                          />
-                        </div>
-                        <div className="max-h-[300px] overflow-y-auto space-y-1 -mx-1 px-1">
-                          {(() => {
-                            const filtered = availableBrands.filter((b: any) =>
-                              b.name
-                                .toLowerCase()
-                                .includes(brandSearch.toLowerCase()),
-                            );
-                            if (filtered.length === 0) {
-                              return (
-                                <div className="text-center py-8 text-sm text-muted-foreground">
-                                  {availableBrands.length === 0
-                                    ? "All brands have been added."
-                                    : "No brands match your search."}
-                                </div>
+                      <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Select brand</DialogTitle>
+                          <DialogDescription>
+                            Search and select a brand to add to this product.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              placeholder="Search brands..."
+                              value={brandSearch}
+                              onChange={(e) => setBrandSearch(e.target.value)}
+                              className="pl-9"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="max-h-[300px] overflow-y-auto space-y-1 -mx-1 px-1">
+                            {(() => {
+                              const filtered = availableBrands.filter(
+                                (b: any) =>
+                                  b.name
+                                    .toLowerCase()
+                                    .includes(brandSearch.toLowerCase()),
                               );
-                            }
-                            return filtered.map((b: any) => (
-                              <button
-                                key={b.id}
-                                type="button"
-                                className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm text-left hover:bg-muted/80 transition-colors cursor-pointer"
-                                onClick={() => {
-                                  handleAddBrand(b.id);
-                                  setBrandModalOpen(false);
-                                  setBrandSearch("");
-                                }}
-                              >
-                                {b.logo ? (
-                                  <Image
-                                    src={b.logo}
-                                    alt={b.name}
-                                    width={32}
-                                    height={32}
-                                    className="h-8 w-8 rounded-md object-cover border"
-                                  />
-                                ) : (
-                                  <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
-                                    {b.name.charAt(0).toUpperCase()}
+                              if (filtered.length === 0) {
+                                return (
+                                  <div className="text-center py-8 text-sm text-muted-foreground">
+                                    {availableBrands.length === 0
+                                      ? "All brands have been added."
+                                      : "No brands match your search."}
                                   </div>
-                                )}
-                                <span className="font-medium">{b.name}</span>
-                              </button>
-                            ));
-                          })()}
+                                );
+                              }
+                              return filtered.map((b: any) => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm text-left hover:bg-muted/80 transition-colors cursor-pointer"
+                                  onClick={() => {
+                                    handleAddBrand(b.id);
+                                    setBrandModalOpen(false);
+                                    setBrandSearch("");
+                                  }}
+                                >
+                                  {b.logo ? (
+                                    <Image
+                                      src={b.logo}
+                                      alt={b.name}
+                                      width={32}
+                                      height={32}
+                                      className="h-8 w-8 rounded-md object-cover border"
+                                    />
+                                  ) : (
+                                    <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
+                                      {b.name.charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <span className="font-medium">{b.name}</span>
+                                </button>
+                              ));
+                            })()}
+                          </div>
                         </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </FormSection>
-              )}
+                      </DialogContent>
+                    </Dialog>
+                  </FormSection>
+                ))}
 
               {/* ── Description ── */}
               {(selectedCoreProductId || isEdit) && (
@@ -1524,7 +1589,9 @@ export default function ProductForm({
                                   disabled={!returnableField.state.value}
                                   min="0"
                                   onChange={(event) =>
-                                    depositField.handleChange(event.target.value)
+                                    depositField.handleChange(
+                                      event.target.value,
+                                    )
                                   }
                                   step="0.01"
                                   type="number"
@@ -1711,7 +1778,7 @@ function makeDefaultSettings(
   return {
     variantOptionId,
     brandId,
-    consumerPrice: "",
+    consumerPrice: "0",
   };
 }
 
@@ -1755,72 +1822,6 @@ function StatusPill({ status }: { status: string }) {
     >
       {status}
     </span>
-  );
-}
-
-function FormSection({
-  title,
-  description,
-  action,
-  children,
-}: {
-  title: string;
-  description?: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="px-5 py-6 sm:px-6">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h2 className="text-[15px] font-semibold leading-none tracking-tight">
-            {title}
-          </h2>
-          {description && (
-            <p className="text-[13px] text-muted-foreground">{description}</p>
-          )}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function IdentitySummaryRow({
-  image,
-  name,
-  meta,
-  action,
-}: {
-  image?: string | null;
-  name: string;
-  meta: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3">
-      {image ? (
-        <Image
-          src={image}
-          alt={name}
-          width={44}
-          height={44}
-          className="h-11 w-11 rounded-lg border bg-background object-cover"
-        />
-      ) : (
-        <div className="flex h-11 w-11 items-center justify-center rounded-lg border bg-background">
-          <Package className="h-5 w-5 text-muted-foreground" />
-        </div>
-      )}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">{name}</p>
-        {meta && (
-          <p className="truncate text-xs text-muted-foreground">{meta}</p>
-        )}
-      </div>
-      {action}
-    </div>
   );
 }
 
@@ -1871,6 +1872,7 @@ function BrandConfigCard({
   onRemove,
   onToggleVariant,
   onSetVariants,
+  canRemove = true,
 }: {
   config: BrandConfig;
   variantOptions: any[];
@@ -1879,6 +1881,7 @@ function BrandConfigCard({
   onRemove: () => void;
   onToggleVariant: (variantOptionId: number) => void;
   onSetVariants: (variantOptionIds: number[]) => void;
+  canRemove?: boolean;
 }) {
   const selectedCount = config.selectedVariantIds.length;
   const totalCount = variantOptions.length;
@@ -1887,50 +1890,51 @@ function BrandConfigCard({
   return (
     <div className="rounded-lg border bg-card">
       {/* Brand header */}
-      <button
-        type="button"
-        className="flex w-full items-center gap-3 p-3 text-left group"
-        onClick={onToggleExpand}
-      >
-        {isExpanded ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-        {config.brandLogo ? (
-          <Image
-            src={config.brandLogo}
-            alt={config.brandName}
-            width={32}
-            height={32}
-            className="h-8 w-8 rounded-md border object-cover"
-          />
-        ) : (
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
-            {config.brandName.charAt(0).toUpperCase()}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{config.brandName}</p>
-          <p className="text-xs text-muted-foreground">
-            {selectedCount > 0
-              ? `${selectedCount} variant${selectedCount !== 1 ? "s" : ""} selected`
-              : "No variants selected yet"}
-          </p>
-        </div>
-        <Button
+      <div className="group flex items-center gap-3 p-3">
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-destructive/60 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          onClick={onToggleExpand}
         >
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </button>
+          {isExpanded ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          {config.brandLogo ? (
+            <Image
+              src={config.brandLogo}
+              alt={config.brandName}
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-md border object-cover"
+            />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+              {config.brandName.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{config.brandName}</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedCount > 0
+                ? `${selectedCount} variant${selectedCount !== 1 ? "s" : ""} selected`
+                : "No variants selected yet"}
+            </p>
+          </div>
+        </button>
+        {canRemove && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive/60 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={onRemove}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
 
       {/* Expanded content — variant chips */}
       {isExpanded && (
