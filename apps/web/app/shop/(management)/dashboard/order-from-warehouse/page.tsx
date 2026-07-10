@@ -155,14 +155,80 @@ function getCartItemKey(item: {
   return `${item.variantId}:${item.fulfillmentMode}:${item.targetVariantId ?? "none"}`;
 }
 
-function formatCartItemLine(item: Pick<CartItem, "modeLabel" | "unitLabel">) {
+function formatCartItemLine(
+  item: Pick<CartItem, "modeLabel" | "unitLabel" | "familyLabel">,
+) {
+  const modeLabel = item.modeLabel.trim();
+  const unitLabel = item.unitLabel.trim();
+  const familyLabel = item.familyLabel?.trim().toLowerCase() || "";
+
+  if (familyLabel === "lpg") {
+    if (!unitLabel) {
+      return modeLabel || "Cylinder";
+    }
+
+    if (
+      !modeLabel ||
+      unitLabel.toLowerCase() === modeLabel.toLowerCase() ||
+      unitLabel.toLowerCase().includes(modeLabel.toLowerCase())
+    ) {
+      return unitLabel;
+    }
+
+    return `${unitLabel} • ${modeLabel}`;
+  }
+
   if (
-    item.modeLabel.trim().toLowerCase() === item.unitLabel.trim().toLowerCase()
+    modeLabel.toLowerCase() === unitLabel.toLowerCase()
   ) {
-    return item.modeLabel;
+    return modeLabel;
   }
 
   return `${item.modeLabel} • ${item.unitLabel}`;
+}
+
+function getRetailerStockTone(stockQty: number) {
+  if (stockQty > 10) {
+    return {
+      classes: "text-blue-600 bg-blue-50 border-blue-200",
+      textClass: "text-blue-600",
+      label: "In Stock",
+      summary: "Ready to order",
+      detail: "Available now",
+    };
+  }
+
+  if (stockQty > 0) {
+    return {
+      classes: "text-amber-600 bg-amber-50 border-amber-200",
+      textClass: "text-amber-600",
+      label: "Low Stock",
+      summary: "Limited availability",
+      detail: "Limited stock",
+    };
+  }
+
+  return {
+    classes: "text-red-600 bg-red-50 border-red-200",
+    textClass: "text-red-600",
+    label: "Out of Stock",
+    summary: "Currently unavailable",
+    detail: "Out of stock",
+  };
+}
+
+function getVariantSelectionTitle(profile: ProductTypeFulfillmentProfile) {
+  switch (profile.family) {
+    case "lpg":
+      return "Select Capacity";
+    case "fashion":
+    case "footwear":
+      return "Select Size";
+    case "electronics":
+      return "Select Model";
+    default:
+      return "Select Pack";
+  }
 }
 
 function buildWarehouseOrderUrl(warehouseSlug?: string | null) {
@@ -252,6 +318,7 @@ function ProductCard({
           label: firstDirectOption?.quantityUnitLabel || "Unit",
         };
   const stockLabelLower = stockSummary.label.toLowerCase();
+  const stockTone = getRetailerStockTone(stockSummary.qty);
 
   return (
     <button
@@ -276,14 +343,13 @@ function ProductCard({
         {/* Stock badge */}
         <div className="absolute top-2 right-2">
           <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-              stockSummary.qty > 10
-                ? "text-blue-600 bg-blue-50 border-blue-200"
-                : stockSummary.qty > 3
-                  ? "text-amber-600 bg-amber-50 border-amber-200"
-                  : "text-red-600 bg-red-50 border-red-200"
-            }`}
+            className={`relative inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${stockTone.classes} text-transparent select-none`}
           >
+            <span
+              className={`absolute inset-0 flex items-center justify-center ${stockTone.textClass}`}
+            >
+              {stockTone.label}
+            </span>
             📦 {stockSummary.qty} {stockSummary.label}
           </span>
         </div>
@@ -317,13 +383,21 @@ function ProductCard({
             {behaviourLabel}
           </span>
         </div>
-        <p className="text-[10px] text-gray-400 mt-0.5">
+        <p className="sr-only">
           {brandName && (
             <span className="text-blue-500 font-medium">{brandName}</span>
           )}
           {brandName && " • "}
           {variantCount} variant{variantCount > 1 ? "s" : ""} • 📦{" "}
           {stockSummary.qty} {stockLabelLower}
+        </p>
+        <p className="text-[10px] text-gray-400 mt-0.5">
+          {brandName && (
+            <span className="text-blue-500 font-medium">{brandName}</span>
+          )}
+          {brandName && " • "}
+          {variantCount} variant{variantCount > 1 ? "s" : ""} •{" "}
+          {stockTone.summary}
         </p>
         <div className="flex items-baseline gap-1 mt-1.5">
           <span className="text-base font-bold text-gray-900">
@@ -460,15 +534,21 @@ function VariantModal({
   const containerLabel = getWarehouseModeDisplayLabel(profile, "carton");
   const containerLabelLower = containerLabel.toLowerCase();
   const selectedModeLabel = selectedModeOption?.label ?? "Unit";
+  const normalizedUnitLabel = (selected.variant.unitLabel || "").trim();
+  const normalizedQuantityUnitLabel = quantityUnitLabel.trim();
   const selectedVariantLabel =
     profile.family === "lpg"
-      ? Array.from(
-          new Set(
-            [selected.variant.unitLabel, quantityUnitLabel]
-              .filter(Boolean)
-              .map((value) => value.trim()),
-          ),
-        ).join(" ")
+      ? normalizedUnitLabel &&
+        (!normalizedQuantityUnitLabel ||
+          normalizedUnitLabel
+            .toLowerCase()
+            .includes(normalizedQuantityUnitLabel.toLowerCase()))
+        ? normalizedUnitLabel
+        : Array.from(
+            new Set(
+              [normalizedUnitLabel, normalizedQuantityUnitLabel].filter(Boolean),
+            ),
+          ).join(" • ")
       : selected.variant.unitLabel || quantityUnitLabel;
   const quantityDisplayLabel = usesContainerStock
     ? selectedModeLabel
@@ -476,6 +556,8 @@ function VariantModal({
   const containerSelectionTitle = selectedModeOption?.label || containerLabel;
   const containerSelectionTitleLower = containerSelectionTitle.toLowerCase();
   const hasMeaningfulContainerWeight = (selectedCarton?.weightKg || 0) > 0;
+  const stockTone = getRetailerStockTone(stockQty);
+  const variantSelectionTitle = getVariantSelectionTitle(profile);
 
   useEffect(() => {
     setSelectedMode(getDefaultWarehouseOrderMode(profile, selected));
@@ -578,6 +660,9 @@ function VariantModal({
                           qty: totalBrandDirectQty,
                           label: brandDirectLabel,
                         };
+                  const brandStockTone = getRetailerStockTone(
+                    brandStockSummary.qty,
+                  );
 
                   return (
                     <button
@@ -645,10 +730,13 @@ function VariantModal({
                           {bg.variants.length > 1 ? "s" : ""}
                         </span>
                         <span className="text-[10px] text-gray-300">•</span>
-                        <span
-                          className={`text-[10px] ${brandStockSummary.qty > 5 ? "text-blue-500" : brandStockSummary.qty > 0 ? "text-amber-500" : "text-red-400"}`}
-                        >
+                        <span className="sr-only">
                           📦 {brandStockSummary.qty} {brandStockSummary.label}
+                        </span>
+                        <span
+                          className={`text-[10px] ${brandStockTone.textClass}`}
+                        >
+                          {brandStockTone.detail}
                         </span>
                       </div>
                     </button>
@@ -760,14 +848,13 @@ function VariantModal({
             </div>
             <div className="text-right">
               <span
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                  stockQty > 10
-                    ? "text-blue-600 bg-blue-50 border-blue-200"
-                    : stockQty > 0
-                      ? "text-amber-600 bg-amber-50 border-amber-200"
-                      : "text-red-600 bg-red-50 border-red-200"
-                }`}
+                className={`relative inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${stockTone.classes} text-transparent select-none`}
               >
+                <span
+                  className={`absolute inset-0 flex items-center justify-center ${stockTone.textClass}`}
+                >
+                  {stockTone.detail}
+                </span>
                 {!usesContainerStock && isLooseVariant
                   ? looseStockKg > 0
                     ? `🏷️ ${looseStockKg} KG available (${looseMaxQty} × ${variantWeightKg}KG)`
@@ -797,7 +884,7 @@ function VariantModal({
                   {packVars.length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                        Select Pack
+                        {variantSelectionTitle}
                       </h3>
                       <div className="flex flex-wrap gap-2">
                         {packVars.map((v) => {
@@ -833,11 +920,16 @@ function VariantModal({
                                 ৳{Number(v.price).toLocaleString()}
                               </div>
                               {vTotalCartons > 0 && (
-                                <div
-                                  className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}
-                                >
-                                  📦 {vTotalCartons} {containerLabelLower}
-                                </div>
+                                <>
+                                  <div className="sr-only">
+                                    📦 {vTotalCartons} {containerLabelLower}
+                                  </div>
+                                  <div
+                                    className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}
+                                  >
+                                    {containerLabel} stock available
+                                  </div>
+                                </>
                               )}
                               {vCartQty > 0 && (
                                 <div
@@ -933,8 +1025,13 @@ function VariantModal({
                           : selectedVariantLabel}
                       </div>
                       <div
-                        className={`text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"}`}
+                        className={`relative text-[9px] mt-0.5 font-medium ${isSelected ? "text-blue-200" : "text-blue-500"} text-transparent select-none`}
                       >
+                        <span className="absolute inset-0">
+                          {opt.totalKg > 0
+                            ? `Total ${opt.totalKg} KG per ${containerSelectionTitleLower}`
+                            : `${containerSelectionTitle} ready to order`}
+                        </span>
                         {opt.totalKg > 0
                           ? `📦 ${opt.count} ${containerSelectionTitleLower} (${opt.totalKg} KG)`
                           : `📦 ${opt.count} ${containerSelectionTitleLower}`}
@@ -1048,9 +1145,12 @@ function VariantModal({
                         variantId: selected.variantId,
                         quantity: qty,
                         productName: product.name,
-                        unitLabel: usesContainerStock
-                          ? selectedModeLabel
-                          : quantityUnitLabel,
+                        unitLabel:
+                          profile.family === "lpg"
+                            ? selectedVariantLabel
+                            : usesContainerStock
+                              ? selectedModeLabel
+                              : quantityUnitLabel,
                         weightKg:
                           !usesContainerStock && isLooseVariant
                             ? String(variantWeightKg)

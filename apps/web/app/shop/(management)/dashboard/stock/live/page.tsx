@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  FULFILLMENT_UNITS,
+  type ProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
 import { useState } from "react";
 import Link from "next/link";
 import {
@@ -18,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatStockDisplayUnit } from "@/lib/stock-measure";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -30,6 +35,63 @@ const STATUS_CONFIG = {
   low: { label: "Low Stock", color: "border-amber-200 text-amber-700 bg-amber-50", dot: "bg-amber-500", dotRing: "ring-amber-200" },
   out_of_stock: { label: "Out of Stock", color: "border-red-200 text-red-700 bg-red-50", dot: "bg-red-500", dotRing: "ring-red-200" },
 } as const;
+
+function getProductProfile(product: any): ProductTypeFulfillmentProfile | null {
+  return product?.fulfillmentProfile ?? null;
+}
+
+function getPrimaryStockUnitLabel(profile?: ProductTypeFulfillmentProfile | null) {
+  if (!profile) {
+    return "Pack";
+  }
+
+  const descriptor = FULFILLMENT_UNITS[profile.displayUnit];
+  return formatStockDisplayUnit(
+    descriptor?.shortLabel || descriptor?.label || "Pack",
+  );
+}
+
+function supportsLooseStock(product: any) {
+  const profile = getProductProfile(product);
+  return Boolean(profile?.supportedModes.includes("loose"));
+}
+
+function formatVariantTitle(product: any, variant: any) {
+  const profile = getProductProfile(product);
+  const family = profile?.family ?? "generic";
+  const brandName = variant.brandName || "";
+  const unitLabel = variant.unitLabel || "";
+  const packType = String(variant.packType || "").toLowerCase();
+  const weightKg = Number(variant.weightKg || 0);
+  const primaryLabel = getPrimaryStockUnitLabel(profile);
+
+  if (family === "lpg") {
+    return brandName ? `${unitLabel} (${brandName})` : unitLabel || "Cylinder";
+  }
+
+  if (packType === "loose") {
+    return brandName ? `${brandName} • Loose` : unitLabel || "Loose";
+  }
+
+  if ((family === "grocery" || family === "bulk_liquid") && weightKg > 0) {
+    return `${brandName || "No Brand"} + ${weightKg}KG`;
+  }
+
+  if (brandName && unitLabel) {
+    return `${brandName} • ${unitLabel}`;
+  }
+
+  return brandName || unitLabel || primaryLabel;
+}
+
+function getVariantStockUnitLabel(product: any, variant: any) {
+  const packType = String(variant.packType || "").toLowerCase();
+  if (packType === "loose") {
+    return "KG";
+  }
+
+  return getPrimaryStockUnitLabel(getProductProfile(product));
+}
 
 // ─── Main Page ─────────────────────────────────────────────────
 
@@ -143,12 +205,11 @@ export default function StockLivePage() {
             {products.map((p: any) => {
               const isExpanded = expandedId === p.productId;
               const sc = STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG];
-
-              // Aggregate packs + loose across variants
-              const totalPackKg = (p.variants || []).reduce((sum: number, v: any) => {
-                const isPack = (v.packType || "").toLowerCase() !== "loose";
-                return sum + (isPack ? v.availableQty * parseFloat(v.weightKg || "0") : 0);
-              }, 0);
+              const primaryLabel = getPrimaryStockUnitLabel(
+                getProductProfile(p),
+              );
+              const showLooseSummary =
+                supportsLooseStock(p) || Number(p.totalLooseQty || 0) > 0;
 
               return (
                 <div key={p.productId}>
@@ -198,12 +259,16 @@ export default function StockLivePage() {
                     <div className="py-2.5 px-2">
                       <div className="flex items-center gap-1 flex-wrap">
                         <span className="text-xs font-bold text-gray-900 tabular-nums">
-                          {Math.round(p.totalPackQty)} Pack
+                          {Math.round(p.totalPackQty)} {primaryLabel}
                         </span>
-                        <span className="text-gray-300 text-[10px]">·</span>
-                        <span className="text-xs font-bold text-gray-900 tabular-nums">
-                          {Math.round(p.totalLooseQty * 100) / 100} KG Loose
-                        </span>
+                        {showLooseSummary && (
+                          <>
+                            <span className="text-gray-300 text-[10px]">·</span>
+                            <span className="text-xs font-bold text-gray-900 tabular-nums">
+                              {Math.round(p.totalLooseQty * 100) / 100} KG Loose
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -254,6 +319,10 @@ function ExpandedProductDetail({
   onSelectVariant: (id: number | null) => void;
 }) {
   const sc = STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG];
+  const profile = getProductProfile(p);
+  const primaryLabel = getPrimaryStockUnitLabel(profile);
+  const showLooseSection =
+    supportsLooseStock(p) || Number(p.totalLooseQty || 0) > 0;
 
   // Split variants into pack and loose
   const packVariants = (p.variants || []).filter((v: any) => (v.packType || "").toLowerCase() !== "loose");
@@ -287,9 +356,13 @@ function ExpandedProductDetail({
           </div>
           {/* Inline summary pills */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="bg-white border rounded px-2 py-1 text-[11px] font-bold text-gray-800">📦 {Math.round(p.totalPackQty)} Pack</span>
-            <span className="text-gray-300 text-xs">+</span>
-            <span className="bg-white border rounded px-2 py-1 text-[11px] font-bold text-gray-800">🏷️ {Math.round(p.totalLooseQty * 100) / 100} KG</span>
+            <span className="bg-white border rounded px-2 py-1 text-[11px] font-bold text-gray-800">📦 {Math.round(p.totalPackQty)} {primaryLabel}</span>
+            {showLooseSection && (
+              <>
+                <span className="text-gray-300 text-xs">+</span>
+                <span className="bg-white border rounded px-2 py-1 text-[11px] font-bold text-gray-800">🏷️ {Math.round(p.totalLooseQty * 100) / 100} KG</span>
+              </>
+            )}
           </div>
           <Badge variant="outline" className={`text-[9px] font-bold shrink-0 ${sc.color}`}>
             {sc.label}
@@ -302,7 +375,7 @@ function ExpandedProductDetail({
           {packVariants.length > 0 && (
             <div>
               <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
-                <BarChart3 size={10} /> Variant Stock (Pack)
+                <BarChart3 size={10} /> Variant Stock ({primaryLabel})
               </h4>
               <div className="bg-white border rounded-lg overflow-hidden divide-y divide-gray-50">
                 {packVariants.map((v: any) => {
@@ -320,11 +393,11 @@ function ExpandedProductDetail({
                       }}
                     >
                       <span className="text-xs font-medium text-gray-800">
-                        {v.brandName || "No Brand"} + {v.weightKg}KG
+                        {formatVariantTitle(p, v)}
                       </span>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-xs font-bold text-gray-900 tabular-nums">
-                          → {v.availableQty} Pack
+                          → {v.availableQty} {getVariantStockUnitLabel(p, v)}
                         </span>
                         <span className={`w-1.5 h-1.5 rounded-full ring-1 ${vs.dot} ${vs.dotRing}`} />
                       </div>
@@ -336,6 +409,7 @@ function ExpandedProductDetail({
           )}
 
           {/* Loose stock (variant-wise breakdown) */}
+          {showLooseSection && (
           <div className="min-w-[160px]">
             <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
               <Tag size={10} /> Loose Stock
@@ -390,25 +464,27 @@ function ExpandedProductDetail({
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* ── Selected Variant (inline compact) ── */}
         {selectedVariant && (
-          <div className="bg-white border border-blue-200 rounded-lg px-3 py-2 flex items-center gap-4 text-xs">
-            <span className="font-bold text-blue-900">
-              ▸ {selectedVariant.brandName || "No Brand"} + {selectedVariant.weightKg}KG
-              {(selectedVariant.packType || "").toLowerCase() === "loose" ? " / Loose" : ""}
-            </span>
-            <div className="flex items-center gap-3 ml-auto text-[11px]">
-              <span className="text-blue-700">
-                Available: <strong>{selectedVariant.availableQty} {(selectedVariant.packType || "").toLowerCase() === "loose" ? "KG" : "Pack"}</strong>
+            <div className="bg-white border border-blue-200 rounded-lg px-3 py-2 flex items-center gap-4 text-xs">
+              <span className="font-bold text-blue-900">
+              ▸ {formatVariantTitle(p, selectedVariant)}
               </span>
-              <span className="text-blue-600">
-                Loose: <strong>+{Math.round(totalLooseKg * 100) / 100} KG</strong>
-              </span>
-              <span className="text-gray-400">MOQ: <strong className="text-gray-700">1 Pack</strong></span>
+              <div className="flex items-center gap-3 ml-auto text-[11px]">
+                <span className="text-blue-700">
+                Available: <strong>{selectedVariant.availableQty} {getVariantStockUnitLabel(p, selectedVariant)}</strong>
+                </span>
+              {showLooseSection && (
+                <span className="text-blue-600">
+                  Loose: <strong>+{Math.round(totalLooseKg * 100) / 100} KG</strong>
+                </span>
+              )}
+              <span className="text-gray-400">MOQ: <strong className="text-gray-700">1 {getVariantStockUnitLabel(p, selectedVariant)}</strong></span>
+              </div>
             </div>
-          </div>
         )}
 
         {/* ── Quick Actions (inline) ── */}
@@ -427,9 +503,11 @@ function ExpandedProductDetail({
           <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2 text-gray-400" disabled>
             <Printer size={10} /> Label
           </Button>
-          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2 text-gray-400" disabled>
-            <ArrowRightLeft size={10} /> Loose→Pack
-          </Button>
+          {showLooseSection && (
+            <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2 text-gray-400" disabled>
+              <ArrowRightLeft size={10} /> Loose→Pack
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  FULFILLMENT_UNITS,
+  type ProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -26,10 +30,54 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatStockDisplayUnit } from "@/lib/stock-measure";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useMyRetailProducts, useStockOverview } from "@/hooks/use-shop-owner-api";
+
+function getRetailFulfillmentProfile(item: any): ProductTypeFulfillmentProfile | null {
+  return item?.variant?.product?.fulfillmentProfile ?? null;
+}
+
+function getRetailCountUnitLabel(item: any) {
+  const profile = getRetailFulfillmentProfile(item);
+  if (!profile) {
+    return "Unit";
+  }
+
+  const descriptor = FULFILLMENT_UNITS[profile.displayUnit];
+  return formatStockDisplayUnit(
+    descriptor?.shortLabel || descriptor?.label || "Unit",
+  );
+}
+
+function getRetailUnitCellLabel(item: any) {
+  const variant = item?.variant;
+  const profile = getRetailFulfillmentProfile(item);
+  const family = profile?.family ?? "generic";
+
+  if (family === "grocery" || family === "bulk_liquid") {
+    return variant?.weightKg ? `${variant.weightKg} KG` : "—";
+  }
+
+  if (family === "lpg") {
+    return "Cylinder";
+  }
+
+  return getRetailCountUnitLabel(item);
+}
+
+function formatRetailStockBadgeLabel(item: any, qty: number) {
+  const profile = getRetailFulfillmentProfile(item);
+  const family = profile?.family ?? "generic";
+
+  if (family === "grocery" || family === "bulk_liquid") {
+    return `${qty}`;
+  }
+
+  return `${qty} ${getRetailCountUnitLabel(item)}`;
+}
 
 // ─── KPI Card ──────────────────────────────────────────────────
 
@@ -561,7 +609,7 @@ export default function StockPage() {
                             {variant?.quantitySelectorLabel || variant?.unitLabel || "—"}
                           </TableCell>
                           <TableCell className="text-xs text-gray-400 py-3">
-                            {variant?.weightKg ? `${variant.weightKg} KG` : "—"}
+                            {getRetailUnitCellLabel(item)}
                           </TableCell>
                           <TableCell className="text-center py-3">
                             <Badge
@@ -574,7 +622,7 @@ export default function StockPage() {
                                     : "border-red-200 text-red-700 bg-red-50"
                               }`}
                             >
-                              {qty}
+                              {formatRetailStockBadgeLabel(item, qty)}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right text-sm py-3">

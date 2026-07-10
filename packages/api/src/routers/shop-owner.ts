@@ -14,6 +14,7 @@ import {
     buildProductTypeFulfillmentProfile,
     FULFILLMENT_MODES,
     FULFILLMENT_MODE_LABELS,
+    type ProductTypeFulfillmentInput,
 } from "@bikalpo-project/db/fulfillment";
 import {
     brand,
@@ -529,7 +530,18 @@ const managementQueries = {
                         with: {
                             product: {
                                 with: {
-                                    category: { columns: { id: true, name: true } },
+                                    category: {
+                                        columns: { id: true, name: true },
+                                        with: {
+                                            type: {
+                                                columns: {
+                                                    name: true,
+                                                    slug: true,
+                                                    inventoryBehaviour: true,
+                                                },
+                                            },
+                                        },
+                                    },
                                 },
                             },
                             brand: { columns: { id: true, name: true } },
@@ -739,6 +751,14 @@ const managementQueries = {
                 sku: string | null;
                 categoryId: number | null;
                 categoryName: string | null;
+                type: {
+                    name: string;
+                    slug: string | null;
+                    inventoryBehaviour: string;
+                    trackingType: "none" | "batch" | "serial";
+                    isReturnablePack: boolean;
+                };
+                fulfillmentProfile: ReturnType<typeof buildProductTypeFulfillmentProfile>;
                 totalAvailableQty: number;
                 totalPackQty: number;
                 totalLooseQty: number;
@@ -763,6 +783,29 @@ const managementQueries = {
                 const uncartonedQty = Math.max(0, qty - cartonQty);
                 const packQty = isLoose ? 0 : uncartonedQty;
                 const looseQty = isLoose ? qty : 0;
+                const productTypeRow = (
+                    prod.category as
+                        | {
+                            type?: {
+                                name?: string | null;
+                                slug?: string | null;
+                                inventoryBehaviour?: string | null;
+                            };
+                        }
+                        | null
+                )?.type;
+                const type: ProductTypeFulfillmentInput = {
+                    name: productTypeRow?.name ?? "Generic",
+                    slug: productTypeRow?.slug ?? null,
+                    inventoryBehaviour:
+                        (productTypeRow?.inventoryBehaviour as ProductTypeFulfillmentInput["inventoryBehaviour"]) ??
+                        "fixed_pack",
+                    trackingType: prod.trackingType,
+                    isReturnablePack: prod.isReturnablePack,
+                };
+                const fulfillmentProfile = buildProductTypeFulfillmentProfile(
+                    type,
+                );
 
                 if (!productMap.has(pid)) {
                     productMap.set(pid, {
@@ -772,6 +815,8 @@ const managementQueries = {
                         sku: prod.sku,
                         categoryId: prod.category?.id ?? null,
                         categoryName: prod.category?.name ?? null,
+                        type,
+                        fulfillmentProfile,
                         totalAvailableQty: 0,
                         totalPackQty: 0,
                         totalLooseQty: 0,
@@ -1559,7 +1604,18 @@ const managementQueries = {
                         with: {
                             product: {
                                 with: {
-                                    category: { columns: { name: true, slug: true } },
+                                    category: {
+                                        columns: { name: true, slug: true },
+                                        with: {
+                                            type: {
+                                                columns: {
+                                                    name: true,
+                                                    slug: true,
+                                                    inventoryBehaviour: true,
+                                                },
+                                            },
+                                        },
+                                    },
                                     images: { limit: 1 },
                                     brand: { columns: { id: true, name: true } },
                                     productBrands: {
@@ -1588,9 +1644,49 @@ const managementQueries = {
 
             const total = filtered.length;
             const paginated = filtered.slice(offset, offset + limit);
+            const items = paginated.map((inv) => {
+                const productRow = inv.variant?.product;
+                const typeRow = (
+                    productRow?.category as
+                        | {
+                            type?: {
+                                name?: string | null;
+                                slug?: string | null;
+                                inventoryBehaviour?: string | null;
+                            };
+                        }
+                        | null
+                )?.type;
+                const type: ProductTypeFulfillmentInput = {
+                    name: typeRow?.name ?? "Generic",
+                    slug: typeRow?.slug ?? null,
+                    inventoryBehaviour:
+                        (typeRow?.inventoryBehaviour as ProductTypeFulfillmentInput["inventoryBehaviour"]) ??
+                        "fixed_pack",
+                    trackingType: productRow?.trackingType ?? "none",
+                    isReturnablePack: productRow?.isReturnablePack ?? false,
+                };
+
+                return {
+                    ...inv,
+                    variant: inv.variant
+                        ? {
+                            ...inv.variant,
+                            product: inv.variant.product
+                                ? {
+                                    ...inv.variant.product,
+                                    type,
+                                    fulfillmentProfile:
+                                        buildProductTypeFulfillmentProfile(type),
+                                }
+                                : inv.variant.product,
+                        }
+                        : inv.variant,
+                };
+            });
 
             return {
-                items: paginated,
+                items,
                 pagination: {
                     page,
                     limit,
