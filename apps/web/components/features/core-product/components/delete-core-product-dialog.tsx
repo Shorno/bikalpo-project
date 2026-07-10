@@ -28,6 +28,7 @@ export default function DeleteCoreProductDialog({
   onOpenChange,
 }: DeleteCoreProductDialogProps) {
   const queryClient = useQueryClient();
+  const deletionBlocked = coreProduct.hasConfiguration === true;
 
   const mutation = useMutation(
     orpc.adminCoreProduct.delete.mutationOptions({
@@ -48,28 +49,48 @@ export default function DeleteCoreProductDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete Core Product</AlertDialogTitle>
+          <AlertDialogTitle>
+            {deletionBlocked
+              ? "Core product cannot be deleted"
+              : "Delete Core Product"}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete{" "}
-            <strong>&quot;{coreProduct.name}&quot;</strong>? This will also
-            remove all linked brands and pack variant templates. This action
-            cannot be undone.
+            {deletionBlocked ? (
+              <>
+                <strong>&quot;{coreProduct.name}&quot;</strong> already has
+                generated brand products. The core identity must remain so
+                existing products, stock, and order history stay linked
+                correctly. Deactivate unwanted brand products from the Product
+                editor instead.
+              </>
+            ) : (
+              <>
+                Are you sure you want to delete{" "}
+                <strong>&quot;{coreProduct.name}&quot;</strong>? This action
+                cannot be undone.
+              </>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={mutation.isPending}>
-            Cancel
+            {deletionBlocked ? "Close" : "Cancel"}
           </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => mutation.mutate({ id: coreProduct.id })}
-            disabled={mutation.isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Delete
-          </AlertDialogAction>
+          {!deletionBlocked && (
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                mutation.mutate({ id: coreProduct.id });
+              }}
+              disabled={mutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {mutation.isPending && (
+                <Loader className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Delete
+            </AlertDialogAction>
+          )}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

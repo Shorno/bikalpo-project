@@ -64,6 +64,11 @@ export function ProductCard({ product }: ProductCardProps) {
 
       {/* Product Info */}
       <div className="p-3">
+        {product.brand?.name && (
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 mb-0.5">
+            {product.brand.name}
+          </p>
+        )}
         <h3 className="text-sm font-medium text-gray-900 mb-1 line-clamp-2 transition-colors hover:text-emerald-600">
           {product.name}
         </h3>

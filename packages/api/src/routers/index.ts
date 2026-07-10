@@ -19,6 +19,7 @@ import { adminLandingRouter } from "./admin-landing";
 import { adminMarketingRouter } from "./admin-marketing";
 import { adminOfferRouter } from "./admin-offer";
 import { adminOrderRouter } from "./admin-order";
+import { adminProductConfigRouter } from "./admin-product-config";
 import { adminProductTypeRouter } from "./admin-product-type";
 import { adminProductVariantRouter } from "./admin-product-variant";
 import { adminRewardRouter } from "./admin-reward";
@@ -85,6 +86,7 @@ export const appRouter = {
   }),
   audit: auditRouter,
   adminCoreProduct: adminCoreProductRouter,
+  adminProductConfig: adminProductConfigRouter,
   adminOffer: adminOfferRouter,
   adminProductType: adminProductTypeRouter,
   adminVariantOption: adminVariantOptionRouter,

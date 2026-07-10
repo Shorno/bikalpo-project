@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   decimal,
@@ -9,12 +9,14 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
-import { timestamps } from "./columns.helpers";
 import { brand } from "./brand";
 import { category, subCategory } from "./category";
+import { timestamps } from "./columns.helpers";
 import { coreProductIdentity } from "./core-product";
+import { trackingTypeEnum } from "./tracking-type";
 import { variantOption } from "./variant-option";
 
 // Type for product features
@@ -35,12 +37,7 @@ export const productStatusEnum = pgEnum("product_status", [
   "draft",
 ]);
 
-// Tracking type enum
-export const trackingTypeEnum = pgEnum("tracking_type", [
-  "none",
-  "batch",
-  "serial",
-]);
+export { trackingTypeEnum };
 
 // Visibility enum
 export const visibilityEnum = pgEnum("product_visibility", [
@@ -48,93 +45,138 @@ export const visibilityEnum = pgEnum("product_visibility", [
   "private",
 ]);
 
-export const product = pgTable("product", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 150 }).notNull(),
-  slug: varchar("slug", { length: 150 }).notNull().unique(),
-  description: text("description"),
-  categoryId: integer("category_id")
-    .notNull()
-    .references(() => category.id, { onDelete: "cascade" }),
-  subCategoryId: integer("sub_category_id").references(() => subCategory.id, {
-    onDelete: "set null",
-  }),
-  brandId: integer("brand_id").references(() => brand.id, {
-    onDelete: "set null",
-  }),
+export const product = pgTable(
+  "product",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 150 }).notNull(),
+    slug: varchar("slug", { length: 150 }).notNull().unique(),
+    description: text("description"),
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => category.id, { onDelete: "cascade" }),
+    subCategoryId: integer("sub_category_id").references(() => subCategory.id, {
+      onDelete: "set null",
+    }),
+    brandId: integer("brand_id").references(() => brand.id, {
+      onDelete: "set null",
+    }),
 
-  /** Link to Core Product Identity (nullable for backward compat with existing products) */
-  coreProductId: integer("core_product_id").references(
-    () => coreProductIdentity.id,
-    { onDelete: "restrict" },
-  ),
+    /** Link to Core Product Identity (nullable for backward compat with existing products) */
+    coreProductId: integer("core_product_id").references(
+      () => coreProductIdentity.id,
+      { onDelete: "restrict" },
+    ),
 
-  size: varchar("size", { length: 50 }).notNull(),
-  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+    size: varchar("size", { length: 50 }).notNull(),
+    price: decimal("price", { precision: 10, scale: 2 }).notNull(),
 
-  reorderLevel: integer("reorder_level").default(0).notNull(),
-  sku: varchar("sku", { length: 100 }),
-  supplier: text("supplier"),
-  lastRestockedAt: timestamp("last_restocked_at"),
+    reorderLevel: integer("reorder_level").default(0).notNull(),
+    sku: varchar("sku", { length: 100 }),
+    supplier: text("supplier"),
+    lastRestockedAt: timestamp("last_restocked_at"),
 
-  image: varchar("image", { length: 255 }).notNull(),
+    image: varchar("image", { length: 255 }).notNull(),
 
-  /** Short description (plain text) */
-  shortDescription: text("short_description"),
+    /** Short description (plain text) */
+    shortDescription: text("short_description"),
 
-  /** Optional video URL */
-  videoUrl: varchar("video_url", { length: 500 }),
+    /** Optional video URL */
+    videoUrl: varchar("video_url", { length: 500 }),
 
-  // Product features stored as JSONB
-  features: jsonb("features").$type<ProductFeatureGroup[]>().default([]),
+    // Product features stored as JSONB
+    features: jsonb("features").$type<ProductFeatureGroup[]>().default([]),
 
-  inStock: boolean("in_stock").default(true).notNull(),
-  isFeatured: boolean("is_featured").default(false).notNull(),
+    inStock: boolean("in_stock").default(true).notNull(),
+    isFeatured: boolean("is_featured").default(false).notNull(),
 
-  // === B2B + B2C Pack Return Configuration (product-level defaults) ===
-  isReturnablePack: boolean("is_returnable_pack").default(false).notNull(),
-  defaultPackDepositAmount: decimal("default_pack_deposit_amount", {
-    precision: 10,
-    scale: 2,
-  }).default("0"),
-  allowedPackBrands: jsonb("allowed_pack_brands").$type<string[]>().default([]),
-  allowedPackSizes: jsonb("allowed_pack_sizes").$type<string[]>().default([]),
+    // === B2B + B2C Pack Return Configuration (product-level defaults) ===
+    isReturnablePack: boolean("is_returnable_pack").default(false).notNull(),
+    defaultPackDepositAmount: decimal("default_pack_deposit_amount", {
+      precision: 10,
+      scale: 2,
+    }).default("0"),
+    allowedPackBrands: jsonb("allowed_pack_brands")
+      .$type<string[]>()
+      .default([]),
+    allowedPackSizes: jsonb("allowed_pack_sizes").$type<string[]>().default([]),
 
-  // === Behavior Settings (from docs) ===
+    // === Inventory & Product Rules (from docs) ===
 
-  /** Tracking type: none, batch, serial */
-  trackingType: trackingTypeEnum("tracking_type").default("none").notNull(),
+    /** Whether normal product returns are allowed */
+    returnPolicyEnabled: boolean("return_policy_enabled")
+      .default(true)
+      .notNull(),
 
-  /** Whether expiry tracking is enabled */
-  expiryEnabled: boolean("expiry_enabled").default(false).notNull(),
+    /** Tracking type: none, batch, serial */
+    trackingType: trackingTypeEnum("tracking_type").default("none").notNull(),
 
-  /** Whether damage control is enabled */
-  damageControlEnabled: boolean("damage_control_enabled")
-    .default(false)
-    .notNull(),
+    /** Whether expiry tracking is enabled */
+    expiryEnabled: boolean("expiry_enabled").default(false).notNull(),
 
-  /** Whether stock tracking is enabled for this product */
-  stockTrackingEnabled: boolean("stock_tracking_enabled")
-    .default(true)
-    .notNull(),
+    /** Whether damage control is enabled */
+    damageControlEnabled: boolean("damage_control_enabled")
+      .default(false)
+      .notNull(),
 
-  /** Whether this product is available for sale */
-  availableForSale: boolean("available_for_sale").default(true).notNull(),
+    /** Whether stock tracking is enabled for this product */
+    stockTrackingEnabled: boolean("stock_tracking_enabled")
+      .default(true)
+      .notNull(),
 
-  /** Product visibility: public or private */
-  visibility: visibilityEnum("visibility").default("public").notNull(),
+    /** Whether minimum order quantity is enforced */
+    minimumOrderEnabled: boolean("minimum_order_enabled")
+      .default(true)
+      .notNull(),
 
-  /** Scheduled publish date (null = publish immediately) */
-  scheduledAt: timestamp("scheduled_at"),
+    /** Product-level minimum order quantity applied to generated variants */
+    minimumOrderQty: decimal("minimum_order_qty", {
+      precision: 12,
+      scale: 2,
+    })
+      .default("1")
+      .notNull(),
 
-  // Product status
-  status: productStatusEnum("status").default("active").notNull(),
+    /** Product-level inventory/order unit applied to generated variants */
+    inventoryUnit: varchar("inventory_unit", { length: 20 })
+      .default("unit")
+      .notNull(),
 
-  /** Warehouse that created this product. NULL = admin-created (global). */
-  createdByWarehouseId: text("created_by_warehouse_id"),
+    /** Product-level conversion flag, defaulted from product type behavior */
+    conversionEnabled: boolean("conversion_enabled").default(false).notNull(),
 
-  ...timestamps,
-});
+    /** Whether this product supports loose inventory units */
+    inventoryLooseUnitEnabled: boolean("inventory_loose_unit_enabled")
+      .default(false)
+      .notNull(),
+
+    /** Loose inventory unit used when loose mode is enabled */
+    inventoryLooseUnit: varchar("inventory_loose_unit", { length: 20 })
+      .default("kg")
+      .notNull(),
+
+    /** Product visibility: public or private */
+    visibility: visibilityEnum("visibility").default("public").notNull(),
+
+    /** Scheduled publish date (null = publish immediately) */
+    scheduledAt: timestamp("scheduled_at"),
+
+    // Product status
+    status: productStatusEnum("status").default("active").notNull(),
+
+    /** Warehouse that created this product. NULL = admin-created (global). */
+    createdByWarehouseId: text("created_by_warehouse_id"),
+
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("product_core_brand_admin_unique")
+      .on(table.coreProductId, table.brandId)
+      .where(
+        sql`${table.createdByWarehouseId} IS NULL AND ${table.coreProductId} IS NOT NULL AND ${table.brandId} IS NOT NULL`,
+      ),
+  ],
+);
 
 export const productImage = pgTable("product_image", {
   id: serial("id").primaryKey(),
@@ -291,7 +333,7 @@ export type ProductWithRelations = Omit<Product, "price"> & {
     id: number;
     name: string;
     slug: string;
-    logo: string;
+    logo: string | null;
   } | null;
   images?: ProductImage[];
 };

@@ -120,6 +120,62 @@
       "when": 1783218215244,
       "tag": "0017_dapper_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783500000000,
+      "tag": "0018_product_inventory_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783600000000,
+      "tag": "0019_drop_available_for_sale",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783700000000,
+      "tag": "0020_product_type_rule_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1783800000000,
+      "tag": "0021_rule_setting_visibility_flags",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1783900000000,
+      "tag": "0022_core_product_creator_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784000000000,
+      "tag": "0023_split_multibrand_admin_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784100000000,
+      "tag": "0024_repair_sourced_variant_product_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784200000000,
+      "tag": "0025_high_vengeance",
+      "breakpoints": true
     }
   ]
 }

@@ -794,7 +794,7 @@ const managementQueries = {
                         }
                         | null
                 )?.type;
-                const type: ProductTypeFulfillmentInput = {
+                const type: ProductGroup["type"] = {
                     name: productTypeRow?.name ?? "Generic",
                     slug: productTypeRow?.slug ?? null,
                     inventoryBehaviour:
@@ -7602,7 +7602,6 @@ const shopProductEndpoints = {
 
                 // Step 8: Visibility
                 status: z.enum(["active", "inactive", "draft"]).default("active"),
-                availableForSale: z.boolean().default(true),
             }),
         )
         .handler(async ({ input, context }) => {
@@ -7636,7 +7635,6 @@ const shopProductEndpoints = {
                     damageControlEnabled: input.damageControlEnabled,
                     stockTrackingEnabled: input.stockTrackingEnabled,
                     trackingType: input.trackingType,
-                    availableForSale: input.availableForSale,
                 })
                 .returning({ id: product.id });
 

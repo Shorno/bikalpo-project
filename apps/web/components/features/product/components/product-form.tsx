@@ -1,38 +1,37 @@
 "use client";
 
+import {
+  FULFILLMENT_UNITS,
+  type FulfillmentUnitCode,
+  type ProductTypeFulfillmentProfile,
+} from "@bikalpo-project/db/fulfillment";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Check,
   ChevronDown,
   ChevronRight,
-  ImageIcon,
+  Info,
   Loader,
-  Package,
   Plus,
-  Save,
   Search,
-  Settings,
-  Tag,
   X,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -53,12 +52,22 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   createProductSchema,
   updateProductSchema,
 } from "@/schema/product.schema";
 import { generateSlug } from "@/utils/generate-slug";
 import { client, orpc } from "@/utils/orpc";
+import DeleteProductDialog from "./delete-product-dialog";
 import type { ProductWithRelations } from "./product-columns";
+import {
+  ProductEditorSection as FormSection,
+  ProductEditorIdentity as IdentitySummaryRow,
+} from "./product-editor-ui";
 import ProductFeaturesInput from "./product-features-input";
 import type { DraftVariant } from "./variant-form-dialog";
 
@@ -72,15 +81,169 @@ export type VariantPriceSettings = {
   consumerPrice: string;
 };
 
-/** A saved brand configuration with its selected variant options and settings */
+/** A saved brand configuration with its selected variant options */
 type BrandConfig = {
   brandId: number;
   brandName: string;
+  brandLogo?: string | null;
   /** Which variant option IDs are included for this brand */
   selectedVariantIds: number[];
-  /** Per-variant settings keyed by variantOptionId */
+  /**
+   * Per-variant settings keyed by variantOptionId. Pricing is NOT edited in
+   * this form (it lives in the product-price space), but we keep any existing
+   * consumerPrice here so re-saving the product round-trips it instead of
+   * wiping prices already set elsewhere.
+   */
   variantSettings: Record<number, VariantPriceSettings>;
 };
+
+type ProductRuleTrackingType = "none" | "batch" | "serial";
+
+type ProductRuleSettings = {
+  trackingTypes: ProductRuleTrackingType[];
+  trackingAvailable: boolean;
+  defaultTrackingType: ProductRuleTrackingType;
+  returnPolicyAvailable: boolean;
+  returnPolicyDefault: boolean;
+  expiryAvailable: boolean;
+  expiryDefault: boolean;
+  damageAvailable: boolean;
+  damageDefault: boolean;
+  stockTrackingAvailable: boolean;
+  stockTrackingDefault: boolean;
+  minimumOrderAvailable: boolean;
+  minimumOrderDefault: boolean;
+  minimumOrderQtyDefault: string;
+  inventoryUnitOptions: FulfillmentUnitCode[];
+  inventoryUnitAvailable: boolean;
+  defaultInventoryUnit: FulfillmentUnitCode;
+  conversionAvailable: boolean;
+  conversionDefault: boolean;
+  inventoryLooseUnitAvailable: boolean;
+  inventoryLooseUnitDefault: boolean;
+  inventoryLooseUnitOptions: FulfillmentUnitCode[];
+  defaultInventoryLooseUnit: FulfillmentUnitCode;
+  returnablePackAvailable: boolean;
+  returnablePackDefault: boolean;
+  defaultPackDepositAmount: string;
+};
+
+type ProductRuleDefaults = {
+  trackingType: ProductRuleTrackingType;
+  expiryEnabled: boolean;
+  damageControlEnabled: boolean;
+  isReturnablePack: boolean;
+  returnPolicyEnabled: boolean;
+  stockTrackingEnabled: boolean;
+  minimumOrderEnabled: boolean;
+  minimumOrderQty: string;
+  inventoryUnit: FulfillmentUnitCode;
+  conversionEnabled: boolean;
+  inventoryLooseUnitEnabled: boolean;
+  inventoryLooseUnit: FulfillmentUnitCode;
+  defaultPackDepositAmount: string;
+};
+
+const FALLBACK_RULE_SETTINGS: ProductRuleSettings = {
+  trackingTypes: ["none"],
+  trackingAvailable: true,
+  defaultTrackingType: "none",
+  returnPolicyAvailable: true,
+  returnPolicyDefault: true,
+  expiryAvailable: true,
+  expiryDefault: false,
+  damageAvailable: true,
+  damageDefault: true,
+  stockTrackingAvailable: true,
+  stockTrackingDefault: true,
+  minimumOrderAvailable: true,
+  minimumOrderDefault: true,
+  minimumOrderQtyDefault: "1",
+  inventoryUnitOptions: ["unit"],
+  inventoryUnitAvailable: true,
+  defaultInventoryUnit: "unit",
+  conversionAvailable: true,
+  conversionDefault: false,
+  inventoryLooseUnitAvailable: false,
+  inventoryLooseUnitDefault: false,
+  inventoryLooseUnitOptions: ["kg"],
+  defaultInventoryLooseUnit: "kg",
+  returnablePackAvailable: true,
+  returnablePackDefault: false,
+  defaultPackDepositAmount: "0",
+};
+
+function normalizeRuleSettings(
+  settings?: ProductRuleSettings | null,
+): ProductRuleSettings {
+  const source = settings ?? FALLBACK_RULE_SETTINGS;
+  const trackingTypes = source.trackingTypes?.length
+    ? source.trackingTypes
+    : FALLBACK_RULE_SETTINGS.trackingTypes;
+  const inventoryUnitOptions = source.inventoryUnitOptions?.length
+    ? source.inventoryUnitOptions
+    : FALLBACK_RULE_SETTINGS.inventoryUnitOptions;
+  const inventoryLooseUnitOptions = source.inventoryLooseUnitOptions?.length
+    ? source.inventoryLooseUnitOptions
+    : FALLBACK_RULE_SETTINGS.inventoryLooseUnitOptions;
+
+  return {
+    ...FALLBACK_RULE_SETTINGS,
+    ...source,
+    trackingTypes,
+    trackingAvailable: source.trackingAvailable ?? true,
+    defaultTrackingType: trackingTypes.includes(source.defaultTrackingType)
+      ? source.defaultTrackingType
+      : trackingTypes[0]!,
+    inventoryUnitOptions,
+    defaultInventoryUnit: inventoryUnitOptions.includes(
+      source.defaultInventoryUnit,
+    )
+      ? source.defaultInventoryUnit
+      : inventoryUnitOptions[0]!,
+    inventoryUnitAvailable: source.inventoryUnitAvailable ?? true,
+    inventoryLooseUnitOptions,
+    defaultInventoryLooseUnit: inventoryLooseUnitOptions.includes(
+      source.defaultInventoryLooseUnit,
+    )
+      ? source.defaultInventoryLooseUnit
+      : inventoryLooseUnitOptions[0]!,
+    minimumOrderQtyDefault: String(source.minimumOrderQtyDefault ?? "1"),
+    defaultPackDepositAmount: String(source.defaultPackDepositAmount ?? "0"),
+  };
+}
+
+function getRuleDefaultsFromSettings(
+  settings?: ProductRuleSettings | null,
+): ProductRuleDefaults {
+  const normalized = normalizeRuleSettings(settings);
+
+  return {
+    trackingType: normalized.trackingAvailable
+      ? normalized.defaultTrackingType
+      : "none",
+    expiryEnabled: normalized.expiryAvailable && normalized.expiryDefault,
+    damageControlEnabled:
+      normalized.damageAvailable && normalized.damageDefault,
+    isReturnablePack:
+      normalized.returnablePackAvailable && normalized.returnablePackDefault,
+    returnPolicyEnabled:
+      normalized.returnPolicyAvailable && normalized.returnPolicyDefault,
+    stockTrackingEnabled:
+      normalized.stockTrackingAvailable && normalized.stockTrackingDefault,
+    minimumOrderEnabled:
+      normalized.minimumOrderAvailable && normalized.minimumOrderDefault,
+    minimumOrderQty: normalized.minimumOrderQtyDefault,
+    inventoryUnit: normalized.defaultInventoryUnit,
+    conversionEnabled:
+      normalized.conversionAvailable && normalized.conversionDefault,
+    inventoryLooseUnitEnabled:
+      normalized.inventoryLooseUnitAvailable &&
+      normalized.inventoryLooseUnitDefault,
+    inventoryLooseUnit: normalized.defaultInventoryLooseUnit,
+    defaultPackDepositAmount: normalized.defaultPackDepositAmount,
+  };
+}
 
 // ============================================================
 // Main Component
@@ -90,12 +253,14 @@ interface ProductFormProps {
   mode: "create" | "edit";
   product?: ProductWithRelations;
   initialCoreProductId?: number | null;
+  structureLocked?: boolean;
 }
 
 export default function ProductForm({
   mode,
   product,
   initialCoreProductId = null,
+  structureLocked = false,
 }: ProductFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -119,7 +284,12 @@ export default function ProductForm({
   const [selectedCoreProductId, setSelectedCoreProductId] = useState<
     number | null
   >((product as any)?.coreProductId ?? initialCoreProductIdForCreate);
+  const isStructureLocked =
+    structureLocked && isEdit && selectedCoreProductId !== null;
   const [initializedCoreProductId, setInitializedCoreProductId] = useState<
+    number | null
+  >(null);
+  const [ruleDefaultsAppliedTypeId, setRuleDefaultsAppliedTypeId] = useState<
     number | null
   >(null);
   const [draftVariants] = useState<DraftVariant[]>([]);
@@ -138,8 +308,9 @@ export default function ProductForm({
       // Find variant prices for this brand
       const brandVPs = (existingVPs || []).filter(
         (vp: any) =>
-          (vp.brandId ?? null) === pb.brandId ||
-          (!vp.brandId && pbs.length === 1),
+          vp.isActive !== false &&
+          ((vp.brandId ?? null) === pb.brandId ||
+            (!vp.brandId && pbs.length === 1)),
       );
 
       const variantSettings: Record<number, VariantPriceSettings> = {};
@@ -156,6 +327,7 @@ export default function ProductForm({
       configs.push({
         brandId: pb.brandId,
         brandName: pb.brand?.name ?? `Brand #${pb.brandId}`,
+        brandLogo: pb.brand?.logo ?? null,
         selectedVariantIds,
         variantSettings,
       });
@@ -165,7 +337,22 @@ export default function ProductForm({
 
   // Currently-editing brand (for the inline config panel)
   const [activeBrandId, setActiveBrandId] = useState<number | null>(null);
-  const [expandedBrandId, setExpandedBrandId] = useState<number | null>(null);
+  // Brands are expanded by default; this tracks the ones the user collapsed.
+  const [collapsedBrandIds, setCollapsedBrandIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+
+  const toggleBrandExpanded = (brandId: number) => {
+    setCollapsedBrandIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(brandId)) {
+        next.delete(brandId);
+      } else {
+        next.add(brandId);
+      }
+      return next;
+    });
+  };
 
   // === Reference data queries ===
   const { data: typesData } = useQuery(
@@ -195,6 +382,9 @@ export default function ProductForm({
     }),
   );
   const coreProducts = coreProductsData?.coreProducts ?? [];
+  const selectableCoreProducts = coreProducts.filter(
+    (coreProduct: any) => !coreProduct.hasConfiguration,
+  );
 
   const lockedCoreProductQuery = useQuery({
     ...orpc.adminCoreProduct.getById.queryOptions({
@@ -229,11 +419,25 @@ export default function ProductForm({
     isCoreIdentityLocked &&
     lockedCoreProductQuery.isLoading &&
     !activeCoreProduct;
+  const activeTypeId =
+    (activeCoreProduct as any)?.category?.typeId ?? selectedTypeId;
+  const activeProductType = productTypes.find(
+    (type: any) => type.id === activeTypeId,
+  );
+  const activeFulfillmentProfile = activeProductType?.fulfillmentProfile as
+    | ProductTypeFulfillmentProfile
+    | undefined;
+  const activeRuleSettings = useMemo(
+    () =>
+      normalizeRuleSettings(
+        activeProductType?.ruleSettings as ProductRuleSettings | undefined,
+      ),
+    [activeProductType?.ruleSettings],
+  );
+  const activeRuleDefaults = getRuleDefaultsFromSettings(activeRuleSettings);
   const activeTypeName =
     (activeCoreProduct as any)?.category?.type?.name ??
-    productTypes.find(
-      (type: any) => type.id === (activeCoreProduct as any)?.category?.typeId,
-    )?.name ??
+    activeProductType?.name ??
     "Unassigned";
 
   // Filter cascades
@@ -326,10 +530,46 @@ export default function ProductForm({
         (product as any)?.coreProductId ?? initialCoreProductIdForCreate,
       shortDescription: (product as any)?.shortDescription ?? "",
       videoUrl: (product as any)?.videoUrl ?? "",
-      trackingType: (product as any)?.trackingType ?? "none",
-      expiryEnabled: (product as any)?.expiryEnabled ?? false,
-      damageControlEnabled: (product as any)?.damageControlEnabled ?? false,
-      isReturnablePack: (product as any)?.isReturnablePack ?? false,
+      trackingType:
+        (product as any)?.trackingType ?? activeRuleDefaults.trackingType,
+      expiryEnabled:
+        (product as any)?.expiryEnabled ?? activeRuleDefaults.expiryEnabled,
+      damageControlEnabled:
+        (product as any)?.damageControlEnabled ??
+        activeRuleDefaults.damageControlEnabled,
+      isReturnablePack:
+        (product as any)?.isReturnablePack ??
+        activeRuleDefaults.isReturnablePack,
+      defaultPackDepositAmount: String(
+        (product as any)?.defaultPackDepositAmount ??
+          activeRuleDefaults.defaultPackDepositAmount,
+      ),
+      allowedPackBrands:
+        (product as any)?.allowedPackBrands ?? ([] as string[]),
+      allowedPackSizes: (product as any)?.allowedPackSizes ?? ([] as string[]),
+      stockTrackingEnabled:
+        (product as any)?.stockTrackingEnabled ??
+        activeRuleDefaults.stockTrackingEnabled,
+      returnPolicyEnabled:
+        (product as any)?.returnPolicyEnabled ??
+        activeRuleDefaults.returnPolicyEnabled,
+      minimumOrderEnabled:
+        (product as any)?.minimumOrderEnabled ??
+        activeRuleDefaults.minimumOrderEnabled,
+      minimumOrderQty: String(
+        (product as any)?.minimumOrderQty ?? activeRuleDefaults.minimumOrderQty,
+      ),
+      inventoryUnit:
+        (product as any)?.inventoryUnit ?? activeRuleDefaults.inventoryUnit,
+      conversionEnabled:
+        (product as any)?.conversionEnabled ??
+        activeRuleDefaults.conversionEnabled,
+      inventoryLooseUnitEnabled:
+        (product as any)?.inventoryLooseUnitEnabled ??
+        activeRuleDefaults.inventoryLooseUnitEnabled,
+      inventoryLooseUnit:
+        (product as any)?.inventoryLooseUnit ??
+        activeRuleDefaults.inventoryLooseUnit,
       visibility: (product as any)?.visibility ?? "public",
       status: (product as any)?.status ?? "active",
     },
@@ -338,6 +578,17 @@ export default function ProductForm({
       onSubmit: isEdit ? updateProductSchema : createProductSchema,
     },
     onSubmit: async ({ value }) => {
+      if (brandConfigs.length === 0) {
+        toast.error("Add at least one brand");
+        return;
+      }
+      if (
+        brandConfigs.some((config) => config.selectedVariantIds.length === 0)
+      ) {
+        toast.error("Select at least one variant for every brand");
+        return;
+      }
+
       // Build variant prices array from brand configs
       const vpArray: any[] = [];
       for (const bc of brandConfigs) {
@@ -356,8 +607,12 @@ export default function ProductForm({
 
       const payload = {
         ...value,
-        coreProductId: selectedCoreProductId,
-        brandIds: brandIds.length > 0 ? brandIds : undefined,
+        coreProductId: isStructureLocked ? undefined : selectedCoreProductId,
+        brandIds: isStructureLocked
+          ? undefined
+          : brandIds.length > 0
+            ? brandIds
+            : undefined,
         variantPrices: vpArray.length > 0 ? vpArray : undefined,
       };
 
@@ -419,6 +674,58 @@ export default function ProductForm({
     isCoreIdentityLocked,
   ]);
 
+  useEffect(() => {
+    if (
+      !isEdit &&
+      isCoreIdentityLocked &&
+      lockedCoreProduct?.hasConfiguration
+    ) {
+      router.replace(
+        `/dashboard/admin/products/core/${lockedCoreProduct.id}/edit`,
+      );
+    }
+  }, [isCoreIdentityLocked, isEdit, lockedCoreProduct, router]);
+
+  useEffect(() => {
+    if (
+      isEdit ||
+      !activeTypeId ||
+      !activeProductType ||
+      ruleDefaultsAppliedTypeId === activeTypeId
+    ) {
+      return;
+    }
+
+    const defaults = getRuleDefaultsFromSettings(activeRuleSettings);
+    form.setFieldValue("trackingType", defaults.trackingType);
+    form.setFieldValue("expiryEnabled", defaults.expiryEnabled);
+    form.setFieldValue("damageControlEnabled", defaults.damageControlEnabled);
+    form.setFieldValue("isReturnablePack", defaults.isReturnablePack);
+    form.setFieldValue("returnPolicyEnabled", defaults.returnPolicyEnabled);
+    form.setFieldValue("stockTrackingEnabled", defaults.stockTrackingEnabled);
+    form.setFieldValue("minimumOrderEnabled", defaults.minimumOrderEnabled);
+    form.setFieldValue("minimumOrderQty", defaults.minimumOrderQty);
+    form.setFieldValue("inventoryUnit", defaults.inventoryUnit);
+    form.setFieldValue("conversionEnabled", defaults.conversionEnabled);
+    form.setFieldValue(
+      "inventoryLooseUnitEnabled",
+      defaults.inventoryLooseUnitEnabled,
+    );
+    form.setFieldValue("inventoryLooseUnit", defaults.inventoryLooseUnit);
+    form.setFieldValue(
+      "defaultPackDepositAmount",
+      defaults.defaultPackDepositAmount,
+    );
+    setRuleDefaultsAppliedTypeId(activeTypeId);
+  }, [
+    activeProductType,
+    activeRuleSettings,
+    activeTypeId,
+    form,
+    isEdit,
+    ruleDefaultsAppliedTypeId,
+  ]);
+
   // Add a brand configuration
   const handleAddBrand = (brandId: number) => {
     const brand = allBrands.find((b: any) => b.id === brandId);
@@ -427,28 +734,36 @@ export default function ProductForm({
     const newConfig: BrandConfig = {
       brandId: brand.id,
       brandName: brand.name,
+      brandLogo: brand.logo ?? null,
       selectedVariantIds: [],
       variantSettings: {},
     };
 
     setBrandConfigs((prev) => [...prev, newConfig]);
     setActiveBrandId(brandId);
-    setExpandedBrandId(brandId);
+    // New brands start expanded — make sure they aren't in the collapsed set.
+    setCollapsedBrandIds((prev) => {
+      if (!prev.has(brandId)) return prev;
+      const next = new Set(prev);
+      next.delete(brandId);
+      return next;
+    });
   };
 
   // Remove a brand configuration
   const handleRemoveBrand = (brandId: number) => {
     setBrandConfigs((prev) => prev.filter((bc) => bc.brandId !== brandId));
     if (activeBrandId === brandId) setActiveBrandId(null);
-    if (expandedBrandId === brandId) setExpandedBrandId(null);
+    setCollapsedBrandIds((prev) => {
+      if (!prev.has(brandId)) return prev;
+      const next = new Set(prev);
+      next.delete(brandId);
+      return next;
+    });
   };
 
   // Toggle variant inclusion for a brand
-  const handleToggleVariant = (
-    brandId: number,
-    variantOptionId: number,
-    variantOption: any,
-  ) => {
+  const handleToggleVariant = (brandId: number, variantOptionId: number) => {
     setBrandConfigs((prev) =>
       prev.map((bc) => {
         if (bc.brandId !== brandId) return bc;
@@ -473,80 +788,133 @@ export default function ProductForm({
     );
   };
 
-  // Update a variant setting for a brand
-  const updateBrandVariantField = (
-    brandId: number,
-    variantOptionId: number,
-    field: keyof VariantPriceSettings,
-    value: any,
-  ) => {
+  // Select-all / clear all variants for a brand at once
+  const handleSetVariants = (brandId: number, variantOptionIds: number[]) => {
     setBrandConfigs((prev) =>
       prev.map((bc) => {
         if (bc.brandId !== brandId) return bc;
-        const current =
-          bc.variantSettings[variantOptionId] ??
-          makeDefaultSettings(variantOptionId, brandId);
+        const variantSettings: Record<number, VariantPriceSettings> = {};
+        for (const voId of variantOptionIds) {
+          variantSettings[voId] =
+            bc.variantSettings[voId] ?? makeDefaultSettings(voId, brandId);
+        }
         return {
           ...bc,
-          variantSettings: {
-            ...bc.variantSettings,
-            [variantOptionId]: { ...current, [field]: value },
-          },
+          selectedVariantIds: variantOptionIds,
+          variantSettings,
         };
       }),
     );
   };
 
+  const isLpgRules = activeFulfillmentProfile?.family === "lpg";
+  const supportsLooseInventory = activeRuleSettings.inventoryLooseUnitAvailable;
+  const inventoryUnitOptions = activeRuleSettings.inventoryUnitOptions.map(
+    (code) => ({
+      value: code,
+      label: FULFILLMENT_UNITS[code]?.label ?? code,
+    }),
+  );
+  const looseUnitOptions = activeRuleSettings.inventoryLooseUnitOptions.map(
+    (code) => ({
+      value: code,
+      label: FULFILLMENT_UNITS[code]?.label ?? code,
+    }),
+  );
+  const returnableRuleLabel = isLpgRules
+    ? "Empty cylinder exchange"
+    : "Empty pack return";
+  const returnableRuleDescription = isLpgRules
+    ? "Require empty cylinder exchange for refill-style sales"
+    : "Require returnable packaging such as jars, drums, or packs";
+  const depositLabel = isLpgRules
+    ? "Exchange Value (BDT)"
+    : "Deposit Amount (BDT)";
+  const conversionDescription =
+    "Enable unit conversion for products that need pack-to-loose or carton-to-pack handling.";
+
+  const identityDescription = isEdit
+    ? "The core product this listing is based on."
+    : isCoreIdentityLocked
+      ? "This product is based on the selected core identity."
+      : selectedCoreProductId
+        ? "The core product this listing is based on."
+        : "Choose the core product this listing is based on.";
+
   return (
     <div className="min-h-screen bg-muted/30">
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-10 bg-background border-b">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button asChild variant="ghost" size="icon">
-                <Link href="/dashboard/admin/products">
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-              </Button>
-              <div>
-                <h1 className="text-lg font-semibold">
-                  {isEdit ? "Edit Product" : "New Product"}
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  {isEdit
-                    ? product?.name
-                    : "Create a product from Core Identity"}
-                </p>
+      {/* Command bar */}
+      <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+            >
+              <Link href="/dashboard/admin/products">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">
+                Products <span className="opacity-50">/</span>{" "}
+                {isEdit ? "Edit product" : "New product"}
+              </p>
+              <div className="flex items-center gap-2">
+                <form.Subscribe selector={(state) => state.values.name}>
+                  {(name) => (
+                    <h1 className="truncate text-base font-semibold leading-tight">
+                      {name || (isEdit ? product?.name : "New product")}
+                    </h1>
+                  )}
+                </form.Subscribe>
+                <form.Subscribe selector={(state) => state.values.status}>
+                  {(status) => <StatusPill status={status} />}
+                </form.Subscribe>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push("/dashboard/admin/products")}
-                disabled={isPending}
-              >
-                Discard
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  form.setFieldValue("status", "draft");
-                  form.handleSubmit();
-                }}
-                disabled={isPending}
-              >
-                <Save className="mr-2 h-4 w-4" />
-                Save Draft
-              </Button>
-              <Button onClick={() => form.handleSubmit()} disabled={isPending}>
-                {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-                <Save className="mr-2 h-4 w-4" />
-                {isEdit ? "Save Changes" : "Publish Product"}
-              </Button>
-            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {isEdit && product?.id ? (
+              <DeleteProductDialog
+                productId={product.id}
+                productName={product.name}
+                force
+                compact
+                onSuccess={() => router.push("/dashboard/admin/products")}
+              />
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/dashboard/admin/products")}
+              disabled={isPending}
+            >
+              Discard
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                form.setFieldValue("status", "draft");
+                form.handleSubmit();
+              }}
+              disabled={isPending}
+            >
+              Save draft
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => form.handleSubmit()}
+              disabled={isPending}
+            >
+              {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+              {isEdit ? "Save changes" : "Publish"}
+            </Button>
           </div>
         </div>
       </div>
@@ -558,245 +926,215 @@ export default function ProductForm({
           form.handleSubmit();
         }}
       >
-        <div className="container mx-auto px-4 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Content - Left Column (2/3 width) */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* ── 1. Core Product Selection ── */}
-              {!isEdit && (
-                <Card>
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <Package className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-base">
-                        Core Product Identity
-                      </CardTitle>
-                    </div>
-                    <CardDescription>
-                      {isCoreIdentityLocked
-                        ? "This product is based on the selected core identity."
-                        : "Select a pre-defined Core Identity to create a product from"}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {isCoreIdentityLocked ? (
-                      <div className="space-y-4">
-                        {isLoadingLockedCoreProduct ? (
-                          <div className="flex items-center gap-2 rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                            <Loader className="h-4 w-4 animate-spin" />
-                            Loading core identity...
-                          </div>
-                        ) : activeCoreProduct ? (
-                          <>
-                            <div className="flex items-center gap-4 rounded-lg border bg-muted/40 p-3">
-                              {activeCoreProduct.image ? (
-                                <Image
-                                  src={activeCoreProduct.image}
-                                  alt={activeCoreProduct.name}
-                                  width={56}
-                                  height={56}
-                                  className="h-14 w-14 rounded-lg border bg-background object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-14 w-14 items-center justify-center rounded-lg border bg-background">
-                                  <Package className="h-5 w-5 text-muted-foreground" />
-                                </div>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate font-semibold">
-                                  {activeCoreProduct.name}
-                                </p>
-                                <p className="truncate text-xs text-muted-foreground">
-                                  Slug: {activeCoreProduct.slug}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                              <ReadOnlyIdentityField
-                                label="Type"
-                                value={activeTypeName}
-                              />
-                              <ReadOnlyIdentityField
-                                label="Category"
-                                value={
-                                  activeCoreProduct.category?.name ?? "None"
-                                }
-                              />
-                              <ReadOnlyIdentityField
-                                label="Sub Category"
-                                value={
-                                  activeCoreProduct.subCategory?.name ?? "None"
-                                }
-                              />
-                              <ReadOnlyIdentityField
-                                label="Core Identity"
-                                value={activeCoreProduct.name}
-                              />
-                            </div>
-                          </>
-                        ) : (
-                          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                            Core identity could not be loaded.
-                          </div>
-                        )}
+        <div className="mx-auto max-w-6xl px-4 py-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+            {/* Console panel */}
+            <div className="divide-y rounded-xl border bg-card">
+              {/* ── Identity ── */}
+              <FormSection title="Identity" description={identityDescription}>
+                <div className="space-y-4">
+                  {isEdit ? (
+                    <IdentitySummaryRow
+                      image={product?.image}
+                      name={product?.name ?? "Product"}
+                      meta={[
+                        activeTypeName,
+                        product?.category?.name,
+                        (product as any)?.subCategory?.name,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    />
+                  ) : isCoreIdentityLocked ? (
+                    isLoadingLockedCoreProduct ? (
+                      <div className="flex items-center gap-2 rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+                        <Loader className="h-4 w-4 animate-spin" />
+                        Loading core identity...
                       </div>
+                    ) : activeCoreProduct ? (
+                      <IdentitySummaryRow
+                        image={activeCoreProduct.image}
+                        name={activeCoreProduct.name}
+                        meta={[
+                          activeTypeName,
+                          activeCoreProduct.category?.name,
+                          activeCoreProduct.subCategory?.name,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      />
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Type */}
-                        <Field>
-                          <FieldLabel>Type</FieldLabel>
-                          <Select
-                            value={
-                              selectedTypeId ? String(selectedTypeId) : "all"
-                            }
-                            onValueChange={(v) => {
-                              const val = v === "all" ? null : Number(v);
-                              setSelectedTypeId(val);
-                              setSelectedCategory(null);
-                              setSelectedSubCategoryId(null);
-                              setSelectedCoreProductId(null);
-                              form.setFieldValue("categoryId", 0);
-                              form.setFieldValue("subCategoryId", undefined);
-                              form.setFieldValue("coreProductId", null);
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">All Types</SelectItem>
-                              {productTypes.map((t: any) => (
-                                <SelectItem key={t.id} value={String(t.id)}>
-                                  {t.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-
-                        {/* Category */}
-                        <Field>
-                          <FieldLabel>Category *</FieldLabel>
-                          <Select
-                            value={
-                              selectedCategory ? String(selectedCategory) : "0"
-                            }
-                            onValueChange={(v) => {
-                              const val = Number(v);
-                              setSelectedCategory(val || null);
-                              setSelectedSubCategoryId(null);
-                              setSelectedCoreProductId(null);
-                              form.setFieldValue("categoryId", val);
-                              form.setFieldValue("subCategoryId", undefined);
-                              form.setFieldValue("coreProductId", null);
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="0" disabled>
-                                Select category
-                              </SelectItem>
-                              {filteredCategories.map((c: any) => (
-                                <SelectItem key={c.id} value={String(c.id)}>
-                                  {c.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-
-                        {/* Sub Category */}
-                        <Field>
-                          <FieldLabel>Sub Category</FieldLabel>
-                          <Select
-                            value={
-                              selectedSubCategoryId
-                                ? String(selectedSubCategoryId)
-                                : "none"
-                            }
-                            onValueChange={(v) => {
-                              const val = v === "none" ? null : Number(v);
-                              setSelectedSubCategoryId(val);
-                              setSelectedCoreProductId(null);
-                              form.setFieldValue(
-                                "subCategoryId",
-                                val ?? undefined,
-                              );
-                              form.setFieldValue("coreProductId", null);
-                            }}
-                            disabled={filteredSubcategories.length === 0}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">All</SelectItem>
-                              {filteredSubcategories.map((sc: any) => (
-                                <SelectItem key={sc.id} value={String(sc.id)}>
-                                  {sc.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-
-                        {/* Core Identity */}
-                        <Field>
-                          <FieldLabel>Core Identity *</FieldLabel>
-                          <Select
-                            value={
-                              selectedCoreProductId
-                                ? String(selectedCoreProductId)
-                                : "0"
-                            }
-                            onValueChange={(v) => {
-                              const val = Number(v);
-                              handleCoreProductSelect(val || null);
-                            }}
-                            disabled={!selectedCategory}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select core product" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="0" disabled>
-                                Select core identity
-                              </SelectItem>
-                              {coreProducts.map((cp: any) => (
-                                <SelectItem key={cp.id} value={String(cp.id)}>
-                                  {cp.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                        Core identity could not be loaded.
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
+                    )
+                  ) : selectedCoreProductId ? (
+                    <IdentitySummaryRow
+                      image={activeCoreProduct?.image}
+                      name={activeCoreProduct?.name ?? "Core identity"}
+                      meta={[
+                        activeTypeName,
+                        activeCoreProduct?.category?.name,
+                        activeCoreProduct?.subCategory?.name,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      action={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 shrink-0"
+                          onClick={() => {
+                            setSelectedCoreProductId(null);
+                            form.setFieldValue("coreProductId", null);
+                          }}
+                        >
+                          Change
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {/* Type */}
+                      <Field>
+                        <FieldLabel>Type</FieldLabel>
+                        <Select
+                          value={
+                            selectedTypeId ? String(selectedTypeId) : "all"
+                          }
+                          onValueChange={(v) => {
+                            const val = v === "all" ? null : Number(v);
+                            setSelectedTypeId(val);
+                            setSelectedCategory(null);
+                            setSelectedSubCategoryId(null);
+                            setSelectedCoreProductId(null);
+                            form.setFieldValue("categoryId", 0);
+                            form.setFieldValue("subCategoryId", undefined);
+                            form.setFieldValue("coreProductId", null);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All types</SelectItem>
+                            {productTypes.map((t: any) => (
+                              <SelectItem key={t.id} value={String(t.id)}>
+                                {t.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
 
-              {/* ── 1b. Product Name (editable, separate from core identity) ── */}
-              {(selectedCoreProductId || isEdit) && (
-                <Card>
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <Tag className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-base">Product Name</CardTitle>
+                      {/* Category */}
+                      <Field>
+                        <FieldLabel>Category *</FieldLabel>
+                        <Select
+                          value={
+                            selectedCategory ? String(selectedCategory) : "0"
+                          }
+                          onValueChange={(v) => {
+                            const val = Number(v);
+                            setSelectedCategory(val || null);
+                            setSelectedSubCategoryId(null);
+                            setSelectedCoreProductId(null);
+                            form.setFieldValue("categoryId", val);
+                            form.setFieldValue("subCategoryId", undefined);
+                            form.setFieldValue("coreProductId", null);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0" disabled>
+                              Select category
+                            </SelectItem>
+                            {filteredCategories.map((c: any) => (
+                              <SelectItem key={c.id} value={String(c.id)}>
+                                {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+
+                      {/* Sub category */}
+                      <Field>
+                        <FieldLabel>Sub category</FieldLabel>
+                        <Select
+                          value={
+                            selectedSubCategoryId
+                              ? String(selectedSubCategoryId)
+                              : "none"
+                          }
+                          onValueChange={(v) => {
+                            const val = v === "none" ? null : Number(v);
+                            setSelectedSubCategoryId(val);
+                            setSelectedCoreProductId(null);
+                            form.setFieldValue(
+                              "subCategoryId",
+                              val ?? undefined,
+                            );
+                            form.setFieldValue("coreProductId", null);
+                          }}
+                          disabled={filteredSubcategories.length === 0}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">All</SelectItem>
+                            {filteredSubcategories.map((sc: any) => (
+                              <SelectItem key={sc.id} value={String(sc.id)}>
+                                {sc.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+
+                      {/* Core identity */}
+                      <Field>
+                        <FieldLabel>Core identity *</FieldLabel>
+                        <Select
+                          value={
+                            selectedCoreProductId
+                              ? String(selectedCoreProductId)
+                              : "0"
+                          }
+                          onValueChange={(v) => {
+                            const val = Number(v);
+                            handleCoreProductSelect(val || null);
+                          }}
+                          disabled={!selectedCategory}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select core product" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0" disabled>
+                              Select core identity
+                            </SelectItem>
+                            {selectableCoreProducts.map((cp: any) => (
+                              <SelectItem key={cp.id} value={String(cp.id)}>
+                                {cp.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
                     </div>
-                    <CardDescription>
-                      Set the display name for this product. Pre-filled from
-                      Core Identity but can be customized.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  )}
+
+                  {(selectedCoreProductId || isEdit) && (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <form.Field name="name">
                         {(field) => (
                           <Field>
-                            <FieldLabel>Product Name *</FieldLabel>
+                            <FieldLabel>Display name *</FieldLabel>
                             <Input
                               value={field.state.value}
                               onChange={(e) => {
@@ -805,9 +1143,6 @@ export default function ProductForm({
                               }}
                               placeholder="Enter product display name"
                             />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              This name will be used as the product label
-                            </p>
                           </Field>
                         )}
                       </form.Field>
@@ -826,89 +1161,90 @@ export default function ProductForm({
                         )}
                       </form.Field>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  )}
+                </div>
+              </FormSection>
 
-              {/* ── 2. Brand Selection + Variant Configuration ── */}
-              {(selectedCoreProductId || isEdit) && (
-                <Card>
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <Tag className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-base">
-                        Brand & Variant Configuration
-                      </CardTitle>
-                    </div>
-                    <CardDescription>
-                      Select brands and configure variants for each. You must
-                      complete variant setup before adding another brand.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Saved brand configs */}
+              {/* ── Brands and variants ── */}
+              {(selectedCoreProductId || isEdit) &&
+                (isStructureLocked ? (
+                  <FormSection
+                    title="Brand and variants"
+                    description="The brand is fixed for this generated product. Prices are managed in Product Price."
+                  >
                     {brandConfigs.map((bc) => (
                       <BrandConfigCard
                         key={bc.brandId}
                         config={bc}
                         variantOptions={availableVariantOptions}
-                        isExpanded={expandedBrandId === bc.brandId}
-                        onToggleExpand={() =>
-                          setExpandedBrandId(
-                            expandedBrandId === bc.brandId ? null : bc.brandId,
-                          )
+                        isExpanded={!collapsedBrandIds.has(bc.brandId)}
+                        onToggleExpand={() => toggleBrandExpanded(bc.brandId)}
+                        onRemove={() => undefined}
+                        onToggleVariant={(voId) =>
+                          handleToggleVariant(bc.brandId, voId)
                         }
-                        onRemove={() => handleRemoveBrand(bc.brandId)}
-                        onToggleVariant={(voId, vo) =>
-                          handleToggleVariant(bc.brandId, voId, vo)
+                        onSetVariants={(voIds) =>
+                          handleSetVariants(bc.brandId, voIds)
                         }
-                        onUpdateField={(voId, field, value) =>
-                          updateBrandVariantField(
-                            bc.brandId,
-                            voId,
-                            field,
-                            value,
-                          )
-                        }
+                        canRemove={false}
                       />
                     ))}
+                  </FormSection>
+                ) : (
+                  <FormSection
+                    title="Brands and variants"
+                    description="Pick the variants each brand offers. Prices are managed in Product Price."
+                  >
+                    <div className="space-y-3">
+                      {brandConfigs.map((bc) => (
+                        <BrandConfigCard
+                          key={bc.brandId}
+                          config={bc}
+                          variantOptions={availableVariantOptions}
+                          isExpanded={!collapsedBrandIds.has(bc.brandId)}
+                          onToggleExpand={() => toggleBrandExpanded(bc.brandId)}
+                          onRemove={() => handleRemoveBrand(bc.brandId)}
+                          onToggleVariant={(voId) =>
+                            handleToggleVariant(bc.brandId, voId)
+                          }
+                          onSetVariants={(voIds) =>
+                            handleSetVariants(bc.brandId, voIds)
+                          }
+                        />
+                      ))}
 
-                    {/* Add Brand Button + Modal */}
-                    <div className="border border-dashed rounded-lg p-4">
                       <Button
                         type="button"
                         variant="outline"
-                        className="w-full justify-start gap-2 text-muted-foreground"
+                        className="w-full justify-center gap-2 border-dashed text-muted-foreground"
                         onClick={() => {
                           setBrandSearch("");
                           setBrandModalOpen(true);
                         }}
                       >
                         <Plus className="h-4 w-4" />
-                        Add a brand...
+                        Add a brand
                       </Button>
+
                       {brandConfigs.length === 0 && (
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Select a brand to begin configuring variants for this
-                          product.
+                        <p className="text-center text-xs text-muted-foreground">
+                          Add a brand to start configuring variants.
                         </p>
                       )}
                     </div>
 
-                    {/* Brand Selector Modal */}
                     <Dialog
                       open={brandModalOpen}
                       onOpenChange={setBrandModalOpen}
                     >
                       <DialogContent className="sm:max-w-md">
                         <DialogHeader>
-                          <DialogTitle>Select Brand</DialogTitle>
+                          <DialogTitle>Select brand</DialogTitle>
                           <DialogDescription>
                             Search and select a brand to add to this product.
                           </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-3">
-                          {/* Search Input */}
                           <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
@@ -919,8 +1255,6 @@ export default function ProductForm({
                               autoFocus
                             />
                           </div>
-
-                          {/* Brand List */}
                           <div className="max-h-[300px] overflow-y-auto space-y-1 -mx-1 px-1">
                             {(() => {
                               const filtered = availableBrands.filter(
@@ -970,182 +1304,341 @@ export default function ProductForm({
                         </div>
                       </DialogContent>
                     </Dialog>
+                  </FormSection>
+                ))}
 
-                    {brandConfigs.length > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        {brandConfigs.length} brand
-                        {brandConfigs.length > 1 ? "s" : ""} configured — one
-                        product will be created with all brands attached
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* ── 5. Product Details ── */}
-              <Card>
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-base">Product Details</CardTitle>
-                  <CardDescription>
-                    Additional product information
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <form.Field name="shortDescription">
-                    {(field) => (
-                      <Field>
-                        <FieldLabel>Short Description</FieldLabel>
-                        <Input
-                          value={field.state.value}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          placeholder="Premium quality rice for daily consumption"
-                        />
-                      </Field>
-                    )}
-                  </form.Field>
-
-                  <form.Field name="description">
-                    {(field) => (
-                      <Field>
-                        <FieldLabel htmlFor={field.name}>
-                          Full Description
-                        </FieldLabel>
-                        <RichTextEditor
-                          value={field.state.value}
-                          onChange={field.handleChange}
-                          placeholder="Describe your product..."
-                        />
-                      </Field>
-                    )}
-                  </form.Field>
-                </CardContent>
-              </Card>
-
-              {/* ── 6. Behavior Settings ── */}
-              <Card>
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-2">
-                    <Settings className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle className="text-base">
-                      Behavior Settings
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <form.Field name="isReturnablePack">
-                      {(field) => (
-                        <div className="flex items-center justify-between border rounded-lg p-3">
-                          <div>
-                            <FieldLabel className="text-sm font-medium">
-                              Empty Pack Return
-                            </FieldLabel>
-                            <p className="text-xs text-muted-foreground">
-                              Require empty pack return
-                            </p>
-                          </div>
-                          <Switch
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </div>
-                      )}
-                    </form.Field>
-
-                    <form.Field name="expiryEnabled">
-                      {(field) => (
-                        <div className="flex items-center justify-between border rounded-lg p-3">
-                          <div>
-                            <FieldLabel className="text-sm font-medium">
-                              Expiry Tracking
-                            </FieldLabel>
-                            <p className="text-xs text-muted-foreground">
-                              Track product expiry dates
-                            </p>
-                          </div>
-                          <Switch
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </div>
-                      )}
-                    </form.Field>
-
-                    <form.Field name="damageControlEnabled">
-                      {(field) => (
-                        <div className="flex items-center justify-between border rounded-lg p-3">
-                          <div>
-                            <FieldLabel className="text-sm font-medium">
-                              Damage Control
-                            </FieldLabel>
-                            <p className="text-xs text-muted-foreground">
-                              Enable damage reporting
-                            </p>
-                          </div>
-                          <Switch
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </div>
-                      )}
-                    </form.Field>
-
-                    <form.Field name="trackingType">
+              {/* ── Description ── */}
+              {(selectedCoreProductId || isEdit) && (
+                <FormSection
+                  title="Description"
+                  description="How this product appears to customers."
+                >
+                  <div className="space-y-4">
+                    <form.Field name="shortDescription">
                       {(field) => (
                         <Field>
-                          <FieldLabel>Tracking Type</FieldLabel>
-                          <Select
+                          <FieldLabel>Short description</FieldLabel>
+                          <Input
                             value={field.state.value}
-                            onValueChange={(v) => field.handleChange(v as any)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No Tracking</SelectItem>
-                              <SelectItem value="batch">Batch</SelectItem>
-                              <SelectItem value="serial">Serial</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="Premium quality rice for daily consumption"
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                    <form.Field name="description">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel htmlFor={field.name}>
+                            Full description
+                          </FieldLabel>
+                          <RichTextEditor
+                            value={field.state.value}
+                            onChange={field.handleChange}
+                            placeholder="Describe your product..."
+                          />
                         </Field>
                       )}
                     </form.Field>
                   </div>
-                </CardContent>
-              </Card>
+                </FormSection>
+              )}
 
-              {/* ── 7. Features ── */}
-              <Card>
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-base">Product Features</CardTitle>
-                  <CardDescription>
-                    Add feature groups with key-value pairs (e.g.,
-                    Specifications: Weight - 500g)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form.Field name="features">
-                    {(field) => (
-                      <ProductFeaturesInput
-                        value={field.state.value}
-                        onChange={field.handleChange}
-                      />
-                    )}
-                  </form.Field>
-                </CardContent>
-              </Card>
+              {/* ── Inventory rules ── */}
+              <FormSection
+                title="Inventory rules"
+                description="Stock, return, order, and conversion behavior."
+              >
+                <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+                  {activeRuleSettings.trackingAvailable && (
+                    <form.Field name="trackingType">
+                      {(field) => (
+                        <RuleControlRow
+                          description="Choose how this product is tracked in inventory."
+                          label="Batch tracking"
+                        >
+                          <Select
+                            value={field.state.value}
+                            onValueChange={(value) =>
+                              field.handleChange(value as any)
+                            }
+                          >
+                            <SelectTrigger className="h-9 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {activeRuleSettings.trackingTypes.map((type) => (
+                                <SelectItem key={type} value={type}>
+                                  {type === "none"
+                                    ? "Disable"
+                                    : type === "batch"
+                                      ? "Enable"
+                                      : "Serial tracking"}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
 
-              {/* ── 8. Media ── */}
-              <Card>
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle className="text-base">Media</CardTitle>
-                  </div>
-                  <CardDescription>Product images and media</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {activeRuleSettings.returnPolicyAvailable && (
+                    <form.Field name="returnPolicyEnabled">
+                      {(field) => (
+                        <RuleControlRow
+                          description="Allow standard product returns."
+                          label="Return policy"
+                        >
+                          <Switch
+                            aria-label="Return policy"
+                            checked={field.state.value}
+                            onCheckedChange={field.handleChange}
+                          />
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+
+                  {activeRuleSettings.expiryAvailable && (
+                    <form.Field name="expiryEnabled">
+                      {(field) => (
+                        <RuleControlRow
+                          description="Track product expiry dates."
+                          label="Expiry tracking"
+                        >
+                          <Switch
+                            aria-label="Expiry tracking"
+                            checked={field.state.value}
+                            onCheckedChange={field.handleChange}
+                          />
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+
+                  {activeRuleSettings.damageAvailable && (
+                    <form.Field name="damageControlEnabled">
+                      {(field) => (
+                        <RuleControlRow
+                          description="Enable damage reporting for this product."
+                          label="Damage control"
+                        >
+                          <Switch
+                            aria-label="Damage control"
+                            checked={field.state.value}
+                            onCheckedChange={field.handleChange}
+                          />
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+
+                  {activeRuleSettings.stockTrackingAvailable && (
+                    <form.Field name="stockTrackingEnabled">
+                      {(field) => (
+                        <RuleControlRow
+                          description="Track inventory movement for this product."
+                          label="Stock tracking"
+                        >
+                          <Switch
+                            aria-label="Stock tracking"
+                            checked={field.state.value}
+                            onCheckedChange={field.handleChange}
+                          />
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+
+                  {activeRuleSettings.minimumOrderAvailable && (
+                    <form.Field name="minimumOrderEnabled">
+                      {(enabledField) => (
+                        <RuleControlRow
+                          description="Apply a minimum order to generated variants."
+                          label="Minimum order qty"
+                        >
+                          <div className="flex w-full items-center justify-end gap-3">
+                            <Switch
+                              aria-label="Minimum order qty"
+                              checked={enabledField.state.value}
+                              onCheckedChange={enabledField.handleChange}
+                            />
+                            <form.Field name="minimumOrderQty">
+                              {(qtyField) => (
+                                <Input
+                                  aria-label="Minimum qty"
+                                  className="h-9 flex-1 text-right"
+                                  disabled={!enabledField.state.value}
+                                  min="0"
+                                  onChange={(event) =>
+                                    qtyField.handleChange(event.target.value)
+                                  }
+                                  step="0.01"
+                                  type="number"
+                                  value={qtyField.state.value}
+                                />
+                              )}
+                            </form.Field>
+                          </div>
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+
+                  {activeRuleSettings.inventoryUnitAvailable && (
+                    <form.Field name="inventoryUnit">
+                      {(field) => (
+                        <RuleControlRow
+                          description="Saved to the product and applied to generated variants."
+                          label="Inventory unit"
+                        >
+                          <Select
+                            value={field.state.value}
+                            onValueChange={(value) =>
+                              field.handleChange(value as FulfillmentUnitCode)
+                            }
+                          >
+                            <SelectTrigger className="h-9 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {inventoryUnitOptions.map((unit) => (
+                                <SelectItem key={unit.value} value={unit.value}>
+                                  {unit.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+
+                  {activeRuleSettings.conversionAvailable && (
+                    <form.Field name="conversionEnabled">
+                      {(field) => (
+                        <RuleControlRow
+                          description={conversionDescription}
+                          label="Conversion"
+                        >
+                          <Switch
+                            aria-label="Conversion"
+                            checked={field.state.value}
+                            onCheckedChange={field.handleChange}
+                          />
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+
+                  {supportsLooseInventory && (
+                    <form.Field name="inventoryLooseUnitEnabled">
+                      {(enabledField) => (
+                        <RuleControlRow
+                          description="Enable loose inventory for weight or volume based sales."
+                          label="Inventory loose unit"
+                        >
+                          <div className="flex w-full items-center justify-end gap-3">
+                            <Switch
+                              aria-label="Inventory loose unit"
+                              checked={enabledField.state.value}
+                              onCheckedChange={enabledField.handleChange}
+                            />
+                            <form.Field name="inventoryLooseUnit">
+                              {(unitField) => (
+                                <Select
+                                  disabled={!enabledField.state.value}
+                                  value={unitField.state.value}
+                                  onValueChange={(value) =>
+                                    unitField.handleChange(
+                                      value as FulfillmentUnitCode,
+                                    )
+                                  }
+                                >
+                                  <SelectTrigger className="h-9 flex-1">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {looseUnitOptions.map((unit) => (
+                                      <SelectItem
+                                        key={unit.value}
+                                        value={unit.value}
+                                      >
+                                        {unit.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </form.Field>
+                          </div>
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+
+                  {activeRuleSettings.returnablePackAvailable && (
+                    <form.Field name="isReturnablePack">
+                      {(returnableField) => (
+                        <RuleControlRow
+                          description={returnableRuleDescription}
+                          label={returnableRuleLabel}
+                        >
+                          <div className="flex w-full items-center justify-end gap-3">
+                            <Switch
+                              aria-label={returnableRuleLabel}
+                              checked={returnableField.state.value}
+                              onCheckedChange={returnableField.handleChange}
+                            />
+                            <form.Field name="defaultPackDepositAmount">
+                              {(depositField) => (
+                                <Input
+                                  aria-label={depositLabel}
+                                  className="h-9 flex-1 text-right"
+                                  disabled={!returnableField.state.value}
+                                  min="0"
+                                  onChange={(event) =>
+                                    depositField.handleChange(
+                                      event.target.value,
+                                    )
+                                  }
+                                  step="0.01"
+                                  type="number"
+                                  value={depositField.state.value}
+                                />
+                              )}
+                            </form.Field>
+                          </div>
+                        </RuleControlRow>
+                      )}
+                    </form.Field>
+                  )}
+                </div>
+              </FormSection>
+
+              {/* ── Features ── */}
+              <FormSection
+                title="Features"
+                description="Grouped key-value specifications (e.g. Weight — 500g)."
+              >
+                <form.Field name="features">
+                  {(field) => (
+                    <ProductFeaturesInput
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                    />
+                  )}
+                </form.Field>
+              </FormSection>
+
+              {/* ── Media ── */}
+              <FormSection
+                title="Media"
+                description="Images and video for this product."
+              >
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                     <form.Field name="image">
                       {(field) => {
                         const isInvalid =
@@ -1153,7 +1646,7 @@ export default function ProductForm({
                           !field.state.meta.isValid;
                         return (
                           <Field data-invalid={isInvalid}>
-                            <FieldLabel>Thumbnail / Main Image</FieldLabel>
+                            <FieldLabel>Thumbnail / main image</FieldLabel>
                             <ImageUploader
                               value={field.state.value}
                               onChange={field.handleChange}
@@ -1186,7 +1679,7 @@ export default function ProductForm({
                   <form.Field name="videoUrl">
                     {(field) => (
                       <Field>
-                        <FieldLabel>Video URL (optional)</FieldLabel>
+                        <FieldLabel>Video URL</FieldLabel>
                         <Input
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
@@ -1195,75 +1688,74 @@ export default function ProductForm({
                       </Field>
                     )}
                   </form.Field>
-                </CardContent>
-              </Card>
+                </div>
+              </FormSection>
             </div>
 
-            {/* Sidebar - Right Column (1/3 width) */}
-            <div className="space-y-6">
-              {/* Visibility */}
-              <Card>
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-base">Visibility</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <form.Field name="visibility">
+            {/* Sidebar */}
+            <div className="space-y-4 lg:sticky lg:top-[72px]">
+              <div className="rounded-xl border bg-card">
+                <div className="border-b px-4 py-3">
+                  <h3 className="text-sm font-semibold">Publish</h3>
+                </div>
+                <div className="space-y-4 p-4">
+                  <form.Field name="status">
                     {(field) => (
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
-                          <input
-                            type="radio"
-                            name="visibility"
-                            value="public"
-                            checked={field.state.value === "public"}
-                            onChange={() => field.handleChange("public")}
-                            className="accent-primary"
-                          />
-                          <div>
-                            <p className="text-sm font-medium">Public</p>
-                            <p className="text-xs text-muted-foreground">
-                              Visible to all customers
-                            </p>
-                          </div>
-                        </label>
-                        <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
-                          <input
-                            type="radio"
-                            name="visibility"
-                            value="private"
-                            checked={field.state.value === "private"}
-                            onChange={() => field.handleChange("private")}
-                            className="accent-primary"
-                          />
-                          <div>
-                            <p className="text-sm font-medium">Private</p>
-                            <p className="text-xs text-muted-foreground">
-                              Only visible to admins
-                            </p>
-                          </div>
-                        </label>
+                      <div className="space-y-1.5">
+                        <FieldLabel className="text-xs text-muted-foreground">
+                          Status
+                        </FieldLabel>
+                        <Select
+                          value={field.state.value}
+                          onValueChange={(v) => field.handleChange(v as any)}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="inactive">Inactive</SelectItem>
+                            <SelectItem value="draft">Draft</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     )}
                   </form.Field>
-                </CardContent>
-              </Card>
 
-              {/* Status Controls */}
-              <Card>
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-2">
-                    <Settings className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle className="text-base">Status</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                  <form.Field name="visibility">
+                    {(field) => (
+                      <div className="space-y-1.5">
+                        <FieldLabel className="text-xs text-muted-foreground">
+                          Visibility
+                        </FieldLabel>
+                        <Select
+                          value={field.state.value}
+                          onValueChange={(v) => field.handleChange(v as any)}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="public">Public</SelectItem>
+                            <SelectItem value="private">Private</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {field.state.value === "public"
+                            ? "Visible to all customers"
+                            : "Only visible to admins"}
+                        </p>
+                      </div>
+                    )}
+                  </form.Field>
+
+                  <Separator />
+
                   <form.Field name="isFeatured">
                     {(field) => (
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-3">
                         <div>
-                          <FieldLabel className="text-sm font-medium">
-                            Featured
-                          </FieldLabel>
+                          <p className="text-sm font-medium">Featured</p>
                           <p className="text-xs text-muted-foreground">
                             Show in featured section
                           </p>
@@ -1275,8 +1767,8 @@ export default function ProductForm({
                       </div>
                     )}
                   </form.Field>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1296,7 +1788,7 @@ function makeDefaultSettings(
   return {
     variantOptionId,
     brandId,
-    consumerPrice: "",
+    consumerPrice: "0",
   };
 }
 
@@ -1322,19 +1814,58 @@ function getAvailableVariantsForCoreProduct(
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function ReadOnlyIdentityField({
+// ============================================================
+// Presentational helpers
+// ============================================================
+
+function StatusPill({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    active: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    inactive: "bg-muted text-muted-foreground",
+    draft: "bg-amber-500/10 text-amber-600 dark:text-amber-500",
+  };
+  return (
+    <span
+      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+        styles[status] ?? styles.inactive
+      }`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function RuleControlRow({
+  children,
+  description,
   label,
-  value,
 }: {
+  children: ReactNode;
+  description: string;
   label: string;
-  value: string;
 }) {
   return (
-    <div className="rounded-lg border bg-background p-3">
-      <p className="text-xs font-medium uppercase text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 text-sm font-medium">{value}</p>
+    <div className="flex min-h-[52px] items-center justify-between gap-4 border-t py-3">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <FieldLabel className="text-sm font-normal">{label}</FieldLabel>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              aria-label={`${label} details`}
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              type="button"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-64 text-xs" side="top">
+            {description}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+        {children}
+      </div>
     </div>
   );
 }
@@ -1350,116 +1881,131 @@ function BrandConfigCard({
   onToggleExpand,
   onRemove,
   onToggleVariant,
-  onUpdateField,
+  onSetVariants,
+  canRemove = true,
 }: {
   config: BrandConfig;
   variantOptions: any[];
   isExpanded: boolean;
   onToggleExpand: () => void;
   onRemove: () => void;
-  onToggleVariant: (variantOptionId: number, variantOption: any) => void;
-  onUpdateField: (
-    variantOptionId: number,
-    field: keyof VariantPriceSettings,
-    value: any,
-  ) => void;
+  onToggleVariant: (variantOptionId: number) => void;
+  onSetVariants: (variantOptionIds: number[]) => void;
+  canRemove?: boolean;
 }) {
+  const selectedCount = config.selectedVariantIds.length;
+  const totalCount = variantOptions.length;
+  const allSelected = totalCount > 0 && selectedCount === totalCount;
+
   return (
-    <div className="space-y-3">
-      {/* Brand header — flat row */}
-      <div
-        className="flex items-center gap-3 cursor-pointer group"
-        onClick={onToggleExpand}
-      >
-        {isExpanded ? (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        )}
-        <span className="font-semibold text-sm">{config.brandName}</span>
-        <Badge variant="outline" className="text-[10px] font-normal">
-          {config.selectedVariantIds.length} variant
-          {config.selectedVariantIds.length !== 1 ? "s" : ""}
-        </Badge>
-        <div className="flex-1" />
-        <Button
+    <div className="rounded-lg border bg-card">
+      {/* Brand header */}
+      <div className="group flex items-center gap-3 p-3">
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-destructive/60 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          onClick={onToggleExpand}
         >
-          <X className="h-3.5 w-3.5" />
-        </Button>
+          {isExpanded ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          {config.brandLogo ? (
+            <Image
+              src={config.brandLogo}
+              alt={config.brandName}
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-md border object-cover"
+            />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+              {config.brandName.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{config.brandName}</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedCount > 0
+                ? `${selectedCount} variant${selectedCount !== 1 ? "s" : ""} selected`
+                : "No variants selected yet"}
+            </p>
+          </div>
+        </button>
+        {canRemove && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive/60 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={onRemove}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
 
-      {/* Expanded content */}
+      {/* Expanded content — variant chips */}
       {isExpanded && (
-        <div className="pl-7 space-y-3">
-          {/* Variant selection + pricing — unified list */}
-          <div className="space-y-1.5">
-            {variantOptions.length === 0 ? (
+        <>
+          <Separator />
+          <div className="space-y-3 p-3">
+            {totalCount === 0 ? (
               <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
                 No variant options are available for this core identity.
               </div>
             ) : (
-              variantOptions.map((v: any) => {
-                const isIncluded = config.selectedVariantIds.includes(v.id);
-                const settings = isIncluded
-                  ? (config.variantSettings[v.id] ??
-                    makeDefaultSettings(v.id, config.brandId))
-                  : null;
-
-                return (
-                  <div
-                    key={v.id}
-                    className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors ${
-                      isIncluded ? "bg-muted/50" : "hover:bg-muted/30"
-                    }`}
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    Tap a variant to include it for this brand
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() =>
+                      onSetVariants(
+                        allSelected ? [] : variantOptions.map((v: any) => v.id),
+                      )
+                    }
                   >
-                    <Checkbox
-                      checked={isIncluded}
-                      onCheckedChange={() => onToggleVariant(v.id, v)}
-                    />
-                    <span
-                      className={`text-sm flex-1 min-w-0 ${isIncluded ? "text-foreground" : "text-muted-foreground"}`}
-                    >
-                      {v.name}
-                      {v.size && (
-                        <span className="text-muted-foreground ml-1">
-                          · {v.size} {v.unit}
+                    {allSelected ? "Clear all" : "Select all"}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {variantOptions.map((v: any) => {
+                    const isIncluded = config.selectedVariantIds.includes(v.id);
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => onToggleVariant(v.id)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                          isIncluded
+                            ? "border-primary bg-primary/10 font-medium text-primary"
+                            : "border-border text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        {isIncluded && <Check className="h-3.5 w-3.5" />}
+                        <span>
+                          {v.name}
+                          {v.size && (
+                            <span className="ml-1 opacity-70">
+                              · {v.size}
+                              {v.unit ? ` ${v.unit}` : ""}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    {isIncluded && settings && (
-                      <div className="relative w-24 shrink-0">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
-                          ৳
-                        </span>
-                        <Input
-                          className="h-7 text-sm pl-6 pr-2 text-right"
-                          type="number"
-                          step="0.01"
-                          value={settings.consumerPrice}
-                          onChange={(e) =>
-                            onUpdateField(v.id, "consumerPrice", e.target.value)
-                          }
-                          placeholder="0"
-                        />
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
-        </div>
+        </>
       )}
-
-      <Separator />
     </div>
   );
 }

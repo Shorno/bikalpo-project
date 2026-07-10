@@ -4,11 +4,11 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Eye, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
-import { ADMIN_BASE } from "@/lib/routes";
-import EditCoreProductDialog from "./edit-core-product-dialog";
-import DeleteCoreProductDialog from "./delete-core-product-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ADMIN_BASE } from "@/lib/routes";
+import DeleteCoreProductDialog from "./delete-core-product-dialog";
+import EditCoreProductDialog from "./edit-core-product-dialog";
 
 export interface CoreProductWithRelations {
   id: number;
@@ -21,6 +21,8 @@ export interface CoreProductWithRelations {
   subCategoryId: number | null;
   supportsPack: boolean;
   supportsLoose: boolean;
+  hasConfiguration?: boolean;
+  configuredBrandCount?: number;
   createdAt: Date;
   updatedAt: Date;
   category: {
@@ -54,7 +56,10 @@ export function useCoreProductColumns() {
         header: () => <div className="text-center">SKU</div>,
         cell: ({ row }) => (
           <div className="text-center">
-            <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
+            <Badge
+              variant="outline"
+              className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800"
+            >
               {(row.original as any).composedSku || row.original.sku}
             </Badge>
           </div>

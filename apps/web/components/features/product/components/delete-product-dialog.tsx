@@ -23,6 +23,11 @@ interface DeleteProductDialogProps {
   productName: string;
   onSuccess?: () => void;
   compact?: boolean;
+  /**
+   * Permanently delete instead of deactivating. Also removes any order/invoice/
+   * estimate line items referencing this product. For test-data cleanup.
+   */
+  force?: boolean;
 }
 
 export default function DeleteProductDialog({
@@ -30,6 +35,7 @@ export default function DeleteProductDialog({
   productName,
   onSuccess,
   compact,
+  force,
 }: DeleteProductDialogProps) {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
@@ -48,7 +54,7 @@ export default function DeleteProductDialog({
   });
 
   const handleDelete = () => {
-    mutation.mutate({ id: productId });
+    mutation.mutate({ id: productId, force });
   };
 
   return (
@@ -85,8 +91,9 @@ export default function DeleteProductDialog({
           <div className="text-sm">
             <p className="font-semibold text-destructive mb-1">Warning</p>
             <p className="text-muted-foreground">
-              All associated product data, including images, will be permanently
-              deleted.
+              {force
+                ? "All associated data — variants, prices, images, and any order, invoice, or estimate line items referencing this product — will be permanently deleted."
+                : "All associated product data, including images, will be permanently deleted."}
             </p>
           </div>
         </div>
