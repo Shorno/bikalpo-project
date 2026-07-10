@@ -12,36 +12,36 @@ import { db } from "@bikalpo-project/db";
 import {
   address,
   announcement,
+  area,
   brand,
   brandUpdate,
   cart,
   cartItem,
   category,
+  comboOffer,
+  coreProductIdentity,
+  customerHomeTab,
+  customerHomeTabProduct,
   deliveryGroupInvoice,
   estimate,
+  inventory,
   invoice,
   itemRequest,
   offer,
-  comboOffer,
-  customerHomeTab,
-  customerHomeTabProduct,
-  coreProductIdentity,
+  openOrderBid,
+  openOrderBidItem,
   order,
   orderItem,
   payment,
   product,
   productReview,
   productVariant,
-  subCategory,
-  inventory,
-  area,
   sellerAreaMapping,
+  subCategory,
   supportTicket,
   supportTicketReply,
   user,
   userProfile,
-  openOrderBid,
-  openOrderBidItem,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
@@ -57,9 +57,9 @@ import {
   isNull,
   lte,
   or,
+  type SQL,
   sql,
   sum,
-  type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 
@@ -70,22 +70,22 @@ import {
   publicProcedure,
 } from "../index";
 import {
+  computeOrderAreaFields,
   findAreasForPoint,
   findSellersNearPoint,
-  computeOrderAreaFields,
 } from "../services/location-service";
 import {
-  splitCartIntoSubOrders,
-  findEligibleSellers,
-  createBidsForSubOrder,
+  type CartItemForSplit,
   checkAndExpireBids,
   checkBroadcastExpiry,
+  createBidsForSubOrder,
   DEFAULT_BROADCAST_MINUTES,
-  type CartItemForSplit,
+  findEligibleSellers,
+  splitCartIntoSubOrders,
 } from "../services/open-order-matching";
 import {
-  estimateOrderAcceptSchema,
   convertEstimateToB2bOrder,
+  estimateOrderAcceptSchema,
 } from "./helpers/estimate-order-conversion";
 
 // ────────────────────────────────────────────────────────────────
@@ -983,7 +983,8 @@ const queries = {
       const limit = Math.max(1, Math.min(100, parseInt(limitStr, 10) || 12));
       const offset = (page - 1) * limit;
 
-      const conditions: SQL[] = [];
+      // Only active, public, non-scheduled products are sellable
+      const conditions: SQL[] = [...getWebViewProductConditions()];
 
       // Category filter
       if (categorySlug) {
@@ -1079,6 +1080,9 @@ const queries = {
           with: {
             category: { columns: { slug: true, name: true } },
             subCategory: { columns: { name: true } },
+            brand: {
+              columns: { id: true, name: true, slug: true, logo: true },
+            },
             images: true,
             variants: {
               columns: { id: true, price: true, isActive: true },
@@ -1095,7 +1099,7 @@ const queries = {
 
       // Batch-fetch review stats for all returned products
       const productIds = products.map((p) => p.id);
-      let reviewStatsMap: Record<
+      const reviewStatsMap: Record<
         number,
         { averageRating: number; totalReviews: number }
       > = {};
@@ -1124,7 +1128,7 @@ const queries = {
       const coreProductIds = products
         .map((p) => p.coreProductId)
         .filter((id): id is number => id != null);
-      let sellerCountMap: Record<number, number> = {};
+      const sellerCountMap: Record<number, number> = {};
       if (coreProductIds.length > 0) {
         const uniqueCoreIds = [...new Set(coreProductIds)];
         const sellerRows = await db
@@ -1197,7 +1201,10 @@ const queries = {
     .handler(async ({ input }) => {
       if (!input.query.trim()) return { products: [] };
       const results = await db.query.product.findMany({
-        where: ilike(product.name, `%${input.query}%`),
+        where: and(
+          ilike(product.name, `%${input.query}%`),
+          ...getWebViewProductConditions(),
+        ),
         with: { category: { columns: { name: true, slug: true } } },
         limit: 10,
       });
@@ -1219,10 +1226,14 @@ const queries = {
     .input(z.object({ slug: z.string() }))
     .handler(async ({ input }) => {
       const found = await db.query.product.findFirst({
-        where: eq(product.slug, input.slug),
+        where: and(
+          eq(product.slug, input.slug),
+          ...getWebViewProductConditions(),
+        ),
         with: {
           category: { columns: { name: true, slug: true } },
           subCategory: { columns: { name: true } },
+          brand: { columns: { id: true, name: true, slug: true, logo: true } },
           images: true,
         },
       });
@@ -1370,9 +1381,13 @@ const queries = {
             where: and(
               eq(product.categoryId, cat.id),
               eq(product.inStock, true),
+              ...getWebViewProductConditions(),
             ),
             with: {
               category: { columns: { name: true, slug: true } },
+              brand: {
+                columns: { id: true, name: true, slug: true, logo: true },
+              },
               variants: {
                 columns: { id: true, price: true, isActive: true },
               },
@@ -1383,7 +1398,7 @@ const queries = {
 
           // Batch-fetch review stats
           const pIds = products.map((p) => p.id);
-          let reviewStatsMap: Record<
+          const reviewStatsMap: Record<
             number,
             { averageRating: number; totalReviews: number }
           > = {};
@@ -1411,7 +1426,7 @@ const queries = {
           const coreIds = products
             .map((p) => p.coreProductId)
             .filter((id): id is number => id != null);
-          let sellerCountMap: Record<number, number> = {};
+          const sellerCountMap: Record<number, number> = {};
           if (coreIds.length > 0) {
             const uniqueCoreIds = [...new Set(coreIds)];
             const sellerRows = await db

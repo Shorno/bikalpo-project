@@ -102,7 +102,7 @@ export function AdminDashboardClient() {
   // ── Quick actions ─────────────────────────────────────────────────
   const quickActions = [
     { title: "Product Catalog", href: `${ADMIN_BASE}/products`, icon: Package },
-    { title: "Consumer Prices", href: `${ADMIN_BASE}/consumer-products`, icon: DollarSign },
+    { title: "Product Price", href: `${ADMIN_BASE}/product-price`, icon: DollarSign },
     { title: "Orders", href: `${ADMIN_BASE}/orders`, icon: ShoppingCart },
     { title: "Invoices", href: `${ADMIN_BASE}/invoices`, icon: FileText },
     { title: "Delivery", href: `${ADMIN_BASE}/delivery`, icon: Truck },

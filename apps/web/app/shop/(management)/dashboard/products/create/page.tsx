@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, Loader2, Save, ChevronDown } from "lucide-react";
+import { ArrowLeft, ChevronDown, Loader2, Save } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
+import { StepBrandVariant } from "@/components/products/step-brand-variant";
+import { StepClassification } from "@/components/products/step-classification";
+import { StepPricing } from "@/components/products/step-pricing";
+import { StepRules } from "@/components/products/step-rules";
+import { StepStockVisibility } from "@/components/products/step-stock-visibility";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,11 +18,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useCreateProductOptions, useCreateShopProduct } from "@/hooks/use-shop-products-api";
-import { StepClassification } from "@/components/products/step-classification";
-import { StepBrandVariant } from "@/components/products/step-brand-variant";
-import { StepPricing } from "@/components/products/step-pricing";
-import { StepRules } from "@/components/products/step-rules";
-import { StepStockVisibility } from "@/components/products/step-stock-visibility";
 
 // ── Form State ──
 export type CreateProductFormState = {
@@ -43,7 +43,6 @@ export type CreateProductFormState = {
   displayName: string;
   shortNote: string;
   status: "active" | "inactive" | "draft";
-  availableForSale: boolean;
 };
 
 const INITIAL_STATE: CreateProductFormState = {
@@ -59,7 +58,6 @@ const INITIAL_STATE: CreateProductFormState = {
   displayName: "",
   shortNote: "",
   status: "active",
-  availableForSale: true,
 };
 
 export default function CreateProductPage() {
@@ -108,7 +106,6 @@ export default function CreateProductPage() {
         displayName: form.displayName || undefined,
         shortNote: form.shortNote || undefined,
         status: asDraft ? "draft" : form.status,
-        availableForSale: form.availableForSale,
       });
       router.push("/dashboard/products");
     } catch { /* error handled by mutation hook */ }

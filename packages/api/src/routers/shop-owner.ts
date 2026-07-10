@@ -7502,7 +7502,6 @@ const shopProductEndpoints = {
 
                 // Step 8: Visibility
                 status: z.enum(["active", "inactive", "draft"]).default("active"),
-                availableForSale: z.boolean().default(true),
             }),
         )
         .handler(async ({ input, context }) => {
@@ -7536,7 +7535,6 @@ const shopProductEndpoints = {
                     damageControlEnabled: input.damageControlEnabled,
                     stockTrackingEnabled: input.stockTrackingEnabled,
                     trackingType: input.trackingType,
-                    availableForSale: input.availableForSale,
                 })
                 .returning({ id: product.id });
 

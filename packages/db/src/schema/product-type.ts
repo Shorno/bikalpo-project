@@ -9,8 +9,9 @@ import {
     varchar,
 } from "drizzle-orm/pg-core";
 import { INVENTORY_BEHAVIOURS, type InventoryBehaviour } from "../fulfillment";
-import { timestamps } from "./columns.helpers";
 import { category } from "./category";
+import { timestamps } from "./columns.helpers";
+import { productTypeRuleSetting } from "./product-type-rule-setting";
 
 /**
  * Inventory behaviour determines how stock flows from warehouse → shop.
@@ -51,8 +52,12 @@ export const productType = pgTable("product_type", {
     ...timestamps,
 });
 
-export const productTypeRelations = relations(productType, ({ many }) => ({
+export const productTypeRelations = relations(productType, ({ many, one }) => ({
     categories: many(category),
+    ruleSettings: one(productTypeRuleSetting, {
+        fields: [productType.id],
+        references: [productTypeRuleSetting.productTypeId],
+    }),
 }));
 
 export type ProductType = typeof productType.$inferSelect;

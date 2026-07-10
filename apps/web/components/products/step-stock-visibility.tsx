@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
 import { CheckCircle2 } from "lucide-react";
+import { useEffect } from "react";
+import type { CreateProductFormState } from "@/app/shop/(management)/dashboard/products/create/page";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { CreateProductFormState } from "@/app/shop/(management)/dashboard/products/create/page";
+import { Textarea } from "@/components/ui/textarea";
 
 type Props = {
   form: CreateProductFormState;
@@ -198,24 +197,6 @@ export function StepStockVisibility({ form, update, options }: Props) {
                 </div>
               </label>
             </RadioGroup>
-          </div>
-
-          {/* Available for Sale */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">Available for Sale</Label>
-            <label className={`flex items-center gap-3 border rounded-xl p-3.5 cursor-pointer transition-all ${
-              form.availableForSale ? "border-primary bg-primary/5" : "border-gray-200 hover:bg-gray-50"
-            }`}>
-              <Checkbox
-                checked={form.availableForSale}
-                onCheckedChange={(checked) => update({ availableForSale: !!checked })}
-                className="data-[state=checked]:bg-primary"
-              />
-              <div>
-                <span className="font-medium text-sm block">Yes</span>
-                <span className="text-xs text-muted-foreground">Customers can purchase this product</span>
-              </div>
-            </label>
           </div>
         </div>
       </div>
