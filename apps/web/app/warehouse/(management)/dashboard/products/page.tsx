@@ -63,7 +63,7 @@ const WH = "/warehouse/dashboard";
 type FilterOption = { id: number; name: string };
 
 type WarehouseProductRow = {
-  inventoryId: number;
+  inventoryId: number | null;
   variantId: number;
   sku: string | null;
   variantSku: string | null;
@@ -521,7 +521,7 @@ export default function WarehouseProductsPage() {
   const table = useReactTable({
     data: visibleRows,
     columns,
-    getRowId: (row) => String(row.inventoryId),
+    getRowId: (row) => String(row.variantId),
     state: { sorting: tableSorting },
     onSortingChange: handleTableSortingChange,
     getCoreRowModel: getCoreRowModel(),

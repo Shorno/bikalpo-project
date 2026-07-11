@@ -82,8 +82,8 @@ export const coreProductIdentity = pgTable("core_product_identity", {
 
 /**
  * Brand-neutral details captured during the first admin product creation.
- * Generated brand products can diverge later; this immutable snapshot remains
- * the source for products added to the core product in the future.
+ * Generated brand products can diverge later; this editable, versioned
+ * template remains the source for products added to the core product later.
  */
 export type AdminProductGenerationTemplateDetails = {
   name: string;

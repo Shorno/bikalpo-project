@@ -9,6 +9,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
+import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
 import {
   address,
   announcement,
@@ -225,18 +226,11 @@ function isConsumerVisibleVariant(variant: any): boolean {
 }
 
 function getVariantOptionLabel(option: any): string {
-  if (!option) return "Variant";
-  return (
-    option.name ||
-    [option.size, option.unit].filter(Boolean).join(" ") ||
-    "Variant"
-  );
+  return option ? resolveVariantOption(option).label : "Variant";
 }
 
 function getVariantUnitLabel(option: any): string {
-  if (!option) return "";
-  if (option.size && option.unit) return `${option.size}${option.unit}`;
-  return option.unit || option.name || "";
+  return option ? resolveVariantOption(option).orderUnit : "";
 }
 
 function getActiveReferencePrices(productRow: any) {

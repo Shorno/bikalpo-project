@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  FULFILLMENT_UNITS,
+  type FulfillmentUnitCode,
+} from "@bikalpo-project/db/fulfillment";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,6 +13,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Info,
   Loader2,
   Plus,
   RotateCcw,
@@ -17,8 +22,16 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
+import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
+import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,8 +40,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import RichTextEditor from "@/components/ui/rich-text-editor";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   type CoreProductConfigValues,
   coreProductConfigSchema,
@@ -38,6 +66,7 @@ import {
   ProductEditorIdentity,
   ProductEditorSection,
 } from "./product-editor-ui";
+import ProductFeaturesInput from "./product-features-input";
 
 const PRODUCTS_BASE = "/dashboard/admin/products";
 
@@ -51,11 +80,13 @@ type CoreProductConfigFormProps = {
     isError?: boolean;
     listHref: string;
     productEditHref: (productId: number) => string;
-    onConfigure: (brands: CoreProductConfigValues["brands"]) => Promise<unknown>;
+    onConfigure: (values: CoreProductConfigValues) => Promise<unknown>;
     onSaved?: () => void | Promise<void>;
     initialBrands?: CoreProductConfigValues["brands"];
     presetBrands?: CoreProductConfigValues["brands"];
     reloadPresetLabel?: string;
+    variantAliases?: Record<number, string>;
+    onVariantAliasChange?: (variantOptionId: number, alias: string) => void;
   };
 };
 
@@ -98,6 +129,10 @@ type ExistingBrandProduct = {
 
 type CoreProductConfiguration = {
   core: any;
+  template?: {
+    version: number | null;
+    details: CoreProductConfigValues["template"];
+  };
   brands: ExistingBrandProduct[];
 };
 
@@ -106,7 +141,7 @@ export default function CoreProductConfigForm({
   adapter,
 }: CoreProductConfigFormProps) {
   const queryClient = useQueryClient();
-  const lastSyncedSignature = useRef<string | null>(null);
+  const seededDefaultsSignature = useRef<string | null>(null);
   const [brandDialogOpen, setBrandDialogOpen] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
   const [collapsedBrands, setCollapsedBrands] = useState<Set<number>>(
@@ -126,45 +161,6 @@ export default function CoreProductConfigForm({
     queryKey: ["adminCatalogApproval", "coreProductConfigOptions"],
     queryFn: () => orpc.adminCatalogApproval.getRequestOptions.call({}),
     enabled: !adapter,
-  });
-
-  const configureMutation = useMutation({
-    mutationFn: (input: {
-      coreProductId: number;
-      brands: CoreProductConfigValues["brands"];
-    }) =>
-      adapter
-        ? adapter.onConfigure(input.brands)
-        : orpc.adminProductConfig.configure.call(input),
-    onSuccess: async () => {
-      setSaved(true);
-      toast.success("Brand products updated");
-      if (adapter) {
-        await adapter.onSaved?.();
-      } else {
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: orpc.adminProductConfig.get.queryKey({
-              input: { coreProductId },
-            }),
-          }),
-          queryClient.invalidateQueries({
-            queryKey: orpc.adminCoreProduct.getAll.queryKey({ input: {} }),
-          }),
-        ]);
-      }
-    },
-    onError: (error) => {
-      toast.error(error.message || "Could not save product changes");
-    },
-  });
-
-  const form = useForm({
-    defaultValues: { brands: [] } as CoreProductConfigValues,
-    validators: { onSubmit: coreProductConfigSchema },
-    onSubmit: async ({ value }) => {
-      configureMutation.mutate({ coreProductId, brands: value.brands });
-    },
   });
 
   const configuration = (adapter?.configuration ??
@@ -187,37 +183,93 @@ export default function CoreProductConfigForm({
     () => new Map(existingBrands.map((brand) => [brand.brandId, brand])),
     [existingBrands],
   );
+  const defaultValues = useMemo<CoreProductConfigValues>(
+    () => ({
+      template: normalizeTemplateDetails(
+        configuration?.template?.details,
+        core,
+      ),
+      brands:
+        adapter?.initialBrands ??
+        configuration?.brands
+          .filter((brand) => brand.status !== "inactive")
+          .map((brand) => ({
+            brandId: brand.brandId,
+            variants: brand.variantOptions
+              .filter((option) => option.isActive)
+              .map((option) => ({
+                variantOptionId: option.variantOptionId,
+                consumerPrice: option.consumerPrice || "0",
+              })),
+          })) ??
+        [],
+    }),
+    [adapter?.initialBrands, configuration?.brands, configuration?.template, core],
+  );
+
+  const configureMutation = useMutation({
+    mutationFn: (input: {
+      coreProductId: number;
+      expectedVersion: number | null;
+      details: CoreProductConfigValues["template"];
+      brands: CoreProductConfigValues["brands"];
+    }) =>
+      adapter
+        ? adapter.onConfigure({ template: input.details, brands: input.brands })
+        : orpc.adminProductConfig.configure.call(input),
+    onSuccess: async () => {
+      setSaved(true);
+      toast.success("Shared template and brand products updated");
+      if (adapter) {
+        await adapter.onSaved?.();
+      } else {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: orpc.adminProductConfig.get.queryKey({
+              input: { coreProductId },
+            }),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: orpc.adminCoreProduct.getAll.queryKey({ input: {} }),
+          }),
+        ]);
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Could not save product changes");
+    },
+  });
+
+  const form = useForm({
+    defaultValues,
+    validators: {
+      // Zod defaults make its input type wider than the fully initialized form.
+      // @ts-expect-error TanStack Form validates the runtime value correctly.
+      onSubmit: coreProductConfigSchema,
+    },
+    onSubmit: async ({ value }) => {
+      const normalizedTemplate = mergeTemplateDetails(
+        value.template,
+        defaultValues.template,
+        core,
+      );
+      configureMutation.mutate({
+        coreProductId,
+        expectedVersion: configuration?.template?.version ?? null,
+        details: normalizedTemplate,
+        brands: value.brands,
+      });
+    },
+  });
 
   useEffect(() => {
     if (!configuration) return;
-
-    const nextBrands =
-      adapter?.initialBrands ??
-      configuration.brands
-        .filter((brand: any) => brand.status !== "inactive")
-        .map((brand: any) => ({
-          brandId: brand.brandId,
-          variants: brand.variantOptions
-            .filter((option: any) => option.isActive)
-            .map((option: any) => ({
-              variantOptionId: option.variantOptionId,
-              consumerPrice: option.consumerPrice || "0",
-            })),
-        }));
-
-    // Signature of the server state we'd seed the form from. Re-sync whenever
-    // it changes — e.g. an instantly-served stale/empty cache being replaced by
-    // a fresh background refetch — so the editor never stays stuck on an
-    // outdated snapshot (which previously required a full page reload to fix).
-    // Never clobber the user's unsaved edits once they've started changing
-    // things: only the very first sync is unconditional.
-    const signature = `${coreProductId}:${JSON.stringify(nextBrands)}`;
-    if (signature === lastSyncedSignature.current) return;
-    if (lastSyncedSignature.current !== null && form.state.isDirty) return;
-
-    form.reset({ brands: nextBrands });
-    lastSyncedSignature.current = signature;
-  }, [adapter?.initialBrands, configuration, coreProductId, form]);
+    const signature = JSON.stringify(defaultValues);
+    if (seededDefaultsSignature.current === signature) return;
+    if (seededDefaultsSignature.current !== null && form.state.isTouched) return;
+    form.reset(defaultValues);
+    seededDefaultsSignature.current = signature;
+  }, [configuration, defaultValues, form]);
 
   const toggleCollapsed = (brandId: number) => {
     setCollapsedBrands((current) => {
@@ -308,14 +360,27 @@ export default function CoreProductConfigForm({
   };
 
   const submitChanges = () => {
-    const result = coreProductConfigSchema.safeParse(form.state.values);
+    const normalizedValues = {
+      ...form.state.values,
+      template: mergeTemplateDetails(
+        form.state.values.template,
+        defaultValues.template,
+        core,
+      ),
+    };
+    const result = coreProductConfigSchema.safeParse(normalizedValues);
     if (!result.success) {
       toast.error(
         result.error.issues[0]?.message ?? "Review the brand products",
       );
       return;
     }
-    form.handleSubmit();
+    configureMutation.mutate({
+      coreProductId,
+      expectedVersion: configuration?.template?.version ?? null,
+      details: result.data.template,
+      brands: result.data.brands,
+    });
   };
 
   if (adapter?.isLoading || (!adapter && (configQuery.isLoading || brandsQuery.isLoading))) {
@@ -438,13 +503,35 @@ export default function CoreProductConfigForm({
                       title="Identity"
                       description="The shared core product for these independent brand products."
                     >
-                      <ProductEditorIdentity
-                        image={core.image}
-                        name={core.name}
-                        meta={[core.category?.name, core.subCategory?.name]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      />
+                      <div className="space-y-4">
+                        <ProductEditorIdentity
+                          image={core.image}
+                          name={core.name}
+                          meta={[core.category?.name, core.subCategory?.name]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        />
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <form.Field name="template.name">
+                            {(field) => (
+                              <Field>
+                                <FieldLabel>Display name *</FieldLabel>
+                                <Input
+                                  value={field.state.value}
+                                  onChange={(event) =>
+                                    field.handleChange(event.target.value)
+                                  }
+                                  placeholder="Enter product display name"
+                                />
+                              </Field>
+                            )}
+                          </form.Field>
+                          <Field>
+                            <FieldLabel>Slug</FieldLabel>
+                            <Input value={core.slug ?? ""} disabled />
+                          </Field>
+                        </div>
+                      </div>
                     </ProductEditorSection>
 
                     <ProductEditorSection
@@ -514,9 +601,66 @@ export default function CoreProductConfigForm({
                         </div>
                       )}
                     </ProductEditorSection>
+
+                    {adapter?.onVariantAliasChange && (() => {
+                      const selectedVariantIds = [...new Set(selectedBrands.flatMap((brand) => brand.variants.map((variant) => variant.variantOptionId)))];
+                      return selectedVariantIds.length > 0 ? (
+                        <ProductEditorSection title="Warehouse variant labels" description="Optional display-only aliases for this warehouse. Measurements and inventory units remain controlled by Admin Variant Setup.">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            {selectedVariantIds.map((variantOptionId) => {
+                              const option = availableVariants.find((item) => item.id === variantOptionId);
+                              if (!option) return null;
+                              return <Field key={variantOptionId}><FieldLabel>{option.name}</FieldLabel><Input value={adapter.variantAliases?.[variantOptionId] ?? ""} onChange={(event) => adapter.onVariantAliasChange?.(variantOptionId, event.target.value)} placeholder="Use admin canonical label" /></Field>;
+                            })}
+                          </div>
+                        </ProductEditorSection>
+                      ) : null;
+                    })()}
+
+                    <SharedTemplateEditor
+                      form={form}
+                      defaults={defaultValues.template}
+                    />
                   </div>
 
                   <aside className="space-y-4 lg:sticky lg:top-[72px]">
+                    <div className="rounded-xl border bg-card">
+                      <div className="border-b px-4 py-3">
+                        <h3 className="text-sm font-semibold">Publish</h3>
+                      </div>
+                      <div className="space-y-4 p-4">
+                        <form.Field name="template.visibility">
+                          {(field) => (
+                            <div className="space-y-1.5">
+                              <FieldLabel className="text-xs text-muted-foreground">
+                                Visibility
+                              </FieldLabel>
+                              <Select
+                                value={field.state.value || defaultValues.template.visibility}
+                                onValueChange={(value) =>
+                                  field.handleChange(
+                                    value as "public" | "private",
+                                  )
+                                }
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="public">Public</SelectItem>
+                                  <SelectItem value="private">Private</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-muted-foreground">
+                                {field.state.value === "private"
+                                  ? "Only visible to admins"
+                                  : "Visible to all customers"}
+                              </p>
+                            </div>
+                          )}
+                        </form.Field>
+                      </div>
+                    </div>
                     <div className="rounded-xl border bg-card">
                       <div className="border-b px-4 py-3">
                         <h2 className="text-sm font-semibold">Changes</h2>
@@ -900,4 +1044,261 @@ function filterVariantsForCore(
       return isGlobal || isTypeWide || isCategoryScoped;
     })
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function normalizeTemplateDetails(
+  details: Partial<CoreProductConfigValues["template"]> | undefined,
+  core: any,
+): CoreProductConfigValues["template"] {
+  return {
+    name: details?.name?.trim() || core?.name?.trim() || "Product",
+    description: details?.description ?? "",
+    shortDescription: details?.shortDescription ?? "",
+    videoUrl: details?.videoUrl ?? "",
+    image: details?.image || core?.image || "",
+    additionalImages: details?.additionalImages ?? [],
+    features: details?.features ?? [],
+    trackingType: details?.trackingType || "none",
+    returnPolicyEnabled: details?.returnPolicyEnabled ?? true,
+    expiryEnabled: details?.expiryEnabled ?? false,
+    damageControlEnabled: details?.damageControlEnabled ?? false,
+    stockTrackingEnabled: details?.stockTrackingEnabled ?? true,
+    minimumOrderEnabled: details?.minimumOrderEnabled ?? true,
+    minimumOrderQty: String(details?.minimumOrderQty ?? "1"),
+    inventoryUnit: details?.inventoryUnit || "unit",
+    conversionEnabled: details?.conversionEnabled ?? false,
+    inventoryLooseUnitEnabled:
+      details?.inventoryLooseUnitEnabled ?? false,
+    inventoryLooseUnit: details?.inventoryLooseUnit || "kg",
+    isReturnablePack: details?.isReturnablePack ?? false,
+    defaultPackDepositAmount: String(
+      details?.defaultPackDepositAmount ?? "0",
+    ),
+    visibility: details?.visibility ?? "public",
+  };
+}
+
+function mergeTemplateDetails(
+  current: Partial<CoreProductConfigValues["template"]>,
+  defaults: CoreProductConfigValues["template"],
+  core: any,
+) {
+  return normalizeTemplateDetails(
+    {
+      ...defaults,
+      ...current,
+      trackingType: current.trackingType || defaults.trackingType,
+      inventoryUnit: current.inventoryUnit || defaults.inventoryUnit,
+      inventoryLooseUnit:
+        current.inventoryLooseUnit || defaults.inventoryLooseUnit,
+    },
+    core,
+  );
+}
+
+function SharedTemplateEditor({
+  form,
+  defaults,
+}: {
+  form: any;
+  defaults: CoreProductConfigValues["template"];
+}) {
+  const units = Object.values(FULFILLMENT_UNITS);
+
+  return (
+    <>
+      <ProductEditorSection
+        title="Description"
+        description="How this product appears to customers."
+      >
+        <div className="space-y-4">
+          <form.Field name="template.shortDescription">
+            {(field: any) => (
+              <Field>
+                <FieldLabel>Short description</FieldLabel>
+                <Input
+                  value={field.state.value ?? ""}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="Premium quality rice for daily consumption"
+                />
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="template.description">
+            {(field: any) => (
+              <Field>
+                <FieldLabel>Full description</FieldLabel>
+                <RichTextEditor
+                  value={field.state.value ?? ""}
+                  onChange={field.handleChange}
+                  placeholder="Describe your product..."
+                />
+              </Field>
+            )}
+          </form.Field>
+        </div>
+      </ProductEditorSection>
+
+      <ProductEditorSection
+        title="Inventory rules"
+        description="Stock, return, order, and conversion behavior."
+      >
+        <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+          <form.Field name="template.trackingType">
+            {(field: any) => (
+              <TemplateRuleRow label="Batch tracking" description="Choose how this product is tracked in inventory.">
+                <Select value={field.state.value || defaults.trackingType} onValueChange={field.handleChange}>
+                  <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Disable</SelectItem>
+                    <SelectItem value="batch">Enable</SelectItem>
+                    <SelectItem value="serial">Serial tracking</SelectItem>
+                  </SelectContent>
+                </Select>
+              </TemplateRuleRow>
+            )}
+          </form.Field>
+          {[
+            ["returnPolicyEnabled", "Return policy", "Allow standard product returns."],
+            ["expiryEnabled", "Expiry tracking", "Track product expiry dates."],
+            ["damageControlEnabled", "Damage control", "Enable damage reporting for this product."],
+            ["stockTrackingEnabled", "Stock tracking", "Track inventory movement for this product."],
+          ].map(([name, label, description]) => (
+            <form.Field key={name} name={`template.${name}`}>
+              {(field: any) => (
+                <TemplateRuleRow label={label} description={description}>
+                  <Switch checked={field.state.value} onCheckedChange={field.handleChange} />
+                </TemplateRuleRow>
+              )}
+            </form.Field>
+          ))}
+          <form.Field name="template.minimumOrderEnabled">
+            {(enabled: any) => (
+              <TemplateRuleRow label="Minimum order qty" description="Apply a minimum order to generated variants.">
+                <div className="flex w-full items-center justify-end gap-3">
+                  <Switch checked={enabled.state.value} onCheckedChange={enabled.handleChange} />
+                  <form.Field name="template.minimumOrderQty">
+                    {(qty: any) => (
+                      <Input aria-label="Minimum qty" className="h-9 flex-1 text-right" type="number" min="0" step="0.01" disabled={!enabled.state.value} value={qty.state.value} onChange={(event) => qty.handleChange(event.target.value)} />
+                    )}
+                  </form.Field>
+                </div>
+              </TemplateRuleRow>
+            )}
+          </form.Field>
+          <form.Field name="template.inventoryUnit">
+            {(field: any) => (
+              <TemplateRuleRow label="Inventory unit" description="Saved to the product and applied to generated variants.">
+                <UnitSelect value={field.state.value || defaults.inventoryUnit} units={units} onChange={field.handleChange} />
+              </TemplateRuleRow>
+            )}
+          </form.Field>
+          <form.Field name="template.conversionEnabled">
+            {(field: any) => (
+              <TemplateRuleRow label="Conversion" description="Allow stock-unit conversion for this product.">
+                <Switch checked={field.state.value} onCheckedChange={field.handleChange} />
+              </TemplateRuleRow>
+            )}
+          </form.Field>
+          <form.Field name="template.inventoryLooseUnitEnabled">
+            {(enabled: any) => (
+              <TemplateRuleRow label="Inventory loose unit" description="Enable loose inventory for weight or volume based sales.">
+                <div className="flex w-full items-center justify-end gap-3">
+                  <Switch checked={enabled.state.value} onCheckedChange={enabled.handleChange} />
+                  <form.Field name="template.inventoryLooseUnit">
+                    {(unit: any) => <UnitSelect disabled={!enabled.state.value} value={unit.state.value} units={units} onChange={unit.handleChange} />}
+                  </form.Field>
+                </div>
+              </TemplateRuleRow>
+            )}
+          </form.Field>
+          <form.Field name="template.isReturnablePack">
+            {(enabled: any) => (
+              <TemplateRuleRow label="Returnable pack" description="Apply a default refundable deposit.">
+                <div className="flex w-full items-center justify-end gap-3">
+                  <Switch checked={enabled.state.value} onCheckedChange={enabled.handleChange} />
+                  <form.Field name="template.defaultPackDepositAmount">
+                    {(deposit: any) => (
+                      <Input className="h-9 flex-1 text-right" type="number" min="0" step="0.01" disabled={!enabled.state.value} value={deposit.state.value} onChange={(event) => deposit.handleChange(event.target.value)} />
+                    )}
+                  </form.Field>
+                </div>
+              </TemplateRuleRow>
+            )}
+          </form.Field>
+        </div>
+      </ProductEditorSection>
+
+      <ProductEditorSection
+        title="Features"
+        description="Grouped key-value specifications (e.g. Weight — 500g)."
+      >
+        <form.Field name="template.features">
+          {(field: any) => <ProductFeaturesInput value={field.state.value} onChange={field.handleChange} />}
+        </form.Field>
+      </ProductEditorSection>
+
+      <ProductEditorSection
+        title="Media"
+        description="Images and video for this product."
+      >
+        <div className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            <form.Field name="template.image">
+              {(field: any) => (
+                <Field>
+                  <FieldLabel>Thumbnail / main image</FieldLabel>
+                  <ImageUploader value={field.state.value} onChange={field.handleChange} folder="products" maxSizeMB={5} />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="template.additionalImages">
+              {(field: any) => (
+                <Field>
+                  <FieldLabel>Gallery</FieldLabel>
+                  <AdditionalImagesUploader value={field.state.value} onChange={field.handleChange} folder="products/additional" maxSizeMB={5} />
+                </Field>
+              )}
+            </form.Field>
+          </div>
+          <form.Field name="template.videoUrl">
+            {(field: any) => (
+              <Field>
+                <FieldLabel>Video URL</FieldLabel>
+                <Input value={field.state.value ?? ""} onChange={(event) => field.handleChange(event.target.value)} placeholder="https://youtube.com/watch?v=..." />
+              </Field>
+            )}
+          </form.Field>
+        </div>
+      </ProductEditorSection>
+    </>
+  );
+}
+
+function TemplateRuleRow({ label, description, children }: { label: string; description: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-[52px] items-center justify-between gap-4 border-t py-3">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <FieldLabel className="text-sm font-normal">{label}</FieldLabel>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button aria-label={`${label} details`} className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" type="button">
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-64 text-xs" side="top">{description}</TooltipContent>
+        </Tooltip>
+      </div>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">{children}</div>
+    </div>
+  );
+}
+
+function UnitSelect({ value, units, onChange, disabled = false }: { value: FulfillmentUnitCode; units: Array<(typeof FULFILLMENT_UNITS)[FulfillmentUnitCode]>; onChange: (value: FulfillmentUnitCode) => void; disabled?: boolean }) {
+  return (
+    <Select disabled={disabled} value={value} onValueChange={(next) => onChange(next as FulfillmentUnitCode)}>
+      <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
+      <SelectContent>{units.map((unit) => <SelectItem key={unit.code} value={unit.code}>{unit.label}</SelectItem>)}</SelectContent>
+    </Select>
+  );
 }

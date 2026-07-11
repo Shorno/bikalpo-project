@@ -10,6 +10,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
+import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
 import {
     buildProductTypeFulfillmentProfile,
     FULFILLMENT_MODES,
@@ -7597,6 +7598,7 @@ const shopProductEndpoints = {
                     where: eq(variantOption.id, sel.variantOptionId),
                 });
                 if (!vo) continue;
+                const resolvedVariant = resolveVariantOption(vo);
 
                 // Get pricing for this combo
                 const priceEntry = input.pricing.find(
@@ -7609,13 +7611,15 @@ const shopProductEndpoints = {
                     .insert(productVariant)
                     .values({
                         productId: newProduct.id,
-                        unitLabel: vo.name,
-                        weightKg: vo.size ?? "0",
-                        packagingType: vo.variantType === "loose" ? "loose" : "packet",
+                        unitLabel: resolvedVariant.label,
+                        weightKg: resolvedVariant.weightKg,
+                        packagingType: resolvedVariant.container.toLowerCase(),
                         price: retailPrice,
                         brandId: sel.brandId,
                         pricingType: "per_unit",
                         sourceVariantOptionId: vo.id,
+                        orderUnit: resolvedVariant.orderUnit,
+                        packType: resolvedVariant.container.toLowerCase() as any,
                     })
                     .returning({ id: productVariant.id });
 

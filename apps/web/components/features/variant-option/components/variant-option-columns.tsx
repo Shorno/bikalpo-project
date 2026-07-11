@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Pencil, Trash2 } from "lucide-react";
 import * as React from "react";
 import DeleteVariantOptionDialog from "@/components/features/variant-option/components/delete-variant-option-dialog";
-import EditVariantOptionDialog from "@/components/features/variant-option/components/edit-variant-option-dialog";
+import VariantOptionDialog from "@/components/features/variant-option/components/variant-option-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,12 @@ export interface VariantOptionRow {
   unit: string;
   size: string | null;
   variantType: "pack" | "loose";
+  definitionKind: "measurement" | "loose" | "attribute" | null;
+  definition: Record<string, unknown> | null;
+  displayAlias: string | null;
+  canonicalSignature: string | null;
+  needsReview: boolean;
+  structuralLocked: boolean;
   typeId: number | null;
   categoryId: number | null;
   skuCode: string | null;
@@ -63,7 +69,7 @@ export function useVariantOptionColumns() {
                 column.toggleSorting(column.getIsSorted() === "asc")
               }
             >
-              Variant Name
+              Canonical Label
               <ArrowUpDown className="ml-2 h-4 w-4" />
             </Button>
           </div>
@@ -73,23 +79,23 @@ export function useVariantOptionColumns() {
         ),
       },
       {
-        accessorKey: "unit",
-        header: () => <div className="text-center">Unit</div>,
+        accessorKey: "definitionKind",
+        header: () => <div className="text-center">Definition</div>,
         cell: ({ row }) => (
           <div className="text-center">
             <Badge variant="outline" className="font-mono text-xs">
-              {row.getValue("unit")}
+              {row.original.definitionKind ?? "Legacy"}
             </Badge>
           </div>
         ),
         size: 90,
       },
       {
-        accessorKey: "size",
-        header: () => <div className="text-center">Size</div>,
+        accessorKey: "displayAlias",
+        header: () => <div className="text-center">Display Alias</div>,
         cell: ({ row }) => (
           <div className="text-center text-sm">
-            {row.getValue("size") || (
+            {row.original.displayAlias || (
               <span className="text-muted-foreground">—</span>
             )}
           </div>
@@ -131,21 +137,20 @@ export function useVariantOptionColumns() {
         size: 130,
       },
       {
-        accessorKey: "variantType",
-        header: () => <div className="text-center">Variant Type</div>,
+        accessorKey: "structuralLocked",
+        header: () => <div className="text-center">Structure</div>,
         cell: ({ row }) => {
-          const vType = row.getValue("variantType") as string;
+          const locked = row.original.structuralLocked;
           return (
             <div className="flex justify-center">
               <Badge
                 variant="secondary"
                 className={cn(
                   "text-xs",
-                  vType === "pack" && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-                  vType === "loose" && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                  locked && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
                 )}
               >
-                {vType === "pack" ? "Pack" : "Loose"}
+                {locked ? "In use · locked" : row.original.needsReview ? "Needs review" : "Editable"}
               </Badge>
             </div>
           );
@@ -211,7 +216,8 @@ function VariantOptionActions({ option }: { option: VariantOptionRow }) {
         <span className="sr-only">Delete</span>
       </Button>
 
-      <EditVariantOptionDialog
+      <VariantOptionDialog
+        mode="edit"
         variantOption={option}
         open={showEdit}
         onOpenChange={setShowEdit}

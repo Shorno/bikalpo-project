@@ -11,6 +11,8 @@ build
 # Environment variables
 .env
 .env*.local
+# Local authentication contacts (contains personal phone numbers)
+context/login-contacts.local.md
 .next
 # IDEs and editors
 .vscode/*

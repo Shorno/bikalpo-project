@@ -328,9 +328,9 @@ function ExpandedDetail({ item }: { item: UnitCartonItem }) {
             variant="outline"
             size="sm"
             className="text-xs gap-1.5"
-            onClick={() => toast.info("Create Carton — coming soon")}
+            asChild
           >
-            📦 Create Carton
+            <Link href="/warehouse/dashboard/carton-tracking/create">📦 Create Carton</Link>
           </Button>
           <Button
             variant="outline"
