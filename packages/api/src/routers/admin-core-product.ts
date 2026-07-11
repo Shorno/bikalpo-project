@@ -7,7 +7,6 @@ import {
   eq,
   ilike,
   isNotNull,
-  isNull,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -104,7 +103,7 @@ export const adminCoreProductRouter = {
         .from(product)
         .where(
           and(
-            isNull(product.createdByWarehouseId),
+            eq(product.creatorSource, "admin"),
             isNotNull(product.coreProductId),
           ),
         )
@@ -170,7 +169,7 @@ export const adminCoreProductRouter = {
       const existingProduct = await db.query.product.findFirst({
         where: and(
           eq(product.coreProductId, result.id),
-          isNull(product.createdByWarehouseId),
+          eq(product.creatorSource, "admin"),
         ),
         columns: { id: true },
       });

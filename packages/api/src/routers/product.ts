@@ -180,7 +180,7 @@ type ConsumerPriceListInput = z.infer<typeof consumerPriceListParamsSchema>;
 async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
   const conditions: SQL[] = [
     eq(productVariantPrice.isActive, true),
-    isNull(product.createdByWarehouseId),
+    eq(product.creatorSource, "admin"),
   ];
 
   if (input.search?.trim()) {
@@ -349,7 +349,7 @@ async function fetchConsumerReferencePricePage(
 ) {
   const conditions: SQL[] = [
     eq(productVariantPrice.isActive, true),
-    isNull(product.createdByWarehouseId),
+    eq(product.creatorSource, "admin"),
   ];
 
   if (input.search?.trim()) {
@@ -677,7 +677,7 @@ export const productRouter = {
         const existingProduct = await tx.query.product.findFirst({
           where: and(
             eq(product.coreProductId, coreProductId),
-            isNull(product.createdByWarehouseId),
+            eq(product.creatorSource, "admin"),
           ),
           columns: { id: true },
         });
@@ -838,6 +838,8 @@ export const productRouter = {
               subCategoryId: core.subCategoryId ?? null,
               brandId,
               coreProductId,
+              creatorSource: "admin",
+              createdById: context.session.user.id,
               size: templateDetails.size,
               price: templateDetails.price,
               reorderLevel: templateDetails.reorderLevel,
@@ -936,6 +938,7 @@ export const productRouter = {
           categoryId: true,
           subCategoryId: true,
           createdByWarehouseId: true,
+          creatorSource: true,
         },
       });
       if (!existing) {
@@ -946,7 +949,7 @@ export const productRouter = {
       // Their own variant set remains editable without affecting siblings.
       const isCoreManaged =
         existing.coreProductId !== null &&
-        existing.createdByWarehouseId === null;
+        existing.creatorSource === "admin";
       const brandIds = isCoreManaged ? undefined : inputBrandIds;
       if (isCoreManaged && !existing.brandId) {
         throw new ORPCError("BAD_REQUEST", {
@@ -1180,6 +1183,7 @@ export const productRouter = {
           brandId: true,
           coreProductId: true,
           createdByWarehouseId: true,
+          creatorSource: true,
         },
       });
       if (!existing) {
@@ -1191,7 +1195,7 @@ export const productRouter = {
       if (
         !input.force &&
         existing.coreProductId !== null &&
-        existing.createdByWarehouseId === null
+        existing.creatorSource === "admin"
       ) {
         await db.transaction(async (tx) => {
           await tx
@@ -1232,7 +1236,7 @@ export const productRouter = {
           const remaining = await tx.query.product.findFirst({
             where: and(
               eq(product.coreProductId, existing.coreProductId),
-              isNull(product.createdByWarehouseId),
+              eq(product.creatorSource, "admin"),
             ),
             columns: { id: true },
           });
@@ -1652,6 +1656,7 @@ export const productRouter = {
         .select({
           id: productVariantPrice.id,
           createdByWarehouseId: product.createdByWarehouseId,
+          creatorSource: product.creatorSource,
         })
         .from(productVariantPrice)
         .innerJoin(product, eq(productVariantPrice.productId, product.id))
@@ -1663,7 +1668,7 @@ export const productRouter = {
         });
       }
 
-      if (existing.createdByWarehouseId) {
+      if (existing.creatorSource !== "admin") {
         throw new ORPCError("FORBIDDEN", {
           message: "Only admin-created product prices can be updated here",
         });

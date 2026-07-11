@@ -61,6 +61,9 @@ type WarehouseProductRow = {
   productSku: string | null;
   productName: string;
   productStatus: string;
+  creatorSource: "admin" | "warehouse" | "shop" | "unknown";
+  creatorId: string | null;
+  isOwnedByWarehouse: boolean;
   coreProductId: number | null;
   coreProductName: string;
   coreProductImage: string;
@@ -331,7 +334,7 @@ export default function WarehouseProductsPage() {
 
   const visibleRows = filteredRows.slice(0, visibleCount);
   const activeProductCount = new Set(
-    activeRows.map((row) => row.coreProductId ?? row.productId),
+    activeRows.map((row) => row.productId),
   ).size;
   const hasMore = visibleRows.length < filteredRows.length;
   const hasActiveFilters = Boolean(
@@ -540,7 +543,26 @@ export default function WarehouseProductsPage() {
                         <TableRow key={item.inventoryId} className="cursor-pointer transition-colors hover:bg-muted/50">
                           <TableCell>
                             <Link href={getDetailHref(item)} className="block">
-                              <div className="font-medium">{item.coreProductName || item.productName}</div>
+                              <div className="font-medium">{item.productName}</div>
+                              <div className="mt-1 flex flex-wrap items-center gap-1">
+                                {item.brandName !== "—" && (
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {item.brandName}
+                                  </Badge>
+                                )}
+                                <Badge
+                                  variant={item.isOwnedByWarehouse ? "default" : "secondary"}
+                                  className="text-[10px]"
+                                >
+                                  {item.isOwnedByWarehouse
+                                    ? "Created by this warehouse"
+                                    : item.creatorSource === "shop"
+                                      ? "Retailer product"
+                                      : item.creatorSource === "admin"
+                                        ? "Admin product"
+                                        : "External warehouse product"}
+                                </Badge>
+                              </div>
                               {item.sku && (
                                 <span className="mt-0.5 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                                   {item.sku}
@@ -683,9 +705,17 @@ function RowActions({
             <Link href={`${WH}/stock/add`}>Add Stock</Link>
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem onSelect={() => onNotImplemented("Edit product")}>
-          Edit Product (Not implemented)
-        </DropdownMenuItem>
+        {item.isOwnedByWarehouse && item.coreProductId ? (
+          <DropdownMenuItem asChild>
+            <Link href={`${WH}/catalog/add/${item.coreProductId}`}>
+              Manage Brand & Variants
+            </Link>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem disabled>
+            Product details owned by creator
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
           <Link href={`${WH}/stock-adjustment/create`}>Adjust Stock</Link>
         </DropdownMenuItem>
@@ -699,14 +729,18 @@ function RowActions({
         <DropdownMenuItem onSelect={() => onNotImplemented("Print label")}>
           Print Label (Not implemented)
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          disabled={isDeactivating}
-          onSelect={() => onDeactivate(item)}
-        >
-          Deactivate
-        </DropdownMenuItem>
+        {item.isOwnedByWarehouse && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={isDeactivating}
+              onSelect={() => onDeactivate(item)}
+            >
+              Deactivate
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

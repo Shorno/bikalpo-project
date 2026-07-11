@@ -176,6 +176,13 @@
       "when": 1784200000000,
       "tag": "0025_high_vengeance",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784300000000,
+      "tag": "0026_warehouse_product_alignment",
+      "breakpoints": true
     }
   ]
 }

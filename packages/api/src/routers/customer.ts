@@ -308,7 +308,7 @@ function getLowestReferencePriceFromRows(productRows: any[]) {
 
 function getPrimaryWebViewProduct(productRows: any[]) {
   return (
-    productRows.find((productRow) => productRow.createdByWarehouseId == null) ??
+    productRows.find((productRow) => productRow.creatorSource === "admin") ??
     productRows[0] ??
     null
   );
@@ -316,7 +316,7 @@ function getPrimaryWebViewProduct(productRows: any[]) {
 
 function getScopedWebViewProductRows(productRows: any[]) {
   const adminRows = productRows.filter(
-    (productRow) => productRow.createdByWarehouseId == null,
+    (productRow) => productRow.creatorSource === "admin",
   );
 
   return adminRows.length > 0 ? adminRows : productRows;

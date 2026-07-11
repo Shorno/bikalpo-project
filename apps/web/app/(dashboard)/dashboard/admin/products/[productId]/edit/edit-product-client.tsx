@@ -10,7 +10,7 @@ interface EditProductClientProps {
 
 export default function EditProductClient({ product }: EditProductClientProps) {
   const isCoreManaged =
-    product.coreProductId !== null && product.createdByWarehouseId === null;
+    product.coreProductId !== null && product.creatorSource === "admin";
 
   if (isCoreManaged) {
     return <ProductEditForm product={product} />;

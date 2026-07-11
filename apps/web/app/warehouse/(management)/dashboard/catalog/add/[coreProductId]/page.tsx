@@ -18,7 +18,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
@@ -119,55 +119,120 @@ export default function WarehouseAddProductPage() {
 
   // === Queries ===
 
-  const { data: coreProductData, isLoading: loadingCoreProduct } = useQuery({
-    queryKey: ["warehouse", "getCoreProductById", { id: coreProductId }],
+  const { data: configurationData, isLoading: loadingCoreProduct } = useQuery({
+    queryKey: [
+      "warehouse",
+      "getWarehouseCoreConfiguration",
+      { coreProductId },
+    ],
     queryFn: () =>
-      (orpc.warehouse as any).getCoreProductById.call({ id: coreProductId }),
+      (orpc.warehouse as any).getWarehouseCoreConfiguration.call({
+        coreProductId,
+      }),
     enabled: !!coreProductId && !Number.isNaN(coreProductId),
   });
 
-  const coreProduct = coreProductData?.coreProduct;
-  const isFashionProduct = isFashionTypeName(coreProduct?.category?.type?.name);
-  const primaryAttributeLabel = isFashionProduct ? "Color" : "Brand";
-  const variantDimensionLabel = isFashionProduct ? "Size" : "Variant";
+  const coreProduct = configurationData?.core;
+  const isFashionCategory = isFashionTypeName(
+    coreProduct?.category?.type?.name,
+  );
+  // Fashion and Footwear now follow the same real-brand card invariant.
+  const isFashionProduct = false;
+  const primaryAttributeLabel = "Brand";
+  const variantDimensionLabel = isFashionCategory ? "Size" : "Variant";
 
-  // Auto-fill from core product on load (once)
-  if (coreProduct && !initialized) {
-    setName(coreProduct.name);
-    setSlug(coreProduct.slug);
-    setMainImage(coreProduct.image || "");
+  const allBrands: any[] = configurationData?.options?.brands ?? [];
+  const allVariantOptions: any[] =
+    configurationData?.options?.variantOptions ?? [];
+
+  useEffect(() => {
+    if (!configurationData || initialized) return;
+
+    const defaults = configurationData.defaults ?? {};
+    setName(defaults.name || configurationData.core.name);
+    setSlug(defaults.slug || configurationData.core.slug);
+    setShortDescription(defaults.shortDescription || "");
+    setDescription(defaults.description || "");
+    setMainImage(defaults.image || configurationData.core.image || "");
+    setAdditionalImages(defaults.additionalImages || []);
+    setVideoUrl(defaults.videoUrl || "");
+    setTrackingType(defaults.trackingType || "none");
+    setExpiryEnabled(Boolean(defaults.expiryEnabled));
+    setDamageControlEnabled(Boolean(defaults.damageControlEnabled));
+    setIsReturnablePack(Boolean(defaults.isReturnablePack));
+
+    const sourceBrands = configurationData.current?.length
+      ? configurationData.current
+      : configurationData.adminPreset?.brands ?? [];
+    setBrandConfigs(
+      sourceBrands
+        .filter((brand: any) => brand.brandId)
+        .map((brand: any) => ({
+          brandId: brand.brandId,
+          brandName:
+            brand.brandName ||
+            configurationData.options.brands.find(
+              (option: any) => option.id === brand.brandId,
+            )?.name ||
+            "Unknown brand",
+          selectedVariantIds: brand.variants
+            .filter((variant: any) => variant.isActive !== false)
+            .map((variant: any) => variant.variantOptionId),
+          variantSettings: Object.fromEntries(
+            brand.variants.map((variant: any) => [
+              variant.variantOptionId,
+              {
+                variantOptionId: variant.variantOptionId,
+                retailerPrice: "",
+              },
+            ]),
+          ),
+        })),
+    );
     setInitialized(true);
-  }
+  }, [configurationData, initialized]);
 
-  const { data: brandsAndVariantsData } = useQuery({
-    queryKey: [
-      "warehouse",
-      "getBrandsAndVariants",
-      {
-        typeId: coreProduct?.category?.typeId,
-        categoryId: coreProduct?.categoryId,
-      },
-    ],
-    queryFn: () =>
-      (orpc.warehouse as any).getBrandsAndVariants.call({
-        typeId: coreProduct?.category?.typeId,
-        categoryId: coreProduct?.categoryId,
-      }),
-    enabled: !!coreProduct,
-  });
-
-  const allBrands: any[] = brandsAndVariantsData?.brands ?? [];
-  const allVariantOptions: any[] = brandsAndVariantsData?.variantOptions ?? [];
+  const reloadAdminPreset = () => {
+    if (!configurationData?.adminPreset?.available) return;
+    const defaults = configurationData.adminDefaults ?? {};
+    setName(defaults.name || configurationData.core.name);
+    setSlug(defaults.slug || configurationData.core.slug);
+    setShortDescription(defaults.shortDescription || "");
+    setDescription(defaults.description || "");
+    setMainImage(defaults.image || configurationData.core.image || "");
+    setAdditionalImages(defaults.additionalImages || []);
+    setVideoUrl(defaults.videoUrl || "");
+    setTrackingType(defaults.trackingType || "none");
+    setExpiryEnabled(Boolean(defaults.expiryEnabled));
+    setDamageControlEnabled(Boolean(defaults.damageControlEnabled));
+    setIsReturnablePack(Boolean(defaults.isReturnablePack));
+    setBrandConfigs(
+      configurationData.adminPreset.brands.map((brand: any) => ({
+        brandId: brand.brandId,
+        brandName: brand.brandName,
+        selectedVariantIds: brand.variants.map(
+          (variant: any) => variant.variantOptionId,
+        ),
+        variantSettings: Object.fromEntries(
+          brand.variants.map((variant: any) => [
+            variant.variantOptionId,
+            { variantOptionId: variant.variantOptionId, retailerPrice: "" },
+          ]),
+        ),
+      })),
+    );
+    toast.success("Current admin preset loaded. Save to apply it.");
+  };
 
   // === Mutation ===
 
   const createMutation = useMutation({
     mutationFn: (data: any) =>
-      (orpc.warehouse as any).createWarehouseProduct.call(data),
+      (orpc.warehouse as any).configureWarehouseCoreProducts.call(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["warehouse"] });
-      toast.success("Product created successfully!");
-      router.push("/warehouse/dashboard/catalog");
+      toast.success("Warehouse product configuration saved");
+      router.push("/warehouse/dashboard/products");
     },
     onError: (err: any) => {
       toast.error(err?.message || "Failed to create product");
@@ -293,30 +358,7 @@ export default function WarehouseAddProductPage() {
     );
   };
 
-  const updateRetailerPrice = (
-    brandId: number,
-    variantOptionId: number,
-    price: string,
-  ) => {
-    setBrandConfigs((prev) =>
-      prev.map((bc) => {
-        if (bc.brandId !== brandId) return bc;
-        const current = bc.variantSettings[variantOptionId] ?? {
-          variantOptionId,
-          retailerPrice: "",
-        };
-        return {
-          ...bc,
-          variantSettings: {
-            ...bc.variantSettings,
-            [variantOptionId]: { ...current, retailerPrice: price },
-          },
-        };
-      }),
-    );
-  };
-
-  const handleSubmit = (submitStatus: "active" | "draft") => {
+  const handleSubmit = (_submitStatus: "active" | "draft") => {
     if (!name.trim()) {
       toast.error("Product name is required");
       return;
@@ -330,7 +372,7 @@ export default function WarehouseAddProductPage() {
       return;
     }
 
-    // Check that each color/brand has at least one size/variant with a price
+    // Every brand must have at least one approved variant.
     for (const bc of brandConfigs) {
       if (bc.selectedVariantIds.length === 0) {
         toast.error(
@@ -338,68 +380,30 @@ export default function WarehouseAddProductPage() {
         );
         return;
       }
-      for (const voId of bc.selectedVariantIds) {
-        const vo = allVariantOptions.find((v: any) => v.id === voId);
-        const isLoose = vo?.variantType === "loose";
-        // Loose variants don't require a price
-        if (!isLoose) {
-          const settings = bc.variantSettings[voId];
-          if (!settings?.retailerPrice || Number(settings.retailerPrice) <= 0) {
-            toast.error(
-              `Set a retailer price for all selected ${variantDimensionLabel.toLowerCase()} options in "${bc.brandName}"`,
-            );
-            return;
-          }
-        }
-      }
     }
 
     const payload = {
       coreProductId,
-      name: name.trim(),
-      slug: slug.trim() || generateSlug(name),
-      shortDescription: shortDescription || null,
-      description: description || null,
-      image: mainImage,
-      categoryId: coreProduct?.categoryId,
-      subCategoryId: coreProduct?.subCategoryId || null,
-      brandConfigs: isFashionProduct
-        ? []
-        : brandConfigs.map((bc) => ({
-            brandId: bc.brandId,
-            variants: bc.selectedVariantIds.map((voId) => {
-              const vo = allVariantOptions.find((v: any) => v.id === voId);
-              const isLoose = vo?.variantType === "loose";
-              const price = bc.variantSettings[voId]?.retailerPrice;
-              return {
-                variantOptionId: voId,
-                retailerPrice: price || (isLoose ? "0" : "0"),
-              };
-            }),
-          })),
-      colorConfigs: isFashionProduct
-        ? brandConfigs.map((bc) => ({
-            color: bc.colorName || bc.brandName,
-            variants: bc.selectedVariantIds.map((voId) => {
-              const vo = allVariantOptions.find((v: any) => v.id === voId);
-              const isLoose = vo?.variantType === "loose";
-              const price = bc.variantSettings[voId]?.retailerPrice;
-              return {
-                variantOptionId: voId,
-                retailerPrice: price || (isLoose ? "0" : "0"),
-              };
-            }),
-          }))
-        : [],
-      trackingType,
-      expiryEnabled,
-      damageControlEnabled,
-      isReturnablePack,
-      status: submitStatus,
-      visibility,
-      additionalImages:
-        additionalImages.length > 0 ? additionalImages : undefined,
-      videoUrl: videoUrl || null,
+      expectedVersion: configurationData?.version ?? null,
+      details: {
+        name: name.trim(),
+        shortDescription: shortDescription || null,
+        description: description || null,
+        image: mainImage,
+        additionalImages,
+        videoUrl: videoUrl || null,
+        trackingType,
+        expiryEnabled,
+        damageControlEnabled,
+        isReturnablePack,
+        visibility,
+      },
+      brands: brandConfigs.map((bc) => ({
+        brandId: bc.brandId,
+        variants: bc.selectedVariantIds.map((variantOptionId) => ({
+          variantOptionId,
+        })),
+      })),
     };
 
     createMutation.mutate(payload);
@@ -458,6 +462,16 @@ export default function WarehouseAddProductPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {configurationData?.adminPreset?.available && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={reloadAdminPreset}
+                  disabled={isPending}
+                >
+                  Reload Admin Preset
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -590,9 +604,8 @@ export default function WarehouseAddProductPage() {
                   </CardTitle>
                 </div>
                 <CardDescription>
-                  {isFashionProduct
-                    ? "Add colors and configure size-based piece variants with retailer prices for each color."
-                    : "Select brands and configure variant pack sizes with retailer prices for each."}
+                  Select approved brands and the variants each brand should
+                  offer. Selling prices remain managed from the Pricing page.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -602,7 +615,7 @@ export default function WarehouseAddProductPage() {
                     key={bc.brandId}
                     config={bc}
                     variantOptions={allVariantOptions}
-                    isFashion={isFashionProduct}
+                    isFashion={isFashionCategory}
                     variantDimensionLabel={variantDimensionLabel}
                     isExpanded={expandedBrandId === bc.brandId}
                     onToggleExpand={() =>
@@ -613,9 +626,6 @@ export default function WarehouseAddProductPage() {
                     onRemove={() => handleRemoveBrand(bc.brandId)}
                     onToggleVariant={(voId) =>
                       handleToggleVariant(bc.brandId, voId)
-                    }
-                    onUpdatePrice={(voId, price) =>
-                      updateRetailerPrice(bc.brandId, voId, price)
                     }
                   />
                 ))}
@@ -1063,7 +1073,6 @@ function BrandConfigCard({
   onToggleExpand,
   onRemove,
   onToggleVariant,
-  onUpdatePrice,
 }: {
   config: BrandConfig;
   variantOptions: any[];
@@ -1073,7 +1082,6 @@ function BrandConfigCard({
   onToggleExpand: () => void;
   onRemove: () => void;
   onToggleVariant: (variantOptionId: number) => void;
-  onUpdatePrice: (variantOptionId: number, price: string) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -1122,9 +1130,6 @@ function BrandConfigCard({
 
               return variantOptions.map((v: any) => {
                 const isIncluded = config.selectedVariantIds.includes(v.id);
-                const settings = isIncluded
-                  ? config.variantSettings[v.id]
-                  : null;
                 const isLoose = v.variantType === "loose";
                 // Disable this loose checkbox if another loose is already selected
                 const isDisabledLoose =
@@ -1168,44 +1173,19 @@ function BrandConfigCard({
                         </span>
                       )}
                     </span>
-                    {isIncluded && settings && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <div className="relative w-28">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
-                            ৳
-                          </span>
-                          <Input
-                            className="h-7 text-sm pl-6 pr-2 text-right"
-                            type="text"
-                            inputMode="numeric"
-                            value={settings.retailerPrice}
-                            onChange={(e) =>
-                              onUpdatePrice(
-                                v.id,
-                                e.target.value.replace(/[^0-9]/g, ""),
-                              )
-                            }
-                            placeholder={isLoose ? "Optional" : "Price"}
-                          />
-                        </div>
-                        {isLoose && (
-                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                            per KG
-                          </span>
-                        )}
-                      </div>
+                    {isIncluded && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        Price later
+                      </Badge>
                     )}
                   </div>
                 );
               });
             })()}
           </div>
-          {variantOptions.some((v: any) => v.variantType === "loose") && (
-            <p className="text-[11px] text-amber-600/80 pl-1">
-              💡 Loose variants don't require a price — leave blank if not
-              applicable.
-            </p>
-          )}
+          <p className="text-[11px] text-muted-foreground pl-1">
+            Prices are intentionally excluded from product configuration.
+          </p>
         </div>
       )}
 

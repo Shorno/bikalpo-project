@@ -24,6 +24,7 @@ import {
   PackageSearch,
   Plus,
   Search,
+  Settings,
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -74,6 +75,8 @@ type CoreProduct = {
   slug: string;
   image: string;
   products: CatalogProduct[];
+  adminBrandCount: number;
+  warehouseBrandCount: number;
 };
 
 type SubCategoryData = {
@@ -332,6 +335,16 @@ export default function WarehouseCatalogPage() {
                     ({inStockCount}/{allVariants.length})
                   </span>
                 )}
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  <Badge variant="outline" className="text-[9px]">
+                    Admin preset · {cp.adminBrandCount} brands
+                  </Badge>
+                  {cp.warehouseBrandCount > 0 && (
+                    <Badge className="bg-emerald-600 text-[9px]">
+                      Your setup · {cp.warehouseBrandCount}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -342,6 +355,7 @@ export default function WarehouseCatalogPage() {
         header: () => <div className="text-right">Action</div>,
         cell: ({ row }) => {
           const cpId = row.original.coreProduct.id;
+          const configured = row.original.coreProduct.warehouseBrandCount > 0;
           return (
             <div className="flex justify-end gap-1.5">
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
@@ -355,8 +369,8 @@ export default function WarehouseCatalogPage() {
                   router.push(`/warehouse/dashboard/catalog/add/${cpId}`)
                 }
               >
-                <Plus size={12} />
-                Add
+                {configured ? <Settings size={12} /> : <Plus size={12} />}
+                {configured ? "Manage" : "Configure"}
               </Button>
             </div>
           );
