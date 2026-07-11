@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import CoreProductConfigForm from "@/components/features/product/components/core-product-config-form";
 import { orpc } from "@/utils/orpc";
 
@@ -14,6 +15,7 @@ export default function WarehouseCoreProductConfigPage() {
   const coreProductId = Number(
     useParams<{ coreProductId: string }>().coreProductId,
   );
+  const [variantAliases, setVariantAliases] = useState<Record<number, string>>({});
 
   const configurationQuery = useQuery({
     queryKey: [
@@ -40,10 +42,15 @@ export default function WarehouseCoreProductConfigPage() {
             variantOptionId: variant.variantOptionId,
           })),
         })),
+        variantAliases: Object.entries(variantAliases).filter(([, alias]) => alias.trim()).map(([variantOptionId, alias]) => ({ variantOptionId: Number(variantOptionId), alias: alias.trim() })),
       }),
   });
 
   const data = configurationQuery.data;
+  useEffect(() => {
+    if (!data?.variantAliases) return;
+    setVariantAliases(Object.fromEntries(data.variantAliases.map((entry: any) => [entry.variantOptionId, entry.alias])));
+  }, [data?.variantAliases]);
   const currentBrands = data?.current ?? [];
   const presetBrands = data?.adminPreset?.brands ?? [];
   const configuration = data
@@ -123,6 +130,8 @@ export default function WarehouseCoreProductConfigPage() {
             ? normalizedPreset
             : undefined,
         reloadPresetLabel: "Reload Admin Preset",
+        variantAliases,
+        onVariantAliasChange: (variantOptionId, alias) => setVariantAliases((current) => ({ ...current, [variantOptionId]: alias })),
         onConfigure: async (values) => configureMutation.mutateAsync(values),
         initialBrands:
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,

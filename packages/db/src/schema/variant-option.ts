@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import {
     boolean,
     integer,
+    jsonb,
     pgEnum,
     pgTable,
     serial,
@@ -45,6 +46,13 @@ export const variantOption = pgTable("variant_option", {
 
     /** Whether this is a pack variant or loose variant */
     variantType: variantOptionTypeEnum("variant_type").default("pack").notNull(),
+
+    /** Structured source of truth. Legacy rows may remain null during migration. */
+    definitionKind: varchar("definition_kind", { length: 20 }),
+    definition: jsonb("definition").$type<Record<string, unknown>>(),
+    displayAlias: varchar("display_alias", { length: 100 }),
+    canonicalSignature: varchar("canonical_signature", { length: 255 }),
+    needsReview: boolean("needs_review").default(false).notNull(),
 
     /** Scoping: Product Type FK. Null means "Global" (available to all types). */
     typeId: integer("type_id").references(() => productType.id, {

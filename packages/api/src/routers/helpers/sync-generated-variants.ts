@@ -5,6 +5,7 @@ import {
   variantOption,
 } from "@bikalpo-project/db/schema";
 import { eq, inArray } from "drizzle-orm";
+import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type DbClient = typeof db | DbTransaction;
@@ -39,6 +40,8 @@ export function getGeneratedVariantOrderUnit(
     | { unit?: string | null; variantType?: "pack" | "loose" | string | null }
     | undefined,
 ) {
+  const resolved = resolveVariantOption(option);
+  if (resolved.definition) return resolved.orderUnit;
   if (
     option?.variantType === "loose" &&
     productData.inventoryLooseUnitEnabled
@@ -72,24 +75,27 @@ export function buildAutoVariantRows(params: {
 
   return insertedPrices.map((pvp, idx) => {
     const vo = voMap[pvp.variantOptionId];
-    const isLoose = vo?.variantType === "loose";
-    const packType = isLoose ? "loose" : "packet";
-    const weightKg = vo?.size || "0";
+    const resolved = resolveVariantOption(vo);
+    const packType = resolved.container.trim().toLowerCase().replace(/\s+/g, "_");
+    const supportedPackType = ["sack", "carton", "packet", "loose", "bottle", "can", "jar", "pouch", "box", "unit", "pair", "cylinder", "drum", "bundle"].includes(packType)
+      ? packType
+      : resolved.isLoose ? "loose" : "unit";
+    const weightKg = resolved.weightKg || "0";
 
     return {
       productId,
       brandId: pvp.brandId || null,
       sku: `CP-${productId}-B${pvp.brandId ?? 0}-VO-${pvp.variantOptionId}`,
-      unitLabel: vo?.name || "Unit",
-      quantitySelectorLabel: vo?.name || "Unit",
-      packagingType: packType,
+      unitLabel: resolved.label,
+      quantitySelectorLabel: resolved.label,
+      packagingType: supportedPackType,
       weightKg,
       price: pvp.consumerPrice || "0",
       orderMin: generatedOrderMin,
       orderUnit: getGeneratedVariantOrderUnit(settings, vo),
-      packType: (packType as "loose" | "packet") || null,
+      packType: supportedPackType as "sack" | "carton" | "packet" | "loose" | "bottle" | "can" | "jar" | "pouch" | "box" | "unit" | "pair" | "cylinder" | "drum" | "bundle",
       packWeightKg: weightKg || null,
-      sellUnit: vo?.name || null,
+      sellUnit: resolved.label,
       sourceVariantPriceId: pvp.id,
       sourceVariantOptionId: pvp.variantOptionId,
       stockQuantity: 0,

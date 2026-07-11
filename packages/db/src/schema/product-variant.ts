@@ -47,6 +47,11 @@ export const packTypeEnum = pgEnum("pack_type", [
     "jar",
     "pouch",
     "box",
+    "unit",
+    "pair",
+    "cylinder",
+    "drum",
+    "bundle",
 ]);
 
 /** Order type this variant supports */

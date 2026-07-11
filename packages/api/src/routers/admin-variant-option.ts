@@ -4,22 +4,26 @@ import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import {
     variantOption,
-    category,
+    productVariant,
+    productVariantPrice,
     productType,
 } from "@bikalpo-project/db/schema";
+import { buildProductTypeFulfillmentProfile } from "@bikalpo-project/db/fulfillment";
+import { formatVariantDefinition, variantDefinitionSignature, withDerivedOperationalUnit } from "@bikalpo-project/db/variant-definition";
 import { adminProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
 
-const UNITS = [
-    "KG", "ML", "L", "Pc", "Size", "Box", "Carton", "Ton", "Pair", "Unit",
-] as const;
+const commonUnits = z.string().min(1).max(20).trim();
+const definitionSchema = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("measurement"), value: z.string().min(1).max(20).trim(), measurementUnit: commonUnits, container: commonUnits }),
+    z.object({ kind: z.literal("loose"), measurementUnit: commonUnits }),
+    z.object({ kind: z.literal("attribute"), attribute: z.string().min(1).max(30).trim(), value: z.string().min(1).max(30).trim() }),
+]);
 
 const createInput = z.object({
-    name: z.string().min(1).max(100).trim(),
-    unit: z.string().min(1).max(20),
-    size: z.string().max(20).optional(),
-    variantType: z.enum(["pack", "loose"]).default("pack"),
-    typeId: z.number().int().nullable(),
+    definition: definitionSchema,
+    displayAlias: z.string().max(100).trim().optional(),
+    typeId: z.number().int(),
     categoryId: z.number().int().nullable(),
     sortOrder: z.number().int().default(0),
 });
@@ -29,23 +33,25 @@ const updateInput = createInput.extend({
     isActive: z.boolean().default(true),
 });
 
+const filtersInput = z.object({
+    search: z.string().optional(),
+    typeId: z.number().int().optional(),
+    categoryId: z.number().int().optional(),
+    unit: z.string().optional(),
+    variantType: z.enum(["all", "pack", "loose"]).default("all"),
+    status: z.enum(["all", "active", "disabled"]).default("all"),
+});
+
 export const adminVariantOptionRouter = {
     /**
      * List all variant options with type/category info.
      */
     getAll: adminProcedure
         .input(
-            z.object({
-                search: z.string().optional(),
-                typeId: z.number().int().optional(),
-                categoryId: z.number().int().optional(),
-                unit: z.string().optional(),
-                variantType: z.enum(["all", "pack", "loose"]).default("all"),
-                status: z.enum(["all", "active", "disabled"]).default("all"),
-            }).optional(),
+            filtersInput.optional(),
         )
         .handler(async ({ input }) => {
-            const filters = input ?? {};
+            const filters: Partial<z.infer<typeof filtersInput>> = input ?? {};
             const conditions: SQL[] = [];
 
             // Search filter
@@ -88,8 +94,14 @@ export const adminVariantOptionRouter = {
                 },
                 orderBy: [asc(variantOption.sortOrder), asc(variantOption.name)],
             });
-
-            return options;
+            const usage = await Promise.all(options.map(async (option) => {
+                const [priceRef, generatedRef] = await Promise.all([
+                    db.query.productVariantPrice.findFirst({ where: eq(productVariantPrice.variantOptionId, option.id), columns: { id: true } }),
+                    db.query.productVariant.findFirst({ where: eq(productVariant.sourceVariantOptionId, option.id), columns: { id: true } }),
+                ]);
+                return { ...option, structuralLocked: Boolean(priceRef || generatedRef) };
+            }));
+            return usage;
         }),
 
     /**
@@ -132,21 +144,18 @@ export const adminVariantOptionRouter = {
     create: adminProcedure
         .input(createInput)
         .handler(async ({ input }) => {
-            // Validate: if typeId is null (Global), categoryId must also be null
-            if (input.typeId === null && input.categoryId !== null) {
-                throw new Error("Global variants cannot have a category scope");
-            }
+            const type = await db.query.productType.findFirst({ where: eq(productType.id, input.typeId) });
+            if (!type) throw new ORPCError("BAD_REQUEST", { message: "Product type not found" });
+            const definition = withDerivedOperationalUnit(input.definition, buildProductTypeFulfillmentProfile(type).family);
+            const name = formatVariantDefinition(definition);
+            const signature = variantDefinitionSignature(definition);
 
             // Check uniqueness: name must be unique within same typeId + categoryId scope
             const existingConditions: SQL[] = [
-                eq(variantOption.name, input.name),
+                eq(variantOption.canonicalSignature, signature),
             ];
 
-            if (input.typeId === null) {
-                existingConditions.push(isNull(variantOption.typeId));
-            } else {
-                existingConditions.push(eq(variantOption.typeId, input.typeId));
-            }
+            existingConditions.push(eq(variantOption.typeId, input.typeId));
 
             if (input.categoryId === null) {
                 existingConditions.push(isNull(variantOption.categoryId));
@@ -160,53 +169,29 @@ export const adminVariantOptionRouter = {
 
             if (existing) {
                 throw new Error(
-                    `A variant option named "${input.name}" already exists in this scope`,
+                    `The same structured variant already exists in this scope`,
                 );
             }
 
-            // Enforce: only one loose variant per (typeId, categoryId) scope
-            if (input.variantType === "loose") {
-                const looseConditions: SQL[] = [
-                    eq(variantOption.variantType, "loose"),
-                ];
-                if (input.typeId === null) {
-                    looseConditions.push(isNull(variantOption.typeId));
-                } else {
-                    looseConditions.push(eq(variantOption.typeId, input.typeId));
-                }
-                if (input.categoryId === null) {
-                    looseConditions.push(isNull(variantOption.categoryId));
-                } else {
-                    looseConditions.push(eq(variantOption.categoryId, input.categoryId));
-                }
-                const existingLoose = await db.query.variantOption.findFirst({
-                    where: and(...looseConditions),
-                });
-                if (existingLoose) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: `A loose variant already exists in this scope ("${existingLoose.name}"). Only one loose variant is allowed per type/category.`,
-                    });
-                }
-            }
-
             // Auto-generate next 2-digit skuCode scoped to typeId + categoryId
-            const skuFilterCondition = input.typeId === null
-                ? (input.categoryId === null
-                    ? sql`${variantOption.typeId} IS NULL AND ${variantOption.categoryId} IS NULL`
-                    : sql`${variantOption.typeId} IS NULL AND ${variantOption.categoryId} = ${input.categoryId}`)
-                : (input.categoryId === null
+            const skuFilterCondition = input.categoryId === null
                     ? sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} IS NULL`
-                    : sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} = ${input.categoryId}`);
+                    : sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} = ${input.categoryId}`;
 
             const skuCode = await nextSkuCode(variantOption, variantOption.skuCode, 2, skuFilterCondition);
 
             const [created] = await db
                 .insert(variantOption)
                 .values({
-                    name: input.name,
-                    unit: input.unit,
-                    size: input.size || null,
-                    variantType: input.variantType,
+                    name,
+                    unit: "measurementUnit" in definition ? definition.measurementUnit : definition.operationalUnit || "unit",
+                    size: "value" in definition ? definition.value : null,
+                    variantType: definition.kind === "loose" ? "loose" : "pack",
+                    definitionKind: definition.kind,
+                    definition,
+                    displayAlias: input.displayAlias || null,
+                    canonicalSignature: signature,
+                    needsReview: false,
                     typeId: input.typeId,
                     categoryId: input.categoryId,
                     sortOrder: input.sortOrder,
@@ -223,28 +208,33 @@ export const adminVariantOptionRouter = {
     update: adminProcedure
         .input(updateInput)
         .handler(async ({ input }) => {
-            // Validate: if typeId is null (Global), categoryId must also be null
-            if (input.typeId === null && input.categoryId !== null) {
-                throw new Error("Global variants cannot have a category scope");
-            }
-
             const existing = await db.query.variantOption.findFirst({
                 where: eq(variantOption.id, input.id),
             });
 
             if (!existing) throw new Error("Variant option not found");
 
+            const type = await db.query.productType.findFirst({ where: eq(productType.id, input.typeId) });
+            if (!type) throw new ORPCError("BAD_REQUEST", { message: "Product type not found" });
+            const definition = withDerivedOperationalUnit(input.definition, buildProductTypeFulfillmentProfile(type).family);
+            const name = formatVariantDefinition(definition);
+            const signature = variantDefinitionSignature(definition);
+            const [priceRef, generatedRef] = await Promise.all([
+                db.query.productVariantPrice.findFirst({ where: eq(productVariantPrice.variantOptionId, input.id), columns: { id: true } }),
+                db.query.productVariant.findFirst({ where: eq(productVariant.sourceVariantOptionId, input.id), columns: { id: true } }),
+            ]);
+            const structuralLocked = Boolean(priceRef || generatedRef);
+            if (structuralLocked && (existing.canonicalSignature !== signature || existing.typeId !== input.typeId || existing.categoryId !== input.categoryId)) {
+                throw new ORPCError("BAD_REQUEST", { message: "This variant is already in use. Clone it to change its structure or scope." });
+            }
+
             // Check uniqueness (exclude self)
             const dupConditions: SQL[] = [
-                eq(variantOption.name, input.name),
+                eq(variantOption.canonicalSignature, signature),
                 sql`${variantOption.id} != ${input.id}`,
             ];
 
-            if (input.typeId === null) {
-                dupConditions.push(isNull(variantOption.typeId));
-            } else {
-                dupConditions.push(eq(variantOption.typeId, input.typeId));
-            }
+            dupConditions.push(eq(variantOption.typeId, input.typeId));
 
             if (input.categoryId === null) {
                 dupConditions.push(isNull(variantOption.categoryId));
@@ -258,43 +248,22 @@ export const adminVariantOptionRouter = {
 
             if (duplicate) {
                 throw new Error(
-                    `A variant option named "${input.name}" already exists in this scope`,
+                    `The same structured variant already exists in this scope`,
                 );
-            }
-
-            // Enforce: only one loose variant per (typeId, categoryId) scope
-            if (input.variantType === "loose") {
-                const looseConditions: SQL[] = [
-                    eq(variantOption.variantType, "loose"),
-                    sql`${variantOption.id} != ${input.id}`,
-                ];
-                if (input.typeId === null) {
-                    looseConditions.push(isNull(variantOption.typeId));
-                } else {
-                    looseConditions.push(eq(variantOption.typeId, input.typeId));
-                }
-                if (input.categoryId === null) {
-                    looseConditions.push(isNull(variantOption.categoryId));
-                } else {
-                    looseConditions.push(eq(variantOption.categoryId, input.categoryId));
-                }
-                const existingLoose = await db.query.variantOption.findFirst({
-                    where: and(...looseConditions),
-                });
-                if (existingLoose) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: `A loose variant already exists in this scope ("${existingLoose.name}"). Only one loose variant is allowed per type/category.`,
-                    });
-                }
             }
 
             await db
                 .update(variantOption)
                 .set({
-                    name: input.name,
-                    unit: input.unit,
-                    size: input.size || null,
-                    variantType: input.variantType,
+                    name,
+                    unit: "measurementUnit" in definition ? definition.measurementUnit : definition.operationalUnit || "unit",
+                    size: "value" in definition ? definition.value : null,
+                    variantType: definition.kind === "loose" ? "loose" : "pack",
+                    definitionKind: definition.kind,
+                    definition,
+                    displayAlias: input.displayAlias || null,
+                    canonicalSignature: signature,
+                    needsReview: false,
                     typeId: input.typeId,
                     categoryId: input.categoryId,
                     isActive: input.isActive,
@@ -317,6 +286,14 @@ export const adminVariantOptionRouter = {
             });
 
             if (!existing) throw new Error("Variant option not found");
+
+            const [priceRef, generatedRef] = await Promise.all([
+                db.query.productVariantPrice.findFirst({ where: eq(productVariantPrice.variantOptionId, input.id), columns: { id: true } }),
+                db.query.productVariant.findFirst({ where: eq(productVariant.sourceVariantOptionId, input.id), columns: { id: true } }),
+            ]);
+            if (priceRef || generatedRef) {
+                throw new ORPCError("BAD_REQUEST", { message: "This variant is in use and cannot be deleted. Disable it instead." });
+            }
 
             await db.delete(variantOption).where(eq(variantOption.id, input.id));
 

@@ -11,6 +11,9 @@
     "./fulfillment.schema": {
       "default": "./src/fulfillment.schema.ts"
     },
+    "./variant-definition": {
+      "default": "./src/variant-definition.ts"
+    },
     "./schema": {
       "default": "./src/schema/index.ts"
     },

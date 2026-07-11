@@ -8,6 +8,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
+import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
 import {
 	deliveryGroup,
 	deliveryGroupInvoice,
@@ -6128,6 +6129,7 @@ import {
 	productImage,
 	productVariantPrice,
 	variantOption,
+	warehouseVariantAlias,
 } from "@bikalpo-project/db/schema";
 
 const warehouseConfiguredVariantSchema = z.object({
@@ -6180,6 +6182,10 @@ const configureWarehouseCoreSchema = z.object({
 			}),
 		)
 		.min(1),
+	variantAliases: z.array(z.object({
+		variantOptionId: z.number().int().positive(),
+		alias: z.string().trim().min(1).max(100),
+	})).default([]),
 });
 
 const updateWarehouseProductSchema = z.object({
@@ -6428,7 +6434,8 @@ const warehouseProductCreation = {
 						continue;
 					}
 					const option = optionMap.get(row.variantOptionId)!;
-					const isLoose = option.variantType === "loose";
+					const resolved = resolveVariantOption(option);
+					const packType = resolved.container.toLowerCase();
 					const [priceRow] = await tx.insert(productVariantPrice).values({
 						productId: existing.id,
 						variantOptionId: option.id,
@@ -6442,15 +6449,15 @@ const warehouseProductCreation = {
 						color: row.color?.trim() || null,
 						size: option.size ?? null,
 						sku: `WH-${existing.id}-B${existing.brandId}-VO${option.id}-${sortOrder}`,
-						unitLabel: option.name,
-						quantitySelectorLabel: option.name,
-						packagingType: isLoose ? "loose" : "packet",
-						weightKg: option.unit.toUpperCase() === "KG" && option.size ? option.size : "0",
+						unitLabel: resolved.label,
+						quantitySelectorLabel: resolved.label,
+						packagingType: packType,
+						weightKg: resolved.weightKg,
 						price: "0",
 						orderMin: input.details.minimumOrderEnabled ? input.details.minimumOrderQty : "1",
-						orderUnit: option.unit,
-						packType: isLoose ? "loose" : "packet",
-						sellUnit: option.name,
+						orderUnit: resolved.orderUnit,
+						packType: packType as any,
+						sellUnit: resolved.label,
 						variantType: "trade",
 						orderType: "b2b",
 						visibilityRole: "shop_owner",
@@ -6576,6 +6583,12 @@ const warehouseProductCreation = {
 					orderBy: [variantOption.sortOrder, variantOption.name],
 				}),
 			]);
+			const aliases = await db.query.warehouseVariantAlias.findMany({
+				where: and(
+					eq(warehouseVariantAlias.warehouseId, warehouseId),
+					eq(warehouseVariantAlias.coreProductId, core.id),
+				),
+			});
 			const typeId = core.category?.typeId ?? null;
 			const variantOptions = allVariantOptions.filter((option) => {
 				const global = option.typeId === null && option.categoryId === null;
@@ -6643,6 +6656,7 @@ const warehouseProductCreation = {
 						})),
 				})),
 				options: { brands, variantOptions },
+				variantAliases: aliases.map((row) => ({ variantOptionId: row.variantOptionId, alias: row.alias })),
 			};
 		}),
 
@@ -6719,6 +6733,23 @@ const warehouseProductCreation = {
 					});
 				}
 				const optionMap = new Map(optionRows.map((option) => [option.id, option]));
+				const selectedOptionIds = new Set(optionIds);
+				if (input.variantAliases.some((entry) => !selectedOptionIds.has(entry.variantOptionId))) {
+					throw new ORPCError("BAD_REQUEST", { message: "Aliases can only be assigned to selected variants" });
+				}
+				await tx.delete(warehouseVariantAlias).where(and(
+					eq(warehouseVariantAlias.warehouseId, warehouseId),
+					eq(warehouseVariantAlias.coreProductId, core.id),
+				));
+				if (input.variantAliases.length > 0) {
+					await tx.insert(warehouseVariantAlias).values(input.variantAliases.map((entry) => ({
+						warehouseId,
+						coreProductId: core.id,
+						variantOptionId: entry.variantOptionId,
+						alias: entry.alias,
+					})));
+				}
+				const aliasMap = new Map(input.variantAliases.map((entry) => [entry.variantOptionId, entry.alias]));
 				const typeId = core.category?.typeId ?? null;
 				for (const option of optionRows) {
 					const valid =
@@ -6928,13 +6959,11 @@ const warehouseProductCreation = {
 					let sortOrder = existingVariants.length;
 					for (const [key, desired] of desiredByKey) {
 						const existingVariant = existingByKey.get(key);
+						const desiredOption = optionMap.get(desired.variantOptionId)!;
+						const desiredResolved = resolveVariantOption(desiredOption);
+						const effectiveLabel = aliasMap.get(desired.variantOptionId) || desiredResolved.label;
 						if (existingVariant) {
-							if (!existingVariant.isActive) {
-								await tx
-									.update(productVariant)
-									.set({ isActive: true })
-									.where(eq(productVariant.id, existingVariant.id));
-							}
+							await tx.update(productVariant).set({ isActive: true, unitLabel: effectiveLabel, quantitySelectorLabel: effectiveLabel, sellUnit: effectiveLabel }).where(eq(productVariant.id, existingVariant.id));
 							await tx.insert(inventory).values({
 								ownerType: "warehouse",
 								ownerId: warehouseId,
@@ -6946,8 +6975,9 @@ const warehouseProductCreation = {
 							});
 							continue;
 						}
-						const option = optionMap.get(desired.variantOptionId)!;
-						const isLoose = option.variantType === "loose";
+						const option = desiredOption;
+						const resolved = desiredResolved;
+						const packType = resolved.container.toLowerCase();
 						const [priceRow] = await tx
 							.insert(productVariantPrice)
 							.values({
@@ -6966,20 +6996,17 @@ const warehouseProductCreation = {
 								color: desired.color?.trim() || null,
 								size: option.size ?? null,
 								sku: `WH-${targetProduct.id}-B${brand.id}-VO${option.id}-${sortOrder}`,
-								unitLabel: option.name,
-								quantitySelectorLabel: option.name,
-								packagingType: isLoose ? "loose" : "packet",
-								weightKg:
-									option.unit.toUpperCase() === "KG" && option.size
-										? option.size
-										: "0",
+								unitLabel: effectiveLabel,
+								quantitySelectorLabel: effectiveLabel,
+								packagingType: packType,
+								weightKg: resolved.weightKg,
 								price: "0",
 								orderMin: input.details.minimumOrderEnabled
 									? input.details.minimumOrderQty
 									: "1",
-								orderUnit: option.unit,
-								packType: isLoose ? "loose" : "packet",
-								sellUnit: option.name,
+								orderUnit: resolved.orderUnit,
+								packType: packType as any,
+								sellUnit: effectiveLabel,
 								variantType: "trade",
 								orderType: "b2b",
 								visibilityRole: "shop_owner",
@@ -7270,24 +7297,13 @@ const warehouseProductCreation = {
 					voMap = Object.fromEntries(variantOptions.map((vo) => [vo.id, vo]));
 				}
 
-				// Validate: each brand can have at most one loose variant
-				for (const bc of input.brandConfigs) {
-					const looseCount = bc.variants.filter(
-						(v) => voMap[v.variantOptionId]?.variantType === "loose",
-					).length;
-					if (looseCount > 1) {
-						throw new ORPCError("BAD_REQUEST", {
-							message: `Brand ID ${bc.brandId} has ${looseCount} loose variants. Only one loose variant is allowed per brand.`,
-						});
-					}
-				}
-
 				let sortIdx = 0;
 				for (const bc of input.brandConfigs) {
 					for (const v of bc.variants) {
 						const vo = voMap[v.variantOptionId];
-						const isLoose = vo?.variantType === "loose";
-						const packType = isLoose ? "loose" : "packet";
+						const resolved = resolveVariantOption(vo);
+						const isLoose = resolved.isLoose;
+						const packType = resolved.container.toLowerCase();
 						const normalizedUnit = String(vo?.unit || "")
 							.trim()
 							.toUpperCase();
@@ -7332,13 +7348,13 @@ const warehouseProductCreation = {
 								productId,
 								brandId: bc.brandId,
 								sku: `WH-${productId}-B${bc.brandId}-VO${v.variantOptionId}`,
-								unitLabel: vo?.name || "Unit",
-								quantitySelectorLabel: vo?.name || "Unit",
+								unitLabel: resolved.label,
+								quantitySelectorLabel: resolved.label,
 								packagingType: packType,
 								weightKg,
 								piecesPerUnit,
 								price: v.retailerPrice,
-								orderUnit: vo?.unit || "piece",
+								orderUnit: resolved.orderUnit,
 								packType: (packType as any) || null,
 								packWeightKg:
 									isWeightBasedUnit && numericSize !== null
