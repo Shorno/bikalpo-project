@@ -207,8 +207,8 @@ type TableRow = {
   looseWeight: string;
   cartonUnitSize: string;
   quantity: string;
-  pricePerPack: string;
-  totalPrice: string;
+  purchaseUnitPrice: string;
+  totalPurchaseCost: string;
 };
 
 // ============================================================
@@ -440,8 +440,8 @@ export default function AddStockPage() {
         return (
           row.looseWeight !== "" &&
           parseFloat(row.looseWeight) > 0 &&
-          row.totalPrice !== "" &&
-          parseFloat(row.totalPrice) > 0
+          row.totalPurchaseCost !== "" &&
+          parseFloat(row.totalPurchaseCost) > 0
         );
       }
       if (entryType === "carton") {
@@ -449,11 +449,13 @@ export default function AddStockPage() {
           row.cartonUnitSize !== "" &&
           parseFloat(row.cartonUnitSize) > 0 &&
           getCartonPacksPerCarton(row) > 0 &&
-          row.pricePerPack !== "" &&
-          parseFloat(row.pricePerPack) > 0
+          row.purchaseUnitPrice !== "" &&
+          parseFloat(row.purchaseUnitPrice) > 0
         );
       }
-      return row.pricePerPack !== "" && parseFloat(row.pricePerPack) > 0;
+      return (
+        row.purchaseUnitPrice !== "" && parseFloat(row.purchaseUnitPrice) > 0
+      );
     });
   }, [getCartonCount, getCartonPacksPerCarton, tableRows, entryType]);
 
@@ -533,8 +535,10 @@ export default function AddStockPage() {
     (row: TableRow) => {
       if (entryType !== "loose") return 0;
       const totalQty = getRowTotalQtyValue(row);
-      const totalPrice = parseFloat(row.totalPrice) || 0;
-      return totalQty > 0 && totalPrice > 0 ? totalPrice / totalQty : 0;
+      const totalPurchaseCost = parseFloat(row.totalPurchaseCost) || 0;
+      return totalQty > 0 && totalPurchaseCost > 0
+        ? totalPurchaseCost / totalQty
+        : 0;
     },
     [entryType, getRowTotalQtyValue],
   );
@@ -681,8 +685,8 @@ export default function AddStockPage() {
       looseWeight: "",
       cartonUnitSize: "",
       quantity: "",
-      pricePerPack: "",
-      totalPrice: "",
+      purchaseUnitPrice: "",
+      totalPurchaseCost: "",
     };
     setTableRows((prev) => [...prev, newRow]);
     setShowProductModal(false);
@@ -725,8 +729,8 @@ export default function AddStockPage() {
         return (
           !r.looseWeight ||
           parseFloat(r.looseWeight) <= 0 ||
-          !r.totalPrice ||
-          parseFloat(r.totalPrice) <= 0
+          !r.totalPurchaseCost ||
+          parseFloat(r.totalPurchaseCost) <= 0
         );
       }
       if (entryType === "carton") {
@@ -734,11 +738,11 @@ export default function AddStockPage() {
           !r.cartonUnitSize ||
           parseFloat(r.cartonUnitSize) <= 0 ||
           getCartonPacksPerCarton(r) <= 0 ||
-          !r.pricePerPack ||
-          parseFloat(r.pricePerPack) <= 0
+          !r.purchaseUnitPrice ||
+          parseFloat(r.purchaseUnitPrice) <= 0
         );
       }
-      return !r.pricePerPack || parseFloat(r.pricePerPack) <= 0;
+      return !r.purchaseUnitPrice || parseFloat(r.purchaseUnitPrice) <= 0;
     });
     if (incomplete) {
       toast.error("Please fill in all fields for every product");
@@ -758,7 +762,7 @@ export default function AddStockPage() {
         const price =
           entryType === "loose"
             ? getLooseSupplierPricePerKg(row)
-            : parseFloat(row.pricePerPack);
+            : parseFloat(row.purchaseUnitPrice);
 
         return (orpc.warehouse as any).addStockEntry.call({
           variantId: row.variantId,
@@ -1033,7 +1037,8 @@ export default function AddStockPage() {
                   )}
                 </div>
                 <CardDescription>
-                  Add products to this stock entry
+                  Record incoming stock and its purchase cost. Selling prices
+                  are not changed here.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -1062,10 +1067,10 @@ export default function AddStockPage() {
                         </th>
                         <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">
                           {entryType === "loose"
-                            ? "Total Price"
+                            ? "Total Purchase Cost"
                             : entryType === "carton"
-                              ? "Price/Carton"
-                              : "Price/Pack"}
+                              ? "Buying Price/Carton"
+                              : "Buying Price/Pack"}
                         </th>
                         <th className="w-10 px-2"></th>
                       </tr>
@@ -1094,7 +1099,7 @@ export default function AddStockPage() {
                             getLooseSupplierPricePerKg(row);
                           const cartonRowTotalPrice =
                             getCartonCount(row) *
-                            (parseFloat(row.pricePerPack) || 0);
+                            (parseFloat(row.purchaseUnitPrice) || 0);
                           return (
                             <tr
                               key={row.id}
@@ -1213,13 +1218,14 @@ export default function AddStockPage() {
                                     <Input
                                       type="text"
                                       inputMode="numeric"
-                                      value={row.totalPrice}
+                                      value={row.totalPurchaseCost}
                                       onChange={(e) =>
                                         updateRow(row.id, {
-                                          totalPrice: e.target.value.replace(
-                                            /[^0-9.]/g,
-                                            "",
-                                          ),
+                                          totalPurchaseCost:
+                                            e.target.value.replace(
+                                              /[^0-9.]/g,
+                                              "",
+                                            ),
                                         })
                                       }
                                       placeholder="৳ 0"
@@ -1236,13 +1242,14 @@ export default function AddStockPage() {
                                     <Input
                                       type="text"
                                       inputMode="numeric"
-                                      value={row.pricePerPack}
+                                      value={row.purchaseUnitPrice}
                                       onChange={(e) =>
                                         updateRow(row.id, {
-                                          pricePerPack: e.target.value.replace(
-                                            /[^0-9.]/g,
-                                            "",
-                                          ),
+                                          purchaseUnitPrice:
+                                            e.target.value.replace(
+                                              /[^0-9.]/g,
+                                              "",
+                                            ),
                                         })
                                       }
                                       placeholder="৳ 0"
@@ -1256,13 +1263,14 @@ export default function AddStockPage() {
                                   <Input
                                     type="text"
                                     inputMode="numeric"
-                                    value={row.pricePerPack}
+                                    value={row.purchaseUnitPrice}
                                     onChange={(e) =>
                                       updateRow(row.id, {
-                                        pricePerPack: e.target.value.replace(
-                                          /[^0-9.]/g,
-                                          "",
-                                        ),
+                                        purchaseUnitPrice:
+                                          e.target.value.replace(
+                                            /[^0-9.]/g,
+                                            "",
+                                          ),
                                       })
                                     }
                                     placeholder="৳ 0"

@@ -4658,6 +4658,34 @@ import {
 	category,
 } from "@bikalpo-project/db/schema";
 
+/**
+ * Canonical product scope for warehouse-owned, sellable product records.
+ * Core identities and legacy template rows are configuration sources, not stock targets.
+ */
+function warehouseOwnedProductCondition(userId: string): SQL {
+	return and(
+		eq(productTable.creatorSource, "warehouse"),
+		or(
+			eq(productTable.createdById, userId),
+			eq(productTable.createdByWarehouseId, userId),
+		)!,
+	)!;
+}
+
+function isWarehouseOwnedProduct(
+	product: {
+		creatorSource: string;
+		createdById: string | null;
+		createdByWarehouseId: string | null;
+	},
+	userId: string,
+) {
+	return (
+		product.creatorSource === "warehouse" &&
+		(product.createdById === userId || product.createdByWarehouseId === userId)
+	);
+}
+
 // ────────────────────────────────────────────────────────────────
 // Product Variant Search (for purchase form)
 // ────────────────────────────────────────────────────────────────
@@ -7549,7 +7577,7 @@ const stockEntryQueries = {
 			const userId = context.session.user.id;
 
 			const conditions: SQL[] = [
-				eq(productTable.createdByWarehouseId, userId),
+				warehouseOwnedProductCondition(userId),
 				eq(productTable.status, "active"),
 			];
 
@@ -7716,7 +7744,12 @@ const stockEntryQueries = {
 				where: eq(productVariant.id, input.variantId),
 				with: {
 					product: {
-						columns: { id: true, createdByWarehouseId: true },
+						columns: {
+							id: true,
+							creatorSource: true,
+							createdById: true,
+							createdByWarehouseId: true,
+						},
 					},
 				},
 			});
@@ -7724,9 +7757,10 @@ const stockEntryQueries = {
 			if (!variant) {
 				throw new ORPCError("NOT_FOUND", { message: "Variant not found" });
 			}
-			if ((variant.product as any)?.createdByWarehouseId !== userId) {
+			if (!variant.product || !isWarehouseOwnedProduct(variant.product, userId)) {
 				throw new ORPCError("FORBIDDEN", {
-					message: "This variant does not belong to your warehouse",
+					message:
+						"Stock can only be added to an actual warehouse-created product",
 				});
 			}
 
@@ -7922,6 +7956,8 @@ const stockEntryQueries = {
 					})
 					.returning();
 
+				// Purchase cost belongs to this stock-entry audit row only. Inventory
+				// selling price is deliberately untouched; pricing is managed separately.
 				// Upsert inventory — add to available quantity
 				const inventoryQty =
 					input.entryType === "loose" ? convertedQtyKg : convertedQtyPacks;
@@ -8157,11 +8193,7 @@ const pricingQueries = {
 			const conditions: SQL[] = [
 				eq(productTable.status, "active"),
 				eq(productVariant.isActive, true),
-				eq(productTable.creatorSource, "warehouse"),
-				or(
-					eq(productTable.createdById, userId),
-					eq(productTable.createdByWarehouseId, userId),
-				)!,
+				warehouseOwnedProductCondition(userId),
 			];
 			const baseConditions = [...conditions];
 			if (input.typeId) conditions.push(eq(productTypeTable.id, input.typeId));
