@@ -9,21 +9,21 @@
 
 import { db } from "@bikalpo-project/db";
 import {
-    inventory,
-    product,
-    productVariant,
     brand,
-    category,
-    productType,
-    subCategory,
-    stockEntry,
-    coreProductIdentity,
     cartonConfig,
-    emptyPack,
+    category,
+    coreProductIdentity,
     deliveryGroup,
     deliveryGroupInvoice,
+    emptyPack,
+    inventory,
+    product,
+    productType,
+    productVariant,
+    stockEntry,
+    subCategory,
 } from "@bikalpo-project/db/schema";
-import { and, eq, sql, desc, lt, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -528,7 +528,22 @@ export const stockOverviewRouter = {
         .handler(async ({ context, input }) => {
             const ownerId = context.session.user.id;
 
-            // Get all inventory rows for this product's variants
+            const warehouseOwnedConditions: SQL[] = input.ownerType === "warehouse"
+                ? [
+                    eq(product.creatorSource, "warehouse"),
+                    or(
+                        eq(product.createdById, ownerId),
+                        eq(product.createdByWarehouseId, ownerId),
+                    )!,
+                    eq(product.status, "active"),
+                    eq(productVariant.isActive, true),
+                ]
+                : [
+                    eq(inventory.ownerType, input.ownerType),
+                    eq(inventory.ownerId, ownerId),
+                ];
+
+            // Warehouse views are configuration-backed so variants remain visible at zero stock.
             const rows = await db
                 .select({
                     inventoryId: inventory.id,
@@ -554,16 +569,19 @@ export const stockOverviewRouter = {
                     brandName: brand.name,
                     brandLogo: brand.logo,
                 })
-                .from(inventory)
-                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .from(productVariant)
                 .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(inventory, and(
+                    eq(inventory.variantId, productVariant.id),
+                    eq(inventory.ownerType, input.ownerType),
+                    eq(inventory.ownerId, ownerId),
+                ))
                 // Prefer variant-level brand, fall back to product-level brand
                 .leftJoin(brand, eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`))
                 .where(
                     and(
-                        eq(inventory.ownerType, input.ownerType),
-                        eq(inventory.ownerId, ownerId),
                         eq(productVariant.productId, input.productId),
+                        ...warehouseOwnedConditions,
                     ),
                 )
                 .orderBy(productVariant.sortOrder, productVariant.weightKg);
@@ -602,7 +620,7 @@ export const stockOverviewRouter = {
             }>();
 
             let looseOpenStock = 0;
-            let looseFullDrum = 0;
+            const looseFullDrum = 0;
 
             for (const row of enrichedRows) {
                 const qty = parseFloat(row.availableQty || "0");
@@ -753,10 +771,20 @@ export const stockOverviewRouter = {
             const offset = (input.page - 1) * input.pageSize;
 
             // Build WHERE conditions
-            const conditions = [
-                eq(inventory.ownerType, input.ownerType),
-                eq(inventory.ownerId, ownerId),
-            ];
+            const conditions: SQL[] = input.ownerType === "warehouse"
+                ? [
+                    eq(product.creatorSource, "warehouse"),
+                    or(
+                        eq(product.createdById, ownerId),
+                        eq(product.createdByWarehouseId, ownerId),
+                    )!,
+                    eq(product.status, "active"),
+                    eq(productVariant.isActive, true),
+                ]
+                : [
+                    eq(inventory.ownerType, input.ownerType),
+                    eq(inventory.ownerId, ownerId),
+                ];
             if (input.categoryId) {
                 conditions.push(eq(product.categoryId, input.categoryId));
             }
@@ -791,9 +819,13 @@ export const stockOverviewRouter = {
                     availableQty: inventory.availableQty,
                     brandName: brand.name,
                 })
-                .from(inventory)
-                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .from(productVariant)
                 .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(inventory, and(
+                    eq(inventory.variantId, productVariant.id),
+                    eq(inventory.ownerType, input.ownerType),
+                    eq(inventory.ownerId, ownerId),
+                ))
                 .leftJoin(coreProductIdentity, eq(product.coreProductId, coreProductIdentity.id))
                 .leftJoin(category, eq(product.categoryId, category.id))
                 .leftJoin(productType, eq(category.typeId, productType.id))

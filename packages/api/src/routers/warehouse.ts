@@ -6416,6 +6416,15 @@ const warehouseProductCreation = {
 						if (!currentRow.isActive) {
 							await tx.update(productVariant).set({ isActive: true }).where(eq(productVariant.id, currentRow.id));
 						}
+						await tx.insert(inventory).values({
+							ownerType: "warehouse",
+							ownerId: warehouseId,
+							variantId: currentRow.id,
+							availableQty: "0",
+							retailPrice: null,
+						}).onConflictDoNothing({
+							target: [inventory.ownerType, inventory.ownerId, inventory.variantId],
+						});
 						continue;
 					}
 					const option = optionMap.get(row.variantOptionId)!;
@@ -6926,6 +6935,15 @@ const warehouseProductCreation = {
 									.set({ isActive: true })
 									.where(eq(productVariant.id, existingVariant.id));
 							}
+							await tx.insert(inventory).values({
+								ownerType: "warehouse",
+								ownerId: warehouseId,
+								variantId: existingVariant.id,
+								availableQty: "0",
+								retailPrice: null,
+							}).onConflictDoNothing({
+								target: [inventory.ownerType, inventory.ownerId, inventory.variantId],
+							});
 							continue;
 						}
 						const option = optionMap.get(desired.variantOptionId)!;
@@ -7141,6 +7159,30 @@ const warehouseProductCreation = {
 				throw new ORPCError("NOT_FOUND", {
 					message: "Core product identity not found",
 				});
+			}
+
+			const requestedBrandIds = [
+				...new Set(input.brandConfigs.map((config) => config.brandId)),
+			];
+			if (requestedBrandIds.length > 0) {
+				const existingConfiguredProduct = await db.query.product.findFirst({
+					where: and(
+						eq(productTable.coreProductId, input.coreProductId),
+						eq(productTable.creatorSource, "warehouse"),
+						or(
+							eq(productTable.createdById, userId),
+							eq(productTable.createdByWarehouseId, userId),
+						)!,
+						inArray(productTable.brandId, requestedBrandIds),
+					),
+					columns: { id: true },
+				});
+				if (existingConfiguredProduct) {
+					throw new ORPCError("CONFLICT", {
+						message:
+							"This warehouse already configured one of the selected brands. Edit the existing core configuration instead.",
+					});
+				}
 			}
 
 			// Ensure slug uniqueness (append warehouse suffix if collision)
@@ -8078,7 +8120,7 @@ import {
 } from "@bikalpo-project/db/schema";
 
 const pricingQueries = {
-	/** Paginated inventory-backed rows for the warehouse Products screen. */
+	/** Paginated configured-variant rows for the warehouse Products screen. */
 	getWarehouseProductList: warehouseProcedure
 		.input(
 			z.object({
@@ -8097,10 +8139,13 @@ const pricingQueries = {
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
 			const conditions: SQL[] = [
-				eq(inventory.ownerType, "warehouse"),
-				eq(inventory.ownerId, userId),
 				eq(productTable.status, "active"),
 				eq(productVariant.isActive, true),
+				eq(productTable.creatorSource, "warehouse"),
+				or(
+					eq(productTable.createdById, userId),
+					eq(productTable.createdByWarehouseId, userId),
+				)!,
 			];
 			const baseConditions = [...conditions];
 			if (input.typeId) conditions.push(eq(productTypeTable.id, input.typeId));
@@ -8118,16 +8163,20 @@ const pricingQueries = {
 					ilike(productVariant.unitLabel, term),
 				)!);
 			}
-			const qty = sql<number>`${inventory.availableQty}::numeric`;
+			const qty = sql<number>`COALESCE(${inventory.availableQty}, 0)::numeric`;
 			const threshold = sql<number>`GREATEST(${productVariant.reorderLevel}, ${productTable.reorderLevel}, 10)`;
 			if (input.stockFilter === "out_of_stock") conditions.push(sql`${qty} <= 0`);
 			if (input.stockFilter === "low_stock") conditions.push(sql`${qty} > 0 AND ${qty} <= ${threshold}`);
 			if (input.stockFilter === "in_stock") conditions.push(sql`${qty} > ${threshold}`);
 
 			const fromJoins = (query: any) => query
-				.from(inventory)
-				.innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+				.from(productVariant)
 				.innerJoin(productTable, eq(productVariant.productId, productTable.id))
+				.leftJoin(inventory, and(
+					eq(inventory.variantId, productVariant.id),
+					eq(inventory.ownerType, "warehouse"),
+					eq(inventory.ownerId, userId),
+				))
 				.innerJoin(catTable, eq(productTable.categoryId, catTable.id))
 				.leftJoin(subCategoryTable, eq(productTable.subCategoryId, subCategoryTable.id))
 				.leftJoin(coreProductIdentity, eq(productTable.coreProductId, coreProductIdentity.id))
@@ -8135,8 +8184,8 @@ const pricingQueries = {
 				.leftJoin(productTypeTable, eq(catTable.typeId, productTypeTable.id));
 
 			const orderBy = input.sortBy === "name_desc" ? desc(productTable.name)
-				: input.sortBy === "stock_desc" ? desc(inventory.availableQty)
-				: input.sortBy === "stock_asc" ? inventory.availableQty
+				: input.sortBy === "stock_desc" ? desc(qty)
+				: input.sortBy === "stock_asc" ? qty
 				: input.sortBy === "price_desc" ? desc(inventory.retailPrice)
 				: input.sortBy === "price_asc" ? inventory.retailPrice
 				: productTable.name;
@@ -8147,6 +8196,7 @@ const pricingQueries = {
 				productId: productTable.id, productSku: productTable.sku,
 				productName: productTable.name, productStatus: productTable.status,
 				creatorSource: productTable.creatorSource, creatorId: productTable.createdById,
+				creatorWarehouseId: productTable.createdByWarehouseId,
 				coreProductId: productTable.coreProductId, coreProductName: coreProductIdentity.name,
 				coreProductImage: coreProductIdentity.image,
 				categoryId: catTable.id, categoryName: catTable.name,
@@ -8178,15 +8228,24 @@ const pricingQueries = {
 
 			const items = rows.map((row: any) => {
 				const weight = Number(row.weightKg || 0);
-				const label = [row.color, row.size, weight > 0 ? `${weight}KG` : null, row.packagingType !== "loose" ? row.packagingType : null].filter(Boolean).join(" ") || row.unitLabel;
+				const label = [row.color, row.unitLabel ?? row.size]
+					.filter(Boolean)
+					.join(" ") || (weight > 0 ? `${weight}KG` : "Variant");
 				return {
 					...row,
-					isOwnedByWarehouse: row.creatorSource === "warehouse" && row.creatorId === userId,
+					isOwnedByWarehouse:
+						row.creatorSource === "warehouse" &&
+						(row.creatorId === userId || row.creatorWarehouseId === userId),
 					coreProductName: row.coreProductName ?? row.productName,
 					coreProductImage: row.coreProductImage ?? "",
 					subCategoryName: row.subCategoryName ?? "—", typeName: row.typeName ?? "Other",
 					brandName: row.brandName ?? "—", variantLabel: label,
 					packUnit: weight > 0 ? `${weight} KG` : row.unitLabel,
+					inventoryId: row.inventoryId ?? null,
+					availableQty: row.availableQty ?? "0",
+					reservedQty: row.reservedQty ?? "0",
+					inCartonQty: row.inCartonQty ?? "0",
+					activeCartonCount: row.activeCartonCount ?? 0,
 					packPrice: row.retailPrice ?? row.variantPrice ?? "0", basePrice: row.variantPrice ?? "0",
 					isLoose: row.packagingType === "loose", weightKg: weight,
 				};
