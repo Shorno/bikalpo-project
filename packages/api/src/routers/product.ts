@@ -672,7 +672,7 @@ export const productRouter = {
 
   /**
    * First-time admin product creation for a core product.
-   * One submission stores the immutable shared template and creates one
+   * One submission stores the initial shared template and creates one
    * independent product per selected brand.
    */
   create: adminProcedure

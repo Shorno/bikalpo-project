@@ -6125,8 +6125,8 @@ const productRequests = {
 import {
 	brand as brandTable,
 	productBrand,
-	productVariantPrice,
 	productImage,
+	productVariantPrice,
 	variantOption,
 } from "@bikalpo-project/db/schema";
 
@@ -6584,6 +6584,10 @@ const warehouseProductCreation = {
 			return {
 				core,
 				version: warehouseTemplate?.version ?? null,
+				sourceAdminTemplateVersion:
+					warehouseTemplate?.sourceAdminTemplateVersion ??
+					adminTemplate?.version ??
+					null,
 				defaults:
 					warehouseTemplate?.details ?? adminTemplate?.details ?? {
 						name: core.name,
@@ -7011,7 +7015,10 @@ const warehouseProductCreation = {
 						coreProductId: core.id,
 						warehouseId,
 						version: 1,
-						sourceAdminTemplateVersion: adminTemplate?.version ?? null,
+						sourceAdminTemplateVersion:
+							existingTemplate?.sourceAdminTemplateVersion ??
+							adminTemplate?.version ??
+							null,
 						details: templateDetails,
 						createdById: warehouseId,
 					})
@@ -7022,7 +7029,10 @@ const warehouseProductCreation = {
 						],
 						set: {
 							version: sql`${warehouseProductGenerationTemplate.version} + 1`,
-							sourceAdminTemplateVersion: adminTemplate?.version ?? null,
+							sourceAdminTemplateVersion:
+								existingTemplate?.sourceAdminTemplateVersion ??
+								adminTemplate?.version ??
+								null,
 							details: templateDetails,
 							createdById: warehouseId,
 							updatedAt: new Date(),

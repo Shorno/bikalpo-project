@@ -29,12 +29,12 @@ export default function WarehouseCoreProductConfigPage() {
   });
 
   const configureMutation = useMutation({
-    mutationFn: (brands: any[]) =>
+    mutationFn: (values: any) =>
       (orpc.warehouse as any).configureWarehouseCoreProducts.call({
         coreProductId,
         expectedVersion: configurationQuery.data?.version ?? null,
-        details: configurationQuery.data?.defaults,
-        brands: brands.map((brand) => ({
+        details: values.template,
+        brands: values.brands.map((brand: any) => ({
           brandId: brand.brandId,
           variants: brand.variants.map((variant: any) => ({
             variantOptionId: variant.variantOptionId,
@@ -49,6 +49,10 @@ export default function WarehouseCoreProductConfigPage() {
   const configuration = data
     ? {
         core: data.core,
+        template: {
+          version: data.version,
+          details: data.defaults,
+        },
         brands: currentBrands
           .filter((brand: any) => brand.brandId)
           .map((brand: any) => ({
@@ -119,7 +123,7 @@ export default function WarehouseCoreProductConfigPage() {
             ? normalizedPreset
             : undefined,
         reloadPresetLabel: "Reload Admin Preset",
-        onConfigure: async (brands) => configureMutation.mutateAsync(brands),
+        onConfigure: async (values) => configureMutation.mutateAsync(values),
         initialBrands:
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,
         onSaved: async () => {
