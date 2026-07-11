@@ -8498,7 +8498,9 @@ const pricingQueries = {
 						p.creatorSource === "warehouse" && p.createdById === userId,
 					coreProductId: core?.id ?? null,
 					coreProductName: core?.name ?? p.name,
-					coreProductImage: core?.image ?? (p as any).image ?? "",
+					// Pricing belongs to the warehouse product, so its independently edited
+					// image must win. The core identity image is only a template fallback.
+					coreProductImage: (p as any).image ?? core?.image ?? "",
 					categoryId: cat.id,
 					categoryName: cat.name,
 					subCategoryId: p.subCategory?.id ?? null,
