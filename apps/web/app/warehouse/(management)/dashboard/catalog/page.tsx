@@ -312,8 +312,6 @@ export default function WarehouseCatalogPage() {
         header: "Core Identity",
         cell: ({ row }) => {
           const cp = row.original.coreProduct;
-          const allVariants = cp.products.flatMap((p) => p.variants);
-          const inStockCount = allVariants.filter((v) => v.inInventory).length;
 
           return (
             <div className="flex items-center gap-2.5">
@@ -330,21 +328,6 @@ export default function WarehouseCatalogPage() {
                 <span className="text-sm font-semibold text-foreground">
                   {cp.name}
                 </span>
-                {allVariants.length > 0 && (
-                  <span className="text-xs text-muted-foreground ml-1.5">
-                    ({inStockCount}/{allVariants.length})
-                  </span>
-                )}
-                <div className="mt-1 flex flex-wrap items-center gap-1">
-                  <Badge variant="outline" className="text-[9px]">
-                    Admin preset · {cp.adminBrandCount} brands
-                  </Badge>
-                  {cp.warehouseBrandCount > 0 && (
-                    <Badge className="bg-emerald-600 text-[9px]">
-                      Your setup · {cp.warehouseBrandCount}
-                    </Badge>
-                  )}
-                </div>
               </div>
             </div>
           );

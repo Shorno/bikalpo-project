@@ -17,7 +17,6 @@ import {
     productVariant,
     product,
     brand,
-    category,
 } from "@bikalpo-project/db/schema";
 import { and, eq, sql, desc, ilike, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -38,6 +37,17 @@ async function generateAdjustmentNo(warehouseId: string): Promise<string> {
         : 0;
     const next = lastNum + 1;
     return `ADJ-${String(next).padStart(4, "0")}`;
+}
+
+function normalizeAdjustmentQty(
+    type: "increase" | "decrease" | "damage" | "loss" | "correction",
+    quantity: number,
+) {
+    if (type === "decrease" || type === "damage" || type === "loss") {
+        return -Math.abs(quantity);
+    }
+    if (type === "increase") return Math.abs(quantity);
+    return quantity;
 }
 
 // ── Router ──
@@ -223,9 +233,16 @@ export const stockAdjustmentRouter = {
         .handler(async ({ context, input }) => {
             const warehouseId = context.session.user.id;
             const adjustmentNo = await generateAdjustmentNo(warehouseId);
+            const normalizedItems = input.items.map((item) => ({
+                ...item,
+                adjustQty: normalizeAdjustmentQty(
+                    input.adjustmentType,
+                    item.adjustQty,
+                ),
+            }));
 
             // Fetch current inventory quantities for all variants
-            const variantIds = input.items.map((i) => i.variantId);
+            const variantIds = normalizedItems.map((i) => i.variantId);
 
             const inventoryRows = await db
                 .select({
@@ -253,7 +270,7 @@ export const stockAdjustmentRouter = {
             }
 
             // Validate: no negative stock
-            for (const item of input.items) {
+            for (const item of normalizedItems) {
                 const currentQty = inventoryMap.get(item.variantId) ?? 0;
                 const afterQty = currentQty + item.adjustQty;
                 if (afterQty < 0 && input.status === "submitted") {
@@ -264,7 +281,7 @@ export const stockAdjustmentRouter = {
             }
 
             // Build line items
-            const lineItems = input.items.map((item) => {
+            const lineItems = normalizedItems.map((item) => {
                 const currentQty = inventoryMap.get(item.variantId) ?? 0;
                 return {
                     variantId: item.variantId,
@@ -275,7 +292,7 @@ export const stockAdjustmentRouter = {
                 };
             });
 
-            const totalQtyChange = input.items.reduce(
+            const totalQtyChange = normalizedItems.reduce(
                 (sum, i) => sum + i.adjustQty,
                 0,
             );
@@ -293,7 +310,7 @@ export const stockAdjustmentRouter = {
                         referenceNote: input.referenceNote || null,
                         adjustmentDate: input.adjustmentDate,
                         status: input.status,
-                        totalItems: input.items.length,
+                        totalItems: normalizedItems.length,
                         totalQtyChange: String(totalQtyChange),
                         createdById: warehouseId,
                     })
@@ -309,7 +326,7 @@ export const stockAdjustmentRouter = {
 
                 // 3. If submitted, apply to inventory immediately
                 if (input.status === "submitted") {
-                    for (const item of input.items) {
+                    for (const item of normalizedItems) {
                         await tx
                             .update(inventory)
                             .set({
@@ -360,10 +377,11 @@ export const stockAdjustmentRouter = {
                     message: "Adjustment not found",
                 });
             }
+            const adjustment = adj[0];
 
-            if (adj[0].status !== "draft") {
+            if (adjustment.status !== "draft") {
                 throw new ORPCError("BAD_REQUEST", {
-                    message: `Cannot submit: adjustment is already "${adj[0].status}"`,
+                    message: `Cannot submit: adjustment is already "${adjustment.status}"`,
                 });
             }
 
@@ -378,9 +396,16 @@ export const stockAdjustmentRouter = {
                     message: "Cannot submit an adjustment with no items",
                 });
             }
+            const normalizedItems = items.map((item) => ({
+                ...item,
+                normalizedAdjustQty: normalizeAdjustmentQty(
+                    adjustment.adjustmentType,
+                    parseFloat(item.adjustQty),
+                ),
+            }));
 
             // Re-validate: fetch current inventory and check no negative stock
-            for (const item of items) {
+            for (const item of normalizedItems) {
                 const [invRow] = await db
                     .select({ availableQty: inventory.availableQty })
                     .from(inventory)
@@ -393,7 +418,7 @@ export const stockAdjustmentRouter = {
                     );
 
                 const currentQty = parseFloat(invRow?.availableQty ?? "0");
-                const adjustQty = parseFloat(item.adjustQty);
+                const adjustQty = item.normalizedAdjustQty;
                 if (currentQty + adjustQty < 0) {
                     throw new ORPCError("BAD_REQUEST", {
                         message: `Variant ${item.variantId}: would result in negative stock (${currentQty} + ${adjustQty})`,
@@ -406,12 +431,20 @@ export const stockAdjustmentRouter = {
                 // Update status
                 await tx
                     .update(stockAdjustment)
-                    .set({ status: "submitted" })
+                    .set({
+                        status: "submitted",
+                        totalQtyChange: String(
+                            normalizedItems.reduce(
+                                (sum, item) => sum + item.normalizedAdjustQty,
+                                0,
+                            ),
+                        ),
+                    })
                     .where(eq(stockAdjustment.id, input.id));
 
                 // Apply each item to inventory
-                for (const item of items) {
-                    const adjustQty = parseFloat(item.adjustQty);
+                for (const item of normalizedItems) {
+                    const adjustQty = item.normalizedAdjustQty;
                     await tx
                         .update(inventory)
                         .set({
@@ -427,7 +460,7 @@ export const stockAdjustmentRouter = {
                 }
 
                 // Update currentQty/afterQty snapshots
-                for (const item of items) {
+                for (const item of normalizedItems) {
                     const [invRow] = await tx
                         .select({ availableQty: inventory.availableQty })
                         .from(inventory)
@@ -440,11 +473,12 @@ export const stockAdjustmentRouter = {
                         );
 
                     const newQty = parseFloat(invRow?.availableQty ?? "0");
-                    const adjustQty = parseFloat(item.adjustQty);
+                    const adjustQty = item.normalizedAdjustQty;
                     await tx
                         .update(stockAdjustmentItem)
                         .set({
                             currentQty: String(newQty - adjustQty),
+                            adjustQty: String(adjustQty),
                             afterQty: String(newQty),
                         })
                         .where(eq(stockAdjustmentItem.id, item.id));
@@ -453,7 +487,7 @@ export const stockAdjustmentRouter = {
 
             return {
                 success: true,
-                message: `Adjustment ${adj[0].adjustmentNo} submitted and applied to inventory`,
+                message: `Adjustment ${adjustment.adjustmentNo} submitted and applied to inventory`,
             };
         }),
 

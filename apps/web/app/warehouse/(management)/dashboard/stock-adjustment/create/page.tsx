@@ -81,6 +81,16 @@ const REASON_OPTIONS: { value: AdjustmentReason; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+function isReductionType(type: AdjustmentType | null) {
+  return type === "decrease" || type === "damage" || type === "loss";
+}
+
+function normalizeAdjustmentQty(type: AdjustmentType | null, quantity: number) {
+  if (isReductionType(type)) return -Math.abs(quantity);
+  if (type === "increase") return Math.abs(quantity);
+  return quantity;
+}
+
 // ─── Main Page ─────────────────────────────────────────────────
 
 export default function CreateStockAdjustmentPage() {
@@ -158,7 +168,21 @@ export default function CreateStockAdjustmentPage() {
 
   const updateItemQty = useCallback((variantId: number, adjustQty: number) => {
     setSelectedItems((prev) =>
-      prev.map((i) => (i.variantId === variantId ? { ...i, adjustQty } : i)),
+      prev.map((i) =>
+        i.variantId === variantId
+          ? { ...i, adjustQty: normalizeAdjustmentQty(adjustmentType, adjustQty) }
+          : i,
+      ),
+    );
+  }, [adjustmentType]);
+
+  const handleAdjustmentTypeChange = useCallback((type: AdjustmentType) => {
+    setAdjustmentType(type);
+    setSelectedItems((items) =>
+      items.map((item) => ({
+        ...item,
+        adjustQty: normalizeAdjustmentQty(type, item.adjustQty),
+      })),
     );
   }, []);
 
@@ -245,7 +269,7 @@ export default function CreateStockAdjustmentPage() {
               <button
                 key={t.value}
                 type="button"
-                onClick={() => setAdjustmentType(t.value)}
+                onClick={() => handleAdjustmentTypeChange(t.value)}
                 className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all text-center ${
                   adjustmentType === t.value
                     ? "border-amber-500 bg-amber-50 shadow-sm"
@@ -483,7 +507,13 @@ export default function CreateStockAdjustmentPage() {
                       <td className="py-2.5 px-3">
                         <Input
                           type="number"
-                          value={item.adjustQty || ""}
+                          value={
+                            item.adjustQty
+                              ? isReductionType(adjustmentType)
+                                ? Math.abs(item.adjustQty)
+                                : item.adjustQty
+                              : ""
+                          }
                           onChange={(e) =>
                             updateItemQty(
                               item.variantId,
