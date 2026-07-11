@@ -43,6 +43,20 @@ const PRODUCTS_BASE = "/dashboard/admin/products";
 
 type CoreProductConfigFormProps = {
   coreProductId: number;
+  adapter?: {
+    configuration?: CoreProductConfiguration;
+    brands: BrandOption[];
+    variantOptions: VariantOption[];
+    isLoading?: boolean;
+    isError?: boolean;
+    listHref: string;
+    productEditHref: (productId: number) => string;
+    onConfigure: (brands: CoreProductConfigValues["brands"]) => Promise<unknown>;
+    onSaved?: () => void | Promise<void>;
+    initialBrands?: CoreProductConfigValues["brands"];
+    presetBrands?: CoreProductConfigValues["brands"];
+    reloadPresetLabel?: string;
+  };
 };
 
 type BrandOption = {
@@ -67,6 +81,13 @@ type SelectedVariant = {
 };
 
 type ExistingBrandProduct = {
+  brandId: number;
+  brandName: string;
+  brandLogo?: string | null;
+  productId: number;
+  productName: string;
+  productSlug?: string;
+  productImage?: string | null;
   status: string;
   variantOptions: Array<{
     variantOptionId: number;
@@ -75,8 +96,14 @@ type ExistingBrandProduct = {
   }>;
 };
 
+type CoreProductConfiguration = {
+  core: any;
+  brands: ExistingBrandProduct[];
+};
+
 export default function CoreProductConfigForm({
   coreProductId,
+  adapter,
 }: CoreProductConfigFormProps) {
   const queryClient = useQueryClient();
   const lastSyncedSignature = useRef<string | null>(null);
@@ -87,30 +114,45 @@ export default function CoreProductConfigForm({
   );
   const [saved, setSaved] = useState(false);
 
-  const configQuery = useQuery(
-    orpc.adminProductConfig.get.queryOptions({ input: { coreProductId } }),
-  );
-  const brandsQuery = useQuery(orpc.brand.getAll.queryOptions());
+  const configQuery = useQuery({
+    ...orpc.adminProductConfig.get.queryOptions({ input: { coreProductId } }),
+    enabled: !adapter,
+  });
+  const brandsQuery = useQuery({
+    ...orpc.brand.getAll.queryOptions(),
+    enabled: !adapter,
+  });
   const catalogOptionsQuery = useQuery({
     queryKey: ["adminCatalogApproval", "coreProductConfigOptions"],
     queryFn: () => orpc.adminCatalogApproval.getRequestOptions.call({}),
+    enabled: !adapter,
   });
 
   const configureMutation = useMutation({
-    ...orpc.adminProductConfig.configure.mutationOptions(),
+    mutationFn: (input: {
+      coreProductId: number;
+      brands: CoreProductConfigValues["brands"];
+    }) =>
+      adapter
+        ? adapter.onConfigure(input.brands)
+        : orpc.adminProductConfig.configure.call(input),
     onSuccess: async () => {
       setSaved(true);
       toast.success("Brand products updated");
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: orpc.adminProductConfig.get.queryKey({
-            input: { coreProductId },
+      if (adapter) {
+        await adapter.onSaved?.();
+      } else {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: orpc.adminProductConfig.get.queryKey({
+              input: { coreProductId },
+            }),
           }),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: orpc.adminCoreProduct.getAll.queryKey({ input: {} }),
-        }),
-      ]);
+          queryClient.invalidateQueries({
+            queryKey: orpc.adminCoreProduct.getAll.queryKey({ input: {} }),
+          }),
+        ]);
+      }
     },
     onError: (error) => {
       toast.error(error.message || "Could not save product changes");
@@ -125,19 +167,21 @@ export default function CoreProductConfigForm({
     },
   });
 
-  const configuration = configQuery.data;
+  const configuration = (adapter?.configuration ??
+    configQuery.data) as CoreProductConfiguration | undefined;
   const core = configuration?.core;
-  const existingBrands = configuration?.brands ?? [];
-  const allBrands = (
+  const existingBrands: ExistingBrandProduct[] = configuration?.brands ?? [];
+  const allBrands = adapter?.brands ?? (
     Array.isArray(brandsQuery.data) ? brandsQuery.data : []
   ) as BrandOption[];
   const availableVariants = useMemo(
     () =>
       filterVariantsForCore(
         core,
-        (catalogOptionsQuery.data?.variantOptions ?? []) as VariantOption[],
+        adapter?.variantOptions ??
+          ((catalogOptionsQuery.data?.variantOptions ?? []) as VariantOption[]),
       ),
-    [catalogOptionsQuery.data?.variantOptions, core],
+    [adapter?.variantOptions, catalogOptionsQuery.data?.variantOptions, core],
   );
   const existingByBrandId = useMemo(
     () => new Map(existingBrands.map((brand) => [brand.brandId, brand])),
@@ -147,17 +191,19 @@ export default function CoreProductConfigForm({
   useEffect(() => {
     if (!configuration) return;
 
-    const nextBrands = configuration.brands
-      .filter((brand) => brand.status !== "inactive")
-      .map((brand) => ({
-        brandId: brand.brandId,
-        variants: brand.variantOptions
-          .filter((option) => option.isActive)
-          .map((option) => ({
-            variantOptionId: option.variantOptionId,
-            consumerPrice: option.consumerPrice || "0",
-          })),
-      }));
+    const nextBrands =
+      adapter?.initialBrands ??
+      configuration.brands
+        .filter((brand: any) => brand.status !== "inactive")
+        .map((brand: any) => ({
+          brandId: brand.brandId,
+          variants: brand.variantOptions
+            .filter((option: any) => option.isActive)
+            .map((option: any) => ({
+              variantOptionId: option.variantOptionId,
+              consumerPrice: option.consumerPrice || "0",
+            })),
+        }));
 
     // Signature of the server state we'd seed the form from. Re-sync whenever
     // it changes — e.g. an instantly-served stale/empty cache being replaced by
@@ -171,7 +217,7 @@ export default function CoreProductConfigForm({
 
     form.reset({ brands: nextBrands });
     lastSyncedSignature.current = signature;
-  }, [configuration, coreProductId, form]);
+  }, [adapter?.initialBrands, configuration, coreProductId, form]);
 
   const toggleCollapsed = (brandId: number) => {
     setCollapsedBrands((current) => {
@@ -272,11 +318,11 @@ export default function CoreProductConfigForm({
     form.handleSubmit();
   };
 
-  if (configQuery.isLoading || brandsQuery.isLoading) {
+  if (adapter?.isLoading || (!adapter && (configQuery.isLoading || brandsQuery.isLoading))) {
     return <EditorLoading />;
   }
 
-  if (configQuery.isError || !core) {
+  if (adapter?.isError || (!adapter && configQuery.isError) || !core) {
     return <EditorError />;
   }
 
@@ -302,6 +348,10 @@ export default function CoreProductConfigForm({
           (brand) =>
             existingByBrandId.get(brand.brandId)?.status === "inactive",
         ).length;
+        const listHref = adapter?.listHref ?? PRODUCTS_BASE;
+        const productEditHref =
+          adapter?.productEditHref ??
+          ((productId: number) => `${PRODUCTS_BASE}/${productId}/edit`);
 
         return (
           <div className="min-h-screen bg-muted/30">
@@ -314,7 +364,7 @@ export default function CoreProductConfigForm({
                     size="icon"
                     className="h-8 w-8 shrink-0"
                   >
-                    <Link href={PRODUCTS_BASE} aria-label="Back to products">
+                    <Link href={listHref} aria-label="Back to products">
                       <ArrowLeft className="h-4 w-4" />
                     </Link>
                   </Button>
@@ -334,6 +384,22 @@ export default function CoreProductConfigForm({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {adapter?.presetBrands && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        form.setFieldValue("brands", adapter.presetBrands!);
+                        setSaved(false);
+                        toast.success("Current admin preset loaded. Save to apply it.");
+                      }}
+                      disabled={configureMutation.isPending}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      {adapter.reloadPresetLabel ?? "Reload preset"}
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -341,7 +407,7 @@ export default function CoreProductConfigForm({
                     asChild
                     disabled={configureMutation.isPending}
                   >
-                    <Link href={PRODUCTS_BASE}>Discard</Link>
+                    <Link href={listHref}>Discard</Link>
                   </Button>
                   <Button
                     type="button"
@@ -501,7 +567,7 @@ export default function CoreProductConfigForm({
                           {existingBrands.map((brand) => (
                             <Link
                               key={brand.productId}
-                              href={`${PRODUCTS_BASE}/${brand.productId}/edit`}
+                              href={productEditHref(brand.productId)}
                               className="group flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/60"
                             >
                               <div className="min-w-0">

@@ -254,6 +254,15 @@ interface ProductFormProps {
   product?: ProductWithRelations;
   initialCoreProductId?: number | null;
   structureLocked?: boolean;
+  editAdapter?: {
+    backHref: string;
+    coreProduct: any;
+    variantOptions: any[];
+    productType?: any;
+    onUpdate: (payload: any) => Promise<unknown>;
+    onUpdated?: () => void | Promise<void>;
+    publishOnSave?: boolean;
+  };
 }
 
 export default function ProductForm({
@@ -261,10 +270,13 @@ export default function ProductForm({
   product,
   initialCoreProductId = null,
   structureLocked = false,
+  editAdapter,
 }: ProductFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isEdit = mode === "edit";
+  const listHref = editAdapter?.backHref ?? "/dashboard/admin/products";
+  const usesExternalEditAdapter = Boolean(editAdapter && isEdit);
   const initialCoreProductIdForCreate =
     !isEdit && initialCoreProductId && Number.isFinite(initialCoreProductId)
       ? initialCoreProductId
@@ -355,32 +367,38 @@ export default function ProductForm({
   };
 
   // === Reference data queries ===
-  const { data: typesData } = useQuery(
-    orpc.adminProductType.getAll.queryOptions({ input: {} }),
-  );
-  const productTypes = typesData?.types ?? [];
+  const { data: typesData } = useQuery({
+    ...orpc.adminProductType.getAll.queryOptions({ input: {} }),
+    enabled: !usesExternalEditAdapter,
+  });
+  const productTypes = editAdapter?.productType
+    ? [editAdapter.productType]
+    : typesData?.types ?? [];
 
-  const { data: categoriesData } = useQuery(
-    orpc.category.getAll.queryOptions(),
-  );
+  const { data: categoriesData } = useQuery({
+    ...orpc.category.getAll.queryOptions(),
+    enabled: !usesExternalEditAdapter,
+  });
   const allCategories = Array.isArray(categoriesData) ? categoriesData : [];
 
-  const { data: subcategoriesData } = useQuery(
-    orpc.adminSubcategory.getAllGlobal.queryOptions(),
-  );
+  const { data: subcategoriesData } = useQuery({
+    ...orpc.adminSubcategory.getAllGlobal.queryOptions(),
+    enabled: !usesExternalEditAdapter,
+  });
   const allSubcategories = Array.isArray(subcategoriesData)
     ? subcategoriesData
     : [];
 
   // Core products filtered by category
-  const { data: coreProductsData } = useQuery(
-    orpc.adminCoreProduct.getAll.queryOptions({
+  const { data: coreProductsData } = useQuery({
+    ...orpc.adminCoreProduct.getAll.queryOptions({
       input: {
         categoryId: selectedCategory ?? undefined,
         subCategoryId: selectedSubCategoryId ?? undefined,
       },
     }),
-  );
+    enabled: !usesExternalEditAdapter,
+  });
   const coreProducts = coreProductsData?.coreProducts ?? [];
   const selectableCoreProducts = coreProducts.filter(
     (coreProduct: any) => !coreProduct.hasConfiguration,
@@ -396,24 +414,33 @@ export default function ProductForm({
   const { data: catalogOptionsData } = useQuery({
     queryKey: ["adminCatalogApproval", "productFormOptions"],
     queryFn: () => orpc.adminCatalogApproval.getRequestOptions.call({}),
+    enabled: !usesExternalEditAdapter,
   });
 
   // ALL brands (global, unrestricted)
-  const { data: allBrandsData } = useQuery(orpc.brand.getAll.queryOptions());
-  const allBrands = Array.isArray(allBrandsData) ? allBrandsData : [];
+  const { data: allBrandsData } = useQuery({
+    ...orpc.brand.getAll.queryOptions(),
+    enabled: !usesExternalEditAdapter,
+  });
+  const allBrands = editAdapter
+    ? ((product as any)?.productBrands ?? []).map((row: any) => row.brand)
+    : Array.isArray(allBrandsData)
+      ? allBrandsData
+      : [];
 
   // Derived: selected core product details
   const selectedCoreProduct = coreProducts.find(
     (cp: any) => cp.id === selectedCoreProductId,
   );
-  const lockedCoreProduct = lockedCoreProductQuery.data?.coreProduct;
+  const lockedCoreProduct =
+    editAdapter?.coreProduct ?? lockedCoreProductQuery.data?.coreProduct;
   const activeCoreProduct = lockedCoreProduct ?? selectedCoreProduct;
   const availableVariantOptions =
     isCoreIdentityLocked && !activeCoreProduct
       ? []
       : getAvailableVariantsForCoreProduct(
           activeCoreProduct,
-          catalogOptionsData?.variantOptions ?? [],
+          editAdapter?.variantOptions ?? catalogOptionsData?.variantOptions ?? [],
         );
   const isLoadingLockedCoreProduct =
     isCoreIdentityLocked &&
@@ -485,11 +512,18 @@ export default function ProductForm({
   });
 
   const updateMutation = useMutation({
-    ...orpc.product.update.mutationOptions(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+    mutationFn: (payload: any) =>
+      editAdapter
+        ? editAdapter.onUpdate(payload)
+        : orpc.product.update.call(payload),
+    onSuccess: async () => {
+      if (editAdapter) {
+        await editAdapter.onUpdated?.();
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      }
       toast.success("Product updated successfully");
-      router.push("/dashboard/admin/products");
+      router.push(listHref);
     },
     onError: handleError,
   });
@@ -853,7 +887,7 @@ export default function ProductForm({
               size="icon"
               className="h-8 w-8 shrink-0"
             >
-              <Link href="/dashboard/admin/products">
+              <Link href={listHref}>
                 <ArrowLeft className="h-4 w-4" />
               </Link>
             </Button>
@@ -883,14 +917,14 @@ export default function ProductForm({
                 productName={product.name}
                 force
                 compact
-                onSuccess={() => router.push("/dashboard/admin/products")}
+                onSuccess={() => router.push(listHref)}
               />
             ) : null}
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => router.push("/dashboard/admin/products")}
+              onClick={() => router.push(listHref)}
               disabled={isPending}
             >
               Discard
@@ -909,7 +943,12 @@ export default function ProductForm({
             </Button>
             <Button
               size="sm"
-              onClick={() => form.handleSubmit()}
+              onClick={() => {
+                if (editAdapter?.publishOnSave) {
+                  form.setFieldValue("status", "active");
+                }
+                form.handleSubmit();
+              }}
               disabled={isPending}
             >
               {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}

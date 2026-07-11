@@ -11,7 +11,7 @@ import {
   variantOption,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure } from "../index";
@@ -120,7 +120,7 @@ export const adminProductConfigRouter = {
       const products = await db.query.product.findMany({
         where: and(
           eq(product.coreProductId, input.coreProductId),
-          isNull(product.createdByWarehouseId),
+          eq(product.creatorSource, "admin"),
         ),
         with: {
           brand: {
@@ -304,7 +304,7 @@ export const adminProductConfigRouter = {
         const existingProducts = await tx.query.product.findMany({
           where: and(
             eq(product.coreProductId, coreProductId),
-            isNull(product.createdByWarehouseId),
+            eq(product.creatorSource, "admin"),
           ),
         });
         const existingByBrand = new Map(
@@ -395,6 +395,8 @@ export const adminProductConfigRouter = {
               subCategoryId: core.subCategoryId ?? null,
               brandId: brandConfig.brandId,
               coreProductId,
+              creatorSource: "admin",
+              createdById: context.session.user.id,
               status: details.status,
               visibility: details.visibility,
               scheduledAt: details.scheduledAt

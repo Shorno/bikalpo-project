@@ -7,6 +7,7 @@ import {
   pgTable,
   serial,
   text,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
@@ -136,6 +137,38 @@ export const adminProductGenerationTemplate = pgTable(
   },
 );
 
+/**
+ * Editable, warehouse-owned snapshot of the admin generation defaults.
+ * Brand/variant membership is intentionally derived from product rows.
+ */
+export const warehouseProductGenerationTemplate = pgTable(
+  "warehouse_product_generation_template",
+  {
+    id: serial("id").primaryKey(),
+    coreProductId: integer("core_product_id")
+      .notNull()
+      .references(() => coreProductIdentity.id, { onDelete: "cascade" }),
+    warehouseId: text("warehouse_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    version: integer("version").default(1).notNull(),
+    sourceAdminTemplateVersion: integer("source_admin_template_version"),
+    details: jsonb("details")
+      .$type<AdminProductGenerationTemplateDetails>()
+      .notNull(),
+    createdById: text("created_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("warehouse_generation_template_owner_core_unique").on(
+      table.warehouseId,
+      table.coreProductId,
+    ),
+  ],
+);
+
 // === Relations ===
 
 export const coreProductIdentityRelations = relations(
@@ -171,9 +204,31 @@ export const adminProductGenerationTemplateRelations = relations(
   }),
 );
 
+export const warehouseProductGenerationTemplateRelations = relations(
+  warehouseProductGenerationTemplate,
+  ({ one }) => ({
+    coreProduct: one(coreProductIdentity, {
+      fields: [warehouseProductGenerationTemplate.coreProductId],
+      references: [coreProductIdentity.id],
+    }),
+    warehouse: one(user, {
+      fields: [warehouseProductGenerationTemplate.warehouseId],
+      references: [user.id],
+      relationName: "warehouseGenerationTemplateOwner",
+    }),
+    createdBy: one(user, {
+      fields: [warehouseProductGenerationTemplate.createdById],
+      references: [user.id],
+      relationName: "warehouseGenerationTemplateCreator",
+    }),
+  }),
+);
+
 // === Types ===
 
 export type CoreProductIdentity = typeof coreProductIdentity.$inferSelect;
 export type NewCoreProductIdentity = typeof coreProductIdentity.$inferInsert;
 export type AdminProductGenerationTemplate =
   typeof adminProductGenerationTemplate.$inferSelect;
+export type WarehouseProductGenerationTemplate =
+  typeof warehouseProductGenerationTemplate.$inferSelect;

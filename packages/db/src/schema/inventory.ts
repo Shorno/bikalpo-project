@@ -8,6 +8,7 @@ import {
     serial,
     text,
     timestamp,
+    uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { productVariant } from "./product-variant";
 
@@ -79,6 +80,11 @@ export const inventory = pgTable(
         index("inventory_owner_idx").on(table.ownerType, table.ownerId),
         index("inventory_variant_idx").on(table.variantId),
         index("inventory_owner_variant_idx").on(
+            table.ownerType,
+            table.ownerId,
+            table.variantId,
+        ),
+        uniqueIndex("inventory_owner_variant_unique").on(
             table.ownerType,
             table.ownerId,
             table.variantId,
