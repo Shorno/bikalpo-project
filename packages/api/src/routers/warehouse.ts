@@ -8679,20 +8679,33 @@ const cartonQueries = {
 	 * Get all carton configs for a specific variant.
 	 */
 	getCartonConfigs: warehouseProcedure
-		.input(z.object({ variantId: z.number().int() }))
-		.handler(async ({ input }) => {
+		.input(z.object({ variantId: z.number().int(), includeInactive: z.boolean().optional() }))
+		.handler(async ({ context, input }) => {
+			const variant = await db.query.productVariant.findFirst({
+				where: eq(productVariant.id, input.variantId),
+				with: { product: { columns: { createdByWarehouseId: true } } },
+			});
+			if (!variant || (variant.product as any)?.createdByWarehouseId !== context.session.user.id) {
+				throw new ORPCError("FORBIDDEN", { message: "This variant does not belong to your warehouse" });
+			}
+
 			const configs = await db
 				.select()
 				.from(cartonConfig)
-				.where(
-					and(
-						eq(cartonConfig.variantId, input.variantId),
-						eq(cartonConfig.isActive, true),
-					),
-				)
+				.where(and(
+					eq(cartonConfig.variantId, input.variantId),
+					input.includeInactive ? undefined : eq(cartonConfig.isActive, true),
+				))
 				.orderBy(cartonConfig.packsPerCarton);
 
-			return { configs };
+			const usage = configs.length === 0 ? [] : await db
+				.select({ configId: carton.cartonConfigId, usageCount: count() })
+				.from(carton)
+				.where(inArray(carton.cartonConfigId, configs.map((config) => config.id)))
+				.groupBy(carton.cartonConfigId);
+			const usageByConfig = new Map(usage.map((row) => [row.configId, Number(row.usageCount)]));
+
+			return { configs: configs.map((config) => ({ ...config, usageCount: usageByConfig.get(config.id) || 0 })) };
 		}),
 
 	/**
@@ -8701,15 +8714,23 @@ const cartonQueries = {
 	 */
 	getCartonConfigsBatch: warehouseProcedure
 		.input(z.object({ variantIds: z.array(z.number().int()) }))
-		.handler(async ({ input }) => {
+		.handler(async ({ context, input }) => {
 			if (input.variantIds.length === 0) return { configs: [] };
+			const variants = await db.query.productVariant.findMany({
+				where: inArray(productVariant.id, input.variantIds),
+				with: { product: { columns: { createdByWarehouseId: true } } },
+			});
+			const ownedVariantIds = variants
+				.filter((variant) => (variant.product as any)?.createdByWarehouseId === context.session.user.id)
+				.map((variant) => variant.id);
+			if (ownedVariantIds.length === 0) return { configs: [] };
 
 			const configs = await db
 				.select()
 				.from(cartonConfig)
 				.where(
 					and(
-						inArray(cartonConfig.variantId, input.variantIds),
+						inArray(cartonConfig.variantId, ownedVariantIds),
 						eq(cartonConfig.isActive, true),
 					),
 				)
@@ -8823,6 +8844,24 @@ const cartonQueries = {
 					message: "This variant does not belong to your warehouse",
 				});
 			}
+			if ((variant.packType || variant.packagingType) === "loose") {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Raw loose inventory cannot be used in a carton configuration",
+				});
+			}
+
+			const duplicate = await db.query.cartonConfig.findFirst({
+				where: and(
+					eq(cartonConfig.variantId, input.variantId),
+					eq(cartonConfig.packsPerCarton, input.packsPerCarton),
+					eq(cartonConfig.isActive, true),
+				),
+			});
+			if (duplicate) {
+				throw new ORPCError("CONFLICT", {
+					message: `An active ${input.packsPerCarton}-unit carton configuration already exists`,
+				});
+			}
 
 			// Auto-calculate carton weight
 			const packWeightKg = parseFloat(variant.weightKg);
@@ -8869,6 +8908,7 @@ const cartonQueries = {
 				deliveryCostPerCarton: z.string().optional(),
 				label: z.string().optional(),
 				isDefault: z.boolean().optional(),
+				isActive: z.boolean().optional(),
 			}),
 		)
 		.handler(async ({ context, input }) => {
@@ -8898,6 +8938,26 @@ const cartonQueries = {
 			const updateData: Record<string, any> = {};
 
 			if (input.packsPerCarton !== undefined) {
+				const usageRows = await db
+					.select({ usageCount: count() })
+					.from(carton)
+					.where(eq(carton.cartonConfigId, existing.id));
+				if (Number(usageRows[0]?.usageCount || 0) > 0 && input.packsPerCarton !== existing.packsPerCarton) {
+					throw new ORPCError("CONFLICT", {
+						message: "Units per carton is locked after this configuration has been used. Clone it instead.",
+					});
+				}
+				const duplicate = await db.query.cartonConfig.findFirst({
+					where: and(
+						eq(cartonConfig.variantId, existing.variantId),
+						eq(cartonConfig.packsPerCarton, input.packsPerCarton),
+						eq(cartonConfig.isActive, true),
+						ne(cartonConfig.id, existing.id),
+					),
+				});
+				if (duplicate) {
+					throw new ORPCError("CONFLICT", { message: "An active configuration with this unit count already exists" });
+				}
 				updateData.packsPerCarton = input.packsPerCarton;
 				// Recalculate weight
 				const packWeightKg = parseFloat(existing.variant?.weightKg || "0");
@@ -8912,6 +8972,21 @@ const cartonQueries = {
 			if (input.deliveryCostPerCarton !== undefined)
 				updateData.deliveryCostPerCarton = input.deliveryCostPerCarton;
 			if (input.label !== undefined) updateData.label = input.label;
+			if (input.isActive !== undefined) {
+				if (input.isActive) {
+					const duplicate = await db.query.cartonConfig.findFirst({
+						where: and(
+							eq(cartonConfig.variantId, existing.variantId),
+							eq(cartonConfig.packsPerCarton, input.packsPerCarton ?? existing.packsPerCarton),
+							eq(cartonConfig.isActive, true),
+							ne(cartonConfig.id, existing.id),
+						),
+					});
+					if (duplicate) throw new ORPCError("CONFLICT", { message: "An active configuration with this unit count already exists" });
+				}
+				updateData.isActive = input.isActive;
+				if (!input.isActive) updateData.isDefault = false;
+			}
 
 			if (input.isDefault === true) {
 				// Unset other defaults first
@@ -9003,56 +9078,54 @@ const cartonQueries = {
 	createCarton: warehouseProcedure
 		.input(
 			z.object({
-				variantId: z.number().int(),
-				packCount: z.number().min(0.01), // Allow decimal for loose (KG)
-				cartonConfigId: z.number().int().optional(),
+				cartonConfigId: z.number().int(),
 				storageAreaId: z.number().int().optional(),
 				note: z.string().optional(),
-				// Editable pricing overrides
 				overrideCartonPrice: z.string().optional(),
 				overrideDeliveryCost: z.string().optional(),
+				overrideReason: z.string().trim().min(3).max(500).optional(),
 			}),
 		)
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
 
-			// 1. Get variant to auto-calculate weight and detect type
-			const variant = await db.query.productVariant.findFirst({
-				where: eq(productVariant.id, input.variantId),
+			// The configuration is the only composition source. Variant, quantity,
+			// weight and default pricing are always resolved from it on the server.
+			const config = await db.query.cartonConfig.findFirst({
+				where: and(
+					eq(cartonConfig.id, input.cartonConfigId),
+					eq(cartonConfig.isActive, true),
+				),
+				with: {
+					variant: {
+						with: { product: { columns: { createdByWarehouseId: true } } },
+					},
+				},
 			});
-
-			if (!variant) {
-				throw new ORPCError("NOT_FOUND", { message: "Variant not found" });
+			if (!config || !config.variant) {
+				throw new ORPCError("NOT_FOUND", { message: "Active carton configuration not found" });
+			}
+			const variant = config.variant;
+			if ((variant.product as any)?.createdByWarehouseId !== userId) {
+				throw new ORPCError("FORBIDDEN", { message: "This carton configuration does not belong to your warehouse" });
+			}
+			if ((variant.packType || variant.packagingType) === "loose") {
+				throw new ORPCError("BAD_REQUEST", { message: "Raw loose inventory cannot be placed directly in a carton" });
 			}
 
-			const isLoose = (variant.packType || variant.packagingType) === "loose";
-
-			// 2. Optionally get carton config (for pricing defaults)
-			let configPrice: string | null = null;
-			let configDeliveryCost: string | null = null;
-			let configId: number | null = null;
-
-			if (input.cartonConfigId) {
-				const config = await db.query.cartonConfig.findFirst({
-					where: and(
-						eq(cartonConfig.id, input.cartonConfigId),
-						eq(cartonConfig.variantId, input.variantId),
-						eq(cartonConfig.isActive, true),
-					),
-				});
-				if (config) {
-					configId = config.id;
-					configPrice = config.cartonPrice;
-					configDeliveryCost = config.deliveryCostPerCarton;
-				}
+			const hasPriceOverride = input.overrideCartonPrice !== undefined;
+			const hasDeliveryOverride = input.overrideDeliveryCost !== undefined;
+			if ((hasPriceOverride || hasDeliveryOverride) && !input.overrideReason) {
+				throw new ORPCError("BAD_REQUEST", { message: "An override reason is required for pricing exceptions" });
 			}
+			const packCount = config.packsPerCarton;
 
-			// 3. Check inventory has enough stock
+			// Check inventory has enough unpacked stock.
 			const inv = await db.query.inventory.findFirst({
 				where: and(
 					eq(inventory.ownerType, "warehouse"),
 					eq(inventory.ownerId, userId),
-					eq(inventory.variantId, input.variantId),
+					eq(inventory.variantId, config.variantId),
 				),
 			});
 
@@ -9066,20 +9139,13 @@ const cartonQueries = {
 			const inCarton = parseFloat(inv.inCartonQty);
 			const looseStock = available - inCarton;
 
-			if (looseStock < input.packCount) {
-				const unit = isLoose ? "KG" : "packs";
+			if (looseStock < packCount) {
 				throw new ORPCError("BAD_REQUEST", {
-					message: `Not enough stock. Need ${input.packCount} ${unit}, only ${looseStock.toFixed(isLoose ? 1 : 0)} available.`,
+					message: `Not enough stock. Need ${packCount} units, only ${Math.floor(looseStock)} available.`,
 				});
 			}
 
-			// 4. Calculate carton weight
-			// For loose: quantity IS the weight in KG directly
-			// For packs: packCount × variant.weightKg
-			const packWeightKg = parseFloat(variant.weightKg);
-			const totalWeightKg = isLoose
-				? input.packCount.toFixed(2) // Loose: quantity is already KG
-				: (input.packCount * packWeightKg).toFixed(2);
+			const totalWeightKg = config.cartonWeightKg;
 
 			// 5. Generate carton ID: CTN-YYYY-NNNNNN
 			const year = new Date().getFullYear();
@@ -9100,28 +9166,45 @@ const cartonQueries = {
 
 			// 6. Transaction: create carton + update inventory
 			const result = await db.transaction(async (tx) => {
+				const currentInventory = await tx.query.inventory.findFirst({
+					where: eq(inventory.id, inv.id),
+				});
+				if (!currentInventory) {
+					throw new ORPCError("NOT_FOUND", { message: "Inventory is no longer available" });
+				}
+				const currentInCarton = parseFloat(currentInventory.inCartonQty);
+				const currentUnpacked = parseFloat(currentInventory.availableQty) - currentInCarton;
+				if (currentUnpacked < packCount) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: `Stock changed before creation. Need ${packCount} units, only ${Math.floor(currentUnpacked)} available.`,
+					});
+				}
+
 				const [newCarton] = await tx
 					.insert(carton)
 					.values({
 						cartonId: cartonIdStr,
 						warehouseId: userId,
-						cartonConfigId: configId,
-						variantId: input.variantId,
-						totalPacks: isLoose ? 0 : Math.round(input.packCount),
+						cartonConfigId: config.id,
+						variantId: config.variantId,
+						totalPacks: packCount,
 						totalWeightKg,
 						status: "active",
 						barcode: cartonIdStr,
 						storageAreaId: input.storageAreaId || null,
 						note: input.note || null,
-						cartonPrice: input.overrideCartonPrice || configPrice || null,
+						cartonPrice: input.overrideCartonPrice ?? config.cartonPrice,
 						deliveryCostPerUnit:
-							input.overrideDeliveryCost || configDeliveryCost || null,
+							input.overrideDeliveryCost ?? config.deliveryCostPerCarton,
+						cartonPriceOverridden: hasPriceOverride,
+						deliveryCostOverridden: hasDeliveryOverride,
+						overrideReason: input.overrideReason || null,
 					})
 					.returning();
 
 				// Update inventory: move stock from available → in-carton
-				const newInCartonQty = inCarton + input.packCount;
-				const newActiveCount = (inv.activeCartonCount || 0) + 1;
+				const newInCartonQty = currentInCarton + packCount;
+				const newActiveCount = (currentInventory.activeCartonCount || 0) + 1;
 
 				await tx
 					.update(inventory)

@@ -1,8 +1,10 @@
 import { Package, PackagePlus } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import type { CartonItem } from "./types";
 
 type CartonConfig = {
@@ -22,9 +24,15 @@ type CartonSummaryPanelProps = {
   hasPackItems: boolean;
   canSubmit: boolean;
   isPending: boolean;
+  overridePrice: boolean;
+  overrideDelivery: boolean;
+  overrideReason: string;
   showActions?: boolean;
   onCartonPriceChange: (value: string) => void;
   onDeliveryCostChange: (value: string) => void;
+  onOverridePriceChange: (value: boolean) => void;
+  onOverrideDeliveryChange: (value: boolean) => void;
+  onOverrideReasonChange: (value: string) => void;
   onCreate: () => void;
 };
 
@@ -40,9 +48,15 @@ export function CartonSummaryPanel({
   hasPackItems,
   canSubmit,
   isPending,
+  overridePrice,
+  overrideDelivery,
+  overrideReason,
   showActions = true,
   onCartonPriceChange,
   onDeliveryCostChange,
+  onOverridePriceChange,
+  onOverrideDeliveryChange,
+  onOverrideReasonChange,
   onCreate,
 }: CartonSummaryPanelProps) {
   const hasItems = items.length > 0;
@@ -77,7 +91,10 @@ export function CartonSummaryPanel({
         <p className="text-sm font-medium text-foreground/55 mb-3">Contents</p>
         <div className="space-y-3">
           {items.map((item) => (
-            <div key={item.variantId} className="flex items-center justify-between gap-3">
+            <div
+              key={item.variantId}
+              className="flex items-center justify-between gap-3"
+            >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
                   {item.image ? (
@@ -93,7 +110,9 @@ export function CartonSummaryPanel({
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{item.productName}</p>
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {item.productName}
+                  </p>
                   <p className="text-sm text-foreground/50 truncate">
                     {item.variantLabel.split(" · ")[0]}
                     {item.brandName ? ` · ${item.brandName}` : ""}
@@ -112,11 +131,18 @@ export function CartonSummaryPanel({
         <span className="font-medium text-foreground/70">Carton total</span>
         <div className="flex items-center gap-3 font-semibold text-foreground tabular-nums">
           {hasPackItems && (
-            <span>{items.filter((i) => !i.isLoose).reduce((s, i) => s + i.packCount, 0)} pcs</span>
+            <span>
+              {items
+                .filter((i) => !i.isLoose)
+                .reduce((s, i) => s + i.packCount, 0)}{" "}
+              pcs
+            </span>
           )}
           {hasLooseItems && (
             <>
-              {hasPackItems && <span className="text-foreground/25 font-normal">·</span>}
+              {hasPackItems && (
+                <span className="text-foreground/25 font-normal">·</span>
+              )}
               <span>
                 {items
                   .filter((i) => i.isLoose)
@@ -135,15 +161,30 @@ export function CartonSummaryPanel({
         <p className="text-sm font-medium text-foreground/70">Pricing</p>
 
         <div>
-          <Label htmlFor="carton-price" className="text-sm font-medium text-foreground/80 mb-2 block">
-            Carton price (৳)
-          </Label>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <Label
+              htmlFor="carton-price"
+              className="text-sm font-medium text-foreground/80"
+            >
+              Carton price (৳)
+            </Label>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <Checkbox
+                checked={overridePrice}
+                onCheckedChange={(value) =>
+                  onOverridePriceChange(value === true)
+                }
+              />{" "}
+              Override
+            </label>
+          </div>
           <Input
             id="carton-price"
             type="number"
             placeholder={String(selectedConfig?.cartonPrice || "0")}
             value={cartonPrice}
             onChange={(e) => onCartonPriceChange(e.target.value)}
+            disabled={!overridePrice}
             className="h-10 text-sm"
           />
         </div>
@@ -151,7 +192,10 @@ export function CartonSummaryPanel({
         <div className="space-y-2">
           <p className="text-sm font-medium text-foreground/55">Pack value</p>
           {items.map((item) => (
-            <div key={item.variantId} className="flex justify-between text-sm gap-4">
+            <div
+              key={item.variantId}
+              className="flex justify-between text-sm gap-4"
+            >
               <span className="text-foreground/60 truncate">
                 {item.productName} × {item.packCount}
               </span>
@@ -169,18 +213,57 @@ export function CartonSummaryPanel({
         </div>
 
         <div>
-          <Label htmlFor="delivery-cost" className="text-sm font-medium text-foreground/80 mb-2 block">
-            Delivery cost (৳)
-          </Label>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <Label
+              htmlFor="delivery-cost"
+              className="text-sm font-medium text-foreground/80"
+            >
+              Delivery cost (৳)
+            </Label>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <Checkbox
+                checked={overrideDelivery}
+                onCheckedChange={(value) =>
+                  onOverrideDeliveryChange(value === true)
+                }
+              />{" "}
+              Override
+            </label>
+          </div>
           <Input
             id="delivery-cost"
             type="number"
             placeholder={String(selectedConfig?.deliveryCostPerCarton || "0")}
             value={deliveryCost}
             onChange={(e) => onDeliveryCostChange(e.target.value)}
+            disabled={!overrideDelivery}
             className="h-10 text-sm"
           />
         </div>
+
+        {(overridePrice || overrideDelivery) && (
+          <div>
+            <Label
+              htmlFor="override-reason"
+              className="text-sm font-medium text-foreground/80 mb-2 block"
+            >
+              Override reason
+            </Label>
+            <Textarea
+              id="override-reason"
+              value={overrideReason}
+              onChange={(e) => onOverrideReasonChange(e.target.value)}
+              placeholder="Explain why this carton differs from the approved configuration"
+              className="min-h-20 text-sm"
+            />
+            {overrideReason.trim().length > 0 &&
+              overrideReason.trim().length < 3 && (
+                <p className="mt-1.5 text-xs text-red-600">
+                  Enter at least 3 characters.
+                </p>
+              )}
+          </div>
+        )}
       </div>
 
       {showActions && (

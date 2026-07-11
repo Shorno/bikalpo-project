@@ -197,6 +197,13 @@
       "when": 1784500000000,
       "tag": "0028_structured_variant_definitions",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784600000000,
+      "tag": "0029_carton_configuration_source",
+      "breakpoints": true
     }
   ]
 }

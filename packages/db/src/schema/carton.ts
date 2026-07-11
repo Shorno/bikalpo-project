@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+    boolean,
     decimal,
     index,
     integer,
@@ -112,6 +113,19 @@ export const carton = pgTable(
             precision: 10,
             scale: 2,
         }),
+
+        /** Whether creation explicitly overrode the selected configuration price */
+        cartonPriceOverridden: boolean("carton_price_overridden")
+            .default(false)
+            .notNull(),
+
+        /** Whether creation explicitly overrode the selected configuration delivery cost */
+        deliveryCostOverridden: boolean("delivery_cost_overridden")
+            .default(false)
+            .notNull(),
+
+        /** Required audit explanation when either configuration price is overridden */
+        overrideReason: text("override_reason"),
 
         ...timestamps,
     },

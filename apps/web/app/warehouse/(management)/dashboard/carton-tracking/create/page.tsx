@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, PackagePlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { orpc } from "@/utils/orpc";
@@ -29,8 +29,9 @@ export default function CreateCartonPage() {
   const [note, setNote] = useState("");
   const [cartonPrice, setCartonPrice] = useState("");
   const [deliveryCost, setDeliveryCost] = useState("");
-
-  const cartonPriceManuallySet = useRef(false);
+  const [overridePrice, setOverridePrice] = useState(false);
+  const [overrideDelivery, setOverrideDelivery] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const { data: allProductsData } = useQuery({
     queryKey: ["w", "all-products-for-filters"],
@@ -45,12 +46,21 @@ export default function CreateCartonPage() {
     productFilter !== "all";
 
   const { data: searchData } = useQuery({
-    queryKey: ["w", "search", searchQuery, categoryFilter, subCategoryFilter, productFilter],
+    queryKey: [
+      "w",
+      "search",
+      searchQuery,
+      categoryFilter,
+      subCategoryFilter,
+      productFilter,
+    ],
     queryFn: () =>
       (orpc.warehouse as any).getWarehouseProductsForStock.call({
         search: searchQuery || undefined,
-        categoryId: categoryFilter !== "all" ? Number(categoryFilter) : undefined,
-        subCategoryId: subCategoryFilter !== "all" ? Number(subCategoryFilter) : undefined,
+        categoryId:
+          categoryFilter !== "all" ? Number(categoryFilter) : undefined,
+        subCategoryId:
+          subCategoryFilter !== "all" ? Number(subCategoryFilter) : undefined,
         productId: productFilter !== "all" ? Number(productFilter) : undefined,
         limit: 50,
       }),
@@ -60,7 +70,11 @@ export default function CreateCartonPage() {
   const firstVariantId = items.length > 0 ? items[0].variantId : null;
   const { data: configsData } = useQuery({
     queryKey: ["w", "configs", firstVariantId],
-    queryFn: () => (orpc.warehouse as any).getCartonConfigs.call({ variantId: firstVariantId }),
+    queryFn: () =>
+      (orpc.warehouse as any).getCartonConfigs.call({
+        variantId: firstVariantId,
+        includeInactive: true,
+      }),
     enabled: !!firstVariantId,
   });
   const { data: areasData } = useQuery({
@@ -74,55 +88,98 @@ export default function CreateCartonPage() {
 
   const allProductsList = allProductsData?.products ?? [];
   const products = searchData?.products ?? [];
-  const configs = configsData?.configs ?? [];
+  const configs = useMemo(() => configsData?.configs ?? [], [configsData]);
+  const activeConfigs = useMemo(
+    () => configs.filter((config: any) => config.isActive),
+    [configs],
+  );
   const areas = areasData?.areas ?? [];
   const selectedConfig = configs.find((c: any) => c.id === selectedConfigId);
   const nextCartonId = nextIdData?.nextCartonId ?? "CTN-...";
 
   const allCategories = allProductsList.reduce((acc: any[], p: any) => {
-    if (p.category && !acc.find((c: any) => c.id === p.category.id)) acc.push(p.category);
+    if (p.category && !acc.find((c: any) => c.id === p.category.id))
+      acc.push(p.category);
     return acc;
   }, []);
 
   const allSubCategories = allProductsList.reduce((acc: any[], p: any) => {
     if (!p.subCategory) return acc;
-    if (categoryFilter !== "all" && p.categoryId !== Number(categoryFilter)) return acc;
-    if (!acc.find((sc: any) => sc.id === p.subCategory.id)) acc.push(p.subCategory);
+    if (categoryFilter !== "all" && p.categoryId !== Number(categoryFilter))
+      return acc;
+    if (!acc.find((sc: any) => sc.id === p.subCategory.id))
+      acc.push(p.subCategory);
     return acc;
   }, []);
 
   const allProductNames = allProductsList.reduce((acc: any[], p: any) => {
-    if (categoryFilter !== "all" && p.categoryId !== Number(categoryFilter)) return acc;
-    if (subCategoryFilter !== "all" && p.subCategoryId !== Number(subCategoryFilter)) return acc;
-    if (!acc.find((item: any) => item.id === p.id)) acc.push({ id: p.id, name: p.name });
+    if (categoryFilter !== "all" && p.categoryId !== Number(categoryFilter))
+      return acc;
+    if (
+      subCategoryFilter !== "all" &&
+      p.subCategoryId !== Number(subCategoryFilter)
+    )
+      return acc;
+    if (!acc.find((item: any) => item.id === p.id))
+      acc.push({ id: p.id, name: p.name });
     return acc;
   }, []);
 
-  const totalWeightKg = items
-    .reduce((s, i) => s + (i.isLoose ? i.packCount : i.packCount * i.weightKg), 0)
+  const totalWeightKg = Number(selectedConfig?.cartonWeightKg || 0).toFixed(2);
+  const totalLoosePrice = items
+    .reduce((s, i) => s + i.packCount * i.price, 0)
     .toFixed(2);
-  const totalLoosePrice = items.reduce((s, i) => s + i.packCount * i.price, 0).toFixed(2);
 
   const hasLooseItems = items.some((i) => i.isLoose);
   const hasPackItems = items.some((i) => !i.isLoose);
 
+  const hasOverrides = overridePrice || overrideDelivery;
   const canSubmit =
     items.length > 0 &&
-    items.every((i) => i.packCount > 0 && i.packCount <= i.availableStock);
+    !!selectedConfig &&
+    items.every((i) => i.packCount > 0 && i.packCount <= i.availableStock) &&
+    (!hasOverrides || overrideReason.trim().length >= 3);
 
   useEffect(() => {
-    if (!cartonPriceManuallySet.current && items.some((i) => i.packCount > 0)) {
-      setCartonPrice(totalLoosePrice);
-    }
-  }, [totalLoosePrice, items]);
+    if (!firstVariantId || !configsData) return;
+    const current = activeConfigs.find(
+      (config: any) => config.id === selectedConfigId,
+    );
+    const next =
+      current || activeConfigs.find((config: any) => config.isDefault);
+    setSelectedConfigId(next?.id ?? null);
+    setItems((currentItems) =>
+      currentItems.map((item) => ({
+        ...item,
+        packCount: next?.packsPerCarton ?? 0,
+      })),
+    );
+    setCartonPrice(String(next?.cartonPrice ?? ""));
+    setDeliveryCost(String(next?.deliveryCostPerCarton ?? ""));
+    setOverridePrice(false);
+    setOverrideDelivery(false);
+    setOverrideReason("");
+  }, [firstVariantId, configsData, activeConfigs, selectedConfigId]);
 
   const addItem = (variant: any, product: any) => {
     const vid = variant.variantId || variant.id;
     if (items.find((i) => i.variantId === vid)) return;
     const packType = variant.packType || variant.packagingType || "other";
     const isLoose = packType === "loose";
-    const totalStock = Math.max(0, parseFloat(String(variant.stock?.availableQty ?? 0)));
-    const stockInCartons = Math.max(0, parseFloat(String(variant.stock?.inCartonQty ?? 0)));
+    if (isLoose) {
+      toast.error(
+        "Raw loose stock must be packaged as a sellable variant before carton creation",
+      );
+      return;
+    }
+    const totalStock = Math.max(
+      0,
+      parseFloat(String(variant.stock?.availableQty ?? 0)),
+    );
+    const stockInCartons = Math.max(
+      0,
+      parseFloat(String(variant.stock?.inCartonQty ?? 0)),
+    );
     const looseStock = variant.stock?.looseStock ?? 0;
     const availableForCarton = Math.max(0, parseFloat(String(looseStock)));
     const newItem: CartonItem = {
@@ -146,50 +203,55 @@ export default function CreateCartonPage() {
         : Math.max(0, Math.floor(availableForCarton)),
       image: product.coreProduct?.image || product.image || null,
       isLoose,
+      operationalUnit: String(
+        variant.orderUnit || variant.stockUnit || packType || "unit",
+      ).toLowerCase(),
     };
     setItems([newItem]);
     setSearchQuery("");
     setSelectedConfigId(null);
-    cartonPriceManuallySet.current = false;
     setCartonPrice("");
     setDeliveryCost("");
-  };
-
-  const updatePackCount = (variantId: number, count: number) => {
-    setItems(items.map((i) => (i.variantId === variantId ? { ...i, packCount: count } : i)));
+    setOverridePrice(false);
+    setOverrideDelivery(false);
+    setOverrideReason("");
   };
 
   const removeItem = (variantId: number) => {
     setItems(items.filter((i) => i.variantId !== variantId));
     setSelectedConfigId(null);
-    cartonPriceManuallySet.current = false;
     setCartonPrice("");
     setDeliveryCost("");
+    setOverridePrice(false);
+    setOverrideDelivery(false);
+    setOverrideReason("");
   };
 
-  const handleSelectConfig = (configId: number | null, price?: string | number) => {
+  const handleSelectConfig = (configId: number) => {
+    const config = activeConfigs.find(
+      (candidate: any) => candidate.id === configId,
+    );
+    if (!config) return;
     setSelectedConfigId(configId);
-    if (configId && price) {
-      cartonPriceManuallySet.current = true;
-      setCartonPrice(String(price));
-    }
-  };
-
-  const handleCartonPriceChange = (value: string) => {
-    cartonPriceManuallySet.current = true;
-    setCartonPrice(value);
+    setItems(
+      items.map((item) => ({ ...item, packCount: config.packsPerCarton })),
+    );
+    setCartonPrice(String(config.cartonPrice ?? ""));
+    setDeliveryCost(String(config.deliveryCostPerCarton ?? ""));
+    setOverridePrice(false);
+    setOverrideDelivery(false);
+    setOverrideReason("");
   };
 
   const createMutation = useMutation({
     mutationFn: () =>
       (orpc.warehouse as any).createCarton.call({
-        variantId: items[0].variantId,
-        packCount: items[0].packCount,
-        cartonConfigId: selectedConfigId || undefined,
+        cartonConfigId: selectedConfigId,
         storageAreaId: storageAreaId ? Number(storageAreaId) : undefined,
         note: note || undefined,
-        overrideCartonPrice: cartonPrice || undefined,
-        overrideDeliveryCost: deliveryCost || undefined,
+        overrideCartonPrice: overridePrice ? cartonPrice : undefined,
+        overrideDeliveryCost: overrideDelivery ? deliveryCost : undefined,
+        overrideReason: hasOverrides ? overrideReason.trim() : undefined,
       }),
     onSuccess: (res: any) => {
       toast.success(`Carton ${res.cartonId} created!`);
@@ -211,7 +273,13 @@ export default function CreateCartonPage() {
     hasPackItems,
     canSubmit,
     isPending: createMutation.isPending,
-    onCartonPriceChange: handleCartonPriceChange,
+    overridePrice,
+    overrideDelivery,
+    overrideReason,
+    onOverridePriceChange: setOverridePrice,
+    onOverrideDeliveryChange: setOverrideDelivery,
+    onOverrideReasonChange: setOverrideReason,
+    onCartonPriceChange: setCartonPrice,
     onDeliveryCostChange: setDeliveryCost,
     onCreate: () => createMutation.mutate(),
   };
@@ -262,12 +330,12 @@ export default function CreateCartonPage() {
                 totalWeightKg={totalWeightKg}
                 hasLooseItems={hasLooseItems}
                 hasPackItems={hasPackItems}
+                hasSelectedConfig={!!selectedConfig}
                 onSearchChange={setSearchQuery}
                 onCategoryChange={setCategoryFilter}
                 onSubCategoryChange={setSubCategoryFilter}
                 onProductFilterChange={setProductFilter}
                 onAddItem={addItem}
-                onUpdatePackCount={updatePackCount}
                 onRemoveItem={removeItem}
               />
             </div>
@@ -297,8 +365,12 @@ export default function CreateCartonPage() {
           {/* Summary sidebar */}
           <aside className="hidden xl:block">
             <div className="sticky top-[76px] rounded-xl border bg-card shadow-sm p-6 lg:p-7">
-              <p className="text-[15px] font-semibold text-foreground mb-1">Summary</p>
-              <p className="text-sm text-foreground/50 mb-6">Live preview of this carton</p>
+              <p className="text-[15px] font-semibold text-foreground mb-1">
+                Summary
+              </p>
+              <p className="text-sm text-foreground/50 mb-6">
+                Live preview of this carton
+              </p>
               <CartonSummaryPanel {...summaryPanelProps} showActions />
             </div>
           </aside>
@@ -306,15 +378,22 @@ export default function CreateCartonPage() {
 
         {/* Mobile / tablet summary */}
         <div className="xl:hidden mt-8 rounded-xl border bg-card shadow-sm p-6">
-          <p className="text-[15px] font-semibold text-foreground mb-1">Summary</p>
-          <p className="text-sm text-foreground/50 mb-6">Live preview of this carton</p>
+          <p className="text-[15px] font-semibold text-foreground mb-1">
+            Summary
+          </p>
+          <p className="text-sm text-foreground/50 mb-6">
+            Live preview of this carton
+          </p>
           <CartonSummaryPanel {...summaryPanelProps} showActions={false} />
         </div>
       </div>
 
       <div className="xl:hidden fixed bottom-0 inset-x-0 z-10 bg-background/95 backdrop-blur-sm border-t px-6 py-4">
         <div className="flex items-center gap-3 max-w-none">
-          <Link href="/warehouse/dashboard/carton-tracking" className="flex-shrink-0">
+          <Link
+            href="/warehouse/dashboard/carton-tracking"
+            className="flex-shrink-0"
+          >
             <Button variant="outline" className="h-11 text-sm">
               Cancel
             </Button>
