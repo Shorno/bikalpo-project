@@ -587,6 +587,90 @@ async function fetchConsumerReferencePricePage(
 
 export const productRouter = {
   /**
+   * Get admin-owned products for the Admin Web View.
+   * REST: GET /products/admin-web-view
+   */
+  getAdminWebViewProducts: adminProcedure
+    .route({
+      method: "GET",
+      path: "/products/admin-web-view",
+      tags: ["Product Management"],
+      summary: "Get admin Web View products",
+      description: "Get admin-owned products with full card relations",
+    })
+    .handler(async () => {
+      const products = await db.query.product.findMany({
+        where: eq(product.creatorSource, "admin"),
+        orderBy: [desc(product.createdAt)],
+        with: {
+          category: true,
+          subCategory: true,
+          brand: true,
+          images: true,
+          productBrands: {
+            with: { brand: true },
+          },
+          variants: {
+            with: { brand: true },
+            columns: {
+              id: true,
+              variantType: true,
+              brandId: true,
+              unitLabel: true,
+            },
+          },
+          variantPrices: {
+            with: { variantOption: true },
+          },
+        },
+      });
+
+      return { products };
+    }),
+
+  /**
+   * Get one admin-owned product for the Admin Web View.
+   * REST: GET /products/admin-web-view/:id
+   */
+  getAdminWebViewProductById: adminProcedure
+    .route({
+      method: "GET",
+      path: "/products/admin-web-view/{id}",
+      tags: ["Product Management"],
+      summary: "Get admin Web View product by ID",
+      description: "Get one admin-owned product with full detail relations",
+    })
+    .input(productIdSchema)
+    .handler(async ({ input }) => {
+      const foundProduct = await db.query.product.findFirst({
+        where: and(
+          eq(product.id, input.id),
+          eq(product.creatorSource, "admin"),
+        ),
+        with: {
+          category: true,
+          subCategory: true,
+          brand: true,
+          images: true,
+          productBrands: {
+            with: { brand: true },
+          },
+          variantPrices: {
+            with: {
+              variantOption: true,
+            },
+          },
+        },
+      });
+
+      if (!foundProduct) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+
+      return { product: foundProduct };
+    }),
+
+  /**
    * First-time admin product creation for a core product.
    * One submission stores the immutable shared template and creates one
    * independent product per selected brand.

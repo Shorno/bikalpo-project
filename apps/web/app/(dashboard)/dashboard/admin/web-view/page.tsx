@@ -316,7 +316,7 @@ export default function AdminWebViewPage() {
   const [page, setPage] = useState(1);
 
   const productsQuery = useQuery({
-    ...orpc.product.getAll.queryOptions({ input: {} }),
+    ...orpc.product.getAdminWebViewProducts.queryOptions({ input: {} }),
     queryKey: ["admin-web-view"],
   });
 

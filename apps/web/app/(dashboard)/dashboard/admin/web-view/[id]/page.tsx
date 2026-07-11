@@ -25,7 +25,9 @@ export default async function AdminWebViewDetailPage({
 
   let product;
   try {
-    const result = await client.product.getById({ id: productId });
+    const result = await client.product.getAdminWebViewProductById({
+      id: productId,
+    });
     product = result.product;
   } catch {
     notFound();
@@ -44,8 +46,7 @@ export default async function AdminWebViewDetailPage({
 
   return (
     <WebViewDetailClient
-      // biome-ignore lint/suspicious/noExplicitAny: getById output is a superset of the fields the view needs
-      product={product as any}
+      product={product}
       brandId={brandId}
       reviews={reviewData.reviews}
       stats={reviewData.stats}
