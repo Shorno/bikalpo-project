@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
+  BadgeCheck,
   MapPin,
   Package,
   Search,
@@ -53,36 +54,36 @@ const CITIES = [
 
 function ProductCardSkeleton() {
   return (
-    <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden flex flex-col h-full">
+    <div className="flex flex-col bg-white rounded-xl border border-zinc-200 overflow-hidden h-full">
       {/* Image Skeleton */}
-      <div className="aspect-[16/11] bg-zinc-50 relative border-b border-zinc-100 overflow-hidden flex-shrink-0">
+      <div className="aspect-[4/3] bg-zinc-50 relative border-b border-zinc-100 overflow-hidden shrink-0">
         <Skeleton className="w-full h-full rounded-none" />
       </div>
 
       {/* Info details */}
-      <div className="p-3.5 flex-1 flex flex-col justify-between">
+      <div className="flex flex-1 flex-col p-4">
         <div>
-          {/* Category */}
-          <Skeleton className="h-3 w-16 mb-2" />
-          {/* Product Title */}
+          <Skeleton className="h-3 w-14 mb-2" />
           <Skeleton className="h-4 w-5/6 mb-1.5" />
-          <Skeleton className="h-4 w-2/3 mb-1" />
+          <Skeleton className="h-4 w-2/3" />
         </div>
 
-        {/* Specifications */}
-        <div className="space-y-2 mt-4 pt-2 border-t border-zinc-100">
-          <div className="flex justify-between items-center">
-            <Skeleton className="h-3 w-8" />
-            <Skeleton className="h-3.5 w-16" />
-          </div>
-          <div className="flex justify-between items-center">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-3.5 w-12" />
-          </div>
-          <div className="flex justify-between items-baseline pt-1.5">
-            <Skeleton className="h-3 w-10" />
-            <Skeleton className="h-5 w-20" />
-          </div>
+        {/* Variant chips */}
+        <div className="mt-3 flex gap-1.5">
+          <Skeleton className="h-7 w-14 rounded-md" />
+          <Skeleton className="h-7 w-14 rounded-md" />
+        </div>
+
+        {/* Price + MOQ */}
+        <div className="mt-3 pt-3 border-t border-zinc-100 flex items-end justify-between">
+          <Skeleton className="h-6 w-24" />
+          <Skeleton className="h-4 w-16" />
+        </div>
+
+        {/* Actions */}
+        <div className="mt-4 flex gap-2">
+          <Skeleton className="flex-1 h-9 rounded-lg" />
+          <Skeleton className="h-9 w-20 rounded-lg" />
         </div>
       </div>
     </div>
@@ -320,14 +321,12 @@ export default function WarehouseStorefrontPage() {
         <div className="bg-white border-b border-zinc-200">
           <div className="container mx-auto px-4 py-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="flex items-start gap-5">
-                <div className="w-14 h-14 bg-zinc-100 rounded-lg flex items-center justify-center shrink-0 border border-zinc-200">
-                  <Skeleton className="w-6 h-6" />
-                </div>
+              <div className="flex items-start gap-4">
+                <Skeleton className="w-16 h-16 rounded-xl shrink-0" />
                 <div className="space-y-2.5">
                   <div className="flex items-center gap-3 flex-wrap">
                     <Skeleton className="h-8 w-48 md:w-64" />
-                    <Skeleton className="h-5 w-24" />
+                    <Skeleton className="h-5 w-20 rounded-full" />
                   </div>
                   <div className="flex flex-wrap items-center gap-4 mt-2.5">
                     <Skeleton className="h-4 w-32" />
@@ -340,16 +339,13 @@ export default function WarehouseStorefrontPage() {
         </div>
 
         <div className="container mx-auto px-4 py-6">
-          <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
-            <Skeleton className="h-10 w-full" />
-            <div className="space-y-2">
-              <Skeleton className="h-3 w-24" />
-              <div className="flex flex-wrap gap-1.5">
-                <Skeleton className="h-8 w-12" />
-                <Skeleton className="h-8 w-20" />
-                <Skeleton className="h-8 w-24" />
-                <Skeleton className="h-8 w-16" />
-              </div>
+          <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5 flex flex-col gap-4">
+            <Skeleton className="h-11 w-full rounded-lg" />
+            <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
+              <Skeleton className="h-8 w-16 rounded-lg" />
+              <Skeleton className="h-8 w-20 rounded-lg" />
+              <Skeleton className="h-8 w-24 rounded-lg" />
+              <Skeleton className="h-8 w-16 rounded-lg" />
             </div>
           </div>
         </div>
@@ -560,32 +556,30 @@ export default function WarehouseStorefrontPage() {
       <div className="bg-white border-b border-zinc-200">
         <div className="container mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex items-start gap-5 min-w-0">
-              <div className="w-14 h-14 bg-zinc-900 rounded-lg flex items-center justify-center shrink-0 shadow-sm border border-zinc-800">
-                <Warehouse className="w-6 h-6 text-white" />
+            <div className="flex items-start gap-4 min-w-0">
+              <div className="w-16 h-16 bg-zinc-100 rounded-xl flex items-center justify-center shrink-0 border border-zinc-200">
+                <Warehouse className="w-7 h-7 text-zinc-700" />
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-zinc-900 truncate">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-2xl md:text-[28px] font-semibold tracking-tight text-zinc-900 truncate">
                     {warehouse.warehouseName || warehouse.name}
                   </h1>
-                  <Badge
-                    variant="outline"
-                    className="bg-zinc-50 text-zinc-700 border-zinc-200 font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 font-bold"
-                  >
-                    Verified Store
-                  </Badge>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+                    <BadgeCheck className="w-3.5 h-3.5" />
+                    Verified
+                  </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-4 mt-2.5 text-xs font-medium text-zinc-500">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mt-2 text-sm text-zinc-500">
                   {warehouse.warehouseAddress && (
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <MapPin className="w-4 h-4 text-zinc-400 shrink-0" />
                       <span className="truncate">{warehouse.warehouseAddress}</span>
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 shrink-0">
-                     <Package className="w-3.5 h-3.5 text-zinc-400" />
-                     <span className="font-mono text-zinc-700 font-semibold tabular-nums">
+                     <Package className="w-4 h-4 text-zinc-400" />
+                     <span className="text-zinc-800 font-medium tabular-nums">
                        {warehouse.productCount}
                      </span>
                      <span>products available</span>
@@ -600,17 +594,17 @@ export default function WarehouseStorefrontPage() {
       {/* Access alert block */}
       {isWarehouseBuyer && !isConnectedSupplier && (
         <div className="container mx-auto px-4 pt-6">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div>
-                <h4 className="font-bold text-amber-800 text-sm">Supplier connection required</h4>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  You must request access from this warehouse from your suppliers list before you can order.
+                <h4 className="text-sm font-semibold text-amber-900">Supplier connection required</h4>
+                <p className="text-sm text-amber-700 mt-0.5">
+                  Request access from this warehouse in your suppliers list before you can order.
                 </p>
               </div>
             </div>
-            <Button asChild size="sm" variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-100/50">
+            <Button asChild size="sm" variant="outline" className="shrink-0 border-amber-300 bg-white text-amber-800 hover:bg-amber-100 hover:text-amber-900">
               <Link href="/warehouse/dashboard/suppliers">
                 Go to Suppliers List
               </Link>
@@ -623,9 +617,9 @@ export default function WarehouseStorefrontPage() {
       <div className="container mx-auto px-4 py-6">
         <div className="space-y-6">
           {/* Search & Filter Bar */}
-          <div className="bg-white border border-zinc-200 rounded-lg p-4 flex flex-col gap-4 shadow-sm">
+          <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5 flex flex-col gap-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
               <Input
                 placeholder="Search products..."
                 value={search}
@@ -633,56 +627,57 @@ export default function WarehouseStorefrontPage() {
                   setSearch(e.target.value);
                   setPage(1);
                 }}
-                className="pl-10 h-10 border-zinc-200 focus-visible:ring-zinc-900 rounded-md bg-zinc-50/30 text-sm"
+                className="pl-10 h-11 border-zinc-200 focus-visible:ring-zinc-900/10 focus-visible:border-zinc-400 rounded-lg bg-zinc-50/50 text-sm"
               />
             </div>
 
             {/* Category Tabs */}
             {categories.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">
-                  Category Filters
+              <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
+                <span className="text-xs font-medium text-zinc-400 mr-0.5">
+                  Categories
                 </span>
-                <div className="flex flex-wrap gap-1.5">
-                  <Button
-                    variant={selectedCategory === null ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setSelectedCategory(null);
-                      setPage(1);
-                    }}
-                    className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
-                      selectedCategory === null
-                        ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
-                        : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    All
-                  </Button>
-                  {categories.map((cat) => (
-                    <Button
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory(null);
+                    setPage(1);
+                  }}
+                  className={`h-8 px-3 inline-flex items-center rounded-lg border text-xs font-medium transition-colors ${
+                    selectedCategory === null
+                      ? "bg-zinc-900 text-white border-zinc-900"
+                      : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
+                  }`}
+                >
+                  All
+                </button>
+                {categories.map((cat) => {
+                  const active = selectedCategory === cat.slug;
+                  return (
+                    <button
                       key={cat.id}
-                      variant={
-                        selectedCategory === cat.slug ? "default" : "outline"
-                      }
-                      size="sm"
+                      type="button"
                       onClick={() => {
                         setSelectedCategory(cat.slug);
                         setPage(1);
                       }}
-                      className={`h-8 px-3.5 text-xs font-medium rounded-md transition-colors ${
-                        selectedCategory === cat.slug
-                          ? "bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-900"
+                      className={`h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                        active
+                          ? "bg-zinc-900 text-white border-zinc-900"
                           : "border-zinc-200 text-zinc-600 bg-white hover:bg-zinc-50"
                       }`}
                     >
                       {cat.name}
-                      <span className="ml-1 px-1 py-0.5 text-[9px] font-mono bg-zinc-100 text-zinc-500 rounded border border-zinc-200/50 group-hover:bg-zinc-200">
+                      <span
+                        className={`tabular-nums ${
+                          active ? "text-white/60" : "text-zinc-400"
+                        }`}
+                      >
                         {cat.productCount}
                       </span>
-                    </Button>
-                  ))}
-                </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
