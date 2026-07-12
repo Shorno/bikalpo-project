@@ -10,6 +10,7 @@ import {
   WarehouseProductCard,
   WarehouseProductCardSkeleton,
   type WarehouseProductVariantOption,
+  shortVariantLabel,
 } from "./warehouse-product-card";
 
 /** Map API storefront product to the card-compatible shape */
@@ -95,16 +96,19 @@ function getStockLabel(status: "high" | "medium" | "low") {
       return {
         text: "In Stock",
         color: "text-emerald-700 bg-emerald-50 border-emerald-200",
+        dot: "bg-emerald-500",
       };
     case "medium":
       return {
         text: "Limited Stock",
         color: "text-amber-700 bg-amber-50 border-amber-200",
+        dot: "bg-amber-500",
       };
     case "low":
       return {
         text: "Low Stock",
         color: "text-red-700 bg-red-50 border-red-200",
+        dot: "bg-red-500",
       };
   }
 }
@@ -121,6 +125,27 @@ function ProductDetailModal({
   onAddToCart?: (product: WarehouseProduct) => void;
 }) {
   const [imageError, setImageError] = useState(false);
+  const [selectedVariantId, setSelectedVariantId] = useState(
+    product.selectedVariant?.variantId ?? product.variants[0]?.variantId,
+  );
+  const selectedVariant =
+    product.variants.find((v) => v.variantId === selectedVariantId) ??
+    product.selectedVariant ??
+    product.variants[0];
+  const displayProduct: WarehouseProduct = selectedVariant
+    ? {
+        ...product,
+        id: selectedVariant.inventoryId,
+        sku: selectedVariant.sku,
+        pricePerUnit: selectedVariant.pricePerUnit,
+        unit: selectedVariant.unit,
+        moq: selectedVariant.moq,
+        moqUnit: selectedVariant.unit,
+        availableQty: selectedVariant.availableQty,
+        availableUnit: `${selectedVariant.unit} Available`,
+        selectedVariant,
+      }
+    : product;
   const stock = getStockLabel(product.stockStatus);
 
   return (
@@ -130,12 +155,12 @@ function ProductDetailModal({
     >
       <div className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm" />
       <div
-        className="relative bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto border border-zinc-200 animate-in zoom-in-95 duration-200"
+        className="relative bg-white rounded-2xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto border border-zinc-200 animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute top-3.5 right-3.5 z-10 p-1.5 rounded-md bg-white/95 hover:bg-zinc-100 border border-zinc-200 transition-colors"
+          className="absolute top-3.5 right-3.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 hover:bg-zinc-100 border border-zinc-200 transition-colors"
         >
           <X className="w-4 h-4 text-zinc-500" />
         </button>
@@ -156,80 +181,99 @@ function ProductDetailModal({
           )}
         </div>
         <div className="p-6">
-          <div className="mb-4">
-            <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest block mb-1">
-              {product.brand || "Product Details"}
-            </span>
-            <h2 className="text-lg font-bold text-zinc-900 mb-1 leading-snug">
+          <div className="mb-5">
+            <div className="flex items-center gap-2 mb-1.5 text-xs font-medium text-zinc-500">
+              {product.brand && <span>{product.brand}</span>}
+              {product.brand && displayProduct.sku && (
+                <span className="text-zinc-300">·</span>
+              )}
+              {displayProduct.sku && (
+                <span className="text-zinc-400">SKU {displayProduct.sku}</span>
+              )}
+            </div>
+            <h2 className="text-xl font-semibold tracking-tight text-zinc-900 leading-snug">
               {product.name}
             </h2>
           </div>
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <span className="text-2xl font-extrabold text-zinc-900 font-mono">
-                ৳ {product.pricePerUnit}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-2xl font-semibold text-zinc-900 tabular-nums">
+                ৳ {displayProduct.pricePerUnit}
               </span>
-              <span className="text-xs text-zinc-500 font-medium ml-1">
-                / {product.unit}
+              <span className="text-sm text-zinc-500">
+                / {displayProduct.unit}
               </span>
             </div>
             <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-mono tracking-wider uppercase font-bold border ${stock.color}`}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${stock.color}`}
             >
+              <span className={`w-1.5 h-1.5 rounded-full ${stock.dot}`} />
               {stock.text}
             </span>
           </div>
 
-          {/* Logistics Grid Dividers */}
-          <div className="grid grid-cols-2 gap-px bg-zinc-200 border border-zinc-200 rounded-lg overflow-hidden mb-6">
-            <div className="bg-white p-3.5">
-              <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1">
+          {/* Variant selection */}
+          {product.variants.length > 1 && (
+            <div className="mb-6">
+              <span className="block mb-2 text-xs font-medium text-zinc-500">
+                Select type
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {product.variants.map((variant) => {
+                  const active = variant.variantId === selectedVariant?.variantId;
+                  return (
+                    <button
+                      key={variant.variantId}
+                      type="button"
+                      onClick={() => setSelectedVariantId(variant.variantId)}
+                      className={`h-9 px-3.5 inline-flex items-center rounded-lg border text-sm font-medium transition-colors ${
+                        active
+                          ? "bg-zinc-900 text-white border-zinc-900"
+                          : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                      }`}
+                    >
+                      {shortVariantLabel(variant.label, product.name)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Order specifications */}
+          <dl className="grid grid-cols-2 gap-px bg-zinc-200 border border-zinc-200 rounded-xl overflow-hidden mb-6">
+            <div className="bg-white p-4">
+              <dt className="text-xs font-medium text-zinc-500 mb-1">
                 Minimum Order Qty
-              </p>
-              <p className="text-sm font-mono text-zinc-900 font-bold">
-                {product.moq} {product.moqUnit}
-              </p>
+              </dt>
+              <dd className="text-sm font-medium text-zinc-900 tabular-nums">
+                {displayProduct.moq} {displayProduct.moqUnit}
+              </dd>
             </div>
-            <div className="bg-white p-3.5">
-              <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1">
+            <div className="bg-white p-4">
+              <dt className="text-xs font-medium text-zinc-500 mb-1">
                 Available Qty
-              </p>
-              <p className="text-sm font-mono text-zinc-900 font-bold">
-                {product.availableQty} {product.unit}
-              </p>
+              </dt>
+              <dd className="text-sm font-medium text-zinc-900 tabular-nums">
+                {displayProduct.availableQty} {displayProduct.unit}
+              </dd>
             </div>
-            <div className="bg-white p-3.5">
-              <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                Unit Price
-              </p>
-              <p className="text-sm font-mono text-zinc-900 font-bold">
-                ৳ {product.pricePerUnit} / {product.unit}
-              </p>
-            </div>
-            <div className="bg-white p-3.5">
-              <p className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                Brand
-              </p>
-              <p className="text-sm font-mono text-zinc-900 font-bold">
-                {product.brand || "—"}
-              </p>
-            </div>
-          </div>
+          </dl>
 
           <div className="flex gap-3">
             {mode === "view-only" ? (
               <Button
                 variant="outline"
-                className="flex-1 h-11 border-zinc-200 text-zinc-400 font-semibold gap-2 rounded cursor-not-allowed shadow-none"
+                className="flex-1 h-11 border-zinc-200 text-zinc-400 font-medium gap-2 rounded-lg cursor-not-allowed shadow-none"
                 disabled
               >
                 Access Required
               </Button>
             ) : mode === "w2w" ? (
               <Button
-                className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-2 rounded transition-colors shadow-none"
+                className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-2 rounded-lg transition-colors shadow-none"
                 onClick={() => {
-                  onAddToCart?.(product);
+                  onAddToCart?.(displayProduct);
                   onClose();
                 }}
               >
@@ -237,14 +281,14 @@ function ProductDetailModal({
                 Add to Cart
               </Button>
             ) : (
-              <Button className="flex-1 h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold gap-2 rounded transition-colors shadow-none">
+              <Button className="flex-1 h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-medium gap-2 rounded-lg transition-colors shadow-none">
                 <ShoppingCart className="w-4 h-4" />
                 Add to Cart
               </Button>
             )}
             <Button
               variant="outline"
-              className="h-11 px-6 border-zinc-200 text-zinc-600 hover:bg-zinc-50 font-semibold rounded transition-colors"
+              className="h-11 px-6 border-zinc-200 text-zinc-600 hover:bg-zinc-50 font-medium rounded-lg transition-colors"
               onClick={onClose}
             >
               Close
