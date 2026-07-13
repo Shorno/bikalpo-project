@@ -766,7 +766,7 @@ const managementQueries = {
                 type: {
                     name: string;
                     slug: string | null;
-                    inventoryBehaviour: string;
+                    inventoryBehaviour: ProductTypeFulfillmentInput["inventoryBehaviour"];
                     trackingType: "none" | "batch" | "serial";
                     isReturnablePack: boolean;
                 };

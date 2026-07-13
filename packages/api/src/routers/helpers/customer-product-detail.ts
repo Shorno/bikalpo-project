@@ -255,14 +255,16 @@ function hasAvailableStock(
   );
 }
 
-function pickPreferredPriceRow(
-  rows: Array<{
+function pickPreferredPriceRow<
+  T extends {
     id: number;
     productId: number;
     brandId?: number | null;
     consumerPrice?: number | null;
     sortOrder?: number | null;
-  }>,
+  },
+>(
+  rows: T[],
   stockRows: Array<{
     productId: number;
     variantId: number;
