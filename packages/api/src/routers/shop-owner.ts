@@ -10,7 +10,6 @@
  */
 
 import { db } from "@bikalpo-project/db";
-import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
 import {
     buildProductTypeFulfillmentProfile,
     FULFILLMENT_MODES,
@@ -20,11 +19,8 @@ import {
     brand,
     category,
     product,
-    productBrand,
-    productImage,
     productReview,
     productVariant,
-    productVariantPrice,
     subCategory,
     inventory,
     order,
@@ -38,6 +34,7 @@ import {
     shopCategoryAssignment,
     warehouseCategoryAssignment,
     coreProductIdentity,
+    shopProductGenerationTemplate,
     productType,
     productIdentityRequest,
     variantOption,
@@ -90,6 +87,7 @@ import {
 } from "../services/open-order-matching";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
+import { shopProductConfigEndpoints } from "./shop-product-config";
 
 const purchaseOrderStatusValues = [
     "pending",
@@ -6685,7 +6683,7 @@ const publicCatalogEndpoints = {
      * Get the full product hierarchy: Type → Category → SubCategory → Core Identity.
      * Public-facing, no auth required. Used for the catalog browse page.
      */
-    getPublicCatalogHierarchy: publicProcedure
+    getShopCatalogHierarchy: shopOwnerProcedure
         .input(
             z.object({
                 typeId: z.number().nullish(),
@@ -6696,13 +6694,16 @@ const publicCatalogEndpoints = {
                 limit: z.number().optional().default(50),
             }),
         )
-        .handler(async ({ input }) => {
+        .handler(async ({ input, context }) => {
             const page = input.page ?? 1;
             const limit = input.limit ?? 50;
             const offset = (page - 1) * limit;
+            const shopId = context.session.user.id;
 
             // 1. Build conditions for core products
-            const conditions: SQL[] = [];
+            const conditions: SQL[] = [
+                eq(coreProductIdentity.creatorSource, "admin"),
+            ];
 
             if (input.search?.trim()) {
                 conditions.push(ilike(coreProductIdentity.name, `%${input.search.trim()}%`));
@@ -6757,7 +6758,38 @@ const publicCatalogEndpoints = {
                     .where(where),
             ]);
 
-            // 4. Compose hierarchical SKU and format
+            const coreProductIds = coreProducts.map((cp) => cp.id);
+            const [shopProducts, shopTemplates] = coreProductIds.length > 0
+                ? await Promise.all([
+                    db.query.product.findMany({
+                        where: and(
+                            eq(product.creatorSource, "shop"),
+                            eq(product.createdById, shopId),
+                            inArray(product.coreProductId, coreProductIds),
+                        ),
+                        columns: { coreProductId: true, brandId: true },
+                    }),
+                    db.query.shopProductGenerationTemplate.findMany({
+                        where: and(
+                            eq(shopProductGenerationTemplate.shopId, shopId),
+                            inArray(shopProductGenerationTemplate.coreProductId, coreProductIds),
+                        ),
+                        columns: { coreProductId: true },
+                    }),
+                ])
+                : [[], []];
+            const shopBrandsByCore = new Map<number, Set<number>>();
+            for (const row of shopProducts) {
+                if (row.coreProductId == null || row.brandId == null) continue;
+                const brands = shopBrandsByCore.get(row.coreProductId) ?? new Set<number>();
+                brands.add(row.brandId);
+                shopBrandsByCore.set(row.coreProductId, brands);
+            }
+            const templatedCoreIds = new Set(
+                shopTemplates.map((row) => row.coreProductId),
+            );
+
+            // 4. Compose hierarchical SKU and retailer configuration state
             const items = coreProducts.map((cp) => {
                 const typeCode = cp.category?.type?.skuCode || "??";
                 const catCode = cp.category?.skuCode || "???";
@@ -6783,6 +6815,8 @@ const publicCatalogEndpoints = {
                     subCategory: cp.subCategory
                         ? { id: cp.subCategory.id, name: cp.subCategory.name, slug: cp.subCategory.slug }
                         : null,
+                    shopBrandCount: shopBrandsByCore.get(cp.id)?.size ?? 0,
+                    hasShopTemplate: templatedCoreIds.has(cp.id),
                 };
             });
 
@@ -7346,6 +7380,12 @@ const shopProductEndpoints = {
                 })
                 : [];
 
+            const isRetailerOwned =
+                prod.creatorSource === "shop" && prod.createdById === userId;
+            if (!isRetailerOwned && inventoryRows.length === 0) {
+                throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+            }
+
             const invMap = new Map(inventoryRows.map((inv) => [inv.variantId, inv]));
 
             const variantDetails = variants.map((v) => {
@@ -7397,6 +7437,7 @@ const shopProductEndpoints = {
                     coreProduct: prod.coreProduct,
                     images: prod.images,
                     brands: prod.productBrands.map((pb) => pb.brand),
+                    isRetailerOwned,
                 },
                 variants: variantDetails,
                 totalStock,
@@ -7492,186 +7533,13 @@ const shopProductEndpoints = {
      * Creates product, product_brand links, product_variants, and initial inventory.
      */
     createShopProduct: shopOwnerProcedure
-        .input(
-            z.object({
-                // Step 1-2: Classification & Core Identity
-                coreProductId: z.number(),
-                categoryId: z.number(),
-                subCategoryId: z.number().optional(),
-
-                // Step 3: Brand & Variant selection
-                brandIds: z.array(z.number()).min(1),
-                variantSelections: z.array(
-                    z.object({
-                        variantOptionId: z.number(),
-                        brandId: z.number(),
-                    }),
-                ).min(1),
-
-                // Step 4: Pricing per brand×variant
-                pricing: z.array(
-                    z.object({
-                        variantOptionId: z.number(),
-                        brandId: z.number(),
-                        retailPrice: z.string(), // decimal
-                    }),
-                ),
-
-                // Step 5: Product rules
-                isReturnablePack: z.boolean().default(false),
-                expiryEnabled: z.boolean().default(false),
-                damageControlEnabled: z.boolean().default(false),
-                stockTrackingEnabled: z.boolean().default(true),
-                trackingType: z.enum(["none", "batch", "serial"]).default("none"),
-
-                // Step 6: Opening stock per brand×variant
-                openingStock: z.array(
-                    z.object({
-                        variantOptionId: z.number(),
-                        brandId: z.number(),
-                        quantity: z.number().default(0),
-                    }),
-                ).optional(),
-
-                // Step 7: Customization
-                displayName: z.string().optional(),
-                shortNote: z.string().optional(),
-
-                // Step 8: Visibility
-                status: z.enum(["active", "inactive", "draft"]).default("active"),
-            }),
-        )
-        .handler(async ({ input, context }) => {
-            const userId = context.session.user.id;
-
-            // 1. Fetch core product for defaults
-            const core = await db.query.coreProductIdentity.findFirst({
-                where: eq(coreProductIdentity.id, input.coreProductId),
+        .input(z.unknown())
+        .handler(async () => {
+            throw new ORPCError("BAD_REQUEST", {
+                message: "Retailer products must be configured from Product Catalog",
             });
-            if (!core) throw new ORPCError("NOT_FOUND", { message: "Core product not found" });
-
-            // 2. Create the product row
-            const productName = input.displayName || core.name;
-            const slug = productName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") + "-" + Date.now();
-
-            const [newProduct] = await db
-                .insert(product)
-                .values({
-                    name: productName,
-                    slug,
-                    categoryId: input.categoryId,
-                    subCategoryId: input.subCategoryId ?? null,
-                    coreProductId: input.coreProductId,
-                    creatorSource: "shop",
-                    createdById: userId,
-                    image: core.image ?? "",
-                    size: "default",
-                    price: "0",
-                    status: input.status,
-                    shortDescription: input.shortNote ?? null,
-                    isReturnablePack: input.isReturnablePack,
-                    expiryEnabled: input.expiryEnabled,
-                    damageControlEnabled: input.damageControlEnabled,
-                    stockTrackingEnabled: input.stockTrackingEnabled,
-                    trackingType: input.trackingType,
-                })
-                .returning({ id: product.id });
-
-            if (!newProduct) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Failed to create product" });
-
-            // 3. Insert product_brand links
-            if (input.brandIds.length > 0) {
-                await db.insert(productBrand).values(
-                    input.brandIds.map((bid) => ({
-                        productId: newProduct.id,
-                        brandId: bid,
-                    })),
-                );
-            }
-
-            // 4. Create product_variant + product_variant_price for each brand×variant
-            const createdVariants: Array<{ variantId: number; variantOptionId: number; brandId: number }> = [];
-
-            for (const sel of input.variantSelections) {
-                // Fetch variant option for defaults
-                const vo = await db.query.variantOption.findFirst({
-                    where: eq(variantOption.id, sel.variantOptionId),
-                });
-                if (!vo) continue;
-                const resolvedVariant = resolveVariantOption(vo);
-
-                // Get pricing for this combo
-                const priceEntry = input.pricing.find(
-                    (p) => p.variantOptionId === sel.variantOptionId && p.brandId === sel.brandId,
-                );
-                const retailPrice = priceEntry?.retailPrice ?? "0";
-
-                // Create product variant
-                const [pv] = await db
-                    .insert(productVariant)
-                    .values({
-                        productId: newProduct.id,
-                        unitLabel: resolvedVariant.label,
-                        weightKg: resolvedVariant.weightKg,
-                        packagingType: resolvedVariant.container.toLowerCase(),
-                        price: retailPrice,
-                        brandId: sel.brandId,
-                        pricingType: "per_unit",
-                        sourceVariantOptionId: vo.id,
-                        orderUnit: resolvedVariant.orderUnit,
-                        packType: resolvedVariant.container.toLowerCase() as any,
-                    })
-                    .returning({ id: productVariant.id });
-
-                if (!pv) continue;
-
-                // Create product_variant_price link
-                await db.insert(productVariantPrice).values({
-                    productId: newProduct.id,
-                    variantOptionId: sel.variantOptionId,
-                    brandId: sel.brandId,
-                    consumerPrice: retailPrice,
-                });
-
-                createdVariants.push({
-                    variantId: pv.id,
-                    variantOptionId: sel.variantOptionId,
-                    brandId: sel.brandId,
-                });
-            }
-
-            // 5. Create initial inventory rows
-            for (const cv of createdVariants) {
-                const stockEntry = input.openingStock?.find(
-                    (s) => s.variantOptionId === cv.variantOptionId && s.brandId === cv.brandId,
-                );
-                const qty = stockEntry?.quantity ?? 0;
-
-                // Get retail price
-                const priceEntry = input.pricing.find(
-                    (p) => p.variantOptionId === cv.variantOptionId && p.brandId === cv.brandId,
-                );
-
-                await db.insert(inventory).values({
-                    ownerType: "shop",
-                    ownerId: userId,
-                    variantId: cv.variantId,
-                    availableQty: String(qty),
-                    reservedQty: "0",
-                    retailPrice: priceEntry?.retailPrice ?? null,
-                });
-            }
-
-            return {
-                productId: newProduct.id,
-                variantsCreated: createdVariants.length,
-            };
         }),
 
-    /**
-     * Get full store preview data for the "My Store" consumer view.
-     * Returns store identity, categories, and products with variants/brands.
-     */
     getMyStorePreview: shopOwnerProcedure
         .handler(async ({ context }) => {
             const userId = context.session.user.id;
@@ -8750,4 +8618,5 @@ export const shopOwnerRouter = {
     ...shopStorefrontEndpoints,
     ...publicCatalogEndpoints,
     ...shopProductEndpoints,
+    ...shopProductConfigEndpoints,
 };

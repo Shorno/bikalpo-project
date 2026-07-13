@@ -11,13 +11,11 @@ import {
   ChevronDown,
   ChevronRight,
   Edit,
-  Eye,
   Package,
   PackageOpen,
   PackagePlus,
   Plus,
   Search,
-  ShoppingBag,
   XCircle,
 } from "lucide-react";
 import Image from "next/image";
@@ -43,8 +41,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useShopProducts, useShopProductKPIs, useShopProductDetail } from "@/hooks/use-shop-products-api";
 import { useFilterOptions } from "@/hooks/use-catalog-api";
+import {
+  useShopProductDetail,
+  useShopProductKPIs,
+  useShopProducts,
+} from "@/hooks/use-shop-products-api";
 
 // ────────────────────────────────────────────────────────────────
 // KPI Card
@@ -95,21 +97,30 @@ function StockBadge({ status }: { status: string }) {
   switch (status) {
     case "in_stock":
       return (
-        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+        <Badge
+          variant="outline"
+          className="bg-emerald-50 text-emerald-700 border-emerald-200"
+        >
           <CheckCircle2 className="w-3 h-3 mr-1" />
           In Stock
         </Badge>
       );
     case "low":
       return (
-        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+        <Badge
+          variant="outline"
+          className="bg-amber-50 text-amber-700 border-amber-200"
+        >
           <AlertTriangle className="w-3 h-3 mr-1" />
           Low Stock
         </Badge>
       );
     case "out_of_stock":
       return (
-        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+        <Badge
+          variant="outline"
+          className="bg-red-50 text-red-700 border-red-200"
+        >
           <XCircle className="w-3 h-3 mr-1" />
           Out of Stock
         </Badge>
@@ -127,9 +138,13 @@ export default function ShopProductsPage() {
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<number | undefined>();
   const [brandId, setBrandId] = useState<number | undefined>();
-  const [stockStatus, setStockStatus] = useState<"all" | "in_stock" | "low" | "out_of_stock">("all");
+  const [stockStatus, setStockStatus] = useState<
+    "all" | "in_stock" | "low" | "out_of_stock"
+  >("all");
   const [page, setPage] = useState(1);
-  const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
+  const [expandedProductId, setExpandedProductId] = useState<number | null>(
+    null,
+  );
 
   const { data: kpis, isLoading: kpisLoading } = useShopProductKPIs();
   const { data, isLoading, isError } = useShopProducts({
@@ -148,7 +163,9 @@ export default function ShopProductsPage() {
   const brands = filterData?.brands ?? [];
 
   // Clicking a KPI card sets the stock filter
-  const handleKPIClick = (status: "all" | "in_stock" | "low" | "out_of_stock") => {
+  const handleKPIClick = (
+    status: "all" | "in_stock" | "low" | "out_of_stock",
+  ) => {
     setStockStatus(status === stockStatus ? "all" : status);
     setPage(1);
   };
@@ -163,10 +180,11 @@ export default function ShopProductsPage() {
             Inventory / Products
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Retail Control Panel — Manage your product inventory, stock levels, and pricing
+            Retail Control Panel — Manage your product inventory, stock levels,
+            and pricing
           </p>
         </div>
-        <Link href="/dashboard/products/create">
+        <Link href="/dashboard/product-catalog">
           <Button className="gap-2">
             <Plus className="h-4 w-4" />
             Add Product
@@ -303,7 +321,9 @@ export default function ShopProductsPage() {
         <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
           <XCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
           <p className="text-gray-500 font-medium">Failed to load products</p>
-          <p className="text-sm text-gray-400 mt-1">Please try refreshing the page.</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Please try refreshing the page.
+          </p>
         </div>
       ) : items.length === 0 ? (
         <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
@@ -315,7 +335,7 @@ export default function ShopProductsPage() {
               : "Add your first product to get started"}
           </p>
           {!search && !categoryId && stockStatus === "all" && (
-            <Link href="/dashboard/products/create">
+            <Link href="/dashboard/product-catalog">
               <Button variant="outline" className="gap-2">
                 <Plus className="h-4 w-4" />
                 Add First Product
@@ -346,7 +366,11 @@ export default function ShopProductsPage() {
                       <TableRow
                         key={item.productId}
                         className={`cursor-pointer hover:bg-gray-50/80 transition-colors ${isExpanded ? "bg-blue-50/30" : ""}`}
-                        onClick={() => setExpandedProductId(isExpanded ? null : item.productId)}
+                        onClick={() =>
+                          setExpandedProductId(
+                            isExpanded ? null : item.productId,
+                          )
+                        }
                       >
                         <TableCell className="text-muted-foreground font-mono text-sm">
                           {(page - 1) * 20 + idx + 1}
@@ -409,7 +433,10 @@ export default function ShopProductsPage() {
                       {isExpanded && (
                         <TableRow key={`${item.productId}-detail`}>
                           <TableCell colSpan={7} className="p-0 bg-gray-50/60">
-                            <ExpandedProductDetail productId={item.productId} productName={item.name} />
+                            <ExpandedProductDetail
+                              productId={item.productId}
+                              productName={item.name}
+                            />
                           </TableCell>
                         </TableRow>
                       )}
@@ -424,7 +451,8 @@ export default function ShopProductsPage() {
           {pagination && pagination.totalPages > 1 && (
             <div className="flex items-center justify-between px-2">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * 20 + 1}–{Math.min(page * 20, pagination.totalCount)} of{" "}
+                Showing {(page - 1) * 20 + 1}–
+                {Math.min(page * 20, pagination.totalCount)} of{" "}
                 {pagination.totalCount} products
               </p>
               <div className="flex gap-2">
@@ -554,7 +582,13 @@ function VariantStockBadge({ status }: { status: string }) {
   }
 }
 
-function ExpandedProductDetail({ productId, productName }: { productId: number; productName: string }) {
+function ExpandedProductDetail({
+  productId,
+  productName,
+}: {
+  productId: number;
+  productName: string;
+}) {
   const { data, isLoading } = useShopProductDetail(productId);
 
   if (isLoading) {
@@ -587,8 +621,12 @@ function ExpandedProductDetail({ productId, productName }: { productId: number; 
               📦 Product Overview
             </p>
             <p className="text-sm text-gray-700 mt-0.5">
-              Category: <span className="font-medium">{product.category?.name ?? "—"}</span>
-              {" · "}Total Variants: <span className="font-medium">{variants.length}</span>
+              Category:{" "}
+              <span className="font-medium">
+                {product.category?.name ?? "—"}
+              </span>
+              {" · "}Total Variants:{" "}
+              <span className="font-medium">{variants.length}</span>
             </p>
           </div>
           <div className="text-right">
@@ -622,7 +660,8 @@ function ExpandedProductDetail({ productId, productName }: { productId: number; 
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="text-sm font-mono text-gray-700">
-                  {v.availableQty} {v.weightKg && v.weightKg !== "0" ? "pcs" : "units"}
+                  {v.availableQty}{" "}
+                  {v.weightKg && v.weightKg !== "0" ? "pcs" : "units"}
                 </span>
                 <VariantStockBadge status={v.stockStatus} />
               </div>
@@ -651,12 +690,14 @@ function ExpandedProductDetail({ productId, productName }: { productId: number; 
             Add Stock
           </Button>
         </Link>
-        <Link href={`/dashboard/products/${productId}`}>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
-            <Edit className="h-3.5 w-3.5" />
-            Edit Product
-          </Button>
-        </Link>
+        {data.product.isRetailerOwned && (
+          <Link href={`/dashboard/products/${productId}/edit`}>
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
+              <Edit className="h-3.5 w-3.5" />
+              Edit Product
+            </Button>
+          </Link>
+        )}
         <Link href={`/dashboard/products/${productId}`}>
           <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
             <BarChart3 className="h-3.5 w-3.5" />
