@@ -233,6 +233,58 @@ function matchesStockEntry(
   return false;
 }
 
+function hasAvailableStock(
+  pricingRow: {
+    productId: number;
+    variantId?: number | null;
+    variantOptionId?: number | null;
+    brandId?: number | null;
+  },
+  stockRows: Array<{
+    productId: number;
+    variantId: number;
+    variantOptionId?: number | null;
+    brandId?: number | null;
+    availableQty: number;
+  }>,
+) {
+  return stockRows.some(
+    (stockRow) =>
+      matchesStockEntry(pricingRow, stockRow) &&
+      Number(stockRow.availableQty) > 0,
+  );
+}
+
+function pickPreferredPriceRow(
+  rows: Array<{
+    id: number;
+    productId: number;
+    brandId?: number | null;
+    consumerPrice?: number | null;
+    sortOrder?: number | null;
+  }>,
+  stockRows: Array<{
+    productId: number;
+    variantId: number;
+    variantOptionId?: number | null;
+    brandId?: number | null;
+    availableQty: number;
+  }>,
+) {
+  const orderedRows = [...rows].sort(
+    (a, b) =>
+      (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+      asNumber(a.consumerPrice) - asNumber(b.consumerPrice),
+  );
+
+  return (
+    orderedRows.find((row) => hasAvailableStock(row, stockRows)) ??
+    orderedRows.find((row) => asNumber(row.consumerPrice) > 0) ??
+    orderedRows[0] ??
+    null
+  );
+}
+
 export function buildReferenceCatalogData(productRows: any[]) {
   const activeConsumerVariants = productRows.flatMap((productRow) =>
     (productRow.variants ?? []).filter(isConsumerVisibleVariant),
@@ -495,14 +547,24 @@ export function buildPublicProductDetailPayload(args: {
     openQty: Math.max(row.availableQty - row.inCartonQty, 0),
   }));
   const selectableBrands = referenceCatalog.brands.filter((brand) => brand.id != null);
+  const selectedBrand =
+    primaryProduct?.brandId != null
+      ? referenceCatalog.brands.find((brand) => brand.id === primaryProduct.brandId) ??
+        null
+      : null;
+  const preferredProductRows =
+    primaryProduct?.id != null
+      ? pricingRows.filter((row) => row.productId === primaryProduct.id)
+      : [];
+  const preferredBrandRows =
+    primaryProduct?.brandId != null
+      ? pricingRows.filter((row) => row.brandId === primaryProduct.brandId)
+      : [];
   const defaultPriceRow =
-    pricingRows.find((row) =>
-      stockTableRows.some(
-        (stockRow) =>
-          matchesStockEntry(row, stockRow) && Number(stockRow.availableQty) > 0,
-      ),
-    ) ??
-    pricingRows.find((row) => row.consumerPrice > 0) ??
+    pickPreferredPriceRow(preferredProductRows, stockTableRows) ??
+    pickPreferredPriceRow(preferredBrandRows, stockTableRows) ??
+    pricingRows.find((row) => hasAvailableStock(row, stockTableRows)) ??
+    pricingRows.find((row) => asNumber(row.consumerPrice) > 0) ??
     pricingRows[0] ??
     null;
 
@@ -543,19 +605,23 @@ export function buildPublicProductDetailPayload(args: {
       status: primaryProduct?.status ?? null,
       category: coreProduct.category?.name ?? null,
       subCategory: coreProduct.subCategory?.name ?? null,
-      productName: coreProduct.name,
+      productName: primaryProduct?.name ?? coreProduct.name,
       brand:
-        referenceCatalog.brands.length === 1
+        selectedBrand?.name ??
+        (referenceCatalog.brands.length === 1
           ? referenceCatalog.brands[0]?.name ?? null
-          : null,
+          : null),
       variantDescriptor,
       inventoryUnit: displayUnit.shortLabel,
       minimumOrder,
     },
     gallery: {
-      coverImage: summary.image,
+      coverImage: primaryProduct?.image ?? summary.image,
       videoUrl: primaryProduct?.videoUrl ?? null,
       images: uniqueStrings([
+        primaryProduct?.image,
+        ...((primaryProduct?.images ?? []).map((image: any) => image.imageUrl) ??
+          []),
         coreProduct.image,
         ...productRows.flatMap((productRow) => [
           productRow.image,
@@ -603,7 +669,10 @@ export function buildPublicProductDetailPayload(args: {
       defaultProductId: defaultPriceRow?.productId ?? primaryProduct?.id ?? null,
       defaultVariantId: defaultPriceRow?.variantId ?? null,
       defaultBrandId:
-        defaultPriceRow?.brandId ?? selectableBrands[0]?.id ?? null,
+        defaultPriceRow?.brandId ??
+        primaryProduct?.brandId ??
+        selectableBrands[0]?.id ??
+        null,
       defaultColor: defaultPriceRow?.color ?? null,
       defaultSize: defaultPriceRow?.size ?? null,
       defaultLabel: defaultPriceRow?.label ?? null,

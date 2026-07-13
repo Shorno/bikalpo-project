@@ -533,9 +533,25 @@ async function resolveWebViewProductDetailContext(input: {
   id?: number;
   slug?: string;
 }) {
+  const requestedSlug = input.slug?.trim();
   const identityCondition = input.id
     ? eq(coreProductIdentity.id, input.id)
-    : eq(coreProductIdentity.slug, input.slug?.trim() ?? "");
+    : eq(coreProductIdentity.slug, requestedSlug ?? "");
+
+  const matchedProduct = requestedSlug
+    ? await db.query.product.findFirst({
+        where: and(
+          ...getWebViewProductConditions(),
+          eq(product.slug, requestedSlug),
+        ),
+        columns: {
+          id: true,
+          coreProductId: true,
+          brandId: true,
+          slug: true,
+        },
+      })
+    : null;
 
   let found = await db.query.coreProductIdentity.findFirst({
     where: identityCondition,
@@ -558,17 +574,9 @@ async function resolveWebViewProductDetailContext(input: {
   });
 
   if (!found) {
-    const productIdentityCondition = input.id
-      ? eq(product.id, input.id)
-      : eq(product.slug, input.slug?.trim() ?? "");
-    const foundProduct = await db.query.product.findFirst({
-      where: and(...getWebViewProductConditions(), productIdentityCondition),
-      columns: { coreProductId: true },
-    });
-
-    if (foundProduct?.coreProductId) {
+    if (matchedProduct?.coreProductId) {
       found = await db.query.coreProductIdentity.findFirst({
-        where: eq(coreProductIdentity.id, foundProduct.coreProductId),
+        where: eq(coreProductIdentity.id, matchedProduct.coreProductId),
         with: {
           category: {
             columns: { id: true, name: true, slug: true, typeId: true },
@@ -617,12 +625,18 @@ async function resolveWebViewProductDetailContext(input: {
     orderBy: [desc(product.createdAt)],
   });
   const productRows = getScopedWebViewProductRows(allProductRows);
-  const primaryProduct = getPrimaryWebViewProduct(productRows);
+  const requestedProduct = matchedProduct
+    ? productRows.find((productRow) => productRow.id === matchedProduct.id) ??
+      allProductRows.find((productRow) => productRow.id === matchedProduct.id) ??
+      null
+    : null;
+  const primaryProduct = requestedProduct ?? getPrimaryWebViewProduct(productRows);
 
   return {
     coreProduct: found,
     allProductRows,
     productRows,
+    requestedProduct,
     primaryProduct,
   };
 }
@@ -1204,7 +1218,7 @@ const queries = {
       // Serialize product and variants with proper price conversion
       const foundSerialized = {
         ...primaryProduct,
-        slug: coreProduct.slug,
+        slug: primaryProduct.slug ?? coreProduct.slug,
         price: asNumber(primaryProduct.price),
       };
       const variantsSerialized = variants.map((v) => ({

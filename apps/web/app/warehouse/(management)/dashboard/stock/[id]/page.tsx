@@ -949,14 +949,21 @@ export default function StockDetailPage() {
                     return (
                       <Fragment key={gi}>
                         {group.items.map(
-                          (item: StockVariantItem, ii: number) => {
+                          (variantItem: StockVariantItem, ii: number) => {
                             const { totalQty, inCartonQty, looseQty } =
-                              getVariantDisplayInventory(item, false);
-                            const measure = getGroupMeasure(group);
+                              getVariantDisplayInventory(variantItem, false);
+                            const measure = getGroupMeasure(
+                              group,
+                              item.typeName,
+                            );
                             const countUnitLabel = formatDisplayUnit(
                               measure.quantityUnit,
                             );
-                            const label = buildVariantLabel(group, item, false);
+                            const label = buildVariantLabel(
+                              group,
+                              variantItem,
+                              false,
+                            );
                             const isLoose = false;
                             const weightKg = parseFloat(group.weightKg || "0");
                             const looseQtyCount = 0;

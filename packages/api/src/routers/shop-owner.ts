@@ -718,7 +718,18 @@ const managementQueries = {
                         with: {
                             product: {
                                 with: {
-                                    category: { columns: { id: true, name: true } },
+                                    category: {
+                                        columns: { id: true, name: true },
+                                        with: {
+                                            type: {
+                                                columns: {
+                                                    name: true,
+                                                    slug: true,
+                                                    inventoryBehaviour: true,
+                                                },
+                                            },
+                                        },
+                                    },
                                 },
                             },
                             brand: { columns: { id: true, name: true } },
