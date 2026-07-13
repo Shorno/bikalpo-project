@@ -1,5 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
+  index,
   boolean,
   decimal,
   integer,
@@ -12,6 +14,7 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
+import { user } from "./auth-schema";
 import { brand } from "./brand";
 import { category, subCategory } from "./category";
 import { timestamps } from "./columns.helpers";
@@ -43,6 +46,14 @@ export { trackingTypeEnum };
 export const visibilityEnum = pgEnum("product_visibility", [
   "public",
   "private",
+]);
+
+/** Explicit creator of an actual product row. */
+export const productCreatorSourceEnum = pgEnum("product_creator_source", [
+  "admin",
+  "warehouse",
+  "shop",
+  "unknown",
 ]);
 
 export const product = pgTable(
@@ -165,7 +176,26 @@ export const product = pgTable(
     status: productStatusEnum("status").default("active").notNull(),
 
     /** Warehouse that created this product. NULL = admin-created (global). */
-    createdByWarehouseId: text("created_by_warehouse_id"),
+    createdByWarehouseId: text("created_by_warehouse_id").references(
+      () => user.id,
+      { onDelete: "set null" },
+    ),
+
+    /** Actor type that created the product. `shop` is labelled Retailer in UI. */
+    creatorSource: productCreatorSourceEnum("creator_source")
+      .default("unknown")
+      .notNull(),
+
+    /** User ID of the creator; for warehouse products this is the warehouse ID. */
+    createdById: text("created_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+
+    /** Optional lineage to the product that supplied the initial defaults. */
+    derivedFromProductId: integer("derived_from_product_id").references(
+      (): AnyPgColumn => product.id,
+      { onDelete: "set null" },
+    ),
 
     ...timestamps,
   },
@@ -173,8 +203,23 @@ export const product = pgTable(
     uniqueIndex("product_core_brand_admin_unique")
       .on(table.coreProductId, table.brandId)
       .where(
-        sql`${table.createdByWarehouseId} IS NULL AND ${table.coreProductId} IS NOT NULL AND ${table.brandId} IS NOT NULL`,
+        sql`${table.creatorSource} = 'admin' AND ${table.coreProductId} IS NOT NULL AND ${table.brandId} IS NOT NULL`,
       ),
+    uniqueIndex("product_core_brand_warehouse_unique")
+      .on(table.createdById, table.coreProductId, table.brandId)
+      .where(
+        sql`${table.creatorSource} = 'warehouse' AND ${table.createdById} IS NOT NULL AND ${table.coreProductId} IS NOT NULL AND ${table.brandId} IS NOT NULL`,
+      ),
+    uniqueIndex("product_core_brand_shop_unique")
+      .on(table.createdById, table.coreProductId, table.brandId)
+      .where(
+        sql`${table.creatorSource} = 'shop' AND ${table.createdById} IS NOT NULL AND ${table.coreProductId} IS NOT NULL AND ${table.brandId} IS NOT NULL`,
+      ),
+    index("product_creator_scope_idx").on(
+      table.creatorSource,
+      table.createdById,
+    ),
+    index("product_derived_from_idx").on(table.derivedFromProductId),
   ],
 );
 
@@ -193,16 +238,25 @@ export const productImage = pgTable("product_image", {
  * Junction table for multi-brand product support.
  * A product like "Miniket Rice 1KG" can stock brands: Ifad, ACI, Pran.
  */
-export const productBrand = pgTable("product_brand", {
-  id: serial("id").primaryKey(),
-  productId: integer("product_id")
-    .notNull()
-    .references(() => product.id, { onDelete: "cascade" }),
-  brandId: integer("brand_id")
-    .notNull()
-    .references(() => brand.id, { onDelete: "cascade" }),
-  ...timestamps,
-});
+export const productBrand = pgTable(
+  "product_brand",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => product.id, { onDelete: "cascade" }),
+    brandId: integer("brand_id")
+      .notNull()
+      .references(() => brand.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("product_brand_product_brand_unique").on(
+      table.productId,
+      table.brandId,
+    ),
+  ],
+);
 
 // === Product ↔ Variant Option Price (M2M with pricing) ===
 
@@ -268,6 +322,16 @@ export const productRelations = relations(product, ({ one, many }) => ({
   coreProduct: one(coreProductIdentity, {
     fields: [product.coreProductId],
     references: [coreProductIdentity.id],
+  }),
+  createdBy: one(user, {
+    fields: [product.createdById],
+    references: [user.id],
+    relationName: "productCreator",
+  }),
+  derivedFromProduct: one(product, {
+    fields: [product.derivedFromProductId],
+    references: [product.id],
+    relationName: "derivedProductLineage",
   }),
   images: many(productImage),
   productBrands: many(productBrand),

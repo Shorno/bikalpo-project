@@ -10,6 +10,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
+import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
 import {
     buildProductTypeFulfillmentProfile,
     FULFILLMENT_MODES,
@@ -6204,6 +6205,12 @@ const warehouseConnectionEndpoints = {
                 eq(inventory.ownerType, "warehouse"),
                 eq(inventory.ownerId, warehouseId),
                 sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                sql`CAST(${inventory.retailPrice} AS NUMERIC) > 0`,
+                eq(product.status, "active"),
+                eq(product.visibility, "public"),
+                inArray(product.creatorSource, ["admin", "warehouse"]),
+                sql`${product.brandId} IS NOT NULL`,
+                eq(productVariant.isActive, true),
             ];
 
             if (input.search) {
@@ -6215,6 +6222,21 @@ const warehouseConnectionEndpoints = {
                     )!,
                 );
             }
+
+            const pageProducts = await db
+                .selectDistinct({ productId: product.id })
+                .from(inventory)
+                .innerJoin(
+                    productVariant,
+                    eq(inventory.variantId, productVariant.id),
+                )
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .where(and(...conditions))
+                .orderBy(asc(product.id))
+                .limit(limit)
+                .offset(offset);
+            const pageProductIds = pageProducts.map((row) => row.productId);
+            if (pageProductIds.length === 0) return { products: [] };
 
             const items = await db
                 .select({
@@ -6247,7 +6269,11 @@ const warehouseConnectionEndpoints = {
                     variantPackCountInside: productVariant.packCountInside,
                     productUnitSize: product.size,
                     productBrandId: product.brandId,
+                    productCreatorSource: product.creatorSource,
+                    productCreatedById: product.createdById,
                     variantBrandId: productVariant.brandId,
+                    variantColor: productVariant.color,
+                    variantSize: productVariant.size,
                     brandName: brand.name,
                 })
                 .from(inventory)
@@ -6272,10 +6298,12 @@ const warehouseConnectionEndpoints = {
                     brand,
                     eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`),
                 )
-                .where(and(...conditions))
-                .orderBy(asc(category.name), asc(product.name))
-                .limit(limit)
-                .offset(offset);
+                .where(and(...conditions, inArray(product.id, pageProductIds)))
+                .orderBy(
+                    asc(category.name),
+                    asc(product.name),
+                    asc(productVariant.sortOrder),
+                );
 
             // Annotate each product with canOrder flag
             const products = items.map((item) => {
@@ -6289,8 +6317,7 @@ const warehouseConnectionEndpoints = {
                 }
 
                 const rp = Number(item.retailPrice || 0);
-                const vp = Number(item.variantPrice || 0);
-                const price = rp > 0 ? String(rp) : vp > 0 ? String(vp) : "0";
+                const price = rp > 0 ? String(rp) : "0";
 
                 // Track both total pack stock and loose (non-carton) stock
                 const rawQty = Number(item.availableQty || 0);
@@ -6329,6 +6356,14 @@ const warehouseConnectionEndpoints = {
                             isReturnablePack: item.productIsReturnablePack,
                         },
                         fulfillmentProfile,
+                        creator: {
+                            source: item.productCreatorSource,
+                            creatorId: item.productCreatedById,
+                            warehouseId:
+                                item.productCreatorSource === "warehouse"
+                                    ? item.productCreatedById
+                                    : null,
+                        },
                     },
                     variant: {
                         unitLabel: item.variantUnitLabel,
@@ -6342,6 +6377,8 @@ const warehouseConnectionEndpoints = {
                         packCountInside: item.variantPackCountInside,
                         brandId: item.variantBrandId ?? item.productBrandId,
                         brandName: item.brandName,
+                        color: item.variantColor,
+                        size: item.variantSize,
                     },
                 };
             });
@@ -7625,6 +7662,8 @@ const shopProductEndpoints = {
                     categoryId: input.categoryId,
                     subCategoryId: input.subCategoryId ?? null,
                     coreProductId: input.coreProductId,
+                    creatorSource: "shop",
+                    createdById: userId,
                     image: core.image ?? "",
                     size: "default",
                     price: "0",
@@ -7659,6 +7698,7 @@ const shopProductEndpoints = {
                     where: eq(variantOption.id, sel.variantOptionId),
                 });
                 if (!vo) continue;
+                const resolvedVariant = resolveVariantOption(vo);
 
                 // Get pricing for this combo
                 const priceEntry = input.pricing.find(
@@ -7671,13 +7711,15 @@ const shopProductEndpoints = {
                     .insert(productVariant)
                     .values({
                         productId: newProduct.id,
-                        unitLabel: vo.name,
-                        weightKg: vo.size ?? "0",
-                        packagingType: vo.variantType === "loose" ? "loose" : "packet",
+                        unitLabel: resolvedVariant.label,
+                        weightKg: resolvedVariant.weightKg,
+                        packagingType: resolvedVariant.container.toLowerCase(),
                         price: retailPrice,
                         brandId: sel.brandId,
                         pricingType: "per_unit",
                         sourceVariantOptionId: vo.id,
+                        orderUnit: resolvedVariant.orderUnit,
+                        packType: resolvedVariant.container.toLowerCase() as any,
                     })
                     .returning({ id: productVariant.id });
 

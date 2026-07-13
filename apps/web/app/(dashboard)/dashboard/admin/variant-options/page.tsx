@@ -32,6 +32,8 @@ export default function VariantOptionsPage() {
   const types = (typesData?.types ?? []).map((t) => ({
     id: t.id,
     name: t.name,
+    slug: t.slug,
+    inventoryBehaviour: t.inventoryBehaviour,
   }));
 
   const categories = (categoriesData ?? []).map((c) => ({
@@ -60,7 +62,7 @@ export default function VariantOptionsPage() {
           Variant Setup
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage global variant options that can be reused across core products.
+          Define canonical, type-scoped labels and inventory units reused across core products.
         </p>
       </div>
 

@@ -180,7 +180,7 @@ type ConsumerPriceListInput = z.infer<typeof consumerPriceListParamsSchema>;
 async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
   const conditions: SQL[] = [
     eq(productVariantPrice.isActive, true),
-    isNull(product.createdByWarehouseId),
+    eq(product.creatorSource, "admin"),
   ];
 
   if (input.search?.trim()) {
@@ -349,7 +349,7 @@ async function fetchConsumerReferencePricePage(
 ) {
   const conditions: SQL[] = [
     eq(productVariantPrice.isActive, true),
-    isNull(product.createdByWarehouseId),
+    eq(product.creatorSource, "admin"),
   ];
 
   if (input.search?.trim()) {
@@ -587,8 +587,92 @@ async function fetchConsumerReferencePricePage(
 
 export const productRouter = {
   /**
+   * Get admin-owned products for the Admin Web View.
+   * REST: GET /products/admin-web-view
+   */
+  getAdminWebViewProducts: adminProcedure
+    .route({
+      method: "GET",
+      path: "/products/admin-web-view",
+      tags: ["Product Management"],
+      summary: "Get admin Web View products",
+      description: "Get admin-owned products with full card relations",
+    })
+    .handler(async () => {
+      const products = await db.query.product.findMany({
+        where: eq(product.creatorSource, "admin"),
+        orderBy: [desc(product.createdAt)],
+        with: {
+          category: true,
+          subCategory: true,
+          brand: true,
+          images: true,
+          productBrands: {
+            with: { brand: true },
+          },
+          variants: {
+            with: { brand: true },
+            columns: {
+              id: true,
+              variantType: true,
+              brandId: true,
+              unitLabel: true,
+            },
+          },
+          variantPrices: {
+            with: { variantOption: true },
+          },
+        },
+      });
+
+      return { products };
+    }),
+
+  /**
+   * Get one admin-owned product for the Admin Web View.
+   * REST: GET /products/admin-web-view/:id
+   */
+  getAdminWebViewProductById: adminProcedure
+    .route({
+      method: "GET",
+      path: "/products/admin-web-view/{id}",
+      tags: ["Product Management"],
+      summary: "Get admin Web View product by ID",
+      description: "Get one admin-owned product with full detail relations",
+    })
+    .input(productIdSchema)
+    .handler(async ({ input }) => {
+      const foundProduct = await db.query.product.findFirst({
+        where: and(
+          eq(product.id, input.id),
+          eq(product.creatorSource, "admin"),
+        ),
+        with: {
+          category: true,
+          subCategory: true,
+          brand: true,
+          images: true,
+          productBrands: {
+            with: { brand: true },
+          },
+          variantPrices: {
+            with: {
+              variantOption: true,
+            },
+          },
+        },
+      });
+
+      if (!foundProduct) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+
+      return { product: foundProduct };
+    }),
+
+  /**
    * First-time admin product creation for a core product.
-   * One submission stores the immutable shared template and creates one
+   * One submission stores the initial shared template and creates one
    * independent product per selected brand.
    */
   create: adminProcedure
@@ -677,7 +761,7 @@ export const productRouter = {
         const existingProduct = await tx.query.product.findFirst({
           where: and(
             eq(product.coreProductId, coreProductId),
-            isNull(product.createdByWarehouseId),
+            eq(product.creatorSource, "admin"),
           ),
           columns: { id: true },
         });
@@ -838,6 +922,8 @@ export const productRouter = {
               subCategoryId: core.subCategoryId ?? null,
               brandId,
               coreProductId,
+              creatorSource: "admin",
+              createdById: context.session.user.id,
               size: templateDetails.size,
               price: templateDetails.price,
               reorderLevel: templateDetails.reorderLevel,
@@ -936,6 +1022,7 @@ export const productRouter = {
           categoryId: true,
           subCategoryId: true,
           createdByWarehouseId: true,
+          creatorSource: true,
         },
       });
       if (!existing) {
@@ -946,7 +1033,7 @@ export const productRouter = {
       // Their own variant set remains editable without affecting siblings.
       const isCoreManaged =
         existing.coreProductId !== null &&
-        existing.createdByWarehouseId === null;
+        existing.creatorSource === "admin";
       const brandIds = isCoreManaged ? undefined : inputBrandIds;
       if (isCoreManaged && !existing.brandId) {
         throw new ORPCError("BAD_REQUEST", {
@@ -1180,6 +1267,7 @@ export const productRouter = {
           brandId: true,
           coreProductId: true,
           createdByWarehouseId: true,
+          creatorSource: true,
         },
       });
       if (!existing) {
@@ -1191,7 +1279,7 @@ export const productRouter = {
       if (
         !input.force &&
         existing.coreProductId !== null &&
-        existing.createdByWarehouseId === null
+        existing.creatorSource === "admin"
       ) {
         await db.transaction(async (tx) => {
           await tx
@@ -1232,7 +1320,7 @@ export const productRouter = {
           const remaining = await tx.query.product.findFirst({
             where: and(
               eq(product.coreProductId, existing.coreProductId),
-              isNull(product.createdByWarehouseId),
+              eq(product.creatorSource, "admin"),
             ),
             columns: { id: true },
           });
@@ -1652,6 +1740,7 @@ export const productRouter = {
         .select({
           id: productVariantPrice.id,
           createdByWarehouseId: product.createdByWarehouseId,
+          creatorSource: product.creatorSource,
         })
         .from(productVariantPrice)
         .innerJoin(product, eq(productVariantPrice.productId, product.id))
@@ -1663,7 +1752,7 @@ export const productRouter = {
         });
       }
 
-      if (existing.createdByWarehouseId) {
+      if (existing.creatorSource !== "admin") {
         throw new ORPCError("FORBIDDEN", {
           message: "Only admin-created product prices can be updated here",
         });

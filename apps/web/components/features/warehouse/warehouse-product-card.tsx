@@ -49,15 +49,36 @@ interface WarehouseProductCardProps {
   onUpdateQuantity?: (variantId: number, delta: number) => void;
 }
 
-function getStockColor(status: "high" | "medium" | "low") {
-  switch (status) {
-    case "high":
-      return "text-emerald-700 bg-emerald-50 border-emerald-200";
-    case "medium":
-      return "text-amber-700 bg-amber-50 border-amber-200";
-    case "low":
-      return "text-red-700 bg-red-50 border-red-200";
-  }
+/**
+ * Compact display label for a variant chip: drops words already present in the
+ * product name (e.g. "Cylinder") and removes redundant duplicate tokens so
+ * "45 KG Cylinder · 45" reads as "45 KG". Display-only — cart keys off variantId.
+ */
+export function shortVariantLabel(label: string, productName: string): string {
+  const nameWords = new Set(
+    productName.toLowerCase().split(/\s+/).filter(Boolean),
+  );
+  const parts = label
+    .split("·")
+    .map((part) =>
+      part
+        .trim()
+        .split(/\s+/)
+        .filter((word) => !nameWords.has(word.toLowerCase()))
+        .join(" ")
+        .trim(),
+    )
+    .filter(Boolean);
+  const deduped = parts.filter(
+    (part, i) =>
+      !parts.some(
+        (other, j) =>
+          j !== i &&
+          other.length > part.length &&
+          other.toLowerCase().includes(part.toLowerCase()),
+      ),
+  );
+  return deduped.join(" · ").trim() || label;
 }
 
 function getStockDot(status: "high" | "medium" | "low") {
@@ -110,9 +131,9 @@ export function WarehouseProductCard({
   );
 
   return (
-    <div className="group bg-white rounded-lg border border-zinc-200 overflow-hidden hover:border-zinc-400 transition-colors duration-200 flex flex-col shadow-none">
+    <div className="group flex flex-col bg-white rounded-xl border border-zinc-200 overflow-hidden hover:border-zinc-300 hover:shadow-sm transition-all duration-200">
       {/* Product Image */}
-      <div className="relative aspect-[16/11] bg-zinc-50 border-b border-zinc-100 overflow-hidden flex-shrink-0">
+      <div className="relative aspect-[4/3] bg-zinc-50 border-b border-zinc-100 overflow-hidden shrink-0">
         {!imageError && product.image ? (
           <Image
             src={product.image}
@@ -130,184 +151,185 @@ export function WarehouseProductCard({
 
         {/* Stock badge */}
         <div className="absolute top-2.5 right-2.5">
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[9px] font-mono tracking-wider uppercase font-bold shadow-none ${getStockColor(product.stockStatus)}`}
-          >
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 backdrop-blur-sm border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-700 shadow-sm">
             <span
               className={`w-1.5 h-1.5 rounded-full ${getStockDot(product.stockStatus)}`}
             />
-            {displayProduct.availableQty} {displayProduct.unit}
+            {displayProduct.availableQty} in stock
           </span>
         </div>
       </div>
 
       {/* Product Info */}
-      <div className="p-3.5 flex-1 flex flex-col justify-between">
+      <div className="flex flex-1 flex-col p-4">
+        {/* Brand + name */}
         <div>
-          {/* Name & Brand */}
-          <span className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-widest block mb-1">
-            Brand:{" "}
-            <span className="text-zinc-600">
-              {product.brand || "Not specified"}
+          {product.brand && (
+            <span className="block text-[11px] font-medium text-zinc-400">
+              {product.brand}
             </span>
-          </span>
-          <h3 className="text-sm font-semibold text-zinc-900 line-clamp-2 leading-snug min-h-[40px] hover:text-zinc-700 transition-colors">
+          )}
+          <h3 className="mt-0.5 text-sm font-semibold text-zinc-900 leading-snug line-clamp-2 min-h-[40px]">
             {product.name}
           </h3>
           {displayProduct.sku && (
-            <span className="mt-1 block text-[9px] font-mono text-zinc-400">
-              SKU: {displayProduct.sku}
+            <span className="mt-1 block text-[11px] text-zinc-400">
+              SKU {displayProduct.sku}
             </span>
           )}
         </div>
 
-        <div>
-          {/* Data spec grid */}
-          <div className="space-y-2 mt-4 pt-2.5 border-t border-zinc-100">
-            {product.variants.length > 1 && (
-              <div>
-                <span className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
-                  Select Type
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {product.variants.map((variant) => (
-                    <button
-                      key={variant.variantId}
-                      type="button"
-                      onClick={() => setSelectedVariantId(variant.variantId)}
-                      className={`rounded border px-2 py-1 text-[10px] font-mono font-semibold transition-colors ${
-                        variant.variantId === selectedVariantId
-                          ? "border-zinc-900 bg-zinc-900 text-white"
-                          : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400"
-                      }`}
-                    >
-                      {variant.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="flex justify-between items-center text-[10px] text-zinc-500">
-              <span>Min. Order Qty</span>
-              <span className="font-mono text-zinc-700 bg-zinc-50 px-1.5 py-0.5 rounded border border-zinc-200/50">
-                {displayProduct.moq} {displayProduct.moqUnit}
+        {/* Variant selector */}
+        {product.variants.length > 1 && (
+          <div className="mt-3">
+            <span className="mb-1.5 block text-[11px] font-medium text-zinc-400">
+              Type
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {product.variants.map((variant) => {
+                const active = variant.variantId === selectedVariantId;
+                return (
+                  <button
+                    key={variant.variantId}
+                    type="button"
+                    onClick={() => setSelectedVariantId(variant.variantId)}
+                    className={`h-7 rounded-md border px-2.5 text-xs font-medium transition-colors ${
+                      active
+                        ? "border-zinc-900 bg-zinc-900 text-white"
+                        : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50"
+                    }`}
+                  >
+                    {shortVariantLabel(variant.label, product.name)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Price + MOQ */}
+        <div className="mt-3 pt-3 border-t border-zinc-100 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <span className="block text-[11px] text-zinc-400">Price</span>
+            <div className="mt-0.5 flex items-baseline gap-1">
+              <span className="text-lg font-semibold text-zinc-900 tabular-nums whitespace-nowrap">
+                ৳ {displayProduct.pricePerUnit}
+              </span>
+              <span className="text-[11px] text-zinc-400 whitespace-nowrap">
+                / {shortVariantLabel(displayProduct.unit, product.name)}
               </span>
             </div>
-            <div className="flex justify-between items-baseline pt-1.5 mb-3.5">
-              <span className="text-xs font-semibold text-zinc-400">Price</span>
-              <div className="flex items-baseline gap-0.5">
-                <span className="font-mono font-bold text-base text-zinc-900 tabular-nums">
-                  ৳ {displayProduct.pricePerUnit}
-                </span>
-                <span className="text-[10px] text-zinc-500">
-                  /{displayProduct.unit}
-                </span>
-              </div>
-            </div>
           </div>
+          <div className="shrink-0 text-right">
+            <span className="block text-[11px] text-zinc-400">Min. order</span>
+            <span className="mt-0.5 block text-xs font-medium text-zinc-700 tabular-nums whitespace-nowrap">
+              {displayProduct.moq}{" "}
+              {shortVariantLabel(displayProduct.moqUnit, product.name)}
+            </span>
+          </div>
+        </div>
 
-          {/* Actions */}
-          <div className="flex flex-col gap-2">
-            {mode === "view-only" ? (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 h-8 text-xs font-semibold border-zinc-200 text-zinc-400 gap-1 rounded cursor-not-allowed"
-                  disabled
-                >
-                  Access Required
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 h-8 text-xs font-semibold border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1 rounded transition-colors"
-                  onClick={() => onViewDetails?.(displayProduct)}
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  Details
-                </Button>
-              </div>
-            ) : mode === "w2w" ? (
-              <div className="flex flex-col gap-2">
-                {inCart ? (
-                  <div className="flex items-center justify-between border border-zinc-200 rounded-md h-8 bg-zinc-50 p-0.5">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onUpdateQuantity?.(displayProduct.selectedVariant?.variantId || displayProduct.id, -1);
-                      }}
-                    >
-                      <Minus className="h-3 w-3" />
-                    </Button>
-                    <span className="text-xs font-mono font-bold text-zinc-900">
-                      {inCart.quantity}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onUpdateQuantity?.(displayProduct.selectedVariant?.variantId || displayProduct.id, 1);
-                      }}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ) : (
+        {/* Actions */}
+        <div className="mt-4">
+          {mode === "view-only" ? (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 h-9 text-xs font-medium border-zinc-200 text-zinc-400 gap-1.5 rounded-lg cursor-not-allowed"
+                disabled
+              >
+                Access Required
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
+                onClick={() => onViewDetails?.(displayProduct)}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Details
+              </Button>
+            </div>
+          ) : mode === "w2w" ? (
+            <div className="flex items-center gap-2">
+              {inCart ? (
+                <div className="flex flex-1 items-center justify-between border border-zinc-200 rounded-lg h-9 bg-white px-1">
                   <Button
-                    size="sm"
-                    className="w-full h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1 rounded transition-colors"
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-md"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onAddToCart?.(displayProduct);
+                      onUpdateQuantity?.(displayProduct.selectedVariant?.variantId || displayProduct.id, -1);
                     }}
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add to Cart
+                    <Minus className="h-3 w-3" />
                   </Button>
-                )}
+                  <span className="text-sm font-semibold text-zinc-900 tabular-nums">
+                    {inCart.quantity}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-md"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateQuantity?.(displayProduct.selectedVariant?.variantId || displayProduct.id, 1);
+                    }}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
                 <Button
-                  variant="outline"
                   size="sm"
-                  className="w-full h-8 text-xs font-semibold border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1 rounded transition-colors"
+                  className="flex-1 h-9 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 rounded-lg transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onViewDetails?.(displayProduct);
+                    onAddToCart?.(displayProduct);
                   }}
                 >
-                  <Eye className="w-3.5 h-3.5 mr-1" />
-                  Details
+                  <Plus className="w-3.5 h-3.5" />
+                  Add to Cart
                 </Button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  className="flex-1 h-8 text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-white gap-1 rounded transition-colors"
-                  onClick={() => onBuyNow?.(displayProduct)}
-                >
-                  <ShoppingCart className="w-3.5 h-3.5" />
-                  Buy Now
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 h-8 text-xs font-semibold border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1 rounded transition-colors"
-                  onClick={() => onViewDetails?.(displayProduct)}
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  Details
-                </Button>
-              </div>
-            )}
-          </div>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onViewDetails?.(displayProduct);
+                }}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Details
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1 h-9 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-white gap-1.5 rounded-lg transition-colors"
+                onClick={() => onBuyNow?.(displayProduct)}
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+                Buy Now
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
+                onClick={() => onViewDetails?.(displayProduct)}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Details
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -316,38 +338,36 @@ export function WarehouseProductCard({
 
 export function WarehouseProductCardSkeleton() {
   return (
-    <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden flex flex-col h-full">
+    <div className="flex flex-col bg-white rounded-xl border border-zinc-200 overflow-hidden h-full">
       {/* Image Skeleton */}
-      <div className="aspect-[16/11] bg-zinc-50 relative border-b border-zinc-100 overflow-hidden flex-shrink-0">
+      <div className="aspect-[4/3] bg-zinc-50 relative border-b border-zinc-100 overflow-hidden shrink-0">
         <Skeleton className="w-full h-full rounded-none" />
       </div>
 
       {/* Product Info */}
-      <div className="p-3.5 flex-1 flex flex-col justify-between">
+      <div className="flex flex-1 flex-col p-4">
         <div>
-          <Skeleton className="h-3 w-16 mb-2" />
+          <Skeleton className="h-3 w-14 mb-2" />
           <Skeleton className="h-4 w-5/6 mb-1.5" />
-          <Skeleton className="h-4 w-2/3 mb-1" />
+          <Skeleton className="h-4 w-2/3" />
         </div>
 
-        <div>
-          {/* Data spec grid */}
-          <div className="space-y-2 mt-4 pt-2.5 border-t border-zinc-100">
-            <div className="flex justify-between items-center">
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-4 w-12" />
-            </div>
-            <div className="flex justify-between items-baseline pt-1.5 mb-3.5">
-              <Skeleton className="h-3 w-8" />
-              <Skeleton className="h-5 w-20" />
-            </div>
-          </div>
+        {/* Variant chips */}
+        <div className="mt-3 flex gap-1.5">
+          <Skeleton className="h-7 w-14 rounded-md" />
+          <Skeleton className="h-7 w-14 rounded-md" />
+        </div>
 
-          {/* Actions */}
-          <div className="flex gap-2">
-            <Skeleton className="flex-1 h-8 rounded" />
-            <Skeleton className="flex-1 h-8 rounded" />
-          </div>
+        {/* Price + MOQ */}
+        <div className="mt-3 pt-3 border-t border-zinc-100 flex items-end justify-between">
+          <Skeleton className="h-6 w-24" />
+          <Skeleton className="h-4 w-16" />
+        </div>
+
+        {/* Actions */}
+        <div className="mt-4 flex gap-2">
+          <Skeleton className="flex-1 h-9 rounded-lg" />
+          <Skeleton className="h-9 w-20 rounded-lg" />
         </div>
       </div>
     </div>

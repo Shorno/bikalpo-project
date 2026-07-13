@@ -176,6 +176,34 @@
       "when": 1784200000000,
       "tag": "0025_high_vengeance",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784300000000,
+      "tag": "0026_warehouse_product_alignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1784400000000,
+      "tag": "0027_reconcile_warehouse_configured_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784500000000,
+      "tag": "0028_structured_variant_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784600000000,
+      "tag": "0029_carton_configuration_source",
+      "breakpoints": true
     }
   ]
 }

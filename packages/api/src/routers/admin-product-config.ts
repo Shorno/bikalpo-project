@@ -11,7 +11,7 @@ import {
   variantOption,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure } from "../index";
@@ -24,9 +24,45 @@ const getConfigSchema = z.object({
   coreProductId: z.number().int(),
 });
 
+const sharedTemplateDetailsSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().optional().nullable(),
+  shortDescription: z.string().max(500).optional().nullable(),
+  videoUrl: z.string().max(500).optional().nullable(),
+  image: z.string().min(1),
+  additionalImages: z.array(z.string()).max(6).default([]),
+  features: z
+    .array(
+      z.object({
+        title: z.string(),
+        items: z.array(z.object({ key: z.string(), value: z.string() })),
+      }),
+    )
+    .default([]),
+  trackingType: z.enum(["none", "batch", "serial"]).default("none"),
+  returnPolicyEnabled: z.boolean().default(true),
+  expiryEnabled: z.boolean().default(false),
+  damageControlEnabled: z.boolean().default(false),
+  stockTrackingEnabled: z.boolean().default(true),
+  minimumOrderEnabled: z.boolean().default(true),
+  minimumOrderQty: z.string().regex(/^\d+(\.\d{1,2})?$/).default("1"),
+  inventoryUnit: z.string().default("unit"),
+  conversionEnabled: z.boolean().default(false),
+  inventoryLooseUnitEnabled: z.boolean().default(false),
+  inventoryLooseUnit: z.string().default("kg"),
+  isReturnablePack: z.boolean().default(false),
+  defaultPackDepositAmount: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .default("0"),
+  visibility: z.enum(["public", "private"]).default("public"),
+});
+
 const configureSchema = z
   .object({
     coreProductId: z.number().int(),
+    expectedVersion: z.number().int().positive().optional().nullable(),
+    details: sharedTemplateDetailsSchema,
     brands: z
       .array(
         z.object({
@@ -117,10 +153,14 @@ export const adminProductConfigRouter = {
         });
       }
 
-      const products = await db.query.product.findMany({
+      const [template, products] = await Promise.all([
+        db.query.adminProductGenerationTemplate.findFirst({
+          where: eq(adminProductGenerationTemplate.coreProductId, input.coreProductId),
+        }),
+        db.query.product.findMany({
         where: and(
           eq(product.coreProductId, input.coreProductId),
-          isNull(product.createdByWarehouseId),
+          eq(product.creatorSource, "admin"),
         ),
         with: {
           brand: {
@@ -142,7 +182,14 @@ export const adminProductConfigRouter = {
           },
         },
         orderBy: (p, { asc }) => [asc(p.createdAt)],
-      });
+        }),
+      ]);
+
+      if (!template) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Shared product template not found",
+        });
+      }
 
       const brands = products
         .filter((p) => p.brandId !== null)
@@ -189,7 +236,14 @@ export const adminProductConfigRouter = {
           })),
         }));
 
-      return { core, brands };
+      return {
+        core,
+        template: {
+          version: template.version,
+          details: sharedTemplateDetailsSchema.parse(template.details),
+        },
+        brands,
+      };
     }),
 
   /**
@@ -230,16 +284,6 @@ export const adminProductConfigRouter = {
       if (core.creatorSource !== "admin") {
         throw new ORPCError("BAD_REQUEST", {
           message: "Only admin-created core products can be edited here",
-        });
-      }
-
-      const template = await db.query.adminProductGenerationTemplate.findFirst({
-        where: eq(adminProductGenerationTemplate.coreProductId, coreProductId),
-      });
-      if (!template) {
-        throw new ORPCError("BAD_REQUEST", {
-          message:
-            "Create the first brand products before editing this core product",
         });
       }
 
@@ -301,10 +345,48 @@ export const adminProductConfigRouter = {
       }
 
       const result = await db.transaction(async (tx) => {
+        const currentTemplate =
+          await tx.query.adminProductGenerationTemplate.findFirst({
+            where: eq(adminProductGenerationTemplate.coreProductId, coreProductId),
+          });
+        if (!currentTemplate) {
+          throw new ORPCError("NOT_FOUND", {
+            message: "Shared product template not found",
+          });
+        }
+        if (
+          input.expectedVersion != null &&
+          currentTemplate.version !== input.expectedVersion
+        ) {
+          throw new ORPCError("CONFLICT", {
+            message: "This shared template changed in another session. Reload it.",
+          });
+        }
+
+        const previousSharedDetails = sharedTemplateDetailsSchema.parse(
+          currentTemplate.details,
+        );
+        const templateChanged =
+          JSON.stringify(previousSharedDetails) !== JSON.stringify(input.details);
+        const effectiveTemplateDetails = {
+          ...currentTemplate.details,
+          ...input.details,
+        };
+        if (templateChanged) {
+          await tx
+            .update(adminProductGenerationTemplate)
+            .set({
+              version: currentTemplate.version + 1,
+              details: effectiveTemplateDetails,
+              updatedAt: new Date(),
+            })
+            .where(eq(adminProductGenerationTemplate.coreProductId, coreProductId));
+        }
+
         const existingProducts = await tx.query.product.findMany({
           where: and(
             eq(product.coreProductId, coreProductId),
-            isNull(product.createdByWarehouseId),
+            eq(product.creatorSource, "admin"),
           ),
         });
         const existingByBrand = new Map(
@@ -351,7 +433,7 @@ export const adminProductConfigRouter = {
           }
 
           // === Generate a new per-brand product ===
-          const details = template.details;
+          const details = effectiveTemplateDetails;
           const name = `${brandRow.name} ${details.name}`;
 
           const baseSlug =
@@ -395,6 +477,8 @@ export const adminProductConfigRouter = {
               subCategoryId: core.subCategoryId ?? null,
               brandId: brandConfig.brandId,
               coreProductId,
+              creatorSource: "admin",
+              createdById: context.session.user.id,
               status: details.status,
               visibility: details.visibility,
               scheduledAt: details.scheduledAt
@@ -480,7 +564,15 @@ export const adminProductConfigRouter = {
           }
         }
 
-        return { created, updated, reactivated, deactivated };
+        return {
+          created,
+          updated,
+          reactivated,
+          deactivated,
+          templateVersion: templateChanged
+            ? currentTemplate.version + 1
+            : currentTemplate.version,
+        };
       });
 
       return {

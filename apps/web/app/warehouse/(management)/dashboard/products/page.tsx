@@ -1,9 +1,19 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type ColumnDef,
+  type Column,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  type SortingState,
+  useReactTable,
+} from "@tanstack/react-table";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
+  ArrowUpDown,
   Boxes,
   Filter,
   MoreHorizontal,
@@ -14,7 +24,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import Link from "next/link";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,7 +63,7 @@ const WH = "/warehouse/dashboard";
 type FilterOption = { id: number; name: string };
 
 type WarehouseProductRow = {
-  inventoryId: number;
+  inventoryId: number | null;
   variantId: number;
   sku: string | null;
   variantSku: string | null;
@@ -61,6 +71,9 @@ type WarehouseProductRow = {
   productSku: string | null;
   productName: string;
   productStatus: string;
+  creatorSource: "admin" | "warehouse" | "shop" | "unknown";
+  creatorId: string | null;
+  isOwnedByWarehouse: boolean;
   coreProductId: number | null;
   coreProductName: string;
   coreProductImage: string;
@@ -93,8 +106,9 @@ type PriceListData = {
   items?: WarehouseProductRow[];
   stats?: {
     totalProducts: number;
-    totalVariants: number;
-    lastUpdated: string | null;
+    inStock: number;
+    lowStock: number;
+    outOfStock: number;
   };
   filterOptions?: {
     types?: FilterOption[];
@@ -102,6 +116,12 @@ type PriceListData = {
     subCategories?: FilterOption[];
     coreProducts?: FilterOption[];
     brands?: FilterOption[];
+  };
+  pagination?: {
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
   };
 };
 
@@ -114,6 +134,28 @@ type SortBy =
   | "stock_asc"
   | "price_desc"
   | "price_asc";
+
+function SortableHeader({
+  column,
+  title,
+  align = "left",
+}: {
+  column: Column<WarehouseProductRow, unknown>;
+  title: string;
+  align?: "left" | "right";
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={align === "right" ? "-mr-3 h-8 float-right" : "-ml-3 h-8"}
+      onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+    >
+      {title}
+      <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
+    </Button>
+  );
+}
 
 function toNumber(value: number | string | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -193,7 +235,7 @@ function isActiveProductRow(item: WarehouseProductRow) {
 export default function WarehouseProductsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const deferredSearch = useDeferredValue(search.trim());
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedTypeId, setSelectedTypeId] = useState<number | undefined>();
   const [selectedCategoryId, setSelectedCategoryId] = useState<
     number | undefined
@@ -207,32 +249,52 @@ export default function WarehouseProductsPage() {
   const [selectedBrandId, setSelectedBrandId] = useState<number | undefined>();
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [sortBy, setSortBy] = useState<SortBy>("name_asc");
-  const [visibleCount, setVisibleCount] = useState(50);
+  const [tableSorting, setTableSorting] = useState<SortingState>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, selectedTypeId, selectedCategoryId, selectedSubCategoryId, selectedCoreProductId, selectedBrandId, stockFilter, sortBy, pageSize]);
 
   const { data, isLoading, isError, error, refetch } = useQuery<PriceListData>({
     queryKey: [
       "warehouse",
-      "getWarehousePriceList",
+      "getWarehouseProductList",
       "productsPage",
       {
+        page,
+        pageSize,
         typeId: selectedTypeId,
         categoryId: selectedCategoryId,
         subCategoryId: selectedSubCategoryId,
         coreProductId: selectedCoreProductId,
         brandId: selectedBrandId,
-        search: deferredSearch,
+        search: debouncedSearch,
+        stockFilter,
+        sortBy,
       },
     ],
     queryFn: () =>
-      (orpc.warehouse as any).getWarehousePriceList.call({
+      (orpc.warehouse as any).getWarehouseProductList.call({
+        page,
+        pageSize,
         typeId: selectedTypeId,
         categoryId: selectedCategoryId,
         subCategoryId: selectedSubCategoryId,
         coreProductId: selectedCoreProductId,
         brandId: selectedBrandId,
-        search: deferredSearch || undefined,
+        search: debouncedSearch || undefined,
+        stockFilter,
+        sortBy,
       }),
     staleTime: 30_000,
+    placeholderData: (previousData) => previousData,
   });
 
   const deactivateMutation = useMutation({
@@ -243,7 +305,7 @@ export default function WarehouseProductsPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["warehouse", "getWarehousePriceList"],
+        queryKey: ["warehouse", "getWarehouseProductList"],
       });
       toast.success("Product deactivated");
     },
@@ -252,7 +314,7 @@ export default function WarehouseProductsPage() {
     },
   });
 
-  const allItems = data?.items ?? [];
+  const allItems = useMemo(() => data?.items ?? [], [data?.items]);
   const activeRows = useMemo(
     () => allItems.filter(isActiveProductRow),
     [allItems],
@@ -264,12 +326,12 @@ export default function WarehouseProductsPage() {
   const typeOptions =
     filterOptions.types ?? uniqueOptions(scopedRows, "typeId", "typeName");
   const categoryOptions =
-    selectedTypeId || deferredSearch
+    selectedTypeId || debouncedSearch
       ? uniqueOptions(scopedRows, "categoryId", "categoryName")
       : (filterOptions.categories ??
         uniqueOptions(scopedRows, "categoryId", "categoryName"));
   const subCategoryOptions =
-    selectedCategoryId || selectedTypeId || deferredSearch
+    selectedCategoryId || selectedTypeId || debouncedSearch
       ? uniqueOptions(scopedRows, "subCategoryId", "subCategoryName")
       : (filterOptions.subCategories ??
         uniqueOptions(scopedRows, "subCategoryId", "subCategoryName"));
@@ -277,7 +339,7 @@ export default function WarehouseProductsPage() {
     selectedTypeId ||
     selectedCategoryId ||
     selectedSubCategoryId ||
-    deferredSearch
+    debouncedSearch
       ? uniqueOptions(scopedRows, "coreProductId", "coreProductName")
       : (filterOptions.coreProducts ??
         uniqueOptions(scopedRows, "coreProductId", "coreProductName"));
@@ -285,55 +347,19 @@ export default function WarehouseProductsPage() {
     selectedTypeId ||
     selectedCategoryId ||
     selectedSubCategoryId ||
-    deferredSearch
+    debouncedSearch
       ? uniqueOptions(scopedRows, "brandId", "brandName")
       : (filterOptions.brands ??
         uniqueOptions(scopedRows, "brandId", "brandName"));
 
-  const stockCounts = useMemo(() => {
-    const counts = { inStock: 0, lowStock: 0, outOfStock: 0 };
+  const stockCounts = {
+    inStock: data?.stats?.inStock ?? 0,
+    lowStock: data?.stats?.lowStock ?? 0,
+    outOfStock: data?.stats?.outOfStock ?? 0,
+  };
 
-    for (const row of activeRows) {
-      const state = getStockState(row);
-      if (state === "in_stock") counts.inStock++;
-      if (state === "low_stock") counts.lowStock++;
-      if (state === "out_of_stock") counts.outOfStock++;
-    }
-
-    return counts;
-  }, [activeRows]);
-
-  const filteredRows = useMemo(() => {
-    const rows = activeRows.filter((row) => {
-      if (stockFilter === "all") return true;
-      return getStockState(row) === stockFilter;
-    });
-
-    return [...rows].sort((left, right) => {
-      if (sortBy === "name_asc") {
-        return left.coreProductName.localeCompare(right.coreProductName);
-      }
-      if (sortBy === "name_desc") {
-        return right.coreProductName.localeCompare(left.coreProductName);
-      }
-      if (sortBy === "stock_desc") {
-        return toNumber(right.availableQty) - toNumber(left.availableQty);
-      }
-      if (sortBy === "stock_asc") {
-        return toNumber(left.availableQty) - toNumber(right.availableQty);
-      }
-      if (sortBy === "price_desc") {
-        return toNumber(right.packPrice) - toNumber(left.packPrice);
-      }
-      return toNumber(left.packPrice) - toNumber(right.packPrice);
-    });
-  }, [activeRows, sortBy, stockFilter]);
-
-  const visibleRows = filteredRows.slice(0, visibleCount);
-  const activeProductCount = new Set(
-    activeRows.map((row) => row.coreProductId ?? row.productId),
-  ).size;
-  const hasMore = visibleRows.length < filteredRows.length;
+  const visibleRows = activeRows;
+  const activeProductCount = data?.stats?.totalProducts ?? 0;
   const hasActiveFilters = Boolean(
     search ||
       selectedTypeId ||
@@ -355,10 +381,10 @@ export default function WarehouseProductsPage() {
     setSelectedBrandId(undefined);
     setStockFilter("all");
     setSortBy("name_asc");
-    setVisibleCount(50);
+    setPage(1);
   };
 
-  const handleDeactivate = (item: WarehouseProductRow) => {
+  const handleDeactivate = useCallback((item: WarehouseProductRow) => {
     if (
       window.confirm(
         `Deactivate ${item.coreProductName || item.productName}? This will hide the product from active product lists.`,
@@ -366,11 +392,142 @@ export default function WarehouseProductsPage() {
     ) {
       deactivateMutation.mutate(item.productId);
     }
-  };
+  }, [deactivateMutation.mutate]);
 
-  const notifyNotImplemented = (action: string) => {
+  const notifyNotImplemented = useCallback((action: string) => {
     toast.info(`${action} is not implemented yet.`);
-  };
+  }, []);
+
+  const columns = useMemo<ColumnDef<WarehouseProductRow>[]>(() => [
+    {
+      accessorKey: "productName",
+      header: ({ column }) => <SortableHeader column={column} title="Product" />,
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <Link href={getDetailHref(item)} className="block min-w-[220px]">
+            <div className="font-medium">{item.productName}</div>
+            {item.brandName !== "—" && (
+              <Badge variant="outline" className="mt-1 text-[10px]">
+                {item.brandName}
+              </Badge>
+            )}
+          </Link>
+        );
+      },
+    },
+    {
+      accessorKey: "categoryName",
+      header: ({ column }) => <SortableHeader column={column} title="Category" />,
+      cell: ({ row }) => (
+        <div className="min-w-[130px]">
+          <div className="text-sm font-medium">{row.original.categoryName}</div>
+          {row.original.subCategoryName &&
+            row.original.subCategoryName !== "—" && (
+              <div className="text-xs text-muted-foreground">
+                {row.original.subCategoryName}
+              </div>
+            )}
+        </div>
+      ),
+    },
+    {
+      id: "variant",
+      accessorFn: (row) => getVariantText(row),
+      header: ({ column }) => <SortableHeader column={column} title="Variant" />,
+      cell: ({ row }) => (
+        <Badge variant="outline" className="min-w-[120px] text-xs font-medium">
+          {getVariantText(row.original)}
+        </Badge>
+      ),
+    },
+    {
+      id: "stock",
+      accessorFn: (row) => toNumber(row.availableQty),
+      header: ({ column }) => <SortableHeader column={column} title="Stock" />,
+      cell: ({ row }) => {
+        const item = row.original;
+        const stock = getStockState(item);
+        return (
+          <div className="flex min-w-[140px] items-center gap-2">
+            <span className="font-medium tabular-nums">
+              {formatNumber(item.availableQty)} {getStockUnit(item)}
+            </span>
+            {stock === "low_stock" && (
+              <Badge className="border-amber-200 bg-amber-50 text-[10px] text-amber-700 hover:bg-amber-50">
+                Low
+              </Badge>
+            )}
+            {stock === "out_of_stock" && (
+              <Badge className="border-red-200 bg-red-50 text-[10px] text-red-700 hover:bg-red-50">
+                Out
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: "packPrice",
+      accessorFn: (row) => toNumber(row.packPrice),
+      header: ({ column }) => (
+        <SortableHeader column={column} title="Price" align="right" />
+      ),
+      cell: ({ row }) => (
+        <div className="min-w-[90px] text-right font-medium tabular-nums">
+          {formatCurrency(row.original.packPrice)}
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <div className="text-right">Actions</div>,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <div className="flex justify-end" onClick={(event) => event.stopPropagation()}>
+            <RowActions
+              item={item}
+              stockQty={toNumber(item.availableQty)}
+              onDeactivate={handleDeactivate}
+              onNotImplemented={notifyNotImplemented}
+              isDeactivating={deactivateMutation.isPending}
+            />
+          </div>
+        );
+      },
+    },
+  ], [deactivateMutation.isPending, handleDeactivate, notifyNotImplemented]);
+
+  const handleTableSortingChange = useCallback(
+    (updater: SortingState | ((current: SortingState) => SortingState)) => {
+      setTableSorting((current) => {
+        const next = typeof updater === "function" ? updater(current) : updater;
+        const selected = next[0];
+        if (selected?.id === "productName") {
+          setSortBy(selected.desc ? "name_desc" : "name_asc");
+        } else if (selected?.id === "stock") {
+          setSortBy(selected.desc ? "stock_desc" : "stock_asc");
+        } else if (selected?.id === "packPrice") {
+          setSortBy(selected.desc ? "price_desc" : "price_asc");
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const table = useReactTable({
+    data: visibleRows,
+    columns,
+    getRowId: (row) => String(row.variantId),
+    state: { sorting: tableSorting },
+    onSortingChange: handleTableSortingChange,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    autoResetPageIndex: false,
+  });
 
   return (
     <div className="space-y-6">
@@ -382,7 +539,7 @@ export default function WarehouseProductsPage() {
             Products
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {activeProductCount.toLocaleString("en-BD")} active products · {activeRows.length.toLocaleString("en-BD")} variants
+            {activeProductCount.toLocaleString("en-BD")} active products · {(data?.pagination?.totalCount ?? 0).toLocaleString("en-BD")} variants
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -448,14 +605,14 @@ export default function WarehouseProductsPage() {
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
-              setVisibleCount(50);
+              setPage(1);
             }}
             placeholder="Search by name, SKU..."
             className="pl-9"
           />
         </div>
 
-        <Tabs value={stockFilter} onValueChange={(v) => { setStockFilter(v as StockFilter); setVisibleCount(50); }}>
+        <Tabs value={stockFilter} onValueChange={(v) => { setStockFilter(v as StockFilter); setPage(1); }}>
           <TabsList>
             <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="in_stock">In Stock</TabsTrigger>
@@ -464,7 +621,7 @@ export default function WarehouseProductsPage() {
           </TabsList>
         </Tabs>
 
-        <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+        <Select value={sortBy} onValueChange={(value) => { setSortBy(value as SortBy); setTableSorting([]); }}>
           <SelectTrigger className="w-[180px]">
             <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
             <SelectValue placeholder="Sort" />
@@ -490,19 +647,19 @@ export default function WarehouseProductsPage() {
       {/* ── Advanced Filters (collapsible row) ── */}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <FilterSelect label="Type" value={selectedTypeId} placeholder="All Types" options={typeOptions}
-          onChange={(value) => { setSelectedTypeId(value); setSelectedCategoryId(undefined); setSelectedSubCategoryId(undefined); setSelectedCoreProductId(undefined); setVisibleCount(50); }}
+          onChange={(value) => { setSelectedTypeId(value); setSelectedCategoryId(undefined); setSelectedSubCategoryId(undefined); setSelectedCoreProductId(undefined); setPage(1); }}
         />
         <FilterSelect label="Category" value={selectedCategoryId} placeholder="All Categories" options={categoryOptions}
-          onChange={(value) => { setSelectedCategoryId(value); setSelectedSubCategoryId(undefined); setSelectedCoreProductId(undefined); setVisibleCount(50); }}
+          onChange={(value) => { setSelectedCategoryId(value); setSelectedSubCategoryId(undefined); setSelectedCoreProductId(undefined); setPage(1); }}
         />
         <FilterSelect label="Sub Category" value={selectedSubCategoryId} placeholder="All Sub Categories" options={subCategoryOptions}
-          onChange={(value) => { setSelectedSubCategoryId(value); setSelectedCoreProductId(undefined); setVisibleCount(50); }}
+          onChange={(value) => { setSelectedSubCategoryId(value); setSelectedCoreProductId(undefined); setPage(1); }}
         />
         <FilterSelect label="Core Identity" value={selectedCoreProductId} placeholder="All Core Identities" options={coreProductOptions}
-          onChange={(value) => { setSelectedCoreProductId(value); setVisibleCount(50); }}
+          onChange={(value) => { setSelectedCoreProductId(value); setPage(1); }}
         />
         <FilterSelect label="Brand" value={selectedBrandId} placeholder="All Brands" options={brandOptions}
-          onChange={(value) => { setSelectedBrandId(value); setVisibleCount(50); }}
+          onChange={(value) => { setSelectedBrandId(value); setPage(1); }}
         />
       </div>
 
@@ -514,7 +671,7 @@ export default function WarehouseProductsPage() {
           <ErrorState message={(error as any)?.message || "Could not load warehouse products."} onRetry={() => refetch()} />
         ) : hasNoAssignedProducts ? (
           <EmptyProductsState />
-        ) : filteredRows.length === 0 ? (
+        ) : activeRows.length === 0 ? (
           <NoResultsState onClear={clearFilters} />
         ) : (
           <Card>
@@ -522,88 +679,58 @@ export default function WarehouseProductsPage() {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[240px]">Product</TableHead>
-                      <TableHead className="min-w-[130px]">Category</TableHead>
-                      <TableHead className="min-w-[180px]">Variant</TableHead>
-                      <TableHead className="min-w-[140px]">Stock</TableHead>
-                      <TableHead className="min-w-[100px] text-right">Price</TableHead>
-                      <TableHead className="w-[70px]">Actions</TableHead>
-                    </TableRow>
+                    {table.getHeaderGroups().map((headerGroup) => (
+                      <TableRow key={headerGroup.id}>
+                        {headerGroup.headers.map((header) => (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext(),
+                                )}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    ))}
                   </TableHeader>
                   <TableBody>
-                    {visibleRows.map((item) => {
-                      const qty = toNumber(item.availableQty);
-                      const stock = getStockState(item);
-
-                      return (
-                        <TableRow key={item.inventoryId} className="cursor-pointer transition-colors hover:bg-muted/50">
-                          <TableCell>
-                            <Link href={getDetailHref(item)} className="block">
-                              <div className="font-medium">{item.coreProductName || item.productName}</div>
-                              {item.sku && (
-                                <span className="mt-0.5 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                                  {item.sku}
-                                </span>
-                              )}
-                            </Link>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm font-medium">{item.categoryName}</div>
-                            {item.subCategoryName && item.subCategoryName !== "—" && (
-                              <div className="text-xs text-muted-foreground">{item.subCategoryName}</div>
+                    {table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected() && "selected"}
+                        className="transition-colors hover:bg-muted/50"
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext(),
                             )}
                           </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs font-medium">
-                              {getVariantText(item)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium tabular-nums">
-                                {formatNumber(qty)} {getStockUnit(item)}
-                              </span>
-                              {stock === "low_stock" && (
-                                <Badge className="border-amber-200 bg-amber-50 text-[10px] text-amber-700 hover:bg-amber-50">
-                                  Low
-                                </Badge>
-                              )}
-                              {stock === "out_of_stock" && (
-                                <Badge className="border-red-200 bg-red-50 text-[10px] text-red-700 hover:bg-red-50">
-                                  Out
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">
-                            {formatCurrency(item.packPrice)}
-                          </TableCell>
-                          <TableCell>
-                            <RowActions
-                              item={item}
-                              stockQty={qty}
-                              onDeactivate={handleDeactivate}
-                              onNotImplemented={notifyNotImplemented}
-                              isDeactivating={deactivateMutation.isPending}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                        ))}
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
-              {hasMore && (
-                <div className="flex items-center justify-between border-t px-4 py-3">
-                  <p className="text-sm text-muted-foreground">
-                    Showing {visibleRows.length} of {filteredRows.length.toLocaleString("en-BD")} results
-                  </p>
-                  <Button variant="outline" size="sm" onClick={() => setVisibleCount((c) => c + 50)}>
-                    Load More
-                  </Button>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+                <p className="text-sm text-muted-foreground">
+                  Page {data?.pagination?.page ?? page} of {Math.max(1, data?.pagination?.totalPages ?? 1)} · {data?.pagination?.totalCount ?? 0} results
+                </p>
+                <div className="flex items-center gap-2">
+                  <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+                    <SelectTrigger className="h-8 w-[92px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="25">25 rows</SelectItem>
+                      <SelectItem value="50">50 rows</SelectItem>
+                      <SelectItem value="100">100 rows</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+                  <Button variant="outline" size="sm" disabled={page >= (data?.pagination?.totalPages ?? 1)} onClick={() => setPage((current) => current + 1)}>Next</Button>
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
         )}
@@ -683,9 +810,17 @@ function RowActions({
             <Link href={`${WH}/stock/add`}>Add Stock</Link>
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem onSelect={() => onNotImplemented("Edit product")}>
-          Edit Product (Not implemented)
-        </DropdownMenuItem>
+        {item.isOwnedByWarehouse && item.coreProductId ? (
+          <DropdownMenuItem asChild>
+            <Link href={`${WH}/products/${item.productId}/edit`}>
+              Edit Product
+            </Link>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem disabled>
+            Product details owned by creator
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
           <Link href={`${WH}/stock-adjustment/create`}>Adjust Stock</Link>
         </DropdownMenuItem>
@@ -699,14 +834,18 @@ function RowActions({
         <DropdownMenuItem onSelect={() => onNotImplemented("Print label")}>
           Print Label (Not implemented)
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          disabled={isDeactivating}
-          onSelect={() => onDeactivate(item)}
-        >
-          Deactivate
-        </DropdownMenuItem>
+        {item.isOwnedByWarehouse && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={isDeactivating}
+              onSelect={() => onDeactivate(item)}
+            >
+              Deactivate
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -12,11 +12,10 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
-import EditVariantOptionDialog from "@/components/features/variant-option/components/edit-variant-option-dialog";
 import DeleteVariantOptionDialog from "@/components/features/variant-option/components/delete-variant-option-dialog";
-import NewVariantOptionDialog from "@/components/features/variant-option/components/new-variant-option-dialog";
+import VariantOptionDialog from "@/components/features/variant-option/components/variant-option-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,7 +41,7 @@ import { type VariantOptionRow } from "./variant-option-columns";
 interface DataTableProps {
   columns: ColumnDef<VariantOptionRow, unknown>[];
   data: VariantOptionRow[];
-  types?: { id: number; name: string }[];
+  types?: { id: number; name: string; slug?: string | null; inventoryBehaviour?: "auto_break" | "loose_convert" | "fixed_pack" | null }[];
   categories?: { id: number; name: string; typeId: number | null }[];
 }
 
@@ -109,7 +108,8 @@ function MobileVariantOptionCard({ option }: { option: VariantOptionRow }) {
         </div>
       </CardContent>
 
-      <EditVariantOptionDialog
+      <VariantOptionDialog
+        mode="edit"
         variantOption={option}
         open={showEdit}
         onOpenChange={setShowEdit}
@@ -129,6 +129,7 @@ export default function VariantOptionTable({
   types = [],
   categories = [],
 }: DataTableProps) {
+  const [showCreate, setShowCreate] = React.useState(false);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
@@ -314,8 +315,17 @@ export default function VariantOptionTable({
             </SelectContent>
           </Select>
         </div>
-        <NewVariantOptionDialog types={types} categories={categories} />
+        <Button size="sm" onClick={() => setShowCreate(true)}>
+          <Plus className="mr-1 h-4 w-4" />
+          New Variant
+        </Button>
       </div>
+
+      <VariantOptionDialog
+        mode="create"
+        open={showCreate}
+        onOpenChange={setShowCreate}
+      />
 
       {/* Desktop Table View */}
       <div className="hidden md:block rounded-lg border shadow-sm overflow-hidden">
