@@ -94,7 +94,7 @@ export default function LowStockPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { data, isLoading } = useLowStockProducts();
 
-  const summary = (data as any)?.summary ?? { lowProducts: 0, criticalItems: 0, totalShortage: 0 };
+  const summary = (data as any)?.summary ?? { lowProducts: 0, criticalItems: 0, shortageVariants: 0 };
   const products: any[] = (data as any)?.products ?? [];
 
   if (isLoading) {
@@ -159,9 +159,9 @@ export default function LowStockPage() {
           color="red"
         />
         <KPICard
-          label="Total Shortage"
-          value={`${summary.totalShortage} Units`}
-          subtitle="Units needed to reach minimum"
+          label="Variants Below Minimum"
+          value={summary.shortageVariants}
+          subtitle="Configured variants needing stock"
           icon={TrendingDown}
           color="blue"
         />
@@ -186,7 +186,7 @@ export default function LowStockPage() {
                 <TableHead className="w-[40px] py-3" />
                 <TableHead className="w-[40px] py-3 font-bold text-gray-700">#</TableHead>
                 <TableHead className="py-3 font-bold text-gray-700">Product (Core)</TableHead>
-                <TableHead className="py-3 font-bold text-gray-700">Total Stock</TableHead>
+                <TableHead className="py-3 font-bold text-gray-700">Variants</TableHead>
                 <TableHead className="py-3 font-bold text-gray-700">Issue</TableHead>
                 <TableHead className="text-center py-3 font-bold text-gray-700">Status</TableHead>
               </TableRow>
@@ -234,7 +234,7 @@ export default function LowStockPage() {
                       </TableCell>
                       <TableCell className="py-3">
                         <span className="text-sm font-bold text-gray-900 tabular-nums">
-                          {Math.round(p.totalStock * 100) / 100} {p.stockUnit}
+                          {p.variants.length} configured
                         </span>
                       </TableCell>
                       <TableCell className="py-3">
@@ -264,7 +264,7 @@ export default function LowStockPage() {
                                 <Table>
                                   <TableHeader>
                                     <TableRow className="text-[11px] bg-gray-50">
-                                      <TableHead className="py-2 font-bold text-gray-600">Brand · Weight</TableHead>
+                                      <TableHead className="py-2 font-bold text-gray-600">Brand · Variant</TableHead>
                                       <TableHead className="py-2 font-bold text-gray-600">Available</TableHead>
                                       <TableHead className="py-2 font-bold text-gray-600">Minimum</TableHead>
                                       <TableHead className="py-2 font-bold text-gray-600">Shortage</TableHead>
@@ -280,20 +280,19 @@ export default function LowStockPage() {
                                         <TableRow key={v.variantId} className="hover:bg-gray-50/50">
                                           <TableCell className="py-2">
                                             <span className="text-sm font-medium text-gray-800">
-                                              {v.brandName || "No Brand"} · {v.weightKg}KG
+                                              {v.brandName || "No Brand"} · {v.unitLabel}
                                             </span>
-                                            <span className="text-[10px] text-gray-400 ml-1.5">{v.unitLabel}</span>
                                           </TableCell>
                                           <TableCell className="py-2 text-sm font-bold text-gray-900 tabular-nums">
-                                            {v.availableQty} {v.unitLabel}
+                                            {v.stockDisplay}
                                           </TableCell>
                                           <TableCell className="py-2 text-sm text-gray-500 tabular-nums">
-                                            {v.reorderLevel} {v.unitLabel}
+                                            {v.reorderLevel} {v.operationalUnit}
                                           </TableCell>
                                           <TableCell className="py-2">
                                             {shortage > 0 ? (
                                               <span className="text-sm font-bold text-red-600 tabular-nums">
-                                                -{shortage} {v.unitLabel}
+                                                -{shortage} {v.operationalUnit}
                                               </span>
                                             ) : (
                                               <span className="text-sm text-emerald-600">OK</span>

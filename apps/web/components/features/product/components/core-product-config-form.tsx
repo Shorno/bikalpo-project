@@ -7,6 +7,7 @@ import {
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowUpRight,
   Check,
@@ -22,13 +23,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import {
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
@@ -104,6 +99,10 @@ type VariantOption = {
   variantType?: string | null;
   typeId?: number | null;
   categoryId?: number | null;
+  definitionKind?: string | null;
+  definition?: Record<string, unknown> | null;
+  needsReview?: boolean;
+  isActive?: boolean;
 };
 
 type SelectedVariant = {
@@ -124,6 +123,8 @@ type ExistingBrandProduct = {
     variantOptionId: number;
     consumerPrice: string;
     isActive: boolean;
+    variantOptionName?: string | null;
+    requiresDefinitionReview?: boolean;
   }>;
 };
 
@@ -163,13 +164,16 @@ export default function CoreProductConfigForm({
     enabled: !adapter,
   });
 
-  const configuration = (adapter?.configuration ??
-    configQuery.data) as CoreProductConfiguration | undefined;
+  const configuration = (adapter?.configuration ?? configQuery.data) as
+    | CoreProductConfiguration
+    | undefined;
   const core = configuration?.core;
   const existingBrands: ExistingBrandProduct[] = configuration?.brands ?? [];
-  const allBrands = adapter?.brands ?? (
-    Array.isArray(brandsQuery.data) ? brandsQuery.data : []
-  ) as BrandOption[];
+  const allBrands =
+    adapter?.brands ??
+    ((Array.isArray(brandsQuery.data)
+      ? brandsQuery.data
+      : []) as BrandOption[]);
   const availableVariants = useMemo(
     () =>
       filterVariantsForCore(
@@ -204,7 +208,12 @@ export default function CoreProductConfigForm({
           })) ??
         [],
     }),
-    [adapter?.initialBrands, configuration?.brands, configuration?.template, core],
+    [
+      adapter?.initialBrands,
+      configuration?.brands,
+      configuration?.template,
+      core,
+    ],
   );
 
   const configureMutation = useMutation({
@@ -266,7 +275,8 @@ export default function CoreProductConfigForm({
     if (!configuration) return;
     const signature = JSON.stringify(defaultValues);
     if (seededDefaultsSignature.current === signature) return;
-    if (seededDefaultsSignature.current !== null && form.state.isTouched) return;
+    if (seededDefaultsSignature.current !== null && form.state.isTouched)
+      return;
     form.reset(defaultValues);
     seededDefaultsSignature.current = signature;
   }, [configuration, defaultValues, form]);
@@ -360,6 +370,22 @@ export default function CoreProductConfigForm({
   };
 
   const submitChanges = () => {
+    const allowedVariantIds = new Set(
+      availableVariants.map((variant) => variant.id),
+    );
+    const unavailableSelection = form.state.values.brands.some((brand) =>
+      brand.variants.some(
+        (variant) => !allowedVariantIds.has(variant.variantOptionId),
+      ),
+    );
+    if (unavailableSelection) {
+      toast.error(
+        adapter
+          ? "Ask Admin to review the selected legacy variants, or remove them before saving."
+          : "Review the selected legacy variants in Variant Setup before saving.",
+      );
+      return;
+    }
     const normalizedValues = {
       ...form.state.values,
       template: mergeTemplateDetails(
@@ -383,7 +409,10 @@ export default function CoreProductConfigForm({
     });
   };
 
-  if (adapter?.isLoading || (!adapter && (configQuery.isLoading || brandsQuery.isLoading))) {
+  if (
+    adapter?.isLoading ||
+    (!adapter && (configQuery.isLoading || brandsQuery.isLoading))
+  ) {
     return <EditorLoading />;
   }
 
@@ -397,6 +426,19 @@ export default function CoreProductConfigForm({
         const selectedBrandIds = new Set(
           selectedBrands.map((brand) => brand.brandId),
         );
+        const availableVariantIds = new Set(
+          availableVariants.map((variant) => variant.id),
+        );
+        const unavailableVariantIds = [
+          ...new Set(
+            selectedBrands.flatMap((brand) =>
+              brand.variants
+                .map((variant) => variant.variantOptionId)
+                .filter((variantId) => !availableVariantIds.has(variantId)),
+            ),
+          ),
+        ];
+        const hasUnavailableVariants = unavailableVariantIds.length > 0;
         const addableBrands = allBrands.filter(
           (brand) =>
             !selectedBrandIds.has(brand.id) &&
@@ -457,7 +499,9 @@ export default function CoreProductConfigForm({
                       onClick={() => {
                         form.setFieldValue("brands", adapter.presetBrands!);
                         setSaved(false);
-                        toast.success("Current admin preset loaded. Save to apply it.");
+                        toast.success(
+                          "Current admin preset loaded. Save to apply it.",
+                        );
                       }}
                       disabled={configureMutation.isPending}
                     >
@@ -478,7 +522,9 @@ export default function CoreProductConfigForm({
                     type="button"
                     size="sm"
                     onClick={submitChanges}
-                    disabled={configureMutation.isPending}
+                    disabled={
+                      configureMutation.isPending || hasUnavailableVariants
+                    }
                   >
                     {configureMutation.isPending && (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -550,6 +596,34 @@ export default function CoreProductConfigForm({
                         </Button>
                       }
                     >
+                      {hasUnavailableVariants && (
+                        <div className="mb-4 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                          <div className="min-w-0 space-y-1">
+                            <p className="text-sm font-semibold">
+                              Variant definition required
+                            </p>
+                            <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+                              {adapter
+                                ? "One or more selected variants must be reviewed by Admin before these products can be saved. Remove them or ask Admin to add a concrete definition."
+                                : "One or more selected variants still use the legacy loose setup. Review them in Variant Setup, then return here to save this configuration."}
+                            </p>
+                            {!adapter && (
+                              <Button
+                                asChild
+                                variant="outline"
+                                size="sm"
+                                className="mt-2 h-7 border-amber-400 bg-white/70 text-amber-950 hover:bg-white dark:bg-transparent dark:text-amber-100"
+                              >
+                                <Link href="/dashboard/admin/variant-options">
+                                  Review variants
+                                  <ArrowUpRight className="h-3.5 w-3.5" />
+                                </Link>
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       {selectedBrands.length === 0 ? (
                         <div className="rounded-lg border border-dashed p-6 text-center">
                           <p className="text-sm font-medium">
@@ -576,14 +650,35 @@ export default function CoreProductConfigForm({
                               (item) => item.id === selectedBrand.brandId,
                             );
                             if (!brand) return null;
+                            const existingBrand = existingByBrandId.get(
+                              brand.id,
+                            );
+                            const blockedVariants = selectedBrand.variants
+                              .filter(
+                                (variant) =>
+                                  !availableVariantIds.has(
+                                    variant.variantOptionId,
+                                  ),
+                              )
+                              .map((variant) => ({
+                                id: variant.variantOptionId,
+                                name:
+                                  existingBrand?.variantOptions.find(
+                                    (option) =>
+                                      option.variantOptionId ===
+                                      variant.variantOptionId,
+                                  )?.variantOptionName ??
+                                  `Variant #${variant.variantOptionId}`,
+                              }));
 
                             return (
                               <BrandEditorCard
                                 key={brand.id}
                                 brand={brand}
-                                existing={existingByBrandId.get(brand.id)}
+                                existing={existingBrand}
                                 selectedVariants={selectedBrand.variants}
                                 variants={availableVariants}
+                                blockedVariants={blockedVariants}
                                 expanded={!collapsedBrands.has(brand.id)}
                                 onToggleExpanded={() =>
                                   toggleCollapsed(brand.id)
@@ -602,20 +697,52 @@ export default function CoreProductConfigForm({
                       )}
                     </ProductEditorSection>
 
-                    {adapter?.onVariantAliasChange && (() => {
-                      const selectedVariantIds = [...new Set(selectedBrands.flatMap((brand) => brand.variants.map((variant) => variant.variantOptionId)))];
-                      return selectedVariantIds.length > 0 ? (
-                        <ProductEditorSection title="Warehouse variant labels" description="Optional display-only aliases for this warehouse. Measurements and inventory units remain controlled by Admin Variant Setup.">
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            {selectedVariantIds.map((variantOptionId) => {
-                              const option = availableVariants.find((item) => item.id === variantOptionId);
-                              if (!option) return null;
-                              return <Field key={variantOptionId}><FieldLabel>{option.name}</FieldLabel><Input value={adapter.variantAliases?.[variantOptionId] ?? ""} onChange={(event) => adapter.onVariantAliasChange?.(variantOptionId, event.target.value)} placeholder="Use admin canonical label" /></Field>;
-                            })}
-                          </div>
-                        </ProductEditorSection>
-                      ) : null;
-                    })()}
+                    {adapter?.onVariantAliasChange &&
+                      (() => {
+                        const selectedVariantIds = [
+                          ...new Set(
+                            selectedBrands.flatMap((brand) =>
+                              brand.variants.map(
+                                (variant) => variant.variantOptionId,
+                              ),
+                            ),
+                          ),
+                        ];
+                        return selectedVariantIds.length > 0 ? (
+                          <ProductEditorSection
+                            title="Warehouse variant labels"
+                            description="Optional display-only aliases for this warehouse. Measurements and inventory units remain controlled by Admin Variant Setup."
+                          >
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              {selectedVariantIds.map((variantOptionId) => {
+                                const option = availableVariants.find(
+                                  (item) => item.id === variantOptionId,
+                                );
+                                if (!option) return null;
+                                return (
+                                  <Field key={variantOptionId}>
+                                    <FieldLabel>{option.name}</FieldLabel>
+                                    <Input
+                                      value={
+                                        adapter.variantAliases?.[
+                                          variantOptionId
+                                        ] ?? ""
+                                      }
+                                      onChange={(event) =>
+                                        adapter.onVariantAliasChange?.(
+                                          variantOptionId,
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Use admin canonical label"
+                                    />
+                                  </Field>
+                                );
+                              })}
+                            </div>
+                          </ProductEditorSection>
+                        ) : null;
+                      })()}
 
                     <SharedTemplateEditor
                       form={form}
@@ -636,7 +763,10 @@ export default function CoreProductConfigForm({
                                 Visibility
                               </FieldLabel>
                               <Select
-                                value={field.state.value || defaultValues.template.visibility}
+                                value={
+                                  field.state.value ||
+                                  defaultValues.template.visibility
+                                }
                                 onValueChange={(value) =>
                                   field.handleChange(
                                     value as "public" | "private",
@@ -648,7 +778,9 @@ export default function CoreProductConfigForm({
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="public">Public</SelectItem>
-                                  <SelectItem value="private">Private</SelectItem>
+                                  <SelectItem value="private">
+                                    Private
+                                  </SelectItem>
                                 </SelectContent>
                               </Select>
                               <p className="text-xs text-muted-foreground">
@@ -809,6 +941,7 @@ function BrandEditorCard({
   existing,
   selectedVariants,
   variants,
+  blockedVariants,
   expanded,
   onToggleExpanded,
   onRemove,
@@ -819,6 +952,7 @@ function BrandEditorCard({
   existing?: ExistingBrandProduct;
   selectedVariants: SelectedVariant[];
   variants: VariantOption[];
+  blockedVariants: Array<{ id: number; name: string }>;
   expanded: boolean;
   onToggleExpanded: () => void;
   onRemove: () => void;
@@ -877,6 +1011,24 @@ function BrandEditorCard({
         <>
           <Separator />
           <div className="space-y-3 p-3">
+            {blockedVariants.length > 0 && (
+              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+                <p className="flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-100">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Definition required before saving
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {blockedVariants.map((variant) => (
+                    <span
+                      key={variant.id}
+                      className="rounded-full border border-amber-300 bg-white/70 px-2.5 py-1 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-100"
+                    >
+                      {variant.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {variants.length === 0 ? (
               <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
                 No variant options are available for this core identity.
@@ -1036,6 +1188,14 @@ function filterVariantsForCore(
 
   return variants
     .filter((variant) => {
+      if (
+        variant.isActive === false ||
+        variant.needsReview ||
+        !variant.definition ||
+        !variant.definitionKind
+      ) {
+        return false;
+      }
       const isGlobal = variant.typeId == null && variant.categoryId == null;
       const isTypeWide =
         variant.typeId === typeId && variant.categoryId == null;
@@ -1067,13 +1227,10 @@ function normalizeTemplateDetails(
     minimumOrderQty: String(details?.minimumOrderQty ?? "1"),
     inventoryUnit: details?.inventoryUnit || "unit",
     conversionEnabled: details?.conversionEnabled ?? false,
-    inventoryLooseUnitEnabled:
-      details?.inventoryLooseUnitEnabled ?? false,
+    inventoryLooseUnitEnabled: details?.inventoryLooseUnitEnabled ?? false,
     inventoryLooseUnit: details?.inventoryLooseUnit || "kg",
     isReturnablePack: details?.isReturnablePack ?? false,
-    defaultPackDepositAmount: String(
-      details?.defaultPackDepositAmount ?? "0",
-    ),
+    defaultPackDepositAmount: String(details?.defaultPackDepositAmount ?? "0"),
     visibility: details?.visibility ?? "public",
   };
 }
@@ -1146,9 +1303,17 @@ function SharedTemplateEditor({
         <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
           <form.Field name="template.trackingType">
             {(field: any) => (
-              <TemplateRuleRow label="Batch tracking" description="Choose how this product is tracked in inventory.">
-                <Select value={field.state.value || defaults.trackingType} onValueChange={field.handleChange}>
-                  <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
+              <TemplateRuleRow
+                label="Batch tracking"
+                description="Choose how this product is tracked in inventory."
+              >
+                <Select
+                  value={field.state.value || defaults.trackingType}
+                  onValueChange={field.handleChange}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Disable</SelectItem>
                     <SelectItem value="batch">Enable</SelectItem>
@@ -1159,27 +1324,59 @@ function SharedTemplateEditor({
             )}
           </form.Field>
           {[
-            ["returnPolicyEnabled", "Return policy", "Allow standard product returns."],
+            [
+              "returnPolicyEnabled",
+              "Return policy",
+              "Allow standard product returns.",
+            ],
             ["expiryEnabled", "Expiry tracking", "Track product expiry dates."],
-            ["damageControlEnabled", "Damage control", "Enable damage reporting for this product."],
-            ["stockTrackingEnabled", "Stock tracking", "Track inventory movement for this product."],
+            [
+              "damageControlEnabled",
+              "Damage control",
+              "Enable damage reporting for this product.",
+            ],
+            [
+              "stockTrackingEnabled",
+              "Stock tracking",
+              "Track inventory movement for this product.",
+            ],
           ].map(([name, label, description]) => (
             <form.Field key={name} name={`template.${name}`}>
               {(field: any) => (
                 <TemplateRuleRow label={label} description={description}>
-                  <Switch checked={field.state.value} onCheckedChange={field.handleChange} />
+                  <Switch
+                    checked={field.state.value}
+                    onCheckedChange={field.handleChange}
+                  />
                 </TemplateRuleRow>
               )}
             </form.Field>
           ))}
           <form.Field name="template.minimumOrderEnabled">
             {(enabled: any) => (
-              <TemplateRuleRow label="Minimum order qty" description="Apply a minimum order to generated variants.">
+              <TemplateRuleRow
+                label="Minimum order qty"
+                description="Apply a minimum order to generated variants."
+              >
                 <div className="flex w-full items-center justify-end gap-3">
-                  <Switch checked={enabled.state.value} onCheckedChange={enabled.handleChange} />
+                  <Switch
+                    checked={enabled.state.value}
+                    onCheckedChange={enabled.handleChange}
+                  />
                   <form.Field name="template.minimumOrderQty">
                     {(qty: any) => (
-                      <Input aria-label="Minimum qty" className="h-9 flex-1 text-right" type="number" min="0" step="0.01" disabled={!enabled.state.value} value={qty.state.value} onChange={(event) => qty.handleChange(event.target.value)} />
+                      <Input
+                        aria-label="Minimum qty"
+                        className="h-9 flex-1 text-right"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        disabled={!enabled.state.value}
+                        value={qty.state.value}
+                        onChange={(event) =>
+                          qty.handleChange(event.target.value)
+                        }
+                      />
                     )}
                   </form.Field>
                 </div>
@@ -1188,25 +1385,51 @@ function SharedTemplateEditor({
           </form.Field>
           <form.Field name="template.inventoryUnit">
             {(field: any) => (
-              <TemplateRuleRow label="Inventory unit" description="Saved to the product and applied to generated variants.">
-                <UnitSelect value={field.state.value || defaults.inventoryUnit} units={units} onChange={field.handleChange} />
+              <TemplateRuleRow
+                label="Inventory unit"
+                description="Saved to the product and applied to generated variants."
+              >
+                <UnitSelect
+                  value={field.state.value || defaults.inventoryUnit}
+                  units={units}
+                  onChange={field.handleChange}
+                />
               </TemplateRuleRow>
             )}
           </form.Field>
           <form.Field name="template.conversionEnabled">
             {(field: any) => (
-              <TemplateRuleRow label="Conversion" description="Allow stock-unit conversion for this product.">
-                <Switch checked={field.state.value} onCheckedChange={field.handleChange} />
+              <TemplateRuleRow
+                label="Conversion"
+                description="Allow stock-unit conversion for this product."
+              >
+                <Switch
+                  checked={field.state.value}
+                  onCheckedChange={field.handleChange}
+                />
               </TemplateRuleRow>
             )}
           </form.Field>
           <form.Field name="template.inventoryLooseUnitEnabled">
             {(enabled: any) => (
-              <TemplateRuleRow label="Inventory loose unit" description="Enable loose inventory for weight or volume based sales.">
+              <TemplateRuleRow
+                label="Inventory loose unit"
+                description="Enable loose inventory for weight or volume based sales."
+              >
                 <div className="flex w-full items-center justify-end gap-3">
-                  <Switch checked={enabled.state.value} onCheckedChange={enabled.handleChange} />
+                  <Switch
+                    checked={enabled.state.value}
+                    onCheckedChange={enabled.handleChange}
+                  />
                   <form.Field name="template.inventoryLooseUnit">
-                    {(unit: any) => <UnitSelect disabled={!enabled.state.value} value={unit.state.value} units={units} onChange={unit.handleChange} />}
+                    {(unit: any) => (
+                      <UnitSelect
+                        disabled={!enabled.state.value}
+                        value={unit.state.value}
+                        units={units}
+                        onChange={unit.handleChange}
+                      />
+                    )}
                   </form.Field>
                 </div>
               </TemplateRuleRow>
@@ -1214,12 +1437,28 @@ function SharedTemplateEditor({
           </form.Field>
           <form.Field name="template.isReturnablePack">
             {(enabled: any) => (
-              <TemplateRuleRow label="Returnable pack" description="Apply a default refundable deposit.">
+              <TemplateRuleRow
+                label="Returnable pack"
+                description="Apply a default refundable deposit."
+              >
                 <div className="flex w-full items-center justify-end gap-3">
-                  <Switch checked={enabled.state.value} onCheckedChange={enabled.handleChange} />
+                  <Switch
+                    checked={enabled.state.value}
+                    onCheckedChange={enabled.handleChange}
+                  />
                   <form.Field name="template.defaultPackDepositAmount">
                     {(deposit: any) => (
-                      <Input className="h-9 flex-1 text-right" type="number" min="0" step="0.01" disabled={!enabled.state.value} value={deposit.state.value} onChange={(event) => deposit.handleChange(event.target.value)} />
+                      <Input
+                        className="h-9 flex-1 text-right"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        disabled={!enabled.state.value}
+                        value={deposit.state.value}
+                        onChange={(event) =>
+                          deposit.handleChange(event.target.value)
+                        }
+                      />
                     )}
                   </form.Field>
                 </div>
@@ -1234,7 +1473,12 @@ function SharedTemplateEditor({
         description="Grouped key-value specifications (e.g. Weight — 500g)."
       >
         <form.Field name="template.features">
-          {(field: any) => <ProductFeaturesInput value={field.state.value} onChange={field.handleChange} />}
+          {(field: any) => (
+            <ProductFeaturesInput
+              value={field.state.value}
+              onChange={field.handleChange}
+            />
+          )}
         </form.Field>
       </ProductEditorSection>
 
@@ -1248,7 +1492,12 @@ function SharedTemplateEditor({
               {(field: any) => (
                 <Field>
                   <FieldLabel>Thumbnail / main image</FieldLabel>
-                  <ImageUploader value={field.state.value} onChange={field.handleChange} folder="products" maxSizeMB={5} />
+                  <ImageUploader
+                    value={field.state.value}
+                    onChange={field.handleChange}
+                    folder="products"
+                    maxSizeMB={5}
+                  />
                 </Field>
               )}
             </form.Field>
@@ -1256,7 +1505,12 @@ function SharedTemplateEditor({
               {(field: any) => (
                 <Field>
                   <FieldLabel>Gallery</FieldLabel>
-                  <AdditionalImagesUploader value={field.state.value} onChange={field.handleChange} folder="products/additional" maxSizeMB={5} />
+                  <AdditionalImagesUploader
+                    value={field.state.value}
+                    onChange={field.handleChange}
+                    folder="products/additional"
+                    maxSizeMB={5}
+                  />
                 </Field>
               )}
             </form.Field>
@@ -1265,7 +1519,11 @@ function SharedTemplateEditor({
             {(field: any) => (
               <Field>
                 <FieldLabel>Video URL</FieldLabel>
-                <Input value={field.state.value ?? ""} onChange={(event) => field.handleChange(event.target.value)} placeholder="https://youtube.com/watch?v=..." />
+                <Input
+                  value={field.state.value ?? ""}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="https://youtube.com/watch?v=..."
+                />
               </Field>
             )}
           </form.Field>
@@ -1275,30 +1533,68 @@ function SharedTemplateEditor({
   );
 }
 
-function TemplateRuleRow({ label, description, children }: { label: string; description: string; children: ReactNode }) {
+function TemplateRuleRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description: string;
+  children: ReactNode;
+}) {
   return (
     <div className="flex min-h-[52px] items-center justify-between gap-4 border-t py-3">
       <div className="flex min-w-0 items-center gap-1.5">
         <FieldLabel className="text-sm font-normal">{label}</FieldLabel>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button aria-label={`${label} details`} className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" type="button">
+            <button
+              aria-label={`${label} details`}
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              type="button"
+            >
               <Info className="h-3.5 w-3.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent className="max-w-64 text-xs" side="top">{description}</TooltipContent>
+          <TooltipContent className="max-w-64 text-xs" side="top">
+            {description}
+          </TooltipContent>
         </Tooltip>
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">{children}</div>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+        {children}
+      </div>
     </div>
   );
 }
 
-function UnitSelect({ value, units, onChange, disabled = false }: { value: FulfillmentUnitCode; units: Array<(typeof FULFILLMENT_UNITS)[FulfillmentUnitCode]>; onChange: (value: FulfillmentUnitCode) => void; disabled?: boolean }) {
+function UnitSelect({
+  value,
+  units,
+  onChange,
+  disabled = false,
+}: {
+  value: FulfillmentUnitCode;
+  units: Array<(typeof FULFILLMENT_UNITS)[FulfillmentUnitCode]>;
+  onChange: (value: FulfillmentUnitCode) => void;
+  disabled?: boolean;
+}) {
   return (
-    <Select disabled={disabled} value={value} onValueChange={(next) => onChange(next as FulfillmentUnitCode)}>
-      <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
-      <SelectContent>{units.map((unit) => <SelectItem key={unit.code} value={unit.code}>{unit.label}</SelectItem>)}</SelectContent>
+    <Select
+      disabled={disabled}
+      value={value}
+      onValueChange={(next) => onChange(next as FulfillmentUnitCode)}
+    >
+      <SelectTrigger className="h-9 w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {units.map((unit) => (
+          <SelectItem key={unit.code} value={unit.code}>
+            {unit.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
     </Select>
   );
 }

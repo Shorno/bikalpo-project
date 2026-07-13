@@ -11,6 +11,10 @@
 
 import { db } from "@bikalpo-project/db";
 import {
+    formatVariantStockQuantity,
+    resolveVariantStockSemantics,
+} from "@bikalpo-project/db/variant-definition";
+import {
     buildProductTypeFulfillmentProfile,
     FULFILLMENT_MODES,
     FULFILLMENT_MODE_LABELS,
@@ -32,7 +36,6 @@ import {
     openOrderBidItem,
     shopWarehouseConnection,
     shopCategoryAssignment,
-    warehouseCategoryAssignment,
     coreProductIdentity,
     shopProductGenerationTemplate,
     productType,
@@ -42,10 +45,7 @@ import {
     stockAdjustmentItem,
     damageEntry,
     damageEntryItem,
-    emptyPack,
     productPackRule,
-    supplier,
-    purchaseItem,
     purchase,
     customerAssignment,
     deliveryArea,
@@ -77,14 +77,6 @@ import {
 import { z } from "zod";
 
 import { shopOwnerProcedure, publicProcedure } from "../index";
-import {
-    isSellerAuthorizedForArea,
-    calculateSellerDistance,
-} from "../services/location-service";
-import {
-    DEFAULT_LOCK_TIMEOUT_SECONDS,
-    checkAndExpireBids,
-} from "../services/open-order-matching";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 import { shopProductConfigEndpoints } from "./shop-product-config";
@@ -532,6 +524,7 @@ const managementQueries = {
                                 },
                             },
                             brand: { columns: { id: true, name: true } },
+                            sourceVariantOption: true,
                         },
                     },
                 },
@@ -549,16 +542,22 @@ const managementQueries = {
             let atRiskCount = 0;
 
             const productSet = new Set<number>();
-            const categoryMap = new Map<string, { totalQty: number; hasWeight: boolean }>();
+			const categoryMap = new Map<string, { variantCount: number }>();
             const productStockMap = new Map<number, {
                 name: string;
                 totalQty: number;
-                unit: string;
+				stockLines: string[];
                 image: string | null;
             }>();
 
             for (const inv of shopInventory) {
-                if (!inv.variant?.product) continue;
+				if (!inv.variant?.product || !inv.variant.sourceVariantOption) continue;
+				let semantics;
+				try {
+					semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+				} catch {
+					continue;
+				}
 
                 totalSKUs++;
                 const qty = parseFloat(inv.availableQty || "0");
@@ -579,26 +578,24 @@ const managementQueries = {
 
                 // Category snapshot
                 const catName = inv.variant.product.category?.name || "Uncategorized";
-                const hasWeight = parseFloat(inv.variant.weightKg || "0") > 0;
                 const existing = categoryMap.get(catName);
                 if (existing) {
-                    existing.totalQty += qty;
-                    if (hasWeight) existing.hasWeight = true;
+					existing.variantCount += 1;
                 } else {
-                    categoryMap.set(catName, { totalQty: qty, hasWeight });
+					categoryMap.set(catName, { variantCount: 1 });
                 }
 
                 // Product stock aggregation for top products
                 const pid = inv.variant.product.id;
                 const pEntry = productStockMap.get(pid);
-                const weightKg = parseFloat(inv.variant.weightKg || "0");
                 if (pEntry) {
                     pEntry.totalQty += qty;
+					pEntry.stockLines.push(formatVariantStockQuantity(semantics, qty));
                 } else {
                     productStockMap.set(pid, {
                         name: inv.variant.product.name,
                         totalQty: qty,
-                        unit: weightKg > 0 ? "KG" : "pcs",
+						stockLines: [formatVariantStockQuantity(semantics, qty)],
                         image: inv.variant.product.image,
                     });
                 }
@@ -608,8 +605,8 @@ const managementQueries = {
             const categorySnapshot = Array.from(categoryMap.entries())
                 .map(([name, data]) => ({
                     categoryName: name,
-                    totalQty: Math.round(data.totalQty * 100) / 100,
-                    unit: data.hasWeight ? "KG" : "pcs",
+					totalQty: data.variantCount,
+					unit: "variant SKUs",
                 }))
                 .sort((a, b) => b.totalQty - a.totalQty)
                 .slice(0, 6);
@@ -621,7 +618,8 @@ const managementQueries = {
                 .map((p) => ({
                     productName: p.name,
                     totalQty: Math.round(p.totalQty * 100) / 100,
-                    unit: p.unit,
+					unit: "",
+					stockDisplay: p.stockLines.join(" + "),
                     image: p.image,
                     status: p.totalQty > 20
                         ? ("high" as const)
@@ -708,6 +706,7 @@ const managementQueries = {
                                 },
                             },
                             brand: { columns: { id: true, name: true } },
+                            sourceVariantOption: true,
                         },
                     },
                 },
@@ -721,14 +720,19 @@ const managementQueries = {
                 inventoryId: number;
                 sku: string | null;
                 brandName: string | null;
-                weightKg: string;
                 unitLabel: string;
+                operationalUnit: string;
+                stockDisplay: string;
                 packType: string | null;
                 pcsPerPack: number;
                 availableQty: number;
                 inCartonQty: number;
                 looseQty: number;
                 retailPrice: number;
+				measurementDimension: "mass" | "volume" | "count";
+				measurementUnit: "KG" | "L" | null;
+				massKgPerUnit: number;
+				volumeLPerUnit: number;
             };
 
             type ProductGroup = {
@@ -738,30 +742,26 @@ const managementQueries = {
                 sku: string | null;
                 categoryId: number | null;
                 categoryName: string | null;
-                totalAvailableQty: number;
-                totalPackQty: number;
-                totalLooseQty: number;
-                looseUnit: string;
                 variants: VariantDetail[];
             };
 
             const productMap = new Map<number, ProductGroup>();
 
             for (const inv of shopInventory) {
-                if (!inv.variant?.product) continue;
+                if (!inv.variant?.product || !inv.variant.sourceVariantOption) continue;
+				let semantics;
+				try {
+					semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+				} catch {
+					continue;
+				}
 
                 const prod = inv.variant.product;
                 const pid = prod.id;
                 const qty = parseFloat(inv.availableQty || "0");
                 const cartonQty = parseFloat(inv.inCartonQty || "0");
-                const isLoose = (inv.variant.packagingType || "").toLowerCase() === "loose";
+                const isLoose = semantics.entryType === "loose";
                 const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
-
-                // Pack variants: subtract in-carton qty so packs in cartons aren't double-counted
-                // Loose variants: all qty counts as loose KG
-                const uncartonedQty = Math.max(0, qty - cartonQty);
-                const packQty = isLoose ? 0 : uncartonedQty;
-                const looseQty = isLoose ? qty : 0;
 
                 if (!productMap.has(pid)) {
                     productMap.set(pid, {
@@ -771,32 +771,29 @@ const managementQueries = {
                         sku: prod.sku,
                         categoryId: prod.category?.id ?? null,
                         categoryName: prod.category?.name ?? null,
-                        totalAvailableQty: 0,
-                        totalPackQty: 0,
-                        totalLooseQty: 0,
-                        looseUnit: "KG",
                         variants: [],
                     });
                 }
 
                 const group = productMap.get(pid)!;
-                group.totalAvailableQty += isLoose ? qty : uncartonedQty;
-                group.totalPackQty += packQty;
-                group.totalLooseQty += looseQty;
-
                 group.variants.push({
                     variantId: inv.variant.id,
                     inventoryId: inv.id,
                     sku: inv.variant.sku,
                     brandName: inv.variant.brand?.name ?? null,
-                    weightKg: inv.variant.weightKg,
-                    unitLabel: isLoose ? "KG" : inv.variant.unitLabel,
-                    packType: inv.variant.packagingType,
+					unitLabel: semantics.displayLabel,
+					packType: semantics.packType,
                     pcsPerPack: Number(inv.variant.packCountInside || 0),
-                    availableQty: isLoose ? qty : uncartonedQty,
+                    availableQty: qty,
                     inCartonQty: cartonQty,
                     looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),
                     retailPrice,
+					stockDisplay: formatVariantStockQuantity(semantics, qty),
+					operationalUnit: semantics.operationalUnit,
+					measurementDimension: semantics.measurementDimension,
+					measurementUnit: semantics.measurementUnit,
+					massKgPerUnit: semantics.massKgPerUnit,
+					volumeLPerUnit: semantics.volumeLPerUnit,
                 });
             }
 
@@ -822,10 +819,11 @@ const managementQueries = {
 
             // Status filter
             const withStatus = products.map((p) => {
+                const quantities = p.variants.map((variant) => variant.availableQty);
                 const status: "in_stock" | "low" | "out_of_stock" =
-                    p.totalAvailableQty <= 0
+                    quantities.every((quantity) => quantity <= 0)
                         ? "out_of_stock"
-                        : p.totalAvailableQty <= LOW_STOCK_THRESHOLD
+                        : quantities.some((quantity) => quantity <= LOW_STOCK_THRESHOLD)
                             ? "low"
                             : "in_stock";
                 return { ...p, status };
@@ -875,6 +873,7 @@ const managementQueries = {
                                 },
                             },
                             brand: { columns: { id: true, name: true } },
+                            sourceVariantOption: true,
                         },
                     },
                 },
@@ -884,8 +883,9 @@ const managementQueries = {
             type VariantInfo = {
                 variantId: number;
                 brandName: string | null;
-                weightKg: string;
                 unitLabel: string;
+                operationalUnit: string;
+                stockDisplay: string;
                 availableQty: number;
                 inCartonQty: number;
                 looseQty: number;
@@ -898,8 +898,6 @@ const managementQueries = {
                 productName: string;
                 productImage: string | null;
                 sku: string | null;
-                totalStock: number;
-                stockUnit: string;
                 issueLabel: string;
                 status: "low" | "critical";
                 variants: VariantInfo[];
@@ -909,10 +907,16 @@ const managementQueries = {
 
             const productMap = new Map<number, ProductLow>();
             let criticalItems = 0;
-            let totalShortage = 0;
+            let shortageVariants = 0;
 
             for (const inv of shopInventory) {
-                if (!inv.variant?.product) continue;
+                if (!inv.variant?.product || !inv.variant.sourceVariantOption || !inv.variant.isActive) continue;
+                let semantics;
+                try {
+                    semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+                } catch {
+                    continue;
+                }
 
                 const prod = inv.variant.product;
                 const pid = prod.id;
@@ -935,8 +939,9 @@ const managementQueries = {
                 const variantInfo: VariantInfo = {
                     variantId: inv.variant.id,
                     brandName: inv.variant.brand?.name ?? null,
-                    weightKg: inv.variant.weightKg,
-                    unitLabel: inv.variant.unitLabel,
+                    unitLabel: semantics.displayLabel,
+                    operationalUnit: semantics.operationalUnit,
+                    stockDisplay: formatVariantStockQuantity(semantics, qty),
                     availableQty: qty,
                     inCartonQty: cartonQty,
                     looseQty: Math.max(0, qty - cartonQty),
@@ -947,8 +952,7 @@ const managementQueries = {
                 // Track KPI metrics for low/critical variants
                 if (isLow) {
                     if (variantStatus === "critical") criticalItems++;
-                    const shortage = Math.max(0, threshold - qty);
-                    totalShortage += shortage;
+                    shortageVariants++;
                 }
 
                 // Group by product — include all variants for expanded detail
@@ -958,8 +962,6 @@ const managementQueries = {
                         productName: prod.name,
                         productImage: prod.image,
                         sku: prod.sku,
-                        totalStock: 0,
-                        stockUnit: inv.variant.unitLabel || "pcs",
                         issueLabel: "",
                         status: "low",
                         variants: [],
@@ -969,22 +971,18 @@ const managementQueries = {
                 }
 
                 const group = productMap.get(pid)!;
-                group.totalStock += qty;
                 group.variants.push(variantInfo);
 
                 // Build minimum level config
-                const weightLabel = parseFloat(inv.variant.weightKg || "0") > 0
-                    ? `${inv.variant.weightKg}KG`
-                    : inv.variant.unitLabel;
                 group.minimumLevels.push({
-                    label: `${weightLabel} Variant`,
+                    label: semantics.displayLabel,
                     minimum: threshold,
-                    unit: inv.variant.unitLabel || "Pack",
+                    unit: semantics.operationalUnit,
                 });
 
                 // Track alert reasons for low variants
                 if (isLow) {
-                    const reason = `${weightLabel} ${variantStatus === "critical" ? "Critical" : "Low"}`;
+                    const reason = `${semantics.displayLabel} ${variantStatus === "critical" ? "Critical" : "Low"}`;
                     group.alertReasons.push(reason);
                 }
             }
@@ -1011,10 +1009,7 @@ const managementQueries = {
                     })[0];
 
                 if (worstVariant) {
-                    const wt = parseFloat(worstVariant.weightKg || "0") > 0
-                        ? `${worstVariant.weightKg}KG`
-                        : worstVariant.unitLabel;
-                    group.issueLabel = `${wt} ${worstVariant.status === "critical" ? "Critical" : "Low"}`;
+                    group.issueLabel = `${worstVariant.unitLabel} ${worstVariant.status === "critical" ? "Critical" : "Low"}`;
                 }
 
                 lowProducts.push(group);
@@ -1031,7 +1026,7 @@ const managementQueries = {
                 summary: {
                     lowProducts: lowProducts.length,
                     criticalItems,
-                    totalShortage: Math.round(totalShortage),
+                    shortageVariants,
                 },
                 products: lowProducts,
             };
@@ -1061,6 +1056,7 @@ const managementQueries = {
                                         columns: { id: true, name: true, image: true, sku: true },
                                     },
                                     brand: { columns: { id: true, name: true } },
+                                    sourceVariantOption: true,
                                 },
                             },
                         },
@@ -1073,8 +1069,9 @@ const managementQueries = {
             type ExpiredVariant = {
                 variantId: number;
                 brandName: string | null;
-                weightKg: string;
                 unitLabel: string;
+                operationalUnit: string;
+                stockDisplay: string;
                 qty: number;
                 unitPrice: number;
                 totalValue: number;
@@ -1085,8 +1082,6 @@ const managementQueries = {
                 productId: number;
                 productName: string;
                 productImage: string | null;
-                expiredQty: number;
-                unit: string;
                 lastExpiryDate: string;
                 status: "expired";
                 lossValue: number;
@@ -1098,7 +1093,13 @@ const managementQueries = {
 
             for (const entry of expiredEntries) {
                 for (const item of entry.items) {
-                    if (!item.variant?.product) continue;
+                    if (!item.variant?.product || !item.variant.sourceVariantOption) continue;
+                    let semantics;
+                    try {
+                        semantics = resolveVariantStockSemantics(item.variant.sourceVariantOption);
+                    } catch {
+                        continue;
+                    }
 
                     const prod = item.variant.product;
                     const pid = prod.id;
@@ -1113,8 +1114,6 @@ const managementQueries = {
                             productId: pid,
                             productName: prod.name,
                             productImage: prod.image,
-                            expiredQty: 0,
-                            unit: item.variant.unitLabel || "pcs",
                             lastExpiryDate: entry.entryDate,
                             status: "expired",
                             lossValue: 0,
@@ -1123,7 +1122,6 @@ const managementQueries = {
                     }
 
                     const group = productMap.get(pid)!;
-                    group.expiredQty += qty;
                     group.lossValue += totalValue;
 
                     // Keep the most recent entry date
@@ -1134,8 +1132,9 @@ const managementQueries = {
                     group.variants.push({
                         variantId: item.variant.id,
                         brandName: item.variant.brand?.name ?? null,
-                        weightKg: item.variant.weightKg,
-                        unitLabel: item.variant.unitLabel,
+                        unitLabel: semantics.displayLabel,
+                        operationalUnit: semantics.operationalUnit,
+                        stockDisplay: formatVariantStockQuantity(semantics, qty),
                         qty,
                         unitPrice,
                         totalValue,
@@ -1164,6 +1163,7 @@ const managementQueries = {
                                     expiryEnabled: true,
                                 },
                             },
+                            sourceVariantOption: true,
                         },
                     },
                 },
@@ -1173,14 +1173,18 @@ const managementQueries = {
                 productId: number;
                 productName: string;
                 productImage: string | null;
-                availableQty: number;
-                unit: string;
+                configuredVariants: number;
                 expiryEnabled: boolean;
                 shelfLife: string | null;
             }>();
 
             for (const inv of shopInventory) {
-                if (!inv.variant?.product?.expiryEnabled) continue;
+                if (!inv.variant?.product?.expiryEnabled || !inv.variant.sourceVariantOption || !inv.variant.isActive) continue;
+                try {
+                    resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+                } catch {
+                    continue;
+                }
 
                 const prod = inv.variant.product;
                 const pid = prod.id;
@@ -1193,15 +1197,14 @@ const managementQueries = {
                         productId: pid,
                         productName: prod.name,
                         productImage: prod.image,
-                        availableQty: 0,
-                        unit: inv.variant.unitLabel || "pcs",
+                        configuredVariants: 0,
                         expiryEnabled: true,
                         shelfLife: inv.variant.shelfLife,
                     });
                 }
 
                 const w = watchlistMap.get(pid)!;
-                w.availableQty += qty;
+                w.configuredVariants++;
             }
 
             const expiryEnabledProducts = Array.from(watchlistMap.values());
@@ -6284,7 +6287,14 @@ const warehouseConnectionEndpoints = {
             // Enrich with carton data per variant (single query)
             const allVariantIds = products.map((p) => p.variantId);
             let cartonMap = new Map<number, { cartonCount: number; totalWeightKg: number }>();
-            const cartonOptionsByVariant = new Map<number, { weightKg: number; count: number; totalKg: number; packsPerCarton: number }[]>();
+            const cartonOptionsByVariant = new Map<number, {
+                weightKg: number;
+                count: number;
+                totalKg: number;
+                packsPerCarton: number;
+                cartonPrice: string | null;
+                deliveryCost: string | null;
+            }[]>();
 
             if (allVariantIds.length > 0) {
                 const activeCartons = await db.query.carton.findMany({
@@ -7656,7 +7666,7 @@ const shopProductEndpoints = {
                     sku: inv.variant.sku,
                     unitLabel: inv.variant.unitLabel,
                     weightKg: inv.variant.weightKg,
-                    packType: inv.variant.packagingType,
+					packType: inv.variant.packType,
                     brandId: inv.variant.brandId,
                     brandName: inv.variant.brand?.name ?? null,
                     brandLogo: inv.variant.brand?.logo ?? null,
@@ -7827,6 +7837,7 @@ const shopProductEndpoints = {
                 with: {
                     variant: {
                         with: {
+							sourceVariantOption: true,
                             product: {
                                 columns: { id: true, name: true, slug: true, image: true, categoryId: true },
                                 with: {
@@ -7856,11 +7867,19 @@ const shopProductEndpoints = {
                     brandName: string | null;
                     currentStock: number;
                     retailPrice: string | null;
+					operationalUnit: string;
+					stockDisplay: string;
                 }[];
             }>();
 
             for (const inv of shopInventory) {
-                if (!inv.variant?.product) continue;
+				if (!inv.variant?.product || !inv.variant.sourceVariantOption || !inv.variant.isActive) continue;
+				let semantics;
+				try {
+					semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+				} catch {
+					continue;
+				}
                 const prod = inv.variant.product;
                 const pid = prod.id;
 
@@ -7882,11 +7901,13 @@ const shopProductEndpoints = {
                 productMap.get(pid)!.variants.push({
                     variantId: inv.variant.id,
                     inventoryId: inv.id,
-                    unitLabel: inv.variant.unitLabel,
+					unitLabel: semantics.displayLabel,
                     weightKg: inv.variant.weightKg,
                     brandName,
                     currentStock: Number(inv.availableQty),
                     retailPrice: inv.retailPrice,
+					operationalUnit: semantics.operationalUnit,
+					stockDisplay: formatVariantStockQuantity(semantics, Number(inv.availableQty)),
                 });
             }
 
@@ -7927,13 +7948,17 @@ const shopProductEndpoints = {
             const userId = context.session.user.id;
 
             // Validate all inventory rows belong to this shop
-            const inventoryIds = input.entries.map((e) => e.inventoryId);
+			const inventoryIds = input.entries.map((e) => e.inventoryId);
+			if (new Set(inventoryIds).size !== inventoryIds.length) {
+				throw new ORPCError("BAD_REQUEST", { message: "Duplicate inventory entries are not allowed" });
+			}
             const ownedInventory = await db.query.inventory.findMany({
                 where: and(
                     inArray(inventory.id, inventoryIds),
                     eq(inventory.ownerType, "shop"),
                     eq(inventory.ownerId, userId),
-                ),
+				),
+				with: { variant: { with: { sourceVariantOption: true } } },
             });
 
             if (ownedInventory.length !== inventoryIds.length) {
@@ -7941,6 +7966,18 @@ const shopProductEndpoints = {
                     message: "Some inventory items do not belong to your shop",
                 });
             }
+			for (const row of ownedInventory) {
+				if (!row.variant?.isActive || !row.variant.sourceVariantOption) {
+					throw new ORPCError("BAD_REQUEST", { message: "Stock can only be added to an active generated variant" });
+				}
+				try {
+					resolveVariantStockSemantics(row.variant.sourceVariantOption);
+				} catch (error) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: error instanceof Error ? error.message : "Variant definition is invalid",
+					});
+				}
+			}
 
             // Build a lookup
             const invLookup = new Map(ownedInventory.map((inv) => [inv.id, inv]));
@@ -7997,7 +8034,6 @@ const shopProductEndpoints = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            const conditions: (typeof sql)[] = [];
             const baseConditions = and(
                 eq(inventory.ownerType, "shop"),
                 eq(inventory.ownerId, userId),

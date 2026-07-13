@@ -96,23 +96,17 @@ type ProductResult = {
     size?: string | null;
     packType: string | null;
     brand?: { id: number; name: string } | null;
+	displayLabel: string;
+	stockSemantics: {
+		operationalUnit: string;
+		entryType: "loose" | "pack";
+		measurementDimension: "mass" | "volume" | "count";
+		measurementUnit: "KG" | "L" | null;
+		massKgPerUnit: number;
+		volumeLPerUnit: number;
+	};
   }[];
 };
-
-const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
-const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
-
-function normalizeUnit(unit?: string | null) {
-  return String(unit || "")
-    .trim()
-    .toUpperCase();
-}
-
-function formatUnit(unit?: string | null) {
-  const normalized = normalizeUnit(unit);
-  if (PIECE_UNITS.has(normalized)) return "PCS";
-  return normalized || "UNIT";
-}
 
 function isFashionTypeName(typeName?: string | null) {
   return (
@@ -122,77 +116,17 @@ function isFashionTypeName(typeName?: string | null) {
   );
 }
 
-function parseUnitLabelMeasure(label?: string | null) {
-  const normalizedLabel = String(label || "").trim();
-  if (!normalizedLabel) return null;
-
-  const pieceMatch = normalizedLabel.match(
-    /(\d+(?:\.\d+)?)\s*(pc|pcs|piece|pieces|pair|unit)\b/i,
-  );
-  if (pieceMatch) {
-    const value = Number(pieceMatch[1]);
-    if (value > 0) {
-      return {
-        quantityPerPack: value,
-        quantityUnit: normalizeUnit(pieceMatch[2]) === "PAIR" ? "PAIR" : "PCS",
-      };
-    }
-  }
-
-  const weightMatch = normalizedLabel.match(
-    /(\d+(?:\.\d+)?)\s*(kg|kgs|kilogram|kilograms)\b/i,
-  );
-  if (weightMatch) {
-    const value = Number(weightMatch[1]);
-    if (value > 0) {
-      return {
-        quantityPerPack: value,
-        quantityUnit: "KG",
-      };
-    }
-  }
-
-  return null;
-}
-
 function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
-  const normalizedUnit = normalizeUnit(variant?.orderUnit);
-  const weightKg = parseFloat(variant?.weightKg || "0");
-  const piecesPerUnit = Number(variant?.piecesPerUnit || 0);
-  const parsedLabelMeasure = parseUnitLabelMeasure(variant?.unitLabel);
-
-  if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
-    return {
-      quantityPerPack: weightKg,
-      quantityUnit: "KG",
-      displayLabel: `${variant?.unitLabel || "Unit"} (${weightKg} KG)`,
-    };
-  }
-
-  if (piecesPerUnit > 0) {
-    const unitLabel = formatUnit(variant?.orderUnit);
-    return {
-      quantityPerPack: piecesPerUnit,
-      quantityUnit: unitLabel,
-      displayLabel:
-        piecesPerUnit === 1
-          ? variant?.unitLabel || "Unit"
-          : `${variant?.unitLabel || "Unit"} (${piecesPerUnit} ${unitLabel})`,
-    };
-  }
-
-  if (parsedLabelMeasure) {
-    return {
-      quantityPerPack: parsedLabelMeasure.quantityPerPack,
-      quantityUnit: parsedLabelMeasure.quantityUnit,
-      displayLabel: variant?.unitLabel || "Unit",
-    };
-  }
-
+  const semantics = variant?.stockSemantics;
+  const physicalPerUnit = semantics?.measurementDimension === "mass"
+	? semantics.massKgPerUnit
+	: semantics?.measurementDimension === "volume"
+		? semantics.volumeLPerUnit
+		: 1;
   return {
-    quantityPerPack: 0,
-    quantityUnit: formatUnit(variant?.orderUnit),
-    displayLabel: variant?.unitLabel || "Unit",
+	quantityPerPack: physicalPerUnit || 1,
+	quantityUnit: semantics?.measurementUnit || semantics?.operationalUnit || "unit",
+	displayLabel: variant?.displayLabel || variant?.unitLabel || "Unit",
   };
 }
 
@@ -204,7 +138,6 @@ type TableRow = {
   brandName: string;
   attributeKind: "brand" | "color";
   variantId: number | null;
-  looseWeight: string;
   cartonUnitSize: string;
   quantity: string;
   purchaseUnitPrice: string;
@@ -375,15 +308,8 @@ export default function AddStockPage() {
   }, []);
 
   const getCartonPacksPerCarton = useCallback((row: TableRow) => {
-    const variant = row.variantId
-      ? row.product.variants.find((v) => v.id === row.variantId)
-      : null;
-    const unitSizeKg = parseFloat(row.cartonUnitSize) || 0;
-    const packWeightKg = parseFloat(variant?.weightKg || "0");
-    if (!variant || unitSizeKg <= 0 || packWeightKg <= 0) return 0;
-    const packs = unitSizeKg / packWeightKg;
-    const roundedPacks = Math.round(packs);
-    return Math.abs(packs - roundedPacks) < 0.001 ? roundedPacks : 0;
+	const units = Math.floor(parseFloat(row.cartonUnitSize) || 0);
+	return units > 0 ? units : 0;
   }, []);
 
   const modalIsFashionProduct = isFashionTypeName(
@@ -438,8 +364,6 @@ export default function AddStockPage() {
         return false;
       if (entryType === "loose") {
         return (
-          row.looseWeight !== "" &&
-          parseFloat(row.looseWeight) > 0 &&
           row.totalPurchaseCost !== "" &&
           parseFloat(row.totalPurchaseCost) > 0
         );
@@ -494,25 +418,24 @@ export default function AddStockPage() {
       const qty = parseFloat(row.quantity);
       const isFashionRow = isFashionTypeName(row.product.category?.type?.name);
       if (entryType === "loose") {
-        const looseWeight = parseFloat(row.looseWeight) || 0;
-        return qty * looseWeight;
+		return qty;
       }
       if (entryType === "carton") {
-        const cartonUnitSize = parseFloat(row.cartonUnitSize) || 0;
-        return qty * cartonUnitSize;
+		return qty * getCartonPacksPerCarton(row);
       }
       if (isFashionRow) {
         return qty;
       }
       return qty * getVariantMeasure(variant).quantityPerPack;
     },
-    [getRowVariant, entryType],
+	[getCartonPacksPerCarton, getRowVariant, entryType],
   );
 
   const getRowTotalQtyUnit = useCallback(
     (row: TableRow) => {
       const variant = getRowVariant(row);
-      if (entryType === "loose" || entryType === "carton") return "KG";
+	  if (entryType === "carton") return variant?.stockSemantics.operationalUnit || "unit";
+	  if (entryType === "loose") return variant?.stockSemantics.operationalUnit || "unit";
       if (isFashionTypeName(row.product.category?.type?.name)) return "PCS";
       return getVariantMeasure(variant).quantityUnit;
     },
@@ -682,7 +605,6 @@ export default function AddStockPage() {
           : availableVariants.length === 1
             ? availableVariants[0]!.id
             : null,
-      looseWeight: "",
       cartonUnitSize: "",
       quantity: "",
       purchaseUnitPrice: "",
@@ -727,8 +649,6 @@ export default function AddStockPage() {
         return true;
       if (entryType === "loose") {
         return (
-          !r.looseWeight ||
-          parseFloat(r.looseWeight) <= 0 ||
           !r.totalPurchaseCost ||
           parseFloat(r.totalPurchaseCost) <= 0
         );
@@ -752,35 +672,30 @@ export default function AddStockPage() {
     setIsSubmitting(true);
     try {
       const submitRow = (row: TableRow) => {
-        const totalLooseQty = getRowTotalQtyValue(row);
         const qty =
           entryType === "loose"
-            ? totalLooseQty
+			? parseFloat(row.quantity)
             : entryType === "carton"
               ? getCartonCount(row)
               : parseFloat(row.quantity);
         const price =
           entryType === "loose"
-            ? getLooseSupplierPricePerKg(row)
+			? getLooseSupplierPricePerKg(row)
             : parseFloat(row.purchaseUnitPrice);
 
         return (orpc.warehouse as any).addStockEntry.call({
           variantId: row.variantId,
           entryType,
           quantity: String(qty),
-          quantityUnit:
-            entryType === "loose"
-              ? "KG"
-              : entryType === "carton"
-                ? "Carton"
-                : "Pack",
           supplierId: supplierId || undefined,
           costType:
             entryType === "loose"
-              ? "per_kg"
+			? getRowVariant(row)?.stockSemantics.operationalUnit.toLowerCase() === "kg"
+				? "per_kg"
+				: "per_unit"
               : entryType === "carton"
                 ? "per_carton"
-                : "per_pack",
+				: "per_unit",
           purchasePrice: String(price),
           reference: reference || undefined,
           batchNo: batchNo || undefined,
@@ -789,16 +704,10 @@ export default function AddStockPage() {
           storageAreaId: storageAreaId || undefined,
           shelfRack: shelfRack || undefined,
           note: note || undefined,
-          ...(entryType === "loose"
-            ? {
-                looseWeightPerUnit: parseFloat(row.looseWeight) || undefined,
-              }
-            : {}),
           ...(entryType === "carton"
             ? {
                 cartonCount: getCartonCount(row),
                 packsPerCarton: getCartonPacksPerCarton(row),
-                cartonSource: "packs" as const,
                 createCartonRecords: true,
               }
             : {}),
@@ -922,7 +831,7 @@ export default function AddStockPage() {
                     Loose Entry
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Enter quantity in KG
+					Choose a configured loose variant and enter its canonical quantity
                   </p>
                 </div>
               </button>
@@ -962,7 +871,7 @@ export default function AddStockPage() {
                     Pack Entry
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Enter number of packs
+					Enter the number of configured variant units
                   </p>
                 </div>
               </button>
@@ -1053,7 +962,7 @@ export default function AddStockPage() {
                           Product Name
                         </th>
                         <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">
-                          {entryType === "loose" ? "Weight" : "Unit Size"}
+						  {entryType === "carton" ? "Units / Carton" : "Configured Variant"}
                         </th>
                         <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">
                           {entryType === "loose" || entryType === "carton"
@@ -1070,7 +979,7 @@ export default function AddStockPage() {
                             ? "Total Purchase Cost"
                             : entryType === "carton"
                               ? "Buying Price/Carton"
-                              : "Buying Price/Pack"}
+							  : "Buying Price/Unit"}
                         </th>
                         <th className="w-10 px-2"></th>
                       </tr>
@@ -1123,21 +1032,7 @@ export default function AddStockPage() {
                               </td>
                               <td className="px-3 py-2.5">
                                 {entryType === "loose" ? (
-                                  <Input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={row.looseWeight}
-                                    onChange={(e) =>
-                                      updateRow(row.id, {
-                                        looseWeight: e.target.value.replace(
-                                          /[^0-9.]/g,
-                                          "",
-                                        ),
-                                      })
-                                    }
-                                    placeholder="KG"
-                                    className="h-8 w-[90px] text-right text-sm"
-                                  />
+								  <span className="text-xs font-medium">{variant?.displayLabel || variant?.unitLabel || "—"}</span>
                                 ) : entryType === "carton" ? (
                                   <Input
                                     type="text"
@@ -1151,7 +1046,7 @@ export default function AddStockPage() {
                                         ),
                                       })
                                     }
-                                    placeholder="KG"
+									placeholder="Units"
                                     className="h-8 w-[90px] text-right text-sm"
                                   />
                                 ) : (
@@ -1232,9 +1127,9 @@ export default function AddStockPage() {
                                       className="h-8 text-right text-sm"
                                     />
                                     <p className="mt-1 text-[11px] leading-none text-muted-foreground">
-                                      {supplierPricePerKg > 0
-                                        ? `৳ ${supplierPricePerKg.toFixed(2)}/KG`
-                                        : "৳ 0.00/KG"}
+									  {supplierPricePerKg > 0
+										? `৳ ${supplierPricePerKg.toFixed(2)}/${variant?.stockSemantics.operationalUnit || "unit"}`
+										: `৳ 0.00/${variant?.stockSemantics.operationalUnit || "unit"}`}
                                     </p>
                                   </div>
                                 ) : entryType === "carton" ? (

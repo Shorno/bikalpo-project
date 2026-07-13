@@ -67,7 +67,6 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
             url: `${ADMIN_BASE}/product-price`,
           },
           { title: "Web View", url: `${ADMIN_BASE}/web-view` },
-          { title: "Stock / Inventory", url: `${ADMIN_BASE}/stock` },
         ],
       },
       {

@@ -211,6 +211,13 @@
       "when": 1784700000000,
       "tag": "0030_shop_product_alignment",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784800000000,
+      "tag": "0031_strict_stock_semantics",
+      "breakpoints": true
     }
   ]
 }

@@ -192,7 +192,7 @@ export default function ExpiredProductsPage() {
                       <TableHead className="w-[40px] py-3" />
                       <TableHead className="w-[40px] py-3 font-bold text-gray-700">#</TableHead>
                       <TableHead className="py-3 font-bold text-gray-700">Product (Core)</TableHead>
-                      <TableHead className="py-3 font-bold text-gray-700">Expired Qty</TableHead>
+                      <TableHead className="py-3 font-bold text-gray-700">Affected Variants</TableHead>
                       <TableHead className="py-3 font-bold text-gray-700">Last Expiry</TableHead>
                       <TableHead className="text-center py-3 font-bold text-gray-700">Status</TableHead>
                     </TableRow>
@@ -226,7 +226,7 @@ export default function ExpiredProductsPage() {
                             </TableCell>
                             <TableCell className="py-3">
                               <span className="text-sm font-bold text-gray-900 tabular-nums">
-                                {p.expiredQty} {p.unit}
+                                {p.variants.length} configured
                               </span>
                             </TableCell>
                             <TableCell className="py-3">
@@ -253,7 +253,7 @@ export default function ExpiredProductsPage() {
                                       <Table>
                                         <TableHeader>
                                           <TableRow className="text-[11px] bg-gray-50">
-                                            <TableHead className="py-2 font-bold text-gray-600">Brand · Weight</TableHead>
+                                            <TableHead className="py-2 font-bold text-gray-600">Brand · Variant</TableHead>
                                             <TableHead className="py-2 font-bold text-gray-600">Qty</TableHead>
                                             <TableHead className="py-2 font-bold text-gray-600">Unit Price</TableHead>
                                             <TableHead className="py-2 font-bold text-gray-600">Loss</TableHead>
@@ -265,12 +265,11 @@ export default function ExpiredProductsPage() {
                                             <TableRow key={vi} className="hover:bg-gray-50/50">
                                               <TableCell className="py-2">
                                                 <span className="text-sm font-medium text-gray-800">
-                                                  {v.brandName || "No Brand"} · {v.weightKg}KG
+                                                  {v.brandName || "No Brand"} · {v.unitLabel}
                                                 </span>
-                                                <span className="text-[10px] text-gray-400 ml-1.5">{v.unitLabel}</span>
                                               </TableCell>
                                               <TableCell className="py-2 text-sm font-bold text-gray-900 tabular-nums">
-                                                {v.qty} {v.unitLabel}
+                                                {v.stockDisplay}
                                               </TableCell>
                                               <TableCell className="py-2 text-sm text-gray-600 tabular-nums">
                                                 ৳{v.unitPrice.toLocaleString("en-IN")}
@@ -377,7 +376,7 @@ export default function ExpiredProductsPage() {
                   <TableHeader>
                     <TableRow className="text-xs bg-gradient-to-r from-amber-50/50 to-white">
                       <TableHead className="py-3 font-bold text-gray-700">Product</TableHead>
-                      <TableHead className="py-3 font-bold text-gray-700">In Stock</TableHead>
+                       <TableHead className="py-3 font-bold text-gray-700">Tracked Variants</TableHead>
                       <TableHead className="py-3 font-bold text-gray-700">Shelf Life</TableHead>
                       <TableHead className="text-center py-3 font-bold text-gray-700">Action</TableHead>
                     </TableRow>
@@ -398,7 +397,7 @@ export default function ExpiredProductsPage() {
                           </div>
                         </TableCell>
                         <TableCell className="py-3 text-sm font-bold text-gray-900 tabular-nums">
-                          {Math.round(w.availableQty)} {w.unit}
+                          {w.configuredVariants} configured
                         </TableCell>
                         <TableCell className="py-3 text-sm text-gray-600">
                           {w.shelfLife || "—"}

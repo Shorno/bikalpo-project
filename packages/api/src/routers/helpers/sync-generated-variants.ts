@@ -5,7 +5,12 @@ import {
   variantOption,
 } from "@bikalpo-project/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
+import {
+  ConcreteVariantDefinitionError,
+  resolveConcreteVariantOption,
+  resolveVariantOption,
+} from "@bikalpo-project/db/variant-definition";
+import { ORPCError } from "@orpc/server";
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type DbClient = typeof db | DbTransaction;
@@ -20,6 +25,33 @@ export type GeneratedVariantProductSettings = {
 
 type VariantPriceRow = typeof productVariantPrice.$inferSelect;
 type VariantOptionRow = typeof variantOption.$inferSelect;
+
+export function resolveConcreteVariantForConfig(
+  option: VariantOptionRow | undefined,
+) {
+  if (!option) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "One or more selected variants do not exist",
+    });
+  }
+  try {
+    return resolveConcreteVariantOption(option);
+  } catch (error) {
+    if (error instanceof ConcreteVariantDefinitionError) {
+      throw new ORPCError("BAD_REQUEST", { message: error.message });
+    }
+    throw error;
+  }
+}
+
+export function isConcreteVariantOption(option: VariantOptionRow) {
+  try {
+    resolveConcreteVariantOption(option);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function getGeneratedVariantOrderMin(productData: {
   minimumOrderEnabled?: boolean;
@@ -57,6 +89,28 @@ export function getGeneratedVariantOrderUnit(
   return productData.inventoryUnit || option?.unit || "piece";
 }
 
+/** Refresh canonical metadata without replacing generated rows or commercial data. */
+export async function resyncGeneratedVariantsForOption(
+  client: DbClient,
+  option: VariantOptionRow,
+) {
+  const resolved = resolveConcreteVariantForConfig(option);
+  await client
+    .update(productVariant)
+    .set({
+      unitLabel: resolved.label,
+      quantitySelectorLabel: resolved.label,
+      packagingType: resolved.packagingType,
+      weightKg: resolved.weightKg,
+      orderUnit: resolved.orderUnit,
+      packType: resolved.packType,
+      packWeightKg: resolved.weightKg || null,
+      sellUnit: resolved.label,
+      updatedAt: new Date(),
+    })
+    .where(eq(productVariant.sourceVariantOptionId, option.id));
+}
+
 /**
  * Build the auto-generated product_variant rows for a set of freshly
  * inserted product_variant_price rows. One variant per price row, carrying
@@ -75,11 +129,7 @@ export function buildAutoVariantRows(params: {
 
   return insertedPrices.map((pvp, idx) => {
     const vo = voMap[pvp.variantOptionId];
-    const resolved = resolveVariantOption(vo);
-    const packType = resolved.container.trim().toLowerCase().replace(/\s+/g, "_");
-    const supportedPackType = ["sack", "carton", "packet", "loose", "bottle", "can", "jar", "pouch", "box", "unit", "pair", "cylinder", "drum", "bundle"].includes(packType)
-      ? packType
-      : resolved.isLoose ? "loose" : "unit";
+    const resolved = resolveConcreteVariantForConfig(vo);
     const weightKg = resolved.weightKg || "0";
 
     return {
@@ -88,12 +138,12 @@ export function buildAutoVariantRows(params: {
       sku: `CP-${productId}-B${pvp.brandId ?? 0}-VO-${pvp.variantOptionId}`,
       unitLabel: resolved.label,
       quantitySelectorLabel: resolved.label,
-      packagingType: supportedPackType,
+      packagingType: resolved.packagingType,
       weightKg,
       price: pvp.consumerPrice || "0",
       orderMin: generatedOrderMin,
       orderUnit: getGeneratedVariantOrderUnit(settings, vo),
-      packType: supportedPackType as "sack" | "carton" | "packet" | "loose" | "bottle" | "can" | "jar" | "pouch" | "box" | "unit" | "pair" | "cylinder" | "drum" | "bundle",
+      packType: resolved.packType,
       packWeightKg: weightKg || null,
       sellUnit: resolved.label,
       sourceVariantPriceId: pvp.id,
@@ -208,13 +258,21 @@ export async function syncBrandVariantPrices(
         .where(eq(productVariantPrice.id, row.id));
     }
     const option = voMap[row.variantOptionId];
+    const resolved = resolveConcreteVariantForConfig(option);
     await client
       .update(productVariant)
       .set({
         price: consumerPrice,
         brandId,
         orderMin: getGeneratedVariantOrderMin(settings),
-        orderUnit: getGeneratedVariantOrderUnit(settings, option),
+        unitLabel: resolved.label,
+        quantitySelectorLabel: resolved.label,
+        packagingType: resolved.packagingType,
+        weightKg: resolved.weightKg,
+        orderUnit: resolved.orderUnit,
+        packType: resolved.packType,
+        packWeightKg: resolved.weightKg || null,
+        sellUnit: resolved.label,
         isActive: true,
       })
       .where(eq(productVariant.sourceVariantPriceId, row.id));

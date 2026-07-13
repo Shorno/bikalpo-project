@@ -72,12 +72,15 @@ export default function RetailerCoreProductConfigPage() {
               (variant: any, index: number) => ({
                 variantOptionId: variant.variantOptionId,
                 variantOptionName:
+                  variant.variantOptionName ??
                   data.options.variantOptions.find(
                     (option: any) => option.id === variant.variantOptionId,
-                  )?.name ?? null,
+                  )?.name ??
+                  null,
                 consumerPrice: "0",
                 isActive: variant.isActive !== false,
                 sortOrder: index,
+                requiresDefinitionReview: variant.needsReview === true,
               }),
             ),
           })),

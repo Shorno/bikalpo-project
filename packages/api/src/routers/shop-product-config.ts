@@ -1,5 +1,4 @@
 import { db } from "@bikalpo-project/db";
-import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
 import {
   adminProductGenerationTemplate,
   brand,
@@ -17,6 +16,10 @@ import { ORPCError } from "@orpc/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { shopOwnerProcedure } from "../index";
+import {
+  isConcreteVariantOption,
+  resolveConcreteVariantForConfig,
+} from "./helpers/sync-generated-variants";
 
 const configuredVariantSchema = z.object({
   variantOptionId: z.number().int().positive(),
@@ -179,6 +182,7 @@ async function loadScopedOptions(
         message: `Variant "${option.name}" is not available for this core product`,
       });
     }
+    resolveConcreteVariantForConfig(option);
   }
   return new Map<number, any>(
     rows.map((row: any): [number, any] => [row.id, row]),
@@ -241,7 +245,7 @@ async function syncProductVariants({
 
   for (const [sortOrder, optionId] of desiredOptionIds.entries()) {
     const option = optionMap.get(optionId)!;
-    const resolved = resolveVariantOption(option);
+    const resolved = resolveConcreteVariantForConfig(option);
     const label = resolved.label;
     const existing = existingByOption.get(optionId) as any;
     if (existing) {
@@ -251,6 +255,11 @@ async function syncProductVariants({
           isActive: true,
           unitLabel: label,
           quantitySelectorLabel: label,
+          packagingType: resolved.packagingType,
+          weightKg: resolved.weightKg,
+          orderUnit: resolved.orderUnit,
+          packType: resolved.packType,
+          packWeightKg: resolved.weightKg || null,
           sellUnit: label,
           sortOrder,
         })
@@ -301,7 +310,6 @@ async function syncProductVariants({
         sortOrder,
       })
       .returning();
-    const packType = resolved.container.toLowerCase();
     const [variantRow] = await tx
       .insert(productVariant)
       .values({
@@ -311,12 +319,13 @@ async function syncProductVariants({
         sku: `SHOP-${targetProduct.id}-B${brandId}-VO${option.id}-${sortOrder}`,
         unitLabel: label,
         quantitySelectorLabel: label,
-        packagingType: packType,
+        packagingType: resolved.packagingType,
         weightKg: resolved.weightKg,
         price: "0",
         orderMin: details.minimumOrderEnabled ? details.minimumOrderQty : "1",
         orderUnit: resolved.orderUnit,
-        packType: packType as any,
+        packType: resolved.packType,
+        packWeightKg: resolved.weightKg || null,
         sellUnit: label,
         variantType: "retail",
         orderType: "b2c",
@@ -406,8 +415,10 @@ export const shopProductConfigEndpoints = {
         }),
       ]);
       const typeId = core.category?.typeId ?? null;
-      const variantOptions = allVariantOptions.filter((option) =>
-        optionIsValid(option, typeId, core.categoryId),
+      const variantOptions = allVariantOptions.filter(
+        (option) =>
+          optionIsValid(option, typeId, core.categoryId) &&
+          isConcreteVariantOption(option),
       );
 
       return {
@@ -438,6 +449,13 @@ export const shopProductConfigEndpoints = {
                 .filter((variant) => variant.sourceVariantOptionId !== null)
                 .map((variant) => ({
                   variantOptionId: variant.sourceVariantOptionId!,
+                  variantOptionName:
+                    variant.sourceVariantOption?.name ?? null,
+                  definitionKind:
+                    variant.sourceVariantOption?.definitionKind ?? null,
+                  definition: variant.sourceVariantOption?.definition ?? null,
+                  needsReview:
+                    variant.sourceVariantOption?.needsReview ?? true,
                 })),
             })),
         },
@@ -454,7 +472,12 @@ export const shopProductConfigEndpoints = {
             .map((variant) => ({
               variantId: variant.id,
               variantOptionId: variant.sourceVariantOptionId!,
+              variantOptionName: variant.sourceVariantOption?.name ?? null,
               isActive: variant.isActive,
+              definitionKind:
+                variant.sourceVariantOption?.definitionKind ?? null,
+              definition: variant.sourceVariantOption?.definition ?? null,
+              needsReview: variant.sourceVariantOption?.needsReview ?? true,
             })),
         })),
         options: { brands, variantOptions },
@@ -531,26 +554,24 @@ export const shopProductConfigEndpoints = {
           core.category?.typeId ?? null,
           core.categoryId,
         );
-        const [adminProducts, existingProducts, adminTemplate] =
-          await Promise.all([
-            tx.query.product.findMany({
-              where: and(
-                eq(product.coreProductId, core.id),
-                eq(product.creatorSource, "admin"),
-              ),
-            }),
-            tx.query.product.findMany({
-              where: and(
-                eq(product.coreProductId, core.id),
-                eq(product.creatorSource, "shop"),
-                eq(product.createdById, shopId),
-              ),
-              with: { variants: true },
-            }),
-            tx.query.adminProductGenerationTemplate.findFirst({
-              where: eq(adminProductGenerationTemplate.coreProductId, core.id),
-            }),
-          ]);
+        const adminProducts = await tx.query.product.findMany({
+          where: and(
+            eq(product.coreProductId, core.id),
+            eq(product.creatorSource, "admin"),
+          ),
+        });
+        const existingProducts = await tx.query.product.findMany({
+          where: and(
+            eq(product.coreProductId, core.id),
+            eq(product.creatorSource, "shop"),
+            eq(product.createdById, shopId),
+          ),
+          with: { variants: true },
+        });
+        const adminTemplate =
+          await tx.query.adminProductGenerationTemplate.findFirst({
+            where: eq(adminProductGenerationTemplate.coreProductId, core.id),
+          });
         const adminByBrand = new Map(
           adminProducts
             .filter((row) => row.brandId !== null)
@@ -761,12 +782,13 @@ export const shopProductConfigEndpoints = {
         where: eq(variantOption.isActive, true),
         orderBy: [variantOption.sortOrder, variantOption.name],
       });
-      const options = allOptions.filter((option) =>
-        optionIsValid(
-          option,
-          found.category?.typeId ?? null,
-          found.categoryId,
-        ),
+      const options = allOptions.filter(
+        (option) =>
+          optionIsValid(
+            option,
+            found.category?.typeId ?? null,
+            found.categoryId,
+          ) && isConcreteVariantOption(option),
       );
       return { product: found, options: { variantOptions: options } };
     }),

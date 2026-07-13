@@ -571,6 +571,10 @@ export const adminCatalogApprovalRouter = {
           variantType: true,
           typeId: true,
           categoryId: true,
+          definitionKind: true,
+          definition: true,
+          needsReview: true,
+          isActive: true,
         },
       }),
       db.query.coreProductIdentity.findMany({

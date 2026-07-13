@@ -1,437 +1,211 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
 import {
-  BarChart3,
   BoxesIcon,
   ChevronDown,
   ChevronRight,
   Package,
   Plus,
   Search,
-  ShoppingCart,
-  Tag,
-  ArrowRightLeft,
-  Printer,
 } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { useRealtimeStock } from "@/hooks/use-shop-owner-api";
 
-// ─── Status Config ─────────────────────────────────────────────
-
 const STATUS_CONFIG = {
-  in_stock: { label: "In Stock", color: "border-emerald-200 text-emerald-700 bg-emerald-50", dot: "bg-emerald-500", dotRing: "ring-emerald-200" },
-  low: { label: "Low Stock", color: "border-amber-200 text-amber-700 bg-amber-50", dot: "bg-amber-500", dotRing: "ring-amber-200" },
-  out_of_stock: { label: "Out of Stock", color: "border-red-200 text-red-700 bg-red-50", dot: "bg-red-500", dotRing: "ring-red-200" },
+  in_stock: {
+    label: "In Stock",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  low: {
+    label: "Low Stock",
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  out_of_stock: {
+    label: "Out of Stock",
+    className: "border-red-200 bg-red-50 text-red-700",
+  },
 } as const;
-
-// ─── Main Page ─────────────────────────────────────────────────
 
 export default function StockLivePage() {
   const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState<number | undefined>();
-  const [statusFilter, setStatusFilter] = useState<"all" | "in_stock" | "low" | "out_of_stock">("all");
+  const [categoryId, setCategoryId] = useState<number>();
+  const [status, setStatus] = useState<
+    "all" | "in_stock" | "low" | "out_of_stock"
+  >("all");
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
-
   const { data, isLoading } = useRealtimeStock({
     search: search || undefined,
     categoryId,
-    status: statusFilter,
+    status,
   });
-
   const products: any[] = (data as any)?.products ?? [];
   const categories: any[] = (data as any)?.categories ?? [];
 
   return (
-    <div className="space-y-3 max-w-5xl">
-      {/* ── HEADER ── */}
+    <div className="max-w-5xl space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-          <div className="p-1.5 bg-emerald-100 rounded-lg">
-            <BoxesIcon className="text-emerald-600" size={16} />
-          </div>
-          📦 Stock (Real-time)
-          <span className="text-[10px] text-gray-400 font-normal ml-1">Live inventory</span>
-        </h1>
-        <Button asChild size="sm" className="h-7 text-xs">
+        <div>
+          <h1 className="flex items-center gap-2 text-lg font-bold">
+            <BoxesIcon className="h-5 w-5 text-emerald-600" /> Real-time stock
+          </h1>
+          <p className="text-xs text-muted-foreground">
+            Inventory is shown in each configured variant&apos;s canonical unit.
+          </p>
+        </div>
+        <Button asChild size="sm">
           <Link href="/dashboard/stock/add">
-            <Plus className="mr-1 h-3 w-3" />
-            Add Stock
+            <Plus className="mr-1 h-4 w-4" />
+            Add stock
           </Link>
         </Button>
       </div>
 
-      {/* ── SEARCH / FILTERS (inline, compact) ── */}
-      <div className="flex flex-col sm:flex-row gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="SKU / Product Name / Brand..."
+            className="pl-9"
+            placeholder="Search product, SKU, or brand"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 text-xs"
+            onChange={(event) => setSearch(event.target.value)}
           />
         </div>
         <Select
           value={categoryId?.toString() ?? "all"}
-          onValueChange={(v) => setCategoryId(v === "all" ? undefined : Number(v))}
+          onValueChange={(value) =>
+            setCategoryId(value === "all" ? undefined : Number(value))
+          }
         >
-          <SelectTrigger className="w-[140px] h-8 text-xs">
+          <SelectTrigger className="w-full sm:w-44">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((c: any) => (
-              <SelectItem key={c.id} value={c.id.toString()}>
-                {c.name}
+            <SelectItem value="all">All categories</SelectItem>
+            {categories.map((category: any) => (
+              <SelectItem key={category.id} value={String(category.id)}>
+                {category.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Select
-          value={statusFilter}
-          onValueChange={(v: any) => setStatusFilter(v)}
+          value={status}
+          onValueChange={(value: typeof status) => setStatus(value)}
         >
-          <SelectTrigger className="w-[130px] h-8 text-xs">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger className="w-full sm:w-40">
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="in_stock">🟢 In Stock</SelectItem>
-            <SelectItem value="low">🟡 Low Stock</SelectItem>
-            <SelectItem value="out_of_stock">🔴 Out of Stock</SelectItem>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="in_stock">In stock</SelectItem>
+            <SelectItem value="low">Low stock</SelectItem>
+            <SelectItem value="out_of_stock">Out of stock</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {/* ════════════════════════════════════════════════════════
-          PRODUCT TABLE
-          ════════════════════════════════════════════════════════ */}
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-16 bg-white border rounded-xl">
-          <div className="w-7 h-7 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mb-3" />
-          <p className="text-xs text-gray-500">Loading real-time stock...</p>
+        <div className="rounded-xl border py-16 text-center text-sm text-muted-foreground">
+          Loading stock…
         </div>
       ) : products.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 bg-white border border-dashed rounded-xl">
-          <BoxesIcon className="text-gray-300 mb-3" size={40} />
-          <p className="text-gray-500 text-base font-medium">No products found</p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {search ? "Try adjusting your search or filters." : "Add products to start tracking stock."}
-          </p>
+        <div className="rounded-xl border border-dashed py-16 text-center">
+          <Package className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
+          <p className="font-medium">No stock found</p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          {/* Table Header */}
-          <div className="grid grid-cols-[32px_minmax(80px,0.8fr)_minmax(160px,2fr)_minmax(120px,1fr)_60px] bg-gray-50 border-b text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-            <div className="py-2 px-1" />
-            <div className="py-2 px-2">SKU</div>
-            <div className="py-2 px-2">Product Name</div>
-            <div className="py-2 px-2">Stock Breakdown</div>
-            <div className="py-2 px-2 text-center">Action</div>
-          </div>
-
-          {/* Product Rows */}
-          <div className="divide-y divide-gray-100">
-            {products.map((p: any) => {
-              const isExpanded = expandedId === p.productId;
-              const sc = STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG];
-
-              // Aggregate packs + loose across variants
-              const totalPackKg = (p.variants || []).reduce((sum: number, v: any) => {
-                const isPack = (v.packType || "").toLowerCase() !== "loose";
-                return sum + (isPack ? v.availableQty * parseFloat(v.weightKg || "0") : 0);
-              }, 0);
-
-              return (
-                <div key={p.productId}>
-                  {/* ── Product Row ── */}
-                  <div
-                    className={`grid grid-cols-[32px_minmax(80px,0.8fr)_minmax(160px,2fr)_minmax(120px,1fr)_60px] items-center cursor-pointer transition-colors hover:bg-gray-50/80 ${isExpanded ? "bg-gray-50" : ""}`}
-                    onClick={() => {
-                      setExpandedId(isExpanded ? null : p.productId);
-                      setSelectedVariantId(null);
-                    }}
-                  >
-                    {/* Chevron */}
-                    <div className="flex items-center justify-center py-2.5">
-                      {isExpanded ? (
-                        <ChevronDown size={13} className="text-gray-400" />
-                      ) : (
-                        <ChevronRight size={13} className="text-gray-400" />
-                      )}
-                    </div>
-
-                    {/* SKU */}
-                    <div className="py-2.5 px-2">
-                      <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                        {p.sku || "—"}
-                      </span>
-                    </div>
-
-                    {/* Product Name */}
-                    <div className="py-2.5 px-2 flex items-center gap-2">
-                      {p.productImage ? (
-                        <img
-                          src={p.productImage}
-                          alt={p.productName}
-                          className="w-7 h-7 rounded-md object-cover border flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
-                          <Package className="h-3.5 w-3.5 text-gray-300" />
-                        </div>
-                      )}
-                      <span className="text-xs font-semibold text-gray-800 truncate">
-                        {p.productName}
-                      </span>
-                    </div>
-
-                    {/* Stock Breakdown */}
-                    <div className="py-2.5 px-2">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <span className="text-xs font-bold text-gray-900 tabular-nums">
-                          {Math.round(p.totalPackQty)} Pack
-                        </span>
-                        <span className="text-gray-300 text-[10px]">·</span>
-                        <span className="text-xs font-bold text-gray-900 tabular-nums">
-                          {Math.round(p.totalLooseQty * 100) / 100} KG Loose
-                        </span>
+        <div className="overflow-hidden rounded-xl border bg-background">
+          {products.map((product: any) => {
+            const expanded = expandedId === product.productId;
+            const statusConfig =
+              STATUS_CONFIG[product.status as keyof typeof STATUS_CONFIG];
+            return (
+              <div key={product.productId} className="border-b last:border-b-0">
+                <button
+                  type="button"
+                  className="grid w-full grid-cols-[24px_1fr_auto] items-center gap-3 p-4 text-left hover:bg-muted/40"
+                  onClick={() =>
+                    setExpandedId(expanded ? null : product.productId)
+                  }
+                >
+                  {expanded ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                  <div className="flex min-w-0 items-center gap-3">
+                    {product.productImage ? (
+                      <Image
+                        src={product.productImage}
+                        alt=""
+                        width={36}
+                        height={36}
+                        className="h-9 w-9 rounded-md border object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted">
+                        <Package className="h-4 w-4" />
                       </div>
-                    </div>
-
-                    {/* Action */}
-                    <div className="py-2.5 px-2 flex justify-center">
-                      <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${sc.color}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
-                        View
-                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">
+                        {product.productName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {product.categoryName ?? "Uncategorized"} ·{" "}
+                        {product.variants.length} configured variant
+                        {product.variants.length === 1 ? "" : "s"}
+                      </p>
                     </div>
                   </div>
-
-                  {/* ── Expanded Detail ── */}
-                  {isExpanded && (
-                    <ExpandedProductDetail
-                      product={p}
-                      selectedVariantId={selectedVariantId}
-                      onSelectVariant={setSelectedVariantId}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Footer */}
-          <div className="px-3 py-2 border-t bg-gray-50/50 text-[10px] text-gray-500 flex items-center justify-between">
-            <span>{(data as any)?.totalCount ?? 0} products</span>
-            <span className="text-gray-400">Updates every 30s</span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// EXPANDED PRODUCT DETAIL
-// ═══════════════════════════════════════════════════════════════
-
-function ExpandedProductDetail({
-  product: p,
-  selectedVariantId,
-  onSelectVariant,
-}: {
-  product: any;
-  selectedVariantId: number | null;
-  onSelectVariant: (id: number | null) => void;
-}) {
-  const sc = STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG];
-
-  // Split variants into pack and loose
-  const packVariants = (p.variants || []).filter((v: any) => (v.packType || "").toLowerCase() !== "loose");
-  const looseVariants = (p.variants || []).filter((v: any) => (v.packType || "").toLowerCase() === "loose");
-
-  const selectedVariant = selectedVariantId
-    ? (p.variants || []).find((v: any) => v.variantId === selectedVariantId)
-    : null;
-
-  // Total loose across all loose variants
-  const totalLooseKg = looseVariants.reduce((sum: number, v: any) => sum + v.availableQty, 0);
-
-  return (
-    <div className="bg-gray-50/80 border-t border-gray-100">
-      <div className="px-4 py-3 space-y-2.5">
-        {/* ── Compact header: image + name + stats + badge all in one row ── */}
-        <div className="flex items-center gap-2.5">
-          {p.productImage ? (
-            <img src={p.productImage} alt={p.productName} className="w-8 h-8 rounded-md object-cover border" />
-          ) : (
-            <div className="w-8 h-8 rounded-md bg-gray-100 flex items-center justify-center">
-              <Package className="h-4 w-4 text-gray-300" />
-            </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <h3 className="text-xs font-bold text-gray-900 truncate flex items-center gap-1.5">
-              {p.productName}
-              {p.sku && <span className="text-[9px] font-mono text-gray-400">({p.sku})</span>}
-            </h3>
-            <p className="text-[10px] text-gray-400">Core Identity Level Stock</p>
-          </div>
-          {/* Inline summary pills */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="bg-white border rounded px-2 py-1 text-[11px] font-bold text-gray-800">📦 {Math.round(p.totalPackQty)} Pack</span>
-            <span className="text-gray-300 text-xs">+</span>
-            <span className="bg-white border rounded px-2 py-1 text-[11px] font-bold text-gray-800">🏷️ {Math.round(p.totalLooseQty * 100) / 100} KG</span>
-          </div>
-          <Badge variant="outline" className={`text-[9px] font-bold shrink-0 ${sc.color}`}>
-            {sc.label}
-          </Badge>
-        </div>
-
-        {/* ── Variant Stock + Loose Stock side by side ── */}
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
-          {/* Pack variants (compact list) */}
-          {packVariants.length > 0 && (
-            <div>
-              <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
-                <BarChart3 size={10} /> Variant Stock (Pack)
-              </h4>
-              <div className="bg-white border rounded-lg overflow-hidden divide-y divide-gray-50">
-                {packVariants.map((v: any) => {
-                  const vStatus = v.availableQty <= 0 ? "out_of_stock" : v.availableQty <= 5 ? "low" : "in_stock";
-                  const vs = STATUS_CONFIG[vStatus];
-                  const isSelected = selectedVariantId === v.variantId;
-
-                  return (
-                    <div
-                      key={v.variantId}
-                      className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors ${isSelected ? "bg-blue-50/60 border-l-2 border-l-blue-500" : "hover:bg-gray-50/50 border-l-2 border-l-transparent"}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectVariant(isSelected ? null : v.variantId);
-                      }}
-                    >
-                      <span className="text-xs font-medium text-gray-800">
-                        {v.brandName || "No Brand"} + {v.weightKg}KG
-                      </span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs font-bold text-gray-900 tabular-nums">
-                          → {v.availableQty} Pack
-                        </span>
-                        <span className={`w-1.5 h-1.5 rounded-full ring-1 ${vs.dot} ${vs.dotRing}`} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Loose stock (variant-wise breakdown) */}
-          <div className="min-w-[160px]">
-            <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
-              <Tag size={10} /> Loose Stock
-            </h4>
-            <div className="bg-white border rounded-lg overflow-hidden">
-              {looseVariants.length > 0 ? (
-                <>
-                  <div className="divide-y divide-gray-50">
-                    {looseVariants.map((v: any) => {
-                      const wt = parseFloat(v.weightKg || "0");
-                      const totalKg = v.availableQty;
-                      const unitCount = wt > 0 ? Math.round(totalKg / wt) : 0;
-                      return (
+                  <Badge variant="outline" className={statusConfig.className}>
+                    {statusConfig.label}
+                  </Badge>
+                </button>
+                {expanded && (
+                  <div className="border-t bg-muted/20 px-4 py-3">
+                    <div className="overflow-hidden rounded-lg border bg-background">
+                      {product.variants.map((variant: any) => (
                         <div
-                          key={v.variantId}
-                          className="flex items-center justify-between px-3 py-1.5 hover:bg-gray-50/50 transition-colors"
+                          key={variant.variantId}
+                          className="grid gap-2 border-b px-3 py-2.5 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center"
                         >
-                          <span className="text-xs font-medium text-gray-700">
-                            {v.brandName ? `${v.brandName} · ` : ""}{wt > 0 ? `${wt} KG` : "Loose"}
-                          </span>
-                          <div className="flex items-center gap-1.5 text-xs tabular-nums">
-                            {wt > 0 && unitCount > 0 ? (
-                              <>
-                                <span className="text-gray-500">× {unitCount}</span>
-                                <span className="text-gray-300">=</span>
-                              </>
-                            ) : null}
-                            <span className="font-bold text-gray-900">
-                              {Math.round(totalKg * 100) / 100} KG
-                            </span>
+                          <div>
+                            <p className="text-sm font-medium">
+                              {variant.brandName
+                                ? `${variant.brandName} · `
+                                : ""}
+                              {variant.unitLabel}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {variant.sku ?? "No SKU"} · {variant.packType}
+                            </p>
+                          </div>
+                          <div className="text-sm font-semibold tabular-nums">
+                            {variant.stockDisplay}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                  {/* Total summary */}
-                  <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-t border-gray-100">
-                    <span className="text-[10px] font-bold text-gray-500 uppercase">Total</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-gray-900 tabular-nums">
-                        {Math.round(totalLooseKg * 100) / 100} KG
-                      </span>
-                      <span className={`w-1.5 h-1.5 rounded-full ring-1 ${totalLooseKg > 0 ? "bg-emerald-500 ring-emerald-200" : "bg-red-500 ring-red-200"}`} />
+                      ))}
                     </div>
                   </div>
-                </>
-              ) : (
-                <div className="px-3 py-2 flex items-center justify-between gap-3">
-                  <span className="text-xs text-gray-400">No loose stock</span>
-                  <span className="w-1.5 h-1.5 rounded-full ring-1 bg-gray-300 ring-gray-200" />
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-
-        {/* ── Selected Variant (inline compact) ── */}
-        {selectedVariant && (
-          <div className="bg-white border border-blue-200 rounded-lg px-3 py-2 flex items-center gap-4 text-xs">
-            <span className="font-bold text-blue-900">
-              ▸ {selectedVariant.brandName || "No Brand"} + {selectedVariant.weightKg}KG
-              {(selectedVariant.packType || "").toLowerCase() === "loose" ? " / Loose" : ""}
-            </span>
-            <div className="flex items-center gap-3 ml-auto text-[11px]">
-              <span className="text-blue-700">
-                Available: <strong>{selectedVariant.availableQty} {(selectedVariant.packType || "").toLowerCase() === "loose" ? "KG" : "Pack"}</strong>
-              </span>
-              <span className="text-blue-600">
-                Loose: <strong>+{Math.round(totalLooseKg * 100) / 100} KG</strong>
-              </span>
-              <span className="text-gray-400">MOQ: <strong className="text-gray-700">1 Pack</strong></span>
-            </div>
-          </div>
-        )}
-
-        {/* ── Quick Actions (inline) ── */}
-        <div className="flex items-center gap-1.5 pt-0.5">
-          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mr-1">⚙ Actions</span>
-          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2" asChild>
-            <Link href={`/dashboard/sales?product=${p.productId}`}>
-              <ShoppingCart size={10} /> Sell Now
-            </Link>
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2" asChild>
-            <Link href={`/dashboard/stock/add?product=${p.productId}`}>
-              <Plus size={10} /> Add Stock
-            </Link>
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2 text-gray-400" disabled>
-            <Printer size={10} /> Label
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6 px-2 text-gray-400" disabled>
-            <ArrowRightLeft size={10} /> Loose→Pack
-          </Button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

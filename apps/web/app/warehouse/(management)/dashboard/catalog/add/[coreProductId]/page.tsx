@@ -15,14 +15,12 @@ export default function WarehouseCoreProductConfigPage() {
   const coreProductId = Number(
     useParams<{ coreProductId: string }>().coreProductId,
   );
-  const [variantAliases, setVariantAliases] = useState<Record<number, string>>({});
+  const [variantAliases, setVariantAliases] = useState<Record<number, string>>(
+    {},
+  );
 
   const configurationQuery = useQuery({
-    queryKey: [
-      "warehouse",
-      "getWarehouseCoreConfiguration",
-      { coreProductId },
-    ],
+    queryKey: ["warehouse", "getWarehouseCoreConfiguration", { coreProductId }],
     queryFn: () =>
       (orpc.warehouse as any).getWarehouseCoreConfiguration.call({
         coreProductId,
@@ -42,14 +40,26 @@ export default function WarehouseCoreProductConfigPage() {
             variantOptionId: variant.variantOptionId,
           })),
         })),
-        variantAliases: Object.entries(variantAliases).filter(([, alias]) => alias.trim()).map(([variantOptionId, alias]) => ({ variantOptionId: Number(variantOptionId), alias: alias.trim() })),
+        variantAliases: Object.entries(variantAliases)
+          .filter(([, alias]) => alias.trim())
+          .map(([variantOptionId, alias]) => ({
+            variantOptionId: Number(variantOptionId),
+            alias: alias.trim(),
+          })),
       }),
   });
 
   const data = configurationQuery.data;
   useEffect(() => {
     if (!data?.variantAliases) return;
-    setVariantAliases(Object.fromEntries(data.variantAliases.map((entry: any) => [entry.variantOptionId, entry.alias])));
+    setVariantAliases(
+      Object.fromEntries(
+        data.variantAliases.map((entry: any) => [
+          entry.variantOptionId,
+          entry.alias,
+        ]),
+      ),
+    );
   }, [data?.variantAliases]);
   const currentBrands = data?.current ?? [];
   const presetBrands = data?.adminPreset?.brands ?? [];
@@ -75,21 +85,27 @@ export default function WarehouseCoreProductConfigPage() {
                 (option: any) => option.id === brand.brandId,
               )?.logo ?? null,
             productId: brand.productId ?? brand.sourceProductId ?? 0,
-            productName: brand.productName ??
+            productName:
+              brand.productName ??
               `${brand.brandName || data.core.name} ${data.core.name}`,
             productSlug: "",
             productImage: data.core.image,
             status: brand.status ?? "active",
-            variantOptions: brand.variants.map((variant: any, index: number) => ({
-              variantOptionId: variant.variantOptionId,
-              variantOptionName:
-                data.options.variantOptions.find(
-                  (option: any) => option.id === variant.variantOptionId,
-                )?.name ?? null,
-              consumerPrice: "0",
-              isActive: variant.isActive !== false,
-              sortOrder: index,
-            })),
+            variantOptions: brand.variants.map(
+              (variant: any, index: number) => ({
+                variantOptionId: variant.variantOptionId,
+                variantOptionName:
+                  variant.variantOptionName ??
+                  data.options.variantOptions.find(
+                    (option: any) => option.id === variant.variantOptionId,
+                  )?.name ??
+                  null,
+                consumerPrice: "0",
+                isActive: variant.isActive !== false,
+                sortOrder: index,
+                requiresDefinitionReview: variant.needsReview === true,
+              }),
+            ),
           })),
       }
     : undefined;
@@ -123,15 +139,18 @@ export default function WarehouseCoreProductConfigPage() {
         isLoading: configurationQuery.isLoading,
         isError: configurationQuery.isError,
         listHref: CATALOG_URL,
-        productEditHref: (productId) =>
-          `${PRODUCTS_URL}/${productId}/edit`,
+        productEditHref: (productId) => `${PRODUCTS_URL}/${productId}/edit`,
         presetBrands:
           data?.adminPreset?.available && normalizedPreset.length > 0
             ? normalizedPreset
             : undefined,
         reloadPresetLabel: "Reload Admin Preset",
         variantAliases,
-        onVariantAliasChange: (variantOptionId, alias) => setVariantAliases((current) => ({ ...current, [variantOptionId]: alias })),
+        onVariantAliasChange: (variantOptionId, alias) =>
+          setVariantAliases((current) => ({
+            ...current,
+            [variantOptionId]: alias,
+          })),
         onConfigure: async (values) => configureMutation.mutateAsync(values),
         initialBrands:
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,
