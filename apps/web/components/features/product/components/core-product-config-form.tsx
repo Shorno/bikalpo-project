@@ -1068,15 +1068,7 @@ function BrandEditorCard({
                         }`}
                       >
                         {selected && <Check className="h-3.5 w-3.5" />}
-                        <span>
-                          {variant.name}
-                          {variant.size && (
-                            <span className="ml-1 opacity-70">
-                              · {variant.size}
-                              {variant.unit ? ` ${variant.unit}` : ""}
-                            </span>
-                          )}
-                        </span>
+                        <span>{variant.name}</span>
                       </button>
                     );
                   })}
