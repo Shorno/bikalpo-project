@@ -672,11 +672,13 @@ function ProductDetailDialog({
   );
   const priceItems = priceQuery.data?.items ?? [];
 
-  const configurationQuery = useQuery(
-    orpc.adminProductConfig.get.queryOptions({
+  const configurationQuery = useQuery({
+    ...orpc.adminProductConfig.get.queryOptions({
       input: { coreProductId: product.id },
     }),
-  );
+    enabled: product.hasConfiguration === true,
+    retry: false,
+  });
   const configuredProducts = configurationQuery.data?.brands ?? [];
   const editableProduct = (configuredProducts.find(
     (configured) => configured.status === "active",
