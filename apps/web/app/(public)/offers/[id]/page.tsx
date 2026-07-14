@@ -54,7 +54,7 @@ export default function OfferDetailsPage() {
   const bannerImage = offer.bannerImage || offer.imageUrl || "";
 
   return (
-    <section className="py-6 sm:py-10 bg-gray-50 min-h-[60vh]">
+    <section className="min-h-[60vh] bg-[oklch(0.985_0.004_260)] py-6 sm:py-10">
       <div className="container mx-auto px-4 max-w-5xl">
         <Link
           href="/"
@@ -64,7 +64,7 @@ export default function OfferDetailsPage() {
           Back to offers
         </Link>
 
-        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+        <div className="overflow-hidden rounded-md border bg-background">
           {bannerImage ? (
             <div className="relative h-56 sm:h-80 w-full bg-gray-100">
               <Image
@@ -75,8 +75,8 @@ export default function OfferDetailsPage() {
               />
             </div>
           ) : (
-            <div className="h-56 sm:h-80 w-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
-              <span className="text-white text-5xl sm:text-7xl font-bold opacity-30">
+            <div className="flex h-56 w-full items-center justify-center bg-primary/10 sm:h-80">
+              <span className="text-5xl font-semibold text-primary/35 sm:text-7xl">
                 {offer.discountPercentage}%
               </span>
             </div>
@@ -103,7 +103,7 @@ export default function OfferDetailsPage() {
 
             <div className="flex items-end gap-3 pt-1">
               {offer.comboPrice ? (
-                <span className="text-3xl sm:text-4xl font-bold text-emerald-600">
+                <span className="text-3xl font-semibold tabular-nums text-primary sm:text-4xl">
                   ৳ {offer.comboPrice}
                 </span>
               ) : null}
@@ -114,7 +114,7 @@ export default function OfferDetailsPage() {
                   ৳ {offer.originalPrice}
                 </span>
               ) : null}
-              <span className="text-sm text-emerald-700 font-semibold">
+              <span className="text-sm font-semibold text-primary">
                 {offer.discountPercentage}% OFF
               </span>
             </div>
@@ -149,7 +149,7 @@ export default function OfferDetailsPage() {
             ) : null}
 
             <div className="pt-4">
-              <Link href="/products?sort=discount">
+              <Link href="/products">
                 <Button size="lg" className="w-full sm:w-auto">
                   Shop This Offer
                 </Button>

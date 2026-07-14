@@ -1,160 +1,84 @@
 "use client";
-import { ChevronRight, Menu, Phone, Smartphone, Store } from "lucide-react";
+
+import { Building2, LayoutGrid, MapPin, Tags } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { useActiveCategories } from "@/hooks/use-customer-api";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
 import { NavbarSearch } from "./navbar-search";
 import { UserDropdown } from "./user-dropdown";
 
-const topNavLinks = [
-  { label: "RAMADAN SPECIAL", href: "/products?tag=ramadan" },
-  { label: "GREAT DEALS", href: "/products?sort=discount" },
-  { label: "BUY & SAVE MORE", href: "/products?tag=bundle" },
-  { label: "TO-LET", href: "/to-let" },
-  { label: "OUR BRANDS", href: "/products?view=brands" },
+const storefrontLinks = [
+  { label: "Products", href: "/products", icon: LayoutGrid },
+  { label: "Offers", href: "/offers", icon: Tags },
+  { label: "Stores", href: "/stores", icon: MapPin },
+  { label: "For business", href: "/b2b", icon: Building2 },
 ];
 
 export function Navbar() {
   const isMobile = useIsMobile();
-  const pathname = usePathname();
-  const { data: categoriesData } = useActiveCategories();
-  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
-
-  const isHomePage = pathname === "/";
 
   return (
-    <nav className="sticky top-0 z-50 shadow-md">
-      {/* ── Row 1: Main header (red/primary) ──────────────────── */}
-      <div className="bg-primary">
-        <div className="container mx-auto px-4">
-          <div className="flex h-16 items-center justify-between gap-4">
-            {/* Left: Logo */}
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="md:hidden">
-                <MobileMenu />
-              </div>
-              <Link href="/" className="flex items-center shrink-0">
-                <Image
-                  src={"/logos/site-logo-white.svg"}
-                  alt="Bikalpo"
-                  width={isMobile ? 90 : 120}
-                  height={44}
-                  priority
-                  className="object-contain"
-                />
-              </Link>
+    <nav className="sticky top-0 z-50 border-b border-blue-950/25 bg-primary text-primary-foreground">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center gap-3 sm:gap-5">
+          <div className="md:hidden">
+            <MobileMenu />
+          </div>
+
+          <Link
+            href="/"
+            aria-label="Bikalpo home"
+            className="flex shrink-0 items-center focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-foreground"
+          >
+            <Image
+              src="/logos/site-logo-white.svg"
+              alt="Bikalpo"
+              width={isMobile ? 88 : 112}
+              height={42}
+              priority
+              className="object-contain"
+            />
+          </Link>
+
+          <div className="hidden min-w-0 flex-1 md:block">
+            <NavbarSearch />
+          </div>
+
+          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="text-primary-foreground [&_button]:text-primary-foreground [&_button:hover]:bg-white/10 [&_button:hover]:text-primary-foreground [&_.absolute]:bg-background [&_.absolute]:text-foreground">
+              <CartButton />
             </div>
-
-            {/* Center: Inline search with dropdown */}
-            <div className="flex-1 max-w-xl hidden md:block">
-              <NavbarSearch />
-            </div>
-
-            {/* Right: Actions */}
-            <div className="flex items-center gap-3 shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="hidden lg:flex items-center gap-1.5 text-white hover:bg-white/10 hover:text-white border border-white/30 text-xs px-3 h-8 rounded-sm font-medium"
-                asChild
-              >
-                <Link href="#">
-                  <Smartphone className="size-4" />
-                  Download App
-                </Link>
-              </Button>
-
-              <div className="text-white [&_button]:text-white [&_button:hover]:bg-white/10 [&_button:hover]:text-white [&_.absolute]:bg-white [&_.absolute]:text-primary">
-                <CartButton />
-              </div>
-
-              <div className="[&_button]:bg-white [&_button]:text-primary [&_button]:font-semibold [&_button:hover]:bg-white/90 [&_a]:bg-white [&_a]:text-primary [&_a]:font-semibold [&_a:hover]:bg-white/90">
-                <UserDropdown />
-              </div>
+            <div className="[&_a]:bg-background [&_a]:font-semibold [&_a]:text-primary [&_a:hover]:bg-background/90 [&_button]:bg-background [&_button]:font-semibold [&_button]:text-primary [&_button:hover]:bg-background/90">
+              <UserDropdown />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Mobile search row */}
-      <div className="md:hidden px-4 py-2 border-b bg-gray-50">
-        <NavbarSearch />
-      </div>
-
-      {/* ── Row 2: Category nav bar (white bg) ──────────────── */}
-      <div className="hidden md:block bg-white border-b">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center h-10">
-            {/* Shop by Category */}
-            <div
-              className="relative"
-              onMouseEnter={() => {
-                if (!isHomePage) setCategoryMenuOpen(true);
-              }}
-              onMouseLeave={() => setCategoryMenuOpen(false)}
+      <div className="border-t border-white/15 bg-[oklch(0.43_0.19_265)]">
+        <div className="mx-auto hidden h-10 max-w-7xl items-center gap-1 px-4 sm:px-6 md:flex lg:px-8">
+          {storefrontLinks.map(({ label, href, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
             >
-              <button className="flex items-center gap-2 h-10 px-3 text-gray-800 text-sm font-semibold shrink-0 hover:text-primary transition-colors">
-                <Menu className="size-4" />
-                <span>SHOP BY CATEGORY</span>
-              </button>
+              <Icon className="size-3.5" />
+              {label}
+            </Link>
+          ))}
+          <Link
+            href="/contact"
+            className="ml-auto text-xs font-medium text-blue-100 hover:text-white hover:underline hover:underline-offset-4"
+          >
+            Contact
+          </Link>
+        </div>
 
-              {categoryMenuOpen && categoriesData?.categories && (
-                <div className="absolute top-full left-0 w-60 bg-white shadow-xl border-x border-b border-gray-200 z-50 rounded-b-sm">
-                  <div className="py-1">
-                    {categoriesData.categories.map((cat) => (
-                      <Link
-                        key={cat.slug}
-                        href={`/products/${cat.slug}`}
-                        className="flex items-center justify-between px-4 py-2.5 text-sm text-gray-700 hover:text-primary transition-colors group"
-                      >
-                        <span className="font-medium">{cat.name}</span>
-                        <ChevronRight className="size-3.5 opacity-40 group-hover:text-primary group-hover:opacity-100" />
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="w-px h-5 bg-gray-300 mx-1" />
-
-            {/* Nav links */}
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
-              {topNavLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="px-3 py-2 text-xs font-semibold text-gray-700 hover:text-primary whitespace-nowrap transition-colors tracking-wide"
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </div>
-
-            {/* Right side info */}
-            <div className="ml-auto flex items-center gap-4 shrink-0">
-              <Link
-                href="/stores"
-                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
-              >
-                <Store className="size-3.5" />
-                Our outlets
-              </Link>
-              <Link
-                href="/contact"
-                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
-              >
-                <Phone className="size-3.5" />
-                Help line
-              </Link>
-            </div>
-          </div>
+        <div className="px-4 py-2 md:hidden">
+          <NavbarSearch />
         </div>
       </div>
     </nav>

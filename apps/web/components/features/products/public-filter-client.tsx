@@ -95,17 +95,16 @@ export function PublicFilterClient({
   const brandCount = filters.brand?.split(",").filter(Boolean).length || 0;
 
   return (
-    <div className="sticky top-20 hidden lg:block bg-white border rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50/80">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-          <Filter size={16} className="text-blue-600" />
+    <div className="sticky top-28 hidden overflow-hidden rounded-md border bg-background lg:block">
+      <div className="flex items-center justify-between border-b bg-muted/40 px-4 py-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Filter size={16} className="text-primary" />
           Filters
         </div>
         {hasActiveFilters && (
           <button
             onClick={clearAllFilters}
-            className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 transition-colors"
+            className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground hover:underline hover:underline-offset-4"
           >
             <X size={12} />
             Clear
@@ -125,7 +124,7 @@ export function PublicFilterClient({
               <div className="flex items-center gap-2">
                 Category
                 {categoryCount > 0 && (
-                  <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                  <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                     {categoryCount}
                   </span>
                 )}
@@ -141,11 +140,11 @@ export function PublicFilterClient({
                   <RadioGroupItem
                     value=""
                     id="cat-all"
-                    className="h-3.5 w-3.5 border-gray-300 text-blue-600"
+                    className="h-3.5 w-3.5 border-border text-primary"
                   />
                   <Label
                     htmlFor="cat-all"
-                    className="text-xs font-normal cursor-pointer text-gray-600"
+                    className="cursor-pointer text-xs font-normal text-muted-foreground"
                   >
                     All Categories
                   </Label>
@@ -155,11 +154,11 @@ export function PublicFilterClient({
                     <RadioGroupItem
                       value={cat.slug}
                       id={cat.slug}
-                      className="h-3.5 w-3.5 border-gray-300 text-blue-600"
+                      className="h-3.5 w-3.5 border-border text-primary"
                     />
                     <Label
                       htmlFor={cat.slug}
-                      className="text-xs font-normal cursor-pointer text-gray-600"
+                      className="cursor-pointer text-xs font-normal text-muted-foreground"
                     >
                       {cat.name}
                     </Label>
@@ -177,7 +176,7 @@ export function PublicFilterClient({
               <div className="flex items-center gap-2">
                 Sub Category
                 {subcategoryCount > 0 && (
-                  <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                  <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                     {subcategoryCount}
                   </span>
                 )}
@@ -200,11 +199,11 @@ export function PublicFilterClient({
                           sub.slug,
                         )
                       }
-                      className="h-3.5 w-3.5 rounded-sm data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                      className="h-3.5 w-3.5 rounded-sm data-[state=checked]:border-primary data-[state=checked]:bg-primary"
                     />
                     <Label
                       htmlFor={sub.slug}
-                      className="text-xs cursor-pointer text-gray-600"
+                      className="cursor-pointer text-xs text-muted-foreground"
                     >
                       {sub.name}
                     </Label>
@@ -222,7 +221,7 @@ export function PublicFilterClient({
               <div className="flex items-center gap-2">
                 Brand
                 {brandCount > 0 && (
-                  <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                  <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                     {brandCount}
                   </span>
                 )}
@@ -244,11 +243,11 @@ export function PublicFilterClient({
                           b.slug,
                         )
                       }
-                      className="h-3.5 w-3.5 rounded-sm data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                      className="h-3.5 w-3.5 rounded-sm data-[state=checked]:border-primary data-[state=checked]:bg-primary"
                     />
                     <Label
                       htmlFor={`brand-${b.slug}`}
-                      className="text-xs cursor-pointer text-gray-600"
+                      className="cursor-pointer text-xs text-muted-foreground"
                     >
                       {b.name}
                     </Label>
