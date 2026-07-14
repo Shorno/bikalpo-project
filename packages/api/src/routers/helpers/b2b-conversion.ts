@@ -24,8 +24,12 @@ import {
     usesWeightPoolFulfillmentMode,
     type FulfillmentMode,
 } from "@bikalpo-project/db/fulfillment";
+import {
+    areVariantOptionsStructurallyCompatible,
+    resolveVariantMovementSemantics,
+} from "@bikalpo-project/db/variant-definition";
 import {carton, inventory, order, orderItem, product, productVariant, user, variantConversionMap,} from "@bikalpo-project/db/schema";
-import {and, desc, eq} from "drizzle-orm";
+import {and, desc, eq, sql} from "drizzle-orm";
 
 /**
  * Convert B2B order items to retail inventory upon delivery.
@@ -120,6 +124,7 @@ export async function convertB2bOrderToRetailInventory(
                 weightKg: true,
                 packType: true,
             },
+            with: { sourceVariantOption: true },
         });
 
         if (!tradeVariant) continue;
@@ -148,6 +153,7 @@ export async function convertB2bOrderToRetailInventory(
                                 id: true,
                                 name: true,
                                 slug: true,
+                                family: true,
                                 inventoryBehaviour: true,
                             },
                         },
@@ -157,6 +163,7 @@ export async function convertB2bOrderToRetailInventory(
         });
         const productUnitSize = 0;
         const fulfillmentProfile = buildProductTypeFulfillmentProfile({
+            family: productData?.category?.type?.family,
             name: productData?.category?.type?.name,
             slug: productData?.category?.type?.slug,
             inventoryBehaviour: productData?.category?.type?.inventoryBehaviour,
@@ -314,6 +321,45 @@ export async function convertB2bOrderToRetailInventory(
                 ?? tradeVariant.id;
             conversionRatio = 1;
             conversionSource = "direct_unit_transfer";
+
+            if (fulfillmentProfile.family === "lpg") {
+                if (!Number.isInteger(orderedQty)) {
+                    throw new Error("LPG transfers require a whole number of cylinders");
+                }
+                if (!tradeVariant.sourceVariantOption) {
+                    throw new Error("LPG source variant is missing its Admin Variant definition");
+                }
+                const sourceMovement = resolveVariantMovementSemantics(
+                    tradeVariant.sourceVariantOption,
+                    "lpg",
+                );
+                const targetVariant = targetRetailVariantId === tradeVariant.id
+                    ? tradeVariant
+                    : await tx.query.productVariant.findFirst({
+                        where: eq(productVariant.id, targetRetailVariantId),
+                        columns: { id: true },
+                        with: { sourceVariantOption: true },
+                    });
+                if (!targetVariant?.sourceVariantOption) {
+                    throw new Error("Linked LPG target variant is missing its Admin Variant definition");
+                }
+                const targetMovement = resolveVariantMovementSemantics(
+                    targetVariant.sourceVariantOption,
+                    "lpg",
+                );
+                if (
+                    sourceMovement.inventoryUnit !== "cylinder" ||
+                    targetMovement.inventoryUnit !== "cylinder" ||
+                    !areVariantOptionsStructurallyCompatible(
+                        tradeVariant.sourceVariantOption,
+                        targetVariant.sourceVariantOption,
+                    )
+                ) {
+                    throw new Error(
+                        "Linked LPG variants must use the same cylinder capacity and unit",
+                    );
+                }
+            }
             console.log(`[B2B-CONVERT] Direct transfer: mode=${shopSupplyMode}, target=${targetRetailVariantId}, ratio=${conversionRatio}`);
 
         } else {
@@ -421,18 +467,36 @@ export async function convertB2bOrderToRetailInventory(
                 `[B2B-CONVERT] Deducting: avail ${availableQty}→${newSourceQty}, inCarton ${currentInCarton}→${newInCarton}, cartons ${currentActiveCartonCount}→${newActiveCartonCount}, deductQty=${deductQty}`,
             );
 
-            await tx
-                .update(inventory)
-                .set({
-                    availableQty: newSourceQty.toFixed(2),
-                    reservedQty: newReservedQty.toFixed(2),
-                    ...(isCartonOrder ? { inCartonQty: newInCarton.toFixed(2) } : {}),
-                    ...(isCartonOrder
-                        ? { activeCartonCount: newActiveCartonCount }
-                        : {}),
-                    updatedAt: new Date(),
-                })
-                .where(eq(inventory.id, sourceInv.id));
+            const sourceUpdate = fulfillmentProfile.family === "lpg"
+                ? await tx
+                    .update(inventory)
+                    .set({
+                        reservedQty: sql`${inventory.reservedQty}::numeric - ${deductQty}`,
+                        updatedAt: new Date(),
+                    })
+                    .where(
+                        and(
+                            eq(inventory.id, sourceInv.id),
+                            sql`${inventory.reservedQty}::numeric >= ${deductQty}`,
+                        ),
+                    )
+                    .returning({ id: inventory.id })
+                : await tx
+                    .update(inventory)
+                    .set({
+                        availableQty: newSourceQty.toFixed(2),
+                        reservedQty: newReservedQty.toFixed(2),
+                        ...(isCartonOrder ? { inCartonQty: newInCarton.toFixed(2) } : {}),
+                        ...(isCartonOrder
+                            ? { activeCartonCount: newActiveCartonCount }
+                            : {}),
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(inventory.id, sourceInv.id))
+                    .returning({ id: inventory.id });
+            if (sourceUpdate.length === 0) {
+                throw new Error(`Reserved LPG cylinder stock changed for variant ${tradeVariant.id}`);
+            }
 
             // Mark consumed carton records as "sold" (FIFO: oldest first)
             if (isCartonOrder) {

@@ -237,6 +237,12 @@ export const orderItem = pgTable(
         /** Actual quantity received in shop inventory after conversion */
         convertedQty: decimal("converted_qty", { precision: 12, scale: 2 }),
 
+        /** Immutable movement snapshot for unit-safe fulfillment. */
+        quantityUnit: varchar("quantity_unit", { length: 20 }),
+        inventoryUnit: varchar("inventory_unit", { length: 20 }),
+        conversionFactor: decimal("conversion_factor", { precision: 12, scale: 4 }),
+        inventoryQty: decimal("inventory_qty", { precision: 12, scale: 2 }),
+
         createdAt: timestamp("created_at").defaultNow().notNull(),
     },
     (table) => [

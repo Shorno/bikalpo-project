@@ -12,6 +12,7 @@
 import { db } from "@bikalpo-project/db";
 import {
     formatVariantStockQuantity,
+    resolveVariantMovementSemantics,
     resolveVariantStockSemantics,
 } from "@bikalpo-project/db/variant-definition";
 import {
@@ -1453,6 +1454,10 @@ const managementQueries = {
                             totalPrice: true,
                             supplyMode: true,
                             targetVariantId: true,
+                            quantityUnit: true,
+                            inventoryUnit: true,
+                            conversionFactor: true,
+                            inventoryQty: true,
                             conversionStatus: true,
                             convertedQty: true,
                         },
@@ -1476,6 +1481,10 @@ const managementQueries = {
                 supplyMode: string | null;
                 supplyModeLabel: string;
                 targetVariantId: number | null;
+                quantityUnit: string | null;
+                inventoryUnit: string | null;
+                conversionFactor: string | null;
+                inventoryQty: string | null;
                 conversionStatus: string | null;
                 convertedQty: string | null;
             }[] = [];
@@ -1510,6 +1519,10 @@ const managementQueries = {
                         supplyMode: item.supplyMode,
                         supplyModeLabel: modeLabel,
                         targetVariantId: item.targetVariantId,
+                        quantityUnit: item.quantityUnit,
+                        inventoryUnit: item.inventoryUnit,
+                        conversionFactor: item.conversionFactor,
+                        inventoryQty: item.inventoryQty,
                         conversionStatus: status,
                         convertedQty: item.convertedQty,
                     });
@@ -1887,13 +1900,8 @@ const mutations = {
                     })
                     .where(eq(order.id, input.orderId));
 
-                // Trigger B2B → Retail inventory conversion
-                try {
-                    await convertB2bOrderToRetailInventory(tx, input.orderId);
-                } catch (err: any) {
-                    console.error(`[RECEIVE-PO] B2B conversion failed for order #${input.orderId}:`, err);
-                    // Don't rollback — still mark as received
-                }
+                // Inventory transfer and delivery status are one atomic movement.
+                await convertB2bOrderToRetailInventory(tx, input.orderId);
             });
 
             return {
@@ -1933,6 +1941,25 @@ const mutations = {
             }
 
             await db.transaction(async (tx) => {
+                const cancelled = await tx
+                    .update(order)
+                    .set({
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                    })
+                    .where(
+                        and(
+                            eq(order.id, input.orderId),
+                            eq(order.status, existingOrder.status),
+                        ),
+                    )
+                    .returning({ id: order.id });
+                if (cancelled.length === 0) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Order was already updated by another request",
+                    });
+                }
+
                 // Release approved reservation for confirmed orders.
                 if (existingOrder.warehouseId && existingOrder.status === "confirmed") {
                     for (const item of existingOrder.items) {
@@ -1953,15 +1980,6 @@ const mutations = {
                             );
                     }
                 }
-
-                // Update order status
-                await tx
-                    .update(order)
-                    .set({
-                        status: "cancelled",
-                        cancelledAt: new Date(),
-                    })
-                    .where(eq(order.id, input.orderId));
             });
 
             return {
@@ -4944,6 +4962,10 @@ const warehouseOrderQueries = {
                 currentQty: string;
                 supplyMode: string;
                 targetVariantId: number | null;
+                quantityUnit: string | null;
+                inventoryUnit: string | null;
+                conversionFactor: string | null;
+                inventoryQty: string | null;
             }[] = [];
 
             for (const item of input.items) {
@@ -4975,6 +4997,7 @@ const warehouseOrderQueries = {
                                                         id: true,
                                                         name: true,
                                                         slug: true,
+                                                        family: true,
                                                         inventoryBehaviour: true,
                                                     },
                                                 },
@@ -5003,12 +5026,12 @@ const warehouseOrderQueries = {
                         eq(carton.status, "active"),
                     ));
                 const activeCartonCount = cartonCountResult?.cnt ?? 0;
-                const requestedMode = item.fulfillmentMode ?? item.supplyMode ?? "loose";
+                const requestedMode = item.fulfillmentMode ?? item.supplyMode ?? null;
                 const resolvedMode = resolveWarehouseOrderMode({
                     requestedMode,
-                    fallbackMode: "loose",
                     activeCartonCount,
                     productType: {
+                        family: inv.variant?.product?.category?.type?.family,
                         typeName: inv.variant?.product?.category?.type?.name,
                         typeSlug: inv.variant?.product?.category?.type?.slug,
                         inventoryBehaviour:
@@ -5021,6 +5044,11 @@ const warehouseOrderQueries = {
                 if (requestedMode && !resolvedMode.supportsRequestedMode) {
                     throw new ORPCError("BAD_REQUEST", {
                         message: `${requestedMode} mode is not supported for ${inv.variant?.product?.name || "this product type"}. Supported modes: ${resolvedMode.profile.supportedModes.join(", ")}`,
+                    });
+                }
+                if (resolvedMode.profile.family === "lpg" && !Number.isInteger(item.quantity)) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "LPG orders must use whole cylinder quantities",
                     });
                 }
 
@@ -5165,6 +5193,16 @@ const warehouseOrderQueries = {
                     currentQty: inv.availableQty,
                     supplyMode: resolvedMode.mode,
                     targetVariantId: resolvedTargetVariantId,
+                    quantityUnit:
+                        resolvedMode.profile.family === "lpg" ? "cylinder" : null,
+                    inventoryUnit:
+                        resolvedMode.profile.family === "lpg" ? "cylinder" : null,
+                    conversionFactor:
+                        resolvedMode.profile.family === "lpg" ? "1" : null,
+                    inventoryQty:
+                        resolvedMode.profile.family === "lpg"
+                            ? String(item.quantity)
+                            : null,
                 });
             }
 
@@ -5215,6 +5253,10 @@ const warehouseOrderQueries = {
                         supplyMode: item.supplyMode,
                         targetVariantId: item.targetVariantId,
                         conversionStatus: "pending",
+                        quantityUnit: item.quantityUnit,
+                        inventoryUnit: item.inventoryUnit,
+                        conversionFactor: item.conversionFactor,
+                        inventoryQty: item.inventoryQty,
                     });
                 }
 
@@ -6161,12 +6203,15 @@ const warehouseConnectionEndpoints = {
                     categoryName: category.name,
                     productTypeName: productType.name,
                     productTypeSlug: productType.slug,
+                    productTypeFamily: productType.family,
                     productTypeInventoryBehaviour:
                         productType.inventoryBehaviour,
                     variantUnitLabel: productVariant.unitLabel,
                     variantWeightKg: productVariant.weightKg,
                     variantSku: productVariant.sku,
                     variantPrice: productVariant.price,
+                    packType: productVariant.packType,
+                    orderUnit: productVariant.orderUnit,
                     variantPackType: productVariant.packType,
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
@@ -6227,6 +6272,7 @@ const warehouseConnectionEndpoints = {
                 const inCarton = Number(item.inCartonQty || 0);
                 const effectiveQty = Math.max(0, rawQty - inCarton);
                 const fulfillmentProfile = buildProductTypeFulfillmentProfile({
+                    family: item.productTypeFamily,
                     name: item.productTypeName,
                     slug: item.productTypeSlug,
                     inventoryBehaviour:
@@ -6250,6 +6296,7 @@ const warehouseConnectionEndpoints = {
                         unitSize: item.productUnitSize,
                         categoryName: item.categoryName || "Uncategorized",
                         type: {
+                            family: item.productTypeFamily,
                             name: item.productTypeName ?? "Generic",
                             slug: item.productTypeSlug,
                             inventoryBehaviour:
@@ -8052,6 +8099,8 @@ const shopProductEndpoints = {
                     sku: productVariant.sku,
                     unitLabel: productVariant.unitLabel,
                     weightKg: productVariant.weightKg,
+                    packType: productVariant.packType,
+                    orderUnit: productVariant.orderUnit,
                     productId: product.id,
                     productName: product.name,
                     productImage: product.image,
@@ -8081,6 +8130,10 @@ const shopProductEndpoints = {
                     inventoryId: r.inventoryId,
                     sku: r.sku,
                     unitLabel: r.unitLabel,
+                    quantityUnit:
+                        r.packType === "cylinder" || r.orderUnit === "cylinder"
+                            ? "cylinder"
+                            : r.orderUnit || r.packType || "unit",
                     weightKg: r.weightKg,
                     productId: r.productId,
                     productName: r.productName,
@@ -8138,6 +8191,25 @@ const shopProductEndpoints = {
                     eq(inventory.ownerType, "shop"),
                     eq(inventory.ownerId, userId),
                 ),
+                with: {
+                    variant: {
+                        columns: { id: true },
+                        with: {
+                            sourceVariantOption: true,
+                            product: {
+                                columns: { id: true },
+                                with: {
+                                    category: {
+                                        columns: { id: true },
+                                        with: {
+                                            type: { columns: { family: true } },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
             });
 
             if (ownedInventory.length !== inventoryIds.length) {
@@ -8168,11 +8240,26 @@ const shopProductEndpoints = {
                 const inv = invLookup.get(item.inventoryId)!;
                 const currentQty = parseFloat(inv.availableQty || "0");
                 const adjustQty = item.actualQty - currentQty;
+                const movement = inv.variant?.sourceVariantOption
+                    ? resolveVariantMovementSemantics(
+                        inv.variant.sourceVariantOption,
+                        inv.variant.product?.category?.type?.family ?? "generic",
+                    )
+                    : null;
+                if (
+                    movement?.inventoryUnit === "cylinder" &&
+                    (!Number.isInteger(currentQty) || !Number.isInteger(item.actualQty))
+                ) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Variant ${inv.variantId}: LPG adjustments require whole cylinders`,
+                    });
+                }
                 return {
                     variantId: inv.variantId,
                     currentQty: String(currentQty),
                     adjustQty: String(adjustQty),
                     afterQty: String(item.actualQty),
+                    quantityUnit: movement?.inventoryUnit ?? null,
                     note: item.note || null,
                     inventoryId: inv.id,
                     actualQty: item.actualQty,
@@ -8222,16 +8309,28 @@ const shopProductEndpoints = {
                         currentQty: li.currentQty,
                         adjustQty: li.adjustQty,
                         afterQty: li.afterQty,
+                        quantityUnit: li.quantityUnit,
                         note: li.note,
                     })),
                 );
 
                 // Update inventory quantities
                 for (const li of changedItems) {
-                    await tx
+                    const updated = await tx
                         .update(inventory)
                         .set({ availableQty: li.afterQty })
-                        .where(eq(inventory.id, li.inventoryId));
+                        .where(
+                            and(
+                                eq(inventory.id, li.inventoryId),
+                                sql`${inventory.availableQty}::numeric = ${Number(li.currentQty)}`,
+                            ),
+                        )
+                        .returning({ id: inventory.id });
+                    if (updated.length === 0) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Variant ${li.variantId}: stock changed while the adjustment was being applied`,
+                        });
+                    }
                 }
 
                 return header!;

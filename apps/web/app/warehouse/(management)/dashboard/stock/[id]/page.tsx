@@ -240,6 +240,10 @@ function getGroupMeasure(group?: StockVariantGroup | null) {
   const weightKg = parseFloat(group.weightKg || "0");
   const piecesPerUnit = Number(group.piecesPerUnit || 0);
 
+  if (group.packType === "cylinder" || normalizedUnit === "CYLINDER") {
+    return { quantityPerPack: 1, quantityUnit: "CYLINDER" };
+  }
+
   if (group.packType === "loose") {
     if (PIECE_UNITS.has(normalizedUnit)) {
       return { quantityPerPack: 1, quantityUnit: "PCS" };
@@ -538,7 +542,7 @@ export default function StockDetailPage() {
     const useFashionOpenStockFallback =
       isFashion && !isLoose && !hasPhysicalCartons;
     const looseQty = useFashionOpenStockFallback
-      ? item.totalQty ?? item.availableQty ?? 0
+      ? (item.totalQty ?? item.availableQty ?? 0)
       : (item.availableForCartonQty ?? item.availableQty ?? 0);
     const inCartonQty = summary
       ? summaryInCartonQty

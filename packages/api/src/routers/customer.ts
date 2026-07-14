@@ -9,7 +9,10 @@
  */
 
 import { db } from "@bikalpo-project/db";
-import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
+import {
+  resolveVariantMovementSemantics,
+  resolveVariantOption,
+} from "@bikalpo-project/db/variant-definition";
 import {
   address,
   announcement,
@@ -3277,7 +3280,16 @@ const mutations = {
         where: eq(cart.userId, userId),
         with: {
           items: {
-            with: { product: true, variant: true },
+            with: {
+              product: {
+                with: {
+                  category: {
+                    with: { type: { columns: { family: true } } },
+                  },
+                },
+              },
+              variant: { with: { sourceVariantOption: true } },
+            },
           },
         },
       });
@@ -3295,6 +3307,10 @@ const mutations = {
         productImage: string;
         productSize: string;
         quantity: number;
+        quantityUnit: string | null;
+        inventoryUnit: string | null;
+        conversionFactor: string;
+        inventoryQty: string;
         unitPrice: string;
         totalPrice: string;
       }> = [];
@@ -3322,23 +3338,16 @@ const mutations = {
         // Check stock: for B2C (with shopId), check shop inventory; otherwise check variant/product stock
         let stockQty: number;
         if (item.shopId) {
-          // B2C: check shop's inventory (may be on a different variant than the one selected)
-          const productVariants = await db.query.productVariant.findMany({
-            where: eq(productVariant.productId, item.productId),
-            columns: { id: true },
-          });
-          const variantIds = productVariants.map((v) => v.id);
-          const shopInv =
-            variantIds.length > 0
-              ? await db.query.inventory.findFirst({
-                  where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, item.shopId),
-                    inArray(inventory.variantId, variantIds),
-                    sql`CAST(${inventory.availableQty} AS numeric) > 0`,
-                  ),
-                })
-              : null;
+          // Capacity-specific products must resolve the exact selected variant.
+          const shopInv = item.variantId
+            ? await db.query.inventory.findFirst({
+                where: and(
+                  eq(inventory.ownerType, "shop"),
+                  eq(inventory.ownerId, item.shopId),
+                  eq(inventory.variantId, item.variantId),
+                ),
+              })
+            : null;
           stockQty = shopInv ? Number(shopInv.availableQty) : 0;
         } else {
           stockQty = item.variant ? item.variant.stockQuantity : 999; // product-level stockQuantity removed; skip product-level check
@@ -3347,6 +3356,21 @@ const mutations = {
         if (stockQty < item.quantity) {
           throw new ORPCError("BAD_REQUEST", {
             message: `Insufficient stock for ${item.product.name}. Available: ${stockQty}`,
+          });
+        }
+
+        const movementSemantics = item.variant?.sourceVariantOption
+          ? resolveVariantMovementSemantics(
+              item.variant.sourceVariantOption,
+              item.product.category?.type?.family ?? "generic",
+            )
+          : null;
+        if (
+          movementSemantics?.inventoryUnit === "cylinder" &&
+          !Number.isInteger(item.quantity)
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `${item.product.name} must be ordered in whole cylinders`,
           });
         }
 
@@ -3366,6 +3390,18 @@ const mutations = {
           productImage: item.product.image,
           productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
           quantity: item.quantity,
+          quantityUnit:
+            movementSemantics?.enteredUnit ||
+            item.variant?.orderUnit ||
+            item.variant?.packType ||
+            null,
+          inventoryUnit:
+            movementSemantics?.inventoryUnit ||
+            item.variant?.orderUnit ||
+            item.variant?.packType ||
+            null,
+          conversionFactor: movementSemantics?.conversionFactor ?? "1",
+          inventoryQty: String(item.quantity),
           unitPrice: item.price,
           totalPrice: itemTotal.toFixed(2),
         });
@@ -3447,6 +3483,10 @@ const mutations = {
             productImage: oi.productImage,
             productSize: oi.productSize,
             quantity: oi.quantity,
+            quantityUnit: oi.quantityUnit,
+            inventoryUnit: oi.inventoryUnit,
+            conversionFactor: oi.conversionFactor,
+            inventoryQty: oi.inventoryQty,
             unitPrice: oi.unitPrice,
             totalPrice: oi.totalPrice,
           })),
@@ -3455,32 +3495,25 @@ const mutations = {
         // Deduct stock
         for (const oi of orderItems) {
           if (oi.shopId && oi.variantId) {
-            // B2C: deduct from shop's retail inventory
-            // The shop's inventory variant may differ from the cart's variant
-            // (e.g. TRADE vs RETAIL), so find the actual inventory record
-            const productVars = await tx.query.productVariant.findMany({
-              where: eq(productVariant.productId, oi.productId),
-              columns: { id: true },
-            });
-            const vIds = productVars.map((v) => v.id);
-            if (vIds.length > 0) {
-              const shopInvRecord = await tx.query.inventory.findFirst({
-                where: and(
+            const updated = await tx
+              .update(inventory)
+              .set({
+                availableQty: sql`${inventory.availableQty}::numeric - ${oi.quantity}`,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
                   eq(inventory.ownerType, "shop"),
                   eq(inventory.ownerId, oi.shopId),
-                  inArray(inventory.variantId, vIds),
+                  eq(inventory.variantId, oi.variantId),
+                  sql`CAST(${inventory.availableQty} AS numeric) >= ${oi.quantity}`,
                 ),
-                columns: { id: true },
+              )
+              .returning({ id: inventory.id });
+            if (updated.length === 0) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: `Insufficient stock for ${oi.productName}`,
               });
-              if (shopInvRecord) {
-                await tx
-                  .update(inventory)
-                  .set({
-                    availableQty: sql`${inventory.availableQty}::numeric - ${oi.quantity}`,
-                    updatedAt: new Date(),
-                  })
-                  .where(eq(inventory.id, shopInvRecord.id));
-              }
             }
           } else if (oi.variantId) {
             await tx
@@ -3532,24 +3565,45 @@ const mutations = {
       }
 
       await db.transaction(async (tx) => {
+        const cancelled = await tx
+          .update(order)
+          .set({ status: "cancelled", cancelledAt: new Date() })
+          .where(and(eq(order.id, input.orderId), eq(order.status, "pending")))
+          .returning({ id: order.id });
+        if (cancelled.length === 0) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Order was already updated by another request",
+          });
+        }
+
         // Restore stock
         for (const item of orderData.items) {
           if (item.variantId) {
-            await tx
-              .update(productVariant)
-              .set({
-                stockQuantity: sql`${productVariant.stockQuantity} + ${item.quantity}`,
-              })
-              .where(eq(productVariant.id, item.variantId));
+            if (orderData.shopId) {
+              await tx
+                .update(inventory)
+                .set({
+                  availableQty: sql`${inventory.availableQty}::numeric + ${item.inventoryQty ?? item.quantity}`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(inventory.ownerType, "shop"),
+                  eq(inventory.ownerId, orderData.shopId),
+                  eq(inventory.variantId, item.variantId),
+                ));
+            } else {
+              await tx
+                .update(productVariant)
+                .set({
+                  stockQuantity: sql`${productVariant.stockQuantity} + ${item.quantity}`,
+                })
+                .where(eq(productVariant.id, item.variantId));
+            }
           } else {
             // product-level stockQuantity removed — stock is tracked via inventory
           }
         }
 
-        await tx
-          .update(order)
-          .set({ status: "cancelled", cancelledAt: new Date() })
-          .where(eq(order.id, input.orderId));
       });
 
       return { success: true, message: "Order cancelled" };

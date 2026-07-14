@@ -5,9 +5,11 @@ import {
   type FulfillmentMode,
   type InventoryBehaviour,
   type ProductTypeFulfillmentProfile,
+  type ProductTypeFamily,
 } from "@bikalpo-project/db/fulfillment";
 
 export type WarehouseOrderProductTypeContext = {
+  family?: ProductTypeFamily | null;
   typeName?: string | null;
   typeSlug?: string | null;
   inventoryBehaviour?: InventoryBehaviour | null;
@@ -38,6 +40,7 @@ export function buildWarehouseOrderProfile(
   context: WarehouseOrderProductTypeContext,
 ): ProductTypeFulfillmentProfile {
   return buildProductTypeFulfillmentProfile({
+    family: context.family,
     name: context.typeName,
     slug: context.typeSlug,
     inventoryBehaviour: context.inventoryBehaviour,

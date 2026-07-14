@@ -7,8 +7,11 @@
  * - Mutations (warehouse role only — update order status)
  */
 
-import { db } from "@bikalpo-project/db";
-import { resolveVariantStockSemantics } from "@bikalpo-project/db/variant-definition";
+import { buildProductTypeFulfillmentProfile, db } from "@bikalpo-project/db";
+import {
+	resolveVariantMovementSemantics,
+	resolveVariantStockSemantics,
+} from "@bikalpo-project/db/variant-definition";
 import {
 	deliveryGroup,
 	deliveryGroupInvoice,
@@ -2711,6 +2714,11 @@ const orderQueries = {
 
 			for (const { item, approvedQty } of reviewItems) {
 				if (approvedQty <= 0) continue;
+				if (item.inventoryUnit === "cylinder" && !Number.isInteger(approvedQty)) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: `${item.productName} must be approved in whole cylinders`,
+					});
+				}
 				if (!item.variantId) {
 					throw new ORPCError("BAD_REQUEST", {
 						message: `${item.productName} has no variant for stock reservation`,
@@ -2761,7 +2769,7 @@ const orderQueries = {
 						.where(eq(orderItem.id, item.id));
 
 					if (approvedQty > 0 && item.variantId) {
-						await tx
+						const reserved = await tx
 							.update(inventory)
 							.set({
 								availableQty: sql`CAST(${inventory.availableQty} AS numeric) - ${approvedQty}`,
@@ -2772,12 +2780,19 @@ const orderQueries = {
 									eq(inventory.ownerType, "warehouse"),
 									eq(inventory.ownerId, userId),
 									eq(inventory.variantId, item.variantId),
+									sql`CAST(${inventory.availableQty} AS numeric) >= ${approvedQty}`,
 								),
-							);
+							)
+							.returning({ id: inventory.id });
+						if (reserved.length === 0) {
+							throw new ORPCError("BAD_REQUEST", {
+								message: `Stock changed while reserving ${item.productName}; please review the order again`,
+							});
+						}
 					}
 				}
 
-				await tx
+				const confirmed = await tx
 					.update(order)
 					.set({
 						status: "confirmed",
@@ -2792,7 +2807,18 @@ const orderQueries = {
 						modificationRejectedAt: null,
 						adminNote: input.approvalNote || existingOrder.adminNote,
 					})
-					.where(eq(order.id, existingOrder.id));
+					.where(
+						and(
+							eq(order.id, existingOrder.id),
+							eq(order.status, "pending"),
+						),
+					)
+					.returning({ id: order.id });
+				if (confirmed.length === 0) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "Order was already reviewed by another request",
+					});
+				}
 			});
 
 			return {
@@ -4041,14 +4067,7 @@ const orderQueries = {
 
 				// If fully delivered, trigger B2B conversion
 				if (allFullyDelivered) {
-					try {
-						await convertB2bOrderToRetailInventory(tx, input.orderId);
-					} catch (err: any) {
-						console.error(
-							`[PARTIAL-DELIVERY] B2B conversion failed for order #${input.orderId}:`,
-							err,
-						);
-					}
+					await convertB2bOrderToRetailInventory(tx, input.orderId);
 				}
 			});
 
@@ -4484,6 +4503,25 @@ const orderQueries = {
 			}
 
 			await db.transaction(async (tx) => {
+				const cancelled = await tx
+					.update(order)
+					.set({
+						status: "cancelled",
+						cancelledAt: new Date(),
+					})
+					.where(
+						and(
+							eq(order.id, input.orderId),
+							eq(order.status, existingOrder.status),
+						),
+					)
+					.returning({ id: order.id });
+				if (cancelled.length === 0) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "Order was already updated by another request",
+					});
+				}
+
 				if (existingOrder.warehouseId && existingOrder.status === "confirmed") {
 					for (const item of existingOrder.items) {
 						if (!item.variantId) continue;
@@ -4503,14 +4541,6 @@ const orderQueries = {
 							);
 					}
 				}
-
-				await tx
-					.update(order)
-					.set({
-						status: "cancelled",
-						cancelledAt: new Date(),
-					})
-					.where(eq(order.id, input.orderId));
 			});
 
 			return {
@@ -7320,6 +7350,7 @@ const warehouseProductCreation = {
 
 import {
 	stockEntry,
+	stockReceipt,
 	warehouseStorageArea,
 	cartonConfig,
 	carton,
@@ -7383,7 +7414,15 @@ const stockEntryQueries = {
 					category: {
 						columns: { id: true, name: true, typeId: true },
 						with: {
-							type: { columns: { id: true, name: true } },
+							type: {
+								columns: {
+									id: true,
+									name: true,
+									slug: true,
+									family: true,
+									inventoryBehaviour: true,
+								},
+							},
 						},
 					},
 					subCategory: { columns: { id: true, name: true } },
@@ -7469,10 +7508,18 @@ const stockEntryQueries = {
 					if (!v.sourceVariantOption || !p.coreProduct?.id) return [];
 					try {
 						const semantics = resolveVariantStockSemantics(v.sourceVariantOption);
+						const profile = buildProductTypeFulfillmentProfile(
+							p.category?.type ?? {},
+						);
+						const movementSemantics = resolveVariantMovementSemantics(
+							v.sourceVariantOption,
+							profile.family,
+						);
 						return [{
 							...v,
 							displayLabel: aliasMap.get(`${p.coreProduct.id}:${v.sourceVariantOption.id}`) ?? semantics.displayLabel,
 							stockSemantics: semantics,
+							movementSemantics,
 							stock: stockMap.get(v.id) ?? {
 								availableQty: 0,
 								inCartonQty: 0,
@@ -7486,6 +7533,246 @@ const stockEntryQueries = {
 			}));
 
 			return { products: productsWithStock };
+		}),
+
+	/**
+	 * Receive one or more direct-count LPG variants as one atomic transaction.
+	 * Units and conversion values are derived exclusively from Admin Variant Setup.
+	 */
+	createStockReceipt: warehouseProcedure
+		.input(
+			z.object({
+				idempotencyKey: z.string().trim().min(8).max(100),
+				receiptDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+				supplierId: z.number().int().optional().nullable(),
+				paymentMethod: z.enum(["cash", "bank"]),
+				reference: z.string().trim().max(150).optional(),
+				storageAreaId: z.number().int().optional().nullable(),
+				shelfRack: z.string().trim().max(100).optional(),
+				note: z.string().trim().optional(),
+				lines: z.array(z.object({
+					variantId: z.number().int(),
+					quantity: z.number().int().positive(),
+					purchaseUnitCost: z.string().refine(
+						(value) => Number.isFinite(Number(value)) && Number(value) > 0,
+						"Purchase unit cost must be greater than 0",
+					),
+					batchNo: z.string().trim().max(100).optional(),
+					manufactureDate: z.string().optional(),
+					expiryDate: z.string().optional(),
+				})).min(1),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const warehouseId = context.session.user.id;
+			const existingReceipt = await db.query.stockReceipt.findFirst({
+				where: and(
+					eq(stockReceipt.warehouseId, warehouseId),
+					eq(stockReceipt.idempotencyKey, input.idempotencyKey),
+				),
+			});
+			if (existingReceipt) {
+				return { receipt: existingReceipt, idempotent: true };
+			}
+
+			if (new Set(input.lines.map((line) => line.variantId)).size !== input.lines.length) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Add each LPG variant only once per receipt",
+				});
+			}
+
+			if (input.supplierId) {
+				const ownedSupplier = await db.query.supplier.findFirst({
+					where: and(
+						eq(supplier.id, input.supplierId),
+						eq(supplier.addedBy, warehouseId),
+					),
+					columns: { id: true },
+				});
+				if (!ownedSupplier) {
+					throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+				}
+			}
+
+			if (input.storageAreaId) {
+				const ownedArea = await db.query.warehouseStorageArea.findFirst({
+					where: and(
+						eq(warehouseStorageArea.id, input.storageAreaId),
+						eq(warehouseStorageArea.warehouseId, warehouseId),
+					),
+					columns: { id: true },
+				});
+				if (!ownedArea) {
+					throw new ORPCError("NOT_FOUND", { message: "Storage area not found" });
+				}
+			}
+
+			type ValidatedLine = {
+				variantId: number;
+				quantity: number;
+				purchaseUnitCost: number;
+				massKgPerUnit: number;
+				batchNo?: string;
+				manufactureDate?: string;
+				expiryDate?: string;
+			};
+			const validatedLines: ValidatedLine[] = [];
+
+			for (const line of input.lines) {
+				const variant = await db.query.productVariant.findFirst({
+					where: eq(productVariant.id, line.variantId),
+					with: {
+						sourceVariantOption: true,
+						product: {
+							columns: {
+								id: true,
+								creatorSource: true,
+								createdById: true,
+								createdByWarehouseId: true,
+								trackingType: true,
+							},
+							with: {
+								category: {
+									with: { type: true },
+								},
+							},
+						},
+					},
+				});
+				if (!variant?.product || !isWarehouseOwnedProduct(variant.product, warehouseId)) {
+					throw new ORPCError("FORBIDDEN", {
+						message: "Stock can only be added to a warehouse-configured product",
+					});
+				}
+				if (!variant.isActive || !variant.sourceVariantOption) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "Stock can only be added to an active configured variant",
+					});
+				}
+				if (variant.product.trackingType === "serial") {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "Serial-tracked LPG cylinders require the future asset receiving flow",
+					});
+				}
+				if (variant.product.trackingType === "batch" && !line.batchNo) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "Batch-tracked LPG cylinders require a batch number",
+					});
+				}
+				if (
+					variant.product.trackingType === "none" &&
+					(line.batchNo || line.manufactureDate || line.expiryDate)
+				) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "Batch metadata is only accepted when batch tracking is configured",
+					});
+				}
+
+				const profile = buildProductTypeFulfillmentProfile(
+					variant.product.category?.type ?? {},
+				);
+				const movement = resolveVariantMovementSemantics(
+					variant.sourceVariantOption,
+					profile.family,
+				);
+				const stockSemantics = resolveVariantStockSemantics(
+					variant.sourceVariantOption,
+				);
+				if (
+					profile.family !== "lpg"
+					|| movement.movementKind !== "direct"
+					|| movement.inventoryUnit !== "cylinder"
+				) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: `${stockSemantics.displayLabel} is not configured for direct LPG cylinder receiving`,
+					});
+				}
+
+				validatedLines.push({
+					...line,
+					purchaseUnitCost: Number(line.purchaseUnitCost),
+					massKgPerUnit: stockSemantics.massKgPerUnit,
+				});
+			}
+
+			const result = await db.transaction(async (tx) => {
+				const [createdReceipt] = await tx
+					.insert(stockReceipt)
+					.values({
+						warehouseId,
+						idempotencyKey: input.idempotencyKey,
+						receiptDate: input.receiptDate,
+						paymentMethod: input.paymentMethod,
+						supplierId: input.supplierId || null,
+						reference: input.reference || null,
+						storageAreaId: input.storageAreaId || null,
+						shelfRack: input.shelfRack || null,
+						note: input.note || null,
+						lineCount: validatedLines.length,
+					})
+					.onConflictDoNothing({
+						target: [stockReceipt.warehouseId, stockReceipt.idempotencyKey],
+					})
+					.returning();
+
+				if (!createdReceipt) {
+					const retryReceipt = await tx.query.stockReceipt.findFirst({
+						where: and(
+							eq(stockReceipt.warehouseId, warehouseId),
+							eq(stockReceipt.idempotencyKey, input.idempotencyKey),
+						),
+					});
+					if (!retryReceipt) throw new Error("Unable to resolve idempotent receipt");
+					return { receipt: retryReceipt, idempotent: true };
+				}
+
+				for (const line of validatedLines) {
+					const totalCost = line.quantity * line.purchaseUnitCost;
+					const referenceMass = line.massKgPerUnit > 0
+						? line.quantity * line.massKgPerUnit
+						: null;
+					await tx.insert(stockEntry).values({
+						receiptId: createdReceipt.id,
+						warehouseId,
+						variantId: line.variantId,
+						entryType: "direct",
+						quantity: line.quantity.toFixed(2),
+						quantityUnit: "cylinder",
+						convertedQtyKg: referenceMass?.toFixed(2) ?? null,
+						convertedQtyPacks: null,
+						inventoryDelta: line.quantity.toFixed(2),
+						inventoryUnit: "cylinder",
+						supplierId: input.supplierId || null,
+						costType: "per_unit",
+						purchasePrice: line.purchaseUnitCost.toFixed(2),
+						totalCost: totalCost.toFixed(2),
+						reference: input.reference || null,
+						batchNo: line.batchNo || null,
+						expiryDate: line.expiryDate || null,
+						manufactureDate: line.manufactureDate || null,
+						storageAreaId: input.storageAreaId || null,
+						shelfRack: input.shelfRack || null,
+						note: input.note || null,
+					});
+
+					await tx.insert(inventory).values({
+						ownerType: "warehouse",
+						ownerId: warehouseId,
+						variantId: line.variantId,
+						availableQty: line.quantity.toFixed(2),
+					}).onConflictDoUpdate({
+						target: [inventory.ownerType, inventory.ownerId, inventory.variantId],
+						set: {
+							availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${line.quantity}`,
+							updatedAt: new Date(),
+						},
+					});
+				}
+
+				return { receipt: createdReceipt, idempotent: false };
+			});
+
+			return result;
 		}),
 
 	/**
@@ -7553,6 +7840,11 @@ const stockEntryQueries = {
 			if (!variant.isActive || !variant.sourceVariantOption) {
 				throw new ORPCError("BAD_REQUEST", {
 					message: "Stock can only be added to an active generated variant",
+				});
+			}
+			if (resolveVariantStockSemantics(variant.sourceVariantOption).operationalUnit === "cylinder") {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "LPG cylinders must be received through Direct Entry",
 				});
 			}
 

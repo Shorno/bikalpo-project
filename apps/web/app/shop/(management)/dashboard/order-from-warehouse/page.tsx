@@ -693,7 +693,9 @@ function VariantModal({
                   {packVars.length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                        Select Pack
+                        {profile.family === "lpg"
+                          ? "Select Cylinder Capacity"
+                          : "Select Variant"}
                       </h3>
                       <div className="flex flex-wrap gap-2">
                         {packVars.map((v) => {
@@ -719,9 +721,12 @@ function VariantModal({
                               }`}
                             >
                               <div className="font-semibold">
-                                {vWeight > 0
-                                  ? `${vWeight} KG`
-                                  : v.variant.unitLabel || "Pack"}
+                                {profile.family === "lpg"
+                                  ? v.variant.unitLabel ||
+                                    `${vWeight} KG Cylinder`
+                                  : vWeight > 0
+                                    ? `${vWeight} KG`
+                                    : v.variant.unitLabel || "Unit"}
                               </div>
                               <div
                                 className={`text-[9px] mt-0.5 ${isSelected ? "text-blue-200" : "text-gray-400"}`}

@@ -101,14 +101,7 @@ export async function syncOrderFromDeliveredInvoice(
     }
 
     if (fullyDelivered) {
-        try {
-            await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
-        } catch (error) {
-            console.error(
-                `[INVOICE-FULFILLMENT] B2B conversion failed for order #${deliveredInvoice.orderId}:`,
-                error,
-            );
-        }
+        await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
     }
 
     return {

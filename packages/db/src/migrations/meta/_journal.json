@@ -225,6 +225,20 @@
       "when": 1784900000000,
       "tag": "0032_drop_core_product_variant_support_flags",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785000000000,
+      "tag": "0033_lpg_cylinder_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785100000000,
+      "tag": "0034_lpg_invoice_movement_snapshots",
+      "breakpoints": true
     }
   ]
 }

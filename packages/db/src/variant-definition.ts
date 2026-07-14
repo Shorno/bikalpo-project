@@ -169,6 +169,20 @@ export type VariantStockSemantics = {
   volumeLPerUnit: number;
 };
 
+export type MovementSemantics = {
+  family: VariantProductFamily;
+  movementKind: "direct" | "loose" | "container";
+  enteredUnit: string;
+  inventoryUnit: string;
+  quantityKind: VariantMeasurementDimension;
+  allowsDecimal: boolean;
+  conversionFactor: string;
+  referenceMeasurement?: {
+    unit: "kg" | "liter";
+    perInventoryUnit: string;
+  };
+};
+
 const parsePositiveNumber = (value: string | undefined) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -238,6 +252,54 @@ export function resolveVariantStockSemantics(option: VariantOptionLike): Variant
     measurementUnit: measurement.unit,
     massKgPerUnit: measurement.dimension === "mass" ? measurement.amount : 0,
     volumeLPerUnit: measurement.dimension === "volume" ? measurement.amount : 0,
+  };
+}
+
+export function areVariantOptionsStructurallyCompatible(
+  source: VariantOptionLike,
+  target: VariantOptionLike,
+) {
+  const sourceDefinition = getVariantDefinition(source);
+  const targetDefinition = getVariantDefinition(target);
+  return Boolean(
+    sourceDefinition &&
+      targetDefinition &&
+      variantDefinitionSignature(sourceDefinition) ===
+        variantDefinitionSignature(targetDefinition),
+  );
+}
+
+/** Shared, server-authoritative quantity contract for every inventory movement. */
+export function resolveVariantMovementSemantics(
+  option: VariantOptionLike,
+  family: VariantProductFamily = "generic",
+): MovementSemantics {
+  const semantics = resolveVariantStockSemantics(option);
+  if (family === "lpg" && semantics.operationalUnit !== "cylinder") {
+    throw new ConcreteVariantDefinitionError(semantics.displayLabel);
+  }
+
+  const movementKind = semantics.entryType === "loose"
+    ? "loose"
+    : ["carton", "box", "bundle", "drum"].includes(semantics.packType)
+      ? "container"
+      : "direct";
+  const referenceMeasurement = semantics.measurementDimension === "mass"
+    && semantics.massKgPerUnit > 0
+    ? { unit: "kg" as const, perInventoryUnit: String(semantics.massKgPerUnit) }
+    : semantics.measurementDimension === "volume" && semantics.volumeLPerUnit > 0
+      ? { unit: "liter" as const, perInventoryUnit: String(semantics.volumeLPerUnit) }
+      : undefined;
+
+  return {
+    family,
+    movementKind,
+    enteredUnit: semantics.operationalUnit,
+    inventoryUnit: semantics.operationalUnit,
+    quantityKind: family === "lpg" ? "count" : semantics.measurementDimension,
+    allowsDecimal: movementKind === "loose",
+    conversionFactor: "1",
+    ...(referenceMeasurement ? { referenceMeasurement } : {}),
   };
 }
 

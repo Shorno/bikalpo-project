@@ -97,6 +97,16 @@ function getVariantMeasureInfo(input: {
     const weightKg = parseFloat(input.weightKg || "0");
     const piecesPerUnit = Number(input.piecesPerUnit || 0);
 
+    // LPG capacity is reference content, not an inventory multiplier. A 12 KG
+    // cylinder remains one inventory unit throughout summaries and movements.
+    if (packType === "cylinder" || normalizedUnit === "CYLINDER") {
+        return {
+            quantityPerPack: 1,
+            quantityUnit: "CYLINDER",
+            isLoose: false,
+        };
+    }
+
     if (packType === "loose") {
         if (PIECE_UNITS.has(normalizedUnit)) {
             return { quantityPerPack: 1, quantityUnit: "PCS", isLoose: true };

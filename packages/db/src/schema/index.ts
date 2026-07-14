@@ -55,6 +55,7 @@ export * from "./shop-category-assignment";
 export * from "./shop-warehouse-connection";
 export * from "./stock-adjustment";
 export * from "./stock-entry";
+export * from "./stock-receipt";
 export * from "./supplier";
 export * from "./support";
 export * from "./tolet-listing";

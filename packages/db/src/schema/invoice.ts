@@ -9,10 +9,12 @@ import {
     serial,
     text,
     timestamp,
+    varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { order } from "./order";
 import { product } from "./product";
+import { productVariant } from "./product-variant";
 
 // Invoice type enum
 export const invoiceTypeEnum = pgEnum("invoice_type", ["main", "split"]);
@@ -145,6 +147,9 @@ export const invoiceItem = pgTable(
         productId: integer("product_id")
             .notNull()
             .references(() => product.id, { onDelete: "restrict" }),
+        variantId: integer("variant_id").references(() => productVariant.id, {
+            onDelete: "set null",
+        }),
 
         // Product snapshot at time of invoice
         productName: text("product_name").notNull(),
@@ -153,6 +158,13 @@ export const invoiceItem = pgTable(
 
         // Pricing
         quantity: integer("quantity").notNull(),
+        quantityUnit: varchar("quantity_unit", { length: 20 }),
+        inventoryUnit: varchar("inventory_unit", { length: 20 }),
+        conversionFactor: decimal("conversion_factor", {
+            precision: 12,
+            scale: 4,
+        }),
+        inventoryQty: decimal("inventory_qty", { precision: 12, scale: 2 }),
         unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
         lineTotal: decimal("line_total", { precision: 10, scale: 2 }).notNull(),
 
@@ -199,6 +211,10 @@ export const invoiceItemRelations = relations(invoiceItem, ({ one }) => ({
     product: one(product, {
         fields: [invoiceItem.productId],
         references: [product.id],
+    }),
+    variant: one(productVariant, {
+        fields: [invoiceItem.variantId],
+        references: [productVariant.id],
     }),
 }));
 

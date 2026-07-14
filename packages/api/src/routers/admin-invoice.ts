@@ -377,10 +377,17 @@ export const adminInvoiceRouter = {
                 splitItems.push({
                     invoiceId: 0, // Will be set after invoice creation
                     productId: item.productId,
+                    variantId: originalItem.variantId,
                     productName: originalItem.productName,
                     productSku: originalItem.productSku,
                     productImage: originalItem.productImage,
                     quantity: item.quantity,
+                    quantityUnit: originalItem.quantityUnit,
+                    inventoryUnit: originalItem.inventoryUnit,
+                    conversionFactor: originalItem.conversionFactor,
+                    inventoryQty: originalItem.conversionFactor
+                        ? String(item.quantity * Number(originalItem.conversionFactor))
+                        : null,
                     unitPrice: originalItem.unitPrice,
                     lineTotal: lineTotal.toFixed(2),
                 });

@@ -1,5 +1,9 @@
 import { db } from "@bikalpo-project/db";
 import {
+    resolveVariantMovementSemantics,
+    resolveVariantStockSemantics,
+} from "@bikalpo-project/db/variant-definition";
+import {
     and,
     desc,
     eq,
@@ -179,8 +183,10 @@ async function getCatalogRows(warehouseId: string): Promise<CatalogVariantRow[]>
                     price: true,
                     packWeightKg: true,
                     packType: true,
+                    orderUnit: true,
                 },
                 with: {
+                    sourceVariantOption: true,
                     brand: {
                         columns: {
                             id: true,
@@ -203,7 +209,7 @@ async function getCatalogRows(warehouseId: string): Promise<CatalogVariantRow[]>
                                 columns: { id: true, name: true, typeId: true },
                                 with: {
                                     type: {
-                                        columns: { id: true, name: true },
+                                        columns: { id: true, name: true, family: true },
                                     },
                                 },
                             },
@@ -231,7 +237,16 @@ async function getCatalogRows(warehouseId: string): Promise<CatalogVariantRow[]>
             continue;
         }
 
-        const pack = formatPackLabel({
+        const stockSemantics = variant.sourceVariantOption
+            ? resolveVariantStockSemantics(variant.sourceVariantOption)
+            : null;
+        const movementSemantics = variant.sourceVariantOption
+            ? resolveVariantMovementSemantics(
+                variant.sourceVariantOption,
+                type.family,
+            )
+            : null;
+        const pack = stockSemantics?.displayLabel ?? formatPackLabel({
             packWeightKg: variant.packWeightKg,
             weightKg: variant.weightKg,
             unitLabel: variant.unitLabel,
@@ -259,7 +274,7 @@ async function getCatalogRows(warehouseId: string): Promise<CatalogVariantRow[]>
             brandName,
             pack,
             variantLabel: pack,
-            unitLabel: variant.unitLabel,
+            unitLabel: movementSemantics?.inventoryUnit ?? variant.orderUnit ?? variant.unitLabel,
             availableQty: toNumber(entry.availableQty),
             unitPrice,
         });
@@ -299,8 +314,10 @@ async function resolveSaleLines(
                     price: true,
                     packWeightKg: true,
                     packType: true,
+                    orderUnit: true,
                 },
                 with: {
+                    sourceVariantOption: true,
                     brand: {
                         columns: {
                             name: true,
@@ -312,6 +329,12 @@ async function resolveSaleLines(
                             name: true,
                         },
                         with: {
+                            category: {
+                                columns: { id: true },
+                                with: {
+                                    type: { columns: { family: true } },
+                                },
+                            },
                             coreProduct: {
                                 columns: {
                                     name: true,
@@ -346,7 +369,24 @@ async function resolveSaleLines(
             });
         }
 
-        const pack = formatPackLabel({
+        const movementSemantics = stock.variant.sourceVariantOption
+            ? resolveVariantMovementSemantics(
+                stock.variant.sourceVariantOption,
+                stock.variant.product.category?.type?.family ?? "generic",
+            )
+            : null;
+        if (
+            movementSemantics?.inventoryUnit === "cylinder" &&
+            !Number.isInteger(item.quantity)
+        ) {
+            throw new ORPCError("BAD_REQUEST", {
+                message: `${stock.variant.product.name} must be sold in whole cylinders`,
+            });
+        }
+
+        const pack = stock.variant.sourceVariantOption
+            ? resolveVariantStockSemantics(stock.variant.sourceVariantOption).displayLabel
+            : formatPackLabel({
             packWeightKg: stock.variant.packWeightKg,
             weightKg: stock.variant.weightKg,
             unitLabel: stock.variant.unitLabel,
@@ -365,7 +405,10 @@ async function resolveSaleLines(
             sku: stock.variant.sku,
             productName: stock.variant.product.coreProduct?.name || stock.variant.product.name,
             variantLabel: pack,
-            unitLabel: stock.variant.unitLabel,
+            unitLabel:
+                movementSemantics?.inventoryUnit ??
+                stock.variant.orderUnit ??
+                stock.variant.unitLabel,
             quantity: item.quantity,
             unitPrice,
             lineTotal,

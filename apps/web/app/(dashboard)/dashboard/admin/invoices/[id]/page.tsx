@@ -388,6 +388,7 @@ export default function InvoiceDetailPage() {
                       <TableCell className="text-center py-4">
                         <span className="inline-flex items-center justify-center min-w-[2.5rem] py-1 bg-gray-100 rounded-md text-sm font-medium text-gray-700">
                           {item.quantity}
+                          {item.quantityUnit ? ` ${item.quantityUnit}` : ""}
                         </span>
                       </TableCell>
                       <TableCell className="text-right py-4 tabular-nums text-gray-600">
@@ -573,6 +574,9 @@ export default function InvoiceDetailPage() {
                                     Qty:{" "}
                                     <span className="font-medium text-gray-700">
                                       {item.quantity}
+                                      {item.quantityUnit
+                                        ? ` ${item.quantityUnit}`
+                                        : ""}
                                     </span>
                                   </span>
                                 </div>
