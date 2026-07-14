@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -353,7 +353,7 @@ export default function StockPage() {
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <span className="text-sm font-bold text-gray-900 tabular-nums">
-                      {p.totalQty} {p.unit}
+					  {p.stockDisplay ?? `${p.totalQty} ${p.unit}`}
                     </span>
                     <Badge
                       variant="outline"
@@ -561,7 +561,7 @@ export default function StockPage() {
                             {variant?.quantitySelectorLabel || variant?.unitLabel || "—"}
                           </TableCell>
                           <TableCell className="text-xs text-gray-400 py-3">
-                            {variant?.weightKg ? `${variant.weightKg} KG` : "—"}
+                            {variant?.orderUnit || variant?.sellUnit || "unit"}
                           </TableCell>
                           <TableCell className="text-center py-3">
                             <Badge
@@ -574,7 +574,7 @@ export default function StockPage() {
                                     : "border-red-200 text-red-700 bg-red-50"
                               }`}
                             >
-                              {qty}
+                              {qty} {variant?.orderUnit || variant?.sellUnit || "unit"}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right text-sm py-3">

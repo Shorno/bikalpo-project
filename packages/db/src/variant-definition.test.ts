@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  formatVariantStockQuantity,
+  resolveVariantStockSemantics,
+} from "./variant-definition";
+
+const option = (definition: Record<string, unknown>) => ({
+  name: "Structured variant",
+  definitionKind: definition.kind as string,
+  definition,
+  needsReview: false,
+});
+
+test("formats cylinders as count plus normalized mass", () => {
+  const semantics = resolveVariantStockSemantics(option({
+    kind: "measurement",
+    value: "12",
+    measurementUnit: "KG",
+    container: "cylinder",
+    operationalUnit: "cylinder",
+  }));
+  assert.equal(semantics.packType, "cylinder");
+  assert.equal(semantics.massKgPerUnit, 12);
+	assert.equal(formatVariantStockQuantity(semantics, 2), "2 cylinders · 24 KG");
+});
+
+test("normalizes grams without treating volume as weight", () => {
+  const packet = resolveVariantStockSemantics(option({
+    kind: "measurement",
+    value: "500",
+    measurementUnit: "Gram",
+    container: "packet",
+    operationalUnit: "pack",
+  }));
+  assert.equal(packet.massKgPerUnit, 0.5);
+	assert.equal(formatVariantStockQuantity(packet, 10), "10 packs · 5 KG");
+
+  const bottle = resolveVariantStockSemantics(option({
+    kind: "measurement",
+    value: "5",
+    measurementUnit: "L",
+    container: "bottle",
+    operationalUnit: "bottle",
+  }));
+  assert.equal(bottle.massKgPerUnit, 0);
+  assert.equal(bottle.volumeLPerUnit, 5);
+	assert.equal(formatVariantStockQuantity(bottle, 3), "3 bottles · 15 L");
+});
+
+test("keeps loose and attribute inventory in their operational units", () => {
+  const loose = resolveVariantStockSemantics(option({
+    kind: "loose",
+    measurementUnit: "L",
+    operationalUnit: "l",
+  }));
+  assert.equal(formatVariantStockQuantity(loose, 20), "20 l");
+
+  const size = resolveVariantStockSemantics(option({
+    kind: "attribute",
+    attribute: "Size",
+    value: "XL",
+    operationalUnit: "unit",
+  }));
+	assert.equal(formatVariantStockQuantity(size, 4), "4 units");
+});

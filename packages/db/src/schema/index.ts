@@ -54,7 +54,6 @@ export * from "./seller-application";
 export * from "./shop-category-assignment";
 export * from "./shop-warehouse-connection";
 export * from "./stock-adjustment";
-export * from "./stock-change-log";
 export * from "./stock-entry";
 export * from "./supplier";
 export * from "./support";

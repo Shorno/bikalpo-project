@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Check, ChevronRight, Loader, Package, Plus,
+  ArrowLeft, Check, ChevronRight, Loader, Package,
   Search, Tag, Box, CreditCard, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -45,6 +44,8 @@ type Product = {
     brandName: string | null;
     currentStock: number;
     retailPrice: string | null;
+    operationalUnit: string;
+    stockDisplay: string;
   }[];
 };
 
@@ -75,10 +76,6 @@ export default function AddStockPage() {
     new Date().toISOString().split("T")[0]
   );
   const [referenceNo, setReferenceNo] = useState("");
-
-  // ── Entry Mode (frontend-only) ──
-  type EntryMode = "loose" | "pack" | "carton";
-  const [entryMode, setEntryMode] = useState<EntryMode>("loose");
 
   // ── Cost & Total (frontend-only) ──
   const [discount, setDiscount] = useState("0");
@@ -386,58 +383,6 @@ export default function AddStockPage() {
         </Card>
 
         {/* ══════════════════════════════════════════════════════════
-            🧱 ENTRY MODE
-            ══════════════════════════════════════════════════════════ */}
-        {selectedProduct && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <div className="p-1 bg-orange-100 rounded">
-                  <Box className="h-3.5 w-3.5 text-orange-600" />
-                </div>
-                🧱 Entry Mode
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                {([
-                  { value: "loose" as EntryMode, label: "Loose Entry", desc: "KG / Liter" },
-                  { value: "pack" as EntryMode, label: "Pack Entry", desc: "Per Pack" },
-                  { value: "carton" as EntryMode, label: "Carton Entry", desc: "Auto → Pack" },
-                ] as const).map(({ value, label, desc }) => (
-                  <label
-                    key={value}
-                    className={`flex-1 flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer transition-colors text-xs ${
-                      entryMode === value
-                        ? "bg-orange-50 border-orange-300 ring-1 ring-orange-200"
-                        : "hover:bg-muted/50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="entryMode"
-                      value={value}
-                      checked={entryMode === value}
-                      onChange={() => setEntryMode(value)}
-                      className="accent-orange-500"
-                    />
-                    <div>
-                      <p className="font-medium">{label}</p>
-                      <p className="text-[10px] text-muted-foreground">{desc}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              {entryMode === "carton" && (
-                <p className="text-[10px] text-amber-600 mt-2 bg-amber-50 px-2 py-1 rounded">
-                  📦 Carton → auto converted to packs. Enter carton quantity, system calculates pack count.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════
             📋 ITEM ENTRY TABLE
             ══════════════════════════════════════════════════════════ */}
         {selectedProduct && (
@@ -499,7 +444,7 @@ export default function AddStockPage() {
                           {v.unitLabel}
                         </TableCell>
                         <TableCell className="text-[10px] text-muted-foreground py-2">
-                          {v.weightKg ? `${v.weightKg} KG` : "—"}
+                          {v.operationalUnit}
                         </TableCell>
                         <TableCell className="text-center py-2">
                           <Badge
@@ -556,7 +501,7 @@ export default function AddStockPage() {
               {hasEntries && (
                 <div className="flex items-center p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
                   <p className="text-xs text-emerald-700 font-medium">
-                    📦 +{totalAdding} unit{totalAdding !== 1 ? "s" : ""} across {variantsChanged} variant{variantsChanged !== 1 ? "s" : ""}
+                    Stock will be added in the canonical unit for {variantsChanged} variant{variantsChanged !== 1 ? "s" : ""}.
                   </p>
                 </div>
               )}
@@ -770,7 +715,7 @@ export default function AddStockPage() {
                       </span>
                       <span className="text-emerald-700 shrink-0 font-medium">
                         {v.currentStock} → <span className="font-bold text-emerald-900">{v.newStock}</span>
-                        {v.weightKg && parseFloat(v.weightKg) === 0 ? " KG" : " Pack"}
+                        {` ${v.operationalUnit}`}
                       </span>
                     </div>
                   ))}

@@ -7,15 +7,25 @@ import {
     productVariant,
     productVariantPrice,
     productType,
+    category,
 } from "@bikalpo-project/db/schema";
 import { buildProductTypeFulfillmentProfile } from "@bikalpo-project/db/fulfillment";
-import { formatVariantDefinition, variantDefinitionSignature, withDerivedOperationalUnit } from "@bikalpo-project/db/variant-definition";
+import { formatVariantDefinition, VARIANT_CONTAINERS, variantDefinitionSignature, withDerivedOperationalUnit } from "@bikalpo-project/db/variant-definition";
 import { adminProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
+import { resyncGeneratedVariantsForOption } from "./helpers/sync-generated-variants";
 
 const commonUnits = z.string().min(1).max(20).trim();
 const definitionSchema = z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("measurement"), value: z.string().min(1).max(20).trim(), measurementUnit: commonUnits, container: commonUnits }),
+    z.object({
+        kind: z.literal("measurement"),
+        value: z.string().min(1).max(20).trim(),
+        measurementUnit: commonUnits,
+        container: z.string().refine(
+            (value) => Object.prototype.hasOwnProperty.call(VARIANT_CONTAINERS, value),
+            "Select a supported container",
+        ),
+    }),
     z.object({ kind: z.literal("loose"), measurementUnit: commonUnits }),
     z.object({ kind: z.literal("attribute"), attribute: z.string().min(1).max(30).trim(), value: z.string().min(1).max(30).trim() }),
 ]);
@@ -41,6 +51,19 @@ const filtersInput = z.object({
     variantType: z.enum(["all", "pack", "loose"]).default("all"),
     status: z.enum(["all", "active", "disabled"]).default("all"),
 });
+
+async function validateCategoryScope(typeId: number, categoryId: number | null) {
+    if (categoryId === null) return;
+    const scopedCategory = await db.query.category.findFirst({
+        where: and(eq(category.id, categoryId), eq(category.typeId, typeId)),
+        columns: { id: true },
+    });
+    if (!scopedCategory) {
+        throw new ORPCError("BAD_REQUEST", {
+            message: "The selected category does not belong to this product type",
+        });
+    }
+}
 
 export const adminVariantOptionRouter = {
     /**
@@ -146,6 +169,7 @@ export const adminVariantOptionRouter = {
         .handler(async ({ input }) => {
             const type = await db.query.productType.findFirst({ where: eq(productType.id, input.typeId) });
             if (!type) throw new ORPCError("BAD_REQUEST", { message: "Product type not found" });
+            await validateCategoryScope(input.typeId, input.categoryId);
             const definition = withDerivedOperationalUnit(input.definition, buildProductTypeFulfillmentProfile(type).family);
             const name = formatVariantDefinition(definition);
             const signature = variantDefinitionSignature(definition);
@@ -216,6 +240,7 @@ export const adminVariantOptionRouter = {
 
             const type = await db.query.productType.findFirst({ where: eq(productType.id, input.typeId) });
             if (!type) throw new ORPCError("BAD_REQUEST", { message: "Product type not found" });
+            await validateCategoryScope(input.typeId, input.categoryId);
             const definition = withDerivedOperationalUnit(input.definition, buildProductTypeFulfillmentProfile(type).family);
             const name = formatVariantDefinition(definition);
             const signature = variantDefinitionSignature(definition);
@@ -224,7 +249,10 @@ export const adminVariantOptionRouter = {
                 db.query.productVariant.findFirst({ where: eq(productVariant.sourceVariantOptionId, input.id), columns: { id: true } }),
             ]);
             const structuralLocked = Boolean(priceRef || generatedRef);
-            if (structuralLocked && (existing.canonicalSignature !== signature || existing.typeId !== input.typeId || existing.categoryId !== input.categoryId)) {
+            const isLegacyUpgrade =
+                existing.needsReview &&
+                existing.canonicalSignature === null;
+            if (structuralLocked && !isLegacyUpgrade && (existing.canonicalSignature !== signature || existing.typeId !== input.typeId || existing.categoryId !== input.categoryId)) {
                 throw new ORPCError("BAD_REQUEST", { message: "This variant is already in use. Clone it to change its structure or scope." });
             }
 
@@ -252,9 +280,10 @@ export const adminVariantOptionRouter = {
                 );
             }
 
-            await db
-                .update(variantOption)
-                .set({
+            await db.transaction(async (tx) => {
+                const [updated] = await tx
+                    .update(variantOption)
+                    .set({
                     name,
                     unit: "measurementUnit" in definition ? definition.measurementUnit : definition.operationalUnit || "unit",
                     size: "value" in definition ? definition.value : null,
@@ -269,8 +298,14 @@ export const adminVariantOptionRouter = {
                     isActive: input.isActive,
                     sortOrder: input.sortOrder,
                     updatedAt: new Date(),
-                })
-                .where(eq(variantOption.id, input.id));
+                    })
+                    .where(eq(variantOption.id, input.id))
+                    .returning();
+                if (!updated) {
+                    throw new ORPCError("NOT_FOUND", { message: "Variant option not found" });
+                }
+                await resyncGeneratedVariantsForOption(tx, updated);
+            });
 
             return { message: "Variant option updated successfully" };
         }),

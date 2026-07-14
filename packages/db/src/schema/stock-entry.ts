@@ -29,6 +29,7 @@ export const stockEntryCostTypeEnum = pgEnum("stock_entry_cost_type", [
     "per_kg",
     "per_pack",
     "per_carton",
+    "per_unit",
 ]);
 
 /**
@@ -60,11 +61,21 @@ export const stockEntry = pgTable(
         /** Unit of the entered quantity (e.g. "KG", "Pack") */
         quantityUnit: varchar("quantity_unit", { length: 20 }).notNull(),
 
-        /** Converted quantity in KG (always computed for unified tracking) */
-        convertedQtyKg: decimal("converted_qty_kg", { precision: 12, scale: 2 }).notNull(),
+        /** Compatibility total for mass-based entries. */
+        convertedQtyKg: decimal("converted_qty_kg", { precision: 12, scale: 2 }),
 
-        /** Converted quantity in packs (always computed for unified tracking) */
-        convertedQtyPacks: decimal("converted_qty_packs", { precision: 12, scale: 2 }).notNull(),
+        /** Compatibility total for legacy pack-count reporting. */
+        convertedQtyPacks: decimal("converted_qty_packs", { precision: 12, scale: 2 }),
+
+        /** Exact quantity applied to inventory in the variant's canonical unit. */
+        inventoryDelta: decimal("inventory_delta", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+
+        /** Canonical operational unit used by inventory (cylinder, kg, l, unit, etc.). */
+        inventoryUnit: varchar("inventory_unit", { length: 20 })
+            .default("unit")
+            .notNull(),
 
         // === Supplier & Cost ===
 

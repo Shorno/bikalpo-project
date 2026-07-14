@@ -16,7 +16,10 @@ import { z } from "zod";
 
 import { adminProcedure } from "../index";
 import { generateSku } from "./helpers/generate-sku";
-import { syncBrandVariantPrices } from "./helpers/sync-generated-variants";
+import {
+  resolveConcreteVariantForConfig,
+  syncBrandVariantPrices,
+} from "./helpers/sync-generated-variants";
 
 // === Input Schemas ===
 
@@ -175,6 +178,10 @@ export const adminProductConfigRouter = {
                   unit: true,
                   size: true,
                   variantType: true,
+                  definitionKind: true,
+                  definition: true,
+                  needsReview: true,
+                  isActive: true,
                 },
               },
             },
@@ -233,6 +240,12 @@ export const adminProductConfigRouter = {
             consumerPrice: vp.consumerPrice,
             isActive: vp.isActive,
             sortOrder: vp.sortOrder,
+            definitionKind: vp.variantOption?.definitionKind ?? null,
+            definition: vp.variantOption?.definition ?? null,
+            needsReview: vp.variantOption?.needsReview ?? true,
+            requiresDefinitionReview:
+              vp.variantOption?.needsReview === true ||
+              vp.variantOption?.definition == null,
           })),
         }));
 
@@ -311,6 +324,10 @@ export const adminProductConfigRouter = {
         throw new ORPCError("BAD_REQUEST", {
           message: "One or more variant options do not exist",
         });
+      }
+
+      for (const option of variantOptionRows) {
+        resolveConcreteVariantForConfig(option);
       }
 
       const typeId = core.category?.typeId ?? null;

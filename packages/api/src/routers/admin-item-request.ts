@@ -1,7 +1,7 @@
-import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
-import { itemRequest, product, user, stockChangeLog } from "@bikalpo-project/db/schema";
+import { itemRequest, product, user } from "@bikalpo-project/db/schema";
 import { adminProcedure } from "../index";
 
 const itemRequestFiltersSchema = z.object({
@@ -217,30 +217,13 @@ export const adminItemRequestRouter = {
                 throw new Error("Selected product not found");
             }
 
-            // Stock update removed — stock is now tracked via the inventory system
-            await db
-                .update(product)
-                .set({
-                    inStock: true,
-                    lastRestockedAt: new Date(),
-                })
-                .where(eq(product.id, input.addToProductId));
-
-            await db.insert(stockChangeLog).values({
-                productId: input.addToProductId,
-                changeType: "add",
-                quantity: req.quantity,
-                reason: `Item request ${req.requestNumber} approved`,
-                createdById: userId,
-            });
-
             const [updated] = await db
                 .update(itemRequest)
                 .set({
                     status: "approved",
                     adminResponse:
                         input.adminResponse ||
-                        "Your request has been approved. The item has been added to stock.",
+                        "Your request has been approved and linked to the selected catalog product.",
                     processedById: userId,
                     processedAt: new Date(),
                 })

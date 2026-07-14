@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
 // ────────────────────────────────────────────────────────────────
-// CATALOG QUERY HOOKS (Public)
+// RETAILER CATALOG QUERY HOOKS
 // ────────────────────────────────────────────────────────────────
 
 /** Browse the full catalog hierarchy with cascading filters */
@@ -18,7 +18,7 @@ export function useCatalogHierarchy(filters: {
   limit?: number;
 }) {
   return useQuery(
-    orpc.shopOwner.getPublicCatalogHierarchy.queryOptions({
+    orpc.shopOwner.getShopCatalogHierarchy.queryOptions({
       input: {
         typeId: filters.typeId,
         categoryId: filters.categoryId,
@@ -72,7 +72,9 @@ export function useSubmitProductRequest() {
 }
 
 /** Get my product identity requests */
-export function useMyProductRequests(status?: "pending" | "approved" | "rejected") {
+export function useMyProductRequests(
+  status?: "pending" | "approved" | "rejected",
+) {
   return useQuery(
     orpc.shopOwner.getMyProductRequests.queryOptions({
       input: { status },
@@ -114,7 +116,9 @@ export function useCreateShopProduct() {
     onSuccess: () => {
       toast.success("Product created successfully!");
       qc.invalidateQueries({ queryKey: orpc.shopOwner.getShopProducts.key() });
-      qc.invalidateQueries({ queryKey: orpc.shopOwner.getShopProductKPIs.key() });
+      qc.invalidateQueries({
+        queryKey: orpc.shopOwner.getShopProductKPIs.key(),
+      });
     },
     onError: (err) => toast.error(err.message),
   });

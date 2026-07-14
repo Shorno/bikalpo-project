@@ -1,6 +1,11 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
 
@@ -78,10 +83,12 @@ export function useCreateShopProduct() {
   const qc = useQueryClient();
   return useMutation({
     ...orpc.shopOwner.createShopProduct.mutationOptions(),
-    onSuccess: (data) => {
-      toast.success(`Product created with ${data.variantsCreated} variant(s)!`);
+    onSuccess: () => {
+      toast.success("Use Product Catalog to configure retailer products.");
       qc.invalidateQueries({ queryKey: orpc.shopOwner.getShopProducts.key() });
-      qc.invalidateQueries({ queryKey: orpc.shopOwner.getShopProductKPIs.key() });
+      qc.invalidateQueries({
+        queryKey: orpc.shopOwner.getShopProductKPIs.key(),
+      });
     },
     onError: (err) => toast.error(err.message),
   });

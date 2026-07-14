@@ -169,6 +169,38 @@ export const warehouseProductGenerationTemplate = pgTable(
   ],
 );
 
+/**
+ * Editable, retailer-owned snapshot of the admin generation defaults.
+ * Brand/variant membership is derived from retailer-owned product rows.
+ */
+export const shopProductGenerationTemplate = pgTable(
+  "shop_product_generation_template",
+  {
+    id: serial("id").primaryKey(),
+    coreProductId: integer("core_product_id")
+      .notNull()
+      .references(() => coreProductIdentity.id, { onDelete: "cascade" }),
+    shopId: text("shop_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    version: integer("version").default(1).notNull(),
+    sourceAdminTemplateVersion: integer("source_admin_template_version"),
+    details: jsonb("details")
+      .$type<AdminProductGenerationTemplateDetails>()
+      .notNull(),
+    createdById: text("created_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("shop_generation_template_owner_core_unique").on(
+      table.shopId,
+      table.coreProductId,
+    ),
+  ],
+);
+
 // === Relations ===
 
 export const coreProductIdentityRelations = relations(
@@ -224,6 +256,26 @@ export const warehouseProductGenerationTemplateRelations = relations(
   }),
 );
 
+export const shopProductGenerationTemplateRelations = relations(
+  shopProductGenerationTemplate,
+  ({ one }) => ({
+    coreProduct: one(coreProductIdentity, {
+      fields: [shopProductGenerationTemplate.coreProductId],
+      references: [coreProductIdentity.id],
+    }),
+    shop: one(user, {
+      fields: [shopProductGenerationTemplate.shopId],
+      references: [user.id],
+      relationName: "shopGenerationTemplateOwner",
+    }),
+    createdBy: one(user, {
+      fields: [shopProductGenerationTemplate.createdById],
+      references: [user.id],
+      relationName: "shopGenerationTemplateCreator",
+    }),
+  }),
+);
+
 // === Types ===
 
 export type CoreProductIdentity = typeof coreProductIdentity.$inferSelect;
@@ -232,3 +284,5 @@ export type AdminProductGenerationTemplate =
   typeof adminProductGenerationTemplate.$inferSelect;
 export type WarehouseProductGenerationTemplate =
   typeof warehouseProductGenerationTemplate.$inferSelect;
+export type ShopProductGenerationTemplate =
+  typeof shopProductGenerationTemplate.$inferSelect;

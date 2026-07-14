@@ -61,7 +61,7 @@ import {
   updateProductSchema,
 } from "@/schema/product.schema";
 import { generateSlug } from "@/utils/generate-slug";
-import { client, orpc } from "@/utils/orpc";
+import { orpc } from "@/utils/orpc";
 import DeleteProductDialog from "./delete-product-dialog";
 import type { ProductWithRelations } from "./product-columns";
 import {
@@ -69,7 +69,6 @@ import {
   ProductEditorIdentity as IdentitySummaryRow,
 } from "./product-editor-ui";
 import ProductFeaturesInput from "./product-features-input";
-import type { DraftVariant } from "./variant-form-dialog";
 
 // ============================================================
 // Types
@@ -304,7 +303,6 @@ export default function ProductForm({
   const [ruleDefaultsAppliedTypeId, setRuleDefaultsAppliedTypeId] = useState<
     number | null
   >(null);
-  const [draftVariants] = useState<DraftVariant[]>([]);
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
 
@@ -490,20 +488,7 @@ export default function ProductForm({
 
   const createMutation = useMutation({
     ...orpc.product.create.mutationOptions(),
-    onSuccess: async (result) => {
-      if (result.product && draftVariants.length > 0) {
-        const newProductId = result.product.id;
-        try {
-          for (const d of draftVariants) {
-            await client.adminProductVariant.create({
-              ...d,
-              productId: newProductId,
-            });
-          }
-        } catch {
-          toast.error("Product created but some variants failed to save.");
-        }
-      }
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       toast.success("Product created successfully");
       router.push("/dashboard/admin/products");

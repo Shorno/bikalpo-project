@@ -8,7 +8,6 @@ import {
   Edit,
   Eye,
   Package,
-  PackagePlus,
   Settings,
   XCircle,
 } from "lucide-react";
@@ -37,21 +36,30 @@ function StockBadge({ status }: { status: string }) {
   switch (status) {
     case "in_stock":
       return (
-        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+        <Badge
+          variant="outline"
+          className="bg-emerald-50 text-emerald-700 border-emerald-200"
+        >
           <CheckCircle2 className="w-3 h-3 mr-1" />
           In Stock
         </Badge>
       );
     case "low":
       return (
-        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+        <Badge
+          variant="outline"
+          className="bg-amber-50 text-amber-700 border-amber-200"
+        >
           <AlertTriangle className="w-3 h-3 mr-1" />
           Low
         </Badge>
       );
     case "out_of_stock":
       return (
-        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+        <Badge
+          variant="outline"
+          className="bg-red-50 text-red-700 border-red-200"
+        >
           <XCircle className="w-3 h-3 mr-1" />
           Out of Stock
         </Badge>
@@ -70,7 +78,7 @@ export default function ShopProductDetailPage() {
   const productId = Number(params.productId);
 
   const { data, isLoading, isError } = useShopProductDetail(
-    isNaN(productId) ? null : productId,
+    Number.isNaN(productId) ? null : productId,
   );
 
   if (isLoading) return <DetailSkeleton />;
@@ -95,7 +103,8 @@ export default function ShopProductDetailPage() {
 
   let overallStatus: "in_stock" | "low" | "out_of_stock" = "in_stock";
   if (totalStock <= 0) overallStatus = "out_of_stock";
-  else if (outVariants.length > 0 || lowVariants.length > 0) overallStatus = "low";
+  else if (outVariants.length > 0 || lowVariants.length > 0)
+    overallStatus = "low";
 
   return (
     <div className="space-y-6">
@@ -103,10 +112,14 @@ export default function ShopProductDetailPage() {
       <div className="flex items-center justify-between">
         <BackButton />
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <Edit className="h-3.5 w-3.5" />
-            Edit Product
-          </Button>
+          {product.isRetailerOwned && (
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <Link href={`/dashboard/products/${product.id}/edit`}>
+                <Edit className="h-3.5 w-3.5" />
+                Edit Product
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="gap-1.5">
             <Eye className="h-3.5 w-3.5" />
             View Stock Details
@@ -139,10 +152,13 @@ export default function ShopProductDetailPage() {
 
             {/* Info */}
             <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold text-gray-900">{product.name}</h1>
+              <h1 className="text-xl font-bold text-gray-900">
+                {product.name}
+              </h1>
               {product.coreProduct && (
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  Core Identity: {product.coreProduct.name} ({product.coreProduct.sku})
+                  Core Identity: {product.coreProduct.name} (
+                  {product.coreProduct.sku})
                 </p>
               )}
 
@@ -154,8 +170,12 @@ export default function ShopProductDetailPage() {
                   <Badge variant="outline">{product.subCategory.name}</Badge>
                 )}
                 <Badge
-                  variant={product.status === "active" ? "default" : "secondary"}
-                  className={product.status === "active" ? "bg-emerald-600" : ""}
+                  variant={
+                    product.status === "active" ? "default" : "secondary"
+                  }
+                  className={
+                    product.status === "active" ? "bg-emerald-600" : ""
+                  }
                 >
                   {product.status}
                 </Badge>
@@ -235,7 +255,10 @@ export default function ShopProductDetailPage() {
             <TableBody>
               {variants.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center py-8 text-muted-foreground"
+                  >
                     No variants found for this product
                   </TableCell>
                 </TableRow>
@@ -305,7 +328,9 @@ export default function ShopProductDetailPage() {
             />
             <SettingItem
               label="Tracking Type"
-              value={product.trackingType === "none" ? "None" : product.trackingType}
+              value={
+                product.trackingType === "none" ? "None" : product.trackingType
+              }
               active={product.trackingType !== "none"}
             />
           </div>
@@ -322,12 +347,14 @@ export default function ShopProductDetailPage() {
           <div className="space-y-1 text-sm text-amber-700">
             {outVariants.map((v) => (
               <p key={v.variantId}>
-                ❌ <strong>{v.brandName ?? "Unknown"}</strong> → {v.unitLabel} — Out of stock
+                ❌ <strong>{v.brandName ?? "Unknown"}</strong> → {v.unitLabel} —
+                Out of stock
               </p>
             ))}
             {lowVariants.map((v) => (
               <p key={v.variantId}>
-                ⚠ <strong>{v.brandName ?? "Unknown"}</strong> → {v.unitLabel} — {v.availableQty} remaining
+                ⚠ <strong>{v.brandName ?? "Unknown"}</strong> → {v.unitLabel} —{" "}
+                {v.availableQty} remaining
               </p>
             ))}
           </div>
@@ -344,7 +371,11 @@ export default function ShopProductDetailPage() {
 function BackButton() {
   return (
     <Link href="/dashboard/products">
-      <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="gap-1.5 text-muted-foreground"
+      >
         <ArrowLeft className="h-4 w-4" />
         Back to Products
       </Button>

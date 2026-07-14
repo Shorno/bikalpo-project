@@ -52,7 +52,10 @@ export function useVariantOptionColumns() {
         header: () => <div className="text-center">SKU</div>,
         cell: ({ row }) => (
           <div className="text-center">
-            <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
+            <Badge
+              variant="outline"
+              className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800"
+            >
               {row.original.skuCode || "—"}
             </Badge>
           </div>
@@ -141,16 +144,24 @@ export function useVariantOptionColumns() {
         header: () => <div className="text-center">Structure</div>,
         cell: ({ row }) => {
           const locked = row.original.structuralLocked;
+          const needsReview = row.original.needsReview;
           return (
             <div className="flex justify-center">
               <Badge
                 variant="secondary"
                 className={cn(
                   "text-xs",
-                  locked && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                  (locked || needsReview) &&
+                    "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
                 )}
               >
-                {locked ? "In use · locked" : row.original.needsReview ? "Needs review" : "Editable"}
+                {needsReview
+                  ? locked
+                    ? "In use · review"
+                    : "Needs review"
+                  : locked
+                    ? "In use · locked"
+                    : "Editable"}
               </Badge>
             </div>
           );
