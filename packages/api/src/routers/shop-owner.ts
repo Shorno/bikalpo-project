@@ -6814,8 +6814,6 @@ const publicCatalogEndpoints = {
                     sku: composedSku,
                     image: cp.image,
                     description: cp.description,
-                    supportsPack: cp.supportsPack,
-                    supportsLoose: cp.supportsLoose,
                     type: cp.category?.type
                         ? { id: cp.category.type.id, name: cp.category.type.name, slug: cp.category.type.slug }
                         : null,
@@ -6979,8 +6977,6 @@ const publicCatalogEndpoints = {
                     sku: coreProduct.sku,
                     image: coreProduct.image,
                     description: coreProduct.description,
-                    supportsPack: coreProduct.supportsPack,
-                    supportsLoose: coreProduct.supportsLoose,
                     type: coreProduct.category?.type || null,
                     category: coreProduct.category
                         ? { id: coreProduct.category.id, name: coreProduct.category.name, slug: coreProduct.category.slug }
@@ -7500,7 +7496,7 @@ const shopProductEndpoints = {
             if (input.subCategoryId) cpConditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
             const coreProducts = await db.query.coreProductIdentity.findMany({
                 where: cpConditions.length > 0 ? and(...cpConditions) : undefined,
-                columns: { id: true, name: true, sku: true, image: true, supportsPack: true, supportsLoose: true, categoryId: true, subCategoryId: true },
+                columns: { id: true, name: true, sku: true, image: true, categoryId: true, subCategoryId: true },
                 orderBy: [coreProductIdentity.name],
             });
 

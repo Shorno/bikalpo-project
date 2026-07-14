@@ -1,6 +1,5 @@
 import { relations } from "drizzle-orm";
 import {
-  boolean,
   integer,
   jsonb,
   pgEnum,
@@ -60,12 +59,6 @@ export const coreProductIdentity = pgTable("core_product_identity", {
   subCategoryId: integer("sub_category_id").references(() => subCategory.id, {
     onDelete: "set null",
   }),
-
-  /** Whether this core product supports pack-based variants (e.g. 1KG Pack, 5KG Sack) */
-  supportsPack: boolean("supports_pack").default(true).notNull(),
-
-  /** Whether this core product supports loose variants (e.g. per KG, per Piece) */
-  supportsLoose: boolean("supports_loose").default(false).notNull(),
 
   /** User who created this core product. NULL = unknown historic creator. */
   createdById: text("created_by_id").references(() => user.id, {

@@ -229,10 +229,6 @@ export default function CoreProductDetailPage({
                   <dd className="text-gray-900 font-medium">{coreProduct.subCategory.name}</dd>
                 </>
               )}
-              <dt className="text-gray-500">Supports Pack</dt>
-              <dd>{coreProduct.supportsPack ? "✅ Yes" : "❌ No"}</dd>
-              <dt className="text-gray-500">Supports Loose</dt>
-              <dd>{coreProduct.supportsLoose ? "✅ Yes" : "❌ No"}</dd>
               {brands.length > 0 && (
                 <>
                   <dt className="text-gray-500">Brands</dt>

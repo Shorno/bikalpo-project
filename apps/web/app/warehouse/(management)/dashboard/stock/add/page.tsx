@@ -80,8 +80,6 @@ type ProductResult = {
   coreProduct?: {
     id: number;
     name: string;
-    supportsPack: boolean;
-    supportsLoose: boolean;
   } | null;
   variants: {
     id: number;

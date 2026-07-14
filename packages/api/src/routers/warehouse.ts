@@ -7392,8 +7392,6 @@ const stockEntryQueries = {
 							id: true,
 							name: true,
 							image: true,
-							supportsPack: true,
-							supportsLoose: true,
 						},
 					},
 					variants: {

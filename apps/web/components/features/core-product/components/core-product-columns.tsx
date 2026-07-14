@@ -19,8 +19,6 @@ export interface CoreProductWithRelations {
   image: string;
   categoryId: number;
   subCategoryId: number | null;
-  supportsPack: boolean;
-  supportsLoose: boolean;
   hasConfiguration?: boolean;
   configuredBrandCount?: number;
   createdAt: Date;

@@ -7,7 +7,6 @@ import * as React from "react";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -107,8 +106,6 @@ export default function EditCoreProductDialog({
       subCategoryId: coreProduct.subCategoryId,
 
       typeId: initialTypeId,
-      supportsPack: coreProduct.supportsPack ?? true,
-      supportsLoose: coreProduct.supportsLoose ?? false,
     },
     onSubmit: async ({ value }) => {
       if (!value.image.trim()) {
@@ -125,8 +122,6 @@ export default function EditCoreProductDialog({
         image: value.image,
         categoryId: value.categoryId,
         subCategoryId: value.subCategoryId,
-        supportsPack: value.supportsPack,
-        supportsLoose: value.supportsLoose,
       });
     },
   });
@@ -343,43 +338,6 @@ export default function EditCoreProductDialog({
               </Field>
             )}
           </form.Field>
-
-          {/* Variant Type Support */}
-          <div className="space-y-3">
-            <FieldLabel>Variant Type Support</FieldLabel>
-            <div className="flex items-center gap-6">
-              <form.Field name="supportsPack">
-                {(field) => (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={field.state.value}
-                      onCheckedChange={(checked) =>
-                        field.handleChange(!!checked)
-                      }
-                    />
-                    <span className="text-sm">Pack Based</span>
-                  </label>
-                )}
-              </form.Field>
-              <form.Field name="supportsLoose">
-                {(field) => (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={field.state.value}
-                      onCheckedChange={(checked) =>
-                        field.handleChange(!!checked)
-                      }
-                    />
-                    <span className="text-sm">Loose</span>
-                  </label>
-                )}
-              </form.Field>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Select which variant types this product supports. Pack-based (e.g.
-              1KG, 5KG) and/or Loose (e.g. per KG).
-            </p>
-          </div>
         </form>
 
         <DialogFooter>

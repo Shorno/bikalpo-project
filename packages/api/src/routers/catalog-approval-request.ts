@@ -61,8 +61,6 @@ const coreProductPayloadSchema = z.object({
   typeId: z.number().int(),
   categoryId: z.number().int(),
   subCategoryId: z.number().int().optional().nullable(),
-  supportsPack: z.boolean().default(true),
-  supportsLoose: z.boolean().default(false),
 });
 
 const createRequestInput = z.discriminatedUnion("requestType", [
@@ -387,8 +385,6 @@ async function createCoreProductFromPayload(
       image: input.image,
       categoryId: input.categoryId,
       subCategoryId: input.subCategoryId || null,
-      supportsPack: input.supportsPack,
-      supportsLoose: input.supportsLoose,
     })
     .returning();
 
