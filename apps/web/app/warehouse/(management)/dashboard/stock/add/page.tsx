@@ -165,6 +165,7 @@ type TableRow = {
   brandId: number;
   brandName: string;
   variantId: number | null;
+  batchNo: string;
   cartonUnitSize: string;
   quantity: string;
   purchaseUnitPrice: string;
@@ -187,6 +188,7 @@ export default function AddStockPage() {
   // === Table rows (new table-first approach) ===
   const rowIdRef = useRef(0);
   const [tableRows, setTableRows] = useState<TableRow[]>([]);
+  const [sharedBatchNo, setSharedBatchNo] = useState("");
 
   // === Product selection modal state ===
   const [showProductModal, setShowProductModal] = useState(false);
@@ -344,6 +346,13 @@ export default function AddStockPage() {
     return units > 0 ? units : 0;
   }, []);
 
+  const hasBatchTrackedRows = useMemo(
+    () =>
+      entryType === "direct" &&
+      tableRows.some((row) => row.product.trackingType === "batch"),
+    [entryType, tableRows],
+  );
+
   // Check if all rows are complete
   const allRowsComplete = useMemo(() => {
     if (tableRows.length === 0) return true;
@@ -354,6 +363,12 @@ export default function AddStockPage() {
         (entryType === "carton"
           ? getCartonCount(row) <= 0
           : parseFloat(row.quantity) <= 0)
+      )
+        return false;
+      if (
+        entryType === "direct" &&
+        row.product.trackingType === "batch" &&
+        !row.batchNo?.trim()
       )
         return false;
       if (entryType === "direct" && !Number.isInteger(Number(row.quantity))) {
@@ -621,6 +636,8 @@ export default function AddStockPage() {
           availableVariants.length === 1
             ? availableVariants[0]!.id
             : null,
+        batchNo:
+          selectedProduct.trackingType === "batch" ? sharedBatchNo.trim() : "",
         cartonUnitSize: "",
         quantity: "",
         purchaseUnitPrice: "",
@@ -631,7 +648,7 @@ export default function AddStockPage() {
       toast.success(`Added ${selectedProduct.name} to the table`);
       return true;
     },
-    [entryType],
+    [entryType, sharedBatchNo],
   );
 
   const updateRow = useCallback((rowId: number, updates: Partial<TableRow>) => {
@@ -644,9 +661,39 @@ export default function AddStockPage() {
     setTableRows((prev) => prev.filter((r) => r.id !== rowId));
   }, []);
 
+  const clearRows = useCallback(() => {
+    setTableRows([]);
+    setSharedBatchNo("");
+  }, []);
+
+  const applySharedBatchNo = useCallback(() => {
+    const normalizedBatchNo = sharedBatchNo.trim();
+    if (!normalizedBatchNo) return;
+    setTableRows((rows) =>
+      rows.map((row) =>
+        row.product.trackingType === "batch"
+          ? { ...row, batchNo: normalizedBatchNo }
+          : row,
+      ),
+    );
+    toast.success("Batch number applied to all batch-tracked items");
+  }, [sharedBatchNo]);
+
   const handleSubmit = async () => {
     if (tableRows.length === 0) {
       toast.error("Please add at least one product");
+      return;
+    }
+    const missingBatch = tableRows.find(
+      (row) =>
+        entryType === "direct" &&
+        row.product.trackingType === "batch" &&
+        !row.batchNo?.trim(),
+    );
+    if (missingBatch) {
+      toast.error(
+        `Enter a batch / lot number for ${missingBatch.product.name}`,
+      );
       return;
     }
     const incomplete = tableRows.find((r) => {
@@ -693,7 +740,10 @@ export default function AddStockPage() {
             variantId: row.variantId,
             quantity: Number(row.quantity),
             purchaseUnitCost: row.purchaseUnitPrice,
-            batchNo: batchNo || undefined,
+            batchNo:
+              row.product.trackingType === "batch"
+                ? row.batchNo?.trim()
+                : undefined,
             expiryDate: expiryDate || undefined,
             manufactureDate: manufactureDate || undefined,
           })),
@@ -838,7 +888,7 @@ export default function AddStockPage() {
                       )
                     )
                       return;
-                    setTableRows([]);
+                    clearRows();
                   }
                   setEntryType("direct");
                 }}
@@ -878,7 +928,7 @@ export default function AddStockPage() {
                       )
                     )
                       return;
-                    setTableRows([]);
+                    clearRows();
                   }
                   setEntryType("loose");
                 }}
@@ -919,7 +969,7 @@ export default function AddStockPage() {
                       )
                     )
                       return;
-                    setTableRows([]);
+                    clearRows();
                   }
                   setEntryType("pack");
                 }}
@@ -959,7 +1009,7 @@ export default function AddStockPage() {
                       )
                     )
                       return;
-                    setTableRows([]);
+                    clearRows();
                   }
                   setEntryType("carton");
                 }}
@@ -1011,7 +1061,7 @@ export default function AddStockPage() {
                       variant="ghost"
                       size="sm"
                       className="text-destructive hover:text-destructive"
-                      onClick={() => setTableRows([])}
+                      onClick={clearRows}
                     >
                       Clear All
                     </Button>
@@ -1021,6 +1071,44 @@ export default function AddStockPage() {
                   Record incoming stock and its purchase cost. Selling prices
                   are not changed here.
                 </CardDescription>
+                {hasBatchTrackedRows && (
+                  <div className="flex flex-wrap items-end gap-2 border-t pt-3">
+                    <Field className="min-w-[220px] flex-1">
+                      <FieldLabel className="text-xs">
+                        Batch / Lot for all items
+                      </FieldLabel>
+                      <Input
+                        value={sharedBatchNo}
+                        onChange={(event) =>
+                          setSharedBatchNo(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            applySharedBatchNo();
+                          }
+                        }}
+                        placeholder="e.g. LPG-2026-07-15-A"
+                        maxLength={100}
+                        className="h-8 font-mono text-xs"
+                      />
+                    </Field>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={applySharedBatchNo}
+                      disabled={!sharedBatchNo.trim()}
+                    >
+                      Apply to All
+                    </Button>
+                    <p className="w-full text-xs text-muted-foreground">
+                      Applies to batch-tracked rows. Individual values remain
+                      editable.
+                    </p>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
@@ -1038,6 +1126,11 @@ export default function AddStockPage() {
                             ? "Units / Carton"
                             : "Configured Variant"}
                         </th>
+                        {hasBatchTrackedRows && (
+                          <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">
+                            Batch / Lot No. *
+                          </th>
+                        )}
                         <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">
                           {entryType === "direct"
                             ? "Qty (Cylinders)"
@@ -1066,7 +1159,7 @@ export default function AddStockPage() {
                       {tableRows.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={7}
+                            colSpan={hasBatchTrackedRows ? 8 : 7}
                             className="text-center py-12 text-muted-foreground"
                           >
                             <div className="flex flex-col items-center gap-2">
@@ -1158,6 +1251,29 @@ export default function AddStockPage() {
                                   </Select>
                                 )}
                               </td>
+                              {hasBatchTrackedRows && (
+                                <td className="px-3 py-2.5">
+                                  {row.product.trackingType === "batch" ? (
+                                    <Input
+                                      value={row.batchNo ?? ""}
+                                      onChange={(event) =>
+                                        updateRow(row.id, {
+                                          batchNo: event.target.value,
+                                        })
+                                      }
+                                      placeholder="Required"
+                                      maxLength={100}
+                                      required
+                                      aria-label={`Batch or lot number for ${row.product.name}`}
+                                      className="h-8 w-[150px] font-mono text-xs"
+                                    />
+                                  ) : (
+                                    <span className="text-muted-foreground">
+                                      —
+                                    </span>
+                                  )}
+                                </td>
+                              )}
                               <td className="px-3 py-2.5 text-center">
                                 <Input
                                   type="text"
