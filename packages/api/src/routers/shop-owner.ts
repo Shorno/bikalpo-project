@@ -86,6 +86,10 @@ import {
     releaseB2bOrderReservations,
 } from "./helpers/b2b-inventory-movement";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
+import {
+    getRetailerHandoffOtps,
+    getRetailerOrderDisplayStatus,
+} from "./helpers/retailer-delivery-handoff";
 import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 import { shopProductConfigEndpoints } from "./shop-product-config";
 
@@ -2326,6 +2330,7 @@ const orderQueries = {
                 where: eq(invoice.orderId, result.id),
                 columns: {
                     id: true,
+                    invoiceNumber: true,
                     createdAt: true,
                     approvedAt: true,
                     deliveredAt: true,
@@ -2350,6 +2355,7 @@ const orderQueries = {
                         startedAt: deliveryGroup.startedAt,
                         invoiceStatus: deliveryGroupInvoice.status,
                         deliveredAt: deliveryGroupInvoice.deliveredAt,
+                        deliveryOtp: deliveryGroupInvoice.deliveryOtp,
                     })
                     .from(deliveryGroupInvoice)
                     .innerJoin(
@@ -2364,6 +2370,11 @@ const orderQueries = {
                 invoices,
                 deliveryLinks,
             });
+            const handoffOtps = getRetailerHandoffOtps(invoices, deliveryLinks);
+            const displayStatus = getRetailerOrderDisplayStatus(
+                result.status,
+                deliveryLinks,
+            );
 
             const approvedStatuses = [
                 "approved",
@@ -2436,6 +2447,7 @@ const orderQueries = {
             return {
                 order: {
                     ...result,
+                    displayStatus,
                     items: enrichPurchaseOrderItemsFulfillment(result.items),
                     warehouseName:
                         warehouseInfo?.warehouseName ||
@@ -2451,6 +2463,7 @@ const orderQueries = {
                     trackingId: result.trackingId,
                     riderName: result.riderName,
                     riderPhone: result.riderPhone,
+                    handoffOtps,
                 },
             };
         }),

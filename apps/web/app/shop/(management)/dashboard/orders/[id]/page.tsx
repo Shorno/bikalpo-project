@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Clock,
   CreditCard,
+  KeyRound,
   Loader,
   MapPin,
   Package,
@@ -56,6 +57,14 @@ type StatusDefinition = {
   label: string;
   icon: LucideIcon;
   className: string;
+};
+
+type HandoffOtp = {
+  invoiceId: number;
+  invoiceNumber: string;
+  label: string;
+  mode: "internal_delivery" | "self_pickup";
+  otp: string;
 };
 
 const STATUS_CONFIG: Record<string, StatusDefinition> = {
@@ -173,7 +182,8 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const { order, flow, hasModifications, delivery } = data;
-  const status = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
+  const displayStatus = order.displayStatus || order.status;
+  const status = STATUS_CONFIG[displayStatus] || STATUS_CONFIG.pending;
   const StatusIcon = status.icon;
   const isCancellable = [
     "pending",
@@ -726,6 +736,7 @@ function SummaryRail({
         : "text-muted-foreground";
   const hasTracking =
     delivery.trackingId || delivery.riderName || delivery.riderPhone;
+  const handoffOtps: HandoffOtp[] = delivery.handoffOtps || [];
 
   return (
     <aside className="xl:sticky xl:top-4" aria-label="Order summary">
@@ -789,6 +800,43 @@ function SummaryRail({
             <InfoPair label="Method" value={formatLabel(order.paymentMethod)} />
           </dl>
         </RailSection>
+
+        {handoffOtps.length > 0 && (
+          <RailSection title="Handoff verification" divided>
+            <div className="divide-y">
+              {handoffOtps.map((handoff) => (
+                <div
+                  key={`${handoff.mode}-${handoff.invoiceId}`}
+                  className="py-3 first:pt-0 last:pb-0"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <KeyRound className="h-4 w-4 shrink-0 text-blue-700" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground">
+                          {handoff.label}
+                        </p>
+                        <p className="truncate font-mono text-[11px] text-muted-foreground">
+                          {handoff.invoiceNumber}
+                        </p>
+                      </div>
+                    </div>
+                    <output
+                      aria-label={`${handoff.label} for ${handoff.invoiceNumber}`}
+                      className="font-mono text-xl font-bold tracking-[0.18em] tabular-nums text-foreground"
+                    >
+                      {handoff.otp}
+                    </output>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">
+              Share the code with the rider only after you have received and
+              checked this shipment.
+            </p>
+          </RailSection>
+        )}
 
         <RailSection title="Delivery" divided>
           <div className="flex gap-2.5">

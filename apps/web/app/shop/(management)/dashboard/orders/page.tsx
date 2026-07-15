@@ -120,7 +120,13 @@ function DeliveryOtpBadge({
   orderId: number;
   status: string;
 }) {
-  const showForStatuses = ["confirmed", "processing"];
+  const showForStatuses = [
+    "confirmed",
+    "ready_for_dispatch",
+    "partially_invoiced",
+    "invoiced",
+    "processing",
+  ];
   const { data, isLoading } = useQuery({
     queryKey: ["delivery-otp", orderId],
     queryFn: () => orpc.deliveryman.getOrderDeliveryOtp.call({ orderId }),
