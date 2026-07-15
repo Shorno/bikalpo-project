@@ -3,6 +3,7 @@
 import { Package, ShoppingCart, X } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { WarehouseOrderDialog } from "./warehouse-order-dialog";
 import {
@@ -148,7 +149,7 @@ function ProductDetailModal({
     : product;
   const stock = getStockLabel(product.stockStatus);
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
       onClick={onClose}
@@ -296,7 +297,8 @@ function ProductDetailModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
