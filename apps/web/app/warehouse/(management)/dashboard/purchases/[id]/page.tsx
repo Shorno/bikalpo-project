@@ -258,7 +258,12 @@ export default function WarehouseSupplierOrderDetailPage() {
   const config =
     statusConfig[displayStatus?.key ?? order.status] || statusConfig.pending;
   const statusLabel = displayStatus?.label ?? config.label;
-  const isCancellable = ["pending", "confirmed"].includes(order.status);
+  const isCancellable = [
+    "pending",
+    "approved",
+    "confirmed",
+    "ready_for_dispatch",
+  ].includes(order.status);
   const hasPendingShipmentReceive = (shipments ?? []).some((s) => s.canReceive);
   const isReceivable =
     order.status === "delivered" && !order.receivedAt && !hasPendingShipmentReceive;

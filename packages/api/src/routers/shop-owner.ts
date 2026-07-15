@@ -1971,7 +1971,14 @@ const mutations = {
                 throw new ORPCError("NOT_FOUND", { message: "Order not found" });
             }
 
-            if (!["pending", "confirmed"].includes(existingOrder.status)) {
+            if (
+                ![
+                    "pending",
+                    "approved",
+                    "confirmed",
+                    "ready_for_dispatch",
+                ].includes(existingOrder.status)
+            ) {
                 throw new ORPCError("BAD_REQUEST", {
                     message: `Cannot cancel an order with status '${existingOrder.status}'`,
                 });
@@ -1997,8 +2004,7 @@ const mutations = {
                     });
                 }
 
-                // Release approved reservation for confirmed orders.
-                if (existingOrder.warehouseId && existingOrder.status === "confirmed") {
+                if (existingOrder.warehouseId && existingOrder.status !== "pending") {
                     await releaseB2bOrderReservations(tx, {
                         warehouseId: existingOrder.warehouseId,
                         items: existingOrder.items,
@@ -2714,7 +2720,7 @@ const orderQueries = {
                 throw new ORPCError("BAD_REQUEST", { message: "Modification already resolved" });
             }
 
-            if (existingOrder.status !== "confirmed") {
+            if (!["approved", "confirmed"].includes(existingOrder.status)) {
                 throw new ORPCError("BAD_REQUEST", {
                     message: "Modifications can only be rejected before dispatch",
                 });
@@ -2731,7 +2737,7 @@ const orderQueries = {
                     .where(
                         and(
                             eq(order.id, input.orderId),
-                            eq(order.status, "confirmed"),
+                            inArray(order.status, ["approved", "confirmed"]),
                             sql`${order.modificationAcceptedAt} IS NULL`,
                             sql`${order.modificationRejectedAt} IS NULL`,
                         ),

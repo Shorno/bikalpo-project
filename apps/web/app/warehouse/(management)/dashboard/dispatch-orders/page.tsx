@@ -356,7 +356,7 @@ export default function DispatchOrdersPage() {
     queryClient.invalidateQueries({ queryKey: ["warehouse", "order-management"] });
     if (dispatchOrder) {
       queryClient.invalidateQueries({
-        queryKey: ["warehouse", "order-detail", dispatchOrder.id],
+        queryKey: ["warehouse", "order-management-detail", dispatchOrder.id],
       });
     }
   }, [queryClient, dispatchOrder]);

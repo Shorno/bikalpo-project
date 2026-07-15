@@ -510,3 +510,43 @@ export async function markOrderCartonsDispatched(tx: any, orderIds: number[]) {
       ),
     );
 }
+
+export async function markOrderItemCartonsDispatched(
+  tx: any,
+  lines: Array<{ orderItemId: number; quantity: number }>,
+) {
+  for (const line of lines) {
+    if (line.quantity <= 0) continue;
+
+    const item = await tx.query.orderItem.findFirst({
+      where: eq(orderItem.id, line.orderItemId),
+      columns: { id: true, quantityUnit: true },
+    });
+    if (!item || item.quantityUnit !== "carton") continue;
+
+    const allocatedCartons = await tx.query.carton.findMany({
+      where: and(
+        eq(carton.reservedForOrderItemId, line.orderItemId),
+        eq(carton.status, "reserved"),
+      ),
+      columns: { id: true },
+      orderBy: [carton.createdAt],
+      limit: line.quantity,
+    });
+    if (allocatedCartons.length !== line.quantity) {
+      throw new Error(
+        `Reserved carton count changed for order item ${line.orderItemId}`,
+      );
+    }
+
+    await tx
+      .update(carton)
+      .set({ status: "dispatched" })
+      .where(
+        inArray(
+          carton.id,
+          allocatedCartons.map((row: { id: number }) => row.id),
+        ),
+      );
+  }
+}

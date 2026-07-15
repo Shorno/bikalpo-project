@@ -54,6 +54,17 @@ import { getCartonInventoryUnits } from "./helpers/carton-units";
 import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
+	getDeliveryAssignmentKpiBucket,
+	rollUpDeliveryAreaLabel,
+} from "./helpers/delivery-team-assignment";
+import {
+	buildInvoiceProgress,
+	configureExistingInvoiceFulfillment,
+	createDispatchInvoiceForOrder,
+	deriveDispatchQueueStatus,
+	summarizeInvoiceProgress,
+} from "./helpers/order-dispatch";
+import {
   isConcreteVariantOption,
   resolveConcreteVariantForConfig,
 } from "./helpers/sync-generated-variants";
@@ -1839,7 +1850,17 @@ const orderSourceInput = z
 	.default("all");
 
 const orderOverviewStatusInput = z
-	.enum(["all", "pending", "accepted", "processing", "rejected"])
+	.enum([
+		"all",
+		"pending",
+		"approved",
+		"accepted",
+		"ready_for_dispatch",
+		"partially_invoiced",
+		"invoiced",
+		"processing",
+		"rejected",
+	])
 	.default("all");
 
 const orderPaymentFilterInput = z
@@ -1850,6 +1871,23 @@ const orderDateFilterInput = z
 	.enum(["today", "this_month", "custom", "all"])
 	.default("all");
 
+type OrderTrendSource = "direct" | "salesman" | "estimate" | "preOrder";
+type OrderTrendBucket = Record<OrderTrendSource, number> & { all: number };
+
+function createOrderTrendBucket(): OrderTrendBucket {
+	return { all: 0, direct: 0, salesman: 0, estimate: 0, preOrder: 0 };
+}
+
+function normalizeOrderTrendSource(
+	source: string | null,
+): OrderTrendSource | null {
+	if (source === "direct") return "direct";
+	if (source === "salesman") return "salesman";
+	if (source === "estimate") return "estimate";
+	if (source === "pre_order") return "preOrder";
+	return null;
+}
+
 function getOrderStatusCondition(
 	status: z.infer<typeof orderOverviewStatusInput>,
 ) {
@@ -1858,6 +1896,14 @@ function getOrderStatusCondition(
 			return eq(order.status, "pending");
 		case "accepted":
 			return eq(order.status, "confirmed");
+		case "approved":
+			return inArray(order.status, ["approved", "confirmed"]);
+		case "ready_for_dispatch":
+			return eq(order.status, "ready_for_dispatch");
+		case "partially_invoiced":
+			return eq(order.status, "partially_invoiced");
+		case "invoiced":
+			return eq(order.status, "invoiced");
 		case "processing":
 			return eq(order.status, "processing");
 		case "rejected":
@@ -2111,6 +2157,10 @@ const orderQueries = {
 				eq(order.warehouseId, userId),
 				eq(order.orderType, "b2b"),
 			];
+			const trendToday = new Date();
+			trendToday.setHours(0, 0, 0, 0);
+			const trendStart = new Date(trendToday);
+			trendStart.setDate(trendToday.getDate() - 13);
 
 			const sourceSummary = await db
 				.select({
@@ -2172,7 +2222,7 @@ const orderQueries = {
 
 			const where = and(...conditions);
 
-			const [orders, countResult] = await Promise.all([
+			const [orders, countResult, trendOrders] = await Promise.all([
 				db
 					.select({
 						id: order.id,
@@ -2211,6 +2261,13 @@ const orderQueries = {
 					.from(order)
 					.leftJoin(user, eq(order.userId, user.id))
 					.where(where),
+				db
+					.select({
+						createdAt: order.createdAt,
+						orderSource: order.orderSource,
+					})
+					.from(order)
+					.where(and(...baseConditions, gte(order.createdAt, trendStart))),
 			]);
 
 			const orderIds = orders.map((o) => o.id);
@@ -2286,6 +2343,44 @@ const orderQueries = {
 				estimate: 0,
 				preOrder: 0,
 			};
+			const trendBuckets = new Map<string, OrderTrendBucket>();
+			const trendDays = Array.from({ length: 14 }, (_, index) => {
+				const date = new Date(trendStart);
+				date.setDate(trendStart.getDate() + index);
+				const key = localDateStamp(date);
+				trendBuckets.set(key, createOrderTrendBucket());
+				return {
+					key,
+					label: date.toLocaleDateString("en-US", {
+						month: "short",
+						day: "numeric",
+					}),
+				};
+			});
+
+			for (const trendOrder of trendOrders) {
+				const sourceKey = normalizeOrderTrendSource(trendOrder.orderSource);
+				if (!sourceKey) continue;
+				const bucket = trendBuckets.get(localDateStamp(trendOrder.createdAt));
+				if (!bucket) continue;
+				bucket.all += 1;
+				bucket[sourceKey] += 1;
+			}
+
+			const trendSummary = {
+				current: createOrderTrendBucket(),
+				previous: createOrderTrendBucket(),
+			};
+			for (const [index, day] of trendDays.entries()) {
+				const bucket = trendBuckets.get(day.key) ?? createOrderTrendBucket();
+				const target =
+					index < 7 ? trendSummary.previous : trendSummary.current;
+				target.all += bucket.all;
+				target.direct += bucket.direct;
+				target.salesman += bucket.salesman;
+				target.estimate += bucket.estimate;
+				target.preOrder += bucket.preOrder;
+			}
 
 			return {
 				warehouse: {
@@ -2293,6 +2388,12 @@ const orderQueries = {
 						warehouseUser?.warehouseName || warehouseUser?.name || "Warehouse",
 				},
 				summary,
+				trend: trendDays.slice(7).map((day) => ({
+					date: day.key,
+					label: day.label,
+					...(trendBuckets.get(day.key) ?? createOrderTrendBucket()),
+				})),
+				trendSummary,
 				orders: orders.map((o) => {
 					const rowInvoice = invoiceByOrderId.get(o.id);
 					const rowDelivery = rowInvoice
@@ -2536,10 +2637,17 @@ const orderQueries = {
 				!orderData.modificationRejectedAt &&
 				orderData.status !== "cancelled";
 
+			const isLegacyDispatchReady =
+				["approved", "confirmed"].includes(orderData.status) &&
+				!requiresBuyerAcceptance;
 			const canPrepareDispatch =
-				orderData.status === "confirmed" &&
-				!requiresBuyerAcceptance &&
-				!currentInvoice;
+				isLegacyDispatchReady && !currentInvoice;
+			const canOpenDispatch =
+				canPrepareDispatch ||
+				["ready_for_dispatch", "partially_invoiced", "invoiced"].includes(
+					orderData.status,
+				) ||
+				!!currentInvoice;
 
 			return {
 				warehouse: {
@@ -2560,7 +2668,7 @@ const orderQueries = {
 					invoiceProgress,
 					requiresBuyerAcceptance,
 					canPrepareDispatch,
-					canOpenDispatch: canPrepareDispatch || !!currentInvoice,
+					canOpenDispatch,
 				},
 				pricingSummary,
 				sourceEstimate: sourceEstimate
@@ -2767,23 +2875,28 @@ const orderQueries = {
 					const confirmed = await tx
 						.update(order)
 						.set({
-						status: "confirmed",
-						subtotal: pricingSummary.approvedSubtotal,
-						discount: pricingSummary.discountAmount,
-						total: pricingSummary.finalTotal,
-						confirmedSubtotal: pricingSummary.approvedSubtotal,
-						confirmedTotal: pricingSummary.finalTotal,
-						confirmedAt: new Date(),
-						modifiedByWarehouseAt: hasModifications ? new Date() : null,
-						modificationAcceptedAt: null,
-						modificationRejectedAt: null,
-						adminNote: input.approvalNote || existingOrder.adminNote,
+							status: hasModifications
+								? "approved"
+								: "ready_for_dispatch",
+							subtotal: pricingSummary.approvedSubtotal,
+							discount: pricingSummary.discountAmount,
+							total: pricingSummary.finalTotal,
+							confirmedSubtotal: pricingSummary.approvedSubtotal,
+							confirmedTotal: pricingSummary.finalTotal,
+							confirmedAt: new Date(),
+							readyAt: hasModifications
+								? existingOrder.readyAt
+								: (existingOrder.readyAt ?? new Date()),
+							modifiedByWarehouseAt: hasModifications ? new Date() : null,
+							modificationAcceptedAt: null,
+							modificationRejectedAt: null,
+							adminNote: input.approvalNote || existingOrder.adminNote,
 						})
 						.where(
-						and(
-							eq(order.id, existingOrder.id),
-							eq(order.status, "pending"),
-						),
+							and(
+								eq(order.id, existingOrder.id),
+								eq(order.status, "pending"),
+							),
 						)
 						.returning({ id: order.id });
 					if (confirmed.length === 0) {
@@ -2807,12 +2920,13 @@ const orderQueries = {
 				modified: hasModifications,
 				message: hasModifications
 					? `Order ${existingOrder.orderNumber} accepted with quantity changes`
-					: `Order ${existingOrder.orderNumber} accepted`,
+					: `Order ${existingOrder.orderNumber} is ready for dispatch`,
 			};
 		}),
 
 	/**
-	 * Prepare an approved order for dispatch by generating its invoice.
+	 * Compatibility endpoint for legacy approved/confirmed orders.
+	 * Invoice creation belongs to the Dispatch board.
 	 */
 	prepareOrderForDispatch: warehouseProcedure
 		.route({
@@ -2837,7 +2951,11 @@ const orderQueries = {
 				throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 			}
 
-			if (existingOrder.status !== "confirmed") {
+			if (
+				!["approved", "confirmed", "ready_for_dispatch"].includes(
+					existingOrder.status,
+				)
+			) {
 				throw new ORPCError("BAD_REQUEST", {
 					message: "Only accepted orders can be prepared for dispatch",
 				});
@@ -2853,37 +2971,19 @@ const orderQueries = {
 				});
 			}
 
-			const existingInvoice = await db.query.invoice.findFirst({
-				where: and(
-					eq(invoice.orderId, input.orderId),
-					eq(invoice.invoiceType, "main"),
-				),
-			});
-
-			if (existingInvoice) {
-				return {
-					success: true,
-					invoice: existingInvoice,
-					message: "Invoice already prepared",
-				};
-			}
-
-			const { generateInvoiceFromOrder } = await import(
-				"./helpers/generate-invoice"
-			);
-			const newInvoice = await generateInvoiceFromOrder(input.orderId);
-
-			await db
+			const [updatedOrder] = await db
 				.update(order)
 				.set({
-					readyAt: existingOrder.readyAt || new Date(),
+					status: "ready_for_dispatch",
+					readyAt: existingOrder.readyAt ?? new Date(),
 				})
-				.where(eq(order.id, input.orderId));
+				.where(eq(order.id, input.orderId))
+				.returning();
 
 			return {
 				success: true,
-				invoice: newInvoice,
-				message: `Invoice ${newInvoice.invoiceNumber} prepared for dispatch`,
+				order: updatedOrder,
+				message: `Order ${existingOrder.orderNumber} is ready for dispatch`,
 			};
 		}),
 
@@ -2899,97 +2999,177 @@ const orderQueries = {
 		})
 		.handler(async ({ context }) => {
 			const userId = context.session.user.id;
-
-			const warehouseScope = sql`EXISTS (
-                SELECT 1 FROM "order" scoped_order
-                WHERE scoped_order."id" = ${invoice.orderId}
-                  AND scoped_order."warehouse_id" = ${userId}
-            )`;
-
-			const [readyInvoices, selfPickupInvoices, deliveryQueueCount] =
-				await Promise.all([
-					db.query.invoice.findMany({
-						where: and(
-							warehouseScope,
-							sql`${invoice.fulfillmentMode} IS NULL`,
-							eq(invoice.deliveryStatus, "not_assigned"),
-						),
-						with: {
-							customer: {
-								columns: {
-									id: true,
-									name: true,
-									phoneNumber: true,
-									shopName: true,
-								},
-							},
-							order: {
-								columns: {
-									id: true,
-									orderNumber: true,
-									shippingName: true,
-									shippingPhone: true,
-									shippingAddress: true,
-									shippingCity: true,
-									shippingArea: true,
-								},
-							},
-							items: true,
+			const dispatchOrders = await db.query.order.findMany({
+				where: and(
+					eq(order.warehouseId, userId),
+					eq(order.orderType, "b2b"),
+					inArray(order.status, [
+						"approved",
+						"confirmed",
+						"ready_for_dispatch",
+						"partially_invoiced",
+						"invoiced",
+					]),
+					or(
+						sql`${order.modifiedByWarehouseAt} IS NULL`,
+						sql`${order.modificationAcceptedAt} IS NOT NULL`,
+					),
+				),
+				with: {
+					user: {
+						columns: {
+							id: true,
+							name: true,
+							phoneNumber: true,
+							shopName: true,
+							warehouseName: true,
 						},
+					},
+					items: true,
+				},
+				orderBy: [desc(order.readyAt), desc(order.createdAt)],
+			});
+
+			const orderIds = dispatchOrders.map((row) => row.id);
+			const orderInvoices = orderIds.length
+				? await db.query.invoice.findMany({
+						where: inArray(invoice.orderId, orderIds),
+						with: { items: true },
 						orderBy: [desc(invoice.createdAt)],
-					}),
-					db.query.invoice.findMany({
-						where: and(
-							warehouseScope,
-							eq(invoice.fulfillmentMode, "self_pickup"),
-							sql`${invoice.completionOtpVerifiedAt} IS NULL`,
-						),
-						with: {
-							customer: {
-								columns: {
-									id: true,
-									name: true,
-									phoneNumber: true,
-									shopName: true,
-								},
-							},
-							order: {
-								columns: {
-									id: true,
-									orderNumber: true,
-									shippingName: true,
-									shippingPhone: true,
-									shippingAddress: true,
-									shippingCity: true,
-									shippingArea: true,
-								},
-							},
-							items: true,
-						},
-						orderBy: [desc(invoice.createdAt)],
-					}),
-					db
-						.select({ count: count() })
-						.from(invoice)
-						.where(
-							and(
-								warehouseScope,
-								eq(invoice.fulfillmentMode, "delivery"),
-								eq(invoice.deliveryStatus, "not_assigned"),
-							),
-						),
-				]);
+					})
+				: [];
+			const invoicesByOrderId = new Map<number, typeof orderInvoices>();
+			for (const invoiceRow of orderInvoices) {
+				const rows = invoicesByOrderId.get(invoiceRow.orderId) ?? [];
+				rows.push(invoiceRow);
+				invoicesByOrderId.set(invoiceRow.orderId, rows);
+			}
+
+			const cards = dispatchOrders.map((orderRow) => {
+				const invoices = invoicesByOrderId.get(orderRow.id) ?? [];
+				const progressItems = buildInvoiceProgress(orderRow.items, invoices);
+				const progress = summarizeInvoiceProgress(progressItems);
+				const normalizedStatus = deriveDispatchQueueStatus(
+					progress,
+					invoices.length,
+				);
+
+				return {
+					id: orderRow.id,
+					orderNumber: orderRow.orderNumber,
+					status: normalizedStatus,
+					createdAt: orderRow.createdAt,
+					readyAt: orderRow.readyAt,
+					customer: {
+						id: orderRow.user?.id ?? orderRow.userId,
+						name: orderRow.user?.name ?? orderRow.shippingName,
+						phoneNumber:
+							orderRow.user?.phoneNumber ?? orderRow.shippingPhone,
+						shopName: orderRow.user?.shopName ?? null,
+						warehouseName: orderRow.user?.warehouseName ?? null,
+					},
+					shipping: {
+						name: orderRow.shippingName,
+						phone: orderRow.shippingPhone,
+						address: orderRow.shippingAddress,
+						city: orderRow.shippingCity,
+						area: orderRow.shippingArea,
+					},
+					progress: {
+						...progress,
+						approvedTotal: formatMoneyValue(progress.approvedTotal),
+						invoicedTotal: formatMoneyValue(progress.invoicedTotal),
+						remainingTotal: formatMoneyValue(progress.remainingTotal),
+					},
+					items: progressItems,
+					invoices: invoices.map((invoiceRow) => ({
+						id: invoiceRow.id,
+						invoiceNumber: invoiceRow.invoiceNumber,
+						invoiceType: invoiceRow.invoiceType,
+						splitSequence: invoiceRow.splitSequence,
+						grandTotal: invoiceRow.grandTotal,
+						deliveryStatus: invoiceRow.deliveryStatus,
+						fulfillmentMode: invoiceRow.fulfillmentMode,
+						completionOtpVerifiedAt: invoiceRow.completionOtpVerifiedAt,
+						needsFulfillmentConfig:
+							!invoiceRow.fulfillmentMode &&
+							invoiceRow.deliveryStatus !== "delivered",
+						createdAt: invoiceRow.createdAt,
+					})),
+				};
+			});
 
 			return {
-				readyInvoices,
-				selfPickupInvoices,
-				deliveryQueueCount: Number(deliveryQueueCount[0]?.count || 0),
+				readyOrders: cards.filter(
+					(item) => item.status === "ready_for_dispatch",
+				),
+				partiallyInvoicedOrders: cards.filter(
+					(item) => item.status === "partially_invoiced",
+				),
+				invoicedOrders: cards.filter((item) => item.status === "invoiced"),
 			};
 		}),
 
 	/**
 	 * Select dispatch fulfillment mode for an invoice.
 	 */
+	createFullDispatchInvoice: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/dispatch/orders/full-invoice",
+			tags: ["Warehouse"],
+			summary: "Create a full invoice for remaining dispatch quantities",
+		})
+		.input(z.object({ orderId: z.number() }))
+		.handler(async ({ context, input }) => {
+			const result = await createDispatchInvoiceForOrder({
+				userId: context.session.user.id,
+				orderId: input.orderId,
+			});
+			return {
+				success: true,
+				...result,
+				message: result.fullyInvoiced
+					? "Order fully invoiced"
+					: "Invoice created",
+			};
+		}),
+
+	createPartialDispatchInvoice: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/dispatch/orders/partial-invoice",
+			tags: ["Warehouse"],
+			summary: "Create a partial invoice for selected dispatch quantities",
+		})
+		.input(
+			z.object({
+				orderId: z.number(),
+				items: z
+					.array(
+						z.object({
+							orderItemId: z.number(),
+							quantity: z.number().int().min(1),
+						}),
+					)
+					.min(1),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const result = await createDispatchInvoiceForOrder({
+				userId: context.session.user.id,
+				orderId: input.orderId,
+				items: input.items,
+			});
+			return {
+				success: true,
+				...result,
+				message: result.fullyInvoiced
+					? "Final invoice created"
+					: "Partial invoice created",
+			};
+		}),
+
 	configureDispatchFulfillment: warehouseProcedure
 		.route({
 			method: "POST",
@@ -3004,85 +3184,101 @@ const orderQueries = {
 			}),
 		)
 		.handler(async ({ context, input }) => {
-			const userId = context.session.user.id;
-
-			const existingInvoice = await db.query.invoice.findFirst({
-				where: and(
-					eq(invoice.id, input.invoiceId),
-					sql`EXISTS (
-                        SELECT 1 FROM "order" scoped_order
-                        WHERE scoped_order."id" = ${invoice.orderId}
-                          AND scoped_order."warehouse_id" = ${userId}
-                    )`,
-				),
-				with: {
-					order: {
-						columns: {
-							id: true,
-							readyAt: true,
-						},
-					},
-				},
-			});
-
-			if (!existingInvoice?.order) {
-				throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
-			}
-
-			if (existingInvoice.deliveryStatus === "delivered") {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "This invoice has already been completed",
-				});
-			}
-
-			if (
-				existingInvoice.fulfillmentMode &&
-				existingInvoice.fulfillmentMode !== input.fulfillmentMode
-			) {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "Fulfillment mode has already been selected",
-				});
-			}
-
-			const completionOtp =
-				input.fulfillmentMode === "self_pickup"
-					? Math.floor(1000 + Math.random() * 9000).toString()
-					: null;
-
-			await db.transaction(async (tx) => {
-				await tx
-					.update(invoice)
-					.set({
-						fulfillmentMode: input.fulfillmentMode,
-						completionOtp,
-						completionOtpGeneratedAt:
-							input.fulfillmentMode === "self_pickup" ? new Date() : null,
-						completionOtpVerifiedAt: null,
-						deliveryStatus:
-							input.fulfillmentMode === "self_pickup"
-								? "pending"
-								: "not_assigned",
-						deliverymanId: null,
-						vehicleType: null,
-						expectedDeliveryAt: null,
-					})
-					.where(eq(invoice.id, input.invoiceId));
-
-				if (!existingInvoice.order.readyAt) {
-					await tx
-						.update(order)
-						.set({ readyAt: new Date() })
-						.where(eq(order.id, existingInvoice.order.id));
-				}
+			const result = await configureExistingInvoiceFulfillment({
+				userId: context.session.user.id,
+				invoiceId: input.invoiceId,
+				fulfillmentMode: input.fulfillmentMode,
 			});
 
 			return {
 				success: true,
-				completionOtp,
+				completionOtp: result.completionOtp,
 				message:
 					input.fulfillmentMode === "self_pickup"
 						? "Self pickup is ready. Share the OTP at handover."
 						: "Invoice moved to delivery management.",
+			};
+		}),
+
+	confirmDispatch: warehouseProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/dispatch/orders/confirm",
+			tags: ["Warehouse"],
+			summary: "Create or configure a dispatch invoice",
+		})
+		.input(
+			z.discriminatedUnion("mode", [
+				z.object({
+					mode: z.literal("create"),
+					orderId: z.number(),
+					strategy: z.enum(["full", "partial"]),
+					items: z
+						.array(
+							z.object({
+								orderItemId: z.number(),
+								quantity: z.number().int().min(1),
+							}),
+						)
+						.optional(),
+					fulfillmentMode: z.enum(["self_pickup", "delivery"]),
+				}),
+				z.object({
+					mode: z.literal("configure"),
+					invoiceId: z.number(),
+					fulfillmentMode: z.enum(["self_pickup", "delivery"]),
+				}),
+			]),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			if (input.mode === "configure") {
+				const result = await configureExistingInvoiceFulfillment({
+					userId,
+					invoiceId: input.invoiceId,
+					fulfillmentMode: input.fulfillmentMode,
+				});
+				return {
+					success: true,
+					invoiceId: result.invoice.id,
+					invoiceNumber: result.invoice.invoiceNumber,
+					fulfillmentMode: input.fulfillmentMode,
+					fullyInvoiced: null,
+					orderStatus: null,
+					message:
+						input.fulfillmentMode === "self_pickup"
+							? "Self pickup is ready. Ask the customer for their pickup code at handover."
+							: "Invoice saved for delivery management.",
+				};
+			}
+
+			if (
+				input.strategy === "partial" &&
+				(!input.items || input.items.length === 0)
+			) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Partial dispatch requires at least one item quantity",
+				});
+			}
+			const result = await createDispatchInvoiceForOrder({
+				userId,
+				orderId: input.orderId,
+				items: input.strategy === "partial" ? input.items : undefined,
+				fulfillmentMode: input.fulfillmentMode,
+			});
+			return {
+				success: true,
+				invoiceId: result.invoice.id,
+				invoiceNumber: result.invoice.invoiceNumber,
+				fulfillmentMode: input.fulfillmentMode,
+				fullyInvoiced: result.fullyInvoiced,
+				orderStatus: result.status,
+				message:
+					input.fulfillmentMode === "self_pickup"
+						? "Pickup invoice created. Ask the customer for their pickup code at handover."
+						: result.fullyInvoiced
+							? "Order fully invoiced and saved for delivery."
+							: "Partial invoice created and saved for delivery.",
 			};
 		}),
 
@@ -3535,6 +3731,363 @@ const orderQueries = {
 			};
 		}),
 
+	getDeliveryTeamAssignments: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-team/assignments",
+			tags: ["Warehouse"],
+			summary: "List delivery groups for team assignment with KPIs",
+		})
+		.input(
+			z.object({
+				search: z.string().optional(),
+				kpi: z
+					.enum(["all", "pending_assignment", "assigned", "completed"])
+					.default("all"),
+				area: z.string().optional(),
+				dateRange: z.enum(["all", "today", "this_month"]).default("all"),
+				page: z.number().int().min(1).default(1),
+				limit: z.number().int().min(1).max(100).default(20),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const warehouseId = context.session.user.id;
+			const groupRows = await db.query.deliveryGroup.findMany({
+				where: eq(deliveryGroup.warehouseId, warehouseId),
+				with: {
+					deliveryman: {
+						columns: {
+							id: true,
+							name: true,
+							phoneNumber: true,
+						},
+					},
+					invoices: {
+						with: {
+							invoice: {
+								columns: {
+									id: true,
+									grandTotal: true,
+									fulfillmentMode: true,
+								},
+								with: {
+									order: {
+										columns: {
+											shippingArea: true,
+											orderNumber: true,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				orderBy: [desc(deliveryGroup.createdAt)],
+			});
+
+			const groups = groupRows
+				.filter((group) =>
+					group.invoices.some(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					),
+				)
+				.map((group) => {
+					const internalInvoices = group.invoices.filter(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					);
+					const totalAmount = internalInvoices.reduce((sum, link) => {
+						const value = Number.parseFloat(link.invoice?.grandTotal ?? "0");
+						return sum + (Number.isNaN(value) ? 0 : value);
+					}, 0);
+
+					return {
+						id: group.id,
+						groupName: group.groupName,
+						status: group.status,
+						kpiBucket: getDeliveryAssignmentKpiBucket(group.status),
+						totalInvoices: group.totalInvoices,
+						completedInvoices: group.completedInvoices,
+						totalAmount: formatMoneyValue(totalAmount),
+						areaLabel: rollUpDeliveryAreaLabel(
+							internalInvoices.map(
+								(link) => link.invoice?.order?.shippingArea,
+							),
+						),
+						createdAt: group.createdAt,
+						rider: group.deliveryman
+							? {
+									id: group.deliveryman.id,
+									name: group.deliveryman.name,
+									phoneNumber: group.deliveryman.phoneNumber,
+								}
+							: null,
+						hasRider: !!group.deliverymanId,
+					};
+				});
+
+			const kpis = {
+				total: groups.length,
+				pendingAssignment: groups.filter(
+					(group) => group.kpiBucket === "pending_assignment",
+				).length,
+				assigned: groups.filter((group) => group.kpiBucket === "assigned")
+					.length,
+				completed: groups.filter((group) => group.kpiBucket === "completed")
+					.length,
+			};
+
+			const now = new Date();
+			const startOfToday = new Date(now);
+			startOfToday.setHours(0, 0, 0, 0);
+			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+			const search = input.search?.trim().toLowerCase();
+
+			const filteredGroups = groups.filter((group) => {
+				if (input.kpi !== "all" && group.kpiBucket !== input.kpi) {
+					return false;
+				}
+				if (
+					input.area &&
+					input.area !== "all" &&
+					group.areaLabel !== input.area
+				) {
+					return false;
+				}
+				if (
+					search &&
+					!group.groupName.toLowerCase().includes(search) &&
+					!String(group.id).includes(search) &&
+					!(group.rider?.name ?? "").toLowerCase().includes(search) &&
+					!group.areaLabel.toLowerCase().includes(search)
+				) {
+					return false;
+				}
+				if (
+					input.dateRange === "today" &&
+					group.createdAt < startOfToday
+				) {
+					return false;
+				}
+				if (
+					input.dateRange === "this_month" &&
+					group.createdAt < startOfMonth
+				) {
+					return false;
+				}
+				return true;
+			});
+
+			const total = filteredGroups.length;
+			const offset = (input.page - 1) * input.limit;
+			const areaOptions = [
+				...new Set(
+					groups
+						.map((group) => group.areaLabel)
+						.filter((area) => area && area !== "—"),
+				),
+			].sort();
+
+			return {
+				groups: filteredGroups.slice(offset, offset + input.limit),
+				kpis,
+				areaOptions,
+				pagination: {
+					page: input.page,
+					limit: input.limit,
+					total,
+					totalPages: Math.max(1, Math.ceil(total / input.limit)),
+				},
+			};
+		}),
+
+	getDeliveryTeamRidersOverview: warehouseProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/delivery-team/riders-overview",
+			tags: ["Warehouse"],
+			summary: "Rider-centric delivery assignment overview",
+		})
+		.input(
+			z.object({
+				search: z.string().optional(),
+				status: z.enum(["all", "active", "idle"]).default("all"),
+				area: z.string().optional(),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const warehouseId = context.session.user.id;
+			const riders = await db.query.user.findMany({
+				where: and(
+					eq(user.warehouseId, warehouseId),
+					eq(user.role, "deliveryman"),
+				),
+				columns: {
+					id: true,
+					name: true,
+					phoneNumber: true,
+					banned: true,
+					serviceArea: true,
+				},
+				orderBy: [user.name],
+			});
+
+			const [activeGroups, pendingGroupRows] = await Promise.all([
+				db.query.deliveryGroup.findMany({
+					where: and(
+						eq(deliveryGroup.warehouseId, warehouseId),
+						inArray(deliveryGroup.status, [
+							"assigned",
+							"out_for_delivery",
+							"partial",
+						]),
+					),
+					with: {
+						invoices: {
+							with: {
+								invoice: {
+									columns: { fulfillmentMode: true },
+									with: {
+										order: { columns: { shippingArea: true } },
+									},
+								},
+							},
+						},
+					},
+					orderBy: [desc(deliveryGroup.createdAt)],
+				}),
+				db.query.deliveryGroup.findMany({
+					where: and(
+						eq(deliveryGroup.warehouseId, warehouseId),
+						eq(deliveryGroup.status, "pending_assignment"),
+					),
+					with: {
+						invoices: {
+							with: {
+								invoice: {
+									columns: { fulfillmentMode: true },
+									with: {
+										order: { columns: { shippingArea: true } },
+									},
+								},
+							},
+						},
+					},
+					orderBy: [desc(deliveryGroup.createdAt)],
+				}),
+			]);
+
+			const activeGroupByRiderId = new Map<
+				string,
+				(typeof activeGroups)[number]
+			>();
+			for (const group of activeGroups) {
+				if (!group.deliverymanId || activeGroupByRiderId.has(group.deliverymanId)) {
+					continue;
+				}
+				activeGroupByRiderId.set(group.deliverymanId, group);
+			}
+
+			const pendingGroups = pendingGroupRows
+				.filter((group) =>
+					group.invoices.some(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					),
+				)
+				.map((group) => {
+					const internalInvoices = group.invoices.filter(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					);
+					return {
+						id: group.id,
+						groupName: group.groupName,
+						areaLabel: rollUpDeliveryAreaLabel(
+							internalInvoices.map(
+								(link) => link.invoice?.order?.shippingArea,
+							),
+						),
+						totalInvoices: group.totalInvoices,
+					};
+				});
+
+			const mappedRiders = riders.map((rider) => {
+				const group = activeGroupByRiderId.get(rider.id) ?? null;
+				const internalInvoices =
+					group?.invoices.filter(
+						(link) => link.invoice?.fulfillmentMode === "internal_delivery",
+					) ?? [];
+				const groupArea = rollUpDeliveryAreaLabel(
+					internalInvoices.map((link) => link.invoice?.order?.shippingArea),
+				);
+				const isActive = !!group && internalInvoices.length > 0 && !rider.banned;
+
+				return {
+					id: rider.id,
+					name: rider.name,
+					phoneNumber: rider.phoneNumber,
+					banned: rider.banned ?? false,
+					serviceArea: rider.serviceArea,
+					status: isActive ? ("active" as const) : ("idle" as const),
+					areaLabel: isActive ? groupArea : (rider.serviceArea ?? "—"),
+					activeGroup: isActive
+						? {
+								id: group.id,
+								groupName: group.groupName,
+								areaLabel: groupArea,
+								status: group.status,
+							}
+						: null,
+					totalOrders: isActive ? group.totalInvoices : 0,
+					completedOrders: isActive ? group.completedInvoices : 0,
+					vehicleType: isActive ? group.vehicleType : null,
+				};
+			});
+
+			const kpis = {
+				totalRiders: riders.filter((rider) => !rider.banned).length,
+				ridersAssigned: mappedRiders.filter(
+					(rider) => rider.status === "active",
+				).length,
+				unassignedGroups: pendingGroups.length,
+			};
+			const search = input.search?.trim().toLowerCase();
+			const filteredRiders = mappedRiders.filter((rider) => {
+				if (input.status !== "all" && rider.status !== input.status) {
+					return false;
+				}
+				if (
+					input.area &&
+					input.area !== "all" &&
+					rider.areaLabel !== input.area
+				) {
+					return false;
+				}
+				if (
+					search &&
+					!rider.name.toLowerCase().includes(search) &&
+					!(rider.phoneNumber ?? "").toLowerCase().includes(search) &&
+					!rider.areaLabel.toLowerCase().includes(search) &&
+					!(rider.activeGroup?.groupName ?? "").toLowerCase().includes(search)
+				) {
+					return false;
+				}
+				return true;
+			});
+			const areaOptions = [
+				...new Set(
+					mappedRiders
+						.map((rider) => rider.areaLabel)
+						.filter((area) => area && area !== "—"),
+				),
+			].sort();
+
+			return {
+				riders: filteredRiders,
+				kpis,
+				pendingGroups,
+				areaOptions,
+			};
+		}),
+
 	/**
 	 * Select the final delivery type inside Delivery Management.
 	 */
@@ -3807,7 +4360,12 @@ const orderQueries = {
 				confirmed: ["pending"],
 				processing: ["confirmed"],
 				delivered: ["confirmed", "processing"],
-				cancelled: ["pending", "confirmed"],
+				cancelled: [
+					"pending",
+					"approved",
+					"confirmed",
+					"ready_for_dispatch",
+				],
 			};
 			if (!validTransitions[input.status]?.includes(existingOrder.status)) {
 				throw new ORPCError("BAD_REQUEST", {
@@ -3816,10 +4374,14 @@ const orderQueries = {
 			}
 
 			const updateData: Record<string, any> = {
-				status: input.status,
+				status:
+					input.status === "confirmed" ? "ready_for_dispatch" : input.status,
 			};
 
-			if (input.status === "confirmed") updateData.confirmedAt = new Date();
+			if (input.status === "confirmed") {
+				updateData.confirmedAt = new Date();
+				updateData.readyAt = new Date();
+			}
 			if (input.status === "delivered") updateData.deliveredAt = new Date();
 			if (input.status === "cancelled") updateData.cancelledAt = new Date();
 
@@ -3837,7 +4399,7 @@ const orderQueries = {
 
 					if (
 						input.status === "cancelled" &&
-						existingOrder.status === "confirmed"
+						existingOrder.status !== "pending"
 					) {
 						await releaseB2bOrderReservations(tx, {
 							warehouseId: userId,
@@ -4113,7 +4675,11 @@ const orderQueries = {
 				status: z
 					.enum([
 						"pending",
+						"approved",
 						"confirmed",
+						"ready_for_dispatch",
+						"partially_invoiced",
+						"invoiced",
 						"processing",
 						"delivered",
 						"cancelled",
@@ -4444,7 +5010,7 @@ const orderQueries = {
 				throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 			}
 
-			if (!["processing", "delivered"].includes(existingOrder.status)) {
+			if (existingOrder.status !== "delivered") {
 				throw new ORPCError("BAD_REQUEST", {
 					message: `Cannot receive an order with status '${existingOrder.status}'`,
 				});
@@ -4456,33 +5022,66 @@ const orderQueries = {
 				});
 			}
 
-			await db.transaction(async (tx) => {
-				if (input.receivedItems && input.receivedItems.length > 0) {
-					for (const receivedItem of input.receivedItems) {
-						const existingItem = existingOrder.items.find(
-							(item) => item.id === receivedItem.itemId,
-						);
-						if (!existingItem) continue;
+			const suppliedReceipts = new Map<number, number>();
+			for (const receipt of input.receivedItems ?? []) {
+				if (suppliedReceipts.has(receipt.itemId)) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: `Order item ${receipt.itemId} is duplicated`,
+					});
+				}
+				if (!existingOrder.items.some((item) => item.id === receipt.itemId)) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: `Order item ${receipt.itemId} does not belong to this order`,
+					});
+				}
+				suppliedReceipts.set(receipt.itemId, receipt.receivedQty);
+			}
 
-						const effectiveQty =
-							existingItem.modifiedQty ?? existingItem.quantity;
-						if (receivedItem.receivedQty !== effectiveQty) {
-							await tx
-								.update(orderItem)
-								.set({ modifiedQty: receivedItem.receivedQty })
-								.where(eq(orderItem.id, receivedItem.itemId));
-						}
-					}
+			const receiptRows = existingOrder.items.map((item) => {
+				const approvedQty = item.modifiedQty ?? item.quantity;
+				const deliveredQty = item.deliveredQty ?? 0;
+				const receivedQty = suppliedReceipts.get(item.id) ?? deliveredQty;
+				if (deliveredQty < approvedQty) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: `${item.productName} is not fully delivered yet`,
+					});
+				}
+				if (
+					receivedQty < 0 ||
+					receivedQty > deliveredQty ||
+					receivedQty > approvedQty
+				) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: `Received quantity for ${item.productName} must be between 0 and ${Math.min(deliveredQty, approvedQty)}`,
+					});
+				}
+				return { itemId: item.id, receivedQty };
+			});
+
+			await db.transaction(async (tx) => {
+				const claimed = await tx
+					.update(order)
+					.set({ receivedAt: new Date() })
+					.where(
+						and(
+							eq(order.id, input.orderId),
+							eq(order.status, "delivered"),
+							sql`${order.receivedAt} IS NULL`,
+						),
+					)
+					.returning({ id: order.id });
+				if (claimed.length === 0) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "Order receipt was already completed or its status changed",
+					});
 				}
 
-				await tx
-					.update(order)
-					.set({
-						status: "delivered",
-						deliveredAt: existingOrder.deliveredAt || new Date(),
-						receivedAt: new Date(),
-					})
-					.where(eq(order.id, input.orderId));
+				for (const receipt of receiptRows) {
+					await tx
+						.update(orderItem)
+						.set({ receivedQty: receipt.receivedQty })
+						.where(eq(orderItem.id, receipt.itemId));
+				}
 
 				await convertB2bOrderToRetailInventory(tx, input.orderId);
 			});
@@ -4517,7 +5116,14 @@ const orderQueries = {
 				throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 			}
 
-			if (!["pending", "confirmed"].includes(existingOrder.status)) {
+			if (
+				![
+					"pending",
+					"approved",
+					"confirmed",
+					"ready_for_dispatch",
+				].includes(existingOrder.status)
+			) {
 				throw new ORPCError("BAD_REQUEST", {
 					message: `Cannot cancel an order with status '${existingOrder.status}'`,
 				});
@@ -4543,7 +5149,7 @@ const orderQueries = {
 					});
 				}
 
-				if (existingOrder.warehouseId && existingOrder.status === "confirmed") {
+				if (existingOrder.warehouseId && existingOrder.status !== "pending") {
 					await releaseB2bOrderReservations(tx, {
 						warehouseId: existingOrder.warehouseId,
 						items: existingOrder.items,
@@ -4600,7 +5206,8 @@ const orderQueries = {
 				.set({
 					modificationAcceptedAt: new Date(),
 					confirmedAt: existingOrder.confirmedAt || new Date(),
-					status: "confirmed",
+					readyAt: existingOrder.readyAt || new Date(),
+					status: "ready_for_dispatch",
 				})
 				.where(eq(order.id, input.orderId));
 
@@ -4650,21 +5257,34 @@ const orderQueries = {
 			}
 
 			await db.transaction(async (tx) => {
-				if (existingOrder.warehouseId) {
-					await releaseB2bOrderReservations(tx, {
-						warehouseId: existingOrder.warehouseId,
-						items: existingOrder.items,
-					});
-				}
-
-				await tx
+				const rejected = await tx
 					.update(order)
 					.set({
 						modificationRejectedAt: new Date(),
 						status: "cancelled",
 						cancelledAt: new Date(),
 					})
-					.where(eq(order.id, input.orderId));
+					.where(
+						and(
+							eq(order.id, input.orderId),
+							inArray(order.status, ["approved", "confirmed"]),
+							sql`${order.modificationAcceptedAt} IS NULL`,
+							sql`${order.modificationRejectedAt} IS NULL`,
+						),
+					)
+					.returning({ id: order.id });
+				if (rejected.length === 0) {
+					throw new ORPCError("BAD_REQUEST", {
+						message: "Modification was already resolved or dispatched",
+					});
+				}
+
+				if (existingOrder.warehouseId) {
+					await releaseB2bOrderReservations(tx, {
+						warehouseId: existingOrder.warehouseId,
+						items: existingOrder.items,
+					});
+				}
 			});
 
 			return {
