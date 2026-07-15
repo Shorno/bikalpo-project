@@ -4,26 +4,25 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  BarChart3,
   Box,
   Boxes,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Edit,
-  Package,
-  PackageOpen,
+  CircleOff,
+  Edit3,
   PackagePlus,
   Plus,
+  RotateCcw,
   Search,
-  XCircle,
+  Settings2,
+  SlidersHorizontal,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { type ElementType, Fragment, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -41,113 +40,192 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useFilterOptions } from "@/hooks/use-catalog-api";
 import {
   useShopProductDetail,
   useShopProductKPIs,
   useShopProducts,
 } from "@/hooks/use-shop-products-api";
 
-// ────────────────────────────────────────────────────────────────
-// KPI Card
-// ────────────────────────────────────────────────────────────────
+type ProductStatus =
+  | "in_stock"
+  | "attention"
+  | "out_of_stock"
+  | "setup_required";
+type VariantStatus = "in_stock" | "low_stock" | "out_of_stock";
+type ProductItem = NonNullable<
+  ReturnType<typeof useShopProducts>["data"]
+>["items"][number];
+type QuantityGroup = ProductItem["quantityGroups"][number];
+type ProductDetail = NonNullable<
+  ReturnType<typeof useShopProductDetail>["data"]
+>;
+type ProductVariant = ProductDetail["variants"][number];
 
-function KPICard({
-  title,
-  count,
-  icon: Icon,
-  color,
-  isActive,
-  onClick,
-}: {
-  title: string;
-  count: number;
-  icon: React.ElementType;
-  color: string;
-  isActive?: boolean;
-  onClick?: () => void;
-}) {
+const numberFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+});
+const currencyFormatter = new Intl.NumberFormat("en-BD", {
+  style: "currency",
+  currency: "BDT",
+  maximumFractionDigits: 2,
+});
+
+function formatNumber(value: number) {
+  return numberFormatter.format(value);
+}
+
+function formatUnit(unit: string, quantity: number) {
+  const label = unit.toLowerCase();
+  if (
+    quantity === 1 ||
+    ["kg", "g", "gram", "l", "ml"].includes(label) ||
+    label.endsWith("s")
+  ) {
+    return label;
+  }
+  return label.endsWith("x") ? `${label}es` : `${label}s`;
+}
+
+function formatQuantity(quantity: number, unit: string) {
+  return `${formatNumber(quantity)} ${formatUnit(unit, quantity)}`;
+}
+
+function ProductStatusBadge({ status }: { status: ProductStatus }) {
+  const content = {
+    in_stock: {
+      label: "In stock",
+      icon: CheckCircle2,
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    },
+    attention: {
+      label: "Needs attention",
+      icon: AlertTriangle,
+      className: "border-amber-200 bg-amber-50 text-amber-800",
+    },
+    out_of_stock: {
+      label: "Out of stock",
+      icon: CircleOff,
+      className: "border-red-200 bg-red-50 text-red-700",
+    },
+    setup_required: {
+      label: "Setup required",
+      icon: Settings2,
+      className: "border-slate-300 bg-slate-100 text-slate-700",
+    },
+  }[status];
+  const Icon = content.icon;
+
   return (
-    <Card
-      className={`cursor-pointer transition-all hover:shadow-md ${
-        isActive ? `ring-2 ring-offset-1 ${color.replace("bg-", "ring-")}` : ""
-      }`}
-      onClick={onClick}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{count}</p>
-          </div>
-          <div className={`p-3 rounded-lg ${color} bg-opacity-10`}>
-            <Icon className={`h-5 w-5 ${color.replace("bg-", "text-")}`} />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <Badge variant="outline" className={`gap-1.5 ${content.className}`}>
+      <Icon className="size-3" aria-hidden="true" />
+      {content.label}
+    </Badge>
   );
 }
 
-// ────────────────────────────────────────────────────────────────
-// Stock Status Badge
-// ────────────────────────────────────────────────────────────────
+function VariantStatusBadge({ status }: { status: VariantStatus }) {
+  const value = {
+    in_stock: {
+      label: "In stock",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    },
+    low_stock: {
+      label: "Low stock",
+      className: "border-amber-200 bg-amber-50 text-amber-800",
+    },
+    out_of_stock: {
+      label: "Out of stock",
+      className: "border-red-200 bg-red-50 text-red-700",
+    },
+  }[status];
 
-function StockBadge({ status }: { status: string }) {
-  switch (status) {
-    case "in_stock":
-      return (
-        <Badge
-          variant="outline"
-          className="bg-emerald-50 text-emerald-700 border-emerald-200"
-        >
-          <CheckCircle2 className="w-3 h-3 mr-1" />
-          In Stock
-        </Badge>
-      );
-    case "low":
-      return (
-        <Badge
-          variant="outline"
-          className="bg-amber-50 text-amber-700 border-amber-200"
-        >
-          <AlertTriangle className="w-3 h-3 mr-1" />
-          Low Stock
-        </Badge>
-      );
-    case "out_of_stock":
-      return (
-        <Badge
-          variant="outline"
-          className="bg-red-50 text-red-700 border-red-200"
-        >
-          <XCircle className="w-3 h-3 mr-1" />
-          Out of Stock
-        </Badge>
-      );
-    default:
-      return null;
-  }
+  return (
+    <Badge variant="outline" className={value.className}>
+      {value.label}
+    </Badge>
+  );
 }
 
-// ────────────────────────────────────────────────────────────────
-// Main Page
-// ────────────────────────────────────────────────────────────────
+function QuantityLines({ groups }: { groups: QuantityGroup[] }) {
+  if (groups.length === 0) {
+    return (
+      <span className="text-xs text-muted-foreground">No unit-safe total</span>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      {groups.map((group) => (
+        <div
+          key={`${group.family}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
+          className="text-xs"
+        >
+          <span className="font-mono font-medium tabular-nums text-foreground">
+            {formatQuantity(group.available, group.inventoryUnit)}
+          </span>
+          <span className="text-muted-foreground"> available</span>
+          {group.reserved > 0 && (
+            <span className="text-muted-foreground">
+              {` · ${formatQuantity(group.reserved, group.inventoryUnit)} reserved`}
+            </span>
+          )}
+          {group.referenceMeasurement && (
+            <span className="block text-[11px] text-muted-foreground">
+              {formatNumber(group.referenceMeasurement.available)}{" "}
+              {group.referenceMeasurement.unit}
+              {" reference quantity"}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+  icon: Icon,
+  tone = "default",
+}: {
+  label: string;
+  value: number;
+  icon: ElementType;
+  tone?: "default" | "warning" | "danger";
+}) {
+  const toneClass = {
+    default: "text-slate-500",
+    warning: "text-amber-700",
+    danger: "text-red-700",
+  }[tone];
+
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-4 py-3.5 sm:px-5">
+      <Icon className={`size-4 shrink-0 ${toneClass}`} aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="truncate text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          {label}
+        </p>
+        <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function ShopProductsPage() {
   const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState<number | undefined>();
-  const [brandId, setBrandId] = useState<number | undefined>();
-  const [stockStatus, setStockStatus] = useState<
-    "all" | "in_stock" | "low" | "out_of_stock"
-  >("all");
+  const [categoryId, setCategoryId] = useState<number>();
+  const [brandId, setBrandId] = useState<number>();
+  const [stockStatus, setStockStatus] = useState<"all" | ProductStatus>("all");
   const [page, setPage] = useState(1);
   const [expandedProductId, setExpandedProductId] = useState<number | null>(
     null,
   );
 
   const { data: kpis, isLoading: kpisLoading } = useShopProductKPIs();
-  const { data, isLoading, isError } = useShopProducts({
+  const { data, isLoading, isError, refetch } = useShopProducts({
     search: search || undefined,
     categoryId,
     brandId,
@@ -155,556 +233,781 @@ export default function ShopProductsPage() {
     page,
     limit: 20,
   });
-  const { data: filterData } = useFilterOptions();
 
   const items = data?.items ?? [];
   const pagination = data?.pagination;
-  const categories = filterData?.categories ?? [];
-  const brands = filterData?.brands ?? [];
+  const categories = data?.filterOptions.categories ?? [];
+  const brands = data?.filterOptions.brands ?? [];
+  const filtersActive = Boolean(
+    search || categoryId || brandId || stockStatus !== "all",
+  );
 
-  // Clicking a KPI card sets the stock filter
-  const handleKPIClick = (
-    status: "all" | "in_stock" | "low" | "out_of_stock",
-  ) => {
-    setStockStatus(status === stockStatus ? "all" : status);
+  function clearFilters() {
+    setSearch("");
+    setCategoryId(undefined);
+    setBrandId(undefined);
+    setStockStatus("all");
     setPage(1);
-  };
+  }
+
+  function toggleExpanded(productId: number) {
+    setExpandedProductId((current) =>
+      current === productId ? null : productId,
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <main className="space-y-5 pb-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Boxes className="h-6 w-6 text-primary" />
-            Inventory / Products
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Inventory registry
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Products
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Retail Control Panel — Manage your product inventory, stock levels,
-            and pricing
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            Brand products with exact Admin-configured variants and unit-safe
+            stock.
           </p>
         </div>
-        <Link href="/dashboard/product-catalog">
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            Add Product
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/stock/add">
+              <PackagePlus className="size-4" aria-hidden="true" />
+              Add stock
+            </Link>
           </Button>
-        </Link>
-      </div>
+          <Button asChild>
+            <Link href="/dashboard/product-catalog">
+              <Plus className="size-4" aria-hidden="true" />
+              Add product
+            </Link>
+          </Button>
+        </div>
+      </header>
 
-      {/* KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <section
+        aria-label="Product inventory summary"
+        className="grid overflow-hidden rounded-lg border bg-background sm:grid-cols-2 lg:grid-cols-4 lg:divide-x"
+      >
         {kpisLoading ? (
-          <>
-            {[1, 2, 3, 4].map((i) => (
-              <Card key={i}>
-                <CardContent className="p-4">
-                  <Skeleton className="h-4 w-20 mb-2" />
-                  <Skeleton className="h-8 w-12" />
-                </CardContent>
-              </Card>
-            ))}
-          </>
+          Array.from({ length: 4 }).map((_, index) => (
+            <div
+              key={index}
+              className="space-y-2 border-b p-4 last:border-b-0 sm:p-5 lg:border-b-0"
+            >
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-6 w-12" />
+            </div>
+          ))
         ) : (
           <>
-            <KPICard
-              title="Total Products"
-              count={kpis?.totalProducts ?? 0}
-              icon={Package}
-              color="bg-blue-500"
-              isActive={stockStatus === "all"}
-              onClick={() => handleKPIClick("all")}
+            <SummaryMetric
+              label="Active products"
+              value={kpis?.activeProducts ?? 0}
+              icon={Boxes}
             />
-            <KPICard
-              title="In Stock"
-              count={kpis?.inStock ?? 0}
-              icon={CheckCircle2}
-              color="bg-emerald-500"
-              isActive={stockStatus === "in_stock"}
-              onClick={() => handleKPIClick("in_stock")}
+            <SummaryMetric
+              label="Active variants"
+              value={kpis?.activeVariants ?? 0}
+              icon={SlidersHorizontal}
             />
-            <KPICard
-              title="Low Stock"
-              count={kpis?.lowStock ?? 0}
+            <SummaryMetric
+              label="Low-stock variants"
+              value={kpis?.lowStockVariants ?? 0}
               icon={AlertTriangle}
-              color="bg-amber-500"
-              isActive={stockStatus === "low"}
-              onClick={() => handleKPIClick("low")}
+              tone="warning"
             />
-            <KPICard
-              title="Out of Stock"
-              count={kpis?.outOfStock ?? 0}
-              icon={XCircle}
-              color="bg-red-500"
-              isActive={stockStatus === "out_of_stock"}
-              onClick={() => handleKPIClick("out_of_stock")}
+            <SummaryMetric
+              label="Out-of-stock variants"
+              value={kpis?.outOfStockVariants ?? 0}
+              icon={CircleOff}
+              tone="danger"
             />
           </>
         )}
-      </div>
+      </section>
 
-      {/* Search & Filter Bar */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="Search by product name or SKU..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
+      <section aria-label="Product filters" className="space-y-3">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_190px_190px_190px_auto]">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              aria-label="Search products"
+              placeholder="Search product, brand, variant, or SKU"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              className="pl-9"
+            />
+          </div>
+          <Select
+            value={categoryId?.toString() ?? "all"}
+            onValueChange={(value) => {
+              setCategoryId(value === "all" ? undefined : Number(value));
               setPage(1);
             }}
-            className="pl-9"
-          />
-        </div>
-        <Select
-          value={categoryId?.toString() ?? "all"}
-          onValueChange={(v) => {
-            setCategoryId(v === "all" ? undefined : Number(v));
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id.toString()}>
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={stockStatus}
-          onValueChange={(v) => {
-            setStockStatus(v as typeof stockStatus);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Stock Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="in_stock">In Stock</SelectItem>
-            <SelectItem value="low">Low Stock</SelectItem>
-            <SelectItem value="out_of_stock">Out of Stock</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={brandId?.toString() ?? "all"}
-          onValueChange={(v) => {
-            setBrandId(v === "all" ? undefined : Number(v));
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="All Brands" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Brands</SelectItem>
-            {brands.map((b: any) => (
-              <SelectItem key={b.id} value={b.id.toString()}>
-                {b.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Product Table */}
-      {isLoading ? (
-        <ProductsTableSkeleton />
-      ) : isError ? (
-        <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
-          <XCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">Failed to load products</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Please try refreshing the page.
-          </p>
-        </div>
-      ) : items.length === 0 ? (
-        <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
-          <PackageOpen className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-          <p className="text-gray-500 font-medium text-lg">No products found</p>
-          <p className="text-sm text-gray-400 mt-1 mb-4">
-            {search || categoryId || stockStatus !== "all"
-              ? "Try adjusting your filters"
-              : "Add your first product to get started"}
-          </p>
-          {!search && !categoryId && stockStatus === "all" && (
-            <Link href="/dashboard/product-catalog">
-              <Button variant="outline" className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add First Product
-              </Button>
-            </Link>
+          >
+            <SelectTrigger className="w-full" aria-label="Filter by category">
+              <SelectValue placeholder="All categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              {categories.map((category) => (
+                <SelectItem key={category.id} value={category.id.toString()}>
+                  {category.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={brandId?.toString() ?? "all"}
+            onValueChange={(value) => {
+              setBrandId(value === "all" ? undefined : Number(value));
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-full" aria-label="Filter by brand">
+              <SelectValue placeholder="All brands" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All brands</SelectItem>
+              {brands.map((brand) => (
+                <SelectItem key={brand.id} value={brand.id.toString()}>
+                  {brand.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={stockStatus}
+            onValueChange={(value) => {
+              setStockStatus(value as "all" | ProductStatus);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger
+              className="w-full"
+              aria-label="Filter by stock status"
+            >
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="in_stock">In stock</SelectItem>
+              <SelectItem value="attention">Needs attention</SelectItem>
+              <SelectItem value="out_of_stock">Out of stock</SelectItem>
+              <SelectItem value="setup_required">Setup required</SelectItem>
+            </SelectContent>
+          </Select>
+          {filtersActive && (
+            <Button
+              variant="ghost"
+              onClick={clearFilters}
+              className="justify-start xl:justify-center"
+            >
+              <RotateCcw className="size-4" aria-hidden="true" />
+              Clear
+            </Button>
           )}
         </div>
+        {kpis && kpis.configurationIssueCount > 0 && (
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Settings2 className="size-3.5" aria-hidden="true" />
+            {kpis.configurationIssueCount} active variant
+            {kpis.configurationIssueCount === 1 ? " needs" : "s need"} Admin
+            setup.
+          </p>
+        )}
+      </section>
+
+      {isLoading ? (
+        <ProductsSkeleton />
+      ) : isError ? (
+        <section className="rounded-lg border bg-background px-6 py-14 text-center">
+          <CircleOff
+            className="mx-auto size-8 text-red-600"
+            aria-hidden="true"
+          />
+          <h2 className="mt-3 text-base font-semibold">
+            Products could not be loaded
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Try the request again.
+          </p>
+          <Button
+            variant="outline"
+            className="mt-4"
+            onClick={() => void refetch()}
+          >
+            Retry
+          </Button>
+        </section>
+      ) : items.length === 0 ? (
+        <section className="rounded-lg border bg-background px-6 py-14 text-center">
+          <Box
+            className="mx-auto size-8 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <h2 className="mt-3 text-base font-semibold">
+            {filtersActive
+              ? "No products match these filters"
+              : "No products configured"}
+          </h2>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+            {filtersActive
+              ? "Clear or adjust the filters to see more products."
+              : "Choose a product and brand from the catalog to create your first retail product."}
+          </p>
+          {filtersActive ? (
+            <Button variant="outline" className="mt-4" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          ) : (
+            <Button asChild className="mt-4">
+              <Link href="/dashboard/product-catalog">
+                Open product catalog
+              </Link>
+            </Button>
+          )}
+        </section>
       ) : (
         <>
-          <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+          <div className="hidden overflow-hidden rounded-lg border bg-background lg:block">
             <Table>
               <TableHeader>
-                <TableRow className="bg-gray-50/50">
-                  <TableHead className="w-[50px]">#</TableHead>
-                  <TableHead className="w-[60px]">Image</TableHead>
-                  <TableHead>Product Name</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-center">Variants</TableHead>
-                  <TableHead className="text-right">Stock Level</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-12">
+                    <span className="sr-only">Expand</span>
+                  </TableHead>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Classification</TableHead>
+                  <TableHead className="w-24 text-center">Variants</TableHead>
+                  <TableHead className="min-w-60">Available stock</TableHead>
+                  <TableHead className="w-40">Status</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item, idx) => {
+                {items.map((item) => {
                   const isExpanded = expandedProductId === item.productId;
+                  const panelId = `product-${item.productId}-variants`;
                   return (
-                    <>
+                    <Fragment key={item.productId}>
                       <TableRow
-                        key={item.productId}
-                        className={`cursor-pointer hover:bg-gray-50/80 transition-colors ${isExpanded ? "bg-blue-50/30" : ""}`}
-                        onClick={() =>
-                          setExpandedProductId(
-                            isExpanded ? null : item.productId,
-                          )
-                        }
+                        className={isExpanded ? "bg-blue-50/40" : undefined}
                       >
-                        <TableCell className="text-muted-foreground font-mono text-sm">
-                          {(page - 1) * 20 + idx + 1}
-                        </TableCell>
                         <TableCell>
-                          {item.image ? (
-                            <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 border">
-                              <Image
-                                src={item.image}
-                                alt={item.name}
-                                width={40}
-                                height={40}
-                                className="object-cover w-full h-full"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-10 h-10 rounded-md bg-gray-100 border flex items-center justify-center">
-                              <Box className="w-4 h-4 text-gray-400" />
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${item.name} variants`}
+                            aria-expanded={isExpanded}
+                            aria-controls={panelId}
+                            onClick={() => toggleExpanded(item.productId)}
+                          >
                             {isExpanded ? (
-                              <ChevronDown className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                              <ChevronDown
+                                className="size-4"
+                                aria-hidden="true"
+                              />
                             ) : (
-                              <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                              <ChevronRight
+                                className="size-4"
+                                aria-hidden="true"
+                              />
                             )}
-                            <div>
-                              <span className="font-medium text-gray-900">
-                                {item.name}
-                              </span>
-                              {item.coreProduct && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  Core: {item.coreProduct.name}
-                                </p>
-                              )}
-                            </div>
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          <ProductIdentity item={item} />
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm font-medium">
+                            {item.brand.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.category.name}
+                          </p>
+                        </TableCell>
+                        <TableCell className="text-center font-mono text-sm tabular-nums">
+                          {item.variantCount}
+                        </TableCell>
+                        <TableCell>
+                          <QuantityLines groups={item.quantityGroups} />
+                        </TableCell>
+                        <TableCell>
+                          <ProductStatusBadge status={item.aggregateStatus} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon-sm" asChild>
+                              <Link
+                                href={`/dashboard/products/${item.productId}`}
+                                aria-label={`View ${item.name}`}
+                              >
+                                <ArrowRight
+                                  className="size-4"
+                                  aria-hidden="true"
+                                />
+                              </Link>
+                            </Button>
+                            <Button variant="ghost" size="icon-sm" asChild>
+                              <Link
+                                href={`/dashboard/products/${item.productId}/edit`}
+                                aria-label={`Edit ${item.name}`}
+                              >
+                                <Edit3 className="size-4" aria-hidden="true" />
+                              </Link>
+                            </Button>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="font-normal">
-                            {item.category?.name ?? "—"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                            <Package className="w-3.5 h-3.5" />
-                            {item.variantCount}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {item.totalStock.toFixed(0)} {item.unit}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <StockBadge status={item.stockStatus} />
-                        </TableCell>
                       </TableRow>
-                      {/* Expandable Product Detail */}
                       {isExpanded && (
-                        <TableRow key={`${item.productId}-detail`}>
-                          <TableCell colSpan={7} className="p-0 bg-gray-50/60">
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={7} className="bg-slate-50/70 p-0">
                             <ExpandedProductDetail
                               productId={item.productId}
-                              productName={item.name}
+                              panelId={panelId}
                             />
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </TableBody>
             </Table>
           </div>
 
-          {/* Pagination */}
-          {pagination && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between px-2">
-              <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * 20 + 1}–
-                {Math.min(page * 20, pagination.totalCount)} of{" "}
-                {pagination.totalCount} products
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
+          <div className="space-y-3 lg:hidden">
+            {items.map((item) => {
+              const isExpanded = expandedProductId === item.productId;
+              const panelId = `mobile-product-${item.productId}-variants`;
+              return (
+                <article
+                  key={item.productId}
+                  className="overflow-hidden rounded-lg border bg-background"
                 >
-                  <ArrowLeft className="h-4 w-4 mr-1" />
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={page >= (pagination.totalPages || 1)}
-                >
-                  Next
-                  <ArrowRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Alert Panel */}
-          {kpis && (kpis.lowStock > 0 || kpis.outOfStock > 0) && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                Stock Alerts
-              </h3>
-              <div className="space-y-1 text-sm text-amber-700">
-                {kpis.lowStock > 0 && (
-                  <p>⚠ {kpis.lowStock} product(s) are running low on stock</p>
-                )}
-                {kpis.outOfStock > 0 && (
-                  <p>❌ {kpis.outOfStock} product(s) are out of stock</p>
-                )}
-              </div>
-            </div>
-          )}
+                  <div className="space-y-4 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <ProductIdentity item={item} />
+                      <ProductStatusBadge status={item.aggregateStatus} />
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto] gap-4 border-y py-3">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Available
+                        </p>
+                        <div className="mt-1">
+                          <QuantityLines groups={item.quantityGroups} />
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Variants
+                        </p>
+                        <p className="mt-1 font-mono text-sm font-medium tabular-nums">
+                          {item.variantCount}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-expanded={isExpanded}
+                        aria-controls={panelId}
+                        onClick={() => toggleExpanded(item.productId)}
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="size-4" />
+                        ) : (
+                          <ChevronRight className="size-4" />
+                        )}
+                        {isExpanded ? "Hide variants" : "Show variants"}
+                      </Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/dashboard/products/${item.productId}`}>
+                          View details
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <ExpandedProductDetail
+                      productId={item.productId}
+                      panelId={panelId}
+                    />
+                  )}
+                </article>
+              );
+            })}
+          </div>
         </>
+      )}
+
+      {pagination && pagination.totalPages > 1 && (
+        <nav
+          aria-label="Product pagination"
+          className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p className="text-sm text-muted-foreground">
+            Showing {Math.min((page - 1) * 20 + 1, pagination.totalCount)} to{" "}
+            {Math.min(page * 20, pagination.totalCount)} of{" "}
+            {pagination.totalCount}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+              disabled={page <= 1}
+            >
+              <ArrowLeft className="size-4" aria-hidden="true" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((value) => value + 1)}
+              disabled={page >= pagination.totalPages}
+            >
+              Next
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+        </nav>
+      )}
+    </main>
+  );
+}
+
+function ProductIdentity({ item }: { item: ProductItem }) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/30">
+        {item.image ? (
+          <Image
+            src={item.image}
+            alt=""
+            width={44}
+            height={44}
+            className="size-full object-cover"
+          />
+        ) : (
+          <Box className="size-4 text-muted-foreground" aria-hidden="true" />
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-foreground">
+          {item.name}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">
+          {item.brand.name} · {item.category.name}
+        </p>
+        {item.coreProduct?.sku && (
+          <p className="mt-0.5 truncate font-mono text-[11px] tabular-nums text-muted-foreground">
+            {item.coreProduct.sku}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExpandedProductDetail({
+  productId,
+  panelId,
+}: {
+  productId: number;
+  panelId: string;
+}) {
+  const { data, isLoading, isError } = useShopProductDetail(productId);
+
+  if (isLoading) {
+    return (
+      <div id={panelId} className="space-y-2 border-t p-4">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <Skeleton key={index} className="h-10 w-full" />
+        ))}
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <p id={panelId} className="border-t p-4 text-sm text-red-700">
+        Variant stock could not be loaded.
+      </p>
+    );
+  }
+
+  return (
+    <section
+      id={panelId}
+      aria-label={`${data.product.name} variants`}
+      className="border-t lg:border-t-0"
+    >
+      <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Exact variants</h3>
+          <p className="text-xs text-muted-foreground">
+            Quantities are shown in each variant's operational inventory unit.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/dashboard/stock/add">
+              <PackagePlus className="size-3.5" />
+              Add stock
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/dashboard/stock-adjustment/create">
+              <SlidersHorizontal className="size-3.5" />
+              Adjust stock
+            </Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={`/dashboard/products/${productId}`}>
+              Full details
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      <div className="hidden lg:block">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Variant / SKU</TableHead>
+              <TableHead className="text-right">Available</TableHead>
+              <TableHead className="text-right">Reserved</TableHead>
+              <TableHead className="text-right">On hand</TableHead>
+              <TableHead className="text-right">Retail price</TableHead>
+              <TableHead>Threshold</TableHead>
+              <TableHead className="text-right">Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.variants.map((variant) => (
+              <VariantTableRow key={variant.variantId} variant={variant} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <div className="divide-y lg:hidden">
+        {data.variants.map((variant) => (
+          <VariantMobileRow key={variant.variantId} variant={variant} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function VariantTableRow({ variant }: { variant: ProductVariant }) {
+  const invalid = variant.configurationState === "needs_admin_variant_setup";
+  return (
+    <TableRow>
+      <TableCell>
+        <p className="text-sm font-medium">
+          {variant.canonicalLabel ?? "Admin setup required"}
+        </p>
+        {variant.displayAlias &&
+          variant.displayAlias !== variant.canonicalLabel && (
+            <p className="text-xs text-muted-foreground">
+              Alias: {variant.displayAlias}
+            </p>
+          )}
+        <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          {variant.sku ?? "No SKU"}
+        </p>
+      </TableCell>
+      {invalid ? (
+        <>
+          <UnlabelledMetricCell value={variant.available} />
+          <UnlabelledMetricCell value={variant.reserved} muted />
+          <UnlabelledMetricCell value={variant.onHand} />
+          <TableCell className="text-right font-mono text-sm tabular-nums">
+            {variant.retailPrice === null
+              ? "Not set"
+              : currencyFormatter.format(variant.retailPrice)}
+          </TableCell>
+          <TableCell className="text-xs text-muted-foreground">
+            Admin setup required
+          </TableCell>
+        </>
+      ) : (
+        <>
+          <MetricCell value={variant.available} unit={variant.inventoryUnit} />
+          <MetricCell
+            value={variant.reserved}
+            unit={variant.inventoryUnit}
+            muted
+          />
+          <MetricCell value={variant.onHand} unit={variant.inventoryUnit} />
+          <TableCell className="text-right font-mono text-sm tabular-nums">
+            {variant.retailPrice === null
+              ? "Not set"
+              : currencyFormatter.format(variant.retailPrice)}
+          </TableCell>
+          <TableCell className="text-xs text-muted-foreground">
+            {variant.reorderLevel === null
+              ? "Not configured"
+              : `${formatQuantity(variant.reorderLevel, variant.inventoryUnit ?? "unit")} (${variant.thresholdSource})`}
+          </TableCell>
+        </>
+      )}
+      <TableCell className="text-right">
+        {invalid ? (
+          <ProductStatusBadge status="setup_required" />
+        ) : (
+          <VariantStatusBadge status={variant.status} />
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function MetricCell({
+  value,
+  unit,
+  muted = false,
+}: {
+  value: number;
+  unit: string | null;
+  muted?: boolean;
+}) {
+  return (
+    <TableCell
+      className={`text-right font-mono text-sm tabular-nums ${muted ? "text-muted-foreground" : ""}`}
+    >
+      {formatQuantity(value, unit ?? "unit")}
+    </TableCell>
+  );
+}
+
+function UnlabelledMetricCell({
+  value,
+  muted = false,
+}: {
+  value: number;
+  muted?: boolean;
+}) {
+  return (
+    <TableCell
+      className={`text-right font-mono text-sm tabular-nums ${muted ? "text-muted-foreground" : ""}`}
+    >
+      {formatNumber(value)} <span className="text-[10px]">unlabelled</span>
+    </TableCell>
+  );
+}
+
+function VariantMobileRow({ variant }: { variant: ProductVariant }) {
+  const invalid = variant.configurationState === "needs_admin_variant_setup";
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">
+            {variant.canonicalLabel ?? "Admin setup required"}
+          </p>
+          <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            {variant.sku ?? "No SKU"}
+          </p>
+        </div>
+        {invalid ? (
+          <ProductStatusBadge status="setup_required" />
+        ) : (
+          <VariantStatusBadge status={variant.status} />
+        )}
+      </div>
+      {invalid ? (
+        <div className="grid grid-cols-3 gap-3 rounded-md bg-background p-3">
+          <MobileMetric
+            label="Available"
+            value={variant.available}
+            unit={null}
+          />
+          <MobileMetric label="Reserved" value={variant.reserved} unit={null} />
+          <MobileMetric label="On hand" value={variant.onHand} unit={null} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-3 rounded-md bg-background p-3">
+          <MobileMetric
+            label="Available"
+            value={variant.available}
+            unit={variant.inventoryUnit}
+          />
+          <MobileMetric
+            label="Reserved"
+            value={variant.reserved}
+            unit={variant.inventoryUnit}
+          />
+          <MobileMetric
+            label="On hand"
+            value={variant.onHand}
+            unit={variant.inventoryUnit}
+          />
+        </div>
       )}
     </div>
   );
 }
 
-// ────────────────────────────────────────────────────────────────
-// Skeleton
-// ────────────────────────────────────────────────────────────────
-
-function ProductsTableSkeleton() {
+function MobileMetric({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: number;
+  unit: string | null;
+}) {
   return (
-    <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[50px]">#</TableHead>
-            <TableHead className="w-[60px]">Image</TableHead>
-            <TableHead>Product Name</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead className="text-center">Variants</TableHead>
-            <TableHead className="text-right">Stock Level</TableHead>
-            <TableHead className="text-right">Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <TableRow key={i}>
-              <TableCell>
-                <Skeleton className="h-4 w-5" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-10 w-10 rounded-md" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-32 mb-1" />
-                <Skeleton className="h-3 w-20" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-5 w-16 rounded-full" />
-              </TableCell>
-              <TableCell className="text-center">
-                <Skeleton className="h-4 w-6 mx-auto" />
-              </TableCell>
-              <TableCell className="text-right">
-                <Skeleton className="h-4 w-16 ml-auto" />
-              </TableCell>
-              <TableCell className="text-right">
-                <Skeleton className="h-5 w-20 ml-auto rounded-full" />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 font-mono text-xs font-medium tabular-nums">
+        {unit
+          ? formatQuantity(value, unit)
+          : `${formatNumber(value)} unlabelled`}
+      </p>
     </div>
   );
 }
 
-// ────────────────────────────────────────────────────────────────
-// Expanded Product Detail (Variant Stock Breakdown)
-// ────────────────────────────────────────────────────────────────
-
-function VariantStockBadge({ status }: { status: string }) {
-  switch (status) {
-    case "in_stock":
-      return (
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-          <CheckCircle2 className="w-3 h-3" /> OK
-        </span>
-      );
-    case "low":
-      return (
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-          <AlertTriangle className="w-3 h-3" /> Low
-        </span>
-      );
-    case "out_of_stock":
-      return (
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
-          <XCircle className="w-3 h-3" /> Out
-        </span>
-      );
-    default:
-      return null;
-  }
-}
-
-function ExpandedProductDetail({
-  productId,
-  productName,
-}: {
-  productId: number;
-  productName: string;
-}) {
-  const { data, isLoading } = useShopProductDetail(productId);
-
-  if (isLoading) {
-    return (
-      <div className="p-4 space-y-2">
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">
-        Could not load product details.
-      </div>
-    );
-  }
-
-  const { product, variants, totalStock } = data;
-
+function ProductsSkeleton() {
   return (
-    <div className="border-t border-gray-200">
-      {/* Product Overview Header */}
-      <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              📦 Product Overview
-            </p>
-            <p className="text-sm text-gray-700 mt-0.5">
-              Category:{" "}
-              <span className="font-medium">
-                {product.category?.name ?? "—"}
-              </span>
-              {" · "}Total Variants:{" "}
-              <span className="font-medium">{variants.length}</span>
-            </p>
+    <div className="overflow-hidden rounded-lg border bg-background">
+      <div className="grid grid-cols-[44px_2fr_1fr_100px_1.3fr_140px_100px] gap-4 border-b bg-muted/40 px-4 py-3">
+        {Array.from({ length: 7 }).map((_, index) => (
+          <Skeleton key={index} className="h-3 w-full" />
+        ))}
+      </div>
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div
+          key={index}
+          className="flex items-center gap-4 border-b p-4 last:border-b-0"
+        >
+          <Skeleton className="size-9 shrink-0" />
+          <Skeleton className="size-11 shrink-0 rounded-md" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-3 w-32" />
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-500">Total Stock</p>
-            <p className="text-lg font-bold text-gray-900">{totalStock}</p>
-          </div>
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-5 w-24" />
         </div>
-      </div>
-
-      {/* Variant Stock List */}
-      <div className="px-5 py-2">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-          📊 Variant Stock
-        </p>
-        <div className="space-y-1">
-          {variants.map((v) => (
-            <div
-              key={v.variantId}
-              className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-white transition-colors"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-medium text-gray-800">
-                  {v.brandName ? `${v.brandName}` : "—"}
-                  {v.unitLabel ? ` + ${v.unitLabel}` : ""}
-                </span>
-                {v.sku && (
-                  <code className="text-[10px] text-gray-400 font-mono hidden sm:inline">
-                    {v.sku}
-                  </code>
-                )}
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-sm font-mono text-gray-700">
-                  {v.availableQty}{" "}
-                  {v.weightKg && v.weightKg !== "0" ? "pcs" : "units"}
-                </span>
-                <VariantStockBadge status={v.stockStatus} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Stock Summary */}
-      <div className="px-5 py-2 border-t border-gray-100">
-        <div className="flex items-center justify-between py-1">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            📦 Stock Summary
-          </span>
-          <span className="text-sm font-bold text-gray-900">
-            Total Stock → {totalStock} units
-          </span>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-2">
-        <Link href={`/dashboard/stock/add`}>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
-            <PackagePlus className="h-3.5 w-3.5" />
-            Add Stock
-          </Button>
-        </Link>
-        {data.product.isRetailerOwned && (
-          <Link href={`/dashboard/products/${productId}/edit`}>
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
-              <Edit className="h-3.5 w-3.5" />
-              Edit Product
-            </Button>
-          </Link>
-        )}
-        <Link href={`/dashboard/products/${productId}`}>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8">
-            <BarChart3 className="h-3.5 w-3.5" />
-            View Stock Details
-          </Button>
-        </Link>
-      </div>
+      ))}
     </div>
   );
 }

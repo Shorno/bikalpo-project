@@ -90,6 +90,13 @@ import {
     getRetailerHandoffOtps,
     getRetailerOrderDisplayStatus,
 } from "./helpers/retailer-delivery-handoff";
+import { loadStructuredBrandStockRows } from "./helpers/structured-stock-data";
+import {
+    buildStructuredStockDetail,
+    buildStructuredStockOverview,
+    type StructuredBrandStockSourceRow,
+    type StructuredStockVariant,
+} from "./helpers/structured-stock-overview";
 import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 import { shopProductConfigEndpoints } from "./shop-product-config";
 
@@ -7262,17 +7269,133 @@ const publicCatalogEndpoints = {
 // Shop Product Management (Retail Control Panel)
 // ────────────────────────────────────────────────────────────────
 
+type RetailerProductStockStatus =
+    | "in_stock"
+    | "attention"
+    | "out_of_stock"
+    | "setup_required";
+
+function resolveRetailerProductStockStatus(
+    variants: StructuredStockVariant[],
+): RetailerProductStockStatus {
+    if (
+        variants.some(
+            (variant) => variant.configurationState === "needs_admin_variant_setup",
+        )
+    ) {
+        return "setup_required";
+    }
+    if (
+        variants.length === 0
+        || variants.every((variant) => variant.status === "out_of_stock")
+    ) {
+        return "out_of_stock";
+    }
+    if (variants.some((variant) => variant.status !== "in_stock")) {
+        return "attention";
+    }
+    return "in_stock";
+}
+
+function buildRetailerProductGroups(rows: StructuredBrandStockSourceRow[]) {
+    const rowsByProduct = new Map<number, StructuredBrandStockSourceRow[]>();
+    for (const row of rows) {
+        const productRows = rowsByProduct.get(row.productId) ?? [];
+        productRows.push(row);
+        rowsByProduct.set(row.productId, productRows);
+    }
+
+    return Array.from(rowsByProduct.entries())
+        .flatMap(([productId, productRows]) => {
+            const first = productRows[0];
+            if (!first) return [];
+            const detail = buildStructuredStockDetail(
+                { kind: "product", id: productId },
+                productRows,
+            );
+            if (!detail) return [];
+
+            return [{
+                productId,
+                name: first.productName,
+                image: first.productImage || first.coreProductImage,
+                category: {
+                    id: first.categoryId,
+                    name: first.categoryName,
+                },
+                brand: {
+                    id: first.brandId,
+                    name: first.brandName,
+                    logo: first.brandLogo,
+                    slug: first.brandSlug,
+                },
+                coreProduct: first.coreProductId
+                    ? {
+                            id: first.coreProductId,
+                            name: first.coreProductName || first.productName,
+                            sku: first.coreProductSku,
+                        }
+                    : null,
+                productTypeName: first.productTypeName,
+                variantCount: detail.identity.variantCount,
+                quantityGroups: detail.quantityGroups,
+                stockStatus: detail.stockStatus,
+                aggregateStatus: resolveRetailerProductStockStatus(detail.variants),
+                configurationIssueCount: detail.configurationIssueCount,
+                variants: detail.variants,
+            }];
+        })
+        .sort(
+            (a, b) =>
+                a.name.localeCompare(b.name)
+                || a.brand.name.localeCompare(b.brand.name),
+        );
+}
+
+async function loadRetailerProductStockSnapshot(ownerId: string) {
+    const rows = await loadStructuredBrandStockRows(
+        { ownerType: "shop" },
+        ownerId,
+    );
+    const structured = buildStructuredStockOverview(rows);
+    const products = buildRetailerProductGroups(rows);
+
+    const categories = Array.from(
+        new Map(
+            products.map((item) => [item.category.id, item.category]),
+        ).values(),
+    ).sort((a, b) => a.name.localeCompare(b.name));
+    const brands = Array.from(
+        new Map(
+            products.map((item) => [item.brand.id, item.brand]),
+        ).values(),
+    ).sort((a, b) => a.name.localeCompare(b.name));
+
+    return {
+        products,
+        categories,
+        brands,
+        dashboard: structured.dashboard,
+    };
+}
+
 const shopProductEndpoints = {
     /**
-     * Get shop owner's products — aggregated by product (not variant).
-     * Each row = one product with variant count, total stock, stock status.
+     * Get the retailer's brand products with unit-safe structured stock.
      */
     getShopProducts: shopOwnerProcedure
         .input(
             z.object({
                 search: z.string().optional(),
                 categoryId: z.number().optional(),
-                stockStatus: z.enum(["all", "in_stock", "low", "out_of_stock"]).default("all"),
+                stockStatus: z.enum([
+                    "all",
+                    "in_stock",
+                    "attention",
+                    "out_of_stock",
+                    "setup_required",
+                    "low",
+                ]).default("all"),
                 brandId: z.number().optional(),
                 page: z.number().default(1),
                 limit: z.number().default(20),
@@ -7282,169 +7405,48 @@ const shopProductEndpoints = {
             const userId = context.session.user.id;
             const { search, categoryId, stockStatus, brandId, page, limit } = input;
             const offset = (page - 1) * limit;
+            const snapshot = await loadRetailerProductStockSnapshot(userId);
+            let items = snapshot.products;
 
-            // Get all inventory for this shop owner with product+variant info
-            const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
-                with: {
-                    variant: {
-                        columns: {
-                            id: true,
-                            productId: true,
-                            sku: true,
-                            unitLabel: true,
-                            weightKg: true,
-                            price: true,
-                            packType: true,
-                            brandId: true,
-                            color: true,
-                            size: true,
-                            isActive: true,
-                        },
-                        with: {
-                            product: {
-                                columns: {
-                                    id: true,
-                                    name: true,
-                                    slug: true,
-                                    image: true,
-                                    categoryId: true,
-                                    coreProductId: true,
-                                    status: true,
-                                    reorderLevel: true,
-                                },
-                                with: {
-                                    category: { columns: { id: true, name: true } },
-                                    coreProduct: { columns: { id: true, name: true } },
-                                },
-                            },
-                            brand: { columns: { id: true, name: true } },
-                        },
-                    },
-                },
-            });
-
-            // Group by productId
-            const productMap = new Map<number, {
-                product: typeof shopInventory[0]["variant"]["product"];
-                variants: Array<{
-                    variantId: number;
-                    sku: string | null;
-                    unitLabel: string;
-                    weightKg: string;
-                    brandName: string | null;
-                    brandId: number | null;
-                    availableQty: string;
-                    reservedQty: string;
-                    retailPrice: string | null;
-                }>;
-                totalStock: number;
-                variantCount: number;
-            }>();
-
-            for (const inv of shopInventory) {
-                if (!inv.variant?.product) continue;
-                const pid = inv.variant.product.id;
-
-                if (!productMap.has(pid)) {
-                    productMap.set(pid, {
-                        product: inv.variant.product,
-                        variants: [],
-                        totalStock: 0,
-                        variantCount: 0,
-                    });
-                }
-
-                const entry = productMap.get(pid)!;
-                entry.variants.push({
-                    variantId: inv.variant.id,
-                    sku: inv.variant.sku,
-                    unitLabel: inv.variant.unitLabel,
-                    weightKg: inv.variant.weightKg,
-                    brandName: inv.variant.brand?.name ?? null,
-                    brandId: inv.variant.brandId,
-                    availableQty: inv.availableQty,
-                    reservedQty: inv.reservedQty,
-                    retailPrice: inv.retailPrice,
-                });
-                entry.totalStock += Number(inv.availableQty);
-                entry.variantCount += 1;
-            }
-
-            // Convert to array and apply filters
-            let items = Array.from(productMap.values());
-
-            // Search filter
             if (search?.trim()) {
                 const s = search.toLowerCase();
                 items = items.filter(
                     (item) =>
-                        item.product.name.toLowerCase().includes(s) ||
-                        item.product.slug.toLowerCase().includes(s) ||
-                        item.variants.some((v) => v.sku?.toLowerCase().includes(s)),
+                        item.name.toLowerCase().includes(s)
+                        || item.brand.name.toLowerCase().includes(s)
+                        || item.coreProduct?.name.toLowerCase().includes(s)
+                        || item.coreProduct?.sku?.toLowerCase().includes(s)
+                        || item.variants.some(
+                            (variant) =>
+                                variant.sku?.toLowerCase().includes(s)
+                                || variant.canonicalLabel?.toLowerCase().includes(s),
+                        ),
                 );
             }
-
-            // Category filter
             if (categoryId) {
-                items = items.filter((item) => item.product.categoryId === categoryId);
+                items = items.filter((item) => item.category.id === categoryId);
             }
-
-            // Brand filter
             if (brandId) {
-                items = items.filter((item) =>
-                    item.variants.some((v) => v.brandId === brandId),
-                );
+                items = items.filter((item) => item.brand.id === brandId);
             }
-
-            // Stock status filter
-            const REORDER_THRESHOLD = 10;
-            if (stockStatus === "in_stock") {
-                items = items.filter((item) => item.totalStock > REORDER_THRESHOLD);
-            } else if (stockStatus === "low") {
+            if (stockStatus !== "all") {
+                const normalizedStatus = stockStatus === "low"
+                    ? "attention"
+                    : stockStatus;
                 items = items.filter(
-                    (item) => item.totalStock > 0 && item.totalStock <= REORDER_THRESHOLD,
+                    (item) => item.aggregateStatus === normalizedStatus,
                 );
-            } else if (stockStatus === "out_of_stock") {
-                items = items.filter((item) => item.totalStock <= 0);
             }
 
             const totalCount = items.length;
-
-            // Sort by name
-            items.sort((a, b) => a.product.name.localeCompare(b.product.name));
-
-            // Paginate
             const paginated = items.slice(offset, offset + limit);
 
-            // Build response with stock status
-            const result = paginated.map((item) => {
-                const reorderLevel = item.product.reorderLevel || REORDER_THRESHOLD;
-                let status: "in_stock" | "low" | "out_of_stock";
-                if (item.totalStock <= 0) status = "out_of_stock";
-                else if (item.totalStock <= reorderLevel) status = "low";
-                else status = "in_stock";
-
-                return {
-                    productId: item.product.id,
-                    name: item.product.name,
-                    slug: item.product.slug,
-                    image: item.product.image,
-                    category: item.product.category,
-                    coreProduct: item.product.coreProduct,
-                    variantCount: item.variantCount,
-                    totalStock: item.totalStock,
-                    stockStatus: status,
-                    productStatus: item.product.status,
-                    unit: item.variants[0]?.unitLabel ?? "pcs",
-                };
-            });
-
             return {
-                items: result,
+                items: paginated.map(({ variants: _variants, ...item }) => item),
+                filterOptions: {
+                    categories: snapshot.categories,
+                    brands: snapshot.brands,
+                },
                 pagination: {
                     page,
                     limit,
@@ -7455,64 +7457,36 @@ const shopProductEndpoints = {
         }),
 
     /**
-     * KPI summary: total products, in-stock, low, out-of-stock.
+     * Product and variant summary derived from the same structured snapshot.
      */
     getShopProductKPIs: shopOwnerProcedure
         .handler(async ({ context }) => {
             const userId = context.session.user.id;
-
-            const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
-                columns: { variantId: true, availableQty: true },
-                with: {
-                    variant: {
-                        columns: { id: true, productId: true },
-                        with: {
-                            product: { columns: { id: true, reorderLevel: true } },
-                        },
-                    },
-                },
-            });
-
-            // Group by product
-            const productStockMap = new Map<number, number>();
-            const productReorderMap = new Map<number, number>();
-
-            for (const inv of shopInventory) {
-                if (!inv.variant?.product) continue;
-                const pid = inv.variant.product.id;
-                productStockMap.set(pid, (productStockMap.get(pid) ?? 0) + Number(inv.availableQty));
-                if (!productReorderMap.has(pid)) {
-                    productReorderMap.set(pid, inv.variant.product.reorderLevel || 10);
-                }
-            }
-
-            let totalProducts = 0;
-            let inStock = 0;
-            let lowStock = 0;
-            let outOfStock = 0;
-
-            for (const [pid, totalQty] of productStockMap) {
-                totalProducts++;
-                const reorder = productReorderMap.get(pid) ?? 10;
-                if (totalQty <= 0) outOfStock++;
-                else if (totalQty <= reorder) lowStock++;
-                else inStock++;
-            }
-
-            return { totalProducts, inStock, lowStock, outOfStock };
+            const snapshot = await loadRetailerProductStockSnapshot(userId);
+            return {
+                activeProducts: snapshot.products.length,
+                activeVariants: snapshot.dashboard.summary.activeVariants,
+                lowStockVariants: snapshot.dashboard.stockStatus.lowStock,
+                outOfStockVariants: snapshot.dashboard.stockStatus.outOfStock,
+                configurationIssueCount:
+                    snapshot.dashboard.configurationIssueCount,
+            };
         }),
 
     /**
-     * Detailed view of a single product — all variants with per-variant stock.
+     * Detailed view of a retailer brand product using canonical variants.
      */
     getShopProductDetail: shopOwnerProcedure
         .input(z.object({ productId: z.number() }))
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
+            const snapshot = await loadRetailerProductStockSnapshot(userId);
+            const productGroup = snapshot.products.find(
+                (item) => item.productId === input.productId,
+            );
+            if (!productGroup) {
+                throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+            }
 
             const prod = await db.query.product.findFirst({
                 where: eq(product.id, input.productId),
@@ -7521,70 +7495,10 @@ const shopProductEndpoints = {
                     subCategory: { columns: { id: true, name: true } },
                     coreProduct: { columns: { id: true, name: true, sku: true, image: true } },
                     images: true,
-                    productBrands: {
-                        with: { brand: { columns: { id: true, name: true, logo: true } } },
-                    },
                 },
             });
 
             if (!prod) throw new ORPCError("NOT_FOUND", { message: "Product not found" });
-
-            // Get inventory for this product's variants
-            const variants = await db.query.productVariant.findMany({
-                where: eq(productVariant.productId, input.productId),
-                with: {
-                    brand: { columns: { id: true, name: true } },
-                },
-            });
-
-            const variantIds = variants.map((v) => v.id);
-            const inventoryRows = variantIds.length > 0
-                ? await db.query.inventory.findMany({
-                    where: and(
-                        eq(inventory.ownerType, "shop"),
-                        eq(inventory.ownerId, userId),
-                        inArray(inventory.variantId, variantIds),
-                    ),
-                })
-                : [];
-
-            const isRetailerOwned =
-                prod.creatorSource === "shop" && prod.createdById === userId;
-            if (!isRetailerOwned && inventoryRows.length === 0) {
-                throw new ORPCError("NOT_FOUND", { message: "Product not found" });
-            }
-
-            const invMap = new Map(inventoryRows.map((inv) => [inv.variantId, inv]));
-
-            const variantDetails = variants.map((v) => {
-                const inv = invMap.get(v.id);
-                const availableQty = Number(inv?.availableQty ?? 0);
-                const reorderLevel = v.reorderLevel || 10;
-                let status: "in_stock" | "low" | "out_of_stock";
-                if (availableQty <= 0) status = "out_of_stock";
-                else if (availableQty <= reorderLevel) status = "low";
-                else status = "in_stock";
-
-                return {
-                    variantId: v.id,
-                    sku: v.sku,
-                    unitLabel: v.unitLabel,
-                    weightKg: v.weightKg,
-                    price: v.price,
-                    packType: v.packType,
-                    color: v.color,
-                    size: v.size,
-                    brandId: v.brandId,
-                    brandName: v.brand?.name ?? null,
-                    availableQty,
-                    reservedQty: Number(inv?.reservedQty ?? 0),
-                    retailPrice: inv?.retailPrice ?? null,
-                    stockStatus: status,
-                    isActive: v.isActive,
-                };
-            });
-
-            const totalStock = variantDetails.reduce((sum, v) => sum + v.availableQty, 0);
 
             return {
                 product: {
@@ -7604,11 +7518,26 @@ const shopProductEndpoints = {
                     subCategory: prod.subCategory,
                     coreProduct: prod.coreProduct,
                     images: prod.images,
-                    brands: prod.productBrands.map((pb) => pb.brand),
-                    isRetailerOwned,
+                    brand: productGroup.brand,
+                    productTypeName: productGroup.productTypeName,
+                    isRetailerOwned:
+                        prod.creatorSource === "shop" && prod.createdById === userId,
                 },
-                variants: variantDetails,
-                totalStock,
+                summary: {
+                    variantCount: productGroup.variantCount,
+                    quantityGroups: productGroup.quantityGroups,
+                    stockStatus: productGroup.stockStatus,
+                    aggregateStatus: productGroup.aggregateStatus,
+                    configurationIssueCount:
+                        productGroup.configurationIssueCount,
+                },
+                variants: productGroup.variants.map(({
+                    warehouseSellingPrice,
+                    ...variant
+                }) => ({
+                    ...variant,
+                    retailPrice: warehouseSellingPrice,
+                })),
             };
         }),
 
