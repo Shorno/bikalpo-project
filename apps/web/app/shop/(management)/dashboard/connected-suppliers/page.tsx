@@ -5,14 +5,21 @@ import {
   ArrowRight,
   Building2,
   Link2,
+  RotateCcw,
   Search,
-  ShoppingCart,
+  Store,
   TrendingUp,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+  useEffect,
+  useState,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,6 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useConnectedSuppliers } from "@/hooks/use-shop-owner-api";
+import { getWarehouseStorefrontUrl } from "@/lib/warehouse-storefront-url";
 
 type ConnectedSupplierStatusFilter = "all" | "active" | "inactive";
 
@@ -145,9 +153,11 @@ function NetworkListSkeleton() {
 function EmptyState({
   hasConnections,
   hasFilters,
+  onClearFilters,
 }: {
   hasConnections: boolean;
   hasFilters: boolean;
+  onClearFilters: () => void;
 }) {
   return (
     <Card>
@@ -162,31 +172,49 @@ function EmptyState({
             : "Connect to platform warehouses to build your supplier network."}
         </p>
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-          <Button asChild>
-            <Link
-              href={
-                hasConnections
-                  ? "/dashboard/order-from-warehouse"
-                  : "/dashboard/warehouses"
-              }
-            >
-              {hasConnections ? (
-                <>
-                  <ShoppingCart className="mr-2 h-4 w-4" />
-                  Start Buying
-                </>
-              ) : (
-                <>
-                  <Link2 className="mr-2 h-4 w-4" />
-                  Manage Connections
-                </>
-              )}
-            </Link>
-          </Button>
+          {hasConnections && hasFilters ? (
+            <Button onClick={onClearFilters}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Clear filters
+            </Button>
+          ) : (
+            <Button asChild>
+              <Link href="/dashboard/warehouses">
+                <Link2 className="mr-2 h-4 w-4" />
+                Manage Connections
+              </Link>
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
   );
+}
+
+function isInteractiveTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    Boolean(target.closest("a, button, input, select, textarea"))
+  );
+}
+
+function openStorefront(
+  event: MouseEvent<HTMLElement>,
+  storefrontUrl: string | null,
+) {
+  if (!storefrontUrl || isInteractiveTarget(event.target)) return;
+  window.location.assign(storefrontUrl);
+}
+
+function openStorefrontFromKeyboard(
+  event: KeyboardEvent<HTMLElement>,
+  storefrontUrl: string | null,
+) {
+  if (!storefrontUrl || isInteractiveTarget(event.target)) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+
+  event.preventDefault();
+  window.location.assign(storefrontUrl);
 }
 
 function StatusBadge({
@@ -249,6 +277,13 @@ export default function ConnectedSuppliersPage() {
   const hasFilters =
     !!searchDebounced || statusFilter !== "all" || categoryFilter !== "all";
 
+  const clearFilters = () => {
+    setSearch("");
+    setSearchDebounced("");
+    setStatusFilter("all");
+    setCategoryFilter("all");
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -262,20 +297,12 @@ export default function ConnectedSuppliersPage() {
           </p>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Button asChild variant="outline">
-            <Link href="/dashboard/warehouses">
-              <Link2 className="mr-2 h-4 w-4" />
-              Manage Connections
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href="/dashboard/order-from-warehouse">
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              Create Order
-            </Link>
-          </Button>
-        </div>
+        <Button asChild variant="outline">
+          <Link href="/dashboard/warehouses">
+            <Link2 className="mr-2 h-4 w-4" />
+            Manage Connections
+          </Link>
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -375,6 +402,7 @@ export default function ConnectedSuppliersPage() {
         <EmptyState
           hasConnections={summary.connectedSuppliers > 0}
           hasFilters={hasFilters}
+          onClearFilters={clearFilters}
         />
       ) : (
         <div className="space-y-4">
@@ -392,105 +420,188 @@ export default function ConnectedSuppliersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {suppliers.map((supplier) => (
-                    <TableRow key={supplier.connectionId}>
-                      <TableCell className="px-5">
-                        <div className="space-y-1">
-                          <p className="font-medium">{supplier.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {supplier.phone ||
-                              supplier.email ||
-                              "No contact info"}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {supplier.primaryCategory || "General"}
-                      </TableCell>
-                      <TableCell>
-                        {formatDate(supplier.lastPurchaseDate)}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {formatCurrency(supplier.totalPurchase)}
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={supplier.activityStatus} />
-                      </TableCell>
-                      <TableCell className="px-5 text-right">
-                        <Button asChild size="sm" variant="outline">
-                          <Link
-                            href={`/dashboard/connected-suppliers/${supplier.warehouseId}`}
-                          >
-                            View
-                            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                          </Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {suppliers.map((supplier) => {
+                    const storefrontUrl = supplier.warehouseSlug
+                      ? getWarehouseStorefrontUrl(supplier.warehouseSlug)
+                      : null;
+
+                    return (
+                      <TableRow
+                        key={supplier.connectionId}
+                        role={storefrontUrl ? "link" : undefined}
+                        tabIndex={storefrontUrl ? 0 : undefined}
+                        aria-label={
+                          storefrontUrl
+                            ? `Visit ${supplier.name} storefront`
+                            : undefined
+                        }
+                        className={
+                          storefrontUrl
+                            ? "cursor-pointer transition-colors hover:bg-emerald-50/40 focus-visible:bg-emerald-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-inset"
+                            : undefined
+                        }
+                        onClick={(event) =>
+                          openStorefront(event, storefrontUrl)
+                        }
+                        onKeyDown={(event) =>
+                          openStorefrontFromKeyboard(event, storefrontUrl)
+                        }
+                      >
+                        <TableCell className="px-5">
+                          <div className="space-y-1">
+                            <p className="font-medium">{supplier.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {supplier.phone ||
+                                supplier.email ||
+                                "No contact info"}
+                            </p>
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs font-medium ${
+                                storefrontUrl
+                                  ? "text-emerald-700"
+                                  : "text-amber-700"
+                              }`}
+                            >
+                              <Store className="h-3.5 w-3.5" />
+                              {storefrontUrl
+                                ? "Visit storefront"
+                                : "Storefront unavailable"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {supplier.primaryCategory || "General"}
+                        </TableCell>
+                        <TableCell>
+                          {formatDate(supplier.lastPurchaseDate)}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {formatCurrency(supplier.totalPurchase)}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={supplier.activityStatus} />
+                        </TableCell>
+                        <TableCell className="px-5 text-right">
+                          <Button asChild size="sm" variant="outline">
+                            <Link
+                              href={`/dashboard/connected-suppliers/${supplier.warehouseId}`}
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              View Details
+                              <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
 
           <div className="grid gap-4 lg:hidden">
-            {suppliers.map((supplier) => (
-              <Card key={supplier.connectionId} className="border-border/70">
-                <CardContent className="space-y-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="font-semibold">{supplier.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {supplier.phone || supplier.email || "No contact info"}
-                      </p>
-                    </div>
-                    <StatusBadge status={supplier.activityStatus} />
-                  </div>
+            {suppliers.map((supplier) => {
+              const storefrontUrl = supplier.warehouseSlug
+                ? getWarehouseStorefrontUrl(supplier.warehouseSlug)
+                : null;
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        Category
-                      </p>
-                      <p className="mt-1 font-medium">
-                        {supplier.primaryCategory || "General"}
-                      </p>
+              return (
+                <Card
+                  key={supplier.connectionId}
+                  role={storefrontUrl ? "link" : undefined}
+                  tabIndex={storefrontUrl ? 0 : undefined}
+                  aria-label={
+                    storefrontUrl
+                      ? `Visit ${supplier.name} storefront`
+                      : undefined
+                  }
+                  className={`border-border/70 ${
+                    storefrontUrl
+                      ? "cursor-pointer transition-all hover:border-emerald-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                      : ""
+                  }`}
+                  onClick={(event) => openStorefront(event, storefrontUrl)}
+                  onKeyDown={(event) =>
+                    openStorefrontFromKeyboard(event, storefrontUrl)
+                  }
+                >
+                  <CardContent className="space-y-4 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="font-semibold">{supplier.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {supplier.phone ||
+                            supplier.email ||
+                            "No contact info"}
+                        </p>
+                      </div>
+                      <StatusBadge status={supplier.activityStatus} />
                     </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        Last Purchase
-                      </p>
-                      <p className="mt-1 font-medium">
-                        {formatDate(supplier.lastPurchaseDate)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        Total Buy
-                      </p>
-                      <p className="mt-1 font-medium">
-                        {formatCurrency(supplier.totalPurchase)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        Orders
-                      </p>
-                      <p className="mt-1 font-medium">{supplier.totalOrders}</p>
-                    </div>
-                  </div>
 
-                  <Button asChild className="w-full" variant="outline">
-                    <Link
-                      href={`/dashboard/connected-suppliers/${supplier.warehouseId}`}
-                    >
-                      View Supplier Detail
-                      <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Category
+                        </p>
+                        <p className="mt-1 font-medium">
+                          {supplier.primaryCategory || "General"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Last Purchase
+                        </p>
+                        <p className="mt-1 font-medium">
+                          {formatDate(supplier.lastPurchaseDate)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Total Buy
+                        </p>
+                        <p className="mt-1 font-medium">
+                          {formatCurrency(supplier.totalPurchase)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Orders
+                        </p>
+                        <p className="mt-1 font-medium">
+                          {supplier.totalOrders}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
+                      <span
+                        className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                          storefrontUrl ? "text-emerald-700" : "text-amber-700"
+                        }`}
+                      >
+                        <Store className="h-3.5 w-3.5" />
+                        {storefrontUrl
+                          ? "Visit storefront"
+                          : "Storefront unavailable"}
+                      </span>
+
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          href={`/dashboard/connected-suppliers/${supplier.warehouseId}`}
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
+                          View Details
+                          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}
