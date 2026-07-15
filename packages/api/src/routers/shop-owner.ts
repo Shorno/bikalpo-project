@@ -46,6 +46,8 @@ import {
     stockAdjustmentItem,
     damageEntry,
     damageEntryItem,
+    deliveryGroup,
+    deliveryGroupInvoice,
     productPackRule,
     purchase,
     customerAssignment,
@@ -79,6 +81,7 @@ import { z } from "zod";
 
 import { shopOwnerProcedure, publicProcedure } from "../index";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 import { shopProductConfigEndpoints } from "./shop-product-config";
 
@@ -2292,6 +2295,49 @@ const orderQueries = {
                 if (wh[0]) warehouseInfo = wh[0];
             }
 
+            const invoices = await db.query.invoice.findMany({
+                where: eq(invoice.orderId, result.id),
+                columns: {
+                    id: true,
+                    createdAt: true,
+                    approvedAt: true,
+                    deliveredAt: true,
+                    receivedAt: true,
+                    deliveryStatus: true,
+                    fulfillmentMode: true,
+                    completionOtp: true,
+                    completionOtpVerifiedAt: true,
+                    deliverymanId: true,
+                },
+                orderBy: [asc(invoice.createdAt)],
+            });
+
+            const invoiceIds = invoices.map((invoiceData) => invoiceData.id);
+            const deliveryLinks = invoiceIds.length
+                ? await db
+                    .select({
+                        invoiceId: deliveryGroupInvoice.invoiceId,
+                        groupStatus: deliveryGroup.status,
+                        deliverymanId: deliveryGroup.deliverymanId,
+                        assignedAt: deliveryGroup.assignedAt,
+                        startedAt: deliveryGroup.startedAt,
+                        invoiceStatus: deliveryGroupInvoice.status,
+                        deliveredAt: deliveryGroupInvoice.deliveredAt,
+                    })
+                    .from(deliveryGroupInvoice)
+                    .innerJoin(
+                        deliveryGroup,
+                        eq(deliveryGroupInvoice.groupId, deliveryGroup.id),
+                    )
+                    .where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
+                : [];
+
+            const flow = buildCanonicalOrderFlow({
+                order: result,
+                invoices,
+                deliveryLinks,
+            });
+
             const approvedStatuses = [
                 "approved",
                 "ready_for_dispatch",
@@ -2371,6 +2417,7 @@ const orderQueries = {
                         "Admin",
                     warehousePhone: warehouseInfo?.phone || null,
                 },
+                flow,
                 timeline,
                 hasModifications,
                 delivery: {

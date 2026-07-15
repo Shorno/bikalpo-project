@@ -82,12 +82,16 @@ function StepNode({
               ? "border-amber-500 bg-amber-500 text-white"
               : "border-emerald-500 bg-emerald-500 text-white"
           : current
-            ? "border-blue-600 bg-blue-600 text-white"
+            ? tone === "danger"
+              ? "border-red-500 bg-red-500 text-white"
+              : tone === "warning"
+                ? "border-amber-500 bg-amber-500 text-white"
+                : "border-blue-600 bg-blue-600 text-white"
             : "border-zinc-200 bg-white text-zinc-300",
       )}
       aria-hidden="true"
     >
-      {completed ? (
+      {completed || (current && tone && tone !== "default") ? (
         <Icon className="h-3.5 w-3.5" />
       ) : current ? (
         <span className="h-2 w-2 rounded-full bg-white" />
@@ -129,7 +133,11 @@ function InlineStepper({ steps }: { steps: OrderFlowStep[] }) {
                           ? "text-amber-700"
                           : "text-foreground"
                       : current
-                        ? "text-blue-700"
+                        ? step.tone === "danger"
+                          ? "text-red-700"
+                          : step.tone === "warning"
+                            ? "text-amber-700"
+                            : "text-blue-700"
                         : "text-muted-foreground",
                   )}
                   aria-current={current ? "step" : undefined}
@@ -185,7 +193,11 @@ function InlineStepper({ steps }: { steps: OrderFlowStep[] }) {
                           ? "text-amber-700"
                           : "text-foreground"
                       : current
-                        ? "text-blue-700"
+                        ? step.tone === "danger"
+                          ? "text-red-700"
+                          : step.tone === "warning"
+                            ? "text-amber-700"
+                            : "text-blue-700"
                         : "text-muted-foreground",
                   )}
                   aria-current={current ? "step" : undefined}

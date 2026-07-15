@@ -22,16 +22,15 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import {
-  type OrderFlowStep,
-  OrderFlowStepper,
-} from "@/components/features/orders/order-flow-stepper";
+import { OrderFlowStepper } from "@/components/features/orders/order-flow-stepper";
 import {
   formatRetailerOrderItemQuantity,
   getRetailerOrderFulfillmentSummary,
   getRetailerOrderItemDeliveredQty,
   getRetailerOrderItemEffectiveQty,
   getRetailerOrderItemOrderedQty,
+  getRetailerOrderReviewState,
+  type RetailerOrderReviewState,
 } from "@/components/features/orders/retailer-order-fulfillment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -136,48 +135,6 @@ function formatLabel(value?: string | null) {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function buildRetailerFlow(order: any, timeline: any[]): OrderFlowStep[] {
-  if (order.status === "cancelled") {
-    return [
-      {
-        key: "placed",
-        label: "Order placed",
-        completed: true,
-        date: order.createdAt,
-      },
-      {
-        key: "cancelled",
-        label: "Cancelled",
-        completed: true,
-        date: order.cancelledAt || order.updatedAt,
-        tone: "danger",
-      },
-    ];
-  }
-
-  const normalized = (timeline || []).map((step, index) => ({
-    key: `${String(step.step)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")}-${index}`,
-    label: step.step,
-    completed: step.completed,
-    date: step.date,
-    tone: step.isModification ? ("warning" as const) : undefined,
-  }));
-
-  if (order.status === "returned") {
-    normalized.push({
-      key: "returned",
-      label: "Returned",
-      completed: true,
-      date: order.returnedAt || order.updatedAt,
-      tone: "warning",
-    });
-  }
-
-  return normalized;
-}
-
 export default function PurchaseOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -215,22 +172,25 @@ export default function PurchaseOrderDetailPage() {
     );
   }
 
-  const { order, timeline, hasModifications, delivery } = data;
+  const { order, flow, hasModifications, delivery } = data;
   const status = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
   const StatusIcon = status.icon;
   const isCancellable = ["pending", "confirmed"].includes(order.status);
   const isReceivable =
     ["processing", "delivered"].includes(order.status) && !order.receivedAt;
   const hasActions = isCancellable || isReceivable || !!order.warehousePhone;
+  const reviewState = getRetailerOrderReviewState(order);
   const requestedSummary = getRetailerOrderFulfillmentSummary(
     order.items,
     getRetailerOrderItemOrderedQty,
   );
-  const approvedSummary = getRetailerOrderFulfillmentSummary(
-    order.items,
-    getRetailerOrderItemEffectiveQty,
-  );
-  const flowSteps = buildRetailerFlow(order, timeline);
+  const approvedSummary =
+    reviewState === "reviewed"
+      ? getRetailerOrderFulfillmentSummary(
+          order.items,
+          getRetailerOrderItemEffectiveQty,
+        )
+      : null;
 
   const initReceiveItems = () => {
     const items: Record<number, number> = {};
@@ -337,13 +297,13 @@ export default function PurchaseOrderDetailPage() {
           </h2>
         </header>
         <div className="p-4 sm:p-5">
-          <OrderFlowStepper steps={flowSteps} variant="inline" />
+          <OrderFlowStepper steps={flow} variant="inline" />
         </div>
       </section>
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <main className="min-w-0 space-y-4">
-          <OrderItems items={order.items || []} />
+          <OrderItems items={order.items || []} reviewState={reviewState} />
 
           {(order.customerNote || order.adminNote) && (
             <section
@@ -389,6 +349,7 @@ export default function PurchaseOrderDetailPage() {
           delivery={delivery}
           requestedSummary={requestedSummary}
           approvedSummary={approvedSummary}
+          reviewState={reviewState}
           isCancellable={isCancellable}
           isReceivable={isReceivable}
           onCancel={() => setShowCancelDialog(true)}
@@ -432,7 +393,17 @@ export default function PurchaseOrderDetailPage() {
   );
 }
 
-function OrderItems({ items }: { items: any[] }) {
+function OrderItems({
+  items,
+  reviewState,
+}: {
+  items: any[];
+  reviewState: RetailerOrderReviewState;
+}) {
+  const isReviewed = reviewState === "reviewed";
+  const approvalPlaceholder =
+    reviewState === "pending" ? "Awaiting review" : "Not approved";
+
   return (
     <section
       className="overflow-hidden rounded-lg border bg-card"
@@ -461,8 +432,12 @@ function OrderItems({ items }: { items: any[] }) {
               <th className="px-3 py-3 text-right font-semibold">Requested</th>
               <th className="px-3 py-3 text-right font-semibold">Approved</th>
               <th className="px-3 py-3 text-right font-semibold">Received</th>
-              <th className="px-3 py-3 text-right font-semibold">Unit price</th>
-              <th className="px-4 py-3 text-right font-semibold">Total</th>
+              <th className="px-3 py-3 text-right font-semibold">
+                {isReviewed ? "Approved price" : "Requested price"}
+              </th>
+              <th className="px-4 py-3 text-right font-semibold">
+                {isReviewed ? "Approved total" : "Requested total"}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -475,12 +450,20 @@ function OrderItems({ items }: { items: any[] }) {
                 item.modifiedUnitPrice !== null &&
                 item.modifiedUnitPrice !== undefined &&
                 Number(item.modifiedUnitPrice) !== Number(item.unitPrice);
-              const modified = quantityChanged || priceChanged;
+              const modified = isReviewed && (quantityChanged || priceChanged);
               const approvedQuantity = getRetailerOrderItemEffectiveQty(item);
+              const requestedQuantity = getRetailerOrderItemOrderedQty(item);
               const receivedQuantity = getRetailerOrderItemDeliveredQty(item);
               const approvedPrice = Number(
                 item.modifiedUnitPrice ?? item.unitPrice ?? 0,
               );
+              const requestedPrice = Number(item.unitPrice ?? 0);
+              const displayedPrice = isReviewed
+                ? approvedPrice
+                : requestedPrice;
+              const displayedQuantity = isReviewed
+                ? approvedQuantity
+                : requestedQuantity;
 
               return (
                 <tr
@@ -505,33 +488,44 @@ function OrderItems({ items }: { items: any[] }) {
                     {formatRetailerOrderItemQuantity(item.quantity, item)}
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-xs tabular-nums">
-                    <span
-                      className={cn(
-                        quantityChanged && "font-semibold text-amber-700",
-                      )}
-                    >
-                      {formatRetailerOrderItemQuantity(approvedQuantity, item)}
-                    </span>
+                    {isReviewed ? (
+                      <span
+                        className={cn(
+                          quantityChanged && "font-semibold text-amber-700",
+                        )}
+                      >
+                        {formatRetailerOrderItemQuantity(
+                          approvedQuantity,
+                          item,
+                        )}
+                      </span>
+                    ) : (
+                      <span className="font-sans text-muted-foreground">
+                        {approvalPlaceholder}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-xs tabular-nums">
                     {formatRetailerOrderItemQuantity(receivedQuantity, item)}
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-xs tabular-nums">
-                    {priceChanged && (
+                    {isReviewed && priceChanged && (
                       <span className="mr-1.5 text-muted-foreground line-through">
                         {formatMoney(item.unitPrice)}
                       </span>
                     )}
                     <span
                       className={cn(
-                        priceChanged && "font-semibold text-amber-700",
+                        isReviewed &&
+                          priceChanged &&
+                          "font-semibold text-amber-700",
                       )}
                     >
-                      {formatMoney(approvedPrice)}
+                      {formatMoney(displayedPrice)}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-xs font-semibold tabular-nums">
-                    {formatMoney(approvedPrice * approvedQuantity)}
+                    {formatMoney(displayedPrice * displayedQuantity)}
                   </td>
                 </tr>
               );
@@ -551,10 +545,16 @@ function OrderItems({ items }: { items: any[] }) {
             item.modifiedUnitPrice !== undefined &&
             Number(item.modifiedUnitPrice) !== Number(item.unitPrice);
           const approvedQuantity = getRetailerOrderItemEffectiveQty(item);
+          const requestedQuantity = getRetailerOrderItemOrderedQty(item);
           const receivedQuantity = getRetailerOrderItemDeliveredQty(item);
           const approvedPrice = Number(
             item.modifiedUnitPrice ?? item.unitPrice ?? 0,
           );
+          const requestedPrice = Number(item.unitPrice ?? 0);
+          const displayedPrice = isReviewed ? approvedPrice : requestedPrice;
+          const displayedQuantity = isReviewed
+            ? approvedQuantity
+            : requestedQuantity;
 
           return (
             <article key={item.id} className="p-4">
@@ -575,11 +575,12 @@ function OrderItems({ items }: { items: any[] }) {
                 />
                 <MobileMetric
                   label="Approved"
-                  value={formatRetailerOrderItemQuantity(
-                    approvedQuantity,
-                    item,
-                  )}
-                  changed={quantityChanged}
+                  value={
+                    isReviewed
+                      ? formatRetailerOrderItemQuantity(approvedQuantity, item)
+                      : approvalPlaceholder
+                  }
+                  changed={isReviewed && quantityChanged}
                 />
                 <MobileMetric
                   label="Received"
@@ -589,21 +590,23 @@ function OrderItems({ items }: { items: any[] }) {
                   )}
                 />
                 <MobileMetric
-                  label="Unit price"
-                  value={formatMoney(approvedPrice)}
+                  label={isReviewed ? "Approved price" : "Requested price"}
+                  value={formatMoney(displayedPrice)}
                   previousValue={
-                    priceChanged ? formatMoney(item.unitPrice) : undefined
+                    isReviewed && priceChanged
+                      ? formatMoney(item.unitPrice)
+                      : undefined
                   }
-                  changed={priceChanged}
+                  changed={isReviewed && priceChanged}
                 />
                 <MobileMetric
-                  label="Total"
-                  value={formatMoney(approvedPrice * approvedQuantity)}
+                  label={isReviewed ? "Approved total" : "Requested total"}
+                  value={formatMoney(displayedPrice * displayedQuantity)}
                   strong
                 />
               </dl>
 
-              {(quantityChanged || priceChanged) && (
+              {isReviewed && (quantityChanged || priceChanged) && (
                 <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-700">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   Warehouse adjusted this line item.
@@ -687,6 +690,7 @@ function SummaryRail({
   delivery,
   requestedSummary,
   approvedSummary,
+  reviewState,
   isCancellable,
   isReceivable,
   onCancel,
@@ -695,12 +699,20 @@ function SummaryRail({
   order: any;
   delivery: any;
   requestedSummary: ReturnType<typeof getRetailerOrderFulfillmentSummary>;
-  approvedSummary: ReturnType<typeof getRetailerOrderFulfillmentSummary>;
+  approvedSummary: ReturnType<typeof getRetailerOrderFulfillmentSummary> | null;
+  reviewState: RetailerOrderReviewState;
   isCancellable: boolean;
   isReceivable: boolean;
   onCancel: () => void;
   onReceive: () => void;
 }) {
+  const isReviewed = reviewState === "reviewed";
+  const approvalValue =
+    reviewState === "pending" ? "Awaiting review" : "Not approved";
+  const approvalDetail =
+    reviewState === "pending"
+      ? "Warehouse review pending"
+      : "Cancelled before warehouse review";
   const paymentStatus = formatLabel(order.paymentStatus);
   const paymentStatusClass =
     order.paymentStatus === "paid"
@@ -723,15 +735,22 @@ function SummaryRail({
             />
             <SummaryValue
               label="Approved"
-              value={approvedSummary.primary}
-              secondary={approvedSummary.secondary}
+              value={
+                isReviewed ? approvedSummary?.primary || "—" : approvalValue
+              }
+              secondary={
+                isReviewed ? approvedSummary?.secondary : approvalDetail
+              }
             />
           </dl>
 
           <Separator className="my-4" />
 
           <dl className="space-y-2.5 text-sm">
-            <MoneyRow label="Subtotal" value={order.subtotal} />
+            <MoneyRow
+              label={isReviewed ? "Approved subtotal" : "Requested subtotal"}
+              value={order.subtotal}
+            />
             {Number(order.discount) > 0 && (
               <MoneyRow
                 label="Discount"
@@ -747,7 +766,9 @@ function SummaryRail({
           <Separator className="my-4" />
 
           <div className="flex items-end justify-between gap-4">
-            <span className="text-sm font-semibold text-foreground">Total</span>
+            <span className="text-sm font-semibold text-foreground">
+              {isReviewed ? "Approved total" : "Requested total"}
+            </span>
             <span className="font-mono text-lg font-bold tabular-nums text-foreground">
               {formatMoney(order.total)}
             </span>
@@ -955,41 +976,48 @@ function OrderActions({
   compact?: boolean;
 }) {
   return (
-    <div className={cn("flex gap-2", compact ? "flex-row" : "flex-col")}>
+    <div
+      className={cn("gap-2", compact ? "grid grid-cols-2" : "flex flex-col")}
+    >
       {isReceivable && (
         <Button
           type="button"
           onClick={onReceive}
-          className="min-w-0 flex-1 bg-blue-700 text-white hover:bg-blue-800"
-          size="sm"
+          className={cn("w-full", compact && "col-span-2")}
         >
-          <PackageCheck className="h-4 w-4" />
-          <span className="truncate">Mark received</span>
+          <PackageCheck data-icon="inline-start" />
+          Mark as received
         </Button>
       )}
       {warehousePhone && (
         <Button
-          asChild
+          type="button"
           variant="outline"
-          size="sm"
-          className="min-w-0 flex-1 shadow-none"
+          className={cn(
+            "w-full shadow-none",
+            compact && !isCancellable && "col-span-2",
+          )}
+          onClick={() => {
+            window.location.href = `tel:${warehousePhone}`;
+          }}
+          aria-label={`Contact supplier at ${warehousePhone}`}
         >
-          <a href={`tel:${warehousePhone}`}>
-            <Phone className="h-4 w-4" />
-            <span className="truncate">Contact</span>
-          </a>
+          <Phone data-icon="inline-start" />
+          Contact supplier
         </Button>
       )}
       {isCancellable && (
         <Button
           type="button"
-          variant="outline"
-          size="sm"
-          className="min-w-0 flex-1 border-red-200 text-red-700 shadow-none hover:bg-red-50 hover:text-red-800"
+          variant="destructive"
+          className={cn(
+            "w-full shadow-none",
+            compact && !warehousePhone && "col-span-2",
+          )}
           onClick={onCancel}
         >
-          <Ban className="h-4 w-4" />
-          <span className="truncate">Cancel</span>
+          <Ban data-icon="inline-start" />
+          Cancel order
         </Button>
       )}
     </div>

@@ -47,6 +47,7 @@ import { publicProcedure, warehouseProcedure } from "../index";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import { getCartonInventoryUnits } from "./helpers/carton-units";
 import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
+import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
   isConcreteVariantOption,
   resolveConcreteVariantForConfig,
@@ -2431,6 +2432,10 @@ const orderQueries = {
 							groupName: deliveryGroup.groupName,
 							groupStatus: deliveryGroup.status,
 							deliverymanId: deliveryGroup.deliverymanId,
+							assignedAt: deliveryGroup.assignedAt,
+							startedAt: deliveryGroup.startedAt,
+							invoiceStatus: deliveryGroupInvoice.status,
+							deliveredAt: deliveryGroupInvoice.deliveredAt,
 							deliverymanName: user.name,
 							deliverymanPhone: user.phoneNumber,
 						})
@@ -2549,57 +2554,11 @@ const orderQueries = {
 						}
 					: null,
 				delivery: currentDelivery,
-				flow: [
-					{
-						key: "placed",
-						label: "Order Placed",
-						completed: true,
-						date: orderData.createdAt,
-					},
-					{
-						key: "review",
-						label: orderData.status === "pending" ? "Review" : "Reviewed",
-						completed: orderData.status !== "pending",
-						date: orderData.confirmedAt || orderData.cancelledAt,
-					},
-					{
-						key: "approved",
-						label: orderData.status === "cancelled" ? "Rejected" : "Approved",
-						completed: [
-							"confirmed",
-							"processing",
-							"delivered",
-							"cancelled",
-						].includes(orderData.status),
-						date: orderData.confirmedAt || orderData.cancelledAt,
-					},
-					{
-						key: "ready",
-						label: "Packing / Ready",
-						completed: !!orderData.packingStartedAt || !!orderData.readyAt,
-						date: orderData.readyAt || orderData.packingStartedAt,
-					},
-					{
-						key: "invoice",
-						label: "Invoice Prepared",
-						completed: !!currentInvoice,
-						date: currentInvoice?.createdAt ?? null,
-					},
-					{
-						key: "dispatch",
-						label: "Dispatch Group",
-						completed: !!currentDelivery,
-						date: null,
-					},
-					{
-						key: "deliveryman",
-						label: "Deliveryman Assigned",
-						completed:
-							!!currentDelivery?.deliverymanId ||
-							!!currentInvoice?.deliverymanId,
-						date: null,
-					},
-				],
+				flow: buildCanonicalOrderFlow({
+					order: orderData,
+					invoices,
+					deliveryLinks,
+				}),
 			};
 		}),
 
