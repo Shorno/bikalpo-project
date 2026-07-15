@@ -423,8 +423,16 @@ export default function OrderManagementDetailPage() {
                     key={item.id}
                     className="border-b transition-colors last:border-0 hover:bg-muted/40"
                   >
-                    <td className="px-5 py-3 font-mono text-xs text-muted-foreground">
-                      {item.variant?.sku || `SKU-${item.id}`}
+                    <td className="px-5 py-3 font-mono text-xs tabular-nums">
+                      <p className="text-foreground">
+                        {item.globalSkuSnapshot || "Global SKU pending"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Local:{" "}
+                        {item.sourceSkuSnapshot ||
+                          item.variant?.sku ||
+                          `SKU-${item.id}`}
+                      </p>
                     </td>
                     <td className="px-5 py-3">
                       <div className="font-medium text-foreground">

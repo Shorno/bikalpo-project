@@ -654,8 +654,12 @@ function ProductIdentity({ item }: { item: any }) {
         <p className="truncate text-sm font-medium text-foreground">
           {item.productName}
         </p>
-        <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-          {item.variant?.sku || `ITEM-${item.id}`}
+        <p className="mt-0.5 truncate font-mono text-[11px] text-foreground">
+          {item.globalSkuSnapshot || "Global SKU pending"}
+        </p>
+        <p className="truncate font-mono text-[10px] text-muted-foreground">
+          Local:{" "}
+          {item.targetSkuSnapshot || item.variant?.sku || `ITEM-${item.id}`}
           {item.productSize ? ` · ${item.productSize}` : ""}
         </p>
       </div>

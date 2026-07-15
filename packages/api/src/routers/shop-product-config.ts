@@ -18,6 +18,7 @@ import { z } from "zod";
 import { shopOwnerProcedure } from "../index";
 import {
   isConcreteVariantOption,
+  linkProductVariantsToCatalog,
   resolveConcreteVariantForConfig,
 } from "./helpers/sync-generated-variants";
 
@@ -347,6 +348,8 @@ async function syncProductVariants({
       retailPrice: null,
     });
   }
+
+  await linkProductVariantsToCatalog(tx, targetProduct.id);
 }
 
 export const shopProductConfigEndpoints = {

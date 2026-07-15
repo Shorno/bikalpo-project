@@ -53,3 +53,38 @@ test("target identity rejects cross-brand variants", () => {
     ),
   );
 });
+
+test("Global SKU identity matches owner-specific variants", () => {
+  assert.doesNotThrow(() =>
+    assertCompatibleB2bTargetVariant(
+      { id: 1, productId: 4, catalogVariantId: 27 },
+      { id: 2, productId: 19, catalogVariantId: 27 },
+    ),
+  );
+});
+
+test("Global SKU identity permits only its configured conversion target", () => {
+  assert.doesNotThrow(() =>
+    assertCompatibleB2bTargetVariant(
+      {
+        id: 1,
+        productId: 4,
+        catalogVariantId: 27,
+        catalogVariant: { conversionTargetCatalogVariantId: 28 },
+      },
+      { id: 2, productId: 19, catalogVariantId: 28 },
+    ),
+  );
+
+  assert.throws(() =>
+    assertCompatibleB2bTargetVariant(
+      {
+        id: 1,
+        productId: 4,
+        catalogVariantId: 27,
+        catalogVariant: { conversionTargetCatalogVariantId: 28 },
+      },
+      { id: 3, productId: 19, catalogVariantId: 29 },
+    ),
+  );
+});

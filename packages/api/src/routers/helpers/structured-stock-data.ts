@@ -1,6 +1,7 @@
 import { db } from "@bikalpo-project/db";
 import {
   brand,
+  catalogVariant,
   category,
   coreProductIdentity,
   inventory,
@@ -47,6 +48,10 @@ export async function loadStructuredBrandStockRows(
     );
     conditions.push(eq(product.creatorSource, "warehouse"));
     if (ownerCondition) conditions.push(ownerCondition);
+  } else if (input.ownerType === "shop") {
+    conditions.push(isNotNull(inventory.id));
+    conditions.push(eq(product.creatorSource, "shop"));
+    conditions.push(eq(product.createdById, ownerId));
   } else {
     conditions.push(isNotNull(inventory.id));
   }
@@ -64,6 +69,7 @@ export async function loadStructuredBrandStockRows(
       sql`${product.name} ILIKE ${term}`,
       sql`${coreProductIdentity.name} ILIKE ${term}`,
       sql`${productVariant.sku} ILIKE ${term}`,
+      sql`${catalogVariant.globalSku} ILIKE ${term}`,
     );
     if (searchCondition) conditions.push(searchCondition);
   }
@@ -85,6 +91,9 @@ export async function loadStructuredBrandStockRows(
       family: productType.family,
       variantId: productVariant.id,
       variantSku: productVariant.sku,
+      preferredLocalSku: productVariant.preferredLocalSku,
+      catalogVariantId: productVariant.catalogVariantId,
+      globalSku: catalogVariant.globalSku,
       variantIsActive: productVariant.isActive,
       variantReorderLevel: productVariant.reorderLevel,
       sourceVariantOptionId: productVariant.sourceVariantOptionId,
@@ -123,6 +132,10 @@ export async function loadStructuredBrandStockRows(
     .leftJoin(
       variantOption,
       eq(productVariant.sourceVariantOptionId, variantOption.id),
+    )
+    .leftJoin(
+      catalogVariant,
+      eq(productVariant.catalogVariantId, catalogVariant.id),
     )
     .where(and(...conditions))
     .orderBy(
@@ -180,6 +193,9 @@ export async function loadStructuredBrandStockRows(
     categoryName: row.categoryName,
     family: row.family,
     sku: row.variantSku,
+    catalogVariantId: row.catalogVariantId,
+    globalSku: row.globalSku,
+    localSku: row.preferredLocalSku ?? row.variantSku,
     variantIsActive: row.variantIsActive,
     sourceVariantOptionId: row.sourceVariantOptionId,
     sourceVariantOption:

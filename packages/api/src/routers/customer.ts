@@ -2810,6 +2810,14 @@ const queries = {
         ),
         with: {
           variant: {
+            columns: {
+              id: true,
+              sku: true,
+              unitLabel: true,
+              quantitySelectorLabel: true,
+              price: true,
+              isActive: true,
+            },
             with: {
               product: {
                 columns: {
@@ -2818,6 +2826,8 @@ const queries = {
                   slug: true,
                   image: true,
                   description: true,
+                  status: true,
+                  visibility: true,
                 },
                 with: {
                   images: true,
@@ -2833,7 +2843,16 @@ const queries = {
       const productMap = new Map<number, any>();
       for (const inv of inventoryItems) {
         const prod = inv.variant?.product;
-        if (!prod) continue;
+        if (
+          !prod ||
+          !inv.variant?.isActive ||
+          prod.status !== "active" ||
+          prod.visibility !== "public" ||
+          Number(inv.availableQty || 0) <= 0 ||
+          Number(inv.retailPrice || 0) <= 0
+        ) {
+          continue;
+        }
 
         if (!productMap.has(prod.id)) {
           productMap.set(prod.id, {

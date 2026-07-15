@@ -1,16 +1,18 @@
 import type { db } from "@bikalpo-project/db";
 import {
+  catalogVariant,
+  product,
   productVariant,
   productVariantPrice,
   variantOption,
 } from "@bikalpo-project/db/schema";
-import { eq, inArray } from "drizzle-orm";
 import {
   ConcreteVariantDefinitionError,
   resolveConcreteVariantOption,
   resolveVariantOption,
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type DbClient = typeof db | DbTransaction;
@@ -87,6 +89,54 @@ export function getGeneratedVariantOrderUnit(
   }
 
   return productData.inventoryUnit || option?.unit || "piece";
+}
+
+/** Additive dual-write bridge for generated owner variants. */
+export async function linkProductVariantsToCatalog(
+  client: DbClient,
+  productId: number,
+) {
+  const productRow = await client.query.product.findFirst({
+    where: eq(product.id, productId),
+    columns: { id: true, coreProductId: true, brandId: true },
+    with: { variants: true },
+  });
+  if (!productRow?.coreProductId) return;
+
+  for (const variant of productRow.variants) {
+    if (!variant.sourceVariantOptionId) continue;
+    const brandId = variant.brandId ?? productRow.brandId ?? null;
+    if (variant.catalogVariantId) continue;
+
+    await client
+      .insert(catalogVariant)
+      .values({
+        coreProductId: productRow.coreProductId,
+        brandId,
+        variantOptionId: variant.sourceVariantOptionId,
+      })
+      .onConflictDoNothing();
+
+    const canonical = await client.query.catalogVariant.findFirst({
+      where: and(
+        eq(catalogVariant.coreProductId, productRow.coreProductId),
+        brandId === null
+          ? sql`${catalogVariant.brandId} IS NULL`
+          : eq(catalogVariant.brandId, brandId),
+        eq(catalogVariant.variantOptionId, variant.sourceVariantOptionId),
+      ),
+      columns: { id: true },
+    });
+    if (!canonical) {
+      throw new Error(
+        `Could not resolve catalog identity for variant ${variant.id}`,
+      );
+    }
+    await client
+      .update(productVariant)
+      .set({ catalogVariantId: canonical.id })
+      .where(eq(productVariant.id, variant.id));
+  }
 }
 
 /** Refresh canonical metadata without replacing generated rows or commercial data. */
@@ -309,6 +359,8 @@ export async function syncBrandVariantPrices(
       await client.insert(productVariant).values(autoVariantRows);
     }
   }
+
+  await linkProductVariantsToCatalog(client, productId);
 
   return {
     added: toAdd.length,

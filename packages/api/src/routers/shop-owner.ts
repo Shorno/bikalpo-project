@@ -81,6 +81,7 @@ import { z } from "zod";
 
 import { shopOwnerProcedure, publicProcedure } from "../index";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
     prepareB2bMovementForApproval,
     releaseB2bOrderReservations,
@@ -537,6 +538,9 @@ const managementQueries = {
                 with: {
                     variant: {
                         with: {
+                            catalogVariant: {
+                                columns: { id: true, globalSku: true },
+                            },
                             product: {
                                 with: {
                                     category: { columns: { id: true, name: true } },
@@ -1594,6 +1598,9 @@ const managementQueries = {
                 with: {
                     variant: {
                         with: {
+                            catalogVariant: {
+                                columns: { id: true, globalSku: true },
+                            },
                             product: {
                                 with: {
                                     category: { columns: { name: true, slug: true } },
@@ -1619,7 +1626,9 @@ const managementQueries = {
                 filtered = shopInventory.filter(
                     (inv) =>
                         inv.variant?.product?.name?.toLowerCase().includes(s) ||
-                        inv.variant?.sku?.toLowerCase().includes(s),
+                        inv.variant?.sku?.toLowerCase().includes(s) ||
+                        inv.variant?.preferredLocalSku?.toLowerCase().includes(s) ||
+                        inv.variant?.catalogVariant?.globalSku?.toLowerCase().includes(s),
                 );
             }
 
@@ -5401,6 +5410,11 @@ const warehouseOrderQueries = {
 
                 // Create order items
                 for (const item of validatedItems) {
+                    const buyerTarget = await ensureShopBuyerTargetVariant(tx, {
+                        shopId: userId,
+                        sourceVariantId: item.variantId,
+                        requestedTargetVariantId: item.targetVariantId,
+                    });
                     await tx.insert(orderItem).values({
                         orderId: newOrder!.id,
                         productId: item.productId,
@@ -5412,12 +5426,16 @@ const warehouseOrderQueries = {
                         unitPrice: item.unitPrice,
                         totalPrice: item.totalPrice,
                         supplyMode: item.supplyMode,
-                        targetVariantId: item.targetVariantId,
+                        targetVariantId: buyerTarget.targetVariantId,
                         conversionStatus: "pending",
                         quantityUnit: item.quantityUnit,
                         inventoryUnit: item.inventoryUnit,
                         conversionFactor: item.conversionFactor,
                         inventoryQty: item.inventoryQty,
+                        catalogVariantId: buyerTarget.sourceCatalogVariantId,
+                        globalSkuSnapshot: buyerTarget.sourceGlobalSku,
+                        sourceSkuSnapshot: buyerTarget.sourceLocalSku,
+                        targetSkuSnapshot: buyerTarget.targetLocalSku,
                     });
                 }
 
@@ -7419,6 +7437,36 @@ async function loadRetailerProductStockSnapshot(ownerId: string) {
 }
 
 const shopProductEndpoints = {
+    getShopInventoryIntegrity: shopOwnerProcedure.handler(async ({ context }) => {
+        const userId = context.session.user.id;
+        const rows = await db
+            .select({
+                inventoryId: inventory.id,
+                variantId: inventory.variantId,
+                sku: productVariant.sku,
+                productName: product.name,
+                creatorSource: product.creatorSource,
+                createdById: product.createdById,
+                availableQty: inventory.availableQty,
+                reservedQty: inventory.reservedQty,
+            })
+            .from(inventory)
+            .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+            .innerJoin(product, eq(productVariant.productId, product.id))
+            .where(
+                and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, userId),
+                    or(
+                        sql`${product.creatorSource} <> 'shop'`,
+                        sql`${product.createdById} IS DISTINCT FROM ${userId}`,
+                    ),
+                ),
+            );
+
+        return { count: rows.length, violations: rows };
+    }),
+
     /**
      * Get the retailer's brand products with unit-safe structured stock.
      */

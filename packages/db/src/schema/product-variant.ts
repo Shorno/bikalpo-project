@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
 import { brand } from "./brand";
+import { catalogVariant } from "./catalog-variant";
 import { product } from "./product";
 import { productVariantPrice } from "./product";
 import { variantOption } from "./variant-option";
@@ -212,6 +213,13 @@ export const productVariant = pgTable("product_variant", {
     sourceVariantOptionId: integer("source_variant_option_id")
         .references(() => variantOption.id, { onDelete: "set null" }),
 
+    /** Immutable platform identity shared across all owner-specific variants. */
+    catalogVariantId: integer("catalog_variant_id")
+        .references(() => catalogVariant.id, { onDelete: "restrict" }),
+
+    /** Preferred readable owner alias introduced after Global SKU adoption. */
+    preferredLocalSku: varchar("preferred_local_sku", { length: 32 }),
+
     ...timestamps,
 });
 
@@ -234,6 +242,10 @@ export const productVariantRelations = relations(productVariant, ({ one }) => ({
     sourceVariantOption: one(variantOption, {
         fields: [productVariant.sourceVariantOptionId],
         references: [variantOption.id],
+    }),
+    catalogVariant: one(catalogVariant, {
+        fields: [productVariant.catalogVariantId],
+        references: [catalogVariant.id],
     }),
 }));
 

@@ -38,6 +38,7 @@ import { adminProcedure, publicProcedure } from "../index";
 import { generateSku } from "./helpers/generate-sku";
 import {
   buildAutoVariantRows,
+  linkProductVariantsToCatalog,
   syncBrandVariantPrices,
 } from "./helpers/sync-generated-variants";
 
@@ -1205,6 +1206,8 @@ export const productRouter = {
         if (autoVariantRows.length > 0) {
           await db.insert(productVariant).values(autoVariantRows).returning();
         }
+
+        await linkProductVariantsToCatalog(db, id);
       }
 
       return { product: updatedProduct };

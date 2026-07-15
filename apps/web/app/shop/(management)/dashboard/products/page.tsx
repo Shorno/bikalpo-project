@@ -787,7 +787,7 @@ function ExpandedProductDetail({
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Variant / SKU</TableHead>
+              <TableHead>Variant / identifiers</TableHead>
               <TableHead className="text-right">Available</TableHead>
               <TableHead className="text-right">Reserved</TableHead>
               <TableHead className="text-right">On hand</TableHead>
@@ -826,9 +826,14 @@ function VariantTableRow({ variant }: { variant: ProductVariant }) {
               Alias: {variant.displayAlias}
             </p>
           )}
-        <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {variant.sku ?? "No SKU"}
-        </p>
+        <div className="mt-1 space-y-0.5 font-mono text-[11px] tabular-nums">
+          <p className="text-foreground">
+            {variant.globalSku ?? "Global SKU pending"}
+          </p>
+          <p className="text-muted-foreground">
+            Local: {variant.localSku ?? variant.sku ?? "Not assigned"}
+          </p>
+        </div>
       </TableCell>
       {invalid ? (
         <>
@@ -919,9 +924,14 @@ function VariantMobileRow({ variant }: { variant: ProductVariant }) {
           <p className="text-sm font-medium">
             {variant.canonicalLabel ?? "Admin setup required"}
           </p>
-          <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            {variant.sku ?? "No SKU"}
-          </p>
+          <div className="mt-1 font-mono text-[11px] tabular-nums">
+            <p className="text-foreground">
+              {variant.globalSku ?? "Global SKU pending"}
+            </p>
+            <p className="text-muted-foreground">
+              Local: {variant.localSku ?? variant.sku ?? "Not assigned"}
+            </p>
+          </div>
         </div>
         {invalid ? (
           <ProductStatusBadge status="setup_required" />

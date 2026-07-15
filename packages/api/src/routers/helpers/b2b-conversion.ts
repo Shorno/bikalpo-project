@@ -34,6 +34,11 @@ import {
     assertCompatibleB2bTargetVariant,
     getReceivedRetailerQty,
 } from "./b2b-inventory-movement";
+import {
+    assertInventoryVariantOwnedBy,
+    ensureShopBuyerTargetVariant,
+    ensureWarehouseBuyerTargetVariant,
+} from "./b2b-buyer-target";
 
 /**
  * Convert B2B order items to retail inventory upon confirmed receipt.
@@ -133,6 +138,7 @@ export async function convertB2bOrderToRetailInventory(
                 productId: true,
                 variantType: true,
                 linkedRetailVariantId: true,
+                catalogVariantId: true,
                 conversionRatio: true,
                 conversionLossPercent: true,
                 brandId: true,
@@ -141,7 +147,12 @@ export async function convertB2bOrderToRetailInventory(
                 weightKg: true,
                 packType: true,
             },
-            with: { sourceVariantOption: true },
+            with: {
+                sourceVariantOption: true,
+                catalogVariant: {
+                    columns: { conversionTargetCatalogVariantId: true },
+                },
+            },
         });
 
         if (!tradeVariant) {
@@ -424,6 +435,33 @@ export async function convertB2bOrderToRetailInventory(
             || conversionSource === "bulk_loose_convert"
             || conversionSource === "direct_unit_transfer";
         // Direct loose/unit transfers: no loss applied
+        // Supplier target variants are conversion choices, not buyer inventory
+        // identities. Resolve the exact retailer-owned variant before crediting.
+        const buyerTarget = await ensureShopBuyerTargetVariant(tx, {
+            shopId: orderData.userId,
+            sourceVariantId: tradeVariant.id,
+            requestedTargetVariantId:
+                targetRetailVariantId === tradeVariant.id
+                    ? null
+                    : targetRetailVariantId,
+        });
+        targetRetailVariantId = buyerTarget.targetVariantId;
+        await assertInventoryVariantOwnedBy(tx, {
+            ownerType: "shop",
+            ownerId: orderData.userId,
+            variantId: targetRetailVariantId,
+        });
+        await tx
+            .update(orderItem)
+            .set({
+                targetVariantId: targetRetailVariantId,
+                catalogVariantId: buyerTarget.sourceCatalogVariantId,
+                globalSkuSnapshot: buyerTarget.sourceGlobalSku,
+                sourceSkuSnapshot: buyerTarget.sourceLocalSku,
+                targetSkuSnapshot: buyerTarget.targetLocalSku,
+            })
+            .where(eq(orderItem.id, item.id));
+
         const calculatedRetailQty = isNoLossTransfer
             ? orderedQty * conversionRatio
             : orderedQty * conversionRatio * (1 - lossPercent / 100);
@@ -459,7 +497,12 @@ export async function convertB2bOrderToRetailInventory(
                 }
                 : await tx.query.productVariant.findFirst({
                     where: eq(productVariant.id, targetRetailVariantId),
-                    columns: { id: true, productId: true, brandId: true },
+                    columns: {
+                        id: true,
+                        productId: true,
+                        brandId: true,
+                        catalogVariantId: true,
+                    },
                     with: {
                         product: {
                             columns: { id: true, brandId: true, coreProductId: true },
@@ -707,12 +750,40 @@ async function transferB2bOrderToWarehouseInventory(
             throw new Error(`Order item ${item.id} has an invalid movement snapshot`);
         }
 
-        const targetVariantId = item.targetVariantId ?? item.variantId;
+        const buyerTarget = await ensureWarehouseBuyerTargetVariant(tx, {
+            warehouseId: input.buyerWarehouseId,
+            sourceVariantId: item.variantId,
+            requestedTargetVariantId: item.targetVariantId,
+        });
+        const targetVariantId = buyerTarget.targetVariantId;
+        await assertInventoryVariantOwnedBy(tx, {
+            ownerType: "warehouse",
+            ownerId: input.buyerWarehouseId,
+            variantId: targetVariantId,
+        });
+        await tx
+            .update(orderItem)
+            .set({
+                targetVariantId,
+                catalogVariantId: buyerTarget.sourceCatalogVariantId,
+                globalSkuSnapshot: buyerTarget.sourceGlobalSku,
+                sourceSkuSnapshot: buyerTarget.sourceLocalSku,
+                targetSkuSnapshot: buyerTarget.targetLocalSku,
+            })
+            .where(eq(orderItem.id, item.id));
         const [sourceIdentity, targetIdentity] = await Promise.all([
             tx.query.productVariant.findFirst({
                 where: eq(productVariant.id, item.variantId),
-                columns: { id: true, productId: true, brandId: true },
+                columns: {
+                    id: true,
+                    productId: true,
+                    brandId: true,
+                    catalogVariantId: true,
+                },
                 with: {
+                    catalogVariant: {
+                        columns: { conversionTargetCatalogVariantId: true },
+                    },
                     product: {
                         columns: { id: true, brandId: true, coreProductId: true },
                     },
@@ -720,7 +791,12 @@ async function transferB2bOrderToWarehouseInventory(
             }),
             tx.query.productVariant.findFirst({
                 where: eq(productVariant.id, targetVariantId),
-                columns: { id: true, productId: true, brandId: true },
+                columns: {
+                    id: true,
+                    productId: true,
+                    brandId: true,
+                    catalogVariantId: true,
+                },
                 with: {
                     product: {
                         columns: { id: true, brandId: true, coreProductId: true },

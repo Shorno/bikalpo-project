@@ -8,6 +8,7 @@ export * from "./brand-update";
 export * from "./cart";
 export * from "./carton";
 export * from "./carton-config";
+export * from "./catalog-variant";
 export * from "./catalog-approval-request";
 export * from "./category";
 export * from "./combo-offer";

@@ -342,6 +342,8 @@ export const stockOverviewRouter = {
                 return [
                     variant.productName,
                     variant.brandName,
+                    variant.globalSku,
+                    variant.localSku,
                     variant.sku,
                     variant.canonicalLabel,
                     variant.displayAlias,

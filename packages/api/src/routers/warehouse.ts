@@ -44,6 +44,7 @@ import {
 import { z } from "zod";
 
 import { publicProcedure, warehouseProcedure } from "../index";
+import { ensureWarehouseBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
 	markOrderCartonsDispatched,
@@ -66,6 +67,7 @@ import {
 } from "./helpers/order-dispatch";
 import {
   isConcreteVariantOption,
+  linkProductVariantsToCatalog,
   resolveConcreteVariantForConfig,
 } from "./helpers/sync-generated-variants";
 
@@ -209,6 +211,9 @@ const storefrontQueries = {
 				with: {
 					variant: {
 						with: {
+							catalogVariant: {
+								columns: { id: true, globalSku: true },
+							},
 							brand: {
 								columns: { id: true, name: true, slug: true, logo: true },
 							},
@@ -261,7 +266,11 @@ const storefrontQueries = {
 					const normalizedSearch = search.toLowerCase();
 					if (
 						!prod.name.toLowerCase().includes(normalizedSearch) &&
-						!itemBrand?.name?.toLowerCase().includes(normalizedSearch)
+						!itemBrand?.name?.toLowerCase().includes(normalizedSearch) &&
+						!inv.variant?.sku?.toLowerCase().includes(normalizedSearch) &&
+						!inv.variant?.catalogVariant?.globalSku
+							?.toLowerCase()
+							.includes(normalizedSearch)
 					)
 						return false;
 				}
@@ -316,6 +325,10 @@ const storefrontQueries = {
 						});
 						return {
 							inventoryId: inv.id,
+							catalogVariantId: inv.variant?.catalogVariantId ?? null,
+							globalSku: inv.variant?.catalogVariant?.globalSku ?? null,
+							localSku:
+								inv.variant?.preferredLocalSku ?? inv.variant?.sku ?? null,
 							availableQty: inv.availableQty,
 							retailPrice: inv.retailPrice,
 							fulfillmentMode: profile.defaultMode,
@@ -1415,10 +1428,19 @@ const warehouseSupplierConnectionQueries = {
 					.returning();
 
 				for (const item of validatedItems) {
+					const target = await ensureWarehouseBuyerTargetVariant(tx, {
+						warehouseId: buyerWarehouseId,
+						sourceVariantId: item.variantId,
+					});
 					await tx.insert(orderItem).values({
 						orderId: newOrder!.id,
 						productId: item.productId,
 						variantId: item.variantId,
+						targetVariantId: target.targetVariantId,
+						catalogVariantId: target.sourceCatalogVariantId,
+						globalSkuSnapshot: target.sourceGlobalSku,
+						sourceSkuSnapshot: target.sourceLocalSku,
+						targetSkuSnapshot: target.targetLocalSku,
 						productName: item.productName,
 						productImage: item.productImage,
 						productSize: item.productSize,
@@ -7215,6 +7237,7 @@ const warehouseProductCreation = {
 						input.details.additionalImages.map((imageUrl) => ({ productId: existing.id, imageUrl })),
 					);
 				}
+				await linkProductVariantsToCatalog(tx, existing.id);
 				return { productId: existing.id };
 			});
 		}),
@@ -7824,6 +7847,10 @@ const warehouseProductCreation = {
 							updatedAt: new Date(),
 						},
 					});
+
+				for (const productId of new Set([...created, ...updated])) {
+					await linkProductVariantsToCatalog(tx, productId);
+				}
 
 				return { created, updated, deactivated };
 			});

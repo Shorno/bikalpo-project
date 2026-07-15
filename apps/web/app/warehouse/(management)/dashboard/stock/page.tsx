@@ -66,6 +66,9 @@ type StructuredStockVariant = {
   productName: string;
   brandName: string | null;
   sku: string | null;
+  catalogVariantId: number | null;
+  globalSku: string | null;
+  localSku: string | null;
   canonicalLabel: string | null;
   displayAlias: string | null;
   family: string | null;
@@ -625,9 +628,17 @@ export default function StockOverviewDashboard() {
                           <p className="mt-0.5 text-xs text-zinc-500">
                             {variant.brandName ?? "Brand not assigned"}
                           </p>
-                          <p className="mt-1 font-mono text-[11px] text-zinc-400">
-                            {variant.sku ?? "No SKU"}
-                          </p>
+                          <div className="mt-1 space-y-0.5 font-mono text-[11px] tabular-nums">
+                            <p className="text-zinc-700">
+                              {variant.globalSku ?? "Global SKU pending"}
+                            </p>
+                            <p className="text-zinc-400">
+                              Local:{" "}
+                              {variant.localSku ??
+                                variant.sku ??
+                                "Not assigned"}
+                            </p>
+                          </div>
                         </td>
                         <td className="px-4 py-4">
                           {variant.configurationState === "valid" ? (

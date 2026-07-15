@@ -77,6 +77,9 @@ type StructuredStockVariant = {
   productName: string;
   brandName: string | null;
   sku: string | null;
+  catalogVariantId: number | null;
+  globalSku: string | null;
+  localSku: string | null;
   canonicalLabel: string | null;
   displayAlias: string | null;
   family: ProductTypeFamily | null;
@@ -709,9 +712,14 @@ function VariantTableRow({ variant }: { variant: StructuredStockVariant }) {
         <p className="mt-0.5 text-xs text-muted-foreground">
           {variant.brandName ?? "Brand not assigned"}
         </p>
-        <p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">
-          {variant.sku ?? "No SKU"}
-        </p>
+        <div className="mt-1 space-y-0.5 font-mono text-[11px] tabular-nums">
+          <p className="text-foreground">
+            {variant.globalSku ?? "Global SKU pending"}
+          </p>
+          <p className="text-muted-foreground">
+            Local: {variant.localSku ?? variant.sku ?? "Not assigned"}
+          </p>
+        </div>
       </td>
       <td className="px-4 py-4">
         {valid ? (
@@ -823,9 +831,14 @@ function VariantMobileCard({ variant }: { variant: StructuredStockVariant }) {
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {variant.brandName ?? "Brand not assigned"}
           </p>
-          <p className="mt-1 truncate font-mono text-[11px] tabular-nums text-muted-foreground">
-            {variant.sku ?? "No SKU"}
-          </p>
+          <div className="mt-1 font-mono text-[11px] tabular-nums">
+            <p className="truncate text-foreground">
+              {variant.globalSku ?? "Global SKU pending"}
+            </p>
+            <p className="truncate text-muted-foreground">
+              Local: {variant.localSku ?? variant.sku ?? "Not assigned"}
+            </p>
+          </div>
         </div>
         {valid ? (
           <StatusBadge status={variant.status} />

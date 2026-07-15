@@ -102,7 +102,11 @@ export function buildB2bMovementSnapshot(
 type VariantIdentity = {
   id: number;
   productId: number;
+  catalogVariantId?: number | null;
   brandId?: number | null;
+  catalogVariant?: {
+    conversionTargetCatalogVariantId?: number | null;
+  } | null;
   product?: {
     id?: number;
     brandId?: number | null;
@@ -118,6 +122,28 @@ export function assertCompatibleB2bTargetVariant(
   source: VariantIdentity,
   target: VariantIdentity,
 ) {
+  if (
+    source.catalogVariantId !== null &&
+    source.catalogVariantId !== undefined
+  ) {
+    if (
+      target.catalogVariantId === null ||
+      target.catalogVariantId === undefined
+    ) {
+      throw new Error("Target variant is missing its Global SKU identity");
+    }
+
+    const conversionTargetId =
+      source.catalogVariant?.conversionTargetCatalogVariantId ?? null;
+    if (
+      target.catalogVariantId !== source.catalogVariantId &&
+      target.catalogVariantId !== conversionTargetId
+    ) {
+      throw new Error("Target variant belongs to a different Global SKU");
+    }
+    return;
+  }
+
   const sourceCore = source.product?.coreProductId ?? null;
   const targetCore = target.product?.coreProductId ?? null;
   const sameProductIdentity =
@@ -178,6 +204,9 @@ export async function prepareB2bMovementForApproval(
   const source = await tx.query.productVariant.findFirst({
     where: eq(productVariant.id, input.item.variantId),
     with: {
+      catalogVariant: {
+        columns: { conversionTargetCatalogVariantId: true },
+      },
       product: {
         columns: {
           id: true,
@@ -262,6 +291,9 @@ export async function prepareB2bMovementForApproval(
       : await tx.query.productVariant.findFirst({
           where: eq(productVariant.id, requestedTargetId),
           with: {
+            catalogVariant: {
+              columns: { conversionTargetCatalogVariantId: true },
+            },
             product: {
               columns: { id: true, brandId: true, coreProductId: true },
             },
