@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	buildStructuredStockDetail,
 	buildStructuredStockOverview,
+	type StructuredStockDetailSourceRow,
 	type StructuredStockSourceRow,
 } from "./structured-stock-overview";
 
@@ -60,6 +62,21 @@ function sourceRow(
 		warehouseSellingPrice: input.warehouseSellingPrice ?? null,
 		variantReorderLevel: input.variantReorderLevel ?? 0,
 		productReorderLevel: input.productReorderLevel ?? 0,
+	};
+}
+
+function detailSourceRow(
+	input: Partial<StructuredStockDetailSourceRow> &
+		Pick<StructuredStockDetailSourceRow, "productId" | "variantId">,
+): StructuredStockDetailSourceRow {
+	const row = sourceRow(input);
+	return {
+		...row,
+		coreProductName: input.coreProductName ?? "LPG Gas Cylinder",
+		coreProductSku: input.coreProductSku ?? "001",
+		coreProductImage: input.coreProductImage ?? "/core-lpg.png",
+		productImage: input.productImage ?? `/product-${input.productId}.png`,
+		productTypeName: input.productTypeName ?? "LPG",
 	};
 }
 
@@ -215,4 +232,97 @@ test("keeps aliases display-only and reports invalid Admin definitions", () => {
 	assert.equal(variants[1]?.inventoryUnit, null);
 	assert.equal(dashboard.configurationIssueCount, 1);
 	assert.equal(dashboard.quantityGroups[0]?.available, 7);
+});
+
+test("builds an exact brand-variant detail for a core target", () => {
+	const detail = buildStructuredStockDetail({ kind: "core", id: 1 }, [
+		detailSourceRow({
+			productId: 10,
+			variantId: 101,
+			coreProductId: 1,
+			productName: "Bashundhara LPG Gas Cylinder",
+			brandId: 10,
+			brandName: "Bashundhara",
+			availableQty: null,
+		}),
+		detailSourceRow({
+			productId: 20,
+			variantId: 201,
+			coreProductId: 1,
+			productName: "Omera LPG Gas Cylinder",
+			brandId: 20,
+			brandName: "Omera",
+			availableQty: 60,
+			displayAlias: "Home cylinder",
+		}),
+		detailSourceRow({
+			productId: 30,
+			variantId: 301,
+			coreProductId: 2,
+			coreProductName: "Different core",
+			availableQty: 999,
+		}),
+	]);
+
+	assert.ok(detail);
+	assert.deepEqual(detail.identity, {
+		kind: "core",
+		id: 1,
+		name: "LPG Gas Cylinder",
+		image: "/core-lpg.png",
+		coreSku: "001",
+		productTypeName: "LPG",
+		categoryName: "LPG",
+		productCount: 2,
+		variantCount: 2,
+	});
+	assert.equal(detail.variants[0]?.productName, "Bashundhara LPG Gas Cylinder");
+	assert.equal(detail.variants[0]?.brandName, "Bashundhara");
+	assert.equal(detail.variants[0]?.canonicalLabel, "12 KG cylinder");
+	assert.equal(detail.variants[0]?.movementKind, "direct");
+	assert.equal(detail.variants[0]?.available, 0);
+	assert.equal(detail.variants[1]?.displayAlias, "Home cylinder");
+	assert.equal(detail.quantityGroups[0]?.available, 60);
+	assert.equal(detail.quantityGroups[0]?.referenceMeasurement?.available, 720);
+});
+
+test("filters product targets and keeps invalid definitions visible", () => {
+	const invalidOption = structuredOption({
+		value: "35",
+		measurementUnit: "KG",
+		container: "cylinder",
+		operationalUnit: "cylinder",
+		needsReview: true,
+	});
+	const rows = [
+		detailSourceRow({
+			productId: 10,
+			variantId: 101,
+			coreProductId: 1,
+			sourceVariantOption: invalidOption,
+			availableQty: 4,
+		}),
+		detailSourceRow({
+			productId: 20,
+			variantId: 201,
+			coreProductId: 1,
+			availableQty: 5,
+		}),
+	];
+
+	const detail = buildStructuredStockDetail({ kind: "product", id: 10 }, rows);
+	assert.ok(detail);
+	assert.equal(detail.identity.kind, "product");
+	assert.equal(detail.identity.productCount, 1);
+	assert.equal(detail.identity.variantCount, 1);
+	assert.equal(detail.configurationIssueCount, 1);
+	assert.equal(detail.variants[0]?.movementKind, null);
+	assert.equal(
+		detail.variants[0]?.configurationState,
+		"needs_admin_variant_setup",
+	);
+	assert.equal(
+		buildStructuredStockDetail({ kind: "product", id: 999 }, rows),
+		null,
+	);
 });

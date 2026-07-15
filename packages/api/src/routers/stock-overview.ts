@@ -19,13 +19,18 @@ import {
     productType,
     productVariant,
     subCategory,
+    variantOption,
     warehouseVariantAlias,
 } from "@bikalpo-project/db/schema";
-import { and, eq, inArray, or, type SQL, sql } from "drizzle-orm";
+import { ORPCError } from "@orpc/server";
+import { and, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
-import { buildStructuredStockOverview } from "./helpers/structured-stock-overview";
+import {
+    buildStructuredStockDetail,
+    buildStructuredStockOverview,
+} from "./helpers/structured-stock-overview";
 
 /**
  * Stock status thresholds (configurable per-product later).
@@ -353,6 +358,217 @@ export const stockOverviewRouter = {
                 pageSize: input.pageSize,
                 totalPages,
             };
+        }),
+
+    /**
+     * Target-scoped stock detail resolved exclusively from Admin Variant Setup.
+     * Warehouse-owned variants remain visible at zero stock; other owner types
+     * must already have an inventory row for the requested variant.
+     */
+    getStructuredStockDetail: protectedProcedure
+        .input(
+            z.object({
+                ownerType: z.enum(["warehouse", "shop", "super_seller"]),
+                target: z.discriminatedUnion("kind", [
+                    z.object({
+                        kind: z.literal("core"),
+                        id: z.number().int().positive(),
+                    }),
+                    z.object({
+                        kind: z.literal("product"),
+                        id: z.number().int().positive(),
+                    }),
+                ]),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const ownerId = context.session.user.id;
+            const inventoryScope = and(
+                eq(inventory.variantId, productVariant.id),
+                eq(inventory.ownerType, input.ownerType),
+                eq(inventory.ownerId, ownerId),
+            );
+            const ownerConditions: SQL[] =
+                input.ownerType === "warehouse"
+                    ? [
+                          eq(product.creatorSource, "warehouse"),
+                          or(
+                              eq(product.createdById, ownerId),
+                              eq(product.createdByWarehouseId, ownerId),
+                          )!,
+                      ]
+                    : [isNotNull(inventory.id)];
+            const targetCondition =
+                input.target.kind === "core"
+                    ? eq(product.coreProductId, input.target.id)
+                    : eq(product.id, input.target.id);
+
+            const rows = await db
+                .select({
+                    productId: product.id,
+                    productName: product.name,
+                    productImage: product.image,
+                    productStatus: product.status,
+                    productReorderLevel: product.reorderLevel,
+                    productBrandId: product.brandId,
+                    coreProductId: product.coreProductId,
+                    coreProductName: coreProductIdentity.name,
+                    coreProductSku: coreProductIdentity.sku,
+                    coreProductImage: coreProductIdentity.image,
+                    categoryId: category.id,
+                    categoryName: category.name,
+                    productTypeName: productType.name,
+                    family: productType.family,
+                    variantId: productVariant.id,
+                    variantSku: productVariant.sku,
+                    variantBrandId: productVariant.brandId,
+                    variantIsActive: productVariant.isActive,
+                    variantReorderLevel: productVariant.reorderLevel,
+                    sourceVariantOptionId: productVariant.sourceVariantOptionId,
+                    sourceOptionName: variantOption.name,
+                    sourceOptionUnit: variantOption.unit,
+                    sourceOptionSize: variantOption.size,
+                    sourceOptionVariantType: variantOption.variantType,
+                    sourceOptionDefinitionKind: variantOption.definitionKind,
+                    sourceOptionDefinition: variantOption.definition,
+                    sourceOptionDisplayAlias: variantOption.displayAlias,
+                    sourceOptionNeedsReview: variantOption.needsReview,
+                    availableQty: inventory.availableQty,
+                    reservedQty: inventory.reservedQty,
+                    warehouseSellingPrice: inventory.retailPrice,
+                    brandId: brand.id,
+                    brandName: brand.name,
+                })
+                .from(productVariant)
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(
+                    inventory,
+                    inventoryScope,
+                )
+                .leftJoin(
+                    coreProductIdentity,
+                    eq(product.coreProductId, coreProductIdentity.id),
+                )
+                .innerJoin(category, eq(product.categoryId, category.id))
+                .leftJoin(productType, eq(category.typeId, productType.id))
+                .leftJoin(
+                    brand,
+                    eq(
+                        brand.id,
+                        sql`COALESCE(${productVariant.brandId}, ${product.brandId})`,
+                    ),
+                )
+                .leftJoin(
+                    variantOption,
+                    eq(productVariant.sourceVariantOptionId, variantOption.id),
+                )
+                .where(
+                    and(
+                        targetCondition,
+                        eq(product.status, "active"),
+                        eq(productVariant.isActive, true),
+                        ...ownerConditions,
+                    ),
+                )
+                .orderBy(
+                    product.name,
+                    brand.name,
+                    variantOption.sortOrder,
+                    productVariant.sortOrder,
+                );
+
+            if (rows.length === 0) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Stock detail not found",
+                });
+            }
+
+            const coreProductIds = [
+                ...new Set(
+                    rows.flatMap((row) =>
+                        row.coreProductId === null ? [] : [row.coreProductId],
+                    ),
+                ),
+            ];
+            const aliases =
+                input.ownerType === "warehouse" && coreProductIds.length > 0
+                    ? await db.query.warehouseVariantAlias.findMany({
+                          where: and(
+                              eq(warehouseVariantAlias.warehouseId, ownerId),
+                              inArray(
+                                  warehouseVariantAlias.coreProductId,
+                                  coreProductIds,
+                              ),
+                          ),
+                          columns: {
+                              coreProductId: true,
+                              variantOptionId: true,
+                              alias: true,
+                          },
+                      })
+                    : [];
+            const aliasMap = new Map(
+                aliases.map((entry) => [
+                    `${entry.coreProductId}:${entry.variantOptionId}`,
+                    entry.alias,
+                ]),
+            );
+
+            const detail = buildStructuredStockDetail(
+                input.target,
+                rows.map((row) => ({
+                    productId: row.productId,
+                    variantId: row.variantId,
+                    coreProductId: row.coreProductId,
+                    coreProductName: row.coreProductName,
+                    coreProductSku: row.coreProductSku,
+                    coreProductImage: row.coreProductImage,
+                    productName: row.productName,
+                    productImage: row.productImage,
+                    productIsActive: row.productStatus === "active",
+                    productTypeName: row.productTypeName,
+                    brandId: row.brandId ?? row.variantBrandId ?? row.productBrandId,
+                    brandName: row.brandName,
+                    categoryId: row.categoryId,
+                    categoryName: row.categoryName,
+                    family: row.family,
+                    sku: row.variantSku,
+                    variantIsActive: row.variantIsActive,
+                    sourceVariantOptionId: row.sourceVariantOptionId,
+                    sourceVariantOption:
+                        row.sourceVariantOptionId === null
+                            ? null
+                            : {
+                                  name: row.sourceOptionName,
+                                  unit: row.sourceOptionUnit,
+                                  size: row.sourceOptionSize,
+                                  variantType: row.sourceOptionVariantType,
+                                  definitionKind: row.sourceOptionDefinitionKind,
+                                  definition: row.sourceOptionDefinition,
+                                  displayAlias: row.sourceOptionDisplayAlias,
+                                  needsReview: row.sourceOptionNeedsReview,
+                              },
+                    displayAlias:
+                        row.coreProductId && row.sourceVariantOptionId
+                            ? aliasMap.get(
+                                  `${row.coreProductId}:${row.sourceVariantOptionId}`,
+                              ) ?? null
+                            : null,
+                    availableQty: row.availableQty,
+                    reservedQty: row.reservedQty,
+                    warehouseSellingPrice: row.warehouseSellingPrice,
+                    variantReorderLevel: row.variantReorderLevel,
+                    productReorderLevel: row.productReorderLevel,
+                })),
+            );
+
+            if (!detail) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Stock detail not found",
+                });
+            }
+
+            return detail;
         }),
 
     /**

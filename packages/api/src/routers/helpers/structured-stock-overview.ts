@@ -61,6 +61,7 @@ export type StructuredStockVariant = {
 	canonicalLabel: string | null;
 	displayAlias: string | null;
 	family: VariantProductFamily | null;
+	movementKind: "direct" | "loose" | "container" | null;
 	inventoryUnit: string | null;
 	available: number;
 	reserved: number;
@@ -80,6 +81,36 @@ export type StructuredStockVariant = {
 	status: StockStatus;
 	configurationState: "valid" | "needs_admin_variant_setup";
 	configurationIssue: ConfigurationIssue | null;
+};
+
+export type StructuredStockDetailTarget =
+	| { kind: "core"; id: number }
+	| { kind: "product"; id: number };
+
+export type StructuredStockDetailSourceRow = StructuredStockSourceRow & {
+	coreProductName: string | null;
+	coreProductSku: string | null;
+	coreProductImage: string | null;
+	productImage: string | null;
+	productTypeName: string | null;
+};
+
+export type StructuredStockDetail = {
+	identity: {
+		kind: StructuredStockDetailTarget["kind"];
+		id: number;
+		name: string;
+		image: string | null;
+		coreSku: string | null;
+		productTypeName: string | null;
+		categoryName: string | null;
+		productCount: number;
+		variantCount: number;
+	};
+	quantityGroups: StockQuantityGroup[];
+	stockStatus: StructuredStockDashboard["stockStatus"];
+	variants: StructuredStockVariant[];
+	configurationIssueCount: number;
 };
 
 export type StructuredStockDashboard = {
@@ -344,6 +375,7 @@ export function buildStructuredStockOverview(
 
 		let canonicalLabel: string | null = null;
 		let displayAlias: string | null = row.displayAlias?.trim() || null;
+		let movementKind: StructuredStockVariant["movementKind"] = null;
 		let inventoryUnit: string | null = null;
 		let referenceMeasurement:
 			| StructuredStockVariant["referenceMeasurement"]
@@ -367,6 +399,7 @@ export function buildStructuredStockOverview(
 				if (!displayAlias && stockSemantics.displayLabel !== canonicalLabel) {
 					displayAlias = stockSemantics.displayLabel;
 				}
+				movementKind = movementSemantics.movementKind;
 				inventoryUnit = movementSemantics.inventoryUnit;
 
 				const referenceUnit =
@@ -412,6 +445,7 @@ export function buildStructuredStockOverview(
 			canonicalLabel,
 			displayAlias,
 			family: configurationIssue ? null : row.family,
+			movementKind,
 			inventoryUnit,
 			available: cleanNumber(available),
 			reserved: cleanNumber(reserved),
@@ -473,5 +507,51 @@ export function buildStructuredStockOverview(
 			configurationIssueCount,
 		},
 		variants,
+	};
+}
+
+export function buildStructuredStockDetail(
+	target: StructuredStockDetailTarget,
+	rows: StructuredStockDetailSourceRow[],
+): StructuredStockDetail | null {
+	const matchingRows = rows.filter((row) => {
+		if (!row.productIsActive || !row.variantIsActive) return false;
+		return target.kind === "core"
+			? row.coreProductId === target.id
+			: row.productId === target.id;
+	});
+
+	if (matchingRows.length === 0) return null;
+
+	const snapshot = buildStructuredStockOverview(matchingRows);
+	if (snapshot.variants.length === 0) return null;
+
+	const first = matchingRows[0]!;
+	const productCount = new Set(
+		snapshot.variants.map((variant) => variant.productId),
+	).size;
+
+	return {
+		identity: {
+			kind: target.kind,
+			id: target.id,
+			name:
+				target.kind === "core"
+					? first.coreProductName || first.productName
+					: first.productName,
+			image:
+				target.kind === "core"
+					? first.coreProductImage || first.productImage
+					: first.productImage,
+			coreSku: first.coreProductSku,
+			productTypeName: first.productTypeName,
+			categoryName: first.categoryName,
+			productCount,
+			variantCount: snapshot.variants.length,
+		},
+		quantityGroups: snapshot.dashboard.quantityGroups,
+		stockStatus: snapshot.dashboard.stockStatus,
+		variants: snapshot.variants,
+		configurationIssueCount: snapshot.dashboard.configurationIssueCount,
 	};
 }
