@@ -28,8 +28,11 @@ import { z } from "zod";
 
 import { protectedProcedure } from "../index";
 import {
+    buildStructuredBrandStockDetail,
+    buildStructuredBrandStockOverview,
     buildStructuredStockDetail,
     buildStructuredStockOverview,
+    type StructuredBrandStockSourceRow,
 } from "./helpers/structured-stock-overview";
 
 /**
@@ -279,6 +282,198 @@ async function loadStructuredStockSnapshot(
             ];
         }),
     );
+}
+
+async function loadStructuredBrandStockRows(
+    input: {
+        ownerType: InventoryOwnerType;
+        brandId?: number;
+        categoryId?: number;
+        search?: string;
+    },
+    ownerId: string,
+): Promise<StructuredBrandStockSourceRow[]> {
+    const inventoryScope = and(
+        eq(inventory.variantId, productVariant.id),
+        eq(inventory.ownerType, input.ownerType),
+        eq(inventory.ownerId, ownerId),
+    );
+    const conditions: SQL[] = [
+        eq(product.status, "active"),
+        eq(productVariant.isActive, true),
+    ];
+
+    if (input.ownerType === "warehouse") {
+        const ownerCondition = or(
+            eq(product.createdById, ownerId),
+            eq(product.createdByWarehouseId, ownerId),
+        );
+        conditions.push(eq(product.creatorSource, "warehouse"));
+        if (ownerCondition) conditions.push(ownerCondition);
+    } else {
+        conditions.push(isNotNull(inventory.id));
+    }
+    if (input.brandId !== undefined) {
+        conditions.push(eq(brand.id, input.brandId));
+    }
+    if (input.categoryId !== undefined) {
+        conditions.push(eq(product.categoryId, input.categoryId));
+    }
+    const search = input.search?.trim();
+    if (search) {
+        const term = `%${search}%`;
+        const searchCondition = or(
+            sql`${brand.name} ILIKE ${term}`,
+            sql`${product.name} ILIKE ${term}`,
+            sql`${coreProductIdentity.name} ILIKE ${term}`,
+        );
+        if (searchCondition) conditions.push(searchCondition);
+    }
+
+    const rows = await db
+        .select({
+            productId: product.id,
+            productName: product.name,
+            productImage: product.image,
+            productStatus: product.status,
+            productReorderLevel: product.reorderLevel,
+            productBrandId: product.brandId,
+            coreProductId: product.coreProductId,
+            coreProductName: coreProductIdentity.name,
+            coreProductSku: coreProductIdentity.sku,
+            coreProductImage: coreProductIdentity.image,
+            categoryId: category.id,
+            categoryName: category.name,
+            productTypeName: productType.name,
+            family: productType.family,
+            variantId: productVariant.id,
+            variantSku: productVariant.sku,
+            variantBrandId: productVariant.brandId,
+            variantIsActive: productVariant.isActive,
+            variantReorderLevel: productVariant.reorderLevel,
+            sourceVariantOptionId: productVariant.sourceVariantOptionId,
+            sourceOptionName: variantOption.name,
+            sourceOptionUnit: variantOption.unit,
+            sourceOptionSize: variantOption.size,
+            sourceOptionVariantType: variantOption.variantType,
+            sourceOptionDefinitionKind: variantOption.definitionKind,
+            sourceOptionDefinition: variantOption.definition,
+            sourceOptionDisplayAlias: variantOption.displayAlias,
+            sourceOptionNeedsReview: variantOption.needsReview,
+            availableQty: inventory.availableQty,
+            reservedQty: inventory.reservedQty,
+            warehouseSellingPrice: inventory.retailPrice,
+            brandId: brand.id,
+            brandName: brand.name,
+            brandLogo: brand.logo,
+            brandSlug: brand.slug,
+        })
+        .from(productVariant)
+        .innerJoin(product, eq(productVariant.productId, product.id))
+        .leftJoin(inventory, inventoryScope)
+        .leftJoin(
+            coreProductIdentity,
+            eq(product.coreProductId, coreProductIdentity.id),
+        )
+        .innerJoin(category, eq(product.categoryId, category.id))
+        .leftJoin(productType, eq(category.typeId, productType.id))
+        .innerJoin(
+            brand,
+            eq(
+                brand.id,
+                sql`COALESCE(${productVariant.brandId}, ${product.brandId})`,
+            ),
+        )
+        .leftJoin(
+            variantOption,
+            eq(productVariant.sourceVariantOptionId, variantOption.id),
+        )
+        .where(and(...conditions))
+        .orderBy(
+            brand.name,
+            coreProductIdentity.name,
+            product.name,
+            variantOption.sortOrder,
+            productVariant.sortOrder,
+        );
+
+    const coreProductIds = [
+        ...new Set(
+            rows.flatMap((row) =>
+                row.coreProductId === null ? [] : [row.coreProductId],
+            ),
+        ),
+    ];
+    const aliases =
+        input.ownerType === "warehouse" && coreProductIds.length > 0
+            ? await db.query.warehouseVariantAlias.findMany({
+                  where: and(
+                      eq(warehouseVariantAlias.warehouseId, ownerId),
+                      inArray(
+                          warehouseVariantAlias.coreProductId,
+                          coreProductIds,
+                      ),
+                  ),
+                  columns: {
+                      coreProductId: true,
+                      variantOptionId: true,
+                      alias: true,
+                  },
+              })
+            : [];
+    const aliasMap = new Map(
+        aliases.map((entry) => [
+            `${entry.coreProductId}:${entry.variantOptionId}`,
+            entry.alias,
+        ]),
+    );
+
+    return rows.map((row) => ({
+        productId: row.productId,
+        variantId: row.variantId,
+        coreProductId: row.coreProductId,
+        coreProductName: row.coreProductName,
+        coreProductSku: row.coreProductSku,
+        coreProductImage: row.coreProductImage,
+        productName: row.productName,
+        productImage: row.productImage,
+        productIsActive: row.productStatus === "active",
+        productTypeName: row.productTypeName,
+        brandId: row.brandId,
+        brandName: row.brandName,
+        brandLogo: row.brandLogo,
+        brandSlug: row.brandSlug,
+        categoryId: row.categoryId,
+        categoryName: row.categoryName,
+        family: row.family,
+        sku: row.variantSku,
+        variantIsActive: row.variantIsActive,
+        sourceVariantOptionId: row.sourceVariantOptionId,
+        sourceVariantOption:
+            row.sourceVariantOptionId === null
+                ? null
+                : {
+                      name: row.sourceOptionName,
+                      unit: row.sourceOptionUnit,
+                      size: row.sourceOptionSize,
+                      variantType: row.sourceOptionVariantType,
+                      definitionKind: row.sourceOptionDefinitionKind,
+                      definition: row.sourceOptionDefinition,
+                      displayAlias: row.sourceOptionDisplayAlias,
+                      needsReview: row.sourceOptionNeedsReview,
+                  },
+        displayAlias:
+            row.coreProductId && row.sourceVariantOptionId
+                ? aliasMap.get(
+                      `${row.coreProductId}:${row.sourceVariantOptionId}`,
+                  ) ?? null
+                : null,
+        availableQty: row.availableQty,
+        reservedQty: row.reservedQty,
+        warehouseSellingPrice: row.warehouseSellingPrice,
+        variantReorderLevel: row.variantReorderLevel,
+        productReorderLevel: row.productReorderLevel,
+    }));
 }
 
 
@@ -1234,10 +1429,7 @@ export const stockOverviewRouter = {
             };
         }),
 
-    /**
-     * Brand Stock Overview: Aggregated stock data grouped by brand.
-     * Each row = one brand with total SKUs, stock, low stock count, and status.
-     */
+    /** Brand stock grouped with Admin Variant Setup semantics. */
     getBrandStockOverview: protectedProcedure
         .input(
             z.object({
@@ -1247,239 +1439,32 @@ export const stockOverviewRouter = {
             }),
         )
         .handler(async ({ context, input }) => {
-            const ownerId = context.session.user.id;
-
-            const conditions = [
-                eq(inventory.ownerType, input.ownerType),
-                eq(inventory.ownerId, ownerId),
-            ];
-            if (input.categoryId) {
-                conditions.push(eq(product.categoryId, input.categoryId));
-            }
-            if (input.search) {
-                const term = `%${input.search}%`;
-                conditions.push(sql`${brand.name} ILIKE ${term}`);
-            }
-
-            // Aggregate by brand: join inventory → variant → product → brand
-            const rows = await db
-                .select({
-                    brandId: brand.id,
-                    brandName: brand.name,
-                    brandLogo: brand.logo,
-                    brandSlug: brand.slug,
-                    variantId: productVariant.id,
-                    availableQty: inventory.availableQty,
-                    weightKg: productVariant.weightKg,
-                    packType: productVariant.packType,
-                })
-                .from(inventory)
-                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
-                .innerJoin(product, eq(productVariant.productId, product.id))
-                .innerJoin(brand, eq(productVariant.brandId, brand.id))
-                .where(and(...conditions))
-                .orderBy(brand.name);
-
-            // Group by brand
-            type BrandGroup = {
-                brandId: number;
-                brandName: string;
-                brandLogo: string | null;
-                brandSlug: string;
-                totalStock: number;
-                skuSet: Set<number>;
-                lowStockCount: number;
-            };
-
-            const brandMap = new Map<number, BrandGroup>();
-            const LOW_STOCK_THRESHOLD = 10;
-
-            for (const row of rows) {
-                const qty = parseFloat(row.availableQty || "0");
-                const weightKg = parseFloat(row.weightKg || "0");
-                const isLoose = row.packType === "loose";
-                // Convert to KG: loose is already KG, packs need × weightKg
-                const qtyInKg = isLoose ? qty : qty * weightKg;
-
-                if (!brandMap.has(row.brandId)) {
-                    brandMap.set(row.brandId, {
-                        brandId: row.brandId,
-                        brandName: row.brandName,
-                        brandLogo: row.brandLogo,
-                        brandSlug: row.brandSlug,
-                        totalStock: 0,
-                        skuSet: new Set(),
-                        lowStockCount: 0,
-                    });
-                }
-
-                const g = brandMap.get(row.brandId)!;
-                g.totalStock += qtyInKg;
-                g.skuSet.add(row.variantId);
-                if (qty > 0 && qty <= LOW_STOCK_THRESHOLD) {
-                    g.lowStockCount++;
-                }
-            }
-
-            const brands = Array.from(brandMap.values())
-                .map((g) => ({
-                    brandId: g.brandId,
-                    brandName: g.brandName,
-                    brandLogo: g.brandLogo,
-                    brandSlug: g.brandSlug,
-                    totalSku: g.skuSet.size,
-                    totalStock: Math.round(g.totalStock),
-                    lowStockCount: g.lowStockCount,
-                }))
-                .sort((a, b) => b.totalStock - a.totalStock);
-
-            return { brands };
+            const rows = await loadStructuredBrandStockRows(
+                input,
+                context.session.user.id,
+            );
+            return { brands: buildStructuredBrandStockOverview(rows) };
         }),
 
-    /**
-     * Brand Stock Detail: Products + variants under a specific brand.
-     */
+    /** Exact brand products and variants with structured stock semantics. */
     getBrandStockDetail: protectedProcedure
         .input(
             z.object({
                 ownerType: z.enum(["warehouse", "shop", "super_seller"]),
-                brandId: z.number().int(),
+                brandId: z.number().int().positive(),
             }),
         )
         .handler(async ({ context, input }) => {
-            const ownerId = context.session.user.id;
-
-            // Get brand info
-            const [brandRow] = await db
-                .select({
-                    id: brand.id,
-                    name: brand.name,
-                    logo: brand.logo,
-                    slug: brand.slug,
-                })
-                .from(brand)
-                .where(eq(brand.id, input.brandId))
-                .limit(1);
-
-            if (!brandRow) {
-                return { brand: null, products: [], summary: { totalSku: 0, totalStock: 0, lowStockCount: 0 } };
-            }
-
-            // Get all inventory rows for this brand
-            const rows = await db
-                .select({
-                    variantId: productVariant.id,
-                    variantSku: productVariant.sku,
-                    unitLabel: productVariant.unitLabel,
-                    packType: productVariant.packType,
-                    weightKg: productVariant.weightKg,
-                    productId: product.id,
-                    productName: product.name,
-                    productImage: product.image,
-                    coreProductId: product.coreProductId,
-                    coreProductName: coreProductIdentity.name,
-                    availableQty: inventory.availableQty,
-                    reservedQty: inventory.reservedQty,
-                })
-                .from(inventory)
-                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
-                .innerJoin(product, eq(productVariant.productId, product.id))
-                .leftJoin(coreProductIdentity, eq(product.coreProductId, coreProductIdentity.id))
-                .where(
-                    and(
-                        eq(inventory.ownerType, input.ownerType),
-                        eq(inventory.ownerId, ownerId),
-                        eq(productVariant.brandId, input.brandId),
-                    ),
-                )
-                .orderBy(sql`COALESCE(${coreProductIdentity.name}, ${product.name})`);
-
-            // Group by core product, then by variant
-            type VariantRow = {
-                variantId: number;
-                sku: string | null;
-                unitLabel: string;
-                packType: string | null;
-                weightKg: number;
-                stock: number;
-                reserved: number;
-                available: number;
-                stockKg: number;
-            };
-
-            type ProductGroup = {
-                productId: number;
-                coreProductId: number | null;
-                coreProductName: string;
-                productImage: string | null;
-                totalStock: number;
-                variants: VariantRow[];
-            };
-
-            const productMap = new Map<string, ProductGroup>();
-            let totalSku = 0;
-            let totalStock = 0;
-            let lowStockCount = 0;
-            const skuSet = new Set<number>();
-
-            for (const row of rows) {
-                const available = parseFloat(row.availableQty || "0");
-                const reserved = parseFloat(row.reservedQty || "0");
-                const stock = available + reserved;
-                const weightKg = parseFloat(row.weightKg || "0");
-                const coreName = row.coreProductName || row.productName;
-                const groupKey = row.coreProductId ? `core_${row.coreProductId}` : `product_${row.productId}`;
-                const isLoose = row.packType === "loose";
-                const availableKg = isLoose ? available : available * weightKg;
-
-                if (!productMap.has(groupKey)) {
-                    productMap.set(groupKey, {
-                        productId: row.productId,
-                        coreProductId: row.coreProductId,
-                        coreProductName: coreName,
-                        productImage: row.productImage,
-                        totalStock: 0,
-                        variants: [],
-                    });
-                }
-
-                const g = productMap.get(groupKey)!;
-                g.totalStock += availableKg;
-                g.variants.push({
-                    variantId: row.variantId,
-                    sku: row.variantSku,
-                    unitLabel: row.unitLabel,
-                    packType: row.packType,
-                    weightKg,
-                    stock: Math.round(stock),
-                    reserved: Math.round(reserved),
-                    available: Math.round(available),
-                    stockKg: Math.round(isLoose ? stock : stock * weightKg),
+            const rows = await loadStructuredBrandStockRows(
+                input,
+                context.session.user.id,
+            );
+            const detail = buildStructuredBrandStockDetail(input.brandId, rows);
+            if (!detail) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Brand stock detail not found",
                 });
-
-                if (!skuSet.has(row.variantId)) {
-                    skuSet.add(row.variantId);
-                    totalSku++;
-                    totalStock += availableKg;
-                    if (available > 0 && available <= 10) {
-                        lowStockCount++;
-                    }
-                }
             }
-
-            const products = Array.from(productMap.values()).map((g) => ({
-                ...g,
-                totalStock: Math.round(g.totalStock),
-            }));
-
-            return {
-                brand: brandRow,
-                products,
-                summary: {
-                    totalSku,
-                    totalStock: Math.round(totalStock),
-                    lowStockCount,
-                },
-            };
+            return detail;
         }),
 };

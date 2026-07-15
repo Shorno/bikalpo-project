@@ -113,6 +113,62 @@ export type StructuredStockDetail = {
 	configurationIssueCount: number;
 };
 
+export type StructuredBrandStockSourceRow = Omit<
+	StructuredStockDetailSourceRow,
+	"brandId" | "brandName"
+> & {
+	brandId: number;
+	brandName: string;
+	brandLogo: string | null;
+	brandSlug: string;
+};
+
+export type AggregateStockStatus = "in_stock" | "attention" | "out_of_stock";
+
+export type StructuredBrandStockOverviewItem = {
+	brandId: number;
+	brandName: string;
+	brandLogo: string | null;
+	brandSlug: string;
+	productCount: number;
+	variantCount: number;
+	quantityGroups: StockQuantityGroup[];
+	stockStatus: StructuredStockDashboard["stockStatus"];
+	configurationIssueCount: number;
+};
+
+export type StructuredBrandProductGroup = {
+	key: string;
+	productId: number;
+	coreProductId: number | null;
+	name: string;
+	image: string | null;
+	productCount: number;
+	variantCount: number;
+	quantityGroups: StockQuantityGroup[];
+	stockStatus: StructuredStockDashboard["stockStatus"];
+	aggregateStatus: AggregateStockStatus;
+	configurationIssueCount: number;
+	variants: StructuredStockVariant[];
+};
+
+export type StructuredBrandStockDetail = {
+	brand: {
+		id: number;
+		name: string;
+		logo: string | null;
+		slug: string;
+	};
+	summary: {
+		productCount: number;
+		variantCount: number;
+		quantityGroups: StockQuantityGroup[];
+		stockStatus: StructuredStockDashboard["stockStatus"];
+		configurationIssueCount: number;
+	};
+	products: StructuredBrandProductGroup[];
+};
+
 export type StructuredStockDashboard = {
 	summary: {
 		activeProducts: number;
@@ -526,7 +582,8 @@ export function buildStructuredStockDetail(
 	const snapshot = buildStructuredStockOverview(matchingRows);
 	if (snapshot.variants.length === 0) return null;
 
-	const first = matchingRows[0]!;
+	const first = matchingRows[0];
+	if (!first) return null;
 	const productCount = new Set(
 		snapshot.variants.map((variant) => variant.productId),
 	).size;
@@ -553,5 +610,133 @@ export function buildStructuredStockDetail(
 		stockStatus: snapshot.dashboard.stockStatus,
 		variants: snapshot.variants,
 		configurationIssueCount: snapshot.dashboard.configurationIssueCount,
+	};
+}
+
+function resolveAggregateStatus(
+	variants: StructuredStockVariant[],
+): AggregateStockStatus {
+	if (
+		variants.length === 0 ||
+		variants.every((variant) => variant.status === "out_of_stock")
+	) {
+		return "out_of_stock";
+	}
+	if (variants.some((variant) => variant.status !== "in_stock")) {
+		return "attention";
+	}
+	return "in_stock";
+}
+
+export function buildStructuredBrandStockOverview(
+	rows: StructuredBrandStockSourceRow[],
+): StructuredBrandStockOverviewItem[] {
+	const rowsByBrand = new Map<number, StructuredBrandStockSourceRow[]>();
+
+	for (const row of rows) {
+		const brandRows = rowsByBrand.get(row.brandId) ?? [];
+		brandRows.push(row);
+		rowsByBrand.set(row.brandId, brandRows);
+	}
+
+	return Array.from(rowsByBrand.values())
+		.flatMap((brandRows) => {
+			const first = brandRows[0];
+			if (!first) return [];
+			const snapshot = buildStructuredStockOverview(brandRows);
+			return [
+				{
+					brandId: first.brandId,
+					brandName: first.brandName,
+					brandLogo: first.brandLogo,
+					brandSlug: first.brandSlug,
+					productCount: snapshot.dashboard.summary.activeProducts,
+					variantCount: snapshot.dashboard.summary.activeVariants,
+					quantityGroups: snapshot.dashboard.quantityGroups,
+					stockStatus: snapshot.dashboard.stockStatus,
+					configurationIssueCount:
+						snapshot.dashboard.configurationIssueCount,
+				},
+			];
+		})
+		.filter((brand) => brand.variantCount > 0)
+		.sort(
+			(a, b) =>
+				b.variantCount - a.variantCount ||
+				a.brandName.localeCompare(b.brandName),
+		);
+}
+
+export function buildStructuredBrandStockDetail(
+	brandId: number,
+	rows: StructuredBrandStockSourceRow[],
+): StructuredBrandStockDetail | null {
+	const brandRows = rows.filter(
+		(row) =>
+			row.brandId === brandId && row.productIsActive && row.variantIsActive,
+	);
+	if (brandRows.length === 0) return null;
+
+	const snapshot = buildStructuredStockOverview(brandRows);
+	if (snapshot.variants.length === 0) return null;
+
+	const rowsByProductGroup = new Map<
+		string,
+		StructuredBrandStockSourceRow[]
+	>();
+
+	for (const row of brandRows) {
+		const key = row.coreProductId
+			? `core_${row.coreProductId}`
+			: `product_${row.productId}`;
+		const groupRows = rowsByProductGroup.get(key) ?? [];
+		groupRows.push(row);
+		rowsByProductGroup.set(key, groupRows);
+	}
+
+	const products = Array.from(rowsByProductGroup.entries())
+		.flatMap(([key, groupRows]) => {
+			const first = groupRows[0];
+			if (!first) return [];
+			const groupSnapshot = buildStructuredStockOverview(groupRows);
+			return [
+				{
+					key,
+					productId: first.productId,
+					coreProductId: first.coreProductId,
+					name: first.coreProductName || first.productName,
+					image: first.coreProductImage || first.productImage,
+					productCount: groupSnapshot.dashboard.summary.activeProducts,
+					variantCount: groupSnapshot.dashboard.summary.activeVariants,
+					quantityGroups: groupSnapshot.dashboard.quantityGroups,
+					stockStatus: groupSnapshot.dashboard.stockStatus,
+					aggregateStatus: resolveAggregateStatus(groupSnapshot.variants),
+					configurationIssueCount:
+						groupSnapshot.dashboard.configurationIssueCount,
+					variants: groupSnapshot.variants,
+				},
+			];
+		})
+		.filter((product) => product.variantCount > 0)
+		.sort((a, b) => a.name.localeCompare(b.name));
+
+	const first = brandRows[0];
+	if (!first) return null;
+	return {
+		brand: {
+			id: first.brandId,
+			name: first.brandName,
+			logo: first.brandLogo,
+			slug: first.brandSlug,
+		},
+		summary: {
+			productCount: snapshot.dashboard.summary.activeProducts,
+			variantCount: snapshot.dashboard.summary.activeVariants,
+			quantityGroups: snapshot.dashboard.quantityGroups,
+			stockStatus: snapshot.dashboard.stockStatus,
+			configurationIssueCount:
+				snapshot.dashboard.configurationIssueCount,
+		},
+		products,
 	};
 }

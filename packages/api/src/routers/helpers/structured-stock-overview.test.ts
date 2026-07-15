@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	buildStructuredBrandStockDetail,
+	buildStructuredBrandStockOverview,
 	buildStructuredStockDetail,
 	buildStructuredStockOverview,
+	type StructuredBrandStockSourceRow,
 	type StructuredStockDetailSourceRow,
 	type StructuredStockSourceRow,
 } from "./structured-stock-overview";
@@ -77,6 +80,19 @@ function detailSourceRow(
 		coreProductImage: input.coreProductImage ?? "/core-lpg.png",
 		productImage: input.productImage ?? `/product-${input.productId}.png`,
 		productTypeName: input.productTypeName ?? "LPG",
+	};
+}
+
+function brandSourceRow(
+	input: Partial<StructuredBrandStockSourceRow> &
+		Pick<StructuredBrandStockSourceRow, "productId" | "variantId">,
+): StructuredBrandStockSourceRow {
+	return {
+		...detailSourceRow(input),
+		brandId: input.brandId ?? 19,
+		brandName: input.brandName ?? "Omera",
+		brandLogo: input.brandLogo ?? null,
+		brandSlug: input.brandSlug ?? "omera",
 	};
 }
 
@@ -325,4 +341,176 @@ test("filters product targets and keeps invalid definitions visible", () => {
 		buildStructuredStockDetail({ kind: "product", id: 999 }, rows),
 		null,
 	);
+});
+
+test("aggregates brand stock by operational unit and keeps reference content secondary", () => {
+	const definitions = [
+		[19, "Omera", "omera", 100, 12, 60],
+		[19, "Omera", "omera", 100, 25, 40],
+		[19, "Omera", "omera", 100, 35, 30],
+		[19, "Omera", "omera", 100, 45, 20],
+		[16, "Fresh", "fresh", 200, 12, 40],
+		[16, "Fresh", "fresh", 200, 35, 30],
+		[16, "Fresh", "fresh", 200, 45, 15],
+		[20, "Bashundhara", "bashundhara", 300, 12, 50],
+	] as const;
+	const rows = definitions.map(
+		([brandId, brandName, brandSlug, productId, capacity, quantity], index) =>
+			brandSourceRow({
+				brandId,
+				brandName,
+				brandSlug,
+				productId,
+				variantId: index + 1,
+				productName: `${brandName} LPG Gas Cylinder`,
+				availableQty: quantity,
+				sourceVariantOption: structuredOption({
+					value: String(capacity),
+					measurementUnit: "KG",
+					container: "cylinder",
+					operationalUnit: "cylinder",
+				}),
+			}),
+	);
+
+	const brands = buildStructuredBrandStockOverview(rows);
+	assert.equal(brands.length, 3);
+	const omera = brands.find((item) => item.brandName === "Omera");
+	const fresh = brands.find((item) => item.brandName === "Fresh");
+	const bashundhara = brands.find(
+		(item) => item.brandName === "Bashundhara",
+	);
+	assert.ok(omera);
+	assert.ok(fresh);
+	assert.ok(bashundhara);
+	assert.equal(omera.variantCount, 4);
+	assert.equal(omera.quantityGroups[0]?.onHand, 150);
+	assert.equal(
+		omera.quantityGroups[0]?.referenceMeasurement?.onHand,
+		3670,
+	);
+	assert.equal(fresh.quantityGroups[0]?.onHand, 85);
+	assert.equal(
+		fresh.quantityGroups[0]?.referenceMeasurement?.onHand,
+		2205,
+	);
+	assert.equal(bashundhara.quantityGroups[0]?.onHand, 50);
+	assert.equal(
+		bashundhara.quantityGroups[0]?.referenceMeasurement?.onHand,
+		600,
+	);
+	assert.equal(
+		brands.reduce(
+			(total, item) => total + (item.quantityGroups[0]?.onHand ?? 0),
+			0,
+		),
+		285,
+	);
+});
+
+test("brand reservations preserve on-hand totals and configured threshold status", () => {
+	const before = buildStructuredBrandStockOverview([
+		brandSourceRow({
+			productId: 100,
+			variantId: 1,
+			availableQty: 10,
+			reservedQty: 0,
+			variantReorderLevel: 5,
+		}),
+	]);
+	const after = buildStructuredBrandStockOverview([
+		brandSourceRow({
+			productId: 100,
+			variantId: 1,
+			availableQty: 4,
+			reservedQty: 6,
+			variantReorderLevel: 5,
+		}),
+	]);
+
+	assert.equal(before[0]?.quantityGroups[0]?.onHand, 10);
+	assert.equal(after[0]?.quantityGroups[0]?.onHand, 10);
+	assert.equal(after[0]?.quantityGroups[0]?.available, 4);
+	assert.equal(after[0]?.quantityGroups[0]?.reserved, 6);
+	assert.equal(after[0]?.stockStatus.lowStock, 1);
+	assert.equal(after[0]?.stockStatus.reserved, 1);
+});
+
+test("brand detail keeps exact configured variants including zero stock", () => {
+	const detail = buildStructuredBrandStockDetail(19, [
+		brandSourceRow({
+			productId: 100,
+			variantId: 1,
+			availableQty: 0,
+			displayAlias: "Home cylinder",
+		}),
+		brandSourceRow({
+			productId: 100,
+			variantId: 2,
+			availableQty: 4,
+			variantReorderLevel: 5,
+			sourceVariantOption: structuredOption({
+				value: "25",
+				measurementUnit: "KG",
+				container: "cylinder",
+				operationalUnit: "cylinder",
+			}),
+		}),
+	]);
+
+	assert.ok(detail);
+	assert.equal(detail.summary.variantCount, 2);
+	assert.equal(detail.products.length, 1);
+	assert.equal(detail.products[0]?.variantCount, 2);
+	assert.equal(detail.products[0]?.aggregateStatus, "attention");
+	assert.equal(detail.products[0]?.variants[0]?.available, 0);
+	assert.equal(
+		detail.products[0]?.variants[0]?.canonicalLabel,
+		"12 KG cylinder",
+	);
+	assert.equal(
+		detail.products[0]?.variants[0]?.displayAlias,
+		"Home cylinder",
+	);
+	assert.equal(
+		buildStructuredBrandStockDetail(999, [
+			brandSourceRow({ productId: 100, variantId: 1 }),
+		]),
+		null,
+	);
+});
+
+test("brand aggregation separates unlike units and exposes invalid definitions", () => {
+	const brands = buildStructuredBrandStockOverview([
+		brandSourceRow({ productId: 100, variantId: 1, availableQty: 5 }),
+		brandSourceRow({
+			productId: 101,
+			variantId: 2,
+			availableQty: 3,
+			family: "bulk_liquid",
+			categoryId: 2,
+			categoryName: "Oil",
+			sourceVariantOption: structuredOption({
+				value: "5",
+				measurementUnit: "L",
+				container: "bottle",
+				operationalUnit: "bottle",
+			}),
+		}),
+		brandSourceRow({
+			productId: 102,
+			variantId: 3,
+			availableQty: 7,
+			sourceVariantOption: null,
+			sourceVariantOptionId: null,
+		}),
+	]);
+
+	assert.equal(brands[0]?.quantityGroups.length, 2);
+	assert.deepEqual(
+		brands[0]?.quantityGroups.map((group) => group.inventoryUnit),
+		["bottle", "cylinder"],
+	);
+	assert.equal(brands[0]?.configurationIssueCount, 1);
+	assert.equal(brands[0]?.variantCount, 3);
 });
