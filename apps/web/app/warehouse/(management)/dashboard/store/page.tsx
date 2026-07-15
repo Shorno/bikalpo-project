@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Package, StoreIcon } from "lucide-react";
+import Image from "next/image";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
@@ -24,6 +26,39 @@ function StockBadge({ qty }: { qty: number }) {
     <Badge className="text-[10px] bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
       {qty} in stock
     </Badge>
+  );
+}
+
+function ProductThumbnail({
+  image,
+  productName,
+  brandName,
+}: {
+  image?: string | null;
+  productName: string;
+  brandName?: string | null;
+}) {
+  const [imageError, setImageError] = useState(false);
+  const imageUrl = image?.trim();
+
+  return (
+    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-white">
+      {imageUrl && !imageError ? (
+        <Image
+          src={imageUrl}
+          alt={`${brandName ? `${brandName} ` : ""}${productName}`}
+          fill
+          sizes="48px"
+          className="object-contain p-1"
+          onError={() => setImageError(true)}
+          unoptimized={imageUrl.startsWith("http")}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-gray-100">
+          <Package className="h-5 w-5 text-gray-400" />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -167,21 +202,30 @@ export default function WarehouseStorePage() {
                   variant?.unitLabel || variant?.packType || "Unit";
                 const price = item.retailPrice || variant?.price || "0";
                 const category = product?.category?.name;
+                const brand =
+                  item.brand || variant?.brand || product?.brand || null;
+                const productImage =
+                  product?.image ||
+                  product?.images?.[0]?.imageUrl ||
+                  product?.images?.[0]?.url ||
+                  null;
+                const productName = product?.name || "Unknown";
 
                 return (
                   <div
                     key={item.inventoryId || variant?.id}
                     className="flex items-center gap-4 p-4 hover:bg-gray-50/50 transition-colors"
                   >
-                    {/* Icon */}
-                    <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                      <Package className="w-5 h-5 text-gray-400" />
-                    </div>
+                    <ProductThumbnail
+                      image={productImage}
+                      productName={productName}
+                      brandName={brand?.name}
+                    />
 
                     {/* Product Info */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {product?.name || "Unknown"}
+                        {productName}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
                         {category && (
