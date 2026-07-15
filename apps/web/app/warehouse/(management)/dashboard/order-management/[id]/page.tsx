@@ -20,10 +20,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { type ElementType, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { OrderFlowStepper } from "@/components/features/orders/order-flow-stepper";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
-import { OrderFlowStepper } from "./_components/order-flow-stepper";
 import { OrderSourceBadge } from "./_components/order-source-badge";
 
 /* ── Helpers ─────────────────────────────────────────────── */

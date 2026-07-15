@@ -13,7 +13,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { OrderFlowStepper } from "@/app/warehouse/(management)/dashboard/order-management/[id]/_components/order-flow-stepper";
+import { OrderFlowStepper } from "@/components/features/orders/order-flow-stepper";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

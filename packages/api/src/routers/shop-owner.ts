@@ -2272,13 +2272,19 @@ const orderQueries = {
             }
 
             // Resolve warehouse info
-            let warehouseInfo: { name: string; phone: string | null; shopName: string | null } | null = null;
+            let warehouseInfo: {
+                name: string;
+                phone: string | null;
+                shopName: string | null;
+                warehouseName: string | null;
+            } | null = null;
             if (result.warehouseId) {
                 const wh = await db
                     .select({
                         name: user.name,
                         phone: user.phoneNumber,
                         shopName: user.shopName,
+                        warehouseName: user.warehouseName,
                     })
                     .from(user)
                     .where(eq(user.id, result.warehouseId))
@@ -2358,7 +2364,11 @@ const orderQueries = {
                 order: {
                     ...result,
                     items: enrichPurchaseOrderItemsFulfillment(result.items),
-                    warehouseName: warehouseInfo?.shopName || warehouseInfo?.name || "Admin",
+                    warehouseName:
+                        warehouseInfo?.warehouseName ||
+                        warehouseInfo?.shopName ||
+                        warehouseInfo?.name ||
+                        "Admin",
                     warehousePhone: warehouseInfo?.phone || null,
                 },
                 timeline,
