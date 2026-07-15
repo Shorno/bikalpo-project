@@ -1587,6 +1587,10 @@ const managementQueries = {
                     eq(inventory.ownerType, "shop"),
                     eq(inventory.ownerId, userId),
                 ),
+                // Always start from a deterministic database order. The final
+                // taxonomy sort below is applied before pagination, but this ID
+                // tie-breaker also keeps otherwise identical records stable.
+                orderBy: [asc(inventory.id)],
                 with: {
                     variant: {
                         with: {
@@ -1618,6 +1622,41 @@ const managementQueries = {
                         inv.variant?.sku?.toLowerCase().includes(s),
                 );
             }
+
+            // Match the stable hierarchy used by the admin and warehouse price
+            // lists. Price and updatedAt are deliberately excluded so editing a
+            // price cannot move its row after the query is refreshed.
+            const compareLabels = (left: string | null | undefined, right: string | null | undefined) =>
+                (left ?? "").localeCompare(right ?? "", "en", {
+                    numeric: true,
+                    sensitivity: "base",
+                });
+            const getBrandName = (item: (typeof shopInventory)[number]) =>
+                item.variant?.brand?.name ??
+                item.variant?.product?.brand?.name ??
+                item.variant?.product?.productBrands?.[0]?.brand?.name ??
+                "";
+            const getVariantLabel = (item: (typeof shopInventory)[number]) =>
+                item.variant?.quantitySelectorLabel ??
+                item.variant?.unitLabel ??
+                item.variant?.sku ??
+                "";
+
+            filtered = [...filtered].sort((left, right) =>
+                compareLabels(
+                    left.variant?.product?.category?.name,
+                    right.variant?.product?.category?.name,
+                ) ||
+                compareLabels(
+                    left.variant?.product?.name,
+                    right.variant?.product?.name,
+                ) ||
+                compareLabels(getBrandName(left), getBrandName(right)) ||
+                (left.variant?.sortOrder ?? 0) - (right.variant?.sortOrder ?? 0) ||
+                compareLabels(getVariantLabel(left), getVariantLabel(right)) ||
+                compareLabels(left.variant?.sku, right.variant?.sku) ||
+                left.id - right.id,
+            );
 
             const total = filtered.length;
             const paginated = filtered.slice(offset, offset + limit);

@@ -45,6 +45,35 @@ function resolveBrand(item: any) {
   return null;
 }
 
+function comparePricingRows(left: any, right: any) {
+  const compareLabels = (
+    leftLabel: string | null | undefined,
+    rightLabel: string | null | undefined,
+  ) =>
+    (leftLabel ?? "").localeCompare(rightLabel ?? "", "en", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  const leftVariant = left.variant;
+  const rightVariant = right.variant;
+
+  return (
+    compareLabels(
+      leftVariant?.product?.category?.name,
+      rightVariant?.product?.category?.name,
+    ) ||
+    compareLabels(leftVariant?.product?.name, rightVariant?.product?.name) ||
+    compareLabels(resolveBrand(left)?.name, resolveBrand(right)?.name) ||
+    (leftVariant?.sortOrder ?? 0) - (rightVariant?.sortOrder ?? 0) ||
+    compareLabels(
+      leftVariant?.quantitySelectorLabel ?? leftVariant?.unitLabel,
+      rightVariant?.quantitySelectorLabel ?? rightVariant?.unitLabel,
+    ) ||
+    compareLabels(leftVariant?.sku, rightVariant?.sku) ||
+    (left.id ?? 0) - (right.id ?? 0)
+  );
+}
+
 // ─── Status Config ─────────────────────────────────────────────
 
 const STOCK_STATUS = {
@@ -92,7 +121,7 @@ export default function PricingPage() {
     }
 
     // Apply filters
-    let filtered = items;
+    let filtered = [...items];
     if (search.trim()) {
       const s = search.toLowerCase();
       filtered = filtered.filter((item: any) => {
@@ -117,6 +146,10 @@ export default function PricingPage() {
         return String(brand?.id) === brandFilter;
       });
     }
+
+    // Keep the same taxonomy order before and after a price mutation refetch.
+    // Price and updatedAt are intentionally not sorting fields.
+    filtered.sort(comparePricingRows);
 
     // Group: category → product → variants
     const grouped = new Map<string, {
@@ -148,8 +181,12 @@ export default function PricingPage() {
     }
 
     return {
-      categories: Array.from(catSet.entries()).map(([slug, name]) => ({ slug, name })),
-      brands: Array.from(brandSet.entries()).map(([id, name]) => ({ id, name })),
+      categories: Array.from(catSet.entries())
+        .map(([slug, name]) => ({ slug, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      brands: Array.from(brandSet.entries())
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
       grouped,
       lastUpdated: latestDate ? formatRelativeDate(latestDate) : "—",
     };
@@ -321,7 +358,7 @@ export default function PricingPage() {
                     {/* Variant Table */}
                     <div className="overflow-x-auto">
                       {/* Table Header */}
-                      <div className="grid grid-cols-[minmax(80px,1fr)_minmax(100px,1.5fr)_60px_90px_100px_60px_50px] text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50/40 border-b border-gray-100 px-4 py-2">
+                      <div className="grid min-w-[780px] grid-cols-[minmax(80px,1fr)_minmax(100px,1.5fr)_60px_200px_100px_60px_50px] border-gray-100 border-b bg-gray-50/40 px-4 py-2 font-bold text-[10px] text-gray-400 uppercase tracking-widest">
                         <div>Brand</div>
                         <div>Variant</div>
                         <div>Unit</div>
@@ -342,7 +379,7 @@ export default function PricingPage() {
                           const ss = getStockStatus(qty);
 
                           return (
-                            <div key={item.id} className="grid grid-cols-[minmax(80px,1fr)_minmax(100px,1.5fr)_60px_90px_100px_60px_50px] items-center px-4 py-2.5 hover:bg-gray-50/50 transition-colors">
+                            <div key={item.id} className="grid min-w-[780px] grid-cols-[minmax(80px,1fr)_minmax(100px,1.5fr)_60px_200px_100px_60px_50px] items-center px-4 py-2.5 transition-colors hover:bg-gray-50/50">
                               {/* Brand */}
                               <div className="text-sm text-gray-700 font-medium truncate">
                                 {brand?.name || "—"}
@@ -367,7 +404,7 @@ export default function PricingPage() {
                                       inputMode="decimal"
                                       value={editValue}
                                       onChange={(e) => setEditValue(e.target.value)}
-                                      className="w-20 h-7 text-right text-sm"
+                                      className="h-8 w-32 min-w-32 text-right font-medium text-sm tabular-nums"
                                       autoFocus
                                       onKeyDown={(e) => {
                                         if (e.key === "Enter") savePrice(item.id);
