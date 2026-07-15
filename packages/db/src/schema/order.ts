@@ -220,6 +220,8 @@ export const orderItem = pgTable(
         // === Partial Delivery Tracking ===
         /** How many units have been delivered so far for this item */
         deliveredQty: integer("delivered_qty").default(0),
+        /** Quantity explicitly confirmed by the buyer at receipt */
+        receivedQty: integer("received_qty"),
 
         // === B2B → B2C Conversion Fields ===
 

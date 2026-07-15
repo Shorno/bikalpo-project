@@ -84,6 +84,7 @@ export async function generateInvoiceFromOrder(orderId: number) {
                 ({ item, quantity, unitPrice, lineTotal }) =>
                     ({
                         invoiceId: newInvoice.id,
+                        orderItemId: item.id,
                         productId: item.productId,
                         variantId: item.variantId,
                         productName: item.productName,

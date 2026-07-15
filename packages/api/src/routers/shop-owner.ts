@@ -81,6 +81,10 @@ import { z } from "zod";
 
 import { shopOwnerProcedure, publicProcedure } from "../index";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import {
+    prepareB2bMovementForApproval,
+    releaseB2bOrderReservations,
+} from "./helpers/b2b-inventory-movement";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 import { shopProductConfigEndpoints } from "./shop-product-config";
@@ -1842,7 +1846,7 @@ const mutations = {
                     .array(
                         z.object({
                             itemId: z.number(),
-                            receivedQty: z.number().min(0),
+                            receivedQty: z.number().int().min(0),
                         }),
                     )
                     .optional(),
@@ -1860,8 +1864,9 @@ const mutations = {
                 throw new ORPCError("NOT_FOUND", { message: "Order not found" });
             }
 
-            // Can only receive orders that are in delivery or already marked delivered by warehouse
-            if (!["processing", "delivered"].includes(existingOrder.status)) {
+            // Receiving is the inventory ownership boundary; the full order must
+            // first be factually delivered by the warehouse/delivery flow.
+            if (existingOrder.status !== "delivered") {
                 throw new ORPCError("BAD_REQUEST", {
                     message: `Cannot receive an order with status '${existingOrder.status}'`,
                 });
@@ -1873,35 +1878,64 @@ const mutations = {
                 });
             }
 
-            await db.transaction(async (tx) => {
-                // If received quantities provided, update items
-                if (input.receivedItems && input.receivedItems.length > 0) {
-                    for (const ri of input.receivedItems) {
-                        const existingItem = existingOrder.items.find(
-                            (i) => i.id === ri.itemId,
-                        );
-                        if (!existingItem) continue;
-
-                        // Store the received qty as modifiedQty if different from ordered
-                        const effectiveQty = existingItem.modifiedQty ?? existingItem.quantity;
-                        if (ri.receivedQty !== effectiveQty) {
-                            await tx
-                                .update(orderItem)
-                                .set({ modifiedQty: ri.receivedQty })
-                                .where(eq(orderItem.id, ri.itemId));
-                        }
-                    }
+            const suppliedReceipts = new Map<number, number>();
+            for (const receipt of input.receivedItems ?? []) {
+                if (suppliedReceipts.has(receipt.itemId)) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Order item ${receipt.itemId} is duplicated`,
+                    });
                 }
+                if (!existingOrder.items.some((item) => item.id === receipt.itemId)) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Order item ${receipt.itemId} does not belong to this order`,
+                    });
+                }
+                suppliedReceipts.set(receipt.itemId, receipt.receivedQty);
+            }
 
-                // Mark as delivered (if not already) + received
-                await tx
+            const receiptRows = existingOrder.items.map((item) => {
+                const approvedQty = item.modifiedQty ?? item.quantity;
+                const deliveredQty = item.deliveredQty ?? 0;
+                const receivedQty = suppliedReceipts.get(item.id) ?? deliveredQty;
+                if (deliveredQty < approvedQty) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `${item.productName} is not fully delivered yet`,
+                    });
+                }
+                if (receivedQty < 0 || receivedQty > deliveredQty || receivedQty > approvedQty) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Received quantity for ${item.productName} must be between 0 and ${Math.min(deliveredQty, approvedQty)}`,
+                    });
+                }
+                return { itemId: item.id, receivedQty };
+            });
+
+            await db.transaction(async (tx) => {
+                const claimed = await tx
                     .update(order)
                     .set({
-                        status: "delivered",
-                        deliveredAt: existingOrder.deliveredAt || new Date(),
                         receivedAt: new Date(),
                     })
-                    .where(eq(order.id, input.orderId));
+                    .where(
+                        and(
+                            eq(order.id, input.orderId),
+                            eq(order.status, "delivered"),
+                            sql`${order.receivedAt} IS NULL`,
+                        ),
+                    )
+                    .returning({ id: order.id });
+                if (claimed.length === 0) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Order receipt was already completed or its status changed",
+                    });
+                }
+
+                for (const receipt of receiptRows) {
+                    await tx
+                        .update(orderItem)
+                        .set({ receivedQty: receipt.receivedQty })
+                        .where(eq(orderItem.id, receipt.itemId));
+                }
 
                 // Inventory transfer and delivery status are one atomic movement.
                 await convertB2bOrderToRetailInventory(tx, input.orderId);
@@ -1965,23 +1999,10 @@ const mutations = {
 
                 // Release approved reservation for confirmed orders.
                 if (existingOrder.warehouseId && existingOrder.status === "confirmed") {
-                    for (const item of existingOrder.items) {
-                        if (!item.variantId) continue;
-                        const qty = item.modifiedQty ?? item.quantity;
-                        await tx
-                            .update(inventory)
-                            .set({
-                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${qty}`,
-                                reservedQty: sql`GREATEST(CAST(${inventory.reservedQty} AS numeric) - ${qty}, 0)`,
-                            })
-                            .where(
-                                and(
-                                    eq(inventory.ownerType, "warehouse"),
-                                    eq(inventory.ownerId, existingOrder.warehouseId!),
-                                    eq(inventory.variantId, item.variantId),
-                                ),
-                            );
-                    }
+                    await releaseB2bOrderReservations(tx, {
+                        warehouseId: existingOrder.warehouseId,
+                        items: existingOrder.items,
+                    });
                 }
             });
 
@@ -2693,36 +2714,42 @@ const orderQueries = {
                 throw new ORPCError("BAD_REQUEST", { message: "Modification already resolved" });
             }
 
-            await db.transaction(async (tx) => {
-                // Release the approved reservation created by warehouse review.
-                if (existingOrder.warehouseId) {
-                    for (const item of existingOrder.items) {
-                        if (!item.variantId) continue;
-                        const qty = item.modifiedQty ?? item.quantity;
-                        await tx
-                            .update(inventory)
-                            .set({
-                                availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${qty}`,
-                                reservedQty: sql`GREATEST(CAST(${inventory.reservedQty} AS numeric) - ${qty}, 0)`,
-                            })
-                            .where(
-                                and(
-                                    eq(inventory.ownerType, "warehouse"),
-                                    eq(inventory.ownerId, existingOrder.warehouseId!),
-                                    eq(inventory.variantId, item.variantId),
-                                ),
-                            );
-                    }
-                }
+            if (existingOrder.status !== "confirmed") {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Modifications can only be rejected before dispatch",
+                });
+            }
 
-                await tx
+            await db.transaction(async (tx) => {
+                const rejected = await tx
                     .update(order)
                     .set({
                         modificationRejectedAt: new Date(),
                         status: "cancelled",
                         cancelledAt: new Date(),
                     })
-                    .where(eq(order.id, input.orderId));
+                    .where(
+                        and(
+                            eq(order.id, input.orderId),
+                            eq(order.status, "confirmed"),
+                            sql`${order.modificationAcceptedAt} IS NULL`,
+                            sql`${order.modificationRejectedAt} IS NULL`,
+                        ),
+                    )
+                    .returning({ id: order.id });
+                if (rejected.length === 0) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Modification was already resolved or dispatched",
+                    });
+                }
+
+                // Release the approved reservation created by warehouse review.
+                if (existingOrder.warehouseId) {
+                    await releaseB2bOrderReservations(tx, {
+                        warehouseId: existingOrder.warehouseId,
+                        items: existingOrder.items,
+                    });
+                }
             });
 
             return {
@@ -4954,7 +4981,7 @@ const warehouseOrderQueries = {
                 items: z.array(
                     z.object({
                         variantId: z.number(),
-                        quantity: z.number().min(1),
+                        quantity: z.number().int().min(1),
                         supplyMode: warehouseOrderModeSchema.optional(),
                         fulfillmentMode: warehouseOrderModeSchema.optional(),
                         targetVariantId: z.number().optional().nullable(),
@@ -5220,7 +5247,7 @@ const warehouseOrderQueries = {
                     });
                 }
 
-                let resolvedTargetVariantId: number | null =
+                const resolvedTargetVariantId: number | null =
                     shouldPersistTargetVariant ? (item.targetVariantId ?? null) : null;
 
                 if (resolvedTargetVariantId) {
@@ -5237,6 +5264,18 @@ const warehouseOrderQueries = {
                     }
                 }
 
+                const preparedMovement = await prepareB2bMovementForApproval(db, {
+                    warehouseId,
+                    item: {
+                        id: 0,
+                        productId: inv.variant?.product?.id || 0,
+                        variantId: item.variantId,
+                        targetVariantId: resolvedTargetVariantId,
+                        supplyMode: resolvedMode.mode,
+                    },
+                    approvedQty: item.quantity,
+                });
+
                 validatedItems.push({
                     variantId: item.variantId,
                     quantity: item.quantity,
@@ -5248,18 +5287,18 @@ const warehouseOrderQueries = {
                     productId: inv.variant?.product?.id || 0,
                     inventoryId: inv.id,
                     currentQty: inv.availableQty,
-                    supplyMode: resolvedMode.mode,
-                    targetVariantId: resolvedTargetVariantId,
-                    quantityUnit:
-                        resolvedMode.profile.family === "lpg" ? "cylinder" : null,
-                    inventoryUnit:
-                        resolvedMode.profile.family === "lpg" ? "cylinder" : null,
+                    supplyMode: preparedMovement.mode,
+                    targetVariantId:
+                        preparedMovement.targetVariantId ===
+                        preparedMovement.sourceVariantId
+                            ? null
+                            : preparedMovement.targetVariantId,
+                    quantityUnit: preparedMovement.movement.quantityUnit,
+                    inventoryUnit: preparedMovement.movement.inventoryUnit,
                     conversionFactor:
-                        resolvedMode.profile.family === "lpg" ? "1" : null,
+                        preparedMovement.movement.conversionFactor.toFixed(4),
                     inventoryQty:
-                        resolvedMode.profile.family === "lpg"
-                            ? String(item.quantity)
-                            : null,
+                        preparedMovement.movement.sourceInventoryQty.toFixed(2),
                 });
             }
 

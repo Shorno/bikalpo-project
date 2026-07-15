@@ -15,6 +15,7 @@ import { timestamps } from "./columns.helpers";
 import { user } from "./auth-schema";
 import { productVariant } from "./product-variant";
 import { cartonConfig } from "./carton-config";
+import { orderItem } from "./order";
 import { warehouseStorageArea } from "./warehouse-storage-area";
 
 /**
@@ -26,6 +27,7 @@ import { warehouseStorageArea } from "./warehouse-storage-area";
  */
 export const cartonStatusEnum = pgEnum("carton_status", [
     "active",
+    "reserved",
     "broken",
     "dispatched",
     "sold",
@@ -78,6 +80,13 @@ export const carton = pgTable(
 
         /** Current status of the carton */
         status: cartonStatusEnum("status").default("active").notNull(),
+
+        /** Approved order line that owns this physical carton reservation. */
+        reservedForOrderItemId: integer("reserved_for_order_item_id").references(
+            () => orderItem.id,
+            { onDelete: "set null" },
+        ),
+        reservedAt: timestamp("reserved_at"),
 
         /** Auto-generated barcode value */
         barcode: varchar("barcode", { length: 100 }),
@@ -133,6 +142,7 @@ export const carton = pgTable(
         index("carton_warehouseId_idx").on(table.warehouseId),
         index("carton_variantId_idx").on(table.variantId),
         index("carton_status_idx").on(table.status),
+        index("carton_reservedOrderItem_idx").on(table.reservedForOrderItemId),
         index("carton_cartonId_idx").on(table.cartonId),
     ],
 );
@@ -152,6 +162,10 @@ export const cartonRelations = relations(carton, ({ one }) => ({
     variant: one(productVariant, {
         fields: [carton.variantId],
         references: [productVariant.id],
+    }),
+    reservedForOrderItem: one(orderItem, {
+        fields: [carton.reservedForOrderItemId],
+        references: [orderItem.id],
     }),
     brokenBy: one(user, {
         fields: [carton.brokenById],

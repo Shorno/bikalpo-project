@@ -1,5 +1,6 @@
 "use client";
 
+import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -204,6 +205,9 @@ export default function WarehouseStorefrontPage() {
         price: item.pricePerUnit || "0",
         availableQty,
         quantity: qty,
+        fulfillmentMode: item.selectedVariant?.fulfillmentMode,
+        supplyMode: item.selectedVariant?.fulfillmentMode,
+        targetVariantId: item.selectedVariant?.targetVariantId ?? null,
       };
       saveCart([...cart, newItem]);
       toast.success(`Added ${item.name} to cart`);
@@ -260,7 +264,13 @@ export default function WarehouseStorefrontPage() {
   const orderMutation = useMutation({
     mutationFn: (input: {
       warehouseKey: string;
-      items: { variantId: number; quantity: number }[];
+      items: {
+        variantId: number;
+        quantity: number;
+        fulfillmentMode?: FulfillmentMode;
+        supplyMode?: FulfillmentMode;
+        targetVariantId?: number | null;
+      }[];
       shippingName: string;
       shippingPhone: string;
       shippingAddress: string;
@@ -341,6 +351,9 @@ export default function WarehouseStorefrontPage() {
       items: cart.map((i) => ({
         variantId: i.variantId,
         quantity: i.quantity,
+        fulfillmentMode: i.fulfillmentMode,
+        supplyMode: i.supplyMode,
+        targetVariantId: i.targetVariantId,
       })),
       shippingName,
       shippingPhone,

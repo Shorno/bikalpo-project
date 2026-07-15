@@ -26,9 +26,9 @@ import { OrderFlowStepper } from "@/components/features/orders/order-flow-steppe
 import {
   formatRetailerOrderItemQuantity,
   getRetailerOrderFulfillmentSummary,
-  getRetailerOrderItemDeliveredQty,
   getRetailerOrderItemEffectiveQty,
   getRetailerOrderItemOrderedQty,
+  getRetailerOrderItemReceivedQty,
   getRetailerOrderReviewState,
   type RetailerOrderReviewState,
 } from "@/components/features/orders/retailer-order-fulfillment";
@@ -176,8 +176,7 @@ export default function PurchaseOrderDetailPage() {
   const status = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
   const StatusIcon = status.icon;
   const isCancellable = ["pending", "confirmed"].includes(order.status);
-  const isReceivable =
-    ["processing", "delivered"].includes(order.status) && !order.receivedAt;
+  const isReceivable = order.status === "delivered" && !order.receivedAt;
   const hasActions = isCancellable || isReceivable || !!order.warehousePhone;
   const reviewState = getRetailerOrderReviewState(order);
   const requestedSummary = getRetailerOrderFulfillmentSummary(
@@ -453,7 +452,7 @@ function OrderItems({
               const modified = isReviewed && (quantityChanged || priceChanged);
               const approvedQuantity = getRetailerOrderItemEffectiveQty(item);
               const requestedQuantity = getRetailerOrderItemOrderedQty(item);
-              const receivedQuantity = getRetailerOrderItemDeliveredQty(item);
+              const receivedQuantity = getRetailerOrderItemReceivedQty(item);
               const approvedPrice = Number(
                 item.modifiedUnitPrice ?? item.unitPrice ?? 0,
               );
@@ -546,7 +545,7 @@ function OrderItems({
             Number(item.modifiedUnitPrice) !== Number(item.unitPrice);
           const approvedQuantity = getRetailerOrderItemEffectiveQty(item);
           const requestedQuantity = getRetailerOrderItemOrderedQty(item);
-          const receivedQuantity = getRetailerOrderItemDeliveredQty(item);
+          const receivedQuantity = getRetailerOrderItemReceivedQty(item);
           const approvedPrice = Number(
             item.modifiedUnitPrice ?? item.unitPrice ?? 0,
           );

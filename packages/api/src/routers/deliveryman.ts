@@ -16,6 +16,7 @@ import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, deliverymanProcedure, protectedProcedure, warehouseOrAdminProcedure } from "../index";
+import { markOrderCartonsDispatched } from "./helpers/b2b-inventory-movement";
 import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
 
 // Validation schemas
@@ -470,6 +471,7 @@ export const deliverymanRouter = {
 
                 // Update linked orders to "processing" + set shippedAt
                 if (orderIdsToUpdate.size > 0) {
+                    await markOrderCartonsDispatched(tx, [...orderIdsToUpdate]);
                     await tx.update(order).set({
                         status: "processing",
                         shippedAt: new Date(),

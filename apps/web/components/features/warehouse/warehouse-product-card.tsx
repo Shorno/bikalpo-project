@@ -1,5 +1,6 @@
 "use client";
 
+import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { Eye, Minus, Package, Plus, ShoppingCart } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
@@ -18,6 +19,8 @@ export interface WarehouseProductVariantOption {
   weightKg?: number;
   innerPackSizeKg?: number;
   packType?: string;
+  fulfillmentMode?: FulfillmentMode;
+  targetVariantId?: number | null;
 }
 
 export interface WarehouseProduct {

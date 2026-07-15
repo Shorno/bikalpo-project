@@ -292,8 +292,8 @@ export const adminInvoiceRouter = {
                 parentInvoiceId: z.number(),
                 items: z.array(
                     z.object({
-                        productId: z.number(),
-                        quantity: z.number().min(1),
+                        invoiceItemId: z.number(),
+                        quantity: z.number().int().min(1),
                     }),
                 ),
             }),
@@ -322,29 +322,58 @@ export const adminInvoiceRouter = {
                 );
             }
 
-            // Calculate already delivered quantities
-            const deliveredQuantities = parentInvoice.splitInvoices.reduce(
-                (acc, splitInv) => {
-                    splitInv.items.forEach((item) => {
-                        acc[item.productId] = (acc[item.productId] || 0) + item.quantity;
-                    });
-                    return acc;
-                },
-                {} as Record<number, number>,
-            );
+            const deliveredQuantities = new Map<number, number>();
+            for (const originalItem of parentInvoice.items) {
+                const sameVariantItems = originalItem.variantId
+                    ? parentInvoice.items.filter(
+                          (item) => item.variantId === originalItem.variantId,
+                      )
+                    : [];
+                const sameProductItems = parentInvoice.items.filter(
+                    (item) => item.productId === originalItem.productId,
+                );
+
+                const delivered = parentInvoice.splitInvoices.reduce(
+                    (total, splitInvoice) =>
+                        total +
+                        splitInvoice.items.reduce((splitTotal, splitItem) => {
+                            const exactOrderItem =
+                                originalItem.orderItemId !== null &&
+                                splitItem.orderItemId === originalItem.orderItemId;
+                            const unambiguousLegacyVariant =
+                                originalItem.orderItemId === null &&
+                                originalItem.variantId !== null &&
+                                sameVariantItems.length === 1 &&
+                                splitItem.variantId === originalItem.variantId;
+                            const unambiguousLegacyProduct =
+                                originalItem.orderItemId === null &&
+                                originalItem.variantId === null &&
+                                sameProductItems.length === 1 &&
+                                splitItem.productId === originalItem.productId;
+
+                            return exactOrderItem ||
+                                unambiguousLegacyVariant ||
+                                unambiguousLegacyProduct
+                                ? splitTotal + splitItem.quantity
+                                : splitTotal;
+                        }, 0),
+                    0,
+                );
+                deliveredQuantities.set(originalItem.id, delivered);
+            }
 
             // Validate requested quantities
             for (const item of input.items) {
                 const originalItem = parentInvoice.items.find(
-                    (i) => i.productId === item.productId,
+                    (invoiceLine) => invoiceLine.id === item.invoiceItemId,
                 );
                 if (!originalItem) {
                     throw new Error(
-                        `Product ID ${item.productId} not found in original invoice`,
+                        `Invoice item ${item.invoiceItemId} not found in original invoice`,
                     );
                 }
 
-                const delivered = deliveredQuantities[item.productId] || 0;
+                const delivered = deliveredQuantities.get(originalItem.id) ?? 0;
                 const remaining = originalItem.quantity - delivered;
 
                 if (item.quantity > remaining) {
@@ -366,7 +395,7 @@ export const adminInvoiceRouter = {
 
             for (const item of input.items) {
                 const originalItem = parentInvoice.items.find(
-                    (i) => i.productId === item.productId,
+                    (invoiceLine) => invoiceLine.id === item.invoiceItemId,
                 );
                 if (!originalItem) continue;
 
@@ -376,7 +405,8 @@ export const adminInvoiceRouter = {
 
                 splitItems.push({
                     invoiceId: 0, // Will be set after invoice creation
-                    productId: item.productId,
+                    orderItemId: originalItem.orderItemId,
+                    productId: originalItem.productId,
                     variantId: originalItem.variantId,
                     productName: originalItem.productName,
                     productSku: originalItem.productSku,

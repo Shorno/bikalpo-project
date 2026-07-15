@@ -57,6 +57,8 @@ function mapApiProduct(item: any): WarehouseProduct {
         innerPackSizeKg:
           Number(rowVariant?.innerPackSizeKg || rowVariant?.pieceWeightKg) || 0,
         packType: rowVariant?.packType || rowUnit,
+        fulfillmentMode: row.fulfillmentMode,
+        targetVariantId: row.targetVariantId,
       };
     },
   );

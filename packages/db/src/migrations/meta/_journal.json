@@ -239,6 +239,13 @@
       "when": 1785100000000,
       "tag": "0034_lpg_invoice_movement_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0035_b2b_inventory_integrity",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,7 @@ export type RetailerOrderItemFulfillmentLike = {
   quantity?: number | null;
   modifiedQty?: number | null;
   deliveredQty?: number | null;
+  receivedQty?: number | null;
   supplyMode?: string | null;
   supplyModeLabel?: string | null;
 };
@@ -94,6 +95,12 @@ export function getRetailerOrderItemDeliveredQty(
   item: RetailerOrderItemFulfillmentLike,
 ) {
   return toQuantity(item.deliveredQty);
+}
+
+export function getRetailerOrderItemReceivedQty(
+  item: RetailerOrderItemFulfillmentLike,
+) {
+  return toQuantity(item.receivedQty);
 }
 
 export function getRetailerOrderItemRemainingQty(
