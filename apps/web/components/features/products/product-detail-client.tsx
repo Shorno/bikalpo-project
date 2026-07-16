@@ -51,6 +51,7 @@ interface ProductDetailClientProps {
   subCategoryName?: string | null;
   productSize: string;
   features?: ProductFeatureGroup[] | null;
+  previewMode?: boolean;
 }
 
 /* ── Component ────────────────────────────────────── */
@@ -63,6 +64,7 @@ export function ProductDetailClient({
   subCategoryName,
   productSize,
   features,
+  previewMode = false,
 }: ProductDetailClientProps) {
   const { data: session } = authClient.useSession();
   const userRole = session?.user?.role as string | undefined;
@@ -70,6 +72,13 @@ export function ProductDetailClient({
   // Filter variants by user role: shop_owner → TRADE, everyone else → RETAIL only
   const roleFiltered = useMemo(() => {
     const active = variants.filter((v) => v.isActive !== false);
+
+    if (previewMode) {
+      const retail = active.filter(
+        (v) => v.variantType === "retail" || v.variantType == null,
+      );
+      return retail.length > 0 ? retail : active;
+    }
 
     if (userRole === "shop_owner") {
       const trade = active.filter((v) => v.variantType === "trade");
@@ -81,9 +90,11 @@ export function ProductDetailClient({
     }
 
     // Guests and consumers → RETAIL variants only
-    const retail = active.filter((v) => v.variantType === "retail" || v.variantType == null);
+    const retail = active.filter(
+      (v) => v.variantType === "retail" || v.variantType == null,
+    );
     return retail.length > 0 ? retail : active; // fallback to all if no RETAIL variants exist
-  }, [variants, userRole]);
+  }, [previewMode, variants, userRole]);
 
   const sorted = useMemo(
     () =>
@@ -202,26 +213,35 @@ export function ProductDetailClient({
       </div>
 
       {/* ── Add to Cart ── */}
-      <ProductActions
-        product={{
-          id: product.id,
-          name: product.name,
-          price: displayPrice,
-          image: product.image,
-          size: displaySize,
-          inStock: product.inStock,
-          stockQuantity: displayStock,
-        }}
-        variantId={selected?.id}
-        shopId={selectedSeller?.shopId}
-        orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
-        orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}
-        orderIncrement={
-          selected?.orderIncrement ? Number(selected.orderIncrement) : undefined
-        }
-        categoryName={categoryName}
-        brandName={brandName ?? undefined}
-      />
+      {previewMode ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Ordering and item requests are disabled while viewing the customer
+          preview.
+        </div>
+      ) : (
+        <ProductActions
+          product={{
+            id: product.id,
+            name: product.name,
+            price: displayPrice,
+            image: product.image,
+            size: displaySize,
+            inStock: product.inStock,
+            stockQuantity: displayStock,
+          }}
+          variantId={selected?.id}
+          shopId={selectedSeller?.shopId}
+          orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
+          orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}
+          orderIncrement={
+            selected?.orderIncrement
+              ? Number(selected.orderIncrement)
+              : undefined
+          }
+          categoryName={categoryName}
+          brandName={brandName ?? undefined}
+        />
+      )}
     </div>
   );
 }

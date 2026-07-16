@@ -5,7 +5,7 @@ import { PublicProductsSort } from "@/components/features/products/public-produc
 import {
   getActiveBrands,
   getActiveCategories,
-  getProductsWithQuery,
+  getReferenceProductsWithQuery,
   getSubcategoriesByCategory,
 } from "@/lib/public-data";
 
@@ -20,12 +20,17 @@ interface PublicProductsGridProps {
     page?: string;
     limit?: string;
   };
+  previewMode?: boolean;
 }
 
 export async function PublicProductsGrid({
   searchParams,
+  previewMode = false,
 }: PublicProductsGridProps) {
-  const { products, pagination } = await getProductsWithQuery(searchParams, 60);
+  const { products, pagination } = await getReferenceProductsWithQuery(
+    searchParams,
+    60,
+  );
 
   const categories = await getActiveCategories(600);
   const brands = await getActiveBrands(600);
@@ -81,7 +86,11 @@ export async function PublicProductsGrid({
       ) : (
         <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5 xl:grid-cols-3">
           {products.map((product) => (
-            <ConsumerProductCard key={product.id} product={product as any} />
+            <ConsumerProductCard
+              key={product.id}
+              product={product as any}
+              previewMode={previewMode}
+            />
           ))}
         </div>
       )}

@@ -4,6 +4,7 @@ import { ArrowRight, Package, Star, Store } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 
 interface ConsumerProductCardProps {
   product: {
@@ -19,12 +20,19 @@ interface ConsumerProductCardProps {
     reviewStats?: { averageRating: number; totalReviews: number } | null;
     sellerCount?: number | null;
   };
+  previewMode?: boolean;
 }
 
-export function ConsumerProductCard({ product }: ConsumerProductCardProps) {
+export function ConsumerProductCard({
+  product,
+  previewMode = false,
+}: ConsumerProductCardProps) {
   const [imageError, setImageError] = useState(false);
   const categorySlug = product.category?.slug ?? "all";
-  const productHref = `/products/${categorySlug}/${product.slug}`;
+  const productHref = withCustomerStorefrontPreview(
+    `/products/${categorySlug}/${product.slug}`,
+    previewMode,
+  );
   const hasValidImage = Boolean(
     product.image && !imageError && product.image.trim() !== "",
   );

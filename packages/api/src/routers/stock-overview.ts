@@ -158,7 +158,7 @@ function getVariantMeasureInfo(input: {
 
 type InventoryOwnerType = "warehouse" | "shop" | "super_seller";
 
-async function loadStructuredStockSnapshot(
+export async function loadStructuredStockSnapshot(
     ownerType: InventoryOwnerType,
     ownerId: string,
 ) {
@@ -178,12 +178,17 @@ async function loadStructuredStockSnapshot(
                 columns: {
                     id: true,
                     sku: true,
+                    preferredLocalSku: true,
+                    catalogVariantId: true,
                     brandId: true,
                     isActive: true,
                     reorderLevel: true,
                     sourceVariantOptionId: true,
                 },
                 with: {
+                    catalogVariant: {
+                        columns: { globalSku: true },
+                    },
                     brand: { columns: { id: true, name: true } },
                     sourceVariantOption: true,
                     product: {
@@ -269,6 +274,9 @@ async function loadStructuredStockSnapshot(
                     categoryName: productRow.category?.name ?? "Uncategorized",
                     family: productRow.category?.type?.family ?? null,
                     sku: variant.sku,
+                    catalogVariantId: variant.catalogVariantId,
+                    globalSku: variant.catalogVariant?.globalSku ?? null,
+                    localSku: variant.preferredLocalSku ?? variant.sku,
                     variantIsActive: variant.isActive,
                     sourceVariantOptionId: variant.sourceVariantOptionId,
                     sourceVariantOption: variant.sourceVariantOption,

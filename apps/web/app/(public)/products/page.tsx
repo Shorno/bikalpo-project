@@ -3,7 +3,9 @@ import { Suspense } from "react";
 import { ProductSearch } from "@/components/features/products/product-search";
 import { PublicProductsFilter } from "@/components/features/products/public-products-filter";
 import { PublicProductsGrid } from "@/components/features/products/public-products-grid";
+import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 
 interface ProductsPageProps {
   searchParams: Promise<{
@@ -14,6 +16,7 @@ interface ProductsPageProps {
     search?: string;
     page?: string;
     limit?: string;
+    preview?: string;
   }>;
 }
 
@@ -26,9 +29,12 @@ export default async function ProductsPage({
   searchParams,
 }: ProductsPageProps) {
   const params = await searchParams;
+  const previewMode = isCustomerStorefrontPreview(params.preview);
+  const { preview: _preview, ...catalogParams } = params;
 
   return (
     <div className="min-h-screen bg-[oklch(0.985_0.004_260)]">
+      {previewMode && <CustomerPreviewBanner />}
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 md:py-12 lg:px-8">
         <header className="border-b border-border pb-8">
           <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
@@ -64,7 +70,10 @@ export default async function ProductsPage({
 
           <main className="min-w-0 flex-1">
             <Suspense fallback={<ProductsGridSkeleton />}>
-              <PublicProductsGrid searchParams={params} />
+              <PublicProductsGrid
+                searchParams={catalogParams}
+                previewMode={previewMode}
+              />
             </Suspense>
           </main>
         </div>

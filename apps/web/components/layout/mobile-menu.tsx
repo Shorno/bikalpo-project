@@ -18,6 +18,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 
 const primaryLinks = [
   { label: "Products", href: "/products", icon: LayoutGrid },
@@ -31,7 +32,7 @@ const supportLinks = [
   { label: "Terms and conditions", href: "/terms", icon: FileText },
 ];
 
-export function MobileMenu() {
+export function MobileMenu({ previewMode = false }: { previewMode?: boolean }) {
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -54,7 +55,10 @@ export function MobileMenu() {
             {primaryLinks.map(({ label, href, icon: Icon }) => (
               <Link
                 key={href}
-                href={href}
+                href={withCustomerStorefrontPreview(
+                  href,
+                  previewMode && (href === "/products" || href === "/stores"),
+                )}
                 className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 <Icon className="size-4 text-muted-foreground" />

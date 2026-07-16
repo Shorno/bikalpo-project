@@ -8,11 +8,13 @@ import { StarRating } from "./star-rating";
 interface ProductReviewsProps {
   productId: number;
   variant?: "default" | "emerald";
+  readOnly?: boolean;
 }
 
 export async function ProductReviews({
   productId,
   variant = "default",
+  readOnly = false,
 }: ProductReviewsProps) {
   const [reviewData, session] = await Promise.all([
     client.customer.getProductReviews({ productId }),
@@ -29,7 +31,7 @@ export async function ProductReviews({
     ? reviews.some((r) => r.userId === userId)
     : false;
 
-  const canReview = isLoggedIn && !userHasReviewed;
+  const canReview = !readOnly && isLoggedIn && !userHasReviewed;
 
   return (
     <div className="mt-12 bg-white rounded-lg shadow-sm p-6 lg:p-8">
@@ -55,13 +57,20 @@ export async function ProductReviews({
         </div>
 
         {/* Review Form */}
+        {readOnly && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Reviews are visible, but submitting a review is disabled in customer
+            preview.
+          </div>
+        )}
+
         {canReview && (
           <div className="mb-8">
             <ReviewFormWrapper productId={productId} variant={variant} />
           </div>
         )}
 
-        {!isLoggedIn && (
+        {!readOnly && !isLoggedIn && (
           <div
             className={`${isEmerald ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"} px-4 py-3 rounded-lg mb-6 text-sm`}
           >
@@ -69,7 +78,7 @@ export async function ProductReviews({
           </div>
         )}
 
-        {isLoggedIn && userHasReviewed && (
+        {!readOnly && isLoggedIn && userHasReviewed && (
           <div className="bg-green-50 text-green-700 px-4 py-3 rounded-lg mb-6 text-sm">
             Thank you! You have already reviewed this product.
           </div>

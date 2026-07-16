@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ProductsFilter } from "@/components/features/products/products-filter";
 import { ProductsGrid } from "@/components/features/products/products-grid";
+import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { getActiveCategories, getCategoryBySlug } from "@/lib/public-data";
 
 export const revalidate = 600;
@@ -18,6 +20,7 @@ interface CategoryProductsPageProps {
     maxPrice?: string;
     inStock?: string;
     search?: string;
+    preview?: string;
   }>;
 }
 
@@ -75,6 +78,8 @@ export default async function CategoryProductsPage({
 }: CategoryProductsPageProps) {
   const { category: categorySlug } = await params;
   const filters = await searchParams;
+  const previewMode = isCustomerStorefrontPreview(filters.preview);
+  const { preview: _preview, ...catalogFilters } = filters;
 
   const category = await getCategoryBySlug(categorySlug, revalidate);
 
@@ -83,7 +88,9 @@ export default async function CategoryProductsPage({
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 md:py-12">
+    <div>
+      {previewMode && <CustomerPreviewBanner />}
+      <div className="container mx-auto px-4 py-8 md:py-12">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl md:text-4xl font-serif font-light mb-2">
@@ -107,11 +114,16 @@ export default async function CategoryProductsPage({
           <main className="flex-1">
             <Suspense fallback={<ProductsGridSkeleton />}>
               <ProductsGrid
-                searchParams={{ ...filters, category: categorySlug }}
+                searchParams={{
+                  ...catalogFilters,
+                  category: categorySlug,
+                }}
+                previewMode={previewMode}
               />
             </Suspense>
           </main>
         </div>
+      </div>
     </div>
   );
 }

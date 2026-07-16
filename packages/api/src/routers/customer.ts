@@ -58,6 +58,7 @@ import {
   gte,
   ilike,
   inArray,
+  isNotNull,
   isNull,
   lte,
   or,
@@ -91,6 +92,11 @@ import {
   convertEstimateToB2bOrder,
   estimateOrderAcceptSchema,
 } from "./helpers/estimate-order-conversion";
+import {
+  getReferenceProductEffectivePrice,
+  getReferenceSellerKey,
+  sortReferenceProducts,
+} from "./helpers/reference-product-catalog";
 
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
@@ -500,6 +506,88 @@ async function getCoreSellerCountMap(coreProductIds: number[]) {
   }
 
   return sellerCountMap;
+}
+
+type AdminReferenceProductIdentity = {
+  brandId: number | null;
+  coreProductId: number | null;
+};
+
+async function getReferenceSellerCountMap(
+  referenceProducts: AdminReferenceProductIdentity[],
+) {
+  const sellerCountMap: Record<string, number> = {};
+  const coreProductIds = [
+    ...new Set(
+      referenceProducts
+        .map((referenceProduct) => referenceProduct.coreProductId)
+        .filter((id): id is number => id != null),
+    ),
+  ];
+
+  if (coreProductIds.length === 0) return sellerCountMap;
+
+  const sellerRows = await db
+    .select({
+      brandId: product.brandId,
+      coreProductId: product.coreProductId,
+      sellerCount: sql<number>`COUNT(DISTINCT ${inventory.ownerId})`.mapWith(
+        Number,
+      ),
+    })
+    .from(inventory)
+    .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+    .innerJoin(product, eq(productVariant.productId, product.id))
+    .innerJoin(user, eq(inventory.ownerId, user.id))
+    .where(
+      and(
+        eq(inventory.ownerType, "shop"),
+        inArray(product.coreProductId, coreProductIds),
+        ...getWebViewProductConditions(),
+        eq(productVariant.isActive, true),
+        sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+        eq(user.role, "shop_owner"),
+        eq(user.sellerStatus, "approved"),
+      ),
+    )
+    .groupBy(product.coreProductId, product.brandId);
+
+  for (const row of sellerRows) {
+    if (row.coreProductId == null) continue;
+    sellerCountMap[
+      getReferenceSellerKey(row.coreProductId, row.brandId)
+    ] = row.sellerCount || 0;
+  }
+
+  return sellerCountMap;
+}
+
+async function getReferenceReviewStatsMap(productIds: number[]) {
+  const reviewStatsMap: Record<
+    number,
+    { averageRating: number; totalReviews: number }
+  > = {};
+
+  if (productIds.length === 0) return reviewStatsMap;
+
+  const reviewRows = await db
+    .select({
+      averageRating: avg(productReview.rating),
+      productId: productReview.productId,
+      totalReviews: count(productReview.id),
+    })
+    .from(productReview)
+    .where(inArray(productReview.productId, productIds))
+    .groupBy(productReview.productId);
+
+  for (const row of reviewRows) {
+    reviewStatsMap[row.productId] = {
+      averageRating: row.averageRating ? Number.parseFloat(row.averageRating) : 0,
+      totalReviews: row.totalReviews || 0,
+    };
+  }
+
+  return reviewStatsMap;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -949,6 +1037,192 @@ const queries = {
               ),
             ),
           },
+        },
+      };
+    }),
+
+  /** Get admin-created branded reference products for public discovery */
+  getReferenceProducts: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/reference-products",
+      tags: ["Customer"],
+      summary: "Get public admin reference products",
+    })
+    .input(productFiltersSchema)
+    .handler(async ({ input }) => {
+      const {
+        category: categorySlug,
+        subcategory,
+        brand: brandSlug,
+        minPrice,
+        maxPrice,
+        inStock: inStockString,
+        search,
+        sort = "newest",
+        page: pageString = "1",
+        limit: limitString = "12",
+      } = input;
+
+      const page = Math.max(1, Number.parseInt(pageString, 10) || 1);
+      const limit = Math.max(
+        1,
+        Math.min(100, Number.parseInt(limitString, 10) || 12),
+      );
+      const offset = (page - 1) * limit;
+      const emptyResult = () => ({
+        products: [],
+        pagination: { page, limit, totalCount: 0, totalPages: 0 },
+      });
+      const conditions: SQL[] = [
+        ...getWebViewProductConditions(),
+        eq(product.creatorSource, "admin"),
+        isNotNull(product.coreProductId),
+      ];
+
+      if (categorySlug) {
+        const categorySlugs = categorySlug.split(",").filter(Boolean);
+        const categories = await db.query.category.findMany({
+          where: inArray(category.slug, categorySlugs),
+          columns: { id: true },
+        });
+        if (categories.length === 0) return emptyResult();
+        conditions.push(
+          inArray(
+            product.categoryId,
+            categories.map((categoryRow) => categoryRow.id),
+          ),
+        );
+      }
+
+      if (subcategory) {
+        const subcategorySlugs = subcategory.split(",").filter(Boolean);
+        const subcategories = await db.query.subCategory.findMany({
+          where: inArray(subCategory.slug, subcategorySlugs),
+          columns: { id: true },
+        });
+        if (subcategories.length === 0) return emptyResult();
+        conditions.push(
+          inArray(
+            product.subCategoryId,
+            subcategories.map((subcategoryRow) => subcategoryRow.id),
+          ),
+        );
+      }
+
+      if (brandSlug) {
+        const brandSlugs = brandSlug.split(",").filter(Boolean);
+        const brands = await db.query.brand.findMany({
+          where: inArray(brand.slug, brandSlugs),
+          columns: { id: true },
+        });
+        if (brands.length === 0) return emptyResult();
+        conditions.push(
+          inArray(
+            product.brandId,
+            brands.map((brandRow) => brandRow.id),
+          ),
+        );
+      }
+
+      if (search?.trim()) {
+        conditions.push(ilike(product.name, `%${search.trim()}%`));
+      }
+
+      if (inStockString === "true") conditions.push(eq(product.inStock, true));
+      if (inStockString === "false")
+        conditions.push(eq(product.inStock, false));
+
+      const referenceProducts = await db.query.product.findMany({
+        where: and(...conditions),
+        with: {
+          category: { columns: { slug: true, name: true } },
+          subCategory: { columns: { name: true } },
+          brand: {
+            columns: { id: true, name: true, slug: true, logo: true },
+          },
+          images: true,
+          variants: {
+            columns: {
+              isActive: true,
+              price: true,
+              sourceVariantPriceId: true,
+              variantType: true,
+              visibilityRole: true,
+            },
+          },
+          variantPrices: {
+            columns: {
+              consumerPrice: true,
+              id: true,
+              isActive: true,
+            },
+          },
+        },
+      });
+
+      const productIds = referenceProducts.map(
+        (referenceProduct) => referenceProduct.id,
+      );
+      const [reviewStatsMap, sellerCountMap] = await Promise.all([
+        getReferenceReviewStatsMap(productIds),
+        getReferenceSellerCountMap(referenceProducts),
+      ]);
+
+      let serializedProducts = referenceProducts.map((referenceProduct) => {
+        const effectivePrice = getReferenceProductEffectivePrice(
+          referenceProduct,
+        );
+        const {
+          variantPrices: _variantPrices,
+          variants: _variants,
+          ...productData
+        } = referenceProduct;
+        const sellerCount = referenceProduct.coreProductId
+          ? sellerCountMap[
+              getReferenceSellerKey(
+                referenceProduct.coreProductId,
+                referenceProduct.brandId,
+              )
+            ] || 0
+          : 0;
+
+        return {
+          ...productData,
+          price: effectivePrice,
+          reviewStats: reviewStatsMap[referenceProduct.id] || {
+            averageRating: 0,
+            totalReviews: 0,
+          },
+          sellerCount,
+        };
+      });
+
+      if (minPrice != null && minPrice !== "") {
+        const minimumPrice = asNumber(minPrice);
+        serializedProducts = serializedProducts.filter(
+          (referenceProduct) =>
+            asNumber(referenceProduct.price) >= minimumPrice,
+        );
+      }
+      if (maxPrice != null && maxPrice !== "") {
+        const maximumPrice = asNumber(maxPrice);
+        serializedProducts = serializedProducts.filter(
+          (referenceProduct) =>
+            asNumber(referenceProduct.price) <= maximumPrice,
+        );
+      }
+
+      serializedProducts = sortReferenceProducts(serializedProducts, sort);
+      const totalCount = serializedProducts.length;
+
+      return {
+        products: serializedProducts.slice(offset, offset + limit),
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
         },
       };
     }),

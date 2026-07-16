@@ -57,6 +57,10 @@ function getRootAuthRouteUrl(request: NextRequest) {
   return url;
 }
 
+function isPathAtOrBelow(pathname: string, route: string) {
+  return pathname === route || pathname.startsWith(`${route}/`);
+}
+
 export function proxy(request: NextRequest) {
   const hostname = request.headers.get("host") || "";
   const pathname = request.nextUrl.pathname;
@@ -431,6 +435,20 @@ export function proxy(request: NextRequest) {
     ) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
+    return NextResponse.next();
+  }
+
+  // Let shop owners inspect the customer-facing store and product journey in
+  // an explicitly read-only preview. Cart and checkout routes remain blocked.
+  const isCustomerPreview =
+    request.nextUrl.searchParams.get("preview") === "customer";
+  if (
+    token &&
+    role === "shop_owner" &&
+    isCustomerPreview &&
+    (isPathAtOrBelow(pathname, "/stores") ||
+      isPathAtOrBelow(pathname, "/products"))
+  ) {
     return NextResponse.next();
   }
 

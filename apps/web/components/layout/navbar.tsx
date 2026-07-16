@@ -1,9 +1,14 @@
 "use client";
 
-import { Building2, LayoutGrid, MapPin, Tags } from "lucide-react";
+import { Building2, Eye, LayoutGrid, MapPin, Tags } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  isCustomerStorefrontPreview,
+  withCustomerStorefrontPreview,
+} from "@/lib/customer-storefront-preview";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
 import { NavbarSearch } from "./navbar-search";
@@ -18,13 +23,15 @@ const storefrontLinks = [
 
 export function Navbar() {
   const isMobile = useIsMobile();
+  const searchParams = useSearchParams();
+  const previewMode = isCustomerStorefrontPreview(searchParams.get("preview"));
 
   return (
     <nav className="sticky top-0 z-50 border-b border-blue-950/25 bg-primary text-primary-foreground">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center gap-3 sm:gap-5">
           <div className="md:hidden">
-            <MobileMenu />
+            <MobileMenu previewMode={previewMode} />
           </div>
 
           <Link
@@ -43,12 +50,19 @@ export function Navbar() {
           </Link>
 
           <div className="hidden min-w-0 flex-1 md:block">
-            <NavbarSearch />
+            <NavbarSearch previewMode={previewMode} />
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
             <div className="text-primary-foreground [&_button]:text-primary-foreground [&_button:hover]:bg-white/10 [&_button:hover]:text-primary-foreground [&_.absolute]:bg-background [&_.absolute]:text-foreground">
-              <CartButton />
+              {previewMode ? (
+                <span className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-semibold text-primary-foreground">
+                  <Eye className="size-4" />
+                  Preview
+                </span>
+              ) : (
+                <CartButton />
+              )}
             </div>
             <div className="[&_a]:bg-background [&_a]:font-semibold [&_a]:text-primary [&_a:hover]:bg-background/90 [&_button]:bg-background [&_button]:font-semibold [&_button]:text-primary [&_button:hover]:bg-background/90">
               <UserDropdown />
@@ -62,7 +76,10 @@ export function Navbar() {
           {storefrontLinks.map(({ label, href, icon: Icon }) => (
             <Link
               key={href}
-              href={href}
+              href={withCustomerStorefrontPreview(
+                href,
+                previewMode && (href === "/products" || href === "/stores"),
+              )}
               className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
             >
               <Icon className="size-3.5" />
@@ -78,7 +95,7 @@ export function Navbar() {
         </div>
 
         <div className="px-4 py-2 md:hidden">
-          <NavbarSearch />
+          <NavbarSearch previewMode={previewMode} />
         </div>
       </div>
     </nav>

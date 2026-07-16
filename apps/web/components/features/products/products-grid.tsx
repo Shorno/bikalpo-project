@@ -5,7 +5,7 @@ import { ProductsSort } from "@/components/features/products/products-sort";
 import {
   getActiveBrands,
   getActiveCategories,
-  getProductsWithQuery,
+  getReferenceProductsWithQuery,
   getSubcategoriesByCategory,
 } from "@/lib/public-data";
 
@@ -22,10 +22,14 @@ interface ProductsGridProps {
     page?: string;
     limit?: string;
   };
+  previewMode?: boolean;
 }
 
-export async function ProductsGrid({ searchParams }: ProductsGridProps) {
-  const { products, pagination } = await getProductsWithQuery(
+export async function ProductsGrid({
+  searchParams,
+  previewMode = false,
+}: ProductsGridProps) {
+  const { products, pagination } = await getReferenceProductsWithQuery(
     searchParams,
     600,
   );
@@ -64,6 +68,8 @@ export async function ProductsGrid({ searchParams }: ProductsGridProps) {
             <ProductCard
               key={product.id}
               product={product as ProductWithRelations}
+              previewMode={previewMode}
+              readOnly={previewMode}
             />
           ))}
         </div>

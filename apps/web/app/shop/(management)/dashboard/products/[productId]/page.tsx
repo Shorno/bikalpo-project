@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { RichTextContent } from "@/components/ui/rich-text-content";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -231,9 +232,10 @@ export default function ShopProductDetailPage() {
               )}
             </div>
             {product.description && (
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                {product.description}
-              </p>
+              <RichTextContent
+                content={product.description}
+                className="mt-3 max-w-3xl"
+              />
             )}
           </div>
         </div>

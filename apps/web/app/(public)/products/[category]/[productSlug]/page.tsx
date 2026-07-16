@@ -5,16 +5,27 @@ import { ProductDetailClient } from "@/components/features/products/product-deta
 import { ProductImageGallery } from "@/components/features/products/product-image-gallery";
 import { RelatedProducts } from "@/components/features/products/related-products";
 import { ProductReviews } from "@/components/features/reviews/product-reviews";
+import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
+import {
+  isCustomerStorefrontPreview,
+  withCustomerStorefrontPreview,
+} from "@/lib/customer-storefront-preview";
 import { getProductBySlug } from "@/lib/public-data";
 
 export const revalidate = 30;
 
 interface ProductDetailsPageProps {
   params: Promise<{ category: string; productSlug: string }>;
+  searchParams: Promise<{ preview?: string }>;
 }
 
-export default async function ProductPage({ params }: ProductDetailsPageProps) {
+export default async function ProductPage({
+  params,
+  searchParams,
+}: ProductDetailsPageProps) {
   const { productSlug } = await params;
+  const query = await searchParams;
+  const previewMode = isCustomerStorefrontPreview(query.preview);
   const productData = await getProductBySlug(productSlug, 30);
   const product = productData?.product;
   const variants = productData?.variants;
@@ -35,6 +46,7 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {previewMode && <CustomerPreviewBanner />}
       {/* Breadcrumb */}
       <div className="bg-white border-b">
         <div className="container mx-auto px-4 py-3">
@@ -44,14 +56,17 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
             </Link>
             <ChevronRight className="h-4 w-4 text-gray-400" />
             <Link
-              href="/products"
+              href={withCustomerStorefrontPreview("/products", previewMode)}
               className="text-gray-600 hover:text-gray-900"
             >
               Products
             </Link>
             <ChevronRight className="h-4 w-4 text-gray-400" />
             <Link
-              href={`/products/${product.category.slug}`}
+              href={withCustomerStorefrontPreview(
+                `/products/${product.category.slug}`,
+                previewMode,
+              )}
               className="text-gray-600 hover:text-gray-900"
             >
               {product.category.name}
@@ -79,7 +94,10 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
               {/* Category Badge */}
               <div className="mb-2">
                 <Link
-                  href={`/products/${product.category.slug}`}
+                  href={withCustomerStorefrontPreview(
+                    `/products/${product.category.slug}`,
+                    previewMode,
+                  )}
                   className="inline-block text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full hover:bg-blue-100 transition-colors"
                 >
                   {product.category.name}
@@ -120,6 +138,7 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
                 subCategoryName={product.subCategory?.name}
                 productSize={product.size}
                 features={product.features}
+                previewMode={previewMode}
               />
 
               {/* Trust Badges */}
@@ -260,12 +279,13 @@ export default async function ProductPage({ params }: ProductDetailsPageProps) {
           )}
 
         {/* Product Reviews */}
-        <ProductReviews productId={product.id} />
+        <ProductReviews productId={product.id} readOnly={previewMode} />
 
         {/* Related Products */}
         <RelatedProducts
           categorySlug={product.category.slug}
           currentProductId={product.id}
+          previewMode={previewMode}
         />
       </div>
     </div>

@@ -147,3 +147,16 @@ export async function getProductsWithQuery(
     pagination: result.pagination as ProductPaginationData,
   };
 }
+
+export async function getReferenceProductsWithQuery(
+  filters: ProductListFilters,
+  revalidate = 60,
+) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.customer.getReferenceProducts(filters);
+
+  return {
+    products: result.products ?? [],
+    pagination: result.pagination as ProductPaginationData,
+  };
+}

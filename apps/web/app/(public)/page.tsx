@@ -15,7 +15,7 @@ import {
   getActiveBrands,
   getActiveOffers,
   getCategoriesWithProducts,
-  getProductsWithQuery,
+  getReferenceProductsWithQuery,
 } from "@/lib/public-data";
 
 export const revalidate = 60;
@@ -35,7 +35,10 @@ type HomeOffer = Awaited<ReturnType<typeof getActiveOffers>>[number];
 export default async function HomePage() {
   const [categoryRows, productResult, brands, offers] = await Promise.all([
     getCategoriesWithProducts(1, 60),
-    getProductsWithQuery({ page: "1", limit: "12", sort: "newest" }, 60),
+    getReferenceProductsWithQuery(
+      { page: "1", limit: "12", sort: "newest" },
+      60,
+    ),
     getActiveBrands(60),
     getActiveOffers(4, 60),
   ]);
