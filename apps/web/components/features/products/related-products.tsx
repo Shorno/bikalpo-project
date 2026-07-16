@@ -1,16 +1,18 @@
-import { getProductsWithQuery } from "@/lib/public-data";
+import { getReferenceProductsWithQuery } from "@/lib/public-data";
 import { ProductCard } from "./product-card";
 
 interface RelatedProductsProps {
   categorySlug: string;
   currentProductId: number;
+  previewMode?: boolean;
 }
 
 export async function RelatedProducts({
   categorySlug,
   currentProductId,
+  previewMode = false,
 }: RelatedProductsProps) {
-  const { products } = await getProductsWithQuery(
+  const { products } = await getReferenceProductsWithQuery(
     {
       category: categorySlug,
       limit: "8",
@@ -35,7 +37,12 @@ export async function RelatedProducts({
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {relatedProducts.map((prod) => (
-            <ProductCard key={prod.id} product={prod} />
+            <ProductCard
+              key={prod.id}
+              product={prod}
+              previewMode={previewMode}
+              readOnly={previewMode}
+            />
           ))}
         </div>
       </div>

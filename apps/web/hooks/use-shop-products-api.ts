@@ -17,7 +17,12 @@ import { orpc } from "@/utils/orpc";
 export function useShopProducts(filters: {
   search?: string;
   categoryId?: number;
-  stockStatus?: "all" | "in_stock" | "low" | "out_of_stock";
+  stockStatus?:
+    | "all"
+    | "in_stock"
+    | "attention"
+    | "out_of_stock"
+    | "setup_required";
   brandId?: number;
   page?: number;
   limit?: number;
@@ -32,6 +37,7 @@ export function useShopProducts(filters: {
         page: filters.page ?? 1,
         limit: filters.limit ?? 20,
       },
+      placeholderData: keepPreviousData,
     }),
   );
 }

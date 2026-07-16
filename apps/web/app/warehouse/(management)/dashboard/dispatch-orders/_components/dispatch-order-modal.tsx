@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import {
   CheckCircle2,
   ExternalLink,
@@ -13,7 +13,6 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { OrderFlowStepper } from "@/app/warehouse/(management)/dashboard/order-management/[id]/_components/order-flow-stepper";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -170,13 +169,6 @@ export function DispatchOrderModal({
   const modalMode: DispatchModalMode | null = order
     ? getDispatchModalMode(order)
     : null;
-
-  const { data: orderDetail } = useQuery({
-    queryKey: ["warehouse", "order-detail", order?.id],
-    queryFn: () =>
-      orpc.warehouse.getOrderDetail.call({ orderId: order!.id }),
-    enabled: open && !!order?.id,
-  });
 
   useEffect(() => {
     if (!open || !order) return;
@@ -377,10 +369,6 @@ export function DispatchOrderModal({
         </DialogHeader>
 
         <div className="space-y-4 overflow-y-auto px-5 py-4">
-          {orderDetail?.flow?.length ? (
-            <OrderFlowStepper steps={orderDetail.flow} variant="inline" />
-          ) : null}
-
           {postSubmit.kind === "pickup_complete" ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-4 text-center">
               <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" />

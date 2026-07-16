@@ -7,7 +7,6 @@ import {
   BoxSelect,
   CalendarIcon,
   Check,
-  ChevronRight,
   Loader,
   Package,
   Plus,
@@ -80,8 +79,6 @@ type ProductResult = {
   coreProduct?: {
     id: number;
     name: string;
-    supportsPack: boolean;
-    supportsLoose: boolean;
   } | null;
   variants: {
     id: number;
@@ -96,17 +93,46 @@ type ProductResult = {
     size?: string | null;
     packType: string | null;
     brand?: { id: number; name: string } | null;
-	displayLabel: string;
-	stockSemantics: {
-		operationalUnit: string;
-		entryType: "loose" | "pack";
-		measurementDimension: "mass" | "volume" | "count";
-		measurementUnit: "KG" | "L" | null;
-		massKgPerUnit: number;
-		volumeLPerUnit: number;
-	};
+    displayLabel: string;
+    stockSemantics: {
+      operationalUnit: string;
+      entryType: "loose" | "pack";
+      measurementDimension: "mass" | "volume" | "count";
+      measurementUnit: "KG" | "L" | null;
+      massKgPerUnit: number;
+      volumeLPerUnit: number;
+    };
+    movementSemantics: {
+      family: string;
+      movementKind: "direct" | "loose" | "container";
+      enteredUnit: string;
+      inventoryUnit: string;
+      quantityKind: "mass" | "volume" | "count";
+      allowsDecimal: boolean;
+      conversionFactor: string;
+      referenceMeasurement?: {
+        unit: "kg" | "liter";
+        perInventoryUnit: string;
+      };
+    };
   }[];
 };
+
+type EntryType = "direct" | "loose" | "pack" | "carton";
+
+function variantMatchesEntryType(
+  variant: ProductResult["variants"][number],
+  entryType: EntryType,
+) {
+  const isLpgCylinder =
+    variant.movementSemantics.family === "lpg" &&
+    variant.movementSemantics.movementKind === "direct" &&
+    variant.movementSemantics.inventoryUnit === "cylinder";
+  if (entryType === "direct") return isLpgCylinder;
+  if (entryType === "loose") return variant.packType === "loose";
+  if (isLpgCylinder) return false;
+  return variant.packType !== "loose";
+}
 
 function isFashionTypeName(typeName?: string | null) {
   return (
@@ -118,15 +144,17 @@ function isFashionTypeName(typeName?: string | null) {
 
 function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
   const semantics = variant?.stockSemantics;
-  const physicalPerUnit = semantics?.measurementDimension === "mass"
-	? semantics.massKgPerUnit
-	: semantics?.measurementDimension === "volume"
-		? semantics.volumeLPerUnit
-		: 1;
+  const physicalPerUnit =
+    semantics?.measurementDimension === "mass"
+      ? semantics.massKgPerUnit
+      : semantics?.measurementDimension === "volume"
+        ? semantics.volumeLPerUnit
+        : 1;
   return {
-	quantityPerPack: physicalPerUnit || 1,
-	quantityUnit: semantics?.measurementUnit || semantics?.operationalUnit || "unit",
-	displayLabel: variant?.displayLabel || variant?.unitLabel || "Unit",
+    quantityPerPack: physicalPerUnit || 1,
+    quantityUnit:
+      semantics?.measurementUnit || semantics?.operationalUnit || "unit",
+    displayLabel: variant?.displayLabel || variant?.unitLabel || "Unit",
   };
 }
 
@@ -134,10 +162,10 @@ function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
 type TableRow = {
   id: number;
   product: ProductResult;
-  brandId: number | null;
+  brandId: number;
   brandName: string;
-  attributeKind: "brand" | "color";
   variantId: number | null;
+  batchNo: string;
   cartonUnitSize: string;
   quantity: string;
   purchaseUnitPrice: string;
@@ -153,12 +181,14 @@ export default function AddStockPage() {
   const queryClient = useQueryClient();
 
   // Entry mode
-  const [entryType, setEntryType] = useState<"loose" | "pack" | "carton">(
-    "pack",
+  const [entryType, setEntryType] = useState<EntryType>("direct");
+  const receiptIdempotencyKeyRef = useRef(
+    `stock-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   // === Table rows (new table-first approach) ===
   const rowIdRef = useRef(0);
   const [tableRows, setTableRows] = useState<TableRow[]>([]);
+  const [sharedBatchNo, setSharedBatchNo] = useState("");
 
   // === Product selection modal state ===
   const [showProductModal, setShowProductModal] = useState(false);
@@ -168,14 +198,6 @@ export default function AddStockPage() {
   const [modalSubCategoryId, setModalSubCategoryId] = useState<
     number | undefined
   >();
-  const [modalSelectedProduct, setModalSelectedProduct] =
-    useState<ProductResult | null>(null);
-  const [modalSelectedBrandId, setModalSelectedBrandId] = useState<
-    number | null
-  >(null);
-  const [modalSelectedColor, setModalSelectedColor] = useState<string | null>(
-    null,
-  );
 
   // Payment & Supplier
   const [supplierId, setSupplierId] = useState<number | null>(null);
@@ -217,7 +239,19 @@ export default function AddStockPage() {
     enabled: showProductModal,
   });
 
-  const products: ProductResult[] = productsData?.products ?? [];
+  const unfilteredProducts: ProductResult[] = productsData?.products ?? [];
+  const products = useMemo(
+    () =>
+      unfilteredProducts
+        .map((product) => ({
+          ...product,
+          variants: product.variants.filter((variant) =>
+            variantMatchesEntryType(variant, entryType),
+          ),
+        }))
+        .filter((product) => product.variants.length > 0),
+    [entryType, unfilteredProducts],
+  );
 
   // Derive filter options from all products (unfiltered fetch for options)
   const { data: allProductsData } = useQuery({
@@ -308,47 +342,16 @@ export default function AddStockPage() {
   }, []);
 
   const getCartonPacksPerCarton = useCallback((row: TableRow) => {
-	const units = Math.floor(parseFloat(row.cartonUnitSize) || 0);
-	return units > 0 ? units : 0;
+    const units = Math.floor(parseFloat(row.cartonUnitSize) || 0);
+    return units > 0 ? units : 0;
   }, []);
 
-  const modalIsFashionProduct = isFashionTypeName(
-    modalSelectedProduct?.category?.type?.name,
+  const hasBatchTrackedRows = useMemo(
+    () =>
+      entryType === "direct" &&
+      tableRows.some((row) => row.product.trackingType === "batch"),
+    [entryType, tableRows],
   );
-
-  // Available attributes for modal selected product (filtered by entry type)
-  const modalAvailableAttributes = useMemo(() => {
-    if (!modalSelectedProduct) return [];
-
-    if (modalIsFashionProduct) {
-      const colorSet = new Set<string>();
-      modalSelectedProduct.variants.forEach((v) => {
-        const isLoose = v.packType === "loose";
-        if (entryType === "loose" && !isLoose) return;
-        if (entryType !== "loose" && isLoose) return;
-        const color = String(v.color || "").trim();
-        if (color) colorSet.add(color);
-      });
-      return Array.from(colorSet.values()).map((color) => ({
-        key: color,
-        label: color,
-      }));
-    }
-
-    const brandMap = new Map<number, { key: string; label: string }>();
-    modalSelectedProduct.variants.forEach((v) => {
-      if (v.brand && v.brandId) {
-        const isLoose = v.packType === "loose";
-        if (entryType === "loose" && !isLoose) return;
-        if (entryType !== "loose" && isLoose) return;
-        brandMap.set(v.brand.id, {
-          key: String(v.brand.id),
-          label: v.brand.name,
-        });
-      }
-    });
-    return Array.from(brandMap.values());
-  }, [entryType, modalIsFashionProduct, modalSelectedProduct]);
 
   // Check if all rows are complete
   const allRowsComplete = useMemo(() => {
@@ -362,10 +365,18 @@ export default function AddStockPage() {
           : parseFloat(row.quantity) <= 0)
       )
         return false;
+      if (
+        entryType === "direct" &&
+        row.product.trackingType === "batch" &&
+        !row.batchNo?.trim()
+      )
+        return false;
+      if (entryType === "direct" && !Number.isInteger(Number(row.quantity))) {
+        return false;
+      }
       if (entryType === "loose") {
         return (
-          row.totalPurchaseCost !== "" &&
-          parseFloat(row.totalPurchaseCost) > 0
+          row.totalPurchaseCost !== "" && parseFloat(row.totalPurchaseCost) > 0
         );
       }
       if (entryType === "carton") {
@@ -383,18 +394,13 @@ export default function AddStockPage() {
     });
   }, [getCartonCount, getCartonPacksPerCarton, tableRows, entryType]);
 
-  // Get filtered variants for a row (by brand/color + entry type)
+  // Get filtered variants for a row (by the product's assigned brand + entry type)
   const getVariantsForRow = useCallback(
     (row: TableRow) => {
       return row.product.variants
         .filter((v) => {
-          if (row.attributeKind === "color") {
-            if (String(v.color || "").trim() !== row.brandName) return false;
-          } else if (v.brandId !== row.brandId) {
-            return false;
-          }
-          if (entryType === "loose") return v.packType === "loose";
-          return v.packType !== "loose";
+          if (v.brandId !== row.brandId) return false;
+          return variantMatchesEntryType(v, entryType);
         })
         .sort(
           (a, b) =>
@@ -418,24 +424,29 @@ export default function AddStockPage() {
       const qty = parseFloat(row.quantity);
       const isFashionRow = isFashionTypeName(row.product.category?.type?.name);
       if (entryType === "loose") {
-		return qty;
+        return qty;
       }
+      if (entryType === "direct") return qty;
       if (entryType === "carton") {
-		return qty * getCartonPacksPerCarton(row);
+        return qty * getCartonPacksPerCarton(row);
       }
       if (isFashionRow) {
         return qty;
       }
       return qty * getVariantMeasure(variant).quantityPerPack;
     },
-	[getCartonPacksPerCarton, getRowVariant, entryType],
+    [getCartonPacksPerCarton, getRowVariant, entryType],
   );
 
   const getRowTotalQtyUnit = useCallback(
     (row: TableRow) => {
       const variant = getRowVariant(row);
-	  if (entryType === "carton") return variant?.stockSemantics.operationalUnit || "unit";
-	  if (entryType === "loose") return variant?.stockSemantics.operationalUnit || "unit";
+      if (entryType === "direct")
+        return variant?.movementSemantics.inventoryUnit || "cylinder";
+      if (entryType === "carton")
+        return variant?.stockSemantics.operationalUnit || "unit";
+      if (entryType === "loose")
+        return variant?.stockSemantics.operationalUnit || "unit";
       if (isFashionTypeName(row.product.category?.type?.name)) return "PCS";
       return getVariantMeasure(variant).quantityUnit;
     },
@@ -447,11 +458,22 @@ export default function AddStockPage() {
     (row: TableRow) => {
       const totalQty = getRowTotalQtyValue(row);
       if (totalQty <= 0) return "—";
+      if (entryType === "direct") {
+        const variant = getRowVariant(row);
+        const massPerUnit = Number(
+          variant?.movementSemantics.referenceMeasurement?.perInventoryUnit ||
+            0,
+        );
+        const cylinders = `${totalQty.toFixed(0)} ${totalQty === 1 ? "cylinder" : "cylinders"}`;
+        return massPerUnit > 0
+          ? `${cylinders} · ${(totalQty * massPerUnit).toFixed(0)} KG`
+          : cylinders;
+      }
       const unit = getRowTotalQtyUnit(row);
       const decimals = unit === "KG" ? 1 : 0;
       return `${totalQty.toFixed(decimals)} ${unit}`;
     },
-    [getRowTotalQtyUnit, getRowTotalQtyValue],
+    [entryType, getRowTotalQtyUnit, getRowTotalQtyValue, getRowVariant],
   );
 
   const getLooseSupplierPricePerKg = useCallback(
@@ -501,6 +523,17 @@ export default function AddStockPage() {
       unit: "",
     };
   }, [getRowTotalQtyUnit, getRowTotalQtyValue, tableRows]);
+
+  const totalReferenceMassKg = useMemo(() => {
+    if (entryType !== "direct") return 0;
+    return tableRows.reduce((total, row) => {
+      const variant = getRowVariant(row);
+      const massPerUnit = Number(
+        variant?.movementSemantics.referenceMeasurement?.perInventoryUnit || 0,
+      );
+      return total + getRowTotalQtyValue(row) * massPerUnit;
+    }, 0);
+  }, [entryType, getRowTotalQtyValue, getRowVariant, tableRows]);
 
   const showGenericPackQtyLabel = useMemo(
     () =>
@@ -554,74 +587,69 @@ export default function AddStockPage() {
     setModalTypeId(undefined);
     setModalCategoryId(undefined);
     setModalSubCategoryId(undefined);
-    setModalSelectedProduct(null);
-    setModalSelectedBrandId(null);
-    setModalSelectedColor(null);
     setShowProductModal(true);
   }, []);
 
-  const handleAddFromModal = useCallback(() => {
-    if (!modalSelectedProduct) return;
-    const isFashionProduct = isFashionTypeName(
-      modalSelectedProduct.category?.type?.name,
-    );
-    if (isFashionProduct && entryType !== "pack") {
-      toast.error("Fashion stock should be added through Pack Entry.");
-      return;
-    }
-    if (!isFashionProduct && !modalSelectedBrandId) return;
-    if (isFashionProduct && !modalSelectedColor) return;
+  const addProductSelection = useCallback(
+    (selectedProduct: ProductResult) => {
+      const brand = selectedProduct.brand;
+      if (!brand) {
+        toast.error(
+          "This product has no assigned brand. Configure its brand before adding stock.",
+        );
+        return false;
+      }
 
-    const brand = modalSelectedProduct.variants.find(
-      (v) => v.brandId === modalSelectedBrandId,
-    )?.brand;
-    const availableVariants = modalSelectedProduct.variants
-      .filter((v) => {
-        if (isFashionProduct) {
-          if (String(v.color || "").trim() !== modalSelectedColor) return false;
-        } else if (v.brandId !== modalSelectedBrandId) {
-          return false;
-        }
-        if (entryType === "loose") return v.packType === "loose";
-        return v.packType !== "loose";
-      })
-      .sort(
-        (a, b) =>
-          getVariantMeasure(a).quantityPerPack -
-          getVariantMeasure(b).quantityPerPack,
+      const isFashionProduct = isFashionTypeName(
+        selectedProduct.category?.type?.name,
       );
-    const newRow: TableRow = {
-      id: ++rowIdRef.current,
-      product: modalSelectedProduct,
-      brandId: isFashionProduct ? null : modalSelectedBrandId,
-      brandName: isFashionProduct
-        ? modalSelectedColor || ""
-        : brand?.name || "",
-      attributeKind: isFashionProduct ? "color" : "brand",
-      variantId:
-        (entryType === "loose" || entryType === "carton") &&
-        availableVariants.length > 0
-          ? availableVariants[0]!.id
-          : availableVariants.length === 1
+      if (isFashionProduct && entryType !== "pack") {
+        toast.error("Fashion stock should be added through Pack Entry.");
+        return false;
+      }
+
+      const availableVariants = selectedProduct.variants
+        .filter(
+          (variant) =>
+            variant.brandId === brand.id &&
+            variantMatchesEntryType(variant, entryType),
+        )
+        .sort(
+          (a, b) =>
+            getVariantMeasure(a).quantityPerPack -
+            getVariantMeasure(b).quantityPerPack,
+        );
+      if (availableVariants.length === 0) {
+        toast.error("No configured variants are available for this product.");
+        return false;
+      }
+
+      const newRow: TableRow = {
+        id: ++rowIdRef.current,
+        product: selectedProduct,
+        brandId: brand.id,
+        brandName: brand.name,
+        variantId:
+          entryType === "direct" ||
+          entryType === "loose" ||
+          entryType === "carton" ||
+          availableVariants.length === 1
             ? availableVariants[0]!.id
             : null,
-      cartonUnitSize: "",
-      quantity: "",
-      purchaseUnitPrice: "",
-      totalPurchaseCost: "",
-    };
-    setTableRows((prev) => [...prev, newRow]);
-    setShowProductModal(false);
-    setModalSelectedProduct(null);
-    setModalSelectedBrandId(null);
-    setModalSelectedColor(null);
-    toast.success(`Added ${modalSelectedProduct.name} to the table`);
-  }, [
-    entryType,
-    modalSelectedBrandId,
-    modalSelectedColor,
-    modalSelectedProduct,
-  ]);
+        batchNo:
+          selectedProduct.trackingType === "batch" ? sharedBatchNo.trim() : "",
+        cartonUnitSize: "",
+        quantity: "",
+        purchaseUnitPrice: "",
+        totalPurchaseCost: "",
+      };
+      setTableRows((prev) => [...prev, newRow]);
+      setShowProductModal(false);
+      toast.success(`Added ${selectedProduct.name} to the table`);
+      return true;
+    },
+    [entryType, sharedBatchNo],
+  );
 
   const updateRow = useCallback((rowId: number, updates: Partial<TableRow>) => {
     setTableRows((prev) =>
@@ -633,9 +661,39 @@ export default function AddStockPage() {
     setTableRows((prev) => prev.filter((r) => r.id !== rowId));
   }, []);
 
+  const clearRows = useCallback(() => {
+    setTableRows([]);
+    setSharedBatchNo("");
+  }, []);
+
+  const applySharedBatchNo = useCallback(() => {
+    const normalizedBatchNo = sharedBatchNo.trim();
+    if (!normalizedBatchNo) return;
+    setTableRows((rows) =>
+      rows.map((row) =>
+        row.product.trackingType === "batch"
+          ? { ...row, batchNo: normalizedBatchNo }
+          : row,
+      ),
+    );
+    toast.success("Batch number applied to all batch-tracked items");
+  }, [sharedBatchNo]);
+
   const handleSubmit = async () => {
     if (tableRows.length === 0) {
       toast.error("Please add at least one product");
+      return;
+    }
+    const missingBatch = tableRows.find(
+      (row) =>
+        entryType === "direct" &&
+        row.product.trackingType === "batch" &&
+        !row.batchNo?.trim(),
+    );
+    if (missingBatch) {
+      toast.error(
+        `Enter a batch / lot number for ${missingBatch.product.name}`,
+      );
       return;
     }
     const incomplete = tableRows.find((r) => {
@@ -648,10 +706,7 @@ export default function AddStockPage() {
       )
         return true;
       if (entryType === "loose") {
-        return (
-          !r.totalPurchaseCost ||
-          parseFloat(r.totalPurchaseCost) <= 0
-        );
+        return !r.totalPurchaseCost || parseFloat(r.totalPurchaseCost) <= 0;
       }
       if (entryType === "carton") {
         return (
@@ -671,55 +726,81 @@ export default function AddStockPage() {
 
     setIsSubmitting(true);
     try {
-      const submitRow = (row: TableRow) => {
-        const qty =
-          entryType === "loose"
-			? parseFloat(row.quantity)
-            : entryType === "carton"
-              ? getCartonCount(row)
-              : parseFloat(row.quantity);
-        const price =
-          entryType === "loose"
-			? getLooseSupplierPricePerKg(row)
-            : parseFloat(row.purchaseUnitPrice);
-
-        return (orpc.warehouse as any).addStockEntry.call({
-          variantId: row.variantId,
-          entryType,
-          quantity: String(qty),
+      if (entryType === "direct") {
+        await (orpc.warehouse as any).createStockReceipt.call({
+          idempotencyKey: receiptIdempotencyKeyRef.current,
+          receiptDate: format(paymentDate, "yyyy-MM-dd"),
           supplierId: supplierId || undefined,
-          costType:
-            entryType === "loose"
-			? getRowVariant(row)?.stockSemantics.operationalUnit.toLowerCase() === "kg"
-				? "per_kg"
-				: "per_unit"
-              : entryType === "carton"
-                ? "per_carton"
-				: "per_unit",
-          purchasePrice: String(price),
+          paymentMethod: paymentAccount,
           reference: reference || undefined,
-          batchNo: batchNo || undefined,
-          expiryDate: expiryDate || undefined,
-          manufactureDate: manufactureDate || undefined,
           storageAreaId: storageAreaId || undefined,
           shelfRack: shelfRack || undefined,
           note: note || undefined,
-          ...(entryType === "carton"
-            ? {
-                cartonCount: getCartonCount(row),
-                packsPerCarton: getCartonPacksPerCarton(row),
-                createCartonRecords: true,
-              }
-            : {}),
+          lines: tableRows.map((row) => ({
+            variantId: row.variantId,
+            quantity: Number(row.quantity),
+            purchaseUnitCost: row.purchaseUnitPrice,
+            batchNo:
+              row.product.trackingType === "batch"
+                ? row.batchNo?.trim()
+                : undefined,
+            expiryDate: expiryDate || undefined,
+            manufactureDate: manufactureDate || undefined,
+          })),
         });
-      };
-
-      if (entryType === "carton") {
-        for (const row of tableRows) {
-          await submitRow(row);
-        }
       } else {
-        await Promise.all(tableRows.map((row) => submitRow(row)));
+        const submitRow = (row: TableRow) => {
+          const qty =
+            entryType === "loose"
+              ? parseFloat(row.quantity)
+              : entryType === "carton"
+                ? getCartonCount(row)
+                : parseFloat(row.quantity);
+          const price =
+            entryType === "loose"
+              ? getLooseSupplierPricePerKg(row)
+              : parseFloat(row.purchaseUnitPrice);
+
+          return (orpc.warehouse as any).addStockEntry.call({
+            variantId: row.variantId,
+            entryType,
+            quantity: String(qty),
+            supplierId: supplierId || undefined,
+            costType:
+              entryType === "loose"
+                ? getRowVariant(
+                    row,
+                  )?.stockSemantics.operationalUnit.toLowerCase() === "kg"
+                  ? "per_kg"
+                  : "per_unit"
+                : entryType === "carton"
+                  ? "per_carton"
+                  : "per_unit",
+            purchasePrice: String(price),
+            reference: reference || undefined,
+            batchNo: batchNo || undefined,
+            expiryDate: expiryDate || undefined,
+            manufactureDate: manufactureDate || undefined,
+            storageAreaId: storageAreaId || undefined,
+            shelfRack: shelfRack || undefined,
+            note: note || undefined,
+            ...(entryType === "carton"
+              ? {
+                  cartonCount: getCartonCount(row),
+                  packsPerCarton: getCartonPacksPerCarton(row),
+                  createCartonRecords: true,
+                }
+              : {}),
+          });
+        };
+
+        if (entryType === "carton") {
+          for (const row of tableRows) {
+            await submitRow(row);
+          }
+        } else {
+          await Promise.all(tableRows.map((row) => submitRow(row)));
+        }
       }
       queryClient.invalidateQueries({ queryKey: ["warehouse"] });
       toast.success(
@@ -790,12 +871,52 @@ export default function AddStockPage() {
               <CardTitle className="text-base">Entry Mode</CardTitle>
             </div>
             <CardDescription>
-              Select how you want to add stock -- this determines which products
-              and fields are shown
+              Select how the supplier counted this stock. Product units still
+              come from Admin Variant Setup.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {/* Direct configured-unit entry */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (tableRows.length > 0 && entryType !== "direct") {
+                    if (
+                      !confirm(
+                        "Switching mode will clear your current items. Continue?",
+                      )
+                    )
+                      return;
+                    clearRows();
+                  }
+                  setEntryType("direct");
+                }}
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${
+                  entryType === "direct"
+                    ? "border-violet-500 bg-violet-50 shadow-sm"
+                    : "border-gray-200 hover:border-violet-200 hover:bg-violet-50/30"
+                }`}
+              >
+                <div
+                  className={`rounded-lg p-2.5 ${entryType === "direct" ? "bg-violet-100" : "bg-gray-100"}`}
+                >
+                  <Package
+                    className={`h-5 w-5 ${entryType === "direct" ? "text-violet-600" : "text-gray-400"}`}
+                  />
+                </div>
+                <div>
+                  <p
+                    className={`text-sm font-semibold ${entryType === "direct" ? "text-violet-800" : "text-gray-700"}`}
+                  >
+                    Direct Entry
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Count LPG in configured cylinders
+                  </p>
+                </div>
+              </button>
+
               {/* Loose Entry */}
               <button
                 type="button"
@@ -807,7 +928,7 @@ export default function AddStockPage() {
                       )
                     )
                       return;
-                    setTableRows([]);
+                    clearRows();
                   }
                   setEntryType("loose");
                 }}
@@ -831,7 +952,8 @@ export default function AddStockPage() {
                     Loose Entry
                   </p>
                   <p className="text-xs text-muted-foreground">
-					Choose a configured loose variant and enter its canonical quantity
+                    Choose a configured loose variant and enter its canonical
+                    quantity
                   </p>
                 </div>
               </button>
@@ -847,7 +969,7 @@ export default function AddStockPage() {
                       )
                     )
                       return;
-                    setTableRows([]);
+                    clearRows();
                   }
                   setEntryType("pack");
                 }}
@@ -871,7 +993,7 @@ export default function AddStockPage() {
                     Pack Entry
                   </p>
                   <p className="text-xs text-muted-foreground">
-					Enter the number of configured variant units
+                    Enter the number of configured variant units
                   </p>
                 </div>
               </button>
@@ -887,7 +1009,7 @@ export default function AddStockPage() {
                       )
                     )
                       return;
-                    setTableRows([]);
+                    clearRows();
                   }
                   setEntryType("carton");
                 }}
@@ -939,7 +1061,7 @@ export default function AddStockPage() {
                       variant="ghost"
                       size="sm"
                       className="text-destructive hover:text-destructive"
-                      onClick={() => setTableRows([])}
+                      onClick={clearRows}
                     >
                       Clear All
                     </Button>
@@ -949,6 +1071,44 @@ export default function AddStockPage() {
                   Record incoming stock and its purchase cost. Selling prices
                   are not changed here.
                 </CardDescription>
+                {hasBatchTrackedRows && (
+                  <div className="flex flex-wrap items-end gap-2 border-t pt-3">
+                    <Field className="min-w-[220px] flex-1">
+                      <FieldLabel className="text-xs">
+                        Batch / Lot for all items
+                      </FieldLabel>
+                      <Input
+                        value={sharedBatchNo}
+                        onChange={(event) =>
+                          setSharedBatchNo(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            applySharedBatchNo();
+                          }
+                        }}
+                        placeholder="e.g. LPG-2026-07-15-A"
+                        maxLength={100}
+                        className="h-8 font-mono text-xs"
+                      />
+                    </Field>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={applySharedBatchNo}
+                      disabled={!sharedBatchNo.trim()}
+                    >
+                      Apply to All
+                    </Button>
+                    <p className="w-full text-xs text-muted-foreground">
+                      Applies to batch-tracked rows. Individual values remain
+                      editable.
+                    </p>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
@@ -962,14 +1122,23 @@ export default function AddStockPage() {
                           Product Name
                         </th>
                         <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">
-						  {entryType === "carton" ? "Units / Carton" : "Configured Variant"}
+                          {entryType === "carton"
+                            ? "Units / Carton"
+                            : "Configured Variant"}
                         </th>
+                        {hasBatchTrackedRows && (
+                          <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">
+                            Batch / Lot No. *
+                          </th>
+                        )}
                         <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">
-                          {entryType === "loose" || entryType === "carton"
-                            ? "Qty"
-                            : showGenericPackQtyLabel
+                          {entryType === "direct"
+                            ? "Qty (Cylinders)"
+                            : entryType === "loose" || entryType === "carton"
                               ? "Qty"
-                              : "Qty (Pack)"}
+                              : showGenericPackQtyLabel
+                                ? "Qty"
+                                : "Qty (Pack)"}
                         </th>
                         <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">
                           Total Qty
@@ -979,7 +1148,9 @@ export default function AddStockPage() {
                             ? "Total Purchase Cost"
                             : entryType === "carton"
                               ? "Buying Price/Carton"
-							  : "Buying Price/Unit"}
+                              : entryType === "direct"
+                                ? "Cost / Cylinder"
+                                : "Buying Price/Unit"}
                         </th>
                         <th className="w-10 px-2"></th>
                       </tr>
@@ -988,7 +1159,7 @@ export default function AddStockPage() {
                       {tableRows.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={7}
+                            colSpan={hasBatchTrackedRows ? 8 : 7}
                             className="text-center py-12 text-muted-foreground"
                           >
                             <div className="flex flex-col items-center gap-2">
@@ -1032,7 +1203,11 @@ export default function AddStockPage() {
                               </td>
                               <td className="px-3 py-2.5">
                                 {entryType === "loose" ? (
-								  <span className="text-xs font-medium">{variant?.displayLabel || variant?.unitLabel || "—"}</span>
+                                  <span className="text-xs font-medium">
+                                    {variant?.displayLabel ||
+                                      variant?.unitLabel ||
+                                      "—"}
+                                  </span>
                                 ) : entryType === "carton" ? (
                                   <Input
                                     type="text"
@@ -1046,7 +1221,7 @@ export default function AddStockPage() {
                                         ),
                                       })
                                     }
-									placeholder="Units"
+                                    placeholder="Units"
                                     className="h-8 w-[90px] text-right text-sm"
                                   />
                                 ) : (
@@ -1076,6 +1251,29 @@ export default function AddStockPage() {
                                   </Select>
                                 )}
                               </td>
+                              {hasBatchTrackedRows && (
+                                <td className="px-3 py-2.5">
+                                  {row.product.trackingType === "batch" ? (
+                                    <Input
+                                      value={row.batchNo ?? ""}
+                                      onChange={(event) =>
+                                        updateRow(row.id, {
+                                          batchNo: event.target.value,
+                                        })
+                                      }
+                                      placeholder="Required"
+                                      maxLength={100}
+                                      required
+                                      aria-label={`Batch or lot number for ${row.product.name}`}
+                                      className="h-8 w-[150px] font-mono text-xs"
+                                    />
+                                  ) : (
+                                    <span className="text-muted-foreground">
+                                      —
+                                    </span>
+                                  )}
+                                </td>
+                              )}
                               <td className="px-3 py-2.5 text-center">
                                 <Input
                                   type="text"
@@ -1084,7 +1282,8 @@ export default function AddStockPage() {
                                   onChange={(e) =>
                                     updateRow(row.id, {
                                       quantity:
-                                        entryType === "carton"
+                                        entryType === "carton" ||
+                                        entryType === "direct"
                                           ? e.target.value.replace(
                                               /[^0-9]/g,
                                               "",
@@ -1097,7 +1296,8 @@ export default function AddStockPage() {
                                   }
                                   placeholder={
                                     entryType === "loose" ||
-                                    entryType === "carton"
+                                    entryType === "carton" ||
+                                    entryType === "direct"
                                       ? "1"
                                       : "0"
                                   }
@@ -1127,9 +1327,9 @@ export default function AddStockPage() {
                                       className="h-8 text-right text-sm"
                                     />
                                     <p className="mt-1 text-[11px] leading-none text-muted-foreground">
-									  {supplierPricePerKg > 0
-										? `৳ ${supplierPricePerKg.toFixed(2)}/${variant?.stockSemantics.operationalUnit || "unit"}`
-										: `৳ 0.00/${variant?.stockSemantics.operationalUnit || "unit"}`}
+                                      {supplierPricePerKg > 0
+                                        ? `৳ ${supplierPricePerKg.toFixed(2)}/${variant?.stockSemantics.operationalUnit || "unit"}`
+                                        : `৳ 0.00/${variant?.stockSemantics.operationalUnit || "unit"}`}
                                     </p>
                                   </div>
                                 ) : entryType === "carton" ? (
@@ -1399,6 +1599,11 @@ export default function AddStockPage() {
                         </span>
                       )}
                     </p>
+                    {entryType === "direct" && totalReferenceMassKg > 0 && (
+                      <p className="mt-1 text-[11px] text-emerald-700/70 dark:text-emerald-300/70">
+                        {totalReferenceMassKg.toFixed(0)} KG LPG reference
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1459,238 +1664,131 @@ export default function AddStockPage() {
           <DialogHeader>
             <DialogTitle>Select Product</DialogTitle>
             <DialogDescription>
-              Choose a product and the matching attribute to add to your stock
+              Choose a brand-specific warehouse product to add to this stock
               entry
             </DialogDescription>
           </DialogHeader>
 
-          {!modalSelectedProduct ? (
-            <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
-              {/* Filters: Type → Category → Sub-category */}
-              <div className="flex gap-2 flex-wrap">
+          <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
+            {/* Filters: Type → Category → Sub-category */}
+            <div className="flex gap-2 flex-wrap">
+              <Select
+                value={modalTypeId ? String(modalTypeId) : "all"}
+                onValueChange={(v) => {
+                  setModalTypeId(v === "all" ? undefined : Number(v));
+                  setModalCategoryId(undefined);
+                  setModalSubCategoryId(undefined);
+                }}
+              >
+                <SelectTrigger className="w-full text-sm h-9 min-w-[120px] flex-1">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {typeOptions.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {categoryOptions.length > 0 && (
                 <Select
-                  value={modalTypeId ? String(modalTypeId) : "all"}
+                  value={modalCategoryId ? String(modalCategoryId) : "all"}
                   onValueChange={(v) => {
-                    setModalTypeId(v === "all" ? undefined : Number(v));
-                    setModalCategoryId(undefined);
+                    setModalCategoryId(v === "all" ? undefined : Number(v));
                     setModalSubCategoryId(undefined);
                   }}
                 >
                   <SelectTrigger className="w-full text-sm h-9 min-w-[120px] flex-1">
-                    <SelectValue placeholder="All Types" />
+                    <SelectValue placeholder="All Categories" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    {typeOptions.map((t) => (
-                      <SelectItem key={t.id} value={String(t.id)}>
-                        {t.name}
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categoryOptions.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {categoryOptions.length > 0 && (
-                  <Select
-                    value={modalCategoryId ? String(modalCategoryId) : "all"}
-                    onValueChange={(v) => {
-                      setModalCategoryId(v === "all" ? undefined : Number(v));
-                      setModalSubCategoryId(undefined);
-                    }}
-                  >
-                    <SelectTrigger className="w-full text-sm h-9 min-w-[120px] flex-1">
-                      <SelectValue placeholder="All Categories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Categories</SelectItem>
-                      {categoryOptions.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {subCategoryOptions.length > 0 && (
-                  <Select
-                    value={
-                      modalSubCategoryId ? String(modalSubCategoryId) : "all"
-                    }
-                    onValueChange={(v) =>
-                      setModalSubCategoryId(v === "all" ? undefined : Number(v))
-                    }
-                  >
-                    <SelectTrigger className="w-full text-sm h-9 min-w-[120px] flex-1">
-                      <SelectValue placeholder="Sub-category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Sub-categories</SelectItem>
-                      {subCategoryOptions.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search products..."
-                  value={modalSearch}
-                  onChange={(e) => setModalSearch(e.target.value)}
-                  className="pl-9 h-9"
-                />
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-                {loadingProducts ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : products.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-muted-foreground">
-                    No products found
-                  </div>
-                ) : (
-                  products.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted/80 transition-colors cursor-pointer"
-                      onClick={() => {
-                        setModalSelectedProduct(p);
-                        setModalSelectedBrandId(null);
-                        setModalSelectedColor(null);
-                      }}
-                    >
-                      {p.image && (
-                        <Image
-                          src={p.image}
-                          alt={p.name}
-                          width={36}
-                          height={36}
-                          className="w-9 h-9 rounded-md object-cover border"
-                        />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{p.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {p.category?.type?.name
-                            ? `${p.category.type.name} > `
-                            : ""}
-                          {p.category?.name}
-                          {p.subCategory ? ` > ${p.subCategory.name}` : ""}
-                        </p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Selected product header */}
-              <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                {modalSelectedProduct.image && (
-                  <Image
-                    src={modalSelectedProduct.image}
-                    alt={modalSelectedProduct.name}
-                    width={40}
-                    height={40}
-                    className="w-10 h-10 rounded-lg object-cover border"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">
-                    {modalSelectedProduct.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {modalSelectedProduct.category?.name}
-                    {modalSelectedProduct.coreProduct
-                      ? ` · ${modalSelectedProduct.coreProduct.name}`
-                      : ""}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setModalSelectedProduct(null);
-                    setModalSelectedBrandId(null);
-                    setModalSelectedColor(null);
-                  }}
-                >
-                  <ArrowLeft className="h-4 w-4 mr-1" /> Back
-                </Button>
-              </div>
-
-              {/* Attribute selection */}
-              <div>
-                {modalIsFashionProduct && entryType !== "pack" && (
-                  <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                    Fashion products should be added with Pack Entry only.
-                  </p>
-                )}
-                <p className="text-sm font-medium mb-2">
-                  Select {modalIsFashionProduct ? "Color" : "Brand"}
-                </p>
-                {modalAvailableAttributes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">
-                    No {modalIsFashionProduct ? "colors" : "brands"} available{" "}
-                    for this entry type
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {modalAvailableAttributes.map((attribute) => (
-                      <button
-                        key={attribute.key}
-                        type="button"
-                        onClick={() => {
-                          if (modalIsFashionProduct) {
-                            setModalSelectedColor(attribute.label);
-                            setModalSelectedBrandId(null);
-                          } else {
-                            setModalSelectedBrandId(Number(attribute.key));
-                            setModalSelectedColor(null);
-                          }
-                        }}
-                        className={`p-3 rounded-lg border-2 text-left transition-all cursor-pointer ${
-                          (
-                            modalIsFashionProduct
-                              ? modalSelectedColor === attribute.label
-                              : modalSelectedBrandId === Number(attribute.key)
-                          )
-                            ? "border-primary bg-primary/5 shadow-sm"
-                            : "border-gray-200 hover:border-primary/30"
-                        }`}
-                      >
-                        <p className="text-sm font-medium">{attribute.label}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowProductModal(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleAddFromModal}
-                  disabled={
-                    modalIsFashionProduct
-                      ? !modalSelectedColor
-                      : !modalSelectedBrandId
+              )}
+              {subCategoryOptions.length > 0 && (
+                <Select
+                  value={
+                    modalSubCategoryId ? String(modalSubCategoryId) : "all"
+                  }
+                  onValueChange={(v) =>
+                    setModalSubCategoryId(v === "all" ? undefined : Number(v))
                   }
                 >
-                  <Plus className="mr-1.5 h-4 w-4" /> Add to Table
-                </Button>
-              </DialogFooter>
+                  <SelectTrigger className="w-full text-sm h-9 min-w-[120px] flex-1">
+                    <SelectValue placeholder="Sub-category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sub-categories</SelectItem>
+                    {subCategoryOptions.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
-          )}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search products..."
+                value={modalSearch}
+                onChange={(e) => setModalSearch(e.target.value)}
+                className="pl-9 h-9"
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+              {loadingProducts ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : products.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">
+                  No products found
+                </div>
+              ) : (
+                products.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted/80 transition-colors cursor-pointer"
+                    onClick={() => addProductSelection(p)}
+                  >
+                    {p.image && (
+                      <Image
+                        src={p.image}
+                        alt={p.name}
+                        width={36}
+                        height={36}
+                        className="w-9 h-9 rounded-md object-cover border"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{p.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {p.category?.type?.name
+                          ? `${p.category.type.name} > `
+                          : ""}
+                        {p.category?.name}
+                        {p.subCategory ? ` > ${p.subCategory.name}` : ""}
+                      </p>
+                    </div>
+                    <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
+                      <Plus className="h-3.5 w-3.5" /> Add
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

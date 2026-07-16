@@ -1,32 +1,29 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
+  ArrowRight,
   BadgeCheck,
+  Loader2,
   MapPin,
+  Minus,
   Package,
+  Plus,
   Search,
-  Warehouse,
   ShoppingCart,
   Trash2,
-  Minus,
-  Plus,
-  Loader2,
-  ArrowRight,
-  ChevronRight,
+  Warehouse,
 } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { orpc } from "@/utils/orpc";
-import { authClient } from "@/lib/auth-client";
-import { toast } from "sonner";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -35,8 +32,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import Link from "next/link";
+import { authClient } from "@/lib/auth-client";
+import { orpc } from "@/utils/orpc";
 
 const CITIES = [
   "Dhaka",
@@ -92,7 +98,6 @@ function ProductCardSkeleton() {
 
 export default function WarehouseStorefrontPage() {
   const { slug } = useParams<{ slug: string }>();
-  const router = useRouter();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
@@ -101,34 +106,52 @@ export default function WarehouseStorefrontPage() {
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Buyer connection context
-  const { data: sessionData, isPending: sessionPending } = authClient.useSession();
+  const { data: sessionData, isPending: sessionPending } =
+    authClient.useSession();
   const isWarehouseBuyer = sessionData?.user?.role === "warehouse";
+  const isRetailerBuyer = sessionData?.user?.role === "shop_owner";
 
   // Check connection status
-  const { data: supplierConnections, isLoading: connectionsLoading } = useQuery({
-    ...orpc.warehouse.getMyWarehouseSuppliers.queryOptions({
-      input: { status: "active", search: slug, page: 1, limit: 10 },
-    }),
-    enabled: isWarehouseBuyer,
-  });
+  const { data: supplierConnections, isLoading: connectionsLoading } = useQuery(
+    {
+      ...orpc.warehouse.getMyWarehouseSuppliers.queryOptions({
+        input: { status: "active", search: slug, page: 1, limit: 10 },
+      }),
+      enabled: isWarehouseBuyer,
+    },
+  );
 
   const activeConnection = supplierConnections?.items?.find(
-    (item: any) => item.warehouseSlug === slug || item.warehouseId === slug
+    (item: any) => item.warehouseSlug === slug || item.warehouseId === slug,
   );
   const isConnectedSupplier = !!activeConnection;
 
   // Grid mode evaluation
-  const gridMode: "default" | "w2w" | "view-only" = isWarehouseBuyer
-    ? (isConnectedSupplier ? "w2w" : "view-only")
-    : "default";
+  const gridMode: "default" | "retailer" | "w2w" | "view-only" =
+    isWarehouseBuyer
+      ? isConnectedSupplier
+        ? "w2w"
+        : "view-only"
+      : isRetailerBuyer
+        ? "retailer"
+        : "default";
+  const hasCartAccess = gridMode === "w2w" || gridMode === "retailer";
 
   // Cart key in local storage
-  const cartKey = `warehouse-supplier-cart:${sessionData?.user?.id}:${slug}`;
+  const cartKey = `${
+    gridMode === "retailer"
+      ? "retailer-warehouse-cart"
+      : "warehouse-supplier-cart"
+  }:${sessionData?.user?.id}:${slug}`;
   const [cart, setCart] = useState<any[]>([]);
 
   // Load cart state
   useEffect(() => {
-    if (typeof window !== "undefined" && sessionData?.user?.id && gridMode === "w2w") {
+    if (
+      typeof window !== "undefined" &&
+      sessionData?.user?.id &&
+      hasCartAccess
+    ) {
       const stored = localStorage.getItem(cartKey);
       if (stored) {
         try {
@@ -140,7 +163,7 @@ export default function WarehouseStorefrontPage() {
         setCart([]);
       }
     }
-  }, [cartKey, sessionData?.user?.id, gridMode]);
+  }, [cartKey, sessionData?.user?.id, hasCartAccess]);
 
   // Save cart state
   const saveCart = (newCart: any[]) => {
@@ -152,7 +175,11 @@ export default function WarehouseStorefrontPage() {
 
   // Cart mutators
   const addToCart = (item: any) => {
-    const existing = cart.find((i) => i.variantId === item.selectedVariant?.variantId || i.variantId === item.id);
+    const existing = cart.find(
+      (i) =>
+        i.variantId === item.selectedVariant?.variantId ||
+        i.variantId === item.id,
+    );
     const availableQty = Number(item.availableQty || 0);
     const moq = Number(item.moq || 1);
     const variantId = item.selectedVariant?.variantId || item.id;
@@ -162,8 +189,8 @@ export default function WarehouseStorefrontPage() {
       const nextQty = Math.min(availableQty, existing.quantity + 1);
       saveCart(
         cart.map((i) =>
-          i.variantId === variantId ? { ...i, quantity: nextQty } : i
-        )
+          i.variantId === variantId ? { ...i, quantity: nextQty } : i,
+        ),
       );
       toast.success(`Updated ${item.name} quantity to ${nextQty}`);
     } else {
@@ -178,6 +205,9 @@ export default function WarehouseStorefrontPage() {
         price: item.pricePerUnit || "0",
         availableQty,
         quantity: qty,
+        fulfillmentMode: item.selectedVariant?.fulfillmentMode,
+        supplyMode: item.selectedVariant?.fulfillmentMode,
+        targetVariantId: item.selectedVariant?.targetVariantId ?? null,
       };
       saveCart([...cart, newItem]);
       toast.success(`Added ${item.name} to cart`);
@@ -190,10 +220,13 @@ export default function WarehouseStorefrontPage() {
         .map((i) => {
           if (i.variantId !== variantId) return i;
           const availableQty = Number(i.availableQty || 0);
-          const nextQty = Math.max(0, Math.min(availableQty, i.quantity + delta));
+          const nextQty = Math.max(
+            0,
+            Math.min(availableQty, i.quantity + delta),
+          );
           return { ...i, quantity: nextQty };
         })
-        .filter((i) => i.quantity > 0)
+        .filter((i) => i.quantity > 0),
     );
   };
 
@@ -220,33 +253,76 @@ export default function WarehouseStorefrontPage() {
   useEffect(() => {
     if (sessionData?.user) {
       const u = sessionData.user as any;
-      setShippingName(u.warehouseName || u.name || "");
+      setShippingName(u.shopName || u.warehouseName || u.name || "");
       setShippingPhone(u.phoneNumber || u.phone || "");
-      setShippingAddress(u.warehouseAddress || "");
+      setShippingAddress(u.shopAddress || u.warehouseAddress || "");
     }
   }, [sessionData]);
 
-  // Order mutation
+  // Order mutation. Retailers and warehouses share the cart UI, but each role
+  // keeps its existing server-side ordering flow and authorization checks.
   const orderMutation = useMutation({
     mutationFn: (input: {
       warehouseKey: string;
-      items: { variantId: number; quantity: number }[];
+      items: {
+        variantId: number;
+        quantity: number;
+        fulfillmentMode?: FulfillmentMode;
+        supplyMode?: FulfillmentMode;
+        targetVariantId?: number | null;
+      }[];
       shippingName: string;
       shippingPhone: string;
       shippingAddress: string;
       shippingCity: string;
       shippingArea?: string;
       customerNote?: string;
-      paymentMethod: "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card";
-    }) => orpc.warehouse.placeWarehouseSupplierOrder.call(input),
+      paymentMethod:
+        | "cash_on_delivery"
+        | "bkash"
+        | "nagad"
+        | "bank_transfer"
+        | "card";
+    }) => {
+      const { warehouseKey, ...orderInput } = input;
+
+      return isRetailerBuyer
+        ? orpc.shopOwner.placeWarehouseOrder.call({
+            ...orderInput,
+            warehouseSlug: warehouseKey,
+          })
+        : orpc.warehouse.placeWarehouseSupplierOrder.call(input);
+    },
     onSuccess: (result) => {
       toast.success(result.message || "Order placed successfully!");
       clearCart();
       setIsCartOpen(false);
-      queryClient.invalidateQueries({ queryKey: orpc.warehouse.getMyWarehouseSuppliers.key() });
-      queryClient.invalidateQueries({ queryKey: orpc.warehouse.getMyOrders.key() });
-      
-      const warehouseDashboardUrl = process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL || "http://warehouse.bikalpo.localhost:3001";
+
+      if (isRetailerBuyer) {
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getConnectedWarehouses.key(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getMyWarehouseOrders.key(),
+        });
+
+        const shopDashboardUrl =
+          process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
+          "http://shop.bikalpo.localhost:3001";
+        window.location.href = `${shopDashboardUrl}/dashboard/orders`;
+        return;
+      }
+
+      queryClient.invalidateQueries({
+        queryKey: orpc.warehouse.getMyWarehouseSuppliers.key(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orpc.warehouse.getMyOrders.key(),
+      });
+
+      const warehouseDashboardUrl =
+        process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL ||
+        "http://warehouse.bikalpo.localhost:3001";
       window.location.href = `${warehouseDashboardUrl}/warehouse/dashboard/orders`;
     },
     onError: (error: any) => {
@@ -255,8 +331,15 @@ export default function WarehouseStorefrontPage() {
   });
 
   const handlePlaceOrder = () => {
-    if (!shippingName.trim() || !shippingPhone.trim() || !shippingAddress.trim() || !shippingCity.trim()) {
-      toast.error("Please fill in all receiving contact and delivery address details");
+    if (
+      !shippingName.trim() ||
+      !shippingPhone.trim() ||
+      !shippingAddress.trim() ||
+      !shippingCity.trim()
+    ) {
+      toast.error(
+        "Please fill in all receiving contact and delivery address details",
+      );
       return;
     }
     if (cart.length === 0) {
@@ -265,7 +348,13 @@ export default function WarehouseStorefrontPage() {
     }
     orderMutation.mutate({
       warehouseKey: slug,
-      items: cart.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      items: cart.map((i) => ({
+        variantId: i.variantId,
+        quantity: i.quantity,
+        fulfillmentMode: i.fulfillmentMode,
+        supplyMode: i.supplyMode,
+        targetVariantId: i.targetVariantId,
+      })),
       shippingName,
       shippingPhone,
       shippingAddress,
@@ -308,14 +397,21 @@ export default function WarehouseStorefrontPage() {
   );
 
   const cartTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+    return cart.reduce(
+      (sum, item) => sum + Number(item.price) * item.quantity,
+      0,
+    );
   }, [cart]);
 
   const cartCount = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.quantity, 0);
   }, [cart]);
 
-  if (warehouseLoading || sessionPending || (isWarehouseBuyer && connectionsLoading)) {
+  if (
+    warehouseLoading ||
+    sessionPending ||
+    (isWarehouseBuyer && connectionsLoading)
+  ) {
     return (
       <div className="min-h-screen bg-zinc-50/50">
         <div className="bg-white border-b border-zinc-200">
@@ -385,7 +481,9 @@ export default function WarehouseStorefrontPage() {
         <div className="flex flex-col items-center justify-center py-10 text-center bg-zinc-50 border border-dashed rounded-xl p-4">
           <ShoppingCart className="w-10 h-10 text-zinc-300 mb-2" />
           <p className="text-sm font-semibold text-zinc-500">Cart is empty</p>
-          <p className="text-xs text-zinc-400 mt-0.5">Add supplier variants to begin</p>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Add supplier variants to begin
+          </p>
         </div>
       );
     }
@@ -393,10 +491,15 @@ export default function WarehouseStorefrontPage() {
     return (
       <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 thin-scrollbar">
         {cart.map((item) => (
-          <div key={item.variantId} className="flex gap-3 p-3 rounded-lg border border-zinc-100 bg-white/50 hover:bg-white hover:shadow-sm transition-all duration-200">
+          <div
+            key={item.variantId}
+            className="flex gap-3 p-3 rounded-lg border border-zinc-100 bg-white/50 hover:bg-white hover:shadow-sm transition-all duration-200"
+          >
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-1">
-                <p className="text-xs font-semibold text-zinc-800 line-clamp-1">{item.productName}</p>
+                <p className="text-xs font-semibold text-zinc-800 line-clamp-1">
+                  {item.productName}
+                </p>
                 <button
                   onClick={() => removeFromCart(item.variantId)}
                   className="text-zinc-400 hover:text-red-500 p-0.5 shrink-0"
@@ -443,22 +546,34 @@ export default function WarehouseStorefrontPage() {
           <MapPin className="w-4 h-4 text-emerald-600" />
           Receiving Details
         </h3>
-        
+
         <div className="space-y-1.5">
-          <Label htmlFor="shippingName" className="text-xs font-bold text-zinc-600">
-            Receiving Warehouse / Contact Name *
+          <Label
+            htmlFor="shippingName"
+            className="text-xs font-bold text-zinc-600"
+          >
+            {gridMode === "retailer"
+              ? "Receiving Shop / Contact Name *"
+              : "Receiving Warehouse / Contact Name *"}
           </Label>
           <Input
             id="shippingName"
             value={shippingName}
             onChange={(e) => setShippingName(e.target.value)}
-            placeholder="Receiving warehouse name or contact"
+            placeholder={
+              gridMode === "retailer"
+                ? "Receiving shop name or contact"
+                : "Receiving warehouse name or contact"
+            }
             className="h-9 text-xs bg-zinc-50/50"
           />
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="shippingPhone" className="text-xs font-bold text-zinc-600">
+          <Label
+            htmlFor="shippingPhone"
+            className="text-xs font-bold text-zinc-600"
+          >
             Phone Number *
           </Label>
           <Input
@@ -471,7 +586,10 @@ export default function WarehouseStorefrontPage() {
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="shippingAddress" className="text-xs font-bold text-zinc-600">
+          <Label
+            htmlFor="shippingAddress"
+            className="text-xs font-bold text-zinc-600"
+          >
             Delivery Address *
           </Label>
           <Textarea
@@ -485,11 +603,20 @@ export default function WarehouseStorefrontPage() {
 
         <div className="grid grid-cols-2 gap-3.5">
           <div className="space-y-1.5">
-            <Label htmlFor="shippingCity" className="text-xs font-bold text-zinc-600">
+            <Label
+              htmlFor="shippingCity"
+              className="text-xs font-bold text-zinc-600"
+            >
               City *
             </Label>
-            <Select value={shippingCity || undefined} onValueChange={setShippingCity}>
-              <SelectTrigger id="shippingCity" className="h-9 w-full bg-zinc-50/50 text-xs border-zinc-200 focus:ring-1 focus:ring-zinc-900">
+            <Select
+              value={shippingCity || undefined}
+              onValueChange={setShippingCity}
+            >
+              <SelectTrigger
+                id="shippingCity"
+                className="h-9 w-full bg-zinc-50/50 text-xs border-zinc-200 focus:ring-1 focus:ring-zinc-900"
+              >
                 <SelectValue placeholder="Select city" />
               </SelectTrigger>
               <SelectContent>
@@ -501,9 +628,12 @@ export default function WarehouseStorefrontPage() {
               </SelectContent>
             </Select>
           </div>
-          
+
           <div className="space-y-1.5">
-            <Label htmlFor="shippingArea" className="text-xs font-bold text-zinc-600">
+            <Label
+              htmlFor="shippingArea"
+              className="text-xs font-bold text-zinc-600"
+            >
               Area (Optional)
             </Label>
             <Input
@@ -517,25 +647,47 @@ export default function WarehouseStorefrontPage() {
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="paymentMethod" className="text-xs font-bold text-zinc-600">
+          <Label
+            htmlFor="paymentMethod"
+            className="text-xs font-bold text-zinc-600"
+          >
             Payment Method *
           </Label>
-          <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as any)}>
-            <SelectTrigger id="paymentMethod" className="h-9 w-full bg-zinc-50/50 text-xs border-zinc-200 focus:ring-1 focus:ring-zinc-900">
+          <Select
+            value={paymentMethod}
+            onValueChange={(v) => setPaymentMethod(v as any)}
+          >
+            <SelectTrigger
+              id="paymentMethod"
+              className="h-9 w-full bg-zinc-50/50 text-xs border-zinc-200 focus:ring-1 focus:ring-zinc-900"
+            >
               <SelectValue placeholder="Select payment method" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="cash_on_delivery" className="text-xs">Cash on delivery</SelectItem>
-              <SelectItem value="bkash" className="text-xs">bKash</SelectItem>
-              <SelectItem value="nagad" className="text-xs">Nagad</SelectItem>
-              <SelectItem value="bank_transfer" className="text-xs">Bank transfer</SelectItem>
-              <SelectItem value="card" className="text-xs">Card</SelectItem>
+              <SelectItem value="cash_on_delivery" className="text-xs">
+                Cash on delivery
+              </SelectItem>
+              <SelectItem value="bkash" className="text-xs">
+                bKash
+              </SelectItem>
+              <SelectItem value="nagad" className="text-xs">
+                Nagad
+              </SelectItem>
+              <SelectItem value="bank_transfer" className="text-xs">
+                Bank transfer
+              </SelectItem>
+              <SelectItem value="card" className="text-xs">
+                Card
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="customerNote" className="text-xs font-bold text-zinc-600">
+          <Label
+            htmlFor="customerNote"
+            className="text-xs font-bold text-zinc-600"
+          >
             Order Note (Optional)
           </Label>
           <Textarea
@@ -574,15 +726,17 @@ export default function WarehouseStorefrontPage() {
                   {warehouse.warehouseAddress && (
                     <div className="flex items-center gap-1.5 min-w-0">
                       <MapPin className="w-4 h-4 text-zinc-400 shrink-0" />
-                      <span className="truncate">{warehouse.warehouseAddress}</span>
+                      <span className="truncate">
+                        {warehouse.warehouseAddress}
+                      </span>
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 shrink-0">
-                     <Package className="w-4 h-4 text-zinc-400" />
-                     <span className="text-zinc-800 font-medium tabular-nums">
-                       {warehouse.productCount}
-                     </span>
-                     <span>products available</span>
+                    <Package className="w-4 h-4 text-zinc-400" />
+                    <span className="text-zinc-800 font-medium tabular-nums">
+                      {warehouse.productCount}
+                    </span>
+                    <span>products available</span>
                   </div>
                 </div>
               </div>
@@ -598,13 +752,21 @@ export default function WarehouseStorefrontPage() {
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div>
-                <h4 className="text-sm font-semibold text-amber-900">Supplier connection required</h4>
+                <h4 className="text-sm font-semibold text-amber-900">
+                  Supplier connection required
+                </h4>
                 <p className="text-sm text-amber-700 mt-0.5">
-                  Request access from this warehouse in your suppliers list before you can order.
+                  Request access from this warehouse in your suppliers list
+                  before you can order.
                 </p>
               </div>
             </div>
-            <Button asChild size="sm" variant="outline" className="shrink-0 border-amber-300 bg-white text-amber-800 hover:bg-amber-100 hover:text-amber-900">
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-amber-300 bg-white text-amber-800 hover:bg-amber-100 hover:text-amber-900"
+            >
               <Link href="/warehouse/dashboard/suppliers">
                 Go to Suppliers List
               </Link>
@@ -696,27 +858,50 @@ export default function WarehouseStorefrontPage() {
         </div>
       </div>
 
-      {/* Floating Cart Button & Drawer for all screen sizes */}
-      {gridMode === "w2w" && cart.length > 0 && (
+      {/* Floating Cart Button & Drawer for connected business buyers */}
+      {hasCartAccess && cart.length > 0 && (
         <div className="fixed bottom-6 right-6 z-50">
           <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
             <SheetTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-6 px-5 rounded-full shadow-2xl flex items-center gap-3 border-none transition-all duration-300 hover:scale-105">
+              <Button
+                className={`text-white font-bold py-6 px-5 rounded-full shadow-2xl flex items-center gap-3 border-none transition-all duration-300 hover:scale-105 ${
+                  gridMode === "retailer"
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
                 <div className="relative">
                   <ShoppingCart className="w-5 h-5" />
-                  <span className="absolute -top-2.5 -right-2.5 bg-zinc-950 text-white font-mono text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-emerald-600">
+                  <span
+                    className={`absolute -top-2.5 -right-2.5 bg-zinc-950 text-white font-mono text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center border ${
+                      gridMode === "retailer"
+                        ? "border-blue-600"
+                        : "border-emerald-600"
+                    }`}
+                  >
                     {cartCount}
                   </span>
                 </div>
-                <span className="font-mono">৳ {cartTotal.toLocaleString("en-BD")}</span>
+                <span className="font-mono">
+                  ৳ {cartTotal.toLocaleString("en-BD")}
+                </span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-full sm:max-w-md md:max-w-lg h-full p-0 flex flex-col">
+            <SheetContent
+              side="right"
+              className="w-full sm:max-w-md md:max-w-lg h-full p-0 flex flex-col"
+            >
               <SheetHeader className="p-4 border-b border-zinc-100 flex-shrink-0">
                 <SheetTitle className="flex items-center justify-between">
                   <span className="text-zinc-800 flex items-center gap-2">
-                    <ShoppingCart className="w-4 h-4 text-emerald-600" />
-                    Supplier Cart
+                    <ShoppingCart
+                      className={`w-4 h-4 ${
+                        gridMode === "retailer"
+                          ? "text-blue-600"
+                          : "text-emerald-600"
+                      }`}
+                    />
+                    {gridMode === "retailer" ? "Order Cart" : "Supplier Cart"}
                   </span>
                   <div className="flex items-center gap-2">
                     {cart.length > 0 && (
@@ -729,7 +914,9 @@ export default function WarehouseStorefrontPage() {
                         Clear Cart
                       </Button>
                     )}
-                    <Badge variant="outline" className="font-mono text-xs">{cartCount} units</Badge>
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {cartCount} units
+                    </Badge>
                   </div>
                 </SheetTitle>
               </SheetHeader>
@@ -743,18 +930,36 @@ export default function WarehouseStorefrontPage() {
                 <div className="p-4 border-t border-zinc-200 bg-white flex-shrink-0 space-y-3 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-500 font-semibold">Subtotal</span>
-                      <span className="font-bold text-zinc-900 font-mono">৳ {cartTotal.toLocaleString()}</span>
+                      <span className="text-zinc-500 font-semibold">
+                        Subtotal
+                      </span>
+                      <span className="font-bold text-zinc-900 font-mono">
+                        ৳ {cartTotal.toLocaleString()}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between text-xs pt-1.5 border-t">
-                      <span className="text-zinc-500 font-semibold">Order Total</span>
-                      <span className="font-extrabold text-emerald-600 text-sm font-mono">৳ {cartTotal.toLocaleString()}</span>
+                      <span className="text-zinc-500 font-semibold">
+                        Order Total
+                      </span>
+                      <span
+                        className={`font-extrabold text-sm font-mono ${
+                          gridMode === "retailer"
+                            ? "text-blue-600"
+                            : "text-emerald-600"
+                        }`}
+                      >
+                        ৳ {cartTotal.toLocaleString()}
+                      </span>
                     </div>
                   </div>
 
                   <Button
                     type="button"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-5 gap-2 rounded-lg transition-colors border-none shadow-sm h-10 text-xs"
+                    className={`w-full text-white font-semibold py-5 gap-2 rounded-lg transition-colors border-none shadow-sm h-10 text-xs ${
+                      gridMode === "retailer"
+                        ? "bg-blue-600 hover:bg-blue-700"
+                        : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
                     disabled={orderMutation.isPending}
                     onClick={handlePlaceOrder}
                   >
@@ -763,7 +968,9 @@ export default function WarehouseStorefrontPage() {
                     ) : (
                       <ArrowRight className="w-4 h-4" />
                     )}
-                    Place Supplier Order
+                    {gridMode === "retailer"
+                      ? "Place Order"
+                      : "Place Supplier Order"}
                   </Button>
                 </div>
               )}

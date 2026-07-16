@@ -14,6 +14,7 @@ import {
 import { user } from "./auth-schema";
 import { product } from "./product";
 import { productVariant } from "./product-variant";
+import { catalogVariant } from "./catalog-variant";
 
 // Order status enum
 export const orderStatusEnum = pgEnum("order_status", [
@@ -220,6 +221,8 @@ export const orderItem = pgTable(
         // === Partial Delivery Tracking ===
         /** How many units have been delivered so far for this item */
         deliveredQty: integer("delivered_qty").default(0),
+        /** Quantity explicitly confirmed by the buyer at receipt */
+        receivedQty: integer("received_qty"),
 
         // === B2B → B2C Conversion Fields ===
 
@@ -237,12 +240,28 @@ export const orderItem = pgTable(
         /** Actual quantity received in shop inventory after conversion */
         convertedQty: decimal("converted_qty", { precision: 12, scale: 2 }),
 
+        /** Immutable movement snapshot for unit-safe fulfillment. */
+        quantityUnit: varchar("quantity_unit", { length: 20 }),
+        inventoryUnit: varchar("inventory_unit", { length: 20 }),
+        conversionFactor: decimal("conversion_factor", { precision: 12, scale: 4 }),
+        inventoryQty: decimal("inventory_qty", { precision: 12, scale: 2 }),
+
+        /** Canonical trade-item identity and immutable order-time identifiers. */
+        catalogVariantId: integer("catalog_variant_id").references(
+            () => catalogVariant.id,
+            { onDelete: "restrict" },
+        ),
+        globalSkuSnapshot: varchar("global_sku_snapshot", { length: 14 }),
+        sourceSkuSnapshot: varchar("source_sku_snapshot", { length: 100 }),
+        targetSkuSnapshot: varchar("target_sku_snapshot", { length: 100 }),
+
         createdAt: timestamp("created_at").defaultNow().notNull(),
     },
     (table) => [
         index("orderItem_orderId_idx").on(table.orderId),
         index("orderItem_productId_idx").on(table.productId),
         index("orderItem_variantId_idx").on(table.variantId),
+        index("orderItem_catalogVariantId_idx").on(table.catalogVariantId),
     ],
 );
 
@@ -266,6 +285,10 @@ export const orderItemRelations = relations(orderItem, ({ one }) => ({
     variant: one(productVariant, {
         fields: [orderItem.variantId],
         references: [productVariant.id],
+    }),
+    catalogVariant: one(catalogVariant, {
+        fields: [orderItem.catalogVariantId],
+        references: [catalogVariant.id],
     }),
 }));
 

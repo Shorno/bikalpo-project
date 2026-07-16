@@ -9,15 +9,19 @@ export type ProductTypeRowShape = {
   name: string;
   slug: string;
   inventoryBehaviour: "auto_break" | "loose_convert" | "fixed_pack";
+  family?: Parameters<typeof buildProductTypeFulfillmentProfile>[0]["family"];
   fulfillmentProfile?: ProductTypeFulfillmentProfile;
 };
 
-export function resolveProductTypeProfile<T extends ProductTypeRowShape>(row: T) {
+export function resolveProductTypeProfile<T extends ProductTypeRowShape>(
+  row: T,
+) {
   return (
     row.fulfillmentProfile ??
     buildProductTypeFulfillmentProfile({
       name: row.name,
       slug: row.slug,
+      family: row.family,
       inventoryBehaviour: row.inventoryBehaviour,
     })
   );

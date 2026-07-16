@@ -87,6 +87,17 @@ export async function getActiveBrands(revalidate = 600) {
   return result.brands ?? [];
 }
 
+export async function getActiveOffers(limit = 4, revalidate = 60) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    const result = await client.customer.getActiveOffers({ limit });
+    return result.offers ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function getCategoriesWithProducts(limit = 8, revalidate = 600) {
   const client = getPublicOrpcClient(revalidate);
   const result = await client.customer.getCategoriesWithProducts({ limit });
@@ -130,6 +141,19 @@ export async function getProductsWithQuery(
 ) {
   const client = getPublicOrpcClient(revalidate);
   const result = await client.customer.getCustomerProducts(filters);
+
+  return {
+    products: result.products ?? [],
+    pagination: result.pagination as ProductPaginationData,
+  };
+}
+
+export async function getReferenceProductsWithQuery(
+  filters: ProductListFilters,
+  revalidate = 60,
+) {
+  const client = getPublicOrpcClient(revalidate);
+  const result = await client.customer.getReferenceProducts(filters);
 
   return {
     products: result.products ?? [],

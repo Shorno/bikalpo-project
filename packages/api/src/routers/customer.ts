@@ -9,7 +9,10 @@
  */
 
 import { db } from "@bikalpo-project/db";
-import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
+import {
+  resolveVariantMovementSemantics,
+  resolveVariantOption,
+} from "@bikalpo-project/db/variant-definition";
 import {
   address,
   announcement,
@@ -55,6 +58,7 @@ import {
   gte,
   ilike,
   inArray,
+  isNotNull,
   isNull,
   lte,
   or,
@@ -88,6 +92,16 @@ import {
   convertEstimateToB2bOrder,
   estimateOrderAcceptSchema,
 } from "./helpers/estimate-order-conversion";
+import {
+  getReferenceProductEffectivePrice,
+  getReferenceSellerKey,
+  sortReferenceProducts,
+} from "./helpers/reference-product-catalog";
+import {
+  buildRetailerStorefrontFacets,
+  filterAndSortRetailerStorefrontProducts,
+  retailerStorefrontSortValues,
+} from "./helpers/retailer-storefront-catalog";
 
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
@@ -497,6 +511,88 @@ async function getCoreSellerCountMap(coreProductIds: number[]) {
   }
 
   return sellerCountMap;
+}
+
+type AdminReferenceProductIdentity = {
+  brandId: number | null;
+  coreProductId: number | null;
+};
+
+async function getReferenceSellerCountMap(
+  referenceProducts: AdminReferenceProductIdentity[],
+) {
+  const sellerCountMap: Record<string, number> = {};
+  const coreProductIds = [
+    ...new Set(
+      referenceProducts
+        .map((referenceProduct) => referenceProduct.coreProductId)
+        .filter((id): id is number => id != null),
+    ),
+  ];
+
+  if (coreProductIds.length === 0) return sellerCountMap;
+
+  const sellerRows = await db
+    .select({
+      brandId: product.brandId,
+      coreProductId: product.coreProductId,
+      sellerCount: sql<number>`COUNT(DISTINCT ${inventory.ownerId})`.mapWith(
+        Number,
+      ),
+    })
+    .from(inventory)
+    .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+    .innerJoin(product, eq(productVariant.productId, product.id))
+    .innerJoin(user, eq(inventory.ownerId, user.id))
+    .where(
+      and(
+        eq(inventory.ownerType, "shop"),
+        inArray(product.coreProductId, coreProductIds),
+        ...getWebViewProductConditions(),
+        eq(productVariant.isActive, true),
+        sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+        eq(user.role, "shop_owner"),
+        eq(user.sellerStatus, "approved"),
+      ),
+    )
+    .groupBy(product.coreProductId, product.brandId);
+
+  for (const row of sellerRows) {
+    if (row.coreProductId == null) continue;
+    sellerCountMap[
+      getReferenceSellerKey(row.coreProductId, row.brandId)
+    ] = row.sellerCount || 0;
+  }
+
+  return sellerCountMap;
+}
+
+async function getReferenceReviewStatsMap(productIds: number[]) {
+  const reviewStatsMap: Record<
+    number,
+    { averageRating: number; totalReviews: number }
+  > = {};
+
+  if (productIds.length === 0) return reviewStatsMap;
+
+  const reviewRows = await db
+    .select({
+      averageRating: avg(productReview.rating),
+      productId: productReview.productId,
+      totalReviews: count(productReview.id),
+    })
+    .from(productReview)
+    .where(inArray(productReview.productId, productIds))
+    .groupBy(productReview.productId);
+
+  for (const row of reviewRows) {
+    reviewStatsMap[row.productId] = {
+      averageRating: row.averageRating ? Number.parseFloat(row.averageRating) : 0,
+      totalReviews: row.totalReviews || 0,
+    };
+  }
+
+  return reviewStatsMap;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -946,6 +1042,192 @@ const queries = {
               ),
             ),
           },
+        },
+      };
+    }),
+
+  /** Get admin-created branded reference products for public discovery */
+  getReferenceProducts: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/reference-products",
+      tags: ["Customer"],
+      summary: "Get public admin reference products",
+    })
+    .input(productFiltersSchema)
+    .handler(async ({ input }) => {
+      const {
+        category: categorySlug,
+        subcategory,
+        brand: brandSlug,
+        minPrice,
+        maxPrice,
+        inStock: inStockString,
+        search,
+        sort = "newest",
+        page: pageString = "1",
+        limit: limitString = "12",
+      } = input;
+
+      const page = Math.max(1, Number.parseInt(pageString, 10) || 1);
+      const limit = Math.max(
+        1,
+        Math.min(100, Number.parseInt(limitString, 10) || 12),
+      );
+      const offset = (page - 1) * limit;
+      const emptyResult = () => ({
+        products: [],
+        pagination: { page, limit, totalCount: 0, totalPages: 0 },
+      });
+      const conditions: SQL[] = [
+        ...getWebViewProductConditions(),
+        eq(product.creatorSource, "admin"),
+        isNotNull(product.coreProductId),
+      ];
+
+      if (categorySlug) {
+        const categorySlugs = categorySlug.split(",").filter(Boolean);
+        const categories = await db.query.category.findMany({
+          where: inArray(category.slug, categorySlugs),
+          columns: { id: true },
+        });
+        if (categories.length === 0) return emptyResult();
+        conditions.push(
+          inArray(
+            product.categoryId,
+            categories.map((categoryRow) => categoryRow.id),
+          ),
+        );
+      }
+
+      if (subcategory) {
+        const subcategorySlugs = subcategory.split(",").filter(Boolean);
+        const subcategories = await db.query.subCategory.findMany({
+          where: inArray(subCategory.slug, subcategorySlugs),
+          columns: { id: true },
+        });
+        if (subcategories.length === 0) return emptyResult();
+        conditions.push(
+          inArray(
+            product.subCategoryId,
+            subcategories.map((subcategoryRow) => subcategoryRow.id),
+          ),
+        );
+      }
+
+      if (brandSlug) {
+        const brandSlugs = brandSlug.split(",").filter(Boolean);
+        const brands = await db.query.brand.findMany({
+          where: inArray(brand.slug, brandSlugs),
+          columns: { id: true },
+        });
+        if (brands.length === 0) return emptyResult();
+        conditions.push(
+          inArray(
+            product.brandId,
+            brands.map((brandRow) => brandRow.id),
+          ),
+        );
+      }
+
+      if (search?.trim()) {
+        conditions.push(ilike(product.name, `%${search.trim()}%`));
+      }
+
+      if (inStockString === "true") conditions.push(eq(product.inStock, true));
+      if (inStockString === "false")
+        conditions.push(eq(product.inStock, false));
+
+      const referenceProducts = await db.query.product.findMany({
+        where: and(...conditions),
+        with: {
+          category: { columns: { slug: true, name: true } },
+          subCategory: { columns: { name: true } },
+          brand: {
+            columns: { id: true, name: true, slug: true, logo: true },
+          },
+          images: true,
+          variants: {
+            columns: {
+              isActive: true,
+              price: true,
+              sourceVariantPriceId: true,
+              variantType: true,
+              visibilityRole: true,
+            },
+          },
+          variantPrices: {
+            columns: {
+              consumerPrice: true,
+              id: true,
+              isActive: true,
+            },
+          },
+        },
+      });
+
+      const productIds = referenceProducts.map(
+        (referenceProduct) => referenceProduct.id,
+      );
+      const [reviewStatsMap, sellerCountMap] = await Promise.all([
+        getReferenceReviewStatsMap(productIds),
+        getReferenceSellerCountMap(referenceProducts),
+      ]);
+
+      let serializedProducts = referenceProducts.map((referenceProduct) => {
+        const effectivePrice = getReferenceProductEffectivePrice(
+          referenceProduct,
+        );
+        const {
+          variantPrices: _variantPrices,
+          variants: _variants,
+          ...productData
+        } = referenceProduct;
+        const sellerCount = referenceProduct.coreProductId
+          ? sellerCountMap[
+              getReferenceSellerKey(
+                referenceProduct.coreProductId,
+                referenceProduct.brandId,
+              )
+            ] || 0
+          : 0;
+
+        return {
+          ...productData,
+          price: effectivePrice,
+          reviewStats: reviewStatsMap[referenceProduct.id] || {
+            averageRating: 0,
+            totalReviews: 0,
+          },
+          sellerCount,
+        };
+      });
+
+      if (minPrice != null && minPrice !== "") {
+        const minimumPrice = asNumber(minPrice);
+        serializedProducts = serializedProducts.filter(
+          (referenceProduct) =>
+            asNumber(referenceProduct.price) >= minimumPrice,
+        );
+      }
+      if (maxPrice != null && maxPrice !== "") {
+        const maximumPrice = asNumber(maxPrice);
+        serializedProducts = serializedProducts.filter(
+          (referenceProduct) =>
+            asNumber(referenceProduct.price) <= maximumPrice,
+        );
+      }
+
+      serializedProducts = sortReferenceProducts(serializedProducts, sort);
+      const totalCount = serializedProducts.length;
+
+      return {
+        products: serializedProducts.slice(offset, offset + limit),
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
         },
       };
     }),
@@ -2770,7 +3052,17 @@ const queries = {
       tags: ["Customer"],
       summary: "Get shop details and retail products",
     })
-    .input(z.object({ slug: z.string() }))
+    .input(
+      z.object({
+        slug: z.string(),
+        search: z.string().trim().max(150).optional().nullable(),
+        category: z.string().trim().max(150).optional().nullable(),
+        subcategory: z.string().trim().max(150).optional().nullable(),
+        sort: z.enum(retailerStorefrontSortValues).default("recommended"),
+        page: z.coerce.number().int().min(1).default(1),
+        limit: z.coerce.number().int().min(1).max(48).default(12),
+      }),
+    )
     .handler(async ({ input }) => {
       // 1. Find the shop owner by slug
       const shop = await db
@@ -2782,6 +3074,8 @@ const queries = {
           shopAddress: user.shopAddress,
           businessType: user.businessType,
           image: user.image,
+          shopLat: user.shopLat,
+          shopLng: user.shopLng,
         })
         .from(user)
         .where(
@@ -2807,6 +3101,14 @@ const queries = {
         ),
         with: {
           variant: {
+            columns: {
+              id: true,
+              sku: true,
+              unitLabel: true,
+              quantitySelectorLabel: true,
+              price: true,
+              isActive: true,
+            },
             with: {
               product: {
                 columns: {
@@ -2815,10 +3117,14 @@ const queries = {
                   slug: true,
                   image: true,
                   description: true,
+                  status: true,
+                  visibility: true,
+                  createdAt: true,
                 },
                 with: {
                   images: true,
                   category: { columns: { name: true, slug: true } },
+                  subCategory: { columns: { name: true, slug: true } },
                 },
               },
             },
@@ -2830,7 +3136,16 @@ const queries = {
       const productMap = new Map<number, any>();
       for (const inv of inventoryItems) {
         const prod = inv.variant?.product;
-        if (!prod) continue;
+        if (
+          !prod ||
+          !inv.variant?.isActive ||
+          prod.status !== "active" ||
+          prod.visibility !== "public" ||
+          Number(inv.availableQty || 0) <= 0 ||
+          Number(inv.retailPrice || 0) <= 0
+        ) {
+          continue;
+        }
 
         if (!productMap.has(prod.id)) {
           productMap.set(prod.id, {
@@ -2850,9 +3165,50 @@ const queries = {
         });
       }
 
+      const completeCatalog = Array.from(productMap.values()).map((product) => {
+        const variants = product.variants as Array<{
+          retailPrice: string | number;
+          availableQty: string | number;
+        }>;
+
+        return {
+          ...product,
+          lowestRetailPrice: Math.min(
+            ...variants.map((variant) => Number(variant.retailPrice)),
+          ),
+          variantCount: variants.length,
+          totalAvailableQty: variants.reduce(
+            (sum, variant) => sum + Number(variant.availableQty),
+            0,
+          ),
+        };
+      });
+      const facets = buildRetailerStorefrontFacets(completeCatalog);
+      const filteredProducts = filterAndSortRetailerStorefrontProducts(
+        completeCatalog,
+        {
+          search: input.search,
+          category: input.category,
+          subcategory: input.subcategory,
+          sort: input.sort,
+        },
+      );
+      const totalCount = filteredProducts.length;
+      const totalPages = Math.ceil(totalCount / input.limit);
+      const safePage = totalPages > 0 ? Math.min(input.page, totalPages) : 1;
+      const offset = (safePage - 1) * input.limit;
+
       return {
         shop: shopData,
-        products: Array.from(productMap.values()),
+        products: filteredProducts.slice(offset, offset + input.limit),
+        facets,
+        catalogProductCount: completeCatalog.length,
+        pagination: {
+          page: safePage,
+          limit: input.limit,
+          totalCount,
+          totalPages,
+        },
       };
     }),
 
@@ -3277,7 +3633,16 @@ const mutations = {
         where: eq(cart.userId, userId),
         with: {
           items: {
-            with: { product: true, variant: true },
+            with: {
+              product: {
+                with: {
+                  category: {
+                    with: { type: { columns: { family: true } } },
+                  },
+                },
+              },
+              variant: { with: { sourceVariantOption: true } },
+            },
           },
         },
       });
@@ -3295,6 +3660,10 @@ const mutations = {
         productImage: string;
         productSize: string;
         quantity: number;
+        quantityUnit: string | null;
+        inventoryUnit: string | null;
+        conversionFactor: string;
+        inventoryQty: string;
         unitPrice: string;
         totalPrice: string;
       }> = [];
@@ -3322,23 +3691,16 @@ const mutations = {
         // Check stock: for B2C (with shopId), check shop inventory; otherwise check variant/product stock
         let stockQty: number;
         if (item.shopId) {
-          // B2C: check shop's inventory (may be on a different variant than the one selected)
-          const productVariants = await db.query.productVariant.findMany({
-            where: eq(productVariant.productId, item.productId),
-            columns: { id: true },
-          });
-          const variantIds = productVariants.map((v) => v.id);
-          const shopInv =
-            variantIds.length > 0
-              ? await db.query.inventory.findFirst({
-                  where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, item.shopId),
-                    inArray(inventory.variantId, variantIds),
-                    sql`CAST(${inventory.availableQty} AS numeric) > 0`,
-                  ),
-                })
-              : null;
+          // Capacity-specific products must resolve the exact selected variant.
+          const shopInv = item.variantId
+            ? await db.query.inventory.findFirst({
+                where: and(
+                  eq(inventory.ownerType, "shop"),
+                  eq(inventory.ownerId, item.shopId),
+                  eq(inventory.variantId, item.variantId),
+                ),
+              })
+            : null;
           stockQty = shopInv ? Number(shopInv.availableQty) : 0;
         } else {
           stockQty = item.variant ? item.variant.stockQuantity : 999; // product-level stockQuantity removed; skip product-level check
@@ -3347,6 +3709,21 @@ const mutations = {
         if (stockQty < item.quantity) {
           throw new ORPCError("BAD_REQUEST", {
             message: `Insufficient stock for ${item.product.name}. Available: ${stockQty}`,
+          });
+        }
+
+        const movementSemantics = item.variant?.sourceVariantOption
+          ? resolveVariantMovementSemantics(
+              item.variant.sourceVariantOption,
+              item.product.category?.type?.family ?? "generic",
+            )
+          : null;
+        if (
+          movementSemantics?.inventoryUnit === "cylinder" &&
+          !Number.isInteger(item.quantity)
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `${item.product.name} must be ordered in whole cylinders`,
           });
         }
 
@@ -3366,6 +3743,18 @@ const mutations = {
           productImage: item.product.image,
           productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
           quantity: item.quantity,
+          quantityUnit:
+            movementSemantics?.enteredUnit ||
+            item.variant?.orderUnit ||
+            item.variant?.packType ||
+            null,
+          inventoryUnit:
+            movementSemantics?.inventoryUnit ||
+            item.variant?.orderUnit ||
+            item.variant?.packType ||
+            null,
+          conversionFactor: movementSemantics?.conversionFactor ?? "1",
+          inventoryQty: String(item.quantity),
           unitPrice: item.price,
           totalPrice: itemTotal.toFixed(2),
         });
@@ -3447,6 +3836,10 @@ const mutations = {
             productImage: oi.productImage,
             productSize: oi.productSize,
             quantity: oi.quantity,
+            quantityUnit: oi.quantityUnit,
+            inventoryUnit: oi.inventoryUnit,
+            conversionFactor: oi.conversionFactor,
+            inventoryQty: oi.inventoryQty,
             unitPrice: oi.unitPrice,
             totalPrice: oi.totalPrice,
           })),
@@ -3455,32 +3848,25 @@ const mutations = {
         // Deduct stock
         for (const oi of orderItems) {
           if (oi.shopId && oi.variantId) {
-            // B2C: deduct from shop's retail inventory
-            // The shop's inventory variant may differ from the cart's variant
-            // (e.g. TRADE vs RETAIL), so find the actual inventory record
-            const productVars = await tx.query.productVariant.findMany({
-              where: eq(productVariant.productId, oi.productId),
-              columns: { id: true },
-            });
-            const vIds = productVars.map((v) => v.id);
-            if (vIds.length > 0) {
-              const shopInvRecord = await tx.query.inventory.findFirst({
-                where: and(
+            const updated = await tx
+              .update(inventory)
+              .set({
+                availableQty: sql`${inventory.availableQty}::numeric - ${oi.quantity}`,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
                   eq(inventory.ownerType, "shop"),
                   eq(inventory.ownerId, oi.shopId),
-                  inArray(inventory.variantId, vIds),
+                  eq(inventory.variantId, oi.variantId),
+                  sql`CAST(${inventory.availableQty} AS numeric) >= ${oi.quantity}`,
                 ),
-                columns: { id: true },
+              )
+              .returning({ id: inventory.id });
+            if (updated.length === 0) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: `Insufficient stock for ${oi.productName}`,
               });
-              if (shopInvRecord) {
-                await tx
-                  .update(inventory)
-                  .set({
-                    availableQty: sql`${inventory.availableQty}::numeric - ${oi.quantity}`,
-                    updatedAt: new Date(),
-                  })
-                  .where(eq(inventory.id, shopInvRecord.id));
-              }
             }
           } else if (oi.variantId) {
             await tx
@@ -3532,24 +3918,45 @@ const mutations = {
       }
 
       await db.transaction(async (tx) => {
+        const cancelled = await tx
+          .update(order)
+          .set({ status: "cancelled", cancelledAt: new Date() })
+          .where(and(eq(order.id, input.orderId), eq(order.status, "pending")))
+          .returning({ id: order.id });
+        if (cancelled.length === 0) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Order was already updated by another request",
+          });
+        }
+
         // Restore stock
         for (const item of orderData.items) {
           if (item.variantId) {
-            await tx
-              .update(productVariant)
-              .set({
-                stockQuantity: sql`${productVariant.stockQuantity} + ${item.quantity}`,
-              })
-              .where(eq(productVariant.id, item.variantId));
+            if (orderData.shopId) {
+              await tx
+                .update(inventory)
+                .set({
+                  availableQty: sql`${inventory.availableQty}::numeric + ${item.inventoryQty ?? item.quantity}`,
+                  updatedAt: new Date(),
+                })
+                .where(and(
+                  eq(inventory.ownerType, "shop"),
+                  eq(inventory.ownerId, orderData.shopId),
+                  eq(inventory.variantId, item.variantId),
+                ));
+            } else {
+              await tx
+                .update(productVariant)
+                .set({
+                  stockQuantity: sql`${productVariant.stockQuantity} + ${item.quantity}`,
+                })
+                .where(eq(productVariant.id, item.variantId));
+            }
           } else {
             // product-level stockQuantity removed — stock is tracked via inventory
           }
         }
 
-        await tx
-          .update(order)
-          .set({ status: "cancelled", cancelledAt: new Date() })
-          .where(eq(order.id, input.orderId));
       });
 
       return { success: true, message: "Order cancelled" };

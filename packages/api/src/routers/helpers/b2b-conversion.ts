@@ -1,7 +1,7 @@
 /**
  * B2B → Retail Inventory Conversion Helper
  *
- * When a B2B order is delivered, this:
+ * When a B2B buyer confirms receipt, this:
  *   1. Deducts warehouse inventory for the TRADE variant
  *   2. Converts to RETAIL variant quantity using conversionRatio & lossPercent
  *   3. Adds to shop owner's retail inventory
@@ -24,12 +24,25 @@ import {
     usesWeightPoolFulfillmentMode,
     type FulfillmentMode,
 } from "@bikalpo-project/db/fulfillment";
+import {
+    areVariantOptionsStructurallyCompatible,
+    resolveVariantMovementSemantics,
+} from "@bikalpo-project/db/variant-definition";
 import {carton, inventory, order, orderItem, product, productVariant, user, variantConversionMap,} from "@bikalpo-project/db/schema";
-import {and, desc, eq} from "drizzle-orm";
+import {and, desc, eq, inArray, sql} from "drizzle-orm";
+import {
+    assertCompatibleB2bTargetVariant,
+    getReceivedRetailerQty,
+} from "./b2b-inventory-movement";
+import {
+    assertInventoryVariantOwnedBy,
+    ensureShopBuyerTargetVariant,
+    ensureWarehouseBuyerTargetVariant,
+} from "./b2b-buyer-target";
 
 /**
- * Convert B2B order items to retail inventory upon delivery.
- * Must be called inside the delivery transaction.
+ * Convert B2B order items to retail inventory upon confirmed receipt.
+ * Must be called inside the receipt transaction.
  */
 export async function convertB2bOrderToRetailInventory(
     tx: any,
@@ -62,9 +75,8 @@ export async function convertB2bOrderToRetailInventory(
     });
 
     // ─── IDEMPOTENCY GUARD ───
-    // This function is called from multiple places (deliveryman confirms delivery,
-    // shop owner marks received, warehouse marks delivered). Skip items that have
-    // already been converted to prevent double-counting inventory.
+    // Receipt can be completed through the retailer or verified self-pickup path.
+    // Skip items already converted to prevent double-counting inventory.
     const items = allItems.filter(
         (item: any) => item.conversionStatus !== "converted",
     );
@@ -92,6 +104,18 @@ export async function convertB2bOrderToRetailInventory(
 
     // 3. For each item, find the TRADE variant → convert → update inventory
     for (const item of items) {
+        const claimed = await tx
+            .update(orderItem)
+            .set({ conversionStatus: "converting" })
+            .where(
+                and(
+                    eq(orderItem.id, item.id),
+                    sql`coalesce(${orderItem.conversionStatus}, 'pending') NOT IN ('converting', 'converted')`,
+                ),
+            )
+            .returning({ id: orderItem.id });
+        if (claimed.length === 0) continue;
+
         // Resolve variant: use order item's variant, or fall back to product's first variant
         let resolvedVariantId = item.variantId;
         console.log(`[B2B-CONVERT] Item productId=${item.productId}, variantId=${item.variantId}, supplyMode=${item.supplyMode ?? 'legacy'}`);
@@ -101,7 +125,9 @@ export async function convertB2bOrderToRetailInventory(
                 columns: { id: true },
             });
             console.log(`[B2B-CONVERT] No variantId, fallback variant=${firstVariant?.id ?? 'NONE'}`);
-            if (!firstVariant) continue; // No variant exists for this product, skip
+            if (!firstVariant) {
+                throw new Error(`No source variant exists for order item ${item.id}`);
+            }
             resolvedVariantId = firstVariant.id;
         }
 
@@ -112,6 +138,7 @@ export async function convertB2bOrderToRetailInventory(
                 productId: true,
                 variantType: true,
                 linkedRetailVariantId: true,
+                catalogVariantId: true,
                 conversionRatio: true,
                 conversionLossPercent: true,
                 brandId: true,
@@ -120,9 +147,17 @@ export async function convertB2bOrderToRetailInventory(
                 weightKg: true,
                 packType: true,
             },
+            with: {
+                sourceVariantOption: true,
+                catalogVariant: {
+                    columns: { conversionTargetCatalogVariantId: true },
+                },
+            },
         });
 
-        if (!tradeVariant) continue;
+        if (!tradeVariant) {
+            throw new Error(`Source variant ${resolvedVariantId} was not found`);
+        }
 
         const orderedQty = Number(item.modifiedQty ?? item.quantity);
         const purchaseUnitPrice = item.modifiedUnitPrice
@@ -136,6 +171,8 @@ export async function convertB2bOrderToRetailInventory(
             where: eq(product.id, item.productId),
             columns: {
                 id: true,
+                brandId: true,
+                coreProductId: true,
                 trackingType: true,
                 isReturnablePack: true,
             },
@@ -148,6 +185,7 @@ export async function convertB2bOrderToRetailInventory(
                                 id: true,
                                 name: true,
                                 slug: true,
+                                family: true,
                                 inventoryBehaviour: true,
                             },
                         },
@@ -157,6 +195,7 @@ export async function convertB2bOrderToRetailInventory(
         });
         const productUnitSize = 0;
         const fulfillmentProfile = buildProductTypeFulfillmentProfile({
+            family: productData?.category?.type?.family,
             name: productData?.category?.type?.name,
             slug: productData?.category?.type?.slug,
             inventoryBehaviour: productData?.category?.type?.inventoryBehaviour,
@@ -314,6 +353,45 @@ export async function convertB2bOrderToRetailInventory(
                 ?? tradeVariant.id;
             conversionRatio = 1;
             conversionSource = "direct_unit_transfer";
+
+            if (fulfillmentProfile.family === "lpg") {
+                if (!Number.isInteger(orderedQty)) {
+                    throw new Error("LPG transfers require a whole number of cylinders");
+                }
+                if (!tradeVariant.sourceVariantOption) {
+                    throw new Error("LPG source variant is missing its Admin Variant definition");
+                }
+                const sourceMovement = resolveVariantMovementSemantics(
+                    tradeVariant.sourceVariantOption,
+                    "lpg",
+                );
+                const targetVariant = targetRetailVariantId === tradeVariant.id
+                    ? tradeVariant
+                    : await tx.query.productVariant.findFirst({
+                        where: eq(productVariant.id, targetRetailVariantId),
+                        columns: { id: true },
+                        with: { sourceVariantOption: true },
+                    });
+                if (!targetVariant?.sourceVariantOption) {
+                    throw new Error("Linked LPG target variant is missing its Admin Variant definition");
+                }
+                const targetMovement = resolveVariantMovementSemantics(
+                    targetVariant.sourceVariantOption,
+                    "lpg",
+                );
+                if (
+                    sourceMovement.inventoryUnit !== "cylinder" ||
+                    targetMovement.inventoryUnit !== "cylinder" ||
+                    !areVariantOptionsStructurallyCompatible(
+                        tradeVariant.sourceVariantOption,
+                        targetVariant.sourceVariantOption,
+                    )
+                ) {
+                    throw new Error(
+                        "Linked LPG variants must use the same cylinder capacity and unit",
+                    );
+                }
+            }
             console.log(`[B2B-CONVERT] Direct transfer: mode=${shopSupplyMode}, target=${targetRetailVariantId}, ratio=${conversionRatio}`);
 
         } else {
@@ -357,9 +435,53 @@ export async function convertB2bOrderToRetailInventory(
             || conversionSource === "bulk_loose_convert"
             || conversionSource === "direct_unit_transfer";
         // Direct loose/unit transfers: no loss applied
-        const retailQty = isNoLossTransfer
+        // Supplier target variants are conversion choices, not buyer inventory
+        // identities. Resolve the exact retailer-owned variant before crediting.
+        const buyerTarget = await ensureShopBuyerTargetVariant(tx, {
+            shopId: orderData.userId,
+            sourceVariantId: tradeVariant.id,
+            requestedTargetVariantId:
+                targetRetailVariantId === tradeVariant.id
+                    ? null
+                    : targetRetailVariantId,
+        });
+        targetRetailVariantId = buyerTarget.targetVariantId;
+        await assertInventoryVariantOwnedBy(tx, {
+            ownerType: "shop",
+            ownerId: orderData.userId,
+            variantId: targetRetailVariantId,
+        });
+        await tx
+            .update(orderItem)
+            .set({
+                targetVariantId: targetRetailVariantId,
+                catalogVariantId: buyerTarget.sourceCatalogVariantId,
+                globalSkuSnapshot: buyerTarget.sourceGlobalSku,
+                sourceSkuSnapshot: buyerTarget.sourceLocalSku,
+                targetSkuSnapshot: buyerTarget.targetLocalSku,
+            })
+            .where(eq(orderItem.id, item.id));
+
+        const calculatedRetailQty = isNoLossTransfer
             ? orderedQty * conversionRatio
             : orderedQty * conversionRatio * (1 - lossPercent / 100);
+        const hasMovementSnapshot =
+            item.inventoryQty !== null &&
+            item.inventoryQty !== undefined &&
+            item.conversionFactor !== null &&
+            item.conversionFactor !== undefined;
+        const sourceInventoryQty = hasMovementSnapshot
+            ? Number(item.inventoryQty)
+            : calculatedRetailQty;
+        const receivedOrderQty = Number(item.receivedQty ?? orderedQty);
+        const retailerInventoryQty = hasMovementSnapshot
+            ? getReceivedRetailerQty({
+                receivedOrderQty,
+                approvedOrderQty: orderedQty,
+                retailerInventoryQty:
+                    orderedQty * Number(item.conversionFactor),
+            })
+            : calculatedRetailQty;
 
         // Calculate per-pack price when doing pack breakdown
         let effectiveRetailPrice = purchaseUnitPrice;
@@ -367,7 +489,35 @@ export async function convertB2bOrderToRetailInventory(
             effectiveRetailPrice = (Number(purchaseUnitPrice) / conversionRatio).toFixed(2);
         }
 
-        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: source=${conversionSource}, target=${targetRetailVariantId}, ratio=${conversionRatio}, packBreakdown=${isPackBreakdown}, orderedQty=${orderedQty}, retailQty=${retailQty}, perPackPrice=${effectiveRetailPrice ?? 'N/A'}`);
+        const targetIdentity =
+            targetRetailVariantId === tradeVariant.id
+                ? {
+                    ...tradeVariant,
+                    product: productData,
+                }
+                : await tx.query.productVariant.findFirst({
+                    where: eq(productVariant.id, targetRetailVariantId),
+                    columns: {
+                        id: true,
+                        productId: true,
+                        brandId: true,
+                        catalogVariantId: true,
+                    },
+                    with: {
+                        product: {
+                            columns: { id: true, brandId: true, coreProductId: true },
+                        },
+                    },
+                });
+        if (!targetIdentity) {
+            throw new Error(`Target retail variant ${targetRetailVariantId} was not found`);
+        }
+        assertCompatibleB2bTargetVariant(
+            { ...tradeVariant, product: productData },
+            targetIdentity,
+        );
+
+        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: source=${conversionSource}, target=${targetRetailVariantId}, ratio=${conversionRatio}, packBreakdown=${isPackBreakdown}, orderedQty=${orderedQty}, sourceQty=${sourceInventoryQty}, retailQty=${retailerInventoryQty}, perPackPrice=${effectiveRetailPrice ?? 'N/A'}`);
 
         // ─── A. Deduct warehouse inventory ───
 
@@ -386,7 +536,7 @@ export async function convertB2bOrderToRetailInventory(
             //   - loose direct:  orderedQty × variantWeightKg (e.g. 3 × 20 = 60 KG)
             // Since availableQty stores pack count (for packs) or KG (for loose),
             // retailQty is always the correct deduction amount.
-            const deductQty = retailQty;
+            const deductQty = sourceInventoryQty;
             const reservedQty = Number(sourceInv.reservedQty || 0);
             const availableQty = Number(sourceInv.availableQty || 0);
             const newReservedQty = Math.max(0, reservedQty - deductQty);
@@ -421,21 +571,72 @@ export async function convertB2bOrderToRetailInventory(
                 `[B2B-CONVERT] Deducting: avail ${availableQty}→${newSourceQty}, inCarton ${currentInCarton}→${newInCarton}, cartons ${currentActiveCartonCount}→${newActiveCartonCount}, deductQty=${deductQty}`,
             );
 
-            await tx
-                .update(inventory)
-                .set({
-                    availableQty: newSourceQty.toFixed(2),
-                    reservedQty: newReservedQty.toFixed(2),
-                    ...(isCartonOrder ? { inCartonQty: newInCarton.toFixed(2) } : {}),
-                    ...(isCartonOrder
-                        ? { activeCartonCount: newActiveCartonCount }
-                        : {}),
-                    updatedAt: new Date(),
+            const allocatedCartons = hasMovementSnapshot
+                ? await tx.query.carton.findMany({
+                    where: and(
+                        eq(carton.reservedForOrderItemId, item.id),
+                        inArray(carton.status, ["reserved", "dispatched"]),
+                    ),
+                    columns: { id: true },
                 })
-                .where(eq(inventory.id, sourceInv.id));
+                : [];
+            const sourceUpdate = hasMovementSnapshot
+                ? await tx
+                    .update(inventory)
+                    .set({
+                        reservedQty: sql`${inventory.reservedQty}::numeric - ${deductQty}`,
+                        updatedAt: new Date(),
+                    })
+                    .where(
+                        and(
+                            eq(inventory.id, sourceInv.id),
+                            sql`${inventory.reservedQty}::numeric >= ${deductQty}`,
+                        ),
+                    )
+                    .returning({ id: inventory.id })
+                : fulfillmentProfile.family === "lpg"
+                ? await tx
+                    .update(inventory)
+                    .set({
+                        reservedQty: sql`${inventory.reservedQty}::numeric - ${deductQty}`,
+                        updatedAt: new Date(),
+                    })
+                    .where(
+                        and(
+                            eq(inventory.id, sourceInv.id),
+                            sql`${inventory.reservedQty}::numeric >= ${deductQty}`,
+                        ),
+                    )
+                    .returning({ id: inventory.id })
+                : await tx
+                    .update(inventory)
+                    .set({
+                        availableQty: newSourceQty.toFixed(2),
+                        reservedQty: newReservedQty.toFixed(2),
+                        ...(isCartonOrder ? { inCartonQty: newInCarton.toFixed(2) } : {}),
+                        ...(isCartonOrder
+                            ? { activeCartonCount: newActiveCartonCount }
+                            : {}),
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(inventory.id, sourceInv.id))
+                    .returning({ id: inventory.id });
+            if (sourceUpdate.length === 0) {
+                throw new Error(`Reserved stock changed for variant ${tradeVariant.id}`);
+            }
 
             // Mark consumed carton records as "sold" (FIFO: oldest first)
-            if (isCartonOrder) {
+            if (allocatedCartons.length > 0) {
+                await tx
+                    .update(carton)
+                    .set({ status: "sold" })
+                    .where(
+                        inArray(
+                            carton.id,
+                            allocatedCartons.map((row: { id: number }) => row.id),
+                        ),
+                    );
+            } else if (isCartonOrder && !hasMovementSnapshot) {
                 const activeCartons = await tx.query.carton.findMany({
                     where: and(
                         eq(carton.warehouseId, sourceOwnerId),
@@ -454,59 +655,55 @@ export async function convertB2bOrderToRetailInventory(
                 }
             }
         } else {
-            console.warn(`[B2B-CONVERT] No warehouse inventory found for variant ${tradeVariant.id} owner ${sourceOwnerId}`);
+            throw new Error(
+                `Warehouse inventory was not found for variant ${tradeVariant.id}`,
+            );
         }
 
         // ─── B. Upsert shop owner's RETAIL inventory ───
 
-        const shopInv = await tx.query.inventory.findFirst({
-            where: and(
-                eq(inventory.ownerType, "shop"),
-                eq(inventory.ownerId, orderData.userId),
-                eq(inventory.variantId, targetRetailVariantId),
-            ),
-        });
-
-        if (shopInv) {
-            const updatedQty =
-                Number(shopInv.availableQty) + retailQty;
-
-            await tx
-                .update(inventory)
-                .set({
-                    availableQty: updatedQty.toFixed(2),
-                    updatedAt: new Date(),
-                })
-                .where(eq(inventory.id, shopInv.id));
-        } else {
+        if (retailerInventoryQty > 0) {
             // Use per-pack price (after breakdown), or fall back to warehouse's retail_price
             const initialRetailPrice = effectiveRetailPrice
                 ?? (sourceInv?.retailPrice ? String(sourceInv.retailPrice) : null);
 
-            await tx.insert(inventory).values({
-                ownerType: "shop" as const,
-                ownerId: orderData.userId,
-                variantId: targetRetailVariantId,
-                availableQty: retailQty.toFixed(2),
-                reservedQty: "0",
-                ...(initialRetailPrice ? { retailPrice: initialRetailPrice } : {}),
-            });
+            await tx
+                .insert(inventory)
+                .values({
+                    ownerType: "shop" as const,
+                    ownerId: orderData.userId,
+                    variantId: targetRetailVariantId,
+                    availableQty: retailerInventoryQty.toFixed(2),
+                    reservedQty: "0",
+                    ...(initialRetailPrice ? { retailPrice: initialRetailPrice } : {}),
+                })
+                .onConflictDoUpdate({
+                    target: [
+                        inventory.ownerType,
+                        inventory.ownerId,
+                        inventory.variantId,
+                    ],
+                    set: {
+                        availableQty: sql`${inventory.availableQty}::numeric + ${retailerInventoryQty}`,
+                        updatedAt: new Date(),
+                    },
+                });
         }
 
         // ─── C. Update order item conversion status ───
 
-        try {
-            await tx
-                .update(orderItem)
-                .set({
-                    conversionStatus: "converted",
-                    convertedQty: retailQty.toFixed(2),
-                })
-                .where(eq(orderItem.id, item.id));
-        } catch (e) {
-            // Graceful: if columns don't exist yet (legacy DB), skip
-            console.warn(`[B2B-CONVERT] Could not update conversionStatus for item ${item.id}:`, e);
-        }
+        await tx
+            .update(orderItem)
+            .set({
+                conversionStatus: "converted",
+                convertedQty: retailerInventoryQty.toFixed(2),
+            })
+            .where(
+                and(
+                    eq(orderItem.id, item.id),
+                    sql`${orderItem.conversionStatus} IS DISTINCT FROM 'converted'`,
+                ),
+            );
     }
 }
 
@@ -524,15 +721,93 @@ async function transferB2bOrderToWarehouseInventory(
 
     for (const item of input.items) {
         if (!item.variantId) {
-            await markItemTransferFailed(tx, item.id, "Missing variant for warehouse transfer");
-            continue;
+            throw new Error(`Order item ${item.id} has no source variant`);
         }
 
-        const transferQty = Number(item.modifiedQty ?? item.quantity);
-        if (!Number.isFinite(transferQty) || transferQty <= 0) {
-            await markItemTransferFailed(tx, item.id, "Invalid transfer quantity");
-            continue;
+        const approvedOrderQty = Number(item.modifiedQty ?? item.quantity);
+        const receivedOrderQty = Number(item.receivedQty ?? approvedOrderQty);
+        const sourceInventoryQty = Number(item.inventoryQty ?? approvedOrderQty);
+        const targetInventoryQty =
+            item.conversionFactor !== null && item.conversionFactor !== undefined
+                ? getReceivedRetailerQty({
+                    receivedOrderQty,
+                    approvedOrderQty,
+                    retailerInventoryQty:
+                        approvedOrderQty * Number(item.conversionFactor),
+                })
+                : receivedOrderQty;
+        if (
+            !Number.isFinite(approvedOrderQty) ||
+            !Number.isFinite(receivedOrderQty) ||
+            !Number.isFinite(sourceInventoryQty) ||
+            !Number.isFinite(targetInventoryQty) ||
+            approvedOrderQty <= 0 ||
+            receivedOrderQty < 0 ||
+            receivedOrderQty > approvedOrderQty ||
+            sourceInventoryQty <= 0 ||
+            targetInventoryQty < 0
+        ) {
+            throw new Error(`Order item ${item.id} has an invalid movement snapshot`);
         }
+
+        const buyerTarget = await ensureWarehouseBuyerTargetVariant(tx, {
+            warehouseId: input.buyerWarehouseId,
+            sourceVariantId: item.variantId,
+            requestedTargetVariantId: item.targetVariantId,
+        });
+        const targetVariantId = buyerTarget.targetVariantId;
+        await assertInventoryVariantOwnedBy(tx, {
+            ownerType: "warehouse",
+            ownerId: input.buyerWarehouseId,
+            variantId: targetVariantId,
+        });
+        await tx
+            .update(orderItem)
+            .set({
+                targetVariantId,
+                catalogVariantId: buyerTarget.sourceCatalogVariantId,
+                globalSkuSnapshot: buyerTarget.sourceGlobalSku,
+                sourceSkuSnapshot: buyerTarget.sourceLocalSku,
+                targetSkuSnapshot: buyerTarget.targetLocalSku,
+            })
+            .where(eq(orderItem.id, item.id));
+        const [sourceIdentity, targetIdentity] = await Promise.all([
+            tx.query.productVariant.findFirst({
+                where: eq(productVariant.id, item.variantId),
+                columns: {
+                    id: true,
+                    productId: true,
+                    brandId: true,
+                    catalogVariantId: true,
+                },
+                with: {
+                    catalogVariant: {
+                        columns: { conversionTargetCatalogVariantId: true },
+                    },
+                    product: {
+                        columns: { id: true, brandId: true, coreProductId: true },
+                    },
+                },
+            }),
+            tx.query.productVariant.findFirst({
+                where: eq(productVariant.id, targetVariantId),
+                columns: {
+                    id: true,
+                    productId: true,
+                    brandId: true,
+                    catalogVariantId: true,
+                },
+                with: {
+                    product: {
+                        columns: { id: true, brandId: true, coreProductId: true },
+                    },
+                },
+            }),
+        ]);
+        if (!sourceIdentity || !targetIdentity) {
+            throw new Error(`Order item ${item.id} has an invalid variant mapping`);
+        }
+        assertCompatibleB2bTargetVariant(sourceIdentity, targetIdentity);
 
         const sourceInv = await tx.query.inventory.findFirst({
             where: and(
@@ -543,46 +818,64 @@ async function transferB2bOrderToWarehouseInventory(
         });
 
         if (!sourceInv) {
-            await markItemTransferFailed(tx, item.id, "Supplier warehouse inventory not found");
-            continue;
+            throw new Error(`Supplier inventory is missing for variant ${item.variantId}`);
         }
 
-        const reservedQty = Number(sourceInv.reservedQty || 0);
-        const availableQty = Number(sourceInv.availableQty || 0);
-        const newReservedQty = Math.max(0, reservedQty - transferQty);
-        const newSourceQty =
-            reservedQty >= transferQty
-                ? availableQty
-                : Math.max(0, availableQty - (transferQty - reservedQty));
-
-        await tx
+        const released = await tx
             .update(inventory)
             .set({
-                availableQty: newSourceQty.toFixed(2),
-                reservedQty: newReservedQty.toFixed(2),
+                reservedQty: sql`${inventory.reservedQty}::numeric - ${sourceInventoryQty}`,
                 updatedAt: new Date(),
             })
-            .where(eq(inventory.id, sourceInv.id));
+            .where(
+                and(
+                    eq(inventory.id, sourceInv.id),
+                    sql`${inventory.reservedQty}::numeric >= ${sourceInventoryQty}`,
+                ),
+            )
+            .returning({ id: inventory.id });
+        if (released.length === 0) {
+            throw new Error(`Reserved stock changed for variant ${item.variantId}`);
+        }
+
+        const allocatedCartons = await tx.query.carton.findMany({
+            where: and(
+                eq(carton.reservedForOrderItemId, item.id),
+                inArray(carton.status, ["reserved", "dispatched"]),
+            ),
+            columns: { id: true },
+        });
+        if (allocatedCartons.length > 0) {
+            await tx
+                .update(carton)
+                .set({ status: "sold" })
+                .where(
+                    inArray(
+                        carton.id,
+                        allocatedCartons.map((row: { id: number }) => row.id),
+                    ),
+                );
+        }
 
         const buyerInv = await tx.query.inventory.findFirst({
             where: and(
                 eq(inventory.ownerType, "warehouse"),
                 eq(inventory.ownerId, input.buyerWarehouseId),
-                eq(inventory.variantId, item.variantId),
+                eq(inventory.variantId, targetVariantId),
             ),
         });
 
-        if (buyerInv) {
+        if (targetInventoryQty > 0 && buyerInv) {
             await tx
                 .update(inventory)
                 .set({
                     availableQty: (
-                        Number(buyerInv.availableQty || 0) + transferQty
+                        Number(buyerInv.availableQty || 0) + targetInventoryQty
                     ).toFixed(2),
                     updatedAt: new Date(),
                 })
                 .where(eq(inventory.id, buyerInv.id));
-        } else {
+        } else if (targetInventoryQty > 0) {
             const initialPrice =
                 sourceInv.retailPrice
                     ? String(sourceInv.retailPrice)
@@ -593,8 +886,8 @@ async function transferB2bOrderToWarehouseInventory(
             await tx.insert(inventory).values({
                 ownerType: "warehouse" as const,
                 ownerId: input.buyerWarehouseId,
-                variantId: item.variantId,
-                availableQty: transferQty.toFixed(2),
+                variantId: targetVariantId,
+                availableQty: targetInventoryQty.toFixed(2),
                 reservedQty: "0",
                 ...(initialPrice ? { retailPrice: initialPrice } : {}),
             });
@@ -604,20 +897,17 @@ async function transferB2bOrderToWarehouseInventory(
             .update(orderItem)
             .set({
                 conversionStatus: "converted",
-                convertedQty: transferQty.toFixed(2),
+                convertedQty: targetInventoryQty.toFixed(2),
             })
-            .where(eq(orderItem.id, item.id));
+            .where(
+                and(
+                    eq(orderItem.id, item.id),
+                    sql`${orderItem.conversionStatus} IS DISTINCT FROM 'converted'`,
+                ),
+            );
 
         console.log(
-            `[B2B-W2W] Transferred variant=${item.variantId}, qty=${transferQty}, item=${item.id}`,
+            `[B2B-W2W] Transferred source=${item.variantId}, target=${targetVariantId}, sourceQty=${sourceInventoryQty}, receivedQty=${targetInventoryQty}, item=${item.id}`,
         );
     }
-}
-
-async function markItemTransferFailed(tx: any, itemId: number, reason: string) {
-    console.warn(`[B2B-W2W] ${reason} for item ${itemId}`);
-    await tx
-        .update(orderItem)
-        .set({ conversionStatus: "failed" })
-        .where(eq(orderItem.id, itemId));
 }

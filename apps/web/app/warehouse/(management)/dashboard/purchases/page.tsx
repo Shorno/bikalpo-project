@@ -60,6 +60,11 @@ const statusConfig: Record<
     dotClass: "bg-amber-500",
     pillClass: "text-amber-700 bg-amber-50 border-amber-200",
   },
+  approved: {
+    label: "Buyer Review",
+    dotClass: "bg-orange-500",
+    pillClass: "text-orange-700 bg-orange-50 border-orange-200",
+  },
   confirmed: {
     label: "Confirmed",
     dotClass: "bg-blue-500",
@@ -124,6 +129,7 @@ const statusConfig: Record<
 
 type OrderStatus =
   | "pending"
+  | "approved"
   | "confirmed"
   | "ready_for_dispatch"
   | "partially_invoiced"

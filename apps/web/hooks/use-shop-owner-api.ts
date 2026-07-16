@@ -342,6 +342,14 @@ export function usePurchaseOrderDetail(orderId: number | null) {
       input: { orderId: orderId! },
       enabled: !!orderId,
       staleTime: 1000 * 30,
+      refetchInterval: (query) => {
+        const data = query.state.data;
+        const status = data?.order.displayStatus || data?.order.status;
+
+        return status && ["delivered", "returned", "cancelled"].includes(status)
+          ? false
+          : 15_000;
+      },
     }),
   );
 }

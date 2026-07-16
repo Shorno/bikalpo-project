@@ -30,6 +30,7 @@ export type ProductTypeRow = {
   image: string | null;
   skuCode: string | null;
   inventoryBehaviour: keyof typeof INVENTORY_BEHAVIOUR_LABELS;
+  family: keyof typeof PRODUCT_TYPE_FAMILY_LABELS;
   isActive: boolean;
   displayOrder: number;
   categoryCount: number;
@@ -43,7 +44,10 @@ export function useProductTypeColumns() {
       header: () => <div className="text-center">SKU</div>,
       cell: ({ row }) => (
         <div className="text-center">
-          <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
+          <Badge
+            variant="outline"
+            className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800"
+          >
             {row.original.skuCode || "—"}
           </Badge>
         </div>
@@ -110,7 +114,10 @@ export function useProductTypeColumns() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild>
-                  <Link href={`/dashboard/admin/types/${type.id}`} className="flex items-center gap-2">
+                  <Link
+                    href={`/dashboard/admin/types/${type.id}`}
+                    className="flex items-center gap-2"
+                  >
                     <Eye className="h-4 w-4" />
                     View Details
                   </Link>

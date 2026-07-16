@@ -8,7 +8,12 @@ import {
     text,
     varchar,
 } from "drizzle-orm/pg-core";
-import { INVENTORY_BEHAVIOURS, type InventoryBehaviour } from "../fulfillment";
+import {
+    INVENTORY_BEHAVIOURS,
+    PRODUCT_TYPE_FAMILIES,
+    type InventoryBehaviour,
+    type ProductTypeFamily,
+} from "../fulfillment";
 import { category } from "./category";
 import { timestamps } from "./columns.helpers";
 import { productTypeRuleSetting } from "./product-type-rule-setting";
@@ -22,6 +27,10 @@ import { productTypeRuleSetting } from "./product-type-rule-setting";
  */
 export const inventoryBehaviourEnum = pgEnum("inventory_behaviour", [
     ...INVENTORY_BEHAVIOURS,
+]);
+
+export const productTypeFamilyEnum = pgEnum("product_type_family", [
+    ...PRODUCT_TYPE_FAMILIES,
 ]);
 
 /**
@@ -41,6 +50,11 @@ export const productType = pgTable("product_type", {
     // Inventory behaviour for this product type
     inventoryBehaviour: inventoryBehaviourEnum("inventory_behaviour")
         .default("fixed_pack")
+        .notNull(),
+
+    /** Explicit cross-flow family. Name/slug inference is legacy fallback only. */
+    family: productTypeFamilyEnum("fulfillment_family")
+        .default("generic")
         .notNull(),
 
     /** Auto-generated 2-digit SKU code (e.g. "01", "02"). Immutable after creation. */
@@ -63,3 +77,4 @@ export const productTypeRelations = relations(productType, ({ many, one }) => ({
 export type ProductType = typeof productType.$inferSelect;
 export type NewProductType = typeof productType.$inferInsert;
 export type { InventoryBehaviour };
+export type { ProductTypeFamily };

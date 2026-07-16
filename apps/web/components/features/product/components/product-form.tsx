@@ -2012,15 +2012,7 @@ function BrandConfigCard({
                         }`}
                       >
                         {isIncluded && <Check className="h-3.5 w-3.5" />}
-                        <span>
-                          {v.name}
-                          {v.size && (
-                            <span className="ml-1 opacity-70">
-                              · {v.size}
-                              {v.unit ? ` ${v.unit}` : ""}
-                            </span>
-                          )}
-                        </span>
+                        <span>{v.name}</span>
                       </button>
                     );
                   })}

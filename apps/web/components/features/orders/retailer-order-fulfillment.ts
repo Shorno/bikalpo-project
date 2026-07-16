@@ -7,9 +7,30 @@ export type RetailerOrderItemFulfillmentLike = {
   quantity?: number | null;
   modifiedQty?: number | null;
   deliveredQty?: number | null;
+  receivedQty?: number | null;
   supplyMode?: string | null;
   supplyModeLabel?: string | null;
 };
+
+export type RetailerOrderReviewState = "pending" | "reviewed" | "not_approved";
+
+type RetailerOrderReviewLike = {
+  status?: string | null;
+  confirmedAt?: string | Date | null;
+  modifiedByWarehouseAt?: string | Date | null;
+  modificationAcceptedAt?: string | Date | null;
+};
+
+const REVIEWED_ORDER_STATUSES = new Set([
+  "approved",
+  "confirmed",
+  "ready_for_dispatch",
+  "partially_invoiced",
+  "invoiced",
+  "processing",
+  "delivered",
+  "returned",
+]);
 
 type QuantitySelector = (item: RetailerOrderItemFulfillmentLike) => number;
 
@@ -38,6 +59,26 @@ export function getRetailerOrderItemModeLabel(
   return item.supplyModeLabel || resolveModeLabel(item.supplyMode);
 }
 
+export function getRetailerOrderReviewState(
+  order: RetailerOrderReviewLike,
+): RetailerOrderReviewState {
+  const hasReviewEvidence = Boolean(
+    order.confirmedAt ||
+      order.modifiedByWarehouseAt ||
+      order.modificationAcceptedAt,
+  );
+
+  if (hasReviewEvidence || REVIEWED_ORDER_STATUSES.has(order.status || "")) {
+    return "reviewed";
+  }
+
+  if (order.status === "cancelled") {
+    return "not_approved";
+  }
+
+  return "pending";
+}
+
 export function getRetailerOrderItemOrderedQty(
   item: RetailerOrderItemFulfillmentLike,
 ) {
@@ -54,6 +95,12 @@ export function getRetailerOrderItemDeliveredQty(
   item: RetailerOrderItemFulfillmentLike,
 ) {
   return toQuantity(item.deliveredQty);
+}
+
+export function getRetailerOrderItemReceivedQty(
+  item: RetailerOrderItemFulfillmentLike,
+) {
+  return toQuantity(item.receivedQty);
 }
 
 export function getRetailerOrderItemRemainingQty(

@@ -66,8 +66,6 @@ type CatalogCoreProduct = {
   image: string;
   categoryId: number;
   subCategoryId: number | null;
-  supportsPack?: boolean;
-  supportsLoose?: boolean;
   hasConfiguration?: boolean;
   configuredBrandCount?: number;
   createdAt?: string | Date;
@@ -86,19 +84,6 @@ type CatalogCoreProduct = {
     id: number;
     name: string;
   } | null;
-};
-
-type CatalogOptions = {
-  brands?: Array<{ id: number; name: string; slug: string }>;
-  variantOptions?: Array<{
-    id: number;
-    name: string;
-    unit: string;
-    size: string | null;
-    variantType: "pack" | "loose";
-    typeId: number | null;
-    categoryId: number | null;
-  }>;
 };
 
 type FilterOption = { id: number; name: string };
@@ -188,25 +173,6 @@ function formatDate(value: string | Date | null | undefined) {
   });
 }
 
-function getAvailableVariants(
-  coreProduct: CatalogCoreProduct,
-  variantOptions: CatalogOptions["variantOptions"] = [],
-) {
-  const typeId = coreProduct.category.typeId;
-  const categoryId = coreProduct.categoryId;
-
-  return variantOptions
-    .filter((variant) => {
-      const isGlobal = variant.typeId == null && variant.categoryId == null;
-      const isTypeWide =
-        variant.typeId === typeId && variant.categoryId == null;
-      const isCategoryScoped =
-        variant.typeId === typeId && variant.categoryId === categoryId;
-      return isGlobal || isTypeWide || isCategoryScoped;
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
 function sortableHeader(label: string) {
   return function SortableHeader({
     column,
@@ -255,14 +221,8 @@ export default function ProductsPage() {
     }),
   );
 
-  const optionsQuery = useQuery({
-    queryKey: ["adminCatalogApproval", "catalogOptions"],
-    queryFn: () => orpc.adminCatalogApproval.getRequestOptions.call({}),
-  });
-
   const coreProducts = (productsQuery.data?.coreProducts ??
     []) as CatalogCoreProduct[];
-  const options = optionsQuery.data as CatalogOptions | undefined;
 
   const typeOptions = useMemo(
     () =>
@@ -361,7 +321,7 @@ export default function ProductsPage() {
     typeFilter,
   ]);
 
-  const isLoading = productsQuery.isLoading || optionsQuery.isLoading;
+  const isLoading = productsQuery.isLoading;
 
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -656,10 +616,6 @@ export default function ProductsPage() {
       {selectedProduct && (
         <ProductDetailDialog
           product={selectedProduct}
-          variants={getAvailableVariants(
-            selectedProduct,
-            options?.variantOptions,
-          )}
           onOpenChange={(open) => {
             if (!open) setSelectedProduct(null);
           }}
@@ -704,11 +660,9 @@ function FilterSelect({
 
 function ProductDetailDialog({
   product,
-  variants,
   onOpenChange,
 }: {
   product: CatalogCoreProduct;
-  variants: NonNullable<CatalogOptions["variantOptions"]>;
   onOpenChange: (open: boolean) => void;
 }) {
   const priceQuery = useQuery(
@@ -718,11 +672,13 @@ function ProductDetailDialog({
   );
   const priceItems = priceQuery.data?.items ?? [];
 
-  const configurationQuery = useQuery(
-    orpc.adminProductConfig.get.queryOptions({
+  const configurationQuery = useQuery({
+    ...orpc.adminProductConfig.get.queryOptions({
       input: { coreProductId: product.id },
     }),
-  );
+    enabled: product.hasConfiguration === true,
+    retry: false,
+  });
   const configuredProducts = configurationQuery.data?.brands ?? [];
   const editableProduct = (configuredProducts.find(
     (configured) => configured.status === "active",
@@ -779,18 +735,6 @@ function ProductDetailDialog({
   }, [priceItems]);
 
   const configuredVariantCount = priceItems.length;
-
-  const packVariants = variants.filter(
-    (variant) => variant.variantType === "pack",
-  );
-  const looseVariants = variants.filter(
-    (variant) => variant.variantType === "loose",
-  );
-  const hasLoose = product.supportsLoose || looseVariants.length > 0;
-  const variantTypes = [
-    product.supportsPack !== false || packVariants.length > 0 ? "Pack" : null,
-    hasLoose ? "Loose" : null,
-  ].filter(Boolean) as string[];
 
   const hasImage =
     !!product.image &&
@@ -1014,29 +958,6 @@ function ProductDetailDialog({
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       No brands linked
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Variant Types
-                  </p>
-                  {variantTypes.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {variantTypes.map((type) => (
-                        <Badge
-                          key={type}
-                          variant="outline"
-                          className="font-normal"
-                        >
-                          {type}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No variants configured
                     </p>
                   )}
                 </div>

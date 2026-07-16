@@ -1,5 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import { orderReturn, order, product } from "@bikalpo-project/db/schema";
+import { inventory, orderReturn, order, product } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -354,6 +354,9 @@ export const returnsRouter = {
                 processedBy: context.session.user.id,
                 processedAt: new Date(),
             };
+            if (adminNotes) {
+                updateData.adminNotes = adminNotes;
+            }
 
             if (action === "approve") {
                 updateData.status = "processed";
@@ -363,13 +366,93 @@ export const returnsRouter = {
                 }
                 updateData.refundType = refundType;
 
-                // Restocking removed — stock is now tracked via the inventory system
                 if (restockItems) {
-                    if (returnData.returnType === "full") {
-                        updateData.restocked = returnData.order.items.length;
-                    } else if (returnData.items) {
-                        updateData.restocked = returnData.items.length;
+                    const inventoryOwner = returnData.order.shopId
+                        ? { ownerType: "shop" as const, ownerId: returnData.order.shopId }
+                        : returnData.order.warehouseId
+                            ? { ownerType: "warehouse" as const, ownerId: returnData.order.warehouseId }
+                            : null;
+                    if (!inventoryOwner) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: "This order has no inventory owner to receive the filled-product return",
+                        });
                     }
+
+                    const requestedItems = returnData.returnType === "full"
+                        ? returnData.order.items.map((item) => ({
+                            orderItemId: item.id,
+                            quantity: item.quantity,
+                        }))
+                        : returnData.items ?? [];
+
+                    await db.transaction(async (tx) => {
+                        let restockedLines = 0;
+                        for (const requestedItem of requestedItems) {
+                            const orderLine = returnData.order.items.find(
+                                (item) => item.id === requestedItem.orderItemId,
+                            );
+                            if (!orderLine?.variantId) {
+                                throw new ORPCError("BAD_REQUEST", {
+                                    message: `Return item ${requestedItem.orderItemId} has no exact variant snapshot`,
+                                });
+                            }
+
+                            const conversionFactor = Number(orderLine.conversionFactor ?? 1);
+                            const inventoryQty = Number(requestedItem.quantity) * conversionFactor;
+                            if (
+                                orderLine.inventoryUnit === "cylinder" &&
+                                !Number.isInteger(inventoryQty)
+                            ) {
+                                throw new ORPCError("BAD_REQUEST", {
+                                    message: `${orderLine.productName} must return a whole number of filled cylinders`,
+                                });
+                            }
+
+                            await tx
+                                .insert(inventory)
+                                .values({
+                                    ...inventoryOwner,
+                                    variantId: orderLine.variantId,
+                                    availableQty: String(inventoryQty),
+                                })
+                                .onConflictDoUpdate({
+                                    target: [
+                                        inventory.ownerType,
+                                        inventory.ownerId,
+                                        inventory.variantId,
+                                    ],
+                                    set: {
+                                        availableQty: sql`${inventory.availableQty}::numeric + ${inventoryQty}`,
+                                        updatedAt: new Date(),
+                                    },
+                                });
+                            restockedLines += 1;
+                        }
+
+                        updateData.restocked = restockedLines;
+                        const updatedReturn = await tx
+                            .update(orderReturn)
+                            .set(updateData)
+                            .where(
+                                and(
+                                    eq(orderReturn.id, returnId),
+                                    eq(orderReturn.status, "pending"),
+                                ),
+                            )
+                            .returning({ id: orderReturn.id });
+                        if (updatedReturn.length === 0) {
+                            throw new ORPCError("BAD_REQUEST", {
+                                message: "Return has already been processed",
+                            });
+                        }
+
+                        await tx
+                            .update(order)
+                            .set({ paymentStatus: "refunded" })
+                            .where(eq(order.id, returnData.orderId));
+                    });
+
+                    return { success: true };
                 }
 
                 // Update payment status on order
@@ -379,10 +462,6 @@ export const returnsRouter = {
                     .where(eq(order.id, returnData.orderId));
             } else {
                 updateData.status = "rejected";
-            }
-
-            if (adminNotes) {
-                updateData.adminNotes = adminNotes;
             }
 
             await db

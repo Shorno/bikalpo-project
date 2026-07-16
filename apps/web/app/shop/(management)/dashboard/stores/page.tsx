@@ -1,17 +1,33 @@
 "use client";
 
-import { useState } from "react";
 import {
-  Store, MapPin, Phone, Star, ShoppingCart, Package,
-  Users, Truck, CreditCard, MessageCircle, AlertCircle,
-  Eye, Search, Loader2,
+  AlertCircle,
+  CreditCard,
+  ExternalLink,
+  Eye,
+  Loader2,
+  MapPin,
+  MessageCircle,
+  Package,
+  Phone,
+  Search,
+  ShoppingCart,
+  Star,
+  Store,
+  Truck,
+  Users,
 } from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { useMyStorePreview, useMyStoreStats } from "@/hooks/use-store-preview-api";
+import {
+  useMyStorePreview,
+  useMyStoreStats,
+} from "@/hooks/use-store-preview-api";
+import { getShopStorefrontUrl } from "@/lib/customer-storefront-preview";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -26,15 +42,21 @@ export default function MyStorePage() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [search, setSearch] = useState("");
-  const [selectedBrands, setSelectedBrands] = useState<Record<number, number | null>>({});
-  const [selectedVariants, setSelectedVariants] = useState<Record<number, number | null>>({});
+  const [selectedBrands, setSelectedBrands] = useState<
+    Record<number, number | null>
+  >({});
+  const [selectedVariants, setSelectedVariants] = useState<
+    Record<number, number | null>
+  >({});
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Loading store preview...</p>
+          <p className="text-sm text-muted-foreground">
+            Loading store preview...
+          </p>
         </div>
       </div>
     );
@@ -45,21 +67,30 @@ export default function MyStorePage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center space-y-2">
           <Store className="h-12 w-12 text-muted-foreground/30 mx-auto" />
-          <p className="text-lg font-medium text-muted-foreground">Store data not available</p>
+          <p className="text-lg font-medium text-muted-foreground">
+            Store data not available
+          </p>
         </div>
       </div>
     );
   }
 
   const { store, categories, products } = data;
+  const customerPreviewUrl = store.slug
+    ? getShopStorefrontUrl(store.slug, { previewMode: true })
+    : null;
 
   // Filter products
   let filteredProducts = products;
   if (selectedCategory) {
-    filteredProducts = filteredProducts.filter((p: any) => p.category?.id === selectedCategory);
+    filteredProducts = filteredProducts.filter(
+      (p: any) => p.category?.id === selectedCategory,
+    );
   }
   if (stockFilter !== "all") {
-    filteredProducts = filteredProducts.filter((p: any) => p.stockStatus === stockFilter);
+    filteredProducts = filteredProducts.filter(
+      (p: any) => p.stockStatus === stockFilter,
+    );
   }
   if (search.trim()) {
     const s = search.toLowerCase();
@@ -73,12 +104,42 @@ export default function MyStorePage() {
   return (
     <div className="space-y-6">
       {/* ── Preview Mode Banner ── */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
-        <Eye className="h-4 w-4 text-amber-600 shrink-0" />
-        <p className="text-sm text-amber-800">
-          <span className="font-semibold">Preview Mode</span> — This is how your store looks to customers.
-          Cart and ordering are disabled.
-        </p>
+      <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-2">
+          <Eye className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div>
+            <p className="text-sm text-amber-800">
+              <span className="font-semibold">Preview Mode</span> — This is how
+              your store looks to customers. Cart and ordering are disabled.
+            </p>
+            {!store.slug && (
+              <p className="mt-1 text-xs text-amber-700">
+                A public storefront link will be available after a shop slug is
+                assigned.
+              </p>
+            )}
+          </div>
+        </div>
+        {customerPreviewUrl ? (
+          <Button
+            asChild
+            size="sm"
+            className="shrink-0 bg-amber-700 text-white hover:bg-amber-800"
+          >
+            <a
+              href={customerPreviewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View as customer
+              <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+            </a>
+          </Button>
+        ) : (
+          <Button size="sm" disabled className="shrink-0">
+            View as customer
+          </Button>
+        )}
       </div>
 
       {/* ── Store Header ── */}
@@ -87,7 +148,11 @@ export default function MyStorePage() {
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
               {store.image ? (
-                <img src={store.image} alt={store.name} className="w-14 h-14 rounded-lg object-cover" />
+                <img
+                  src={store.image}
+                  alt={store.name}
+                  className="w-14 h-14 rounded-lg object-cover"
+                />
               ) : (
                 <Store className="h-8 w-8 text-white" />
               )}
@@ -110,12 +175,31 @@ export default function MyStorePage() {
           {/* Stats row */}
           <div className="grid grid-cols-4 gap-3 mt-5">
             {[
-              { icon: Star, label: "Rating", value: stats?.avgRating ? `${stats.avgRating} ★` : "—" },
-              { icon: ShoppingCart, label: "Orders", value: stats?.totalOrders?.toLocaleString() ?? "0" },
-              { icon: Users, label: "Customers", value: stats?.totalCustomers?.toLocaleString() ?? "0" },
-              { icon: Package, label: "Products", value: data.totalProducts.toString() },
+              {
+                icon: Star,
+                label: "Rating",
+                value: stats?.avgRating ? `${stats.avgRating} ★` : "—",
+              },
+              {
+                icon: ShoppingCart,
+                label: "Orders",
+                value: stats?.totalOrders?.toLocaleString() ?? "0",
+              },
+              {
+                icon: Users,
+                label: "Customers",
+                value: stats?.totalCustomers?.toLocaleString() ?? "0",
+              },
+              {
+                icon: Package,
+                label: "Products",
+                value: data.totalProducts.toString(),
+              },
             ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="bg-white/15 rounded-lg p-2.5 text-center">
+              <div
+                key={label}
+                className="bg-white/15 rounded-lg p-2.5 text-center"
+              >
                 <Icon className="h-4 w-4 mx-auto mb-1 text-emerald-100" />
                 <p className="text-sm font-bold">{value}</p>
                 <p className="text-[10px] text-emerald-200">{label}</p>
@@ -125,11 +209,21 @@ export default function MyStorePage() {
 
           {/* Action buttons */}
           <div className="flex gap-2 mt-4 flex-wrap">
-            <Button size="sm" variant="secondary" className="bg-white/20 hover:bg-white/30 text-white border-0" disabled>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="bg-white/20 hover:bg-white/30 text-white border-0"
+              disabled
+            >
               <MessageCircle className="h-3.5 w-3.5 mr-1.5" /> Chat
             </Button>
             {store.phoneNumber && (
-              <Button size="sm" variant="secondary" className="bg-white/20 hover:bg-white/30 text-white border-0" asChild>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="bg-white/20 hover:bg-white/30 text-white border-0"
+                asChild
+              >
                 <a href={`tel:${store.phoneNumber}`}>
                   <Phone className="h-3.5 w-3.5 mr-1.5" /> Call
                 </a>
@@ -157,7 +251,9 @@ export default function MyStorePage() {
             <button
               key={cat.id}
               type="button"
-              onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
+              onClick={() =>
+                setSelectedCategory(cat.id === selectedCategory ? null : cat.id)
+              }
               className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
                 selectedCategory === cat.id
                   ? "bg-emerald-600 text-white"
@@ -165,7 +261,9 @@ export default function MyStorePage() {
               }`}
             >
               {cat.name}
-              <span className="ml-1.5 text-xs opacity-70">{cat.productCount}</span>
+              <span className="ml-1.5 text-xs opacity-70">
+                {cat.productCount}
+              </span>
             </button>
           ))}
         </div>
@@ -194,7 +292,13 @@ export default function MyStorePage() {
                   : "bg-gray-50 text-gray-500 border border-transparent hover:bg-gray-100"
               }`}
             >
-              {f === "all" ? "All" : f === "in_stock" ? "In Stock" : f === "low" ? "Low Stock" : "Out"}
+              {f === "all"
+                ? "All"
+                : f === "in_stock"
+                  ? "In Stock"
+                  : f === "low"
+                    ? "Low Stock"
+                    : "Out"}
             </button>
           ))}
         </div>
@@ -205,9 +309,13 @@ export default function MyStorePage() {
         <Card>
           <CardContent className="py-12 text-center">
             <Package className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-muted-foreground font-medium">No products found</p>
+            <p className="text-muted-foreground font-medium">
+              No products found
+            </p>
             <p className="text-sm text-muted-foreground mt-1">
-              {search ? "Try a different search term" : "Add products from the Product Catalog"}
+              {search
+                ? "Try a different search term"
+                : "Add products from the Product Catalog"}
             </p>
           </CardContent>
         </Card>
@@ -220,10 +328,16 @@ export default function MyStorePage() {
               selectedBrand={selectedBrands[prod.productId] ?? null}
               selectedVariant={selectedVariants[prod.productId] ?? null}
               onSelectBrand={(brandId) =>
-                setSelectedBrands((prev) => ({ ...prev, [prod.productId]: brandId }))
+                setSelectedBrands((prev) => ({
+                  ...prev,
+                  [prod.productId]: brandId,
+                }))
               }
               onSelectVariant={(variantId) =>
-                setSelectedVariants((prev) => ({ ...prev, [prod.productId]: variantId }))
+                setSelectedVariants((prev) => ({
+                  ...prev,
+                  [prod.productId]: variantId,
+                }))
               }
             />
           ))}
@@ -239,7 +353,9 @@ export default function MyStorePage() {
             </div>
             <div>
               <p className="text-sm font-medium">Home Delivery</p>
-              <p className="text-xs text-muted-foreground">Same day delivery available</p>
+              <p className="text-xs text-muted-foreground">
+                Same day delivery available
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -250,7 +366,9 @@ export default function MyStorePage() {
             </div>
             <div>
               <p className="text-sm font-medium">Cash / Online Payment</p>
-              <p className="text-xs text-muted-foreground">bKash / Nagad supported</p>
+              <p className="text-xs text-muted-foreground">
+                bKash / Nagad supported
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -262,7 +380,9 @@ export default function MyStorePage() {
           <div className="flex items-center gap-3 mb-3">
             <Store className="h-5 w-5 text-muted-foreground" />
             <div>
-              <p className="text-sm font-semibold">{store.name || "My Store"}</p>
+              <p className="text-sm font-semibold">
+                {store.name || "My Store"}
+              </p>
               {store.address && (
                 <p className="text-xs text-muted-foreground">{store.address}</p>
               )}
@@ -324,10 +444,13 @@ function ProductCard({
   const displayUnit = activeVariant?.unitLabel || "";
 
   // Check if any variant in this product requires pack return
-  const hasPackReturn = product.isReturnablePack ||
+  const hasPackReturn =
+    product.isReturnablePack ||
     product.variants.some((v: any) => v.isPackReturnRequired);
 
-  const packReturnVariants = product.variants.filter((v: any) => v.isPackReturnRequired);
+  const packReturnVariants = product.variants.filter(
+    (v: any) => v.isPackReturnRequired,
+  );
 
   return (
     <Card className="overflow-hidden hover:shadow-md transition-shadow">
@@ -356,9 +479,13 @@ function ProductCard({
             )}
             {/* Price */}
             <div className="mt-2">
-              <span className="text-lg font-bold text-emerald-700">{displayPrice}</span>
+              <span className="text-lg font-bold text-emerald-700">
+                {displayPrice}
+              </span>
               {displayUnit && (
-                <span className="text-xs text-muted-foreground ml-1">/ {displayUnit}</span>
+                <span className="text-xs text-muted-foreground ml-1">
+                  / {displayUnit}
+                </span>
               )}
             </div>
             {/* Stock badge */}
@@ -393,13 +520,17 @@ function ProductCard({
           {/* Brand selector chips */}
           {product.brands.length > 0 && (
             <div>
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">Brand</p>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                Brand
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {product.brands.map((b: any) => (
                   <button
                     key={b.id}
                     type="button"
-                    onClick={() => onSelectBrand(selectedBrand === b.id ? null : b.id)}
+                    onClick={() =>
+                      onSelectBrand(selectedBrand === b.id ? null : b.id)
+                    }
                     className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
                       selectedBrand === b.id
                         ? "bg-emerald-50 border-emerald-500 text-emerald-700"
@@ -417,15 +548,22 @@ function ProductCard({
           {/* Variant / Pack selector pills */}
           {visibleVariants.length > 0 && (
             <div>
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">Pack</p>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                Pack
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {visibleVariants.map((v: any) => (
                   <button
                     key={v.variantId}
                     type="button"
-                    onClick={() => onSelectVariant(selectedVariant === v.variantId ? null : v.variantId)}
+                    onClick={() =>
+                      onSelectVariant(
+                        selectedVariant === v.variantId ? null : v.variantId,
+                      )
+                    }
                     className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                      (selectedVariant === v.variantId || (!selectedVariant && v === visibleVariants[0]))
+                      selectedVariant === v.variantId ||
+                      (!selectedVariant && v === visibleVariants[0])
                         ? "bg-blue-50 border-blue-500 text-blue-700"
                         : "border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
                     }`}
@@ -448,7 +586,9 @@ function ProductCard({
                   <span key={v.variantId} className="text-xs text-amber-700">
                     {v.brandName || v.unitLabel}
                     {v.packDepositAmount && (
-                      <span className="ml-1 font-medium">৳{v.packDepositAmount}</span>
+                      <span className="ml-1 font-medium">
+                        ৳{v.packDepositAmount}
+                      </span>
                     )}
                   </span>
                 ))}
@@ -460,7 +600,11 @@ function ProductCard({
 
           {/* Action buttons (disabled in preview) */}
           <div className="flex gap-2">
-            <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700" disabled>
+            <Button
+              size="sm"
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+              disabled
+            >
               <ShoppingCart className="h-3.5 w-3.5 mr-1.5" /> Add to Cart
             </Button>
             <Button size="sm" variant="outline" className="flex-1" disabled>

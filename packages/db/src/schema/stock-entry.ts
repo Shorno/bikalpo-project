@@ -16,12 +16,14 @@ import { productVariant } from "./product-variant";
 import { supplier } from "./supplier";
 import { warehouseStorageArea } from "./warehouse-storage-area";
 import { cartonConfig } from "./carton-config";
+import { stockReceipt } from "./stock-receipt";
 
 /** Entry type: how stock was counted when entering */
 export const stockEntryTypeEnum = pgEnum("stock_entry_type", [
     "loose",
     "pack",
     "carton",
+    "direct",
 ]);
 
 /** Cost type: how the purchase price was quoted */
@@ -46,6 +48,11 @@ export const stockEntry = pgTable(
         warehouseId: text("warehouse_id")
             .notNull()
             .references(() => user.id, { onDelete: "cascade" }),
+
+        /** Atomic receiving transaction; null for legacy stock entries. */
+        receiptId: integer("receipt_id").references(() => stockReceipt.id, {
+            onDelete: "set null",
+        }),
 
         /** Which variant is being stocked */
         variantId: integer("variant_id")
@@ -136,6 +143,7 @@ export const stockEntry = pgTable(
         index("stockEntry_warehouseId_idx").on(table.warehouseId),
         index("stockEntry_variantId_idx").on(table.variantId),
         index("stockEntry_supplierId_idx").on(table.supplierId),
+        index("stockEntry_receiptId_idx").on(table.receiptId),
     ],
 );
 
@@ -145,6 +153,10 @@ export const stockEntryRelations = relations(stockEntry, ({ one }) => ({
     warehouse: one(user, {
         fields: [stockEntry.warehouseId],
         references: [user.id],
+    }),
+    receipt: one(stockReceipt, {
+        fields: [stockEntry.receiptId],
+        references: [stockReceipt.id],
     }),
     variant: one(productVariant, {
         fields: [stockEntry.variantId],

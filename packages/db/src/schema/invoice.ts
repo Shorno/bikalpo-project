@@ -9,10 +9,12 @@ import {
     serial,
     text,
     timestamp,
+    varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
-import { order } from "./order";
+import { order, orderItem } from "./order";
 import { product } from "./product";
+import { productVariant } from "./product-variant";
 
 // Invoice type enum
 export const invoiceTypeEnum = pgEnum("invoice_type", ["main", "split"]);
@@ -142,9 +144,16 @@ export const invoiceItem = pgTable(
         invoiceId: integer("invoice_id")
             .notNull()
             .references(() => invoice.id, { onDelete: "cascade" }),
+        /** Exact source order line; avoids matching across brands or variants. */
+        orderItemId: integer("order_item_id").references(() => orderItem.id, {
+            onDelete: "set null",
+        }),
         productId: integer("product_id")
             .notNull()
             .references(() => product.id, { onDelete: "restrict" }),
+        variantId: integer("variant_id").references(() => productVariant.id, {
+            onDelete: "set null",
+        }),
 
         // Product snapshot at time of invoice
         productName: text("product_name").notNull(),
@@ -153,6 +162,13 @@ export const invoiceItem = pgTable(
 
         // Pricing
         quantity: integer("quantity").notNull(),
+        quantityUnit: varchar("quantity_unit", { length: 20 }),
+        inventoryUnit: varchar("inventory_unit", { length: 20 }),
+        conversionFactor: decimal("conversion_factor", {
+            precision: 12,
+            scale: 4,
+        }),
+        inventoryQty: decimal("inventory_qty", { precision: 12, scale: 2 }),
         unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
         lineTotal: decimal("line_total", { precision: 10, scale: 2 }).notNull(),
 
@@ -160,6 +176,7 @@ export const invoiceItem = pgTable(
     },
     (table) => [
         index("invoiceItem_invoiceId_idx").on(table.invoiceId),
+        index("invoiceItem_orderItemId_idx").on(table.orderItemId),
         index("invoiceItem_productId_idx").on(table.productId),
     ],
 );
@@ -196,9 +213,17 @@ export const invoiceItemRelations = relations(invoiceItem, ({ one }) => ({
         fields: [invoiceItem.invoiceId],
         references: [invoice.id],
     }),
+    orderItem: one(orderItem, {
+        fields: [invoiceItem.orderItemId],
+        references: [orderItem.id],
+    }),
     product: one(product, {
         fields: [invoiceItem.productId],
         references: [product.id],
+    }),
+    variant: one(productVariant, {
+        fields: [invoiceItem.variantId],
+        references: [productVariant.id],
     }),
 }));
 

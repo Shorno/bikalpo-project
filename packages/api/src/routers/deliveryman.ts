@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { db } from "@bikalpo-project/db";
 import {
     deliveryGroup,
@@ -16,7 +17,9 @@ import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, deliverymanProcedure, protectedProcedure, warehouseOrAdminProcedure } from "../index";
+import { markOrderCartonsDispatched } from "./helpers/b2b-inventory-movement";
 import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
+import { DELIVERY_START_ORDER_STATUSES } from "./helpers/retailer-delivery-handoff";
 
 // Validation schemas
 const deliverymanIdSchema = z.object({
@@ -443,7 +446,7 @@ export const deliverymanRouter = {
             if (warehouseId && group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
             if (group.status !== "assigned") throw new ORPCError("BAD_REQUEST", { message: "Trip already started" });
 
-            const generateOtp = () => Math.floor(1000 + Math.random() * 9000).toString();
+            const generateOtp = () => randomInt(1000, 10_000).toString();
 
             await db.transaction(async (tx) => {
                 await tx.update(deliveryGroup).set({
@@ -470,12 +473,14 @@ export const deliverymanRouter = {
 
                 // Update linked orders to "processing" + set shippedAt
                 if (orderIdsToUpdate.size > 0) {
+                    await markOrderCartonsDispatched(tx, [...orderIdsToUpdate]);
                     await tx.update(order).set({
                         status: "processing",
+                        processingStartedAt: new Date(),
                         shippedAt: new Date(),
                     }).where(and(
                         inArray(order.id, [...orderIdsToUpdate]),
-                        sql`${order.status} IN ('pending', 'confirmed')`,
+                        inArray(order.status, [...DELIVERY_START_ORDER_STATUSES]),
                     ));
                 }
 
@@ -1714,14 +1719,18 @@ export const deliverymanRouter = {
             });
 
             const deliveryInvoice = deliveryInvoices.find(
-                (row) => row.group?.status === "out_for_delivery",
+                (row) =>
+                    row.group?.status === "out_for_delivery" &&
+                    row.status === "pending" &&
+                    !!row.deliveryOtp,
             );
 
             // Only show OTP if order is out for delivery
             if (
                 !deliveryInvoice ||
                 !deliveryInvoice.group ||
-                deliveryInvoice.group.status !== "out_for_delivery"
+                deliveryInvoice.group.status !== "out_for_delivery" ||
+                !deliveryInvoice.deliveryOtp
             ) {
                 return { otp: null, showOtp: false, mode: null, label: null };
             }

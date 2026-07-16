@@ -1,16 +1,19 @@
 "use client";
 
 import {
-  INVENTORY_BEHAVIOURS,
-  INVENTORY_BEHAVIOUR_LABELS,
   buildProductTypeFulfillmentProfile,
+  INVENTORY_BEHAVIOUR_LABELS,
+  INVENTORY_BEHAVIOURS,
+  PRODUCT_TYPE_FAMILIES,
+  PRODUCT_TYPE_FAMILY_LABELS,
+  type ProductTypeFamily,
 } from "@bikalpo-project/db/fulfillment";
-import type { ProductTypeRow } from "./product-type-columns";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,10 +24,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Field,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -33,10 +33,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
-
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
+import type { ProductTypeRow } from "./product-type-columns";
 
 interface EditTypeDialogProps {
   type: ProductTypeRow;
@@ -53,6 +52,7 @@ export default function EditTypeDialog({ type }: EditTypeDialogProps) {
       slug: string;
       description?: string;
       inventoryBehaviour: (typeof INVENTORY_BEHAVIOURS)[number];
+      family: ProductTypeFamily;
       displayOrder?: number;
     }) => orpc.adminProductType.update.call(data),
     onSuccess: (result) => {
@@ -73,6 +73,7 @@ export default function EditTypeDialog({ type }: EditTypeDialogProps) {
       slug: type.slug,
       description: type.description || "",
       inventoryBehaviour: type.inventoryBehaviour,
+      family: type.family,
       displayOrder: type.displayOrder,
     },
     onSubmit: async ({ value }) => {
@@ -160,30 +161,60 @@ export default function EditTypeDialog({ type }: EditTypeDialogProps) {
             )}
           </form.Field>
 
-          <form.Field name="inventoryBehaviour">
-            {(field) => (
-              <Field>
-                <FieldLabel htmlFor={field.name}>Inventory Behaviour</FieldLabel>
-                <Select
-                  value={field.state.value}
-                  onValueChange={(value) =>
-                    field.handleChange(value as (typeof INVENTORY_BEHAVIOURS)[number])
-                  }
-                >
-                  <SelectTrigger id={field.name}>
-                    <SelectValue placeholder="Select inventory behaviour" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INVENTORY_BEHAVIOURS.map((behaviour) => (
-                      <SelectItem key={behaviour} value={behaviour}>
-                        {INVENTORY_BEHAVIOUR_LABELS[behaviour]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            )}
-          </form.Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <form.Field name="family">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>Product Family</FieldLabel>
+                  <Select
+                    value={field.state.value}
+                    onValueChange={(value) =>
+                      field.handleChange(value as ProductTypeFamily)
+                    }
+                  >
+                    <SelectTrigger id={field.name}>
+                      <SelectValue placeholder="Select product family" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRODUCT_TYPE_FAMILIES.map((family) => (
+                        <SelectItem key={family} value={family}>
+                          {PRODUCT_TYPE_FAMILY_LABELS[family]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="inventoryBehaviour">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={field.name}>
+                    Inventory Behaviour
+                  </FieldLabel>
+                  <Select
+                    value={field.state.value}
+                    onValueChange={(value) =>
+                      field.handleChange(
+                        value as (typeof INVENTORY_BEHAVIOURS)[number],
+                      )
+                    }
+                  >
+                    <SelectTrigger id={field.name}>
+                      <SelectValue placeholder="Select inventory behaviour" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INVENTORY_BEHAVIOURS.map((behaviour) => (
+                        <SelectItem key={behaviour} value={behaviour}>
+                          {INVENTORY_BEHAVIOUR_LABELS[behaviour]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+            </form.Field>
+          </div>
 
           <form.Subscribe selector={(state) => state.values}>
             {(values) => {
@@ -191,11 +222,10 @@ export default function EditTypeDialog({ type }: EditTypeDialogProps) {
                 name: values.name,
                 slug: values.slug || generateSlug(values.name),
                 inventoryBehaviour: values.inventoryBehaviour,
+                family: values.family,
               });
 
-              return (
-                <FulfillmentProfilePreview profile={profile} compact />
-              );
+              return <FulfillmentProfilePreview profile={profile} compact />;
             }}
           </form.Subscribe>
         </form>

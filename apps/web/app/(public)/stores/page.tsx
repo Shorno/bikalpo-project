@@ -5,8 +5,8 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  Locate,
   Loader2,
+  Locate,
   MapPin,
   Search,
   ShoppingBag,
@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +29,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  isCustomerStorefrontPreview,
+  withCustomerStorefrontPreview,
+} from "@/lib/customer-storefront-preview";
 import { orpc } from "@/utils/orpc";
 
 type LocationState =
@@ -37,6 +43,8 @@ type LocationState =
   | { status: "unavailable" };
 
 export default function StoresPage() {
+  const searchParams = useSearchParams();
+  const previewMode = isCustomerStorefrontPreview(searchParams.get("preview"));
   const [search, setSearch] = useState("");
   const [areaId, setAreaId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
@@ -99,6 +107,7 @@ export default function StoresPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50/80 to-white">
+      {previewMode && <CustomerPreviewBanner />}
       {/* ── Hero Header ── */}
       <div className="relative overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDE4YzMuMzE0IDAgNiAyLjY4NiA2IDZzLTIuNjg2IDYtNiA2LTYtMi42ODYtNi02IDIuNjg2LTYgNi02eiIvPjwvZz48L2c+PC9zdmc+')] opacity-40" />
@@ -108,8 +117,8 @@ export default function StoresPage() {
               Discover Local Shops
             </h1>
             <p className="text-emerald-100/90 mt-3 text-base sm:text-lg leading-relaxed">
-              Browse verified sellers near you and explore their catalogs.
-              Find quality products from trusted local businesses.
+              Browse verified sellers near you and explore their catalogs. Find
+              quality products from trusted local businesses.
             </p>
           </div>
 
@@ -117,7 +126,9 @@ export default function StoresPage() {
           <div className="flex items-center gap-6 mt-6">
             {pagination && (
               <div className="text-white/90">
-                <span className="text-2xl font-bold">{pagination.totalCount}</span>
+                <span className="text-2xl font-bold">
+                  {pagination.totalCount}
+                </span>
                 <span className="text-emerald-200 ml-1.5 text-sm">
                   {isLocated ? "shops near you" : "shops available"}
                 </span>
@@ -125,7 +136,9 @@ export default function StoresPage() {
             )}
 
             {/* Location status */}
-            {location.status === "idle" || location.status === "denied" || location.status === "unavailable" ? (
+            {location.status === "idle" ||
+            location.status === "denied" ||
+            location.status === "unavailable" ? (
               <button
                 onClick={requestLocation}
                 className="flex items-center gap-1.5 text-sm text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-all"
@@ -308,7 +321,10 @@ export default function StoresPage() {
               {shops.map((shop: any) => (
                 <Link
                   key={shop.id}
-                  href={`/stores/${shop.shopSlug}`}
+                  href={withCustomerStorefrontPreview(
+                    `/stores/${shop.shopSlug}`,
+                    previewMode,
+                  )}
                   className="group"
                 >
                   <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden transition-all duration-200 hover:shadow-md hover:border-emerald-200/60">

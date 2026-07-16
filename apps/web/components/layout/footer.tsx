@@ -1,133 +1,95 @@
-import { Mail, MapPin, Phone } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { Separator } from "@/components/ui/separator";
+
+const catalogLinks = [
+  { href: "/products", label: "All products" },
+  { href: "/offers", label: "Offers" },
+  { href: "/stores", label: "Stores" },
+  { href: "/b2b", label: "For business" },
+];
+
+const companyLinks = [
+  { href: "/about", label: "About" },
+  { href: "/contact", label: "Contact" },
+  { href: "/faqs", label: "FAQs" },
+  { href: "/verified-customers", label: "Verified customers" },
+];
+
+const policyLinks = [
+  { href: "/terms", label: "Terms" },
+  { href: "/privacy", label: "Privacy" },
+];
 
 export function Footer() {
   return (
-    <footer className="bg-gray-900 text-gray-400">
-      {/* Main footer content */}
-      <div className="container mx-auto px-4 py-10">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
-          {/* About */}
-          <div className="col-span-2 md:col-span-1">
-            <h3 className="text-white font-semibold text-sm uppercase tracking-wider mb-4">
-              About Us
-            </h3>
-            <p className="text-sm leading-relaxed mb-4">
-              Your trusted online marketplace for quality products delivered
-              fast to your door.
+    <footer className="border-t border-slate-800 bg-[oklch(0.18_0.018_260)] text-slate-300">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_0.8fr_0.8fr]">
+          <div>
+            <Link
+              href="/"
+              aria-label="Bikalpo home"
+              className="inline-flex focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+            >
+              <Image
+                src="/logos/site-logo-white.svg"
+                alt="Bikalpo"
+                width={120}
+                height={44}
+                className="object-contain"
+              />
+            </Link>
+            <p className="mt-5 max-w-md text-sm leading-6 text-slate-400">
+              A shared product catalog for customer shopping and business supply
+              workflows.
             </p>
-            <div className="space-y-2 text-sm">
-              <a
-                href="mailto:info@bikalpo.com"
-                className="flex items-center gap-2 hover:text-white transition-colors"
-              >
-                <Mail className="size-3.5 text-primary" />
-                info@bikalpo.com
-              </a>
-              <a
-                href="tel:+8801234567890"
-                className="flex items-center gap-2 hover:text-white transition-colors"
-              >
-                <Phone className="size-3.5 text-primary" />
-                +880 123 456 7890
-              </a>
-              <div className="flex items-center gap-2">
-                <MapPin className="size-3.5 text-primary" />
-                <span>Dhaka, Bangladesh</span>
-              </div>
-            </div>
           </div>
 
-          {/* Quick Links */}
-          <div>
-            <h3 className="text-white font-semibold text-sm uppercase tracking-wider mb-4">
-              Quick Links
-            </h3>
-            <ul className="space-y-2 text-sm">
-              {[
-                { href: "/about", label: "About Us" },
-                { href: "/products", label: "Products" },
-                { href: "/store", label: "Our Outlets" },
-                { href: "/contact", label: "Contact Us" },
-              ].map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="hover:text-white hover:text-primary transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Customer Service */}
-          <div>
-            <h3 className="text-white font-semibold text-sm uppercase tracking-wider mb-4">
-              Customer Service
-            </h3>
-            <ul className="space-y-2 text-sm">
-              {[
-                { href: "/faqs", label: "FAQs" },
-                { href: "/terms", label: "Terms & Conditions" },
-                { href: "/privacy", label: "Privacy Policy" },
-              ].map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="hover:text-white transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* My Account */}
-          <div>
-            <h3 className="text-white font-semibold text-sm uppercase tracking-wider mb-4">
-              My Account
-            </h3>
-            <ul className="space-y-2 text-sm">
-              {[
-                { href: "/login", label: "Login / Register" },
-                { href: "/account/orders", label: "My Orders" },
-                { href: "/account/addresses", label: "My Addresses" },
-              ].map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="hover:text-white transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <FooterLinkGroup title="Catalog" links={catalogLinks} />
+          <FooterLinkGroup title="Company" links={companyLinks} />
         </div>
 
-        <Separator className="bg-gray-800 mb-6" />
-
-        {/* Bottom bar */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-sm">
+        <div className="mt-12 flex flex-col gap-4 border-t border-slate-800 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Bikalpo. All rights reserved.</p>
-          <div className="flex items-center gap-4">
-            <Link href="/terms" className="hover:text-white transition-colors">
-              Terms
-            </Link>
-            <Link
-              href="/privacy"
-              className="hover:text-white transition-colors"
-            >
-              Privacy
-            </Link>
+          <div className="flex items-center gap-5">
+            {policyLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="hover:text-slate-200 hover:underline hover:underline-offset-4"
+              >
+                {link.label}
+              </Link>
+            ))}
           </div>
         </div>
       </div>
     </footer>
+  );
+}
+
+function FooterLinkGroup({
+  title,
+  links,
+}: {
+  title: string;
+  links: Array<{ href: string; label: string }>;
+}) {
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-slate-100">{title}</h2>
+      <ul className="mt-4 space-y-3 text-sm">
+        {links.map((link) => (
+          <li key={link.href}>
+            <Link
+              href={link.href}
+              className="text-slate-400 hover:text-slate-100 hover:underline hover:underline-offset-4"
+            >
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  areVariantOptionsStructurallyCompatible,
   formatVariantStockQuantity,
+  resolveVariantMovementSemantics,
   resolveVariantStockSemantics,
 } from "./variant-definition";
 
@@ -23,6 +25,24 @@ test("formats cylinders as count plus normalized mass", () => {
   assert.equal(semantics.packType, "cylinder");
   assert.equal(semantics.massKgPerUnit, 12);
 	assert.equal(formatVariantStockQuantity(semantics, 2), "2 cylinders · 24 KG");
+
+  const movement = resolveVariantMovementSemantics(option({
+    kind: "measurement",
+    value: "12",
+    measurementUnit: "KG",
+    container: "cylinder",
+    operationalUnit: "cylinder",
+  }), "lpg");
+  assert.deepEqual(movement, {
+    family: "lpg",
+    movementKind: "direct",
+    enteredUnit: "cylinder",
+    inventoryUnit: "cylinder",
+    quantityKind: "count",
+    allowsDecimal: false,
+    conversionFactor: "1",
+    referenceMeasurement: { unit: "kg", perInventoryUnit: "12" },
+  });
 });
 
 test("normalizes grams without treating volume as weight", () => {
@@ -63,4 +83,24 @@ test("keeps loose and attribute inventory in their operational units", () => {
     operationalUnit: "unit",
   }));
 	assert.equal(formatVariantStockQuantity(size, 4), "4 units");
+});
+
+test("requires matching LPG capacity for linked inventory variants", () => {
+  const cylinder = (value: string) =>
+    option({
+      kind: "measurement",
+      value,
+      measurementUnit: "KG",
+      container: "cylinder",
+      operationalUnit: "cylinder",
+    });
+
+  assert.equal(
+    areVariantOptionsStructurallyCompatible(cylinder("12"), cylinder("12")),
+    true,
+  );
+  assert.equal(
+    areVariantOptionsStructurallyCompatible(cylinder("12"), cylinder("35")),
+    false,
+  );
 });

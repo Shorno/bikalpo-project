@@ -119,6 +119,9 @@ export const stockAdjustmentItem = pgTable(
         /** Signed adjustment amount (+10 or -20) */
         adjustQty: decimal("adjust_qty", { precision: 12, scale: 2 }).notNull(),
 
+        /** Canonical unit captured when the adjustment was created. */
+        quantityUnit: varchar("quantity_unit", { length: 20 }),
+
         /** Computed: currentQty + adjustQty */
         afterQty: decimal("after_qty", { precision: 12, scale: 2 })
             .default("0")

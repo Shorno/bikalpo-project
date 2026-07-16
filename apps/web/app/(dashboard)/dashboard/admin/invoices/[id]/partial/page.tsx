@@ -69,22 +69,51 @@ export default function CreatePartialInvoicePage() {
 
   const invoice = result?.invoice;
 
-  // Get already delivered quantities
   const deliveredQuantities =
-    invoice?.splitInvoices?.reduce(
-      (acc, splitInvoice) => {
-        splitInvoice.items?.forEach((item) => {
-          acc[item.productId] = (acc[item.productId] || 0) + item.quantity;
-        });
-        return acc;
-      },
-      {} as Record<number, number>,
-    ) || {};
+    invoice?.items.reduce<Record<number, number>>((acc, originalItem) => {
+      const sameVariantItems = originalItem.variantId
+        ? invoice.items.filter(
+            (item) => item.variantId === originalItem.variantId,
+          )
+        : [];
+      const sameProductItems = invoice.items.filter(
+        (item) => item.productId === originalItem.productId,
+      );
+
+      acc[originalItem.id] =
+        invoice.splitInvoices?.reduce(
+          (total, splitInvoice) =>
+            total +
+            (splitInvoice.items?.reduce((splitTotal, splitItem) => {
+              const exactOrderItem =
+                originalItem.orderItemId !== null &&
+                splitItem.orderItemId === originalItem.orderItemId;
+              const unambiguousLegacyVariant =
+                originalItem.orderItemId === null &&
+                originalItem.variantId !== null &&
+                sameVariantItems.length === 1 &&
+                splitItem.variantId === originalItem.variantId;
+              const unambiguousLegacyProduct =
+                originalItem.orderItemId === null &&
+                originalItem.variantId === null &&
+                sameProductItems.length === 1 &&
+                splitItem.productId === originalItem.productId;
+
+              return exactOrderItem ||
+                unambiguousLegacyVariant ||
+                unambiguousLegacyProduct
+                ? splitTotal + splitItem.quantity
+                : splitTotal;
+            }, 0) ?? 0),
+          0,
+        ) ?? 0;
+      return acc;
+    }, {}) || {};
 
   // Calculate remaining quantities
   const remainingItems =
     invoice?.items.map((item) => {
-      const delivered = deliveredQuantities[item.productId] || 0;
+      const delivered = deliveredQuantities[item.id] || 0;
       const remaining = item.quantity - delivered;
       return {
         ...item,
@@ -94,43 +123,43 @@ export default function CreatePartialInvoicePage() {
       };
     }) || [];
 
-  const handleQuantityChange = (productId: number, value: number) => {
-    const item = remainingItems.find((i) => i.productId === productId);
+  const handleQuantityChange = (invoiceItemId: number, value: number) => {
+    const item = remainingItems.find((i) => i.id === invoiceItemId);
     if (!item) return;
 
     const newValue = Math.max(0, Math.min(value, item.remainingQty));
     setQuantities((prev) => ({
       ...prev,
-      [productId]: newValue,
+      [invoiceItemId]: newValue,
     }));
   };
 
-  const incrementQuantity = (productId: number) => {
-    const item = remainingItems.find((i) => i.productId === productId);
+  const incrementQuantity = (invoiceItemId: number) => {
+    const item = remainingItems.find((i) => i.id === invoiceItemId);
     if (!item) return;
 
-    const current = quantities[productId] || 0;
+    const current = quantities[invoiceItemId] || 0;
     if (current < item.remainingQty) {
       setQuantities((prev) => ({
         ...prev,
-        [productId]: current + 1,
+        [invoiceItemId]: current + 1,
       }));
     }
   };
 
-  const decrementQuantity = (productId: number) => {
-    const current = quantities[productId] || 0;
+  const decrementQuantity = (invoiceItemId: number) => {
+    const current = quantities[invoiceItemId] || 0;
     if (current > 0) {
       setQuantities((prev) => ({
         ...prev,
-        [productId]: current - 1,
+        [invoiceItemId]: current - 1,
       }));
     }
   };
 
   const calculateTotal = () => {
     return remainingItems.reduce((total, item) => {
-      const qty = quantities[item.productId] || 0;
+      const qty = quantities[item.id] || 0;
       const unitPrice = Number.parseFloat(item.unitPrice);
       return total + qty * unitPrice;
     }, 0);
@@ -141,8 +170,8 @@ export default function CreatePartialInvoicePage() {
 
     const selectedItems = Object.entries(quantities)
       .filter(([_, qty]) => qty > 0)
-      .map(([productId, quantity]) => ({
-        productId: Number.parseInt(productId, 10),
+      .map(([invoiceItemId, quantity]) => ({
+        invoiceItemId: Number.parseInt(invoiceItemId, 10),
         quantity,
       }));
 
@@ -301,7 +330,7 @@ export default function CreatePartialInvoicePage() {
                   </TableHeader>
                   <TableBody>
                     {remainingItems.map((item) => {
-                      const selectedQty = quantities[item.productId] || 0;
+                      const selectedQty = quantities[item.id] || 0;
                       const lineTotal =
                         selectedQty * Number.parseFloat(item.unitPrice);
 
@@ -363,9 +392,7 @@ export default function CreatePartialInvoicePage() {
                                     variant="outline"
                                     size="icon"
                                     className="h-8 w-8 shrink-0"
-                                    onClick={() =>
-                                      decrementQuantity(item.productId)
-                                    }
+                                    onClick={() => decrementQuantity(item.id)}
                                     disabled={selectedQty === 0}
                                   >
                                     <Minus className="h-3.5 w-3.5" />
@@ -377,7 +404,7 @@ export default function CreatePartialInvoicePage() {
                                     value={selectedQty}
                                     onChange={(e) =>
                                       handleQuantityChange(
-                                        item.productId,
+                                        item.id,
                                         Number.parseInt(e.target.value, 10) ||
                                           0,
                                       )
@@ -389,9 +416,7 @@ export default function CreatePartialInvoicePage() {
                                     variant="outline"
                                     size="icon"
                                     className="h-8 w-8 shrink-0"
-                                    onClick={() =>
-                                      incrementQuantity(item.productId)
-                                    }
+                                    onClick={() => incrementQuantity(item.id)}
                                     disabled={selectedQty >= item.remainingQty}
                                   >
                                     <Plus className="h-3.5 w-3.5" />
@@ -406,7 +431,7 @@ export default function CreatePartialInvoicePage() {
                                     onClick={() =>
                                       setQuantities((prev) => ({
                                         ...prev,
-                                        [item.productId]: item.remainingQty,
+                                        [item.id]: item.remainingQty,
                                       }))
                                     }
                                   >

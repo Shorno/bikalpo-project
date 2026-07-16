@@ -95,6 +95,10 @@ function getVariantDisplayUnit(
   profile: ProductTypeFulfillmentProfile,
   variant: WarehouseCatalogVariantLike["variant"],
 ) {
+  if (profile.family === "lpg") {
+    return FULFILLMENT_UNITS.cylinder.shortLabel;
+  }
+
   if (isFashionAttributeVariant(profile, variant)) {
     return FULFILLMENT_UNITS.piece.shortLabel;
   }

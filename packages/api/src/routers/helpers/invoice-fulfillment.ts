@@ -34,26 +34,36 @@ export async function syncOrderFromDeliveredInvoice(
     });
 
     for (const deliveredItem of deliveredInvoice.items) {
-        const sameProductItems = orderItems.filter(
-            (item: typeof orderItem.$inferSelect) =>
-                item.productId === deliveredItem.productId,
-        );
-
-        const matchedItem =
-            sameProductItems.find(
+        const exactLinkedItem = deliveredItem.orderItemId
+            ? orderItems.find(
                 (item: typeof orderItem.$inferSelect) =>
-                    item.productSize === deliveredItem.productSku,
+                    item.id === deliveredItem.orderItemId,
             )
-            ?? sameProductItems[0];
+            : null;
+        const exactVariantItems = deliveredItem.variantId
+            ? orderItems.filter(
+                (item: typeof orderItem.$inferSelect) =>
+                    item.variantId === deliveredItem.variantId,
+            )
+            : [];
+        const matchedItem =
+            exactLinkedItem ??
+            (exactVariantItems.length === 1 ? exactVariantItems[0] : null);
 
-        if (!matchedItem) continue;
+        if (!matchedItem) {
+            throw new Error(
+                `Invoice item ${deliveredItem.id} cannot be matched to one exact order variant`,
+            );
+        }
 
         const targetQty = matchedItem.modifiedQty ?? matchedItem.quantity;
         const deliveredSoFar = matchedItem.deliveredQty ?? 0;
-        const nextDeliveredQty = Math.min(
-            targetQty,
-            deliveredSoFar + deliveredItem.quantity,
-        );
+        const nextDeliveredQty = deliveredSoFar + deliveredItem.quantity;
+        if (nextDeliveredQty > targetQty) {
+            throw new Error(
+                `Invoice item ${deliveredItem.id} exceeds its approved order quantity`,
+            );
+        }
 
         await tx
             .update(orderItem)
@@ -90,6 +100,12 @@ export async function syncOrderFromDeliveredInvoice(
         if (options.markReceived) {
             nextOrderState.receivedAt =
                 deliveredInvoice.order.receivedAt ?? new Date();
+            for (const item of refreshedItems) {
+                await tx
+                    .update(orderItem)
+                    .set({ receivedQty: item.deliveredQty ?? 0 })
+                    .where(eq(orderItem.id, item.id));
+            }
         }
     }
 
@@ -100,15 +116,8 @@ export async function syncOrderFromDeliveredInvoice(
             .where(eq(order.id, deliveredInvoice.orderId));
     }
 
-    if (fullyDelivered) {
-        try {
-            await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
-        } catch (error) {
-            console.error(
-                `[INVOICE-FULFILLMENT] B2B conversion failed for order #${deliveredInvoice.orderId}:`,
-                error,
-            );
-        }
+    if (fullyDelivered && options.markReceived) {
+        await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
     }
 
     return {

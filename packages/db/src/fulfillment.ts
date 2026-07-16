@@ -88,6 +88,7 @@ export type FulfillmentUnitDescriptor = {
 };
 
 export type ProductTypeFulfillmentInput = {
+  family?: ProductTypeFamily | null;
   slug?: string | null;
   name?: string | null;
   inventoryBehaviour?: InventoryBehaviour | null;
@@ -408,8 +409,11 @@ function mergeModes(
 }
 
 export function inferProductTypeFamily(
-  input: Pick<ProductTypeFulfillmentInput, "slug" | "name" | "inventoryBehaviour">,
+  input: Pick<ProductTypeFulfillmentInput, "family" | "slug" | "name" | "inventoryBehaviour">,
 ): ProductTypeFamily {
+  if (input.family && PRODUCT_TYPE_FAMILIES.includes(input.family)) {
+    return input.family;
+  }
   const token = `${normalizeToken(input.slug)} ${normalizeToken(input.name)}`.trim();
 
   if (token.includes("lpg") || token.includes("cylinder") || token.includes("gas")) {
@@ -498,12 +502,13 @@ export function buildProductTypeFulfillmentProfile(
   if (family === "lpg") {
     return {
       ...profile,
-      supportedModes: dedupeModes(["cylinder", "unit", ...profile.supportedModes]),
+      supportedModes: ["cylinder"],
       defaultMode: "cylinder",
       orderUnit: "cylinder",
       stockUnit: "cylinder",
       conversionUnit: "cylinder",
       displayUnit: "cylinder",
+      supportsModeSwitching: false,
     };
   }
 

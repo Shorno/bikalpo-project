@@ -6,13 +6,18 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useDebounce } from "@/hooks/use-debounce";
+import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { client } from "@/utils/orpc";
 
 interface NavbarSearchProps {
   className?: string;
+  previewMode?: boolean;
 }
 
-export function NavbarSearch({ className }: NavbarSearchProps) {
+export function NavbarSearch({
+  className,
+  previewMode = false,
+}: NavbarSearchProps) {
   const [focused, setFocused] = useState(false);
   const [query, setQuery] = useState("");
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
@@ -23,10 +28,10 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
 
   // Fetch suggested products (shown when focused but no query)
   const { data: suggestedProducts = [] } = useQuery({
-    queryKey: ["suggested-products"],
+    queryKey: ["suggested-reference-products"],
     queryFn: async () => {
-      const { products } = await client.customer.getCustomerProducts({
-        sort: "popular",
+      const { products } = await client.customer.getReferenceProducts({
+        sort: "newest",
         limit: "6",
         page: "1",
       });
@@ -38,11 +43,17 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
   const showDropdown = focused;
 
   const { data: results = [], isLoading } = useQuery({
-    queryKey: ["search-products", debouncedQuery],
+    queryKey: ["search-reference-products", debouncedQuery],
     queryFn: async () => {
-      if (!debouncedQuery.trim()) return [] as Awaited<ReturnType<typeof client.product.search>>["products"];
-      const { products } = await client.product.search({
-        query: debouncedQuery,
+      if (!debouncedQuery.trim())
+        return [] as Awaited<
+          ReturnType<typeof client.customer.getReferenceProducts>
+        >["products"];
+      const { products } = await client.customer.getReferenceProducts({
+        search: debouncedQuery,
+        limit: "10",
+        page: "1",
+        sort: "newest",
       });
       return products;
     },
@@ -65,7 +76,12 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
   }, []);
 
   const handleProductClick = (categorySlug: string, productSlug: string) => {
-    router.push(`/products/${categorySlug}/${productSlug}`);
+    router.push(
+      withCustomerStorefrontPreview(
+        `/products/${categorySlug}/${productSlug}`,
+        previewMode,
+      ),
+    );
     setFocused(false);
     setQuery("");
   };
@@ -191,7 +207,12 @@ export function NavbarSearch({ className }: NavbarSearchProps) {
           {results.length > 0 && (
             <button
               onClick={() => {
-                router.push(`/products?search=${encodeURIComponent(query)}`);
+                router.push(
+                  withCustomerStorefrontPreview(
+                    `/products?search=${encodeURIComponent(query)}`,
+                    previewMode,
+                  ),
+                );
                 setFocused(false);
                 setQuery("");
               }}

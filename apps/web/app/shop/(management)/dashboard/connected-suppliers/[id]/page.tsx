@@ -13,6 +13,7 @@ import {
   Package,
   Phone,
   ShoppingCart,
+  Store,
   Users,
   Wallet,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useConnectedSupplierDetail } from "@/hooks/use-shop-owner-api";
+import { getWarehouseStorefrontUrl } from "@/lib/warehouse-storefront-url";
 
 type ConnectedSupplierDetail = {
   identity: {
@@ -389,9 +391,9 @@ export default function ConnectedSupplierDetailPage() {
 
   const detail = data as ConnectedSupplierDetail;
   const phoneForLinks = detail.identity.phone?.replace(/[^\d+]/g, "") || "";
-  const orderLink = detail.identity.warehouseSlug
-    ? `/dashboard/order-from-warehouse?warehouse=${encodeURIComponent(detail.identity.warehouseSlug)}`
-    : "/dashboard/warehouses";
+  const storefrontUrl = detail.identity.warehouseSlug
+    ? getWarehouseStorefrontUrl(detail.identity.warehouseSlug)
+    : null;
   const compareLink = detail.smartInsight.compareCategory
     ? `/dashboard/connected-suppliers?category=${encodeURIComponent(detail.smartInsight.compareCategory)}`
     : "/dashboard/connected-suppliers";
@@ -495,12 +497,19 @@ export default function ConnectedSupplierDetailPage() {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row xl:flex-col">
-              <Button asChild>
-                <Link href={orderLink}>
-                  <ShoppingCart className="mr-2 h-4 w-4" />
-                  Create Order
-                </Link>
-              </Button>
+              {storefrontUrl ? (
+                <Button asChild>
+                  <a href={storefrontUrl}>
+                    <Store className="mr-2 h-4 w-4" />
+                    Visit Storefront
+                  </a>
+                </Button>
+              ) : (
+                <Button disabled>
+                  <Store className="mr-2 h-4 w-4" />
+                  Storefront unavailable
+                </Button>
+              )}
               {phoneForLinks ? (
                 <Button asChild variant="outline">
                   <a href={`tel:${phoneForLinks}`}>
@@ -569,12 +578,19 @@ export default function ConnectedSupplierDetailPage() {
                 started yet.
               </p>
             </div>
-            <Button asChild>
-              <Link href={orderLink}>
-                Start Buying
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+            {storefrontUrl ? (
+              <Button asChild>
+                <a href={storefrontUrl}>
+                  Visit Storefront
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </a>
+              </Button>
+            ) : (
+              <Button disabled>
+                <Store className="mr-2 h-4 w-4" />
+                Storefront unavailable
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -1190,12 +1206,19 @@ export default function ConnectedSupplierDetailPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 md:flex-row md:flex-wrap">
-          <Button asChild>
-            <Link href={orderLink}>
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              Create Order
-            </Link>
-          </Button>
+          {storefrontUrl ? (
+            <Button asChild>
+              <a href={storefrontUrl}>
+                <Store className="mr-2 h-4 w-4" />
+                Visit Storefront
+              </a>
+            </Button>
+          ) : (
+            <Button disabled>
+              <Store className="mr-2 h-4 w-4" />
+              Storefront unavailable
+            </Button>
+          )}
           <Button variant="outline" disabled>
             <Wallet className="mr-2 h-4 w-4" />
             Make Payment

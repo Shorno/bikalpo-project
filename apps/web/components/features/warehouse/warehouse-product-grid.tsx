@@ -3,14 +3,15 @@
 import { Package, ShoppingCart, X } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { WarehouseOrderDialog } from "./warehouse-order-dialog";
 import {
+  shortVariantLabel,
   type WarehouseProduct,
   WarehouseProductCard,
   WarehouseProductCardSkeleton,
   type WarehouseProductVariantOption,
-  shortVariantLabel,
 } from "./warehouse-product-card";
 
 /** Map API storefront product to the card-compatible shape */
@@ -56,6 +57,8 @@ function mapApiProduct(item: any): WarehouseProduct {
         innerPackSizeKg:
           Number(rowVariant?.innerPackSizeKg || rowVariant?.pieceWeightKg) || 0,
         packType: rowVariant?.packType || rowUnit,
+        fulfillmentMode: row.fulfillmentMode,
+        targetVariantId: row.targetVariantId,
       };
     },
   );
@@ -121,7 +124,7 @@ function ProductDetailModal({
 }: {
   product: WarehouseProduct;
   onClose: () => void;
-  mode?: "default" | "w2w" | "view-only";
+  mode?: "default" | "retailer" | "w2w" | "view-only";
   onAddToCart?: (product: WarehouseProduct) => void;
 }) {
   const [imageError, setImageError] = useState(false);
@@ -148,7 +151,7 @@ function ProductDetailModal({
     : product;
   const stock = getStockLabel(product.stockStatus);
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
       onClick={onClose}
@@ -220,7 +223,8 @@ function ProductDetailModal({
               </span>
               <div className="flex flex-wrap gap-2">
                 {product.variants.map((variant) => {
-                  const active = variant.variantId === selectedVariant?.variantId;
+                  const active =
+                    variant.variantId === selectedVariant?.variantId;
                   return (
                     <button
                       key={variant.variantId}
@@ -269,9 +273,13 @@ function ProductDetailModal({
               >
                 Access Required
               </Button>
-            ) : mode === "w2w" ? (
+            ) : mode === "w2w" || mode === "retailer" ? (
               <Button
-                className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-2 rounded-lg transition-colors shadow-none"
+                className={`flex-1 h-11 text-white font-medium gap-2 rounded-lg transition-colors shadow-none ${
+                  mode === "retailer"
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
                 onClick={() => {
                   onAddToCart?.(displayProduct);
                   onClose();
@@ -296,7 +304,8 @@ function ProductDetailModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -311,7 +320,7 @@ interface WarehouseProductGridProps {
     totalPages: number;
   };
   onPageChange?: (page: number) => void;
-  mode?: "default" | "w2w" | "view-only";
+  mode?: "default" | "retailer" | "w2w" | "view-only";
   cart?: any[];
   onAddToCart?: (product: any) => void;
   onUpdateQuantity?: (variantId: number, delta: number) => void;

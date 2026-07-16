@@ -3,6 +3,7 @@ import {
   db,
   FULFILLMENT_UNIT_CODES,
   INVENTORY_BEHAVIOURS,
+  PRODUCT_TYPE_FAMILIES,
 } from "@bikalpo-project/db";
 import {
   category,
@@ -310,6 +311,7 @@ export const adminProductTypeRouter = {
         description: z.string().optional(),
         image: z.string().optional(),
         inventoryBehaviour: z.enum(INVENTORY_BEHAVIOURS).default("fixed_pack"),
+        family: z.enum(PRODUCT_TYPE_FAMILIES).optional(),
         displayOrder: z.number().default(0),
       }),
     )
@@ -335,6 +337,8 @@ export const adminProductTypeRouter = {
           description: input.description || null,
           image: input.image || null,
           inventoryBehaviour: input.inventoryBehaviour,
+          family:
+            input.family ?? buildProductTypeFulfillmentProfile(input).family,
           displayOrder: input.displayOrder,
           skuCode,
         })
@@ -364,6 +368,7 @@ export const adminProductTypeRouter = {
         description: z.string().optional(),
         image: z.string().optional(),
         inventoryBehaviour: z.enum(INVENTORY_BEHAVIOURS).default("fixed_pack"),
+        family: z.enum(PRODUCT_TYPE_FAMILIES),
         displayOrder: z.number().optional(),
       }),
     )
@@ -378,6 +383,7 @@ export const adminProductTypeRouter = {
           description: data.description || null,
           image: data.image || null,
           inventoryBehaviour: data.inventoryBehaviour,
+          family: data.family,
           displayOrder: data.displayOrder,
         })
         .where(eq(productType.id, id))

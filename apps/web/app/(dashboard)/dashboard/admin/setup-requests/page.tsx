@@ -26,7 +26,6 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -333,19 +332,8 @@ function payloadSummary(
     { label: "Slug", value: payload.slug },
     { label: "Image", value: payload.image || null, fieldType: "image" },
     { label: "Description", value: payload.description || "None" },
-    {
-      label: "Supports Pack",
-      value: payload.supportsPack === false ? "No" : "Yes",
-      fieldType: "boolean",
-    },
-    {
-      label: "Supports Loose",
-      value: payload.supportsLoose ? "Yes" : "No",
-      fieldType: "boolean",
-    },
   ];
 }
-
 
 function exportRequests(
   requests: CatalogApprovalRequest[],
@@ -1502,26 +1490,6 @@ function PayloadEditor({
           value={payload.description || ""}
           onChange={(event) => update("description", event.target.value)}
         />
-      </div>
-      <div className="flex flex-wrap gap-5">
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={payload.supportsPack ?? true}
-            onCheckedChange={(checked) =>
-              update("supportsPack", checked === true)
-            }
-          />
-          Supports pack
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={payload.supportsLoose ?? false}
-            onCheckedChange={(checked) =>
-              update("supportsLoose", checked === true)
-            }
-          />
-          Supports loose
-        </label>
       </div>
     </div>
   );

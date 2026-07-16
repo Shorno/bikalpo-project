@@ -218,6 +218,55 @@
       "when": 1784800000000,
       "tag": "0031_strict_stock_semantics",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784900000000,
+      "tag": "0032_drop_core_product_variant_support_flags",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785000000000,
+      "tag": "0033_lpg_cylinder_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785100000000,
+      "tag": "0034_lpg_invoice_movement_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0035_b2b_inventory_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785300000000,
+      "tag": "0036_repair_shop_inventory_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1785400000000,
+      "tag": "0037_global_catalog_variant_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1785500000000,
+      "tag": "0038_canonical_inventory_guards",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
+import { resolveVariantMovementSemantics } from "@bikalpo-project/db/variant-definition";
 import {
     stockAdjustment,
     stockAdjustmentItem,
@@ -18,7 +19,7 @@ import {
     product,
     brand,
 } from "@bikalpo-project/db/schema";
-import { and, eq, sql, desc, ilike, or, type SQL } from "drizzle-orm";
+import { and, eq, sql, desc, ilike, inArray, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { ORPCError } from "@orpc/server";
 import { warehouseProcedure } from "../index";
@@ -244,6 +245,49 @@ export const stockAdjustmentRouter = {
             // Fetch current inventory quantities for all variants
             const variantIds = normalizedItems.map((i) => i.variantId);
 
+            const variantRows = await db.query.productVariant.findMany({
+                where: inArray(productVariant.id, variantIds),
+                columns: { id: true },
+                with: {
+                    sourceVariantOption: true,
+                    product: {
+                        columns: { id: true },
+                        with: {
+                            category: {
+                                columns: { id: true },
+                                with: { type: { columns: { family: true } } },
+                            },
+                        },
+                    },
+                },
+            });
+            const movementByVariant = new Map(
+                variantRows
+                    .filter((row) => row.sourceVariantOption)
+                    .map((row) => {
+                        const movement = resolveVariantMovementSemantics(
+                            row.sourceVariantOption!,
+                            row.product?.category?.type?.family ?? "generic",
+                        );
+                        return [row.id, movement] as const;
+                    }),
+            );
+
+            if (variantRows.length !== new Set(variantIds).size) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "One or more selected variants no longer exist",
+                });
+            }
+
+            for (const item of normalizedItems) {
+                const movement = movementByVariant.get(item.variantId);
+                if (movement?.inventoryUnit === "cylinder" && !Number.isInteger(item.adjustQty)) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Variant ${item.variantId}: LPG cylinder adjustments must use whole cylinders`,
+                    });
+                }
+            }
+
             const inventoryRows = await db
                 .select({
                     variantId: inventory.variantId,
@@ -288,6 +332,8 @@ export const stockAdjustmentRouter = {
                     currentQty: String(currentQty),
                     adjustQty: String(item.adjustQty),
                     afterQty: String(currentQty + item.adjustQty),
+                    quantityUnit:
+                        movementByVariant.get(item.variantId)?.inventoryUnit ?? null,
                     note: item.note || null,
                 };
             });
@@ -327,7 +373,7 @@ export const stockAdjustmentRouter = {
                 // 3. If submitted, apply to inventory immediately
                 if (input.status === "submitted") {
                     for (const item of normalizedItems) {
-                        await tx
+                        const updated = await tx
                             .update(inventory)
                             .set({
                                 availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${item.adjustQty}`,
@@ -337,8 +383,15 @@ export const stockAdjustmentRouter = {
                                     eq(inventory.ownerType, "warehouse"),
                                     eq(inventory.ownerId, warehouseId),
                                     eq(inventory.variantId, item.variantId),
+                                    sql`CAST(${inventory.availableQty} AS numeric) + ${item.adjustQty} >= 0`,
                                 ),
-                            );
+                            )
+                            .returning({ id: inventory.id });
+                        if (updated.length === 0) {
+                            throw new ORPCError("BAD_REQUEST", {
+                                message: `Variant ${item.variantId}: inventory changed or the adjustment would make stock negative`,
+                            });
+                        }
                     }
                 }
 
@@ -404,6 +457,17 @@ export const stockAdjustmentRouter = {
                 ),
             }));
 
+            for (const item of normalizedItems) {
+                if (
+                    item.quantityUnit === "cylinder" &&
+                    !Number.isInteger(item.normalizedAdjustQty)
+                ) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `Variant ${item.variantId}: LPG cylinder adjustments must use whole cylinders`,
+                    });
+                }
+            }
+
             // Re-validate: fetch current inventory and check no negative stock
             for (const item of normalizedItems) {
                 const [invRow] = await db
@@ -429,7 +493,7 @@ export const stockAdjustmentRouter = {
             // Apply in transaction
             await db.transaction(async (tx) => {
                 // Update status
-                await tx
+                const statusUpdate = await tx
                     .update(stockAdjustment)
                     .set({
                         status: "submitted",
@@ -440,12 +504,23 @@ export const stockAdjustmentRouter = {
                             ),
                         ),
                     })
-                    .where(eq(stockAdjustment.id, input.id));
+                    .where(
+                        and(
+                            eq(stockAdjustment.id, input.id),
+                            eq(stockAdjustment.status, "draft"),
+                        ),
+                    )
+                    .returning({ id: stockAdjustment.id });
+                if (statusUpdate.length === 0) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Adjustment was already submitted by another request",
+                    });
+                }
 
                 // Apply each item to inventory
                 for (const item of normalizedItems) {
                     const adjustQty = item.normalizedAdjustQty;
-                    await tx
+                    const updated = await tx
                         .update(inventory)
                         .set({
                             availableQty: sql`CAST(${inventory.availableQty} AS numeric) + ${adjustQty}`,
@@ -455,8 +530,15 @@ export const stockAdjustmentRouter = {
                                 eq(inventory.ownerType, "warehouse"),
                                 eq(inventory.ownerId, warehouseId),
                                 eq(inventory.variantId, item.variantId),
+                                sql`CAST(${inventory.availableQty} AS numeric) + ${adjustQty} >= 0`,
                             ),
-                        );
+                        )
+                        .returning({ id: inventory.id });
+                    if (updated.length === 0) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: `Variant ${item.variantId}: inventory changed or the adjustment would make stock negative`,
+                        });
+                    }
                 }
 
                 // Update currentQty/afterQty snapshots
@@ -534,6 +616,8 @@ export const stockAdjustmentRouter = {
                     productImage: product.image,
                     brandName: brand.name,
                     availableQty: inventory.availableQty,
+                    packType: productVariant.packType,
+                    orderUnit: productVariant.orderUnit,
                 })
                 .from(inventory)
                 .innerJoin(
@@ -560,6 +644,10 @@ export const stockAdjustmentRouter = {
                     productImage: r.productImage,
                     brandName: r.brandName,
                     availableQty: parseFloat(r.availableQty || "0"),
+                    quantityUnit:
+                        r.packType === "cylinder" || r.orderUnit === "cylinder"
+                            ? "cylinder"
+                            : r.orderUnit || r.packType || "unit",
                 })),
             };
         }),

@@ -1,6 +1,7 @@
 "use client";
 
-import { Eye, Package, ShoppingCart, Minus, Plus } from "lucide-react";
+import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
+import { Eye, Minus, Package, Plus, ShoppingCart } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,8 @@ export interface WarehouseProductVariantOption {
   weightKg?: number;
   innerPackSizeKg?: number;
   packType?: string;
+  fulfillmentMode?: FulfillmentMode;
+  targetVariantId?: number | null;
 }
 
 export interface WarehouseProduct {
@@ -43,7 +46,7 @@ interface WarehouseProductCardProps {
   product: WarehouseProduct;
   onViewDetails?: (product: WarehouseProduct) => void;
   onBuyNow?: (product: WarehouseProduct) => void;
-  mode?: "default" | "w2w" | "view-only";
+  mode?: "default" | "retailer" | "w2w" | "view-only";
   cart?: any[];
   onAddToCart?: (product: WarehouseProduct) => void;
   onUpdateQuantity?: (variantId: number, delta: number) => void;
@@ -127,7 +130,9 @@ export function WarehouseProductCard({
     : product;
 
   const inCart = cart?.find(
-    (i) => i.variantId === (displayProduct.selectedVariant?.variantId || displayProduct.id)
+    (i) =>
+      i.variantId ===
+      (displayProduct.selectedVariant?.variantId || displayProduct.id),
   );
 
   return (
@@ -251,7 +256,7 @@ export function WarehouseProductCard({
                 Details
               </Button>
             </div>
-          ) : mode === "w2w" ? (
+          ) : mode === "w2w" || mode === "retailer" ? (
             <div className="flex items-center gap-2">
               {inCart ? (
                 <div className="flex flex-1 items-center justify-between border border-zinc-200 rounded-lg h-9 bg-white px-1">
@@ -262,7 +267,11 @@ export function WarehouseProductCard({
                     className="h-7 w-7 rounded-md"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onUpdateQuantity?.(displayProduct.selectedVariant?.variantId || displayProduct.id, -1);
+                      onUpdateQuantity?.(
+                        displayProduct.selectedVariant?.variantId ||
+                          displayProduct.id,
+                        -1,
+                      );
                     }}
                   >
                     <Minus className="h-3 w-3" />
@@ -277,7 +286,11 @@ export function WarehouseProductCard({
                     className="h-7 w-7 rounded-md"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onUpdateQuantity?.(displayProduct.selectedVariant?.variantId || displayProduct.id, 1);
+                      onUpdateQuantity?.(
+                        displayProduct.selectedVariant?.variantId ||
+                          displayProduct.id,
+                        1,
+                      );
                     }}
                   >
                     <Plus className="h-3 w-3" />
@@ -286,7 +299,11 @@ export function WarehouseProductCard({
               ) : (
                 <Button
                   size="sm"
-                  className="flex-1 h-9 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 rounded-lg transition-colors"
+                  className={`flex-1 h-9 text-xs font-medium text-white gap-1.5 rounded-lg transition-colors ${
+                    mode === "retailer"
+                      ? "bg-blue-600 hover:bg-blue-700"
+                      : "bg-emerald-600 hover:bg-emerald-700"
+                  }`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onAddToCart?.(displayProduct);

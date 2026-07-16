@@ -1,4 +1,3 @@
-import type { ProductWithRelations } from "@bikalpo-project/db/schema";
 import { Package } from "lucide-react";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { ProductPagination } from "@/components/features/products/product-pagination";
@@ -6,7 +5,7 @@ import { PublicProductsSort } from "@/components/features/products/public-produc
 import {
   getActiveBrands,
   getActiveCategories,
-  getProductsWithQuery,
+  getReferenceProductsWithQuery,
   getSubcategoriesByCategory,
 } from "@/lib/public-data";
 
@@ -21,12 +20,14 @@ interface PublicProductsGridProps {
     page?: string;
     limit?: string;
   };
+  previewMode?: boolean;
 }
 
 export async function PublicProductsGrid({
   searchParams,
+  previewMode = false,
 }: PublicProductsGridProps) {
-  const { products, pagination } = await getProductsWithQuery(
+  const { products, pagination } = await getReferenceProductsWithQuery(
     searchParams,
     60,
   );
@@ -46,21 +47,20 @@ export async function PublicProductsGrid({
   );
 
   return (
-    <div className="space-y-5">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-gray-600">
-            <span className="font-semibold text-gray-900">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-semibold tabular-nums text-foreground">
               {pagination.totalCount}
             </span>{" "}
             {pagination.totalCount === 1 ? "product" : "products"}
             {hasFilters && " found"}
           </p>
           {searchParams.search && (
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-muted-foreground">
               for "
-              <span className="font-medium text-gray-700">
+              <span className="font-medium text-foreground">
                 {searchParams.search}
               </span>
               "
@@ -75,32 +75,28 @@ export async function PublicProductsGrid({
         />
       </div>
 
-      {/* Products Grid */}
       {products.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 px-4 bg-white rounded-xl border border-dashed border-gray-200">
-          <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-            <Package className="w-8 h-8 text-gray-400" />
-          </div>
-          <p className="text-gray-900 font-medium mb-1">No products found</p>
-          <p className="text-gray-500 text-sm text-center max-w-xs">
-            Try adjusting your search or filter criteria to find what you're
-            looking for
+        <div className="flex min-h-72 flex-col items-center justify-center border border-dashed border-border bg-background px-6 text-center">
+          <Package className="mb-4 size-8 text-muted-foreground" />
+          <h2 className="font-semibold text-foreground">No products found</h2>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+            Adjust the search or filters to view other catalog products.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5 xl:grid-cols-3">
           {products.map((product) => (
             <ConsumerProductCard
               key={product.id}
               product={product as any}
+              previewMode={previewMode}
             />
           ))}
         </div>
       )}
 
-      {/* Pagination */}
       {pagination.totalPages > 1 && (
-        <div className="pt-4">
+        <div className="border-t border-border pt-6">
           <ProductPagination pagination={pagination} />
         </div>
       )}

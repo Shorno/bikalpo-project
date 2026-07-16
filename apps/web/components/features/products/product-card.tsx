@@ -8,13 +8,20 @@ import { useState } from "react";
 import { RequestFormModal } from "@/components/features/item-request/request-form-modal";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/hooks/use-orpc-cart";
+import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { formatPrice } from "@/utils/currency";
 
 interface ProductCardProps {
   product: ProductWithRelations;
+  previewMode?: boolean;
+  readOnly?: boolean;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({
+  product,
+  previewMode = false,
+  readOnly = false,
+}: ProductCardProps) {
   const { addItem } = useCart();
   const [isAdding, setIsAdding] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -23,6 +30,8 @@ export function ProductCard({ product }: ProductCardProps) {
   const isOutOfStock = !product.inStock;
 
   const handleAddToCart = async () => {
+    if (readOnly) return;
+
     setIsAdding(true);
     try {
       await addItem(Number(product.id), 1);
@@ -31,7 +40,10 @@ export function ProductCard({ product }: ProductCardProps) {
     }
   };
 
-  const productHref = `/products/${product.category.slug}/${product.slug}`;
+  const productHref = withCustomerStorefrontPreview(
+    `/products/${product.category.slug}/${product.slug}`,
+    previewMode,
+  );
   const hasValidImage =
     product.image && !imageError && product.image.trim() !== "";
 
@@ -81,7 +93,17 @@ export function ProductCard({ product }: ProductCardProps) {
 
         {/* Actions */}
         <div className="flex gap-1.5">
-          {isOutOfStock ? (
+          {readOnly ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 h-8 text-xs font-medium"
+              disabled
+            >
+              <Eye className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Preview only</span>
+            </Button>
+          ) : isOutOfStock ? (
             <>
               <Button
                 variant="outline"

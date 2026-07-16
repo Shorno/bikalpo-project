@@ -2,7 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeft,
+  CircleX,
   Package,
   PackagePlus,
   Pencil,
@@ -240,6 +242,10 @@ function getGroupMeasure(group?: StockVariantGroup | null) {
   const weightKg = parseFloat(group.weightKg || "0");
   const piecesPerUnit = Number(group.piecesPerUnit || 0);
 
+  if (group.packType === "cylinder" || normalizedUnit === "CYLINDER") {
+    return { quantityPerPack: 1, quantityUnit: "CYLINDER" };
+  }
+
   if (group.packType === "loose") {
     if (PIECE_UNITS.has(normalizedUnit)) {
       return { quantityPerPack: 1, quantityUnit: "PCS" };
@@ -285,15 +291,404 @@ function SectionHeader({ emoji, title }: { emoji: string; title: string }) {
   );
 }
 
+type StructuredStockStatus = "in_stock" | "low_stock" | "out_of_stock";
+
+type StructuredStockDetailData = {
+  identity: {
+    kind: "core" | "product";
+    id: number;
+    name: string;
+    image: string | null;
+    coreSku: string | null;
+    productTypeName: string | null;
+    categoryName: string | null;
+    productCount: number;
+    variantCount: number;
+  };
+  quantityGroups: Array<{
+    family: string;
+    familyLabel: string;
+    inventoryUnit: string;
+    productCount: number;
+    variantCount: number;
+    available: number;
+    reserved: number;
+    onHand: number;
+    referenceMeasurement?: {
+      unit: "kg" | "liter";
+      available: number;
+      reserved: number;
+      onHand: number;
+    };
+  }>;
+  stockStatus: {
+    inStock: number;
+    lowStock: number;
+    outOfStock: number;
+    reserved: number;
+    missingThreshold: number;
+  };
+  variants: Array<{
+    productId: number;
+    variantId: number;
+    productName: string;
+    brandName: string | null;
+    sku: string | null;
+    canonicalLabel: string | null;
+    displayAlias: string | null;
+    family: string | null;
+    movementKind: "direct" | "loose" | "container" | null;
+    inventoryUnit: string | null;
+    available: number;
+    reserved: number;
+    onHand: number;
+    referenceMeasurement?: {
+      unit: "kg" | "liter";
+      perInventoryUnit: number;
+      available: number;
+      reserved: number;
+      onHand: number;
+    };
+    warehouseSellingPrice: number | null;
+    sellingStockValue: number | null;
+    reorderLevel: number | null;
+    thresholdSource: "variant" | "product" | null;
+    thresholdConfigured: boolean;
+    status: StructuredStockStatus;
+    configurationState: "valid" | "needs_admin_variant_setup";
+  }>;
+  configurationIssueCount: number;
+};
+
+function formatStructuredNumber(value: number) {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function formatStructuredUnit(unit: string, quantity: number) {
+  const normalized = unit.trim();
+  const lower = normalized.toLowerCase();
+  if (["kg", "g", "ml", "l", "liter", "litre"].includes(lower)) {
+    return normalized;
+  }
+  if (quantity === 1 || normalized.endsWith("s")) return normalized;
+  if (normalized.endsWith("x")) return normalized + "es";
+  return normalized + "s";
+}
+
+function formatStructuredQuantity(value: number, unit: string) {
+  return (
+    formatStructuredNumber(value) + " " + formatStructuredUnit(unit, value)
+  );
+}
+
+function StructuredStatusBadge({ status }: { status: StructuredStockStatus }) {
+  const styles = {
+    in_stock: {
+      label: "In stock",
+      className: "text-emerald-700",
+      dotClassName: "bg-emerald-500",
+    },
+    low_stock: {
+      label: "Low stock",
+      className: "text-amber-700",
+      dotClassName: "bg-amber-500",
+    },
+    out_of_stock: {
+      label: "Out of stock",
+      className: "text-red-600",
+      dotClassName: "bg-red-500",
+    },
+  } as const;
+  const config = styles[status];
+
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1.5 text-xs font-semibold " +
+        config.className
+      }
+    >
+      <span
+        aria-hidden="true"
+        className={"h-2 w-2 rounded-full " + config.dotClassName}
+      />
+      {config.label}
+    </span>
+  );
+}
+
+function StructuredStockDetailSkeleton() {
+  return (
+    <div className="max-w-6xl space-y-5" aria-busy="true">
+      <div className="h-5 w-32 animate-pulse rounded bg-slate-200" />
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex gap-4">
+          <div className="h-14 w-14 animate-pulse rounded-lg bg-slate-100" />
+          <div className="flex-1 space-y-3">
+            <div className="h-6 w-64 max-w-full animate-pulse rounded bg-slate-200" />
+            <div className="h-4 w-44 animate-pulse rounded bg-slate-100" />
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-3">
+          {[0, 1, 2].map((item) => (
+            <div
+              key={item}
+              className="h-12 animate-pulse rounded bg-slate-100"
+            />
+          ))}
+        </div>
+      </div>
+      <div className="h-28 animate-pulse rounded-xl border border-slate-200 bg-slate-50" />
+      <div className="h-80 animate-pulse rounded-xl border border-slate-200 bg-slate-50" />
+    </div>
+  );
+}
+
+function StructuredStockDetailError({
+  invalidRoute = false,
+}: {
+  invalidRoute?: boolean;
+}) {
+  return (
+    <div className="max-w-6xl space-y-5">
+      <Link
+        href="/warehouse/dashboard/stock/list"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
+      >
+        <ArrowLeft aria-hidden="true" size={15} />
+        Back to Stock List
+      </Link>
+      <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-10 text-center">
+        <CircleX
+          aria-hidden="true"
+          className="mx-auto text-red-500"
+          size={30}
+        />
+        <h1 className="mt-3 text-base font-bold text-red-950">
+          {invalidRoute
+            ? "Invalid stock detail link"
+            : "Stock detail unavailable"}
+        </h1>
+        <p className="mx-auto mt-1 max-w-md text-sm text-red-800">
+          {invalidRoute
+            ? "Open this product again from the warehouse stock list."
+            : "The product may be inactive, unavailable to this warehouse, or the request may have failed."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function StructuredStockDetailView({
+  detail,
+}: {
+  detail: StructuredStockDetailData;
+}) {
+  const primaryGroup =
+    detail.quantityGroups.length === 1 ? detail.quantityGroups[0] : null;
+  const stockBreakdown = detail.quantityGroups
+    .map((group) =>
+      formatStructuredQuantity(group.available, group.inventoryUnit),
+    )
+    .join(" + ");
+  const overallStatus: StructuredStockStatus =
+    detail.stockStatus.inStock > 0
+      ? "in_stock"
+      : detail.stockStatus.lowStock > 0
+        ? "low_stock"
+        : "out_of_stock";
+
+  return (
+    <div className="max-w-4xl space-y-6">
+      <Link
+        href="/warehouse/dashboard/stock/list"
+        className="inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-900"
+      >
+        <ArrowLeft aria-hidden="true" size={14} />
+        Back to Stock List
+      </Link>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+            {detail.identity.image ? (
+              <Image
+                src={detail.identity.image}
+                alt={detail.identity.name}
+                width={48}
+                height={48}
+                className="h-12 w-12 object-cover"
+                unoptimized={detail.identity.image.startsWith("http")}
+              />
+            ) : (
+              <Package aria-hidden="true" className="text-gray-400" size={20} />
+            )}
+          </div>
+          <div className="min-w-0">
+            <h1 className="flex flex-wrap items-center gap-2 text-lg font-bold text-gray-900">
+              {detail.identity.name}
+              {detail.identity.coreSku && (
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600">
+                  Core SKU {detail.identity.coreSku}
+                </span>
+              )}
+            </h1>
+            {(detail.identity.productTypeName ||
+              detail.identity.categoryName) && (
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {detail.identity.productTypeName && (
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                    {detail.identity.productTypeName}
+                  </span>
+                )}
+                {detail.identity.categoryName &&
+                  detail.identity.categoryName !==
+                    detail.identity.productTypeName && (
+                    <span className="text-[11px] text-gray-400">
+                      {detail.identity.categoryName}
+                    </span>
+                  )}
+              </div>
+            )}
+            <p className="mt-0.5 text-xs text-gray-500">
+              Core Identity Level Stock
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-3 sm:grid-cols-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Total Stock
+            </div>
+            <div className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+              {primaryGroup
+                ? formatStructuredQuantity(
+                    primaryGroup.available,
+                    primaryGroup.inventoryUnit,
+                  )
+                : "Multiple units"}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Stock Breakdown
+            </div>
+            <div className="mt-1 text-sm font-semibold text-gray-700">
+              {stockBreakdown || "No stock"}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Status
+            </div>
+            <div className="mt-1">
+              <StructuredStatusBadge status={overallStatus} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600">
+          Variant Stock
+        </div>
+        {detail.variants.length === 0 ? (
+          <div className="rounded-lg border border-dashed bg-gray-50/50 py-6 text-center text-sm text-gray-400">
+            No variants available
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+            {detail.variants.map((variant) => (
+              <div
+                key={variant.variantId}
+                className="flex flex-col gap-3 px-5 py-3 transition-colors hover:bg-gray-50/50 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  {variant.configurationState === "valid" &&
+                  variant.canonicalLabel ? (
+                    <div className="text-sm font-medium text-gray-800">
+                      {variant.canonicalLabel}
+                      {variant.brandName && (
+                        <span className="font-normal text-gray-500">
+                          {" "}
+                          ({variant.brandName})
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700">
+                      <AlertTriangle aria-hidden="true" size={14} />
+                      Admin variant setup required
+                    </div>
+                  )}
+                  {variant.displayAlias &&
+                    variant.displayAlias !== variant.canonicalLabel && (
+                      <div className="mt-0.5 text-xs text-gray-400">
+                        {variant.displayAlias}
+                      </div>
+                    )}
+                </div>
+                <div className="flex shrink-0 items-center justify-between gap-6 sm:justify-end">
+                  <div className="min-w-[150px] text-right text-sm font-bold tabular-nums text-gray-900">
+                    {variant.inventoryUnit
+                      ? formatStructuredQuantity(
+                          variant.available,
+                          variant.inventoryUnit,
+                        )
+                      : formatStructuredNumber(variant.available)}
+                  </div>
+                  <div className="min-w-[100px]">
+                    <StructuredStatusBadge status={variant.status} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 // ─── Main Detail Page ──────────────────────────────────────────
 
 export default function StockDetailPage() {
   const params = useParams();
   const rawId = params.id as string;
 
-  // Parse the ID: "core-123" or "product-456"
-  const isCoreProduct = rawId.startsWith("core-");
-  const numericId = parseInt(rawId.replace(/^(core-|product-)/, ""), 10);
+  const target = useMemo(() => {
+    const match = /^(core|product)-([1-9]\d*)$/.exec(rawId);
+    if (!match) return null;
+    return {
+      kind: match[1] as "core" | "product",
+      id: Number(match[2]),
+    };
+  }, [rawId]);
+  const isCoreProduct = target?.kind === "core";
+  const numericId = target?.id ?? 0;
+
+  const {
+    data: structuredDetail,
+    isLoading: structuredLoading,
+    isError: structuredError,
+  } = useQuery<StructuredStockDetailData>({
+    queryKey: ["stockOverview", "structuredDetail", "warehouse", target],
+    queryFn: async () => {
+      if (!target) throw new Error("Invalid stock detail route");
+      return orpc.stockOverview.getStructuredStockDetail.call({
+        ownerType: "warehouse",
+        target,
+      });
+    },
+    enabled: Boolean(target),
+  });
+  const needsLegacyOperationalDetail =
+    structuredDetail?.variants.some(
+      (variant) =>
+        variant.movementKind === "loose" ||
+        variant.movementKind === "container",
+    ) ?? false;
 
   // For core product: need to fetch all products under this core identity
   // For single product: just fetch that product's breakdown
@@ -318,6 +713,7 @@ export default function StockDetailPage() {
         ) ?? null
       );
     },
+    enabled: Boolean(structuredDetail && needsLegacyOperationalDetail),
   });
 
   const item = listData;
@@ -429,6 +825,22 @@ export default function StockDetailPage() {
     string | null
   >(null);
 
+  if (!target) {
+    return <StructuredStockDetailError invalidRoute />;
+  }
+
+  if (structuredLoading) {
+    return <StructuredStockDetailSkeleton />;
+  }
+
+  if (structuredError || !structuredDetail) {
+    return <StructuredStockDetailError />;
+  }
+
+  if (!needsLegacyOperationalDetail) {
+    return <StructuredStockDetailView detail={structuredDetail} />;
+  }
+
   const isLoading = listLoading || breakdownLoading;
 
   if (isLoading) {
@@ -538,7 +950,7 @@ export default function StockDetailPage() {
     const useFashionOpenStockFallback =
       isFashion && !isLoose && !hasPhysicalCartons;
     const looseQty = useFashionOpenStockFallback
-      ? item.totalQty ?? item.availableQty ?? 0
+      ? (item.totalQty ?? item.availableQty ?? 0)
       : (item.availableForCartonQty ?? item.availableQty ?? 0);
     const inCartonQty = summary
       ? summaryInCartonQty
@@ -729,7 +1141,7 @@ export default function StockDetailPage() {
       {/* ══════════════════════════════════════════════════════════════
           🧾 CORE IDENTITY SUMMARY
           ══════════════════════════════════════════════════════════════ */}
-      <div className="bg-gradient-to-r from-slate-50 to-white rounded-xl border border-slate-200 p-5">
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex items-start gap-4 mb-4">
           <div className="shrink-0 w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden">
             {item.coreProductImage ? (
@@ -746,11 +1158,11 @@ export default function StockDetailPage() {
             )}
           </div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900">
-              🧾 {item.coreProductName}
+            <h1 className="flex flex-wrap items-center gap-2 text-lg font-bold text-gray-900">
+              {item.coreProductName}
               {item.coreProductSku && (
-                <span className="text-sm font-mono text-gray-400 ml-2">
-                  ({item.coreProductSku})
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600">
+                  Core SKU {item.coreProductSku}
                 </span>
               )}
             </h1>

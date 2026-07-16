@@ -84,11 +84,17 @@ export async function generateInvoiceFromOrder(orderId: number) {
                 ({ item, quantity, unitPrice, lineTotal }) =>
                     ({
                         invoiceId: newInvoice.id,
+                        orderItemId: item.id,
                         productId: item.productId,
+                        variantId: item.variantId,
                         productName: item.productName,
                         productSku: item.productSize,
                         productImage: item.productImage,
                         quantity,
+                        quantityUnit: item.quantityUnit,
+                        inventoryUnit: item.inventoryUnit,
+                        conversionFactor: item.conversionFactor,
+                        inventoryQty: item.inventoryQty,
                         unitPrice,
                         lineTotal,
                     }) satisfies NewInvoiceItem,

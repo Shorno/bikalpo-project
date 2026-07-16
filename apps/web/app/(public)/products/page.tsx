@@ -3,7 +3,9 @@ import { Suspense } from "react";
 import { ProductSearch } from "@/components/features/products/product-search";
 import { PublicProductsFilter } from "@/components/features/products/public-products-filter";
 import { PublicProductsGrid } from "@/components/features/products/public-products-grid";
+import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 
 interface ProductsPageProps {
   searchParams: Promise<{
@@ -11,61 +13,70 @@ interface ProductsPageProps {
     subcategory?: string;
     brand?: string;
     sort?: string;
-
     search?: string;
     page?: string;
     limit?: string;
+    preview?: string;
   }>;
 }
 
 export const metadata: Metadata = {
   title: "Products",
-  description: "Browse our premium selection of products",
+  description: "Browse active products available through Bikalpo.",
 };
 
 export default async function ProductsPage({
   searchParams,
 }: ProductsPageProps) {
   const params = await searchParams;
+  const previewMode = isCustomerStorefrontPreview(params.preview);
+  const { preview: _preview, ...catalogParams } = params;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50/50 to-white">
-      <div className="container mx-auto px-4 py-6 md:py-10">
-          {/* Hero Header */}
-          <div className="mb-8 md:mb-10">
+    <div className="min-h-screen bg-[oklch(0.985_0.004_260)]">
+      {previewMode && <CustomerPreviewBanner />}
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 md:py-12 lg:px-8">
+        <header className="border-b border-border pb-8">
+          <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
+            Public catalog
+          </p>
+          <div className="mt-3 flex flex-col justify-between gap-6 md:flex-row md:items-end">
             <div className="max-w-2xl">
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
-                All Products
+              <h1 className="text-3xl font-semibold tracking-[-0.03em] text-foreground md:text-4xl">
+                Products
               </h1>
-              <p className="text-gray-500 text-sm md:text-base">
-                Discover our curated collection of premium products
+              <p className="mt-3 text-sm leading-6 text-muted-foreground md:text-base">
+                Search the active catalog and narrow results by category or
+                brand.
               </p>
             </div>
 
-            {/* Search Bar */}
-            <div className="mt-6 max-w-xl">
-              <Suspense fallback={<Skeleton className="h-10 w-full" />}>
+            <div className="w-full md:max-w-md">
+              <Suspense
+                fallback={<Skeleton className="h-10 w-full rounded-md" />}
+              >
                 <ProductSearch />
               </Suspense>
             </div>
           </div>
+        </header>
 
-          {/* Main Content */}
-          <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-            {/* Sidebar Filter - Desktop Only */}
-            <aside className="hidden lg:block w-full lg:w-64 shrink-0">
-              <Suspense fallback={<FilterSkeleton />}>
-                <PublicProductsFilter />
-              </Suspense>
-            </aside>
+        <div className="mt-8 flex flex-col gap-7 lg:flex-row lg:gap-8">
+          <aside className="hidden w-full shrink-0 lg:block lg:w-64">
+            <Suspense fallback={<FilterSkeleton />}>
+              <PublicProductsFilter categorySlug={params.category} />
+            </Suspense>
+          </aside>
 
-            {/* Products Grid */}
-            <main className="flex-1 min-w-0">
-              <Suspense fallback={<ProductsGridSkeleton />}>
-                <PublicProductsGrid searchParams={params} />
-              </Suspense>
-            </main>
-          </div>
+          <main className="min-w-0 flex-1">
+            <Suspense fallback={<ProductsGridSkeleton />}>
+              <PublicProductsGrid
+                searchParams={catalogParams}
+                previewMode={previewMode}
+              />
+            </Suspense>
+          </main>
+        </div>
       </div>
     </div>
   );
@@ -73,7 +84,7 @@ export default async function ProductsPage({
 
 function FilterSkeleton() {
   return (
-    <div className="bg-white rounded-lg border p-4 space-y-4">
+    <div className="space-y-4 rounded-md border bg-background p-4">
       <Skeleton className="h-6 w-24" />
       <div className="space-y-2">
         <Skeleton className="h-4 w-full" />
@@ -96,11 +107,14 @@ function ProductsGridSkeleton() {
         <Skeleton className="h-5 w-32" />
         <Skeleton className="h-9 w-36" />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 9 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-lg border overflow-hidden">
-            <Skeleton className="aspect-square w-full" />
-            <div className="p-3 space-y-2">
+          <div
+            key={i}
+            className="overflow-hidden rounded-md border bg-background"
+          >
+            <Skeleton className="aspect-[4/3] w-full" />
+            <div className="space-y-2 p-3">
               <Skeleton className="h-4 w-3/4" />
               <Skeleton className="h-3 w-1/2" />
               <Skeleton className="h-8 w-full" />
