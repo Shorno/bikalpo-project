@@ -1,30 +1,47 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  Eye,
-  MapPin,
-  Package,
-  ShoppingBag,
-  ShoppingCart,
-  Store,
-} from "lucide-react";
-import Image from "next/image";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { AlertCircle, Search, X } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { use } from "react";
-import { DeliveryAreaInfo } from "@/components/shared/seller-location-info";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { use, useCallback, useEffect, useRef, useState } from "react";
+import { ProductPagination } from "@/components/features/products/product-pagination";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAddToCart } from "@/hooks/use-customer-api";
 import {
-  isCustomerStorefrontPreview,
-  withCustomerStorefrontPreview,
-} from "@/lib/customer-storefront-preview";
+  ActiveFilterSummary,
+  StorefrontCategorySidebar,
+  StorefrontEmptyState,
+  StorefrontMobileFilters,
+  type StorefrontProduct,
+  StorefrontProductCard,
+  StorefrontSkeleton,
+  StoreHeader,
+} from "@/components/storefront/retailer-storefront";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useAddToCart } from "@/hooks/use-customer-api";
+import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { orpc } from "@/utils/orpc";
+
+const sortValues = [
+  "recommended",
+  "newest",
+  "price_asc",
+  "price_desc",
+  "name_asc",
+] as const;
+type StorefrontSort = (typeof sortValues)[number];
+
+function getSafeSort(value: string | null): StorefrontSort {
+  return sortValues.includes(value as StorefrontSort)
+    ? (value as StorefrontSort)
+    : "recommended";
+}
+
+function getSafePage(value: string | null) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
 
 export default function ShopStorePage({
   params,
@@ -32,254 +49,318 @@ export default function ShopStorePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
+  const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const previewMode = isCustomerStorefrontPreview(searchParams.get("preview"));
-  const { data, isLoading, isError } = useQuery(
-    orpc.customer.getShopBySlug.queryOptions({
-      input: { slug },
-      enabled: !!slug,
-    }),
-  );
+  const query = (searchParams.get("q") ?? "").trim().slice(0, 150);
+  const category = searchParams.get("category")?.trim() ?? "";
+  const subcategory = searchParams.get("subcategory")?.trim() ?? "";
+  const sort = getSafeSort(searchParams.get("sort"));
+  const page = getSafePage(searchParams.get("page"));
+  const [searchInput, setSearchInput] = useState(query);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addToCart = useAddToCart();
 
-  const shop = data?.shop;
-  const products = data?.products ?? [];
+  const updateUrl = useCallback(
+    (
+      updates: Record<string, string | number | null>,
+      options: { replace?: boolean } = {},
+    ) => {
+      const next = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (
+          value === null ||
+          value === "" ||
+          (key === "page" && value === 1) ||
+          (key === "sort" && value === "recommended")
+        ) {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      }
 
-  if (isLoading) {
-    return <StoreSkeleton />;
-  }
+      const href = next.size > 0 ? `${pathname}?${next.toString()}` : pathname;
+      if (options.replace) router.replace(href, { scroll: false });
+      else router.push(href, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
-  if (isError || !shop) {
-    return (
-      <div className="container mx-auto px-4 py-16 text-center">
-        <AlertCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
-        <p className="text-gray-500 font-medium text-lg">Shop not found</p>
-        <Link
-          href="/stores"
-          className="text-sm text-emerald-600 hover:underline mt-2 inline-block"
-        >
-          ← Browse all shops
-        </Link>
-      </div>
-    );
-  }
+  useEffect(() => {
+    setSearchInput(query);
+  }, [query]);
 
-  const handleAddToCart = (
-    productId: number,
-    variantId: number | undefined,
-  ) => {
-    if (previewMode) return;
+  useEffect(
+    () => () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    },
+    [],
+  );
+
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
+    ...orpc.customer.getShopBySlug.queryOptions({
+      input: {
+        slug,
+        search: query || undefined,
+        category: category || undefined,
+        subcategory: subcategory || undefined,
+        sort,
+        page,
+        limit: 12,
+      },
+      enabled: !!slug,
+    }),
+    placeholderData: keepPreviousData,
+  });
+
+  useEffect(() => {
+    if (
+      data?.pagination.totalPages &&
+      data.pagination.page !== page &&
+      !isFetching
+    ) {
+      updateUrl({ page: data.pagination.page }, { replace: true });
+    }
+  }, [data?.pagination, isFetching, page, updateUrl]);
+
+  const scheduleSearch = (value: string) => {
+    setSearchInput(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      updateUrl(
+        { q: value.trim().slice(0, 150) || null, page: null },
+        { replace: true },
+      );
+    }, 300);
+  };
+
+  const clearCatalogFilters = () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    setSearchInput("");
+    updateUrl({ q: null, category: null, subcategory: null, page: null });
+  };
+
+  const handleCategoryChange = (value: string) => {
+    updateUrl({
+      q: searchInput.trim() || null,
+      category: value || null,
+      subcategory: null,
+      page: null,
+    });
+  };
+
+  const handleQuickAdd = (product: StorefrontProduct) => {
+    if (previewMode || product.variantCount !== 1 || !data?.shop) return;
+    const variant = product.variants[0];
+    if (!variant) return;
 
     addToCart.mutate({
-      productId,
-      variantId,
-      shopId: shop.id,
+      productId: product.id,
+      variantId: variant.variantId,
+      shopId: data.shop.id,
       quantity: 1,
     });
   };
 
-  return (
-    <div className="min-h-screen">
-      {previewMode && <CustomerPreviewBanner />}
-      <div className="container mx-auto px-4 py-8">
-        {/* Shop Header */}
-        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-6 md:p-8 mb-8">
-          <div className="flex items-center gap-5">
-            {shop.image ? (
-              <Image
-                src={shop.image}
-                alt={shop.shopName || shop.name}
-                width={72}
-                height={72}
-                className="rounded-full object-cover border-3 border-white shadow-md"
-              />
-            ) : (
-              <div className="w-[72px] h-[72px] bg-emerald-100 rounded-full flex items-center justify-center border-3 border-white shadow-md">
-                <Store className="w-8 h-8 text-emerald-600" />
-              </div>
-            )}
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {shop.shopName || shop.name}
-              </h1>
-              <div className="flex flex-wrap items-center gap-3 mt-2">
-                <Badge variant="outline" className="capitalize">
-                  <ShoppingBag className="w-3 h-3 mr-1" />
-                  {shop.businessType || "Retail"}
-                </Badge>
-                {shop.shopAddress && (
-                  <span className="text-sm text-gray-500 flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5" />
-                    {shop.shopAddress}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
+  if (isLoading && !data) return <StorefrontSkeleton />;
 
-          {/* Delivery Area Info */}
-          <div className="mt-6 pt-4 border-t border-emerald-100">
-            <DeliveryAreaInfo
-              shopLat={(shop as any).shopLat}
-              shopLng={(shop as any).shopLng}
-              shopAddress={shop.shopAddress}
+  if (isError || !data?.shop) {
+    return (
+      <main className="container mx-auto px-4 py-20">
+        <div className="mx-auto max-w-lg rounded-lg border bg-slate-50 px-6 py-12 text-center">
+          <AlertCircle
+            className="mx-auto size-10 text-red-500"
+            aria-hidden="true"
+          />
+          <h1 className="mt-4 text-lg font-semibold text-slate-950">
+            We couldn&apos;t load this store
+          </h1>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            The store may be unavailable, or the catalog request may have
+            failed.
+          </p>
+          <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+            <Button
+              type="button"
+              className="h-11"
+              onClick={() => void refetch()}
+            >
+              Try again
+            </Button>
+            <Button asChild variant="outline" className="h-11 bg-white">
+              <Link href="/stores">Browse all stores</Link>
+            </Button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const { shop, facets, pagination, catalogProductCount } = data;
+  const products = data.products as StorefrontProduct[];
+  const selectedCategory = facets.find((facet) => facet.slug === category);
+  const selectedSubcategory = selectedCategory?.subcategories.find(
+    (facet) => facet.slug === subcategory,
+  );
+  const activeFilterCount = Number(!!category) + Number(!!subcategory);
+  const hasCatalogFilters = !!(query || category || subcategory);
+
+  return (
+    <div className="min-h-screen bg-white">
+      {previewMode && <CustomerPreviewBanner />}
+      <StoreHeader
+        shop={shop}
+        productCount={catalogProductCount}
+        previewMode={previewMode}
+      />
+
+      <main className="container mx-auto px-4 py-6 md:py-8">
+        <section aria-labelledby="store-catalog-heading" aria-busy={isFetching}>
+          <div className="mb-6 overflow-hidden rounded-lg border bg-white">
+            <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <h2
+                      id="store-catalog-heading"
+                      className="text-base font-semibold text-slate-950"
+                    >
+                      Product catalog
+                    </h2>
+                    <p
+                      className="mt-0.5 text-xs text-slate-500"
+                      aria-live="polite"
+                    >
+                      {isFetching
+                        ? "Updating results…"
+                        : `${pagination.totalCount} results`}
+                    </p>
+                  </div>
+                  <StorefrontMobileFilters
+                    facets={facets}
+                    category={category}
+                    subcategory={subcategory}
+                    activeCount={activeFilterCount}
+                    onApply={(nextCategory, nextSubcategory) =>
+                      updateUrl({
+                        q: searchInput.trim() || null,
+                        category: nextCategory || null,
+                        subcategory: nextSubcategory || null,
+                        page: null,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="store-search"
+                    type="search"
+                    value={searchInput}
+                    onChange={(event) => scheduleSearch(event.target.value)}
+                    placeholder="Search this store by product name or SKU"
+                    aria-label="Search this store"
+                    className="h-11 rounded-lg bg-white pl-10 pr-10"
+                    maxLength={150}
+                  />
+                  {searchInput && (
+                    <button
+                      type="button"
+                      onClick={() => scheduleSearch("")}
+                      className="absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      aria-label="Clear store search"
+                    >
+                      <X className="size-4" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <label className="block shrink-0 text-xs font-medium text-slate-600">
+                Sort by
+                <select
+                  value={sort}
+                  onChange={(event) =>
+                    updateUrl({
+                      sort: event.target.value,
+                      q: searchInput.trim() || null,
+                      page: null,
+                    })
+                  }
+                  className="mt-2 h-11 w-full min-w-48 rounded-lg border border-input bg-white px-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 lg:w-auto"
+                >
+                  <option value="recommended">Recommended</option>
+                  <option value="newest">Newest</option>
+                  <option value="price_asc">Price: low to high</option>
+                  <option value="price_desc">Price: high to low</option>
+                  <option value="name_asc">Name: A–Z</option>
+                </select>
+              </label>
+            </div>
+            <ActiveFilterSummary
+              query={query}
+              categoryLabel={selectedCategory?.name}
+              subcategoryLabel={selectedSubcategory?.name}
+              onClear={clearCatalogFilters}
             />
           </div>
-        </div>
 
-        {/* Products */}
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Products ({products.length})
-          </h2>
-          <Link
-            href={withCustomerStorefrontPreview("/stores", previewMode)}
-            className="text-sm text-emerald-600 hover:underline"
-          >
-            ← All shops
-          </Link>
-        </div>
+          <div className="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+            <StorefrontCategorySidebar
+              facets={facets}
+              category={category}
+              subcategory={subcategory}
+              onCategoryChange={handleCategoryChange}
+              onSubcategoryChange={(value) =>
+                updateUrl({
+                  q: searchInput.trim() || null,
+                  subcategory: value || null,
+                  page: null,
+                })
+              }
+            />
 
-        {products.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-lg border">
-            <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">
-              No products available yet
-            </p>
-            <p className="text-sm text-gray-400 mt-1">
-              This shop hasn&apos;t listed any retail products
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {products.map((product: any) => {
-              const img =
-                product.images?.[0]?.imageUrl ||
-                product.images?.[0]?.url ||
-                product.image;
-              const firstVariant = product.variants?.[0];
-              const price =
-                firstVariant?.retailPrice || firstVariant?.basePrice;
-
-              return (
-                <div
-                  key={product.id}
-                  className="bg-white rounded-xl border shadow-sm overflow-hidden transition-all hover:shadow-md"
-                >
-                  {/* Product Image — links to detail */}
-                  <Link
-                    href={withCustomerStorefrontPreview(
-                      `/products/${product.category?.slug ?? "all"}/${product.slug}`,
-                      previewMode,
-                    )}
-                    className="group block"
-                  >
-                    <div className="aspect-square bg-gray-50 relative overflow-hidden">
-                      {img ? (
-                        <Image
-                          src={img}
-                          alt={product.name}
-                          fill
-                          className="object-cover group-hover:scale-105 transition-transform"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package className="w-12 h-12 text-gray-200" />
-                        </div>
-                      )}
-                      {product.category && (
-                        <Badge className="absolute top-2 left-2 bg-white/90 text-gray-600 text-xs border-0">
-                          {product.category.name}
-                        </Badge>
-                      )}
-                    </div>
-                  </Link>
-
-                  {/* Product Info + Add to Cart */}
-                  <div className="p-4">
-                    <Link
-                      href={withCustomerStorefrontPreview(
-                        `/products/${product.category?.slug ?? "all"}/${product.slug}`,
-                        previewMode,
-                      )}
-                    >
-                      <h3 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2 hover:text-emerald-600 transition-colors">
-                        {product.name}
-                      </h3>
-                    </Link>
-
-                    <div className="flex items-end justify-between mb-3">
-                      {price ? (
-                        <p className="text-lg font-bold text-emerald-600">
-                          ৳{Number(price).toLocaleString("en-BD")}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-gray-400">Price not set</p>
-                      )}
-
-                      {product.variants?.length > 1 && (
-                        <span className="text-xs text-gray-400">
-                          {product.variants.length} variants
-                        </span>
-                      )}
-                    </div>
-
-                    {firstVariant?.unitLabel && (
-                      <p className="text-xs text-gray-400 mb-3">
-                        {firstVariant.unitLabel}
-                      </p>
-                    )}
-
-                    {/* Add to Cart Button */}
-                    <Button
-                      size="sm"
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                      disabled={previewMode || !price || addToCart.isPending}
-                      onClick={() =>
-                        handleAddToCart(product.id, firstVariant?.variantId)
-                      }
-                    >
-                      {previewMode ? (
-                        <Eye className="w-4 h-4 mr-2" />
-                      ) : (
-                        <ShoppingCart className="w-4 h-4 mr-2" />
-                      )}
-                      {previewMode ? "Preview only" : "Add to Cart"}
-                    </Button>
+            <div
+              className={
+                isFetching
+                  ? "opacity-60 transition-opacity"
+                  : "transition-opacity"
+              }
+            >
+              {products.length === 0 ? (
+                <StorefrontEmptyState
+                  filtered={catalogProductCount > 0 && hasCatalogFilters}
+                  onClear={clearCatalogFilters}
+                />
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4 min-[430px]:grid-cols-2 xl:grid-cols-3">
+                    {products.map((product) => (
+                      <StorefrontProductCard
+                        key={product.id}
+                        product={product}
+                        previewMode={previewMode}
+                        isAdding={
+                          addToCart.isPending &&
+                          addToCart.variables?.productId === product.id
+                        }
+                        onQuickAdd={handleQuickAdd}
+                      />
+                    ))}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StoreSkeleton() {
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="bg-gray-50 rounded-xl p-8 mb-8 flex items-center gap-5">
-        <Skeleton className="w-[72px] h-[72px] rounded-full" />
-        <div>
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="h-5 w-32 mt-2" />
-        </div>
-      </div>
-      <Skeleton className="h-6 w-32 mb-6" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-xl border overflow-hidden">
-            <Skeleton className="aspect-square w-full" />
-            <div className="p-4">
-              <Skeleton className="h-4 w-full mb-2" />
-              <Skeleton className="h-6 w-20 mb-3" />
-              <Skeleton className="h-8 w-full" />
+                  <ProductPagination pagination={pagination} />
+                </>
+              )}
             </div>
           </div>
-        ))}
-      </div>
+        </section>
+      </main>
     </div>
   );
 }

@@ -97,6 +97,11 @@ import {
   getReferenceSellerKey,
   sortReferenceProducts,
 } from "./helpers/reference-product-catalog";
+import {
+  buildRetailerStorefrontFacets,
+  filterAndSortRetailerStorefrontProducts,
+  retailerStorefrontSortValues,
+} from "./helpers/retailer-storefront-catalog";
 
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
@@ -3047,7 +3052,17 @@ const queries = {
       tags: ["Customer"],
       summary: "Get shop details and retail products",
     })
-    .input(z.object({ slug: z.string() }))
+    .input(
+      z.object({
+        slug: z.string(),
+        search: z.string().trim().max(150).optional().nullable(),
+        category: z.string().trim().max(150).optional().nullable(),
+        subcategory: z.string().trim().max(150).optional().nullable(),
+        sort: z.enum(retailerStorefrontSortValues).default("recommended"),
+        page: z.coerce.number().int().min(1).default(1),
+        limit: z.coerce.number().int().min(1).max(48).default(12),
+      }),
+    )
     .handler(async ({ input }) => {
       // 1. Find the shop owner by slug
       const shop = await db
@@ -3059,6 +3074,8 @@ const queries = {
           shopAddress: user.shopAddress,
           businessType: user.businessType,
           image: user.image,
+          shopLat: user.shopLat,
+          shopLng: user.shopLng,
         })
         .from(user)
         .where(
@@ -3102,10 +3119,12 @@ const queries = {
                   description: true,
                   status: true,
                   visibility: true,
+                  createdAt: true,
                 },
                 with: {
                   images: true,
                   category: { columns: { name: true, slug: true } },
+                  subCategory: { columns: { name: true, slug: true } },
                 },
               },
             },
@@ -3146,9 +3165,50 @@ const queries = {
         });
       }
 
+      const completeCatalog = Array.from(productMap.values()).map((product) => {
+        const variants = product.variants as Array<{
+          retailPrice: string | number;
+          availableQty: string | number;
+        }>;
+
+        return {
+          ...product,
+          lowestRetailPrice: Math.min(
+            ...variants.map((variant) => Number(variant.retailPrice)),
+          ),
+          variantCount: variants.length,
+          totalAvailableQty: variants.reduce(
+            (sum, variant) => sum + Number(variant.availableQty),
+            0,
+          ),
+        };
+      });
+      const facets = buildRetailerStorefrontFacets(completeCatalog);
+      const filteredProducts = filterAndSortRetailerStorefrontProducts(
+        completeCatalog,
+        {
+          search: input.search,
+          category: input.category,
+          subcategory: input.subcategory,
+          sort: input.sort,
+        },
+      );
+      const totalCount = filteredProducts.length;
+      const totalPages = Math.ceil(totalCount / input.limit);
+      const safePage = totalPages > 0 ? Math.min(input.page, totalPages) : 1;
+      const offset = (safePage - 1) * input.limit;
+
       return {
         shop: shopData,
-        products: Array.from(productMap.values()),
+        products: filteredProducts.slice(offset, offset + input.limit),
+        facets,
+        catalogProductCount: completeCatalog.length,
+        pagination: {
+          page: safePage,
+          limit: input.limit,
+          totalCount,
+          totalPages,
+        },
       };
     }),
 
