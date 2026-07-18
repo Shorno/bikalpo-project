@@ -98,6 +98,11 @@ import {
   sortReferenceProducts,
 } from "./helpers/reference-product-catalog";
 import {
+  getCustomerCartStockSource,
+  getRetailerCartDecision,
+  type RetailerCartInventorySnapshot,
+} from "./helpers/retailer-cart-inventory";
+import {
   buildRetailerStorefrontFacets,
   filterAndSortRetailerStorefrontProducts,
   retailerStorefrontSortValues,
@@ -142,6 +147,95 @@ const shippingInfoSchema = z.object({
   lat: z.string().optional(),
   lng: z.string().optional(),
 });
+
+type RetailerCartInventoryKey = {
+  shopId: string;
+  productId: number;
+  variantId: number;
+};
+
+function getRetailerCartInventoryKey({
+  shopId,
+  productId,
+  variantId,
+}: RetailerCartInventoryKey) {
+  return `${shopId}:${productId}:${variantId}`;
+}
+
+async function getRetailerCartInventorySnapshots(
+  requestedItems: RetailerCartInventoryKey[],
+) {
+  const snapshots = new Map<string, RetailerCartInventorySnapshot>();
+  if (requestedItems.length === 0) return snapshots;
+
+  const shopIds = [...new Set(requestedItems.map((item) => item.shopId))];
+  const variantIds = [
+    ...new Set(requestedItems.map((item) => item.variantId)),
+  ];
+  const rows = await db
+    .select({
+      shopId: inventory.ownerId,
+      productId: productVariant.productId,
+      variantId: inventory.variantId,
+      variantIsActive: productVariant.isActive,
+      productStatus: product.status,
+      productVisibility: product.visibility,
+      referenceProductInStock: product.inStock,
+      availableQty: inventory.availableQty,
+      retailPrice: inventory.retailPrice,
+      orderMin: productVariant.orderMin,
+      orderMax: productVariant.orderMax,
+      orderIncrement: productVariant.orderIncrement,
+    })
+    .from(inventory)
+    .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
+    .innerJoin(product, eq(product.id, productVariant.productId))
+    .innerJoin(user, eq(user.id, inventory.ownerId))
+    .where(
+      and(
+        eq(inventory.ownerType, "shop"),
+        inArray(inventory.ownerId, shopIds),
+        inArray(inventory.variantId, variantIds),
+        eq(user.role, "shop_owner"),
+        eq(user.sellerStatus, "approved"),
+      ),
+    );
+
+  const requestedKeys = new Set(requestedItems.map(getRetailerCartInventoryKey));
+  for (const row of rows) {
+    const key = getRetailerCartInventoryKey(row);
+    if (requestedKeys.has(key)) snapshots.set(key, row);
+  }
+
+  return snapshots;
+}
+
+async function getRetailerCartInventorySnapshot(
+  requestedItem: RetailerCartInventoryKey,
+) {
+  const snapshots = await getRetailerCartInventorySnapshots([requestedItem]);
+  return snapshots.get(getRetailerCartInventoryKey(requestedItem)) ?? null;
+}
+
+function requireSellableRetailerCartDecision(
+  decision: ReturnType<typeof getRetailerCartDecision>,
+) {
+  if (decision.ok) return decision;
+
+  if (decision.reason === "not_sellable") {
+    throw new ORPCError("NOT_FOUND", {
+      message: "This product option is not available from this shop",
+    });
+  }
+  if (decision.reason === "insufficient_stock") {
+    throw new ORPCError("BAD_REQUEST", {
+      message: `Only ${decision.availableQuantity} available from this shop`,
+    });
+  }
+  throw new ORPCError("BAD_REQUEST", {
+    message: "Quantity does not match this shop's order rules",
+  });
+}
 
 const addressFormSchema = z.object({
   label: z.string().min(1, "Label is required"),
@@ -2066,16 +2160,52 @@ const queries = {
         }
       }
 
+      const retailerInventoryByKey = await getRetailerCartInventorySnapshots(
+        userCart.items.flatMap((item) =>
+          item.shopId && item.variantId
+            ? [
+                {
+                  shopId: item.shopId,
+                  productId: item.productId,
+                  variantId: item.variantId,
+                },
+              ]
+            : [],
+        ),
+      );
+
       const items = userCart.items.map((item) => {
         const variant = item.variant;
+        const retailerInventory =
+          item.shopId && item.variantId
+            ? retailerInventoryByKey.get(
+                getRetailerCartInventoryKey({
+                  shopId: item.shopId,
+                  productId: item.productId,
+                  variantId: item.variantId,
+                }),
+              )
+            : undefined;
+        const retailerDecision =
+          item.shopId && item.variantId
+            ? getRetailerCartDecision(retailerInventory, {
+                shopId: item.shopId,
+                productId: item.productId,
+                variantId: item.variantId,
+                requestedQuantity: item.quantity,
+                existingQuantity: 0,
+              })
+            : null;
         // Use variant-specific data when available
         const displayName = variant
           ? `${item.product.name} — ${variant.unitLabel}`
           : item.product.name;
         const displaySize = variant ? variant.unitLabel : item.product.size;
-        const currentPrice = variant
-          ? Number(variant.price)
-          : Number(item.product.price);
+        const currentPrice = item.shopId
+          ? Number(retailerInventory?.retailPrice ?? item.price)
+          : variant
+            ? Number(variant.price)
+            : Number(item.product.price);
 
         return {
           id: item.id,
@@ -2089,7 +2219,9 @@ const queries = {
           price: Number(item.price),
           currentPrice,
           quantity: item.quantity,
-          inStock: item.product.inStock,
+          inStock: item.shopId
+            ? retailerDecision?.ok === true
+            : item.product.inStock,
           shopId: item.shopId,
           shopName: item.shopId ? shopMap.get(item.shopId)?.name || null : null,
           shopSlug: item.shopId
@@ -3524,10 +3656,10 @@ const mutations = {
     })
     .input(
       z.object({
-        productId: z.number(),
-        quantity: z.number().min(1).default(1),
-        variantId: z.number().optional(),
-        shopId: z.string().optional(), // B2C: which shop to buy from
+        productId: z.number().int().positive(),
+        quantity: z.number().int().min(1).default(1),
+        variantId: z.number().int().positive().optional(),
+        shopId: z.string().min(1).optional(),
       }),
     )
     .handler(async ({ context, input }) => {
@@ -3538,89 +3670,80 @@ const mutations = {
       });
       if (!productData)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
-      if (!productData.inStock)
+
+      const stockSource = getCustomerCartStockSource({
+        shopId: input.shopId,
+        referenceProductInStock: productData.inStock,
+      });
+      if (stockSource.source === "retailer" && !input.variantId) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "A retailer product option is required",
+        });
+      }
+      if (stockSource.source === "reference" && !stockSource.inStock)
         throw new ORPCError("BAD_REQUEST", {
           message: "Product is out of stock",
         });
 
-      // Determine price: shop retail price (B2C) > variant base price > product price
-      let itemPrice = productData.price;
-
-      if (input.variantId) {
-        // First: check if there's a shop-specific retail price (B2C)
-        if (input.shopId) {
-          // Try exact variant match first
-          let shopInv = await db.query.inventory.findFirst({
-            where: and(
-              eq(inventory.ownerType, "shop"),
-              eq(inventory.ownerId, input.shopId),
-              eq(inventory.variantId, input.variantId),
-            ),
-          });
-
-          // If not found, the shop's inventory might be on a different variant
-          // (e.g. TRADE variant when consumer browsed RETAIL variant)
-          // Search by product: find any inventory this shop has for this product
-          if (!shopInv) {
-            const productVariants = await db.query.productVariant.findMany({
-              where: eq(productVariant.productId, input.productId),
-              columns: { id: true },
-            });
-            const variantIds = productVariants.map((v) => v.id);
-            if (variantIds.length > 0) {
-              shopInv = await db.query.inventory.findFirst({
-                where: and(
-                  eq(inventory.ownerType, "shop"),
-                  eq(inventory.ownerId, input.shopId),
-                  inArray(inventory.variantId, variantIds),
-                  sql`CAST(${inventory.availableQty} AS numeric) > 0`,
-                ),
-              });
-            }
-          }
-
-          if (shopInv?.retailPrice) {
-            itemPrice = shopInv.retailPrice;
-          }
-        }
-
-        // If no shop price was found, use the variant's own base price
-        if (itemPrice === productData.price) {
-          const variantData = await db.query.productVariant.findFirst({
-            where: eq(productVariant.id, input.variantId),
-            columns: { price: true },
-          });
-          if (variantData?.price) {
-            itemPrice = variantData.price;
-          }
-        }
-      }
-
-      // Get or create cart
+      // Find the cart and exact line before validating stock so additions are
+      // checked against the line's resulting total quantity.
       let userCart = await db.query.cart.findFirst({
         where: eq(cart.userId, userId),
       });
+      let existing: typeof cartItem.$inferSelect | undefined;
+      if (userCart) {
+        const dupConditions = [
+          eq(cartItem.cartId, userCart.id),
+          eq(cartItem.productId, input.productId),
+          input.variantId
+            ? eq(cartItem.variantId, input.variantId)
+            : isNull(cartItem.variantId),
+          input.shopId
+            ? eq(cartItem.shopId, input.shopId)
+            : isNull(cartItem.shopId),
+        ];
+        existing = await db.query.cartItem.findFirst({
+          where: and(...dupConditions),
+        });
+      }
+
+      let itemPrice = productData.price;
+      if (stockSource.source === "retailer" && input.variantId) {
+        const snapshot = await getRetailerCartInventorySnapshot({
+          shopId: stockSource.shopId,
+          productId: input.productId,
+          variantId: input.variantId,
+        });
+        const decision = requireSellableRetailerCartDecision(
+          getRetailerCartDecision(snapshot, {
+            shopId: stockSource.shopId,
+            productId: input.productId,
+            variantId: input.variantId,
+            requestedQuantity: input.quantity,
+            existingQuantity: existing?.quantity ?? 0,
+          }),
+        );
+        itemPrice = decision.retailPrice;
+      } else if (input.variantId) {
+        const variantData = await db.query.productVariant.findFirst({
+          where: and(
+            eq(productVariant.id, input.variantId),
+            eq(productVariant.productId, input.productId),
+          ),
+          columns: { price: true },
+        });
+        if (!variantData) {
+          throw new ORPCError("NOT_FOUND", {
+            message: "Product option not found",
+          });
+        }
+        itemPrice = variantData.price;
+      }
+
       if (!userCart) {
         const [newCart] = await db.insert(cart).values({ userId }).returning();
         userCart = newCart!;
       }
-
-      // Check if same item + variant + shop combo exists
-      const dupConditions = [
-        eq(cartItem.cartId, userCart.id),
-        eq(cartItem.productId, input.productId),
-      ];
-      if (input.variantId) {
-        dupConditions.push(eq(cartItem.variantId, input.variantId));
-      } else {
-        dupConditions.push(isNull(cartItem.variantId));
-      }
-      if (input.shopId) {
-        dupConditions.push(eq(cartItem.shopId, input.shopId));
-      }
-      const existing = await db.query.cartItem.findFirst({
-        where: and(...dupConditions),
-      });
 
       if (existing) {
         await db
@@ -3652,7 +3775,12 @@ const mutations = {
       tags: ["Customer"],
       summary: "Update cart item quantity",
     })
-    .input(z.object({ cartItemId: z.number(), quantity: z.number().min(0) }))
+    .input(
+      z.object({
+        cartItemId: z.number().int().positive(),
+        quantity: z.number().int().min(0),
+      }),
+    )
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
 
@@ -3669,9 +3797,36 @@ const mutations = {
         return { success: true, message: "Item removed from cart" };
       }
 
+      let retailerPrice: string | undefined;
+      if (item.shopId) {
+        if (!item.variantId) {
+          throw new ORPCError("NOT_FOUND", {
+            message: "Retailer product option not found",
+          });
+        }
+        const snapshot = await getRetailerCartInventorySnapshot({
+          shopId: item.shopId,
+          productId: item.productId,
+          variantId: item.variantId,
+        });
+        const decision = requireSellableRetailerCartDecision(
+          getRetailerCartDecision(snapshot, {
+            shopId: item.shopId,
+            productId: item.productId,
+            variantId: item.variantId,
+            requestedQuantity: input.quantity,
+            existingQuantity: 0,
+          }),
+        );
+        retailerPrice = decision.retailPrice;
+      }
+
       await db
         .update(cartItem)
-        .set({ quantity: input.quantity })
+        .set({
+          quantity: input.quantity,
+          ...(retailerPrice ? { price: retailerPrice } : {}),
+        })
         .where(eq(cartItem.id, input.cartItemId));
 
       return { success: true, message: "Cart updated" };

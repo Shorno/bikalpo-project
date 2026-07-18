@@ -75,23 +75,35 @@ function RetailerProductDetailSkeleton() {
   return (
     <div className="min-h-screen bg-slate-50/60">
       <div className="border-b bg-white">
-        <div className="container mx-auto flex gap-2 px-4 py-3">
+        <div className="container mx-auto flex gap-2 px-4 py-2">
           <Skeleton className="h-4 w-16" />
           <Skeleton className="h-4 w-28" />
           <Skeleton className="h-4 w-40" />
         </div>
       </div>
-      <div className="container mx-auto px-4 py-8">
-        <Skeleton className="mb-5 h-20 w-full rounded-xl" />
-        <div className="grid overflow-hidden rounded-xl border bg-white lg:grid-cols-2">
-          <Skeleton className="aspect-square w-full rounded-none" />
-          <div className="space-y-5 p-7">
-            <Skeleton className="h-6 w-32" />
-            <Skeleton className="h-10 w-3/4" />
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-12 w-full" />
+      <div className="container mx-auto px-4 py-4">
+        <div className="grid overflow-hidden rounded-lg border bg-white lg:grid-cols-[minmax(0,0.46fr)_minmax(420px,0.54fr)]">
+          <div className="border-b p-4 sm:p-5 lg:border-b-0 lg:border-r">
+            <Skeleton className="aspect-[4/3] w-full rounded-lg" />
           </div>
+          <div className="space-y-3 p-4 sm:p-5 lg:p-6">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-8 w-3/4" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="h-16 w-full" />
+            <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+            <Skeleton className="h-11 w-full" />
+          </div>
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+          <Skeleton className="h-40 w-full rounded-lg" />
+          <Skeleton className="h-40 w-full rounded-lg" />
         </div>
       </div>
     </div>

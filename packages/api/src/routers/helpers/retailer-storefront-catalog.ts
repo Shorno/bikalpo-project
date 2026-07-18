@@ -1,3 +1,5 @@
+import { isSellableRetailerInventory } from "./retailer-inventory-sellability";
+
 export const retailerStorefrontSortValues = [
   "recommended",
   "newest",
@@ -53,11 +55,15 @@ export function selectSellableRetailerVariants<
   return rows
     .filter(
       (row) =>
-        row.ownerId === input.shopId &&
-        row.variant.productId === input.productId &&
-        row.variant.isActive === true &&
-        Number(row.availableQty) > 0 &&
-        Number(row.retailPrice) > 0,
+        isSellableRetailerInventory(
+          {
+            shopId: row.ownerId,
+            productId: row.variant.productId,
+            variantIsActive: row.variant.isActive,
+            retailPrice: row.retailPrice,
+          },
+          input,
+        ) && Number(row.availableQty) > 0,
     )
     .sort(
       (left, right) =>
