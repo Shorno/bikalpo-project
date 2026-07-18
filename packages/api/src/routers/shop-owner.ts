@@ -91,6 +91,11 @@ import {
     getRetailerHandoffOtps,
     getRetailerOrderDisplayStatus,
 } from "./helpers/retailer-delivery-handoff";
+import {
+    createRetailerOrderStockWriter,
+    RetailerOrderStockError,
+    restoreRetailerOrderStock,
+} from "./helpers/retailer-order-stock";
 import { loadStructuredBrandStockRows } from "./helpers/structured-stock-data";
 import {
     buildStructuredStockDetail,
@@ -5005,37 +5010,85 @@ const incomingOrderQueries = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            const existingOrder = await db.query.order.findFirst({
-                where: and(
-                    eq(order.id, input.orderId),
-                    eq(order.shopId, userId),
-                    eq(order.orderType, "b2c"),
-                ),
-            });
+            return db.transaction(async (tx) => {
+                await tx.execute(
+                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
+                );
 
-            if (!existingOrder) {
-                throw new ORPCError("NOT_FOUND", {
-                    message: "Order not found or not owned by your shop",
+                const existingOrder = await tx.query.order.findFirst({
+                    where: and(
+                        eq(order.id, input.orderId),
+                        eq(order.shopId, userId),
+                        eq(order.orderType, "b2c"),
+                    ),
+                    with: { items: true },
                 });
-            }
 
-            const updateData: Record<string, any> = {
-                status: input.status,
-            };
+                if (!existingOrder) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: "Order not found or not owned by your shop",
+                    });
+                }
+                if (
+                    existingOrder.status === "cancelled" ||
+                    existingOrder.status === "delivered"
+                ) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "This order has already reached a final status",
+                    });
+                }
 
-            if (input.status === "confirmed") updateData.confirmedAt = new Date();
-            if (input.status === "delivered") updateData.deliveredAt = new Date();
-            if (input.status === "cancelled") updateData.cancelledAt = new Date();
+                if (input.status === "cancelled") {
+                    try {
+                        await restoreRetailerOrderStock(
+                            createRetailerOrderStockWriter(tx),
+                            userId,
+                            existingOrder.items,
+                        );
+                    } catch (error) {
+                        if (error instanceof RetailerOrderStockError) {
+                            throw new ORPCError("BAD_REQUEST", {
+                                message: error.message,
+                            });
+                        }
+                        throw error;
+                    }
+                }
 
-            await db
-                .update(order)
-                .set(updateData)
-                .where(eq(order.id, input.orderId));
+                const updateData: Record<string, any> = {
+                    status: input.status,
+                };
 
-            return {
-                success: true,
-                message: `Order ${existingOrder.orderNumber} updated to ${input.status}`,
-            };
+                if (input.status === "confirmed")
+                    updateData.confirmedAt = new Date();
+                if (input.status === "delivered")
+                    updateData.deliveredAt = new Date();
+                if (input.status === "cancelled")
+                    updateData.cancelledAt = new Date();
+
+                const updated = await tx
+                    .update(order)
+                    .set(updateData)
+                    .where(
+                        and(
+                            eq(order.id, input.orderId),
+                            eq(order.shopId, userId),
+                            eq(order.orderType, "b2c"),
+                            eq(order.status, existingOrder.status),
+                        ),
+                    )
+                    .returning({ id: order.id });
+                if (updated.length !== 1) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Order was already updated by another request",
+                    });
+                }
+
+                return {
+                    success: true,
+                    message: `Order ${existingOrder.orderNumber} updated to ${input.status}`,
+                };
+            });
         }),
 };
 

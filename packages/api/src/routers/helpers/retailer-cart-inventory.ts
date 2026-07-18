@@ -28,6 +28,84 @@ export type RetailerCartDecision =
       availableQuantity: number;
     };
 
+export type CustomerCartSource =
+  | { kind: "empty" }
+  | { kind: "reference" }
+  | { kind: "retailer"; shopId: string }
+  | { kind: "mixed" };
+
+export type CustomerCartLineSnapshot = {
+  id: number;
+  productId: number;
+  variantId: number | null;
+  shopId: string | null;
+  quantity: number;
+  price: string;
+};
+
+export function isSameCustomerCartSnapshot(
+  expected: CustomerCartLineSnapshot[],
+  current: CustomerCartLineSnapshot[],
+) {
+  if (expected.length !== current.length) return false;
+
+  const currentById = new Map(current.map((line) => [line.id, line]));
+  return expected.every((line) => {
+    const match = currentById.get(line.id);
+    return (
+      match?.productId === line.productId &&
+      match.variantId === line.variantId &&
+      match.shopId === line.shopId &&
+      match.quantity === line.quantity &&
+      Number(match.price) === Number(line.price)
+    );
+  });
+}
+
+export function resolveCustomerCartSource(
+  shopIds: Array<string | null | undefined>,
+): CustomerCartSource {
+  if (shopIds.length === 0) return { kind: "empty" };
+
+  const sources = new Set(shopIds.map((shopId) => shopId ?? null));
+  if (sources.size !== 1) return { kind: "mixed" };
+
+  const [shopId] = sources;
+  return shopId ? { kind: "retailer", shopId } : { kind: "reference" };
+}
+
+export function canAddToCustomerCart(
+  existingShopIds: Array<string | null | undefined>,
+  requestedShopId?: string,
+):
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "different_retailer" | "mixed_source";
+      shopId?: string;
+    } {
+  const currentSource = resolveCustomerCartSource(existingShopIds);
+  if (currentSource.kind === "empty") return { ok: true };
+  if (currentSource.kind === "mixed") {
+    return { ok: false, reason: "mixed_source" };
+  }
+
+  if (currentSource.kind === "reference") {
+    return requestedShopId
+      ? { ok: false, reason: "mixed_source" }
+      : { ok: true };
+  }
+
+  if (!requestedShopId) return { ok: false, reason: "mixed_source" };
+  return currentSource.shopId === requestedShopId
+    ? { ok: true }
+    : {
+        ok: false,
+        reason: "different_retailer",
+        shopId: currentSource.shopId,
+      };
+}
+
 export function getCustomerCartStockSource({
   shopId,
   referenceProductInStock,
@@ -38,6 +116,72 @@ export function getCustomerCartStockSource({
   return shopId
     ? ({ source: "retailer", shopId } as const)
     : ({ source: "reference", inStock: referenceProductInStock } as const);
+}
+
+export function getCustomerOrderLineDecision(
+  snapshot: RetailerCartInventorySnapshot | null | undefined,
+  input: {
+    shopId?: string | null;
+    productId: number;
+    variantId?: number | null;
+    quantity: number;
+    referenceProductInStock: boolean;
+    referenceAvailableQuantity?: number | null;
+  },
+) {
+  const stockSource = getCustomerCartStockSource({
+    shopId: input.shopId ?? undefined,
+    referenceProductInStock: input.referenceProductInStock,
+  });
+
+  if (stockSource.source === "reference") {
+    if (!stockSource.inStock) {
+      return {
+        ok: false,
+        source: "reference",
+        reason: "not_sellable",
+      } as const;
+    }
+    if (
+      input.referenceAvailableQuantity != null &&
+      input.referenceAvailableQuantity < input.quantity
+    ) {
+      return {
+        ok: false,
+        source: "reference",
+        reason: "insufficient_stock",
+        availableQuantity: Math.max(0, input.referenceAvailableQuantity),
+      } as const;
+    }
+    return { ok: true, source: "reference" } as const;
+  }
+
+  if (!input.variantId) {
+    return { ok: false, source: "retailer", reason: "not_sellable" } as const;
+  }
+
+  const decision = getRetailerCartDecision(snapshot, {
+    shopId: stockSource.shopId,
+    productId: input.productId,
+    variantId: input.variantId,
+    requestedQuantity: input.quantity,
+    existingQuantity: 0,
+  });
+  if (!decision.ok) {
+    return {
+      ok: false,
+      source: "retailer",
+      reason: decision.reason,
+      availableQuantity: decision.availableQuantity,
+    } as const;
+  }
+
+  return {
+    ok: true,
+    source: "retailer",
+    availableQuantity: decision.availableQuantity,
+    retailPrice: decision.retailPrice,
+  } as const;
 }
 
 export function getRetailerCartDecision(
@@ -51,6 +195,7 @@ export function getRetailerCartDecision(
   },
 ): RetailerCartDecision {
   if (
+    !snapshot ||
     !isSellableRetailerInventory(snapshot, input) ||
     snapshot.variantId !== input.variantId ||
     snapshot.productStatus !== "active" ||

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { CartItem as CartItemType } from "@/hooks/use-orpc-cart";
 import { getCartItemProductHref } from "@/lib/retailer-storefront-url";
+import { CartRetailerLabel } from "./cart-retailer-label";
 
 interface CartItemProps {
   item: CartItemType;
@@ -70,6 +71,7 @@ export function CartItem({
             </span>
           </h3>
         </Link>
+        <CartRetailerLabel shopName={item.shopName} />
 
         <div className="flex items-center gap-3">
           {/* Quantity Controls */}

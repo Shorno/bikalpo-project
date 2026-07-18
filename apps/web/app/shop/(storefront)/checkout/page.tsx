@@ -2,6 +2,7 @@
 
 import type { Address, PaymentMethod } from "@bikalpo-project/db/schema";
 import {
+  AlertTriangle,
   ArrowLeft,
   Banknote,
   CheckCircle,
@@ -19,13 +20,14 @@ import {
   Trash2,
   User,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AddressSelector } from "@/components/checkout/address-selector";
+import { CartRetailerLabel } from "@/components/layout/cart-retailer-label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -47,8 +49,8 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useEstimatedDeliveryCost,
-  usePlaceOrder,
   usePlaceOpenOrder,
+  usePlaceOrder,
 } from "@/hooks/use-customer-api";
 import { useCart } from "@/hooks/use-orpc-cart";
 import { authClient } from "@/lib/auth-client";
@@ -97,6 +99,10 @@ export default function CustomerCheckoutPage() {
   const placeOrderMutation = usePlaceOrder();
   const placeOpenOrderMutation = usePlaceOpenOrder();
   const isSubmitting = placeOrderMutation.isPending || placeOpenOrderMutation.isPending;
+  const cartSourceKeys = new Set(items.map((item) => item.shopId ?? null));
+  const hasCartSourceConflict = cartSourceKeys.size > 1;
+  const hasRetailerSource = items.some((item) => !!item.shopId);
+  const checkoutRetailerName = items.find((item) => item.shopId)?.shopName;
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_delivery");
@@ -213,12 +219,18 @@ export default function CustomerCheckoutPage() {
       return;
     }
 
-    if (!validateForm()) return;
-
     if (items.length === 0) {
       toast.error("Your cart is empty");
       return;
     }
+    if (hasCartSourceConflict) {
+      toast.error(
+        "Your cart must contain products from one retailer only, or only products without a retailer.",
+      );
+      return;
+    }
+
+    if (!validateForm()) return;
 
     try {
       const result = await placeOrderMutation.mutateAsync({
@@ -348,7 +360,31 @@ export default function CustomerCheckoutPage() {
           </h1>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form id="checkout-form" onSubmit={handleSubmit}>
+          {hasCartSourceConflict ? (
+            <div
+              className="mb-4 flex items-start gap-2 rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-950"
+              role="alert"
+            >
+              <AlertTriangle
+                className="mt-0.5 size-4 shrink-0"
+                aria-hidden="true"
+              />
+              <p>
+                Your cart must contain products from one retailer only, or only
+                products without a retailer. Remove conflicting items before
+                placing the order.
+              </p>
+            </div>
+          ) : hasRetailerSource ? (
+            <div className="mb-4 rounded-lg border bg-white px-4 py-3 text-sm text-slate-700">
+              This order will be placed directly with{" "}
+              <span className="font-semibold text-slate-950">
+                {checkoutRetailerName || "the selected retailer"}
+              </span>
+              .
+            </div>
+          ) : null}
           {/* Mobile: Collapsible Order Summary */}
           <div className="md:hidden mb-4">
             <Collapsible open={summaryOpen} onOpenChange={setSummaryOpen}>
@@ -395,6 +431,7 @@ export default function CustomerCheckoutPage() {
                           <p className="font-medium text-sm truncate">
                             {item.name}
                           </p>
+                          <CartRetailerLabel shopName={item.shopName} />
                           <p className="text-xs text-gray-500 mb-1">
                             {item.size}
                           </p>
@@ -732,6 +769,7 @@ export default function CustomerCheckoutPage() {
                           <p className="font-medium text-sm truncate">
                             {item.name}
                           </p>
+                          <CartRetailerLabel shopName={item.shopName} />
                           <p className="text-xs text-gray-500 mb-1">
                             {item.size}
                           </p>
@@ -815,7 +853,7 @@ export default function CustomerCheckoutPage() {
                       type="submit"
                       className="w-full bg-emerald-600 hover:bg-emerald-700"
                       size="lg"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || hasCartSourceConflict}
                     >
                       {placeOrderMutation.isPending ? (
                         <>
@@ -830,35 +868,41 @@ export default function CustomerCheckoutPage() {
                       )}
                     </Button>
 
-                    <div className="relative">
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
-                      </div>
-                      <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-white px-2 text-muted-foreground">or</span>
-                      </div>
-                    </div>
+                    {!hasRetailerSource && (
+                      <>
+                        <div className="relative">
+                          <div className="absolute inset-0 flex items-center">
+                            <span className="w-full border-t" />
+                          </div>
+                          <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-white px-2 text-muted-foreground">
+                              or
+                            </span>
+                          </div>
+                        </div>
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800"
-                      size="lg"
-                      disabled={isSubmitting}
-                      onClick={handleOpenOrder}
-                    >
-                      {placeOpenOrderMutation.isPending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Finding shops...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="h-4 w-4 mr-2" />
-                          Find Best Shop
-                        </>
-                      )}
-                    </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800"
+                          size="lg"
+                          disabled={isSubmitting || hasCartSourceConflict}
+                          onClick={handleOpenOrder}
+                        >
+                          {placeOpenOrderMutation.isPending ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Finding shops...
+                            </>
+                          ) : (
+                            <>
+                              <Search className="h-4 w-4 mr-2" />
+                              Find Best Shop
+                            </>
+                          )}
+                        </Button>
+                      </>
+                    )}
                   </div>
 
                   <p className="text-xs text-center text-gray-500">
@@ -885,8 +929,7 @@ export default function CustomerCheckoutPage() {
             form="checkout-form"
             className="flex-1 bg-emerald-600 hover:bg-emerald-700"
             size="lg"
-            disabled={isSubmitting}
-            onClick={handleSubmit}
+            disabled={isSubmitting || hasCartSourceConflict}
           >
             {placeOrderMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -897,23 +940,25 @@ export default function CustomerCheckoutPage() {
               </>
             )}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="flex-1 border-purple-200 text-purple-700"
-            size="lg"
-            disabled={isSubmitting}
-            onClick={handleOpenOrder}
-          >
-            {placeOpenOrderMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Search className="h-4 w-4 mr-1" />
-                Find Shop
-              </>
-            )}
-          </Button>
+          {!hasRetailerSource && (
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 border-purple-200 text-purple-700"
+              size="lg"
+              disabled={isSubmitting || hasCartSourceConflict}
+              onClick={handleOpenOrder}
+            >
+              {placeOpenOrderMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <Search className="h-4 w-4 mr-1" />
+                  Find Shop
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
     </div>
