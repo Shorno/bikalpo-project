@@ -3,7 +3,6 @@
 import { Minus, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { CartItem as CartItemType } from "@/hooks/use-orpc-cart";
 import { getCartItemProductHref } from "@/lib/retailer-storefront-url";
@@ -33,93 +32,108 @@ export function CartItem({
     productSlug: item.slug,
     categorySlug: item.categorySlug,
   });
+  const variantLabel = item.size?.trim();
+  const generatedVariantSuffix = variantLabel ? ` — ${variantLabel}` : "";
+  const productName =
+    generatedVariantSuffix && item.name.endsWith(generatedVariantSuffix)
+      ? item.name.slice(0, -generatedVariantSuffix.length)
+      : item.name;
 
   return (
-    <div className="flex items-center gap-4 p-4 border-b rounded-xs shadow-sm hover:shadow-md transition-shadow duration-200">
-      {/* Product Image */}
-      <div className="flex-shrink-0 relative">
+    <li className="border-b border-slate-200 px-4 py-4 last:border-b-0 sm:px-5">
+      <div className="flex items-start gap-3">
         <Link
           href={productLink}
-          className="relative overflow-hidden rounded-lg border-2 block"
+          className="relative block size-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           onClick={onLinkClick}
         >
           <Image
-            src={item.image || "/placeholder.svg"}
-            alt={item.name}
-            width={80}
-            height={80}
-            className="w-20 h-20 object-cover"
+            src={item.image || "/placeholder-image.svg"}
+            alt={productName}
+            width={64}
+            height={64}
+            className="size-full object-contain p-1.5"
           />
         </Link>
-        {item.quantity > 1 && (
-          <Badge
-            variant="secondary"
-            className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center p-0 text-xs font-bold rounded-full border-2"
-          >
-            {item.quantity}
-          </Badge>
-        )}
-      </div>
 
-      {/* Product Info */}
-      <div className="flex-1 min-w-0 space-y-2">
-        <Link href={productLink} onClick={onLinkClick}>
-          <h3 className="text-sm font-semibold line-clamp-2">
-            {item.name}{" "}
-            <span className="text-muted-foreground font-normal">
-              ({item.size})
-            </span>
-          </h3>
-        </Link>
-        <CartRetailerLabel shopName={item.shopName} />
-
-        <div className="flex items-center gap-3">
-          {/* Quantity Controls */}
-          <div className="flex items-center border rounded-lg bg-muted/50">
-            <Button
-              onClick={() => onQuantityChange(item.id, item.quantity - 1)}
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 rounded-l-lg rounded-r-none"
-              disabled={item.quantity <= 1 || isLoading}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <Link
+              href={productLink}
+              className="min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              onClick={onLinkClick}
             >
-              <Minus className="h-3.5 w-3.5" />
-            </Button>
+              <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950 hover:text-primary">
+                {productName}
+              </h3>
+            </Link>
+            <p className="shrink-0 font-mono text-sm font-semibold tabular-nums text-slate-950">
+              {formatPrice(item.price * item.quantity)}
+            </p>
+          </div>
 
-            <div className="flex items-center justify-center min-w-[40px] h-8 px-2 text-sm font-medium bg-background border-x">
-              {item.quantity}
+          {variantLabel && (
+            <p className="mt-0.5 truncate font-mono text-xs tabular-nums text-slate-600">
+              {variantLabel}
+            </p>
+          )}
+          <CartRetailerLabel
+            shopName={item.shopName}
+            className="mt-0.5 text-[11px] font-normal text-slate-500"
+          />
+
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div
+              className="flex h-10 items-center overflow-hidden rounded-lg border border-slate-200 bg-white"
+              role="group"
+              aria-label={`Quantity for ${productName}`}
+            >
+              <Button
+                type="button"
+                onClick={() => onQuantityChange(item.id, item.quantity - 1)}
+                variant="ghost"
+                size="icon"
+                className="size-10 rounded-none text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                disabled={item.quantity <= 1 || isLoading}
+                aria-label={`Decrease ${productName} quantity`}
+              >
+                <Minus className="size-3.5" aria-hidden="true" />
+              </Button>
+
+              <span
+                className="flex h-full min-w-10 items-center justify-center border-x border-slate-200 px-2 font-mono text-sm font-medium tabular-nums text-slate-950"
+                aria-live="polite"
+              >
+                {item.quantity}
+              </span>
+
+              <Button
+                type="button"
+                onClick={() => onQuantityChange(item.id, item.quantity + 1)}
+                variant="ghost"
+                size="icon"
+                className="size-10 rounded-none text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                disabled={isLoading}
+                aria-label={`Increase ${productName} quantity`}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+              </Button>
             </div>
 
             <Button
-              onClick={() => onQuantityChange(item.id, item.quantity + 1)}
+              type="button"
               variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 rounded-r-lg rounded-l-none"
+              size="icon"
+              className="size-10 shrink-0 text-slate-500 hover:bg-red-50 hover:text-destructive"
+              onClick={() => onRemove(item.id)}
               disabled={isLoading}
+              aria-label={`Remove ${productName} from cart`}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Trash2 className="size-4" aria-hidden="true" />
             </Button>
           </div>
-
-          {/* Remove Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-            onClick={() => onRemove(item.id)}
-            disabled={isLoading}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
         </div>
       </div>
-
-      {/* Price */}
-      <div className="flex-shrink-0 text-right">
-        <p className="text-base font-bold">
-          {formatPrice(item.price * item.quantity)}
-        </p>
-      </div>
-    </div>
+    </li>
   );
 }
