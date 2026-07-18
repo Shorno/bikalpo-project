@@ -9,56 +9,58 @@
  * - Inventory and pricing management
  */
 
+import { auth } from "@bikalpo-project/auth";
 import { db } from "@bikalpo-project/db";
+import {
+    buildProductTypeFulfillmentProfile,
+    FULFILLMENT_MODE_LABELS,
+    FULFILLMENT_MODES,
+} from "@bikalpo-project/db/fulfillment";
+import {
+    area,
+    brand,
+    carton,
+    cartonConfig,
+    category,
+    complaint,
+    coreProductIdentity,
+    customerAssignment,
+    damageEntry,
+    damageEntryItem,
+    deliveryArea,
+    deliveryGroup,
+    deliveryGroupInvoice,
+    deliverySchedule,
+    inventory,
+    invoice,
+    invoiceItem,
+    openOrderBid,
+    openOrderBidItem,
+    order,
+    orderItem,
+    product,
+    productIdentityRequest,
+    productPackRule,
+    productReview,
+    productType,
+    productVariant,
+    purchase,
+    sellerAreaMapping,
+    shopCategoryAssignment,
+    shopProductGenerationTemplate,
+    shopWarehouseConnection,
+    stockAdjustment,
+    stockAdjustmentItem,
+    subCategory,
+    user,
+    variantOption,
+    warehouseApplication,
+} from "@bikalpo-project/db/schema";
 import {
     formatVariantStockQuantity,
     resolveVariantMovementSemantics,
     resolveVariantStockSemantics,
 } from "@bikalpo-project/db/variant-definition";
-import {
-    buildProductTypeFulfillmentProfile,
-    FULFILLMENT_MODES,
-    FULFILLMENT_MODE_LABELS,
-} from "@bikalpo-project/db/fulfillment";
-import {
-    brand,
-    category,
-    product,
-    productReview,
-    productVariant,
-    subCategory,
-    inventory,
-    order,
-    orderItem,
-    user,
-    area,
-    sellerAreaMapping,
-    openOrderBid,
-    openOrderBidItem,
-    shopWarehouseConnection,
-    shopCategoryAssignment,
-    coreProductIdentity,
-    shopProductGenerationTemplate,
-    productType,
-    productIdentityRequest,
-    variantOption,
-    stockAdjustment,
-    stockAdjustmentItem,
-    damageEntry,
-    damageEntryItem,
-    deliveryGroup,
-    deliveryGroupInvoice,
-    productPackRule,
-    purchase,
-    customerAssignment,
-    deliveryArea,
-    deliverySchedule,
-    invoice,
-    carton,
-    cartonConfig,
-    warehouseApplication,
-    complaint,
-} from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
     and,
@@ -73,20 +75,21 @@ import {
     lte,
     min,
     or,
+    type SQL,
     sql,
     sum,
-    type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { shopOwnerProcedure, publicProcedure } from "../index";
-import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { publicProcedure, shopOwnerProcedure } from "../index";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
+import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
     prepareB2bMovementForApproval,
     releaseB2bOrderReservations,
 } from "./helpers/b2b-inventory-movement";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
+import { getRetailerOrderTransition } from "./helpers/retailer-consumer-flow";
 import {
     getRetailerHandoffOtps,
     getRetailerOrderDisplayStatus,
@@ -4905,7 +4908,17 @@ const incomingOrderQueries = {
         })
         .input(
             z.object({
-                status: z.enum(["all", "pending", "confirmed", "processing", "delivered", "cancelled"]).default("all"),
+                status: z.enum([
+                    "all",
+                    "pending",
+                    "confirmed",
+                    "ready_for_dispatch",
+                    "invoiced",
+                    "processing",
+                    "delivered",
+                    "returned",
+                    "cancelled",
+                ]).default("all"),
                 page: z.number().default(1),
                 limit: z.number().default(20),
             }),
@@ -4977,13 +4990,76 @@ const incomingOrderQueries = {
                 itemsByOrder.set(item.orderId, existing);
             }
 
+            const fulfillmentRows = orderIds.length > 0
+                ? await db
+                    .select({
+                        orderId: invoice.orderId,
+                        invoiceId: invoice.id,
+                        invoiceNumber: invoice.invoiceNumber,
+                        deliveryStatus: invoice.deliveryStatus,
+                        groupId: deliveryGroup.id,
+                        groupStatus: deliveryGroup.status,
+                        linkStatus: deliveryGroupInvoice.status,
+                        deliverymanId: deliveryGroup.deliverymanId,
+                        assignedAt: deliveryGroup.assignedAt,
+                        startedAt: deliveryGroup.startedAt,
+                    })
+                    .from(invoice)
+                    .leftJoin(
+                        deliveryGroupInvoice,
+                        eq(deliveryGroupInvoice.invoiceId, invoice.id),
+                    )
+                    .leftJoin(
+                        deliveryGroup,
+                        eq(deliveryGroup.id, deliveryGroupInvoice.groupId),
+                    )
+                    .where(inArray(invoice.orderId, orderIds))
+                : [];
+            const fulfillmentByOrder = new Map<number, (typeof fulfillmentRows)[number]>();
+            const groupPriority = (row: (typeof fulfillmentRows)[number]) => {
+                if (
+                    row.linkStatus === "pending" &&
+                    ["pending_assignment", "assigned", "out_for_delivery"].includes(
+                        row.groupStatus ?? "",
+                    )
+                ) {
+                    return 2;
+                }
+                return row.groupId ? 1 : 0;
+            };
+            for (const row of fulfillmentRows) {
+                const current = row.orderId
+                    ? fulfillmentByOrder.get(row.orderId)
+                    : undefined;
+                if (
+                    row.orderId &&
+                    (!current || groupPriority(row) > groupPriority(current))
+                ) {
+                    fulfillmentByOrder.set(row.orderId, row);
+                }
+            }
+
             const totalCount = Number(countResult[0]?.count) || 0;
 
             return {
-                orders: orders.map((o) => ({
-                    ...o,
-                    items: itemsByOrder.get(o.id) || [],
-                })),
+                orders: orders.map((o) => {
+                    const fulfillment = fulfillmentByOrder.get(o.id) ?? null;
+                    return {
+                        ...o,
+                        items: itemsByOrder.get(o.id) || [],
+                        fulfillment: fulfillment?.deliveryStatus === "not_assigned"
+                            ? {
+                                ...fulfillment,
+                                groupId: null,
+                                groupStatus: null,
+                                linkStatus: null,
+                                deliverymanId: null,
+                                assignedAt: null,
+                                startedAt: null,
+                            }
+                            : fulfillment,
+                    };
+                }),
                 pagination: {
                     page,
                     limit,
@@ -4993,22 +5069,17 @@ const incomingOrderQueries = {
             };
         }),
 
-    /** Update status of an incoming B2C order (confirm / cancel) */
-    updateIncomingOrderStatus: shopOwnerProcedure
+    /** Confirm an incoming B2C order and make it ready for invoicing. */
+    confirmIncomingOrder: shopOwnerProcedure
         .route({
             method: "POST",
-            path: "/shop-owner/incoming-orders/update-status",
+            path: "/shop-owner/incoming-orders/{orderId}/confirm",
             tags: ["Shop Owner"],
-            summary: "Update status of an incoming B2C order",
+            summary: "Confirm an incoming B2C consumer order",
         })
-        .input(
-            z.object({
-                orderId: z.number(),
-                status: z.enum(["confirmed", "processing", "delivered", "cancelled"]),
-            }),
-        )
+        .input(z.object({ orderId: z.number() }))
         .handler(async ({ context, input }) => {
-            const userId = context.session.user.id;
+            const shopId = context.session.user.id;
 
             return db.transaction(async (tx) => {
                 await tx.execute(
@@ -5018,10 +5089,9 @@ const incomingOrderQueries = {
                 const existingOrder = await tx.query.order.findFirst({
                     where: and(
                         eq(order.id, input.orderId),
-                        eq(order.shopId, userId),
+                        eq(order.shopId, shopId),
                         eq(order.orderType, "b2c"),
                     ),
-                    with: { items: true },
                 });
 
                 if (!existingOrder) {
@@ -5029,50 +5099,28 @@ const incomingOrderQueries = {
                         message: "Order not found or not owned by your shop",
                     });
                 }
-                if (
-                    existingOrder.status === "cancelled" ||
-                    existingOrder.status === "delivered"
-                ) {
+                const transition = getRetailerOrderTransition(
+                    existingOrder.status,
+                    "confirm",
+                );
+                if (!transition) {
                     throw new ORPCError("BAD_REQUEST", {
-                        message: "This order has already reached a final status",
+                        message: `Order cannot be confirmed from '${existingOrder.status}'`,
                     });
                 }
 
-                if (input.status === "cancelled") {
-                    try {
-                        await restoreRetailerOrderStock(
-                            createRetailerOrderStockWriter(tx),
-                            userId,
-                            existingOrder.items,
-                        );
-                    } catch (error) {
-                        if (error instanceof RetailerOrderStockError) {
-                            throw new ORPCError("BAD_REQUEST", {
-                                message: error.message,
-                            });
-                        }
-                        throw error;
-                    }
-                }
-
-                const updateData: Record<string, any> = {
-                    status: input.status,
-                };
-
-                if (input.status === "confirmed")
-                    updateData.confirmedAt = new Date();
-                if (input.status === "delivered")
-                    updateData.deliveredAt = new Date();
-                if (input.status === "cancelled")
-                    updateData.cancelledAt = new Date();
-
+                const now = new Date();
                 const updated = await tx
                     .update(order)
-                    .set(updateData)
+                    .set({
+                        status: transition.nextStatus,
+                        confirmedAt: now,
+                        readyAt: now,
+                    })
                     .where(
                         and(
                             eq(order.id, input.orderId),
-                            eq(order.shopId, userId),
+                            eq(order.shopId, shopId),
                             eq(order.orderType, "b2c"),
                             eq(order.status, existingOrder.status),
                         ),
@@ -5086,8 +5134,582 @@ const incomingOrderQueries = {
 
                 return {
                     success: true,
-                    message: `Order ${existingOrder.orderNumber} updated to ${input.status}`,
+                    status: transition.nextStatus,
+                    message: `Order ${existingOrder.orderNumber} is ready for invoicing`,
                 };
+            });
+        }),
+
+    /** Cancel a retailer order before invoicing and restore reserved stock. */
+    cancelIncomingOrder: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/incoming-orders/{orderId}/cancel",
+            tags: ["Shop Owner"],
+            summary: "Cancel an incoming B2C consumer order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            return db.transaction(async (tx) => {
+                await tx.execute(
+                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
+                );
+                const existingOrder = await tx.query.order.findFirst({
+                    where: and(
+                        eq(order.id, input.orderId),
+                        eq(order.shopId, shopId),
+                        eq(order.orderType, "b2c"),
+                    ),
+                    with: { items: true },
+                });
+                if (!existingOrder) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: "Order not found or not owned by your shop",
+                    });
+                }
+                const transition = getRetailerOrderTransition(
+                    existingOrder.status,
+                    "cancel",
+                );
+                if (!transition) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Only orders that have not been invoiced can be cancelled",
+                    });
+                }
+
+                try {
+                    await restoreRetailerOrderStock(
+                        createRetailerOrderStockWriter(tx),
+                        shopId,
+                        existingOrder.items,
+                    );
+                } catch (error) {
+                    if (error instanceof RetailerOrderStockError) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: error.message,
+                        });
+                    }
+                    throw error;
+                }
+
+                const cancelled = await tx
+                    .update(order)
+                    .set({ status: "cancelled", cancelledAt: new Date() })
+                    .where(
+                        and(
+                            eq(order.id, input.orderId),
+                            eq(order.shopId, shopId),
+                            eq(order.status, existingOrder.status),
+                        ),
+                    )
+                    .returning({ id: order.id });
+                if (cancelled.length !== 1) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Order was already updated by another request",
+                    });
+                }
+
+                return { success: true, status: "cancelled" as const };
+            });
+        }),
+
+    /** Create the one full internal-delivery invoice for a retailer order. */
+    createIncomingOrderInvoice: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/incoming-orders/{orderId}/invoice",
+            tags: ["Shop Owner"],
+            summary: "Create a full invoice for an incoming B2C order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+
+            return db.transaction(async (tx) => {
+                await tx.execute(
+                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
+                );
+                const existingOrder = await tx.query.order.findFirst({
+                    where: and(
+                        eq(order.id, input.orderId),
+                        eq(order.shopId, shopId),
+                        eq(order.orderType, "b2c"),
+                    ),
+                    with: { items: true },
+                });
+                if (!existingOrder) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: "Order not found or not owned by your shop",
+                    });
+                }
+
+                const existingInvoice = await tx.query.invoice.findFirst({
+                    where: and(
+                        eq(invoice.orderId, existingOrder.id),
+                        eq(invoice.invoiceType, "main"),
+                    ),
+                });
+                if (existingInvoice) {
+                    return {
+                        success: true,
+                        status: "invoiced" as const,
+                        invoice: existingInvoice,
+                    };
+                }
+
+                const transition = getRetailerOrderTransition(
+                    existingOrder.status,
+                    "create_invoice",
+                );
+                if (!transition) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Confirm the order before creating its invoice",
+                    });
+                }
+                if (existingOrder.items.length === 0) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Cannot invoice an order without items",
+                    });
+                }
+
+                const [createdInvoice] = await tx
+                    .insert(invoice)
+                    .values({
+                        invoiceNumber: `INV-${existingOrder.orderNumber}`,
+                        orderId: existingOrder.id,
+                        customerId: existingOrder.userId,
+                        invoiceType: "main",
+                        paymentStatus: "unpaid",
+                        deliveryStatus: "not_assigned",
+                        fulfillmentMode: "internal_delivery",
+                        subtotal: existingOrder.subtotal,
+                        discountAmount: existingOrder.discount,
+                        deliveryCharge: existingOrder.shippingCost,
+                        taxAmount: "0",
+                        grandTotal: existingOrder.total,
+                        customerNotes: existingOrder.customerNote,
+                    })
+                    .returning();
+                if (!createdInvoice) {
+                    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+                        message: "Failed to create invoice",
+                    });
+                }
+
+                await tx.insert(invoiceItem).values(
+                    existingOrder.items.map((item) => ({
+                        invoiceId: createdInvoice.id,
+                        orderItemId: item.id,
+                        productId: item.productId,
+                        variantId: item.variantId,
+                        productName: item.productName,
+                        productSku: item.productSize,
+                        productImage: item.productImage,
+                        quantity: item.quantity,
+                        quantityUnit: item.quantityUnit,
+                        inventoryUnit: item.inventoryUnit,
+                        conversionFactor: item.conversionFactor,
+                        inventoryQty: item.inventoryQty,
+                        unitPrice: item.unitPrice,
+                        lineTotal: item.totalPrice,
+                    })),
+                );
+
+                const updated = await tx
+                    .update(order)
+                    .set({ status: transition.nextStatus })
+                    .where(
+                        and(
+                            eq(order.id, existingOrder.id),
+                            eq(order.status, existingOrder.status),
+                        ),
+                    )
+                    .returning({ id: order.id });
+                if (updated.length !== 1) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Order was already updated by another request",
+                    });
+                }
+
+                return {
+                    success: true,
+                    status: transition.nextStatus,
+                    invoice: createdInvoice,
+                };
+            });
+        }),
+
+    /** List riders employed by this retailer store. */
+    getRetailDeliverymen: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/delivery-team",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Get retailer delivery team",
+        })
+        .handler(async ({ context }) => {
+            const shopId = context.session.user.id;
+            const deliverymen = await db
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    phoneNumber: user.phoneNumber,
+                    serviceArea: user.serviceArea,
+                    banned: user.banned,
+                    createdAt: user.createdAt,
+                })
+                .from(user)
+                .where(
+                    and(
+                        eq(user.shopId, shopId),
+                        eq(user.role, "deliveryman"),
+                    ),
+                )
+                .orderBy(user.name);
+
+            const activeGroups = deliverymen.length > 0
+                ? await db
+                    .select({
+                        deliverymanId: deliveryGroup.deliverymanId,
+                        groupId: deliveryGroup.id,
+                    })
+                    .from(deliveryGroup)
+                    .where(
+                        and(
+                            eq(deliveryGroup.shopId, shopId),
+                            inArray(
+                                deliveryGroup.status,
+                                ["assigned", "out_for_delivery"],
+                            ),
+                        ),
+                    )
+                : [];
+            const activeByRider = new Map(
+                activeGroups.map((entry) => [entry.deliverymanId, entry.groupId]),
+            );
+
+            return {
+                deliverymen: deliverymen.map((entry) => ({
+                    ...entry,
+                    banned: entry.banned ?? false,
+                    activeGroupId: activeByRider.get(entry.id) ?? null,
+                })),
+            };
+        }),
+
+    /** Create a rider account owned by this retailer store. */
+    createRetailDeliveryman: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/delivery-team",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Create a retailer delivery rider",
+        })
+        .input(z.object({
+            name: z.string().trim().min(2).max(100),
+            email: z.string().trim().email(),
+            password: z.string().min(8).max(100),
+            phoneNumber: z.string().trim().max(20).optional(),
+            serviceArea: z.string().trim().max(200).optional(),
+        }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            const newUser = await auth.api.createUser({
+                body: {
+                    email: input.email,
+                    password: input.password,
+                    name: input.name,
+                    role: "deliveryman",
+                    data: { phoneNumber: input.phoneNumber || null },
+                },
+            });
+            if (!newUser?.user) {
+                throw new ORPCError("INTERNAL_SERVER_ERROR", {
+                    message: "Failed to create delivery rider",
+                });
+            }
+
+            await db
+                .update(user)
+                .set({
+                    shopId,
+                    warehouseId: null,
+                    serviceArea: input.serviceArea || null,
+                })
+                .where(eq(user.id, newUser.user.id));
+
+            return {
+                success: true,
+                deliveryman: {
+                    id: newUser.user.id,
+                    name: newUser.user.name,
+                    email: newUser.user.email,
+                    phoneNumber: input.phoneNumber ?? null,
+                },
+            };
+        }),
+
+    /** Put an invoiced consumer order into a retailer-owned delivery group. */
+    createIncomingDeliveryGroup: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/incoming-orders/{orderId}/delivery-group",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Create a retailer delivery group",
+        })
+        .input(z.object({
+            orderId: z.number(),
+            groupName: z.string().trim().min(1).max(120),
+            vehicleType: z.enum(["bike", "car", "van", "truck"]).optional(),
+            expectedDeliveryAt: z.string().optional(),
+        }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            return db.transaction(async (tx) => {
+                await tx.execute(
+                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
+                );
+                const existingInvoice = await tx.query.invoice.findFirst({
+                    where: and(
+                        eq(invoice.orderId, input.orderId),
+                        eq(invoice.invoiceType, "main"),
+                        sql`EXISTS (
+                            SELECT 1 FROM "order" scoped_order
+                            WHERE scoped_order."id" = ${invoice.orderId}
+                              AND scoped_order."shop_id" = ${shopId}
+                              AND scoped_order."order_type" = 'b2c'
+                        )`,
+                    ),
+                    with: { order: true },
+                });
+                if (!existingInvoice?.order) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: "Invoiced retailer order not found",
+                    });
+                }
+                if (
+                    existingInvoice.fulfillmentMode !== "internal_delivery" ||
+                    existingInvoice.deliveryStatus !== "not_assigned"
+                ) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "This invoice is not ready for delivery grouping",
+                    });
+                }
+                const existingLink = await tx.query.deliveryGroupInvoice.findFirst({
+                    where: and(
+                        eq(deliveryGroupInvoice.invoiceId, existingInvoice.id),
+                        eq(deliveryGroupInvoice.status, "pending"),
+                    ),
+                });
+                if (existingLink) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "This invoice already belongs to a delivery group",
+                    });
+                }
+
+                const [group] = await tx
+                    .insert(deliveryGroup)
+                    .values({
+                        groupName: input.groupName,
+                        shopId,
+                        warehouseId: null,
+                        deliverymanId: null,
+                        status: "pending_assignment",
+                        totalInvoices: 1,
+                        completedInvoices: 0,
+                        vehicleType: input.vehicleType ?? null,
+                        expectedDeliveryAt: input.expectedDeliveryAt
+                            ? new Date(input.expectedDeliveryAt)
+                            : null,
+                        assignedAt: null,
+                    })
+                    .returning();
+                if (!group) {
+                    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+                        message: "Failed to create delivery group",
+                    });
+                }
+
+                await tx.insert(deliveryGroupInvoice).values({
+                    groupId: group.id,
+                    invoiceId: existingInvoice.id,
+                    sequence: 0,
+                    status: "pending",
+                });
+                await tx
+                    .update(invoice)
+                    .set({
+                        deliveryStatus: "pending",
+                        deliverymanId: null,
+                        vehicleType: input.vehicleType ?? null,
+                        expectedDeliveryAt: input.expectedDeliveryAt
+                            ? new Date(input.expectedDeliveryAt)
+                            : null,
+                    })
+                    .where(eq(invoice.id, existingInvoice.id));
+
+                return { success: true, group };
+            });
+        }),
+
+    /** Assign or reassign a store rider before the trip starts. */
+    assignIncomingDeliveryman: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/delivery-groups/{groupId}/assign",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Assign a retailer rider to a delivery group",
+        })
+        .input(z.object({
+            groupId: z.number(),
+            deliverymanId: z.string(),
+        }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            return db.transaction(async (tx) => {
+                await tx.execute(
+                    sql`SELECT pg_advisory_xact_lock(${input.groupId})`,
+                );
+                const group = await tx.query.deliveryGroup.findFirst({
+                    where: and(
+                        eq(deliveryGroup.id, input.groupId),
+                        eq(deliveryGroup.shopId, shopId),
+                    ),
+                });
+                if (!group) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: "Delivery group not found",
+                    });
+                }
+                if (!["pending_assignment", "assigned"].includes(group.status)) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "A rider cannot be changed after the trip starts",
+                    });
+                }
+
+                const rider = await tx.query.user.findFirst({
+                    where: and(
+                        eq(user.id, input.deliverymanId),
+                        eq(user.shopId, shopId),
+                        eq(user.role, "deliveryman"),
+                        sql`COALESCE(${user.banned}, false) = false`,
+                    ),
+                });
+                if (!rider) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: "Delivery rider not found for this store",
+                    });
+                }
+                const activeGroup = await tx.query.deliveryGroup.findFirst({
+                    where: and(
+                        eq(deliveryGroup.shopId, shopId),
+                        eq(deliveryGroup.deliverymanId, rider.id),
+                        sql`${deliveryGroup.id} <> ${group.id}`,
+                        inArray(
+                            deliveryGroup.status,
+                            ["assigned", "out_for_delivery"],
+                        ),
+                    ),
+                });
+                if (activeGroup) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "This rider already has an active delivery group",
+                    });
+                }
+
+                await tx
+                    .update(deliveryGroup)
+                    .set({
+                        deliverymanId: rider.id,
+                        status: "assigned",
+                        assignedAt: new Date(),
+                    })
+                    .where(eq(deliveryGroup.id, group.id));
+                const links = await tx.query.deliveryGroupInvoice.findMany({
+                    where: eq(deliveryGroupInvoice.groupId, group.id),
+                    with: { invoice: true },
+                });
+                const invoiceIds = links.map((entry) => entry.invoiceId);
+                if (invoiceIds.length > 0) {
+                    await tx
+                        .update(invoice)
+                        .set({ deliverymanId: rider.id })
+                        .where(inArray(invoice.id, invoiceIds));
+                    const orderIds = [
+                        ...new Set(
+                            links.map((entry) => entry.invoice?.orderId).filter(
+                                (id): id is number => typeof id === "number",
+                            ),
+                        ),
+                    ];
+                    if (orderIds.length > 0) {
+                        await tx
+                            .update(order)
+                            .set({
+                                riderName: rider.name,
+                                riderPhone: rider.phoneNumber,
+                            })
+                            .where(inArray(order.id, orderIds));
+                    }
+                }
+
+                return { success: true, status: "assigned" as const };
+            });
+        }),
+
+    /** Return a failed consumer delivery to the retailer assignment queue. */
+    retryIncomingDelivery: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/incoming-orders/{orderId}/retry-delivery",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Retry a failed retailer delivery",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            return db.transaction(async (tx) => {
+                await tx.execute(
+                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
+                );
+                const failedInvoice = await tx.query.invoice.findFirst({
+                    where: and(
+                        eq(invoice.orderId, input.orderId),
+                        eq(invoice.deliveryStatus, "failed"),
+                        sql`EXISTS (
+                            SELECT 1 FROM "order" scoped_order
+                            WHERE scoped_order."id" = ${invoice.orderId}
+                              AND scoped_order."shop_id" = ${shopId}
+                              AND scoped_order."order_type" = 'b2c'
+                        )`,
+                    ),
+                });
+                if (!failedInvoice) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "No failed delivery is available to retry",
+                    });
+                }
+
+                await tx
+                    .update(invoice)
+                    .set({
+                        deliveryStatus: "not_assigned",
+                        deliverymanId: null,
+                    })
+                    .where(eq(invoice.id, failedInvoice.id));
+                await tx
+                    .update(order)
+                    .set({
+                        status: "invoiced",
+                        riderName: null,
+                        riderPhone: null,
+                    })
+                    .where(eq(order.id, input.orderId));
+
+                return { success: true, status: "invoiced" as const };
             });
         }),
 };

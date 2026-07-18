@@ -12,23 +12,18 @@
 
 import { db } from "@bikalpo-project/db";
 import {
-    category,
     inventory,
     openOrderBid,
     openOrderBidItem,
     order,
     orderItem,
-    product,
     productVariant,
     sellerAreaMapping,
     user,
 } from "@bikalpo-project/db/schema";
-import { and, eq, inArray, sql, ne } from "drizzle-orm";
-import {
-    findAreasForPoint,
-    calculateSellerDistance,
-} from "./location-service";
 import { haversineDistance } from "@bikalpo-project/db/spatial-helpers";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { findAreasForPoint } from "./location-service";
 
 // ─── Constants ───
 
@@ -309,7 +304,8 @@ export async function createBidsForSubOrder(
 /**
  * Select the winning bid for a sub-order.
  * Picks the submitted bid with the lowest totalBid.
- * Marks it as winner, sets order.shopId, changes order status to confirmed.
+ * Marks it as winner and assigns order.shopId. The retailer must still
+ * explicitly confirm the order before it becomes ready for invoicing.
  * Marks other bids as 'lost'.
  *
  * Returns the winning bid or null if no submitted bids exist.
@@ -363,12 +359,13 @@ export async function selectWinner(
                 ),
             );
 
-        // Update the sub-order: assign shop + confirm
+        // Assign the shop, then route the order through the same explicit
+        // retailer confirmation workflow as direct-store orders.
         await tx
             .update(order)
             .set({
                 shopId: winner.shopId,
-                status: "confirmed",
+                status: "pending",
             })
             .where(eq(order.id, subOrderId));
     });

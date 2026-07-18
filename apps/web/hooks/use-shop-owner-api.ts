@@ -7,9 +7,9 @@
 
 "use client";
 
+import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { orpc } from "@/utils/orpc";
 
 // ────────────────────────────────────────────────────────────────
@@ -594,8 +594,11 @@ export function useIncomingOrders(params?: {
     | "all"
     | "pending"
     | "confirmed"
+    | "ready_for_dispatch"
+    | "invoiced"
     | "processing"
     | "delivered"
+    | "returned"
     | "cancelled";
   page?: number;
   limit?: number;
@@ -612,18 +615,91 @@ export function useIncomingOrders(params?: {
   );
 }
 
-/** Update status of an incoming B2C order */
-export function useUpdateIncomingOrderStatus() {
-  const queryClient = useQueryClient();
+function invalidateIncomingOrderQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  return Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getIncomingOrders.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getDashboardStats.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getRetailDeliverymen.key(),
+    }),
+  ]);
+}
 
+export function useConfirmIncomingOrder() {
+  const queryClient = useQueryClient();
   return useMutation(
-    orpc.shopOwner.updateIncomingOrderStatus.mutationOptions({
+    orpc.shopOwner.confirmIncomingOrder.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useCancelIncomingOrder() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.cancelIncomingOrder.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useCreateIncomingOrderInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.createIncomingOrderInvoice.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useCreateIncomingDeliveryGroup() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.createIncomingDeliveryGroup.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useAssignIncomingDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.assignIncomingDeliveryman.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useRetryIncomingDelivery() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.retryIncomingDelivery.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useRetailDeliverymen() {
+  return useQuery(
+    orpc.shopOwner.getRetailDeliverymen.queryOptions({
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+export function useCreateRetailDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.createRetailDeliveryman.mutationOptions({
       onSuccess: () => {
         queryClient.invalidateQueries({
-          queryKey: orpc.shopOwner.getIncomingOrders.key(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: orpc.shopOwner.getDashboardStats.key(),
+          queryKey: orpc.shopOwner.getRetailDeliverymen.key(),
         });
       },
     }),

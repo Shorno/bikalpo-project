@@ -10,10 +10,6 @@
 
 import { db } from "@bikalpo-project/db";
 import {
-  resolveVariantMovementSemantics,
-  resolveVariantOption,
-} from "@bikalpo-project/db/variant-definition";
-import {
   address,
   announcement,
   area,
@@ -26,6 +22,7 @@ import {
   coreProductIdentity,
   customerHomeTab,
   customerHomeTabProduct,
+  deliveryGroup,
   deliveryGroupInvoice,
   estimate,
   inventory,
@@ -47,6 +44,10 @@ import {
   user,
   userProfile,
 } from "@bikalpo-project/db/schema";
+import {
+  resolveVariantMovementSemantics,
+  resolveVariantOption,
+} from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
 import {
   and,
@@ -88,6 +89,7 @@ import {
   findEligibleSellers,
   splitCartIntoSubOrders,
 } from "../services/open-order-matching";
+import { buildConsumerOrderJourney } from "./helpers/consumer-order-journey";
 import {
   convertEstimateToB2bOrder,
   estimateOrderAcceptSchema,
@@ -98,8 +100,8 @@ import {
   sortReferenceProducts,
 } from "./helpers/reference-product-catalog";
 import {
-  canAddToCustomerCart,
   type CustomerCartLineSnapshot,
+  canAddToCustomerCart,
   getCustomerCartStockSource,
   getCustomerOrderLineDecision,
   getRetailerCartDecision,
@@ -158,6 +160,47 @@ const shippingInfoSchema = z.object({
   lat: z.string().optional(),
   lng: z.string().optional(),
 });
+
+async function loadConsumerOrderJourney(
+  orderData: typeof order.$inferSelect,
+) {
+  const orderInvoices = await db.query.invoice.findMany({
+    where: eq(invoice.orderId, orderData.id),
+    columns: {
+      id: true,
+      invoiceNumber: true,
+      createdAt: true,
+      deliveryStatus: true,
+    },
+    orderBy: [asc(invoice.createdAt)],
+  });
+
+  const invoiceIds = orderInvoices.map((entry) => entry.id);
+  const deliveryLinks = invoiceIds.length
+    ? await db
+        .select({
+          invoiceId: deliveryGroupInvoice.invoiceId,
+          groupStatus: deliveryGroup.status,
+          invoiceStatus: deliveryGroupInvoice.status,
+          assignedAt: deliveryGroup.assignedAt,
+          startedAt: deliveryGroup.startedAt,
+          deliveredAt: deliveryGroupInvoice.deliveredAt,
+          deliveryOtp: deliveryGroupInvoice.deliveryOtp,
+        })
+        .from(deliveryGroupInvoice)
+        .innerJoin(
+          deliveryGroup,
+          eq(deliveryGroupInvoice.groupId, deliveryGroup.id),
+        )
+        .where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
+    : [];
+
+  return buildConsumerOrderJourney({
+    order: orderData,
+    invoices: orderInvoices,
+    deliveryLinks,
+  });
+}
 
 type RetailerCartInventoryKey = {
   shopId: string;
@@ -2002,7 +2045,14 @@ const queries = {
         with: { items: true },
         orderBy: [desc(order.createdAt)],
       });
-      return { orders };
+      return {
+        orders: await Promise.all(
+          orders.map(async (entry) => ({
+            ...entry,
+            journey: await loadConsumerOrderJourney(entry),
+          })),
+        ),
+      };
     }),
 
   /** Get order details by order number */
@@ -2026,35 +2076,17 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 
-      const orderInvoices = await db.query.invoice.findMany({
-        where: eq(invoice.orderId, found.id),
-        columns: { id: true },
-      });
-
-      let deliveryInfo: { status: string; otp: string | null } | null = null;
-
-      if (orderInvoices.length > 0) {
-        const invoiceIds = orderInvoices.map((inv) => inv.id);
-        const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
-          where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
-            invoiceIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-          with: { group: true },
-        });
-
-        if (deliveryInvoice) {
-          deliveryInfo = {
-            status: deliveryInvoice.group.status,
-            otp:
-              deliveryInvoice.group.status === "out_for_delivery"
-                ? deliveryInvoice.deliveryOtp
-                : null,
-          };
-        }
-      }
-
-      return { order: found, deliveryInfo };
+      const journey = await loadConsumerOrderJourney(found);
+      return {
+        order: found,
+        journey,
+        deliveryInfo: journey.delivery.status
+          ? {
+              status: journey.delivery.status,
+              otp: journey.delivery.otp,
+            }
+          : null,
+      };
     }),
 
   /** Get order status (order + payment info) */
@@ -2097,7 +2129,7 @@ const queries = {
     .handler(async ({ context }) => {
       const userId = context.session.user.id;
       const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
         with: { items: true },
         orderBy: [desc(order.createdAt)],
       });
@@ -2105,35 +2137,17 @@ const queries = {
         return { order: null, deliveryInfo: null };
       }
 
-      const orderInvoices = await db.query.invoice.findMany({
-        where: eq(invoice.orderId, activeOrder.id),
-        columns: { id: true },
-      });
-
-      let deliveryInfo: { status: string; otp: string | null } | null = null;
-
-      if (orderInvoices.length > 0) {
-        const invoiceIds = orderInvoices.map((inv) => inv.id);
-        const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
-          where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
-            invoiceIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-          with: { group: true },
-        });
-
-        if (deliveryInvoice) {
-          deliveryInfo = {
-            status: deliveryInvoice.group.status,
-            otp:
-              deliveryInvoice.group.status === "out_for_delivery"
-                ? deliveryInvoice.deliveryOtp
-                : null,
-          };
-        }
-      }
-
-      return { order: activeOrder, deliveryInfo };
+      const journey = await loadConsumerOrderJourney(activeOrder);
+      return {
+        order: activeOrder,
+        journey,
+        deliveryInfo: journey.delivery.status
+          ? {
+              status: journey.delivery.status,
+              otp: journey.delivery.otp,
+            }
+          : null,
+      };
     }),
 
   // ── Cart (authenticated customer) ────────────────────────────
@@ -4008,7 +4022,7 @@ const mutations = {
 
       // Check for active order
       const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
       });
       if (activeOrder) {
         throw new ORPCError("BAD_REQUEST", {
@@ -4225,7 +4239,7 @@ const mutations = {
         // prevents a late addition from being omitted and then cleared, and
         // prevents two concurrent placement requests from creating duplicates.
         const lockedActiveOrder = await tx.query.order.findFirst({
-          where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+          where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
           columns: { id: true },
         });
         if (lockedActiveOrder) {
@@ -4343,13 +4357,13 @@ const mutations = {
       };
     }),
 
-  /** Cancel a pending order */
+  /** Cancel a consumer order before invoicing. */
   cancelOrder: protectedProcedure
     .route({
       method: "POST",
       path: "/customer/orders/{orderId}/cancel",
       tags: ["Customer"],
-      summary: "Cancel pending order",
+      summary: "Cancel an order before invoicing",
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
@@ -4362,9 +4376,13 @@ const mutations = {
 
       if (!orderData)
         throw new ORPCError("NOT_FOUND", { message: "Order not found" });
-      if (orderData.status !== "pending") {
+      if (
+        !["pending", "confirmed", "ready_for_dispatch"].includes(
+          orderData.status,
+        )
+      ) {
         throw new ORPCError("BAD_REQUEST", {
-          message: "Only pending orders can be cancelled",
+          message: "Only orders that have not been invoiced can be cancelled",
         });
       }
 
@@ -4372,7 +4390,12 @@ const mutations = {
         const cancelled = await tx
           .update(order)
           .set({ status: "cancelled", cancelledAt: new Date() })
-          .where(and(eq(order.id, input.orderId), eq(order.status, "pending")))
+          .where(
+            and(
+              eq(order.id, input.orderId),
+              eq(order.status, orderData.status),
+            ),
+          )
           .returning({ id: order.id });
         if (cancelled.length === 0) {
           throw new ORPCError("BAD_REQUEST", {
@@ -4728,7 +4751,7 @@ const mutations = {
 
       // Check for active order
       const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
       });
 
       if (activeOrder) {

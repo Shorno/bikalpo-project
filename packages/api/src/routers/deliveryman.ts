@@ -8,25 +8,27 @@ import {
     deliveryRule,
     emptyPack,
     invoice,
-    user,
     order,
     orderReturn,
+    user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, deliverymanProcedure, protectedProcedure, warehouseOrAdminProcedure } from "../index";
 import { markOrderCartonsDispatched } from "./helpers/b2b-inventory-movement";
 import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
 import { DELIVERY_START_ORDER_STATUSES } from "./helpers/retailer-delivery-handoff";
+import {
+    createRetailerOrderStockWriter,
+    restoreRetailerOrderStock,
+} from "./helpers/retailer-order-stock";
 
 // Validation schemas
 const deliverymanIdSchema = z.object({
     id: z.string(),
 });
-
-console.log("--- LOADING DELIVERYMAN ROUTER WITH FIX ---");
 
 function getSessionWarehouseId(context: {
     session: { user: unknown };
@@ -34,6 +36,22 @@ function getSessionWarehouseId(context: {
     return (
         context.session.user as { warehouseId?: string | null }
     ).warehouseId ?? null;
+}
+
+function getSessionShopId(context: {
+    session: { user: unknown };
+}) {
+    return (
+        context.session.user as { shopId?: string | null }
+    ).shopId ?? null;
+}
+
+function getDeliveryOwnerCondition(context: { session: { user: unknown } }) {
+    const warehouseId = getSessionWarehouseId(context);
+    if (warehouseId) return eq(deliveryGroup.warehouseId, warehouseId);
+    const shopId = getSessionShopId(context);
+    if (shopId) return eq(deliveryGroup.shopId, shopId);
+    return undefined;
 }
 
 export const deliverymanRouter = {
@@ -186,11 +204,13 @@ export const deliverymanRouter = {
         .handler(async ({ context }) => {
             try {
                 const warehouseId = getSessionWarehouseId(context);
+                const shopId = getSessionShopId(context);
                 const groups = await db.query.deliveryGroup.findMany({
                     where: and(
                         eq(deliveryGroup.deliverymanId, context.session.user.id),
                         sql`${deliveryGroup.status} IN ('assigned', 'out_for_delivery')`,
                         ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
+                        ...(!warehouseId && shopId ? [eq(deliveryGroup.shopId, shopId)] : []),
                     ),
                     with: {
                         invoices: {
@@ -272,6 +292,7 @@ export const deliverymanRouter = {
         )
         .handler(async ({ input, context }) => {
             const warehouseId = getSessionWarehouseId(context);
+            const shopId = getSessionShopId(context);
             const limit = input?.limit ?? 20;
             const offset = input?.offset ?? 0;
 
@@ -279,6 +300,7 @@ export const deliverymanRouter = {
                 eq(deliveryGroup.deliverymanId, context.session.user.id),
                 inArray(deliveryGroup.status, ["completed", "partial"]),
                 ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
+                ...(!warehouseId && shopId ? [eq(deliveryGroup.shopId, shopId)] : []),
             );
 
             const [{ total }] = await db
@@ -348,11 +370,13 @@ export const deliverymanRouter = {
         .input(z.object({ id: z.number() }))
         .handler(async ({ input, context }) => {
             const warehouseId = getSessionWarehouseId(context);
+            const shopId = getSessionShopId(context);
             const group = await db.query.deliveryGroup.findFirst({
                 where: and(
                     eq(deliveryGroup.id, input.id),
                     eq(deliveryGroup.deliverymanId, context.session.user.id),
                     ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
+                    ...(!warehouseId && shopId ? [eq(deliveryGroup.shopId, shopId)] : []),
                 ),
                 with: {
                     deliveryman: {
@@ -436,6 +460,7 @@ export const deliverymanRouter = {
         }))
         .handler(async ({ input, context }) => {
             const warehouseId = getSessionWarehouseId(context);
+            const shopId = getSessionShopId(context);
             const group = await db.query.deliveryGroup.findFirst({
                 where: eq(deliveryGroup.id, input.id),
                 with: { invoices: true },
@@ -444,17 +469,28 @@ export const deliverymanRouter = {
             if (!group) throw new ORPCError("NOT_FOUND", { message: "Group not found" });
             if (group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
             if (warehouseId && group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
+            if (shopId && group.shopId !== shopId) throw new ORPCError("FORBIDDEN");
             if (group.status !== "assigned") throw new ORPCError("BAD_REQUEST", { message: "Trip already started" });
 
             const generateOtp = () => randomInt(1000, 10_000).toString();
 
             await db.transaction(async (tx) => {
-                await tx.update(deliveryGroup).set({
-                    status: "out_for_delivery",
-                    startLat: input.lat?.toString() ?? null,
-                    startLng: input.lng?.toString() ?? null,
-                    startedAt: new Date(),
-                }).where(eq(deliveryGroup.id, input.id));
+                const [startedGroup] = await tx
+                    .update(deliveryGroup)
+                    .set({
+                        status: "out_for_delivery",
+                        startLat: input.lat?.toString() ?? null,
+                        startLng: input.lng?.toString() ?? null,
+                        startedAt: new Date(),
+                    })
+                    .where(and(
+                        eq(deliveryGroup.id, input.id),
+                        eq(deliveryGroup.status, "assigned"),
+                    ))
+                    .returning({ id: deliveryGroup.id });
+                if (!startedGroup) {
+                    throw new ORPCError("BAD_REQUEST", { message: "Trip already started" });
+                }
 
                 // Collect unique order IDs to update their status
                 const orderIdsToUpdate = new Set<number>();
@@ -522,30 +558,45 @@ export const deliverymanRouter = {
         }))
         .handler(async ({ input, context }) => {
             const warehouseId = getSessionWarehouseId(context);
+            const shopId = getSessionShopId(context);
             const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
                 where: eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
-                with: { group: true, invoice: true },
+                with: {
+                    group: true,
+                    invoice: { with: { order: true } },
+                },
             });
 
             if (!deliveryInv) throw new ORPCError("NOT_FOUND");
             if (deliveryInv.group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
             if (warehouseId && deliveryInv.group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
+            if (shopId && deliveryInv.group.shopId !== shopId) throw new ORPCError("FORBIDDEN");
             if (deliveryInv.group.status !== "out_for_delivery") throw new ORPCError("BAD_REQUEST", { message: "Trip not started" });
             if (deliveryInv.status !== "pending") throw new ORPCError("BAD_REQUEST", { message: "Already processed" });
             if (deliveryInv.deliveryOtp !== input.deliveryOtp) throw new ORPCError("BAD_REQUEST", { message: "Invalid OTP" });
 
             await db.transaction(async (tx) => {
                 // Update delivery group invoice with all data
-                await tx.update(deliveryGroupInvoice).set({
-                    status: "delivered",
-                    deliveredAt: new Date(),
-                    deliveryPhoto: input.deliveryPhoto,
-                    deliveryLat: input.lat?.toString() ?? null,
-                    deliveryLng: input.lng?.toString() ?? null,
-                    paymentMethod: input.paymentMethod ?? null,
-                    amountCollected: input.amountCollected?.toString() ?? "0",
-                    transactionId: input.transactionId ?? null,
-                }).where(eq(deliveryGroupInvoice.id, input.deliveryInvoiceId));
+                const [completedLink] = await tx
+                    .update(deliveryGroupInvoice)
+                    .set({
+                        status: "delivered",
+                        deliveredAt: new Date(),
+                        deliveryPhoto: input.deliveryPhoto,
+                        deliveryLat: input.lat?.toString() ?? null,
+                        deliveryLng: input.lng?.toString() ?? null,
+                        paymentMethod: input.paymentMethod ?? null,
+                        amountCollected: input.amountCollected?.toString() ?? "0",
+                        transactionId: input.transactionId ?? null,
+                    })
+                    .where(and(
+                        eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
+                        eq(deliveryGroupInvoice.status, "pending"),
+                    ))
+                    .returning({ id: deliveryGroupInvoice.id });
+                if (!completedLink) {
+                    throw new ORPCError("BAD_REQUEST", { message: "Delivery already processed" });
+                }
 
                 // Update invoice status
                 await tx.update(invoice).set({
@@ -554,7 +605,19 @@ export const deliverymanRouter = {
                     paymentStatus: input.amountCollected ? "collected" : "unpaid",
                 }).where(eq(invoice.id, deliveryInv.invoiceId));
 
-                await syncOrderFromDeliveredInvoice(tx, deliveryInv.invoiceId);
+                await syncOrderFromDeliveredInvoice(tx, deliveryInv.invoiceId, {
+                    markReceived: deliveryInv.invoice?.order?.orderType === "b2c",
+                });
+                if (
+                    deliveryInv.invoice?.order?.orderType === "b2c" &&
+                    input.amountCollected &&
+                    input.amountCollected > 0
+                ) {
+                    await tx
+                        .update(order)
+                        .set({ paymentStatus: "paid" })
+                        .where(eq(order.id, deliveryInv.invoice.order.id));
+                }
 
                 // Update delivery group counters + running payment total
                 const cashAdd = input.paymentMethod === "cash" ? (input.amountCollected || 0) : 0;
@@ -616,6 +679,7 @@ export const deliverymanRouter = {
         }))
         .handler(async ({ input, context }) => {
             const warehouseId = getSessionWarehouseId(context);
+            const shopId = getSessionShopId(context);
             const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
                 where: eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
                 with: { group: true },
@@ -624,17 +688,28 @@ export const deliverymanRouter = {
             if (!deliveryInv) throw new ORPCError("NOT_FOUND");
             if (deliveryInv.group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
             if (warehouseId && deliveryInv.group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
+            if (shopId && deliveryInv.group.shopId !== shopId) throw new ORPCError("FORBIDDEN");
             if (deliveryInv.group.status !== "out_for_delivery") throw new ORPCError("BAD_REQUEST", { message: "Trip not started" });
             if (deliveryInv.status !== "pending") throw new ORPCError("BAD_REQUEST", { message: "Already processed" });
 
             await db.transaction(async (tx) => {
-                await tx.update(deliveryGroupInvoice).set({
-                    status: "failed",
-                    failedReason: input.failedReason,
-                    failedPhoto: input.failedPhoto ?? null,
-                    deliveryLat: input.lat?.toString() ?? null,
-                    deliveryLng: input.lng?.toString() ?? null,
-                }).where(eq(deliveryGroupInvoice.id, input.deliveryInvoiceId));
+                const [failedLink] = await tx
+                    .update(deliveryGroupInvoice)
+                    .set({
+                        status: "failed",
+                        failedReason: input.failedReason,
+                        failedPhoto: input.failedPhoto ?? null,
+                        deliveryLat: input.lat?.toString() ?? null,
+                        deliveryLng: input.lng?.toString() ?? null,
+                    })
+                    .where(and(
+                        eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
+                        eq(deliveryGroupInvoice.status, "pending"),
+                    ))
+                    .returning({ id: deliveryGroupInvoice.id });
+                if (!failedLink) {
+                    throw new ORPCError("BAD_REQUEST", { message: "Delivery already processed" });
+                }
 
                 await tx.update(invoice).set({ deliveryStatus: "failed" }).where(eq(invoice.id, deliveryInv.invoiceId));
 
@@ -669,7 +744,7 @@ export const deliverymanRouter = {
             method: "POST",
             path: "/deliveries/mark-returned",
             tags: ["Deliveryman"],
-            summary: "Mark invoice as returned — goods brought back to warehouse",
+            summary: "Mark invoice as returned — goods brought back to the dispatch location",
         })
         .input(z.object({
             deliveryInvoiceId: z.number(),
@@ -680,31 +755,61 @@ export const deliverymanRouter = {
         }))
         .handler(async ({ input, context }) => {
             const warehouseId = getSessionWarehouseId(context);
+            const shopId = getSessionShopId(context);
             const deliveryInv = await db.query.deliveryGroupInvoice.findFirst({
                 where: eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
-                with: { group: true, invoice: true },
+                with: {
+                    group: true,
+                    invoice: {
+                        with: {
+                            order: { with: { items: true } },
+                        },
+                    },
+                },
             });
 
             if (!deliveryInv) throw new ORPCError("NOT_FOUND");
             if (deliveryInv.group.deliverymanId !== context.session.user.id) throw new ORPCError("FORBIDDEN");
             if (warehouseId && deliveryInv.group.warehouseId !== warehouseId) throw new ORPCError("FORBIDDEN");
+            if (shopId && deliveryInv.group.shopId !== shopId) throw new ORPCError("FORBIDDEN");
             if (deliveryInv.group.status !== "out_for_delivery") throw new ORPCError("BAD_REQUEST", { message: "Trip not started" });
             if (deliveryInv.status !== "pending") throw new ORPCError("BAD_REQUEST", { message: "Already processed" });
 
             await db.transaction(async (tx) => {
                 // Mark delivery invoice as returned
-                await tx.update(deliveryGroupInvoice).set({
-                    status: "returned",
-                    failedReason: `RETURNED: ${input.returnReason}`,
-                    failedPhoto: input.returnPhoto ?? null,
-                    deliveryLat: input.lat?.toString() ?? null,
-                    deliveryLng: input.lng?.toString() ?? null,
-                }).where(eq(deliveryGroupInvoice.id, input.deliveryInvoiceId));
+                const [returnedLink] = await tx
+                    .update(deliveryGroupInvoice)
+                    .set({
+                        status: "returned",
+                        failedReason: `RETURNED: ${input.returnReason}`,
+                        failedPhoto: input.returnPhoto ?? null,
+                        deliveryLat: input.lat?.toString() ?? null,
+                        deliveryLng: input.lng?.toString() ?? null,
+                    })
+                    .where(and(
+                        eq(deliveryGroupInvoice.id, input.deliveryInvoiceId),
+                        eq(deliveryGroupInvoice.status, "pending"),
+                    ))
+                    .returning({ id: deliveryGroupInvoice.id });
+                if (!returnedLink) {
+                    throw new ORPCError("BAD_REQUEST", { message: "Delivery already processed" });
+                }
 
                 // Update invoice delivery status
                 await tx.update(invoice).set({
                     deliveryStatus: "returned",
                 }).where(eq(invoice.id, deliveryInv.invoiceId));
+
+                if (
+                    deliveryInv.invoice?.order?.orderType === "b2c" &&
+                    deliveryInv.group.shopId
+                ) {
+                    await restoreRetailerOrderStock(
+                        createRetailerOrderStockWriter(tx),
+                        deliveryInv.group.shopId,
+                        deliveryInv.invoice.order.items,
+                    );
+                }
 
                 // Update order status to returned
                 if (deliveryInv.invoice?.orderId) {
@@ -758,10 +863,12 @@ export const deliverymanRouter = {
         .handler(async ({ context }) => {
             const userId = context.session.user.id;
             const warehouseId = getSessionWarehouseId(context);
+            const shopId = getSessionShopId(context);
             const groups = await db.query.deliveryGroup.findMany({
                 where: and(
                     eq(deliveryGroup.deliverymanId, userId),
                     ...(warehouseId ? [eq(deliveryGroup.warehouseId, warehouseId)] : []),
+                    ...(!warehouseId && shopId ? [eq(deliveryGroup.shopId, shopId)] : []),
                 ),
                 with: { invoices: true },
             });
@@ -790,19 +897,31 @@ export const deliverymanRouter = {
                     ),
                 );
 
-            let todayDelivered = 0, todayFailed = 0, pending = 0, delivered = 0, failed = 0, returned = 0;
-            groups.forEach(g => g.invoices.forEach(inv => {
-                if (inv.status === "delivered") {
-                    delivered++;
-                    if (inv.deliveredAt && inv.deliveredAt >= today) todayDelivered++;
-                } else if (inv.status === "failed") {
-                    failed++;
-                    todayFailed++;
-                } else if (inv.status === "returned") {
-                    returned++;
-                    failed++; // count returned as failed for success rate
-                } else if (inv.status === "pending") pending++;
-            }));
+            let todayDelivered = 0;
+            let todayFailed = 0;
+            let pending = 0;
+            let delivered = 0;
+            let failed = 0;
+            for (const group of groups) {
+                for (const linkedInvoice of group.invoices) {
+                    if (linkedInvoice.status === "delivered") {
+                        delivered++;
+                        if (
+                            linkedInvoice.deliveredAt &&
+                            linkedInvoice.deliveredAt >= today
+                        ) {
+                            todayDelivered++;
+                        }
+                    } else if (linkedInvoice.status === "failed") {
+                        failed++;
+                        todayFailed++;
+                    } else if (linkedInvoice.status === "returned") {
+                        failed++;
+                    } else if (linkedInvoice.status === "pending") {
+                        pending++;
+                    }
+                }
+            }
 
             const totalDeliveriesCount = delivered + failed + pending;
             const successRate = (delivered + failed) > 0 ? Math.round((delivered / (delivered + failed)) * 100) : 100;
@@ -824,37 +943,37 @@ export const deliverymanRouter = {
             };
         }),
 
-    /**
-     * Get delivery man's assigned warehouse details
-     */
+    /** Get the deliveryman's assigned dispatch organization. */
     getAssignedWarehouse: deliverymanProcedure
         .route({
             method: "GET",
             path: "/assigned-warehouse",
             tags: ["Deliveryman"],
-            summary: "Get deliveryman's assigned warehouse details",
+            summary: "Get deliveryman's assigned dispatch organization",
         })
         .handler(async ({ context }) => {
             const warehouseId = getSessionWarehouseId(context);
-            if (!warehouseId) {
+            const shopId = getSessionShopId(context);
+            const ownerId = warehouseId ?? shopId;
+            if (!ownerId) {
                 return null;
             }
 
-            const warehouseUser = await db.query.user.findFirst({
-                where: eq(user.id, warehouseId),
+            const owner = await db.query.user.findFirst({
+                where: eq(user.id, ownerId),
             });
 
-            if (!warehouseUser) {
+            if (!owner) {
                 return null;
             }
 
             return {
-                id: warehouseUser.id,
-                name: warehouseUser.name,
-                warehouseName: warehouseUser.warehouseName,
-                warehouseAddress: warehouseUser.warehouseAddress,
-                phoneNumber: warehouseUser.phoneNumber,
-                email: warehouseUser.email,
+                id: owner.id,
+                name: owner.name,
+                warehouseName: owner.warehouseName ?? owner.shopName,
+                warehouseAddress: owner.warehouseAddress ?? owner.shopAddress,
+                phoneNumber: owner.phoneNumber,
+                email: owner.email,
             };
         }),
 
@@ -1088,26 +1207,27 @@ export const deliverymanRouter = {
                     })
                     .where(inArray(invoice.id, input.invoiceIds));
 
-                const linkedInvoices = await tx.query.invoice.findMany({
-                    where: inArray(invoice.id, input.invoiceIds),
-                    columns: { orderId: true },
-                });
-                const orderIds = [...new Set(linkedInvoices.map(i => i.orderId).filter(Boolean))] as number[];
-                if (orderIds.length > 0) {
-                    await tx.update(order).set({
-                        status: "processing",
-                        processingStartedAt: new Date(),
-                        shippedAt: new Date(),
-                        ...(deliveryman
-                            ? {
+                if (deliveryman) {
+                    const linkedInvoices = await tx.query.invoice.findMany({
+                        where: inArray(invoice.id, input.invoiceIds),
+                        columns: { orderId: true },
+                    });
+                    const orderIds = [
+                        ...new Set(
+                            linkedInvoices
+                                .map((linkedInvoice) => linkedInvoice.orderId)
+                                .filter((orderId): orderId is number => typeof orderId === "number"),
+                        ),
+                    ];
+                    if (orderIds.length > 0) {
+                        await tx
+                            .update(order)
+                            .set({
                                 riderName: deliveryman.name,
                                 riderPhone: deliveryman.phoneNumber,
-                            }
-                            : {}),
-                    }).where(and(
-                        inArray(order.id, orderIds),
-                        sql`${order.status} IN ('pending', 'confirmed')`,
-                    ));
+                            })
+                            .where(inArray(order.id, orderIds));
+                    }
                 }
 
                 return group;
@@ -1215,20 +1335,33 @@ export const deliverymanRouter = {
                     })
                     .where(inArray(invoice.id, input.invoiceIds));
 
-                const linkedInvoices = await tx.query.invoice.findMany({
-                    where: inArray(invoice.id, input.invoiceIds),
-                    columns: { orderId: true },
-                });
-                const orderIds = [...new Set(linkedInvoices.map((row) => row.orderId).filter(Boolean))] as number[];
-                if (orderIds.length > 0) {
-                    await tx.update(order).set({
-                        status: "processing",
-                        processingStartedAt: new Date(),
-                        shippedAt: new Date(),
-                    }).where(and(
-                        inArray(order.id, orderIds),
-                        sql`${order.status} IN ('pending', 'confirmed')`,
-                    ));
+                if (existingGroup.deliverymanId) {
+                    const [linkedInvoices, assignedRider] = await Promise.all([
+                        tx.query.invoice.findMany({
+                            where: inArray(invoice.id, input.invoiceIds),
+                            columns: { orderId: true },
+                        }),
+                        tx.query.user.findFirst({
+                            where: eq(user.id, existingGroup.deliverymanId),
+                            columns: { name: true, phoneNumber: true },
+                        }),
+                    ]);
+                    const orderIds = [
+                        ...new Set(
+                            linkedInvoices
+                                .map((linkedInvoice) => linkedInvoice.orderId)
+                                .filter((orderId): orderId is number => typeof orderId === "number"),
+                        ),
+                    ];
+                    if (assignedRider && orderIds.length > 0) {
+                        await tx
+                            .update(order)
+                            .set({
+                                riderName: assignedRider.name,
+                                riderPhone: assignedRider.phoneNumber,
+                            })
+                            .where(inArray(order.id, orderIds));
+                    }
                 }
             });
 
@@ -1771,6 +1904,7 @@ export const deliverymanRouter = {
                 where: and(
                     eq(deliveryGroup.id, input.groupId),
                     eq(deliveryGroup.deliverymanId, context.session.user.id),
+                    getDeliveryOwnerCondition(context),
                 ),
                 columns: { id: true, status: true },
             });
@@ -1821,6 +1955,14 @@ export const deliverymanRouter = {
             if (deliveryInv.group.deliverymanId !== context.session.user.id) {
                 throw new ORPCError("FORBIDDEN");
             }
+            const warehouseId = getSessionWarehouseId(context);
+            const shopId = getSessionShopId(context);
+            if (warehouseId && deliveryInv.group.warehouseId !== warehouseId) {
+                throw new ORPCError("FORBIDDEN");
+            }
+            if (shopId && deliveryInv.group.shopId !== shopId) {
+                throw new ORPCError("FORBIDDEN");
+            }
 
             const [created] = await db.insert(emptyPack).values({
                 deliveryGroupInvoiceId: input.deliveryGroupInvoiceId,
@@ -1856,6 +1998,7 @@ export const deliverymanRouter = {
                 where: and(
                     eq(deliveryGroup.id, input.groupId),
                     eq(deliveryGroup.deliverymanId, context.session.user.id),
+                    getDeliveryOwnerCondition(context),
                 ),
                 with: { invoices: { with: { invoice: true } } },
             });
@@ -1928,6 +2071,7 @@ export const deliverymanRouter = {
                 where: and(
                     eq(deliveryGroup.id, input.groupId),
                     eq(deliveryGroup.deliverymanId, context.session.user.id),
+                    getDeliveryOwnerCondition(context),
                 ),
                 with: {
                     invoices: {
@@ -2005,6 +2149,7 @@ export const deliverymanRouter = {
                 where: and(
                     eq(deliveryGroup.id, input.groupId),
                     eq(deliveryGroup.deliverymanId, context.session.user.id),
+                    getDeliveryOwnerCondition(context),
                 ),
                 with: { invoices: true },
             });

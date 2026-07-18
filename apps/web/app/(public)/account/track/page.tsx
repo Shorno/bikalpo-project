@@ -1,5 +1,5 @@
-import { TrackOrderClient } from "@/components/shop/track-order-client";
+import { ActiveOrderRedirect } from "@/components/shop/active-order-redirect";
 
 export default function TrackOrderPage() {
-  return <TrackOrderClient />;
+  return <ActiveOrderRedirect />;
 }

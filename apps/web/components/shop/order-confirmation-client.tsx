@@ -159,13 +159,10 @@ export function OrderConfirmationClient({
 
             {/* Actions */}
             <div className="flex flex-wrap gap-3">
-              <Button
-                asChild
-                className="bg-emerald-600 hover:bg-emerald-700 gap-2"
-              >
-                <Link href="/account/track">
+              <Button asChild className="gap-2 bg-blue-700 hover:bg-blue-800">
+                <Link href={`/account/orders/${order.orderNumber}`}>
                   <Truck className="h-4 w-4" />
-                  Track Your Order
+                  View order journey
                 </Link>
               </Button>
               <Button variant="outline" asChild className="gap-2">

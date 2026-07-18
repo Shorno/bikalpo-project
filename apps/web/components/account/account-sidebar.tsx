@@ -12,7 +12,6 @@ import {
   MapPin,
   Package,
   ShoppingCart,
-  Truck,
   User,
 } from "lucide-react";
 import Link from "next/link";
@@ -39,11 +38,6 @@ const sidebarItems = [
     label: "My Orders History",
     href: "/account/orders",
     icon: Package,
-  },
-  {
-    label: "Track Order",
-    href: "/account/track",
-    icon: Truck,
   },
   {
     label: "Estimates",
