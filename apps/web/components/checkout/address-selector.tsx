@@ -2,10 +2,9 @@
 
 import type { Address } from "@bikalpo-project/db/schema";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Home, Loader2, MapPin, Plus } from "lucide-react";
+import { Check, ChevronDown, Home, Loader2, MapPin, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AddressForm } from "@/components/account/address-form";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -27,164 +26,219 @@ export function AddressSelector({
 }: AddressSelectorProps) {
   const queryClient = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addressesOpen, setAddressesOpen] = useState(false);
   const hasAutoSelected = useRef(false);
-
   const { data, isLoading } = useMyAddresses();
-
   const addresses = data?.addresses ?? [];
+  const selectedAddress = addresses.find(
+    (address) => address.id === selectedAddressId,
+  );
 
-  // Auto-select default address ONLY on initial load (once)
   useEffect(() => {
-    if (addresses.length > 0 && !hasAutoSelected.current) {
-      const defaultAddress = addresses.find((addr) => addr.isDefault);
-      if (defaultAddress) {
-        hasAutoSelected.current = true;
-        onSelectAddress(defaultAddress);
-      }
+    if (addresses.length === 0 || hasAutoSelected.current) return;
+    const defaultAddress = addresses.find((address) => address.isDefault);
+    hasAutoSelected.current = true;
+    if (defaultAddress) {
+      onSelectAddress(defaultAddress);
+    } else {
+      setAddressesOpen(true);
     }
   }, [addresses, onSelectAddress]);
 
   const handleAddressAdded = () => {
     setShowAddModal(false);
-    // Refetch addresses to get the newly added one
     queryClient.invalidateQueries({
       queryKey: orpc.customer.getMyAddresses.key(),
     });
   };
 
+  const addressDialog = (
+    <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+      <DialogContent
+        className="overflow-hidden p-0 sm:max-w-lg"
+        showCloseButton={false}
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>Add new address</DialogTitle>
+        </DialogHeader>
+        <AddressForm onClose={handleAddressAdded} />
+      </DialogContent>
+    </Dialog>
+  );
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-4">
-        <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
-        <span className="ml-2 text-sm text-gray-500">Loading addresses...</span>
+      <div
+        className="flex min-h-14 animate-pulse items-center gap-3 rounded-lg bg-muted/55 px-4"
+        role="status"
+        aria-label="Loading saved addresses"
+      >
+        <Loader2 className="size-4 animate-spin text-primary" />
+        <span className="text-sm text-muted-foreground">
+          Loading saved addresses...
+        </span>
       </div>
     );
   }
 
   if (addresses.length === 0) {
     return (
-      <div className="mb-4">
-        <button
-          type="button"
-          onClick={() => setShowAddModal(true)}
-          className="w-full p-3 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-700 flex items-center justify-center gap-2 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          <span className="text-sm font-medium">Add a Saved Address</span>
-        </button>
-
-        {/* Add Address Modal */}
-        <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-          <DialogContent
-            className="sm:max-w-lg p-0 overflow-hidden"
-            showCloseButton={false}
+      <>
+        <div className="flex min-h-14 items-center justify-between gap-4 rounded-lg bg-muted/40 px-4 py-2.5">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">
+              No saved delivery addresses
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Enter the delivery details below.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
           >
-            <DialogHeader className="sr-only">
-              <DialogTitle>Add New Address</DialogTitle>
-            </DialogHeader>
-            <AddressForm onClose={handleAddressAdded} />
-          </DialogContent>
-        </Dialog>
-      </div>
+            <Plus className="size-3.5" aria-hidden="true" />
+            Save an address
+          </button>
+        </div>
+        {addressDialog}
+      </>
     );
   }
 
   return (
-    <div className="space-y-3 mb-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-gray-700">Saved Addresses</p>
-        <button
-          type="button"
-          onClick={() => setShowAddModal(true)}
-          className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
-        >
-          <Plus className="h-3 w-3" />
-          Add New
-        </button>
-      </div>
+    <>
+      <div className="rounded-lg border bg-background">
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              Saved addresses
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Choose a saved address or enter a different one.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+            Add new
+          </button>
+        </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {addresses.map((address) => {
-          const isSelected = selectedAddressId === address.id;
-          return (
+        {selectedAddress && !addressesOpen ? (
+          <button
+            type="button"
+            onClick={() => setAddressesOpen(true)}
+            className="flex w-full items-center gap-3 border-t px-4 py-3.5 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/35"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/9 text-primary">
+              <Check className="size-4" aria-hidden="true" />
+            </span>
+            <AddressDetails address={selectedAddress} className="flex-1" />
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-primary">
+              Change
+              <ChevronDown className="size-3.5" aria-hidden="true" />
+            </span>
+          </button>
+        ) : (
+          <div
+            className="grid gap-2 border-t p-3"
+            role="radiogroup"
+            aria-label="Saved delivery addresses"
+          >
+            {addresses.map((address) => {
+              const isSelected = selectedAddressId === address.id;
+              return (
+                <button
+                  key={address.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => {
+                    onSelectAddress(address);
+                    setAddressesOpen(false);
+                  }}
+                  className={cn(
+                    "flex min-h-16 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35",
+                    isSelected && "border-primary/45 bg-primary/[0.055]",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground",
+                      isSelected && "bg-primary/10 text-primary",
+                    )}
+                  >
+                    {isSelected ? (
+                      <Check className="size-4" aria-hidden="true" />
+                    ) : address.label.toLowerCase() === "home" ? (
+                      <Home className="size-4" aria-hidden="true" />
+                    ) : (
+                      <MapPin className="size-4" aria-hidden="true" />
+                    )}
+                  </span>
+                  <AddressDetails address={address} className="flex-1" />
+                  {address.isDefault && (
+                    <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Default
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
             <button
-              key={address.id}
               type="button"
-              onClick={() => onSelectAddress(address)}
+              role="radio"
+              aria-checked={selectedAddressId === null}
+              onClick={() => {
+                onSelectAddress(null);
+                setAddressesOpen(false);
+              }}
               className={cn(
-                "relative p-3 rounded-lg border text-left transition-all",
-                isSelected
-                  ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500"
-                  : "border-gray-200 hover:border-emerald-300 hover:bg-gray-50",
+                "flex min-h-12 items-center gap-3 rounded-lg border px-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35",
+                selectedAddressId === null &&
+                  "border-primary/45 bg-primary/[0.055] text-foreground",
               )}
             >
-              {/* Selection indicator */}
-              {isSelected && (
-                <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                  <Check className="h-3 w-3 text-white" />
-                </div>
-              )}
-
-              {/* Address label with icon */}
-              <div className="flex items-center gap-1.5 mb-1">
-                {address.label.toLowerCase() === "home" ? (
-                  <Home className="h-3.5 w-3.5 text-gray-400" />
-                ) : (
-                  <MapPin className="h-3.5 w-3.5 text-gray-400" />
-                )}
-                <span className="text-sm font-medium text-gray-900">
-                  {address.label}
-                </span>
-                {address.isDefault && (
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 border-0"
-                  >
-                    Default
-                  </Badge>
-                )}
-              </div>
-
-              {/* Address details */}
-              <p className="text-xs text-gray-600 line-clamp-1">
-                {address.recipientName} • {address.phone}
-              </p>
-              <p className="text-xs text-gray-500 line-clamp-1">
-                {address.address}, {address.city}
-                {address.area && `, ${address.area}`}
-              </p>
+              <span className="flex size-8 items-center justify-center rounded-md bg-muted">
+                <Plus className="size-4" aria-hidden="true" />
+              </span>
+              Use a different address
             </button>
-          );
-        })}
-
-        {/* New address option */}
-        <button
-          type="button"
-          onClick={() => onSelectAddress(null)}
-          className={cn(
-            "p-3 rounded-lg border text-left transition-all flex items-center justify-center gap-2",
-            selectedAddressId === null
-              ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500"
-              : "border-dashed border-gray-300 hover:border-emerald-300 hover:bg-gray-50",
-          )}
-        >
-          <Plus className="h-4 w-4 text-gray-400" />
-          <span className="text-sm text-gray-600">Use a different address</span>
-        </button>
+          </div>
+        )}
       </div>
+      {addressDialog}
+    </>
+  );
+}
 
-      {/* Add Address Modal */}
-      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent
-          className="sm:max-w-lg p-0 overflow-hidden"
-          showCloseButton={false}
-        >
-          <DialogHeader className="sr-only">
-            <DialogTitle>Add New Address</DialogTitle>
-          </DialogHeader>
-          <AddressForm onClose={handleAddressAdded} />
-        </DialogContent>
-      </Dialog>
-    </div>
+function AddressDetails({
+  address,
+  className,
+}: {
+  address: Address;
+  className?: string;
+}) {
+  return (
+    <span className={cn("min-w-0", className)}>
+      <span className="flex items-center gap-2">
+        <span className="truncate text-sm font-semibold text-foreground">
+          {address.label}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {address.recipientName}
+        </span>
+      </span>
+      <span className="mt-0.5 block truncate text-xs leading-5 text-muted-foreground">
+        {address.address}, {address.city}
+        {address.area && `, ${address.area}`}
+      </span>
+    </span>
   );
 }
