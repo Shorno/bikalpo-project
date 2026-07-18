@@ -345,6 +345,7 @@ export default function ShopStorePage({
                       <StorefrontProductCard
                         key={product.id}
                         product={product}
+                        shopSlug={shop.shopSlug || slug}
                         previewMode={previewMode}
                         isAdding={
                           addToCart.isPending &&

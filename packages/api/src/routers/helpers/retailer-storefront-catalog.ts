@@ -30,6 +30,41 @@ export interface RetailerStorefrontFacet {
   subcategories: Array<{ name: string; slug: string; count: number }>;
 }
 
+export interface RetailerInventoryVariantRow<
+  TVariant extends {
+    productId: number;
+    isActive: boolean | null;
+    sortOrder: number | null;
+  },
+> {
+  ownerId: string;
+  retailPrice: string | null;
+  availableQty: string;
+  variant: TVariant;
+}
+
+export function selectSellableRetailerVariants<
+  TRow extends RetailerInventoryVariantRow<{
+    productId: number;
+    isActive: boolean | null;
+    sortOrder: number | null;
+  }>,
+>(rows: TRow[], input: { shopId: string; productId: number }): TRow[] {
+  return rows
+    .filter(
+      (row) =>
+        row.ownerId === input.shopId &&
+        row.variant.productId === input.productId &&
+        row.variant.isActive === true &&
+        Number(row.availableQty) > 0 &&
+        Number(row.retailPrice) > 0,
+    )
+    .sort(
+      (left, right) =>
+        (left.variant.sortOrder ?? 0) - (right.variant.sortOrder ?? 0),
+    );
+}
+
 export function buildRetailerStorefrontFacets(
   products: RetailerStorefrontProduct[],
 ): RetailerStorefrontFacet[] {

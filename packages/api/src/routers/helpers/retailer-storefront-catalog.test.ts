@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildRetailerStorefrontFacets,
   filterAndSortRetailerStorefrontProducts,
+  selectSellableRetailerVariants,
 } from "./retailer-storefront-catalog";
 
 const products = [
@@ -98,5 +99,55 @@ test("applies hierarchical filters and every catalog sort", () => {
       sort: "name_asc",
     }).map((product) => product.id),
     [2, 1, 3],
+  );
+});
+
+test("isolates a retailer's sellable variants from other shops and unavailable rows", () => {
+  const rows = [
+    {
+      ownerId: "shop-a",
+      retailPrice: "120.00",
+      availableQty: "4",
+      variant: { id: 2, productId: 10, isActive: true, sortOrder: 2 },
+    },
+    {
+      ownerId: "shop-b",
+      retailPrice: "90.00",
+      availableQty: "8",
+      variant: { id: 3, productId: 10, isActive: true, sortOrder: 1 },
+    },
+    {
+      ownerId: "shop-a",
+      retailPrice: "100.00",
+      availableQty: "2",
+      variant: { id: 1, productId: 10, isActive: true, sortOrder: 1 },
+    },
+    {
+      ownerId: "shop-a",
+      retailPrice: "80.00",
+      availableQty: "0",
+      variant: { id: 4, productId: 10, isActive: true, sortOrder: 3 },
+    },
+    {
+      ownerId: "shop-a",
+      retailPrice: "70.00",
+      availableQty: "5",
+      variant: { id: 5, productId: 10, isActive: false, sortOrder: 4 },
+    },
+  ];
+
+  assert.deepEqual(
+    selectSellableRetailerVariants(rows, {
+      shopId: "shop-a",
+      productId: 10,
+    }).map((row) => row.variant.id),
+    [1, 2],
+  );
+  assert.deepEqual(
+    selectSellableRetailerVariants(rows, {
+      shopId: "shop-missing",
+      productId: 10,
+    }),
+    [],
   );
 });

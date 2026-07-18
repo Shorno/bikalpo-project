@@ -101,6 +101,7 @@ import {
   buildRetailerStorefrontFacets,
   filterAndSortRetailerStorefrontProducts,
   retailerStorefrontSortValues,
+  selectSellableRetailerVariants,
 } from "./helpers/retailer-storefront-catalog";
 
 // ────────────────────────────────────────────────────────────────
@@ -2015,6 +2016,9 @@ const queries = {
                   price: true,
                   inStock: true,
                 },
+                with: {
+                  category: { columns: { slug: true } },
+                },
               },
               variant: {
                 columns: {
@@ -2040,14 +2044,25 @@ const queries = {
             .filter((id): id is string => !!id),
         ),
       ];
-      const shopMap = new Map<string, string>();
+      const shopMap = new Map<
+        string,
+        { name: string; shopSlug: string | null }
+      >();
       if (shopIds.length > 0) {
         const shops = await db
-          .select({ id: user.id, shopName: user.shopName, name: user.name })
+          .select({
+            id: user.id,
+            shopName: user.shopName,
+            name: user.name,
+            shopSlug: user.shopSlug,
+          })
           .from(user)
           .where(inArray(user.id, shopIds));
         for (const s of shops) {
-          shopMap.set(s.id, s.shopName || s.name);
+          shopMap.set(s.id, {
+            name: s.shopName || s.name,
+            shopSlug: s.shopSlug,
+          });
         }
       }
 
@@ -2068,7 +2083,7 @@ const queries = {
           variantId: item.variantId,
           name: displayName,
           slug: item.product.slug,
-          categorySlug: undefined as string | undefined,
+          categorySlug: item.product.category?.slug,
           image: item.product.image,
           size: displaySize,
           price: Number(item.price),
@@ -2076,7 +2091,10 @@ const queries = {
           quantity: item.quantity,
           inStock: item.product.inStock,
           shopId: item.shopId,
-          shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
+          shopName: item.shopId ? shopMap.get(item.shopId)?.name || null : null,
+          shopSlug: item.shopId
+            ? shopMap.get(item.shopId)?.shopSlug || null
+            : null,
         };
       });
 
@@ -3208,6 +3226,112 @@ const queries = {
           limit: input.limit,
           totalCount,
           totalPages,
+        },
+      };
+    }),
+
+  /** Get one product exactly as sold by a specific approved retailer. */
+  getShopProductBySlug: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops/{shopSlug}/products/{productSlug}",
+      tags: ["Customer"],
+      summary: "Get a retailer-scoped product detail",
+    })
+    .input(
+      z.object({
+        shopSlug: z.string().trim().min(1).max(150),
+        productSlug: z.string().trim().min(1).max(150),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const shop = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          shopAddress: user.shopAddress,
+          businessType: user.businessType,
+          image: user.image,
+        })
+        .from(user)
+        .where(
+          and(
+            eq(user.shopSlug, input.shopSlug),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        )
+        .limit(1);
+
+      if (!shop[0]) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      const foundProduct = await db.query.product.findFirst({
+        where: and(
+          eq(product.slug, input.productSlug),
+          eq(product.status, "active"),
+          eq(product.visibility, "public"),
+        ),
+        with: {
+          images: true,
+          category: { columns: { name: true, slug: true } },
+          subCategory: { columns: { name: true, slug: true } },
+          brand: { columns: { id: true, name: true, slug: true, logo: true } },
+        },
+      });
+
+      if (!foundProduct) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+
+      const inventoryRows = await db
+        .select({
+          ownerId: inventory.ownerId,
+          variant: productVariant,
+          retailPrice: inventory.retailPrice,
+          availableQty: inventory.availableQty,
+        })
+        .from(inventory)
+        .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
+        .where(
+          and(
+            eq(inventory.ownerType, "shop"),
+            eq(inventory.ownerId, shop[0].id),
+            eq(productVariant.productId, foundProduct.id),
+          ),
+        )
+        .orderBy(asc(productVariant.sortOrder));
+
+      const shopVariants = selectSellableRetailerVariants(inventoryRows, {
+        shopId: shop[0].id,
+        productId: foundProduct.id,
+      });
+
+      if (shopVariants.length === 0) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Product is not available from this shop",
+        });
+      }
+
+      return {
+        shop: shop[0],
+        product: {
+          ...foundProduct,
+          lowestRetailPrice: Math.min(
+            ...shopVariants.map((row) => Number(row.retailPrice)),
+          ),
+          totalAvailableQty: shopVariants.reduce(
+            (total, row) => total + Number(row.availableQty),
+            0,
+          ),
+          variants: shopVariants.map(({ variant, retailPrice, availableQty }) => ({
+            ...variant,
+            retailPrice: retailPrice!,
+            availableQty,
+          })),
         },
       };
     }),

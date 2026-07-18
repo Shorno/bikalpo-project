@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
+import { getRetailerProductHref } from "@/lib/retailer-storefront-url";
 import { cn } from "@/lib/utils";
 
 export interface StorefrontFacet {
@@ -399,6 +400,7 @@ export function StorefrontMobileFilters({
 
 interface ProductCardProps {
   product: StorefrontProduct;
+  shopSlug: string;
   previewMode: boolean;
   isAdding: boolean;
   onQuickAdd: (product: StorefrontProduct) => void;
@@ -406,15 +408,17 @@ interface ProductCardProps {
 
 export function StorefrontProductCard({
   product,
+  shopSlug,
   previewMode,
   isAdding,
   onQuickAdd,
 }: ProductCardProps) {
   const image = product.images?.[0]?.imageUrl || product.image;
-  const detailHref = withCustomerStorefrontPreview(
-    `/products/${product.category?.slug ?? "all"}/${product.slug}`,
+  const detailHref = getRetailerProductHref({
+    shopSlug,
+    productSlug: product.slug,
     previewMode,
-  );
+  });
   const categoryContext = [product.category?.name, product.subCategory?.name]
     .filter(Boolean)
     .join(" / ");

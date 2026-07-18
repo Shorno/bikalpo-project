@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { CartItem as CartItemType } from "@/hooks/use-orpc-cart";
+import { getCartItemProductHref } from "@/lib/retailer-storefront-url";
 
 interface CartItemProps {
   item: CartItemType;
@@ -26,8 +27,11 @@ export function CartItem({
     return `৳${price.toLocaleString("en-BD")}`;
   };
 
-  // Product link format: /products/{categorySlug}/{productSlug}
-  const productLink = `/products/${item.categorySlug}/${item.slug}`;
+  const productLink = getCartItemProductHref({
+    shopSlug: item.shopSlug,
+    productSlug: item.slug,
+    categorySlug: item.categorySlug,
+  });
 
   return (
     <div className="flex items-center gap-4 p-4 border-b rounded-xs shadow-sm hover:shadow-md transition-shadow duration-200">
