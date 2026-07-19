@@ -640,6 +640,15 @@ export function useConfirmIncomingOrder() {
   );
 }
 
+export function useApproveIncomingOrder() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.approveIncomingOrder.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
 export function useCancelIncomingOrder() {
   const queryClient = useQueryClient();
   return useMutation(
@@ -693,6 +702,54 @@ export function useRetailDeliverymen() {
   );
 }
 
+export function useIncomingOrderDetail(orderId: number) {
+  return useQuery(
+    orpc.shopOwner.getIncomingOrderById.queryOptions({
+      input: { orderId },
+      enabled: Number.isFinite(orderId),
+      staleTime: 1000 * 20,
+    }),
+  );
+}
+
+export function useRetailDispatchOrders(
+  view: "ready_for_dispatch" | "invoiced",
+  search?: string,
+) {
+  return useQuery(
+    orpc.shopOwner.getRetailDispatchOrders.queryOptions({
+      input: { view, search: search || undefined },
+      staleTime: 1000 * 15,
+    }),
+  );
+}
+
+export function useRetailDeliveryInvoices(
+  status:
+    | "all"
+    | "not_assigned"
+    | "pending"
+    | "out_for_delivery"
+    | "delivered"
+    | "failed"
+    | "returned" = "all",
+) {
+  return useQuery(
+    orpc.shopOwner.getRetailDeliveryInvoices.queryOptions({
+      input: { status },
+      staleTime: 1000 * 15,
+    }),
+  );
+}
+
+export function useRetailAssignmentOverview() {
+  return useQuery(
+    orpc.shopOwner.getRetailAssignmentOverview.queryOptions({
+      staleTime: 1000 * 15,
+    }),
+  );
+}
+
 export function useCreateRetailDeliveryman() {
   const queryClient = useQueryClient();
   return useMutation(
@@ -702,6 +759,86 @@ export function useCreateRetailDeliveryman() {
           queryKey: orpc.shopOwner.getRetailDeliverymen.key(),
         });
       },
+    }),
+  );
+}
+
+function invalidateRetailFulfillmentQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  return Promise.all([
+    invalidateIncomingOrderQueries(queryClient),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getRetailDispatchOrders.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getRetailDeliveryInvoices.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getRetailAssignmentOverview.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.deliveryman.getGroups.key(),
+    }),
+  ]);
+}
+
+export function useCreateRetailDeliveryGroup() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.deliveryman.createGroup.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useAddRetailInvoicesToGroup() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.deliveryman.addInvoicesToGroup.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useAssignRetailDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.deliveryman.assignDeliveryman.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useUpdateRetailDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.updateRetailDeliveryman.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useToggleRetailDeliverymanBan() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.toggleRetailDeliverymanBan.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useResetRetailDeliverymanPassword() {
+  return useMutation(
+    orpc.shopOwner.resetRetailDeliverymanPassword.mutationOptions(),
+  );
+}
+
+export function useDeleteRetailDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.deleteRetailDeliveryman.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
     }),
   );
 }

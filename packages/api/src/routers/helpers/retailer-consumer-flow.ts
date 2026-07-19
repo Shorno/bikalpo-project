@@ -35,3 +35,10 @@ export function getRetailerOrderTransition(
 
   return null;
 }
+
+/** Operational desk terminology; consumer projection remains Store confirmed. */
+export function getRetailerOperationalStatusLabel(status: string) {
+    if (status === "pending") return "Pending Approval";
+    if (status === "ready_for_dispatch") return "Ready for Dispatch";
+    return status.replaceAll("_", " ");
+}

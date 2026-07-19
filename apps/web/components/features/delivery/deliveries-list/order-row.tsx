@@ -16,7 +16,8 @@ export function OrderRow({
         <div className="flex flex-col">
           <span className="font-medium">{item.invoice.invoiceNumber}</span>
           <span className="text-xs text-muted-foreground">
-            {item.invoice.customer?.name} ({item.invoice.customer?.phoneNumber})
+            Delivery Recipient: {item.invoice.recipient.displayName} (
+            {item.invoice.customer?.phoneNumber})
           </span>
         </div>
       </TableCell>

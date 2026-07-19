@@ -105,21 +105,26 @@ export async function requireDeliveryman() {
   return requireRole(["deliveryman"]);
 }
 
-export async function requireWarehouseDeliveryman() {
+export async function requireFulfillmentDeliveryman() {
   const session = await requireRole(["deliveryman"]);
-  const warehouseId = (session.user as { warehouseId?: string | null })
-    .warehouseId;
+  const owner = session.user as {
+    warehouseId?: string | null;
+    shopId?: string | null;
+  };
 
-  if (!warehouseId) {
+  if (!owner.warehouseId && !owner.shopId) {
     if (typeof window === "undefined") {
       const { unauthorized } = await import("next/navigation");
       return unauthorized();
     }
-    throw new Error("Warehouse deliveryman access required");
+    throw new Error("Assigned fulfillment owner required");
   }
 
   return session;
 }
+
+/** @deprecated Use requireFulfillmentDeliveryman. */
+export const requireWarehouseDeliveryman = requireFulfillmentDeliveryman;
 
 export async function requireWarehouseSalesman() {
   const session = await requireRole(["salesman"]);

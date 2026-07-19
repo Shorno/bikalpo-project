@@ -9,7 +9,7 @@
  * - Inventory and pricing management
  */
 
-import { auth } from "@bikalpo-project/auth";
+import { auth, setCredentialPassword } from "@bikalpo-project/auth";
 import { db } from "@bikalpo-project/db";
 import {
     buildProductTypeFulfillmentProfile,
@@ -4897,6 +4897,61 @@ const orderQueries = {
 // Incoming B2C Orders (consumers buying from this shop)
 // ────────────────────────────────────────────────────────────────
 
+async function approveRetailerOrder(shopId: string, orderId: number) {
+    return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${orderId})`);
+        const existingOrder = await tx.query.order.findFirst({
+            where: and(
+                eq(order.id, orderId),
+                eq(order.shopId, shopId),
+                eq(order.orderType, "b2c"),
+            ),
+        });
+        if (!existingOrder) {
+            throw new ORPCError("NOT_FOUND", {
+                message: "Order not found or not owned by your shop",
+            });
+        }
+        const transition = getRetailerOrderTransition(
+            existingOrder.status,
+            "confirm",
+        );
+        if (!transition) {
+            throw new ORPCError("BAD_REQUEST", {
+                message: `Order cannot be approved from '${existingOrder.status}'`,
+            });
+        }
+
+        const now = new Date();
+        const updated = await tx
+            .update(order)
+            .set({
+                status: transition.nextStatus,
+                confirmedAt: now,
+                readyAt: now,
+            })
+            .where(
+                and(
+                    eq(order.id, orderId),
+                    eq(order.shopId, shopId),
+                    eq(order.orderType, "b2c"),
+                    eq(order.status, existingOrder.status),
+                ),
+            )
+            .returning({ id: order.id });
+        if (updated.length !== 1) {
+            throw new ORPCError("BAD_REQUEST", {
+                message: "Order was already updated by another request",
+            });
+        }
+        return {
+            success: true,
+            status: transition.nextStatus,
+            message: `Order ${existingOrder.orderNumber} is ready for invoicing`,
+        };
+    });
+}
+
 const incomingOrderQueries = {
     /** List B2C consumer orders placed to this shop */
     getIncomingOrders: shopOwnerProcedure
@@ -4908,9 +4963,10 @@ const incomingOrderQueries = {
         })
         .input(
             z.object({
-                status: z.enum([
-                    "all",
-                    "pending",
+                status: z
+                    .enum([
+                        "all",
+                        "pending",
                     "confirmed",
                     "ready_for_dispatch",
                     "invoiced",
@@ -4918,7 +4974,8 @@ const incomingOrderQueries = {
                     "delivered",
                     "returned",
                     "cancelled",
-                ]).default("all"),
+                    ])
+                    .default("all"),
                 page: z.number().default(1),
                 limit: z.number().default(20),
             }),
@@ -4968,15 +5025,13 @@ const incomingOrderQueries = {
                     .orderBy(desc(order.createdAt))
                     .limit(limit)
                     .offset(offset),
-                db
-                    .select({ count: count() })
-                    .from(order)
-                    .where(where),
+                db.select({ count: count() }).from(order).where(where),
             ]);
 
             // Fetch items for each order
             const orderIds = orders.map((o) => o.id);
-            const items = orderIds.length > 0
+            const items =
+                orderIds.length > 0
                 ? await db
                     .select()
                     .from(orderItem)
@@ -4990,7 +5045,8 @@ const incomingOrderQueries = {
                 itemsByOrder.set(item.orderId, existing);
             }
 
-            const fulfillmentRows = orderIds.length > 0
+            const fulfillmentRows =
+                orderIds.length > 0
                 ? await db
                     .select({
                         orderId: invoice.orderId,
@@ -5015,7 +5071,10 @@ const incomingOrderQueries = {
                     )
                     .where(inArray(invoice.orderId, orderIds))
                 : [];
-            const fulfillmentByOrder = new Map<number, (typeof fulfillmentRows)[number]>();
+            const fulfillmentByOrder = new Map<
+                number,
+                (typeof fulfillmentRows)[number]
+            >();
             const groupPriority = (row: (typeof fulfillmentRows)[number]) => {
                 if (
                     row.linkStatus === "pending" &&
@@ -5047,7 +5106,8 @@ const incomingOrderQueries = {
                     return {
                         ...o,
                         items: itemsByOrder.get(o.id) || [],
-                        fulfillment: fulfillment?.deliveryStatus === "not_assigned"
+                        fulfillment:
+                            fulfillment?.deliveryStatus === "not_assigned"
                             ? {
                                 ...fulfillment,
                                 groupId: null,
@@ -5069,7 +5129,71 @@ const incomingOrderQueries = {
             };
         }),
 
-    /** Confirm an incoming B2C order and make it ready for invoicing. */
+    /** Full owner-scoped detail for retailer order review. */
+    getIncomingOrderById: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/incoming-orders/{orderId}",
+            tags: ["Shop Owner"],
+            summary: "Get incoming retailer order detail",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            const detail = await db.query.order.findFirst({
+                    where: and(
+                        eq(order.id, input.orderId),
+                        eq(order.shopId, shopId),
+                        eq(order.orderType, "b2c"),
+                    ),
+                with: { items: true },
+                });
+            if (!detail) {
+                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+                }
+            const [customer, orderInvoices] = await Promise.all([
+                db.query.user.findFirst({
+                    where: eq(user.id, detail.userId),
+                    columns: { id: true, name: true, email: true, phoneNumber: true },
+                }),
+                db.query.invoice.findMany({
+                    where: eq(invoice.orderId, detail.id),
+                    with: { items: true, deliveryman: true },
+                    orderBy: [desc(invoice.createdAt)],
+                }),
+            ]);
+            const invoiceIds = orderInvoices.map((entry) => entry.id);
+            const links =
+                invoiceIds.length > 0
+                    ? await db.query.deliveryGroupInvoice.findMany({
+                            where: inArray(deliveryGroupInvoice.invoiceId, invoiceIds),
+                            with: { group: { with: { deliveryman: true } } },
+                    })
+                    : [];
+                return {
+                order: {
+                    ...detail,
+                    customer,
+                    invoices: orderInvoices,
+                    deliveryLinks: links,
+                },
+                };
+        }),
+
+    /** Canonical operational approval. Consumer tracking still projects this as Store confirmed. */
+    approveIncomingOrder: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/incoming-orders/{orderId}/approve",
+            tags: ["Shop Owner"],
+            summary: "Approve an incoming B2C consumer order",
+        })
+        .input(z.object({ orderId: z.number() }))
+        .handler(({ context, input }) =>
+            approveRetailerOrder(context.session.user.id, input.orderId),
+        ),
+
+    /** Compatibility wrapper for clients that still call confirmation. */
     confirmIncomingOrder: shopOwnerProcedure
         .route({
             method: "POST",
@@ -5078,67 +5202,9 @@ const incomingOrderQueries = {
             summary: "Confirm an incoming B2C consumer order",
         })
         .input(z.object({ orderId: z.number() }))
-        .handler(async ({ context, input }) => {
-            const shopId = context.session.user.id;
-
-            return db.transaction(async (tx) => {
-                await tx.execute(
-                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
-                );
-
-                const existingOrder = await tx.query.order.findFirst({
-                    where: and(
-                        eq(order.id, input.orderId),
-                        eq(order.shopId, shopId),
-                        eq(order.orderType, "b2c"),
-                    ),
-                });
-
-                if (!existingOrder) {
-                    throw new ORPCError("NOT_FOUND", {
-                        message: "Order not found or not owned by your shop",
-                    });
-                }
-                const transition = getRetailerOrderTransition(
-                    existingOrder.status,
-                    "confirm",
-                );
-                if (!transition) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: `Order cannot be confirmed from '${existingOrder.status}'`,
-                    });
-                }
-
-                const now = new Date();
-                const updated = await tx
-                    .update(order)
-                    .set({
-                        status: transition.nextStatus,
-                        confirmedAt: now,
-                        readyAt: now,
-                    })
-                    .where(
-                        and(
-                            eq(order.id, input.orderId),
-                            eq(order.shopId, shopId),
-                            eq(order.orderType, "b2c"),
-                            eq(order.status, existingOrder.status),
-                        ),
-                    )
-                    .returning({ id: order.id });
-                if (updated.length !== 1) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: "Order was already updated by another request",
-                    });
-                }
-
-                return {
-                    success: true,
-                    status: transition.nextStatus,
-                    message: `Order ${existingOrder.orderNumber} is ready for invoicing`,
-                };
-            });
-        }),
+        .handler(({ context, input }) =>
+            approveRetailerOrder(context.session.user.id, input.orderId),
+        ),
 
     /** Cancel a retailer order before invoicing and restore reserved stock. */
     cancelIncomingOrder: shopOwnerProcedure
@@ -5153,9 +5219,7 @@ const incomingOrderQueries = {
             const shopId = context.session.user.id;
 
             return db.transaction(async (tx) => {
-                await tx.execute(
-                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
-                );
+                await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
                 const existingOrder = await tx.query.order.findFirst({
                     where: and(
                         eq(order.id, input.orderId),
@@ -5228,9 +5292,7 @@ const incomingOrderQueries = {
             const shopId = context.session.user.id;
 
             return db.transaction(async (tx) => {
-                await tx.execute(
-                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
-                );
+                await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
                 const existingOrder = await tx.query.order.findFirst({
                     where: and(
                         eq(order.id, input.orderId),
@@ -5341,6 +5403,186 @@ const incomingOrderQueries = {
             });
         }),
 
+    /** Orders shown at the retailer dispatch desk. */
+    getRetailDispatchOrders: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/dispatch-orders",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Get retailer dispatch orders",
+        })
+        .input(
+            z.object({
+                view: z
+                    .enum(["ready_for_dispatch", "invoiced"])
+                    .default("ready_for_dispatch"),
+                search: z.string().trim().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const conditions: SQL[] = [
+                eq(order.shopId, context.session.user.id),
+                eq(order.orderType, "b2c"),
+                eq(order.status, input.view),
+            ];
+            if (input.search) {
+                conditions.push(
+                    or(
+                        ilike(order.orderNumber, `%${input.search}%`),
+                        ilike(order.shippingName, `%${input.search}%`),
+                        ilike(order.shippingPhone, `%${input.search}%`),
+                    ) as SQL,
+                );
+            }
+            const orders = await db.query.order.findMany({
+                where: and(...conditions),
+                with: { items: true },
+                orderBy: [desc(order.createdAt)],
+            });
+            const ids = orders.map((entry) => entry.id);
+            const invoices =
+                ids.length > 0
+                    ? await db.query.invoice.findMany({
+                            where: inArray(invoice.orderId, ids),
+                            with: { items: true },
+                        })
+                    : [];
+            const invoiceByOrder = new Map(
+                invoices.map((entry) => [entry.orderId, entry]),
+            );
+            return {
+                orders: orders.map((entry) => ({
+                    ...entry,
+                    invoice: invoiceByOrder.get(entry.id) ?? null,
+                })),
+            };
+        }),
+
+    /** Full invoices used by retailer Delivery Management. */
+    getRetailDeliveryInvoices: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/delivery-management/invoices",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Get retailer delivery-management invoices",
+        })
+        .input(
+            z.object({
+                status: z
+                    .enum([
+                        "all",
+                        "not_assigned",
+                        "pending",
+                        "out_for_delivery",
+                        "delivered",
+                        "failed",
+                        "returned",
+                    ])
+                    .default("all"),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const conditions: SQL[] = [
+                eq(invoice.fulfillmentMode, "internal_delivery"),
+                sql`EXISTS (
+                    SELECT 1 FROM "order" scoped_order
+                    WHERE scoped_order."id" = ${invoice.orderId}
+                      AND scoped_order."shop_id" = ${context.session.user.id}
+                      AND scoped_order."order_type" = 'b2c'
+                )`,
+            ];
+            if (input.status !== "all") {
+                conditions.push(eq(invoice.deliveryStatus, input.status));
+            }
+            const invoices = await db.query.invoice.findMany({
+                where: and(...conditions),
+                with: {
+                    order: true,
+                    customer: { columns: { id: true, name: true, phoneNumber: true } },
+                    items: true,
+                    deliveryman: { columns: { id: true, name: true, phoneNumber: true } },
+                },
+                orderBy: [desc(invoice.createdAt)],
+            });
+            const ids = invoices.map((entry) => entry.id);
+            const links =
+                ids.length > 0
+                    ? await db.query.deliveryGroupInvoice.findMany({
+                            where: inArray(deliveryGroupInvoice.invoiceId, ids),
+                            with: { group: { with: { deliveryman: true } } },
+                        })
+                    : [];
+            const linkByInvoice = new Map(
+                links.map((entry) => [entry.invoiceId, entry]),
+            );
+            return {
+                invoices: invoices.map((entry) => ({
+                    ...entry,
+                    deliveryGroupLink: linkByInvoice.get(entry.id) ?? null,
+                })),
+            };
+        }),
+
+    /** Owner-scoped groups and rider KPIs shared by both assignment lenses. */
+    getRetailAssignmentOverview: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/delivery-team/assignments",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Get retailer assignment overview",
+        })
+        .handler(async ({ context }) => {
+            const shopId = context.session.user.id;
+            const [groups, riders] = await Promise.all([
+                db.query.deliveryGroup.findMany({
+                    where: eq(deliveryGroup.shopId, shopId),
+                    with: {
+                        deliveryman: true,
+                        invoices: {
+                            with: { invoice: { with: { order: true, customer: true } } },
+                            orderBy: [deliveryGroupInvoice.sequence],
+                        },
+                    },
+                    orderBy: [desc(deliveryGroup.createdAt)],
+                }),
+                db.query.user.findMany({
+                    where: and(eq(user.shopId, shopId), eq(user.role, "deliveryman")),
+                    orderBy: [asc(user.name)],
+                }),
+            ]);
+            const activeStatuses = new Set([
+                "assigned",
+                "out_for_delivery",
+                "partial",
+            ]);
+            const busyIds = new Set(
+                groups
+                    .filter((entry) => activeStatuses.has(entry.status))
+                    .map((entry) => entry.deliverymanId)
+                    .filter((id): id is string => Boolean(id)),
+            );
+            return {
+                groups,
+                deliverymen: riders.map((entry) => ({
+                    ...entry,
+                    hasActiveGroup: busyIds.has(entry.id),
+                })),
+                stats: {
+                    pendingGroups: groups.filter(
+                        (entry) => entry.status === "pending_assignment",
+                    ).length,
+                    assignedGroups: groups.filter((entry) => entry.status === "assigned")
+                        .length,
+                    activeGroups: groups.filter(
+                        (entry) => entry.status === "out_for_delivery",
+                    ).length,
+                    availableRiders: riders.filter(
+                        (entry) => !entry.banned && !busyIds.has(entry.id),
+                    ).length,
+                },
+            };
+        }),
+
     /** List riders employed by this retailer store. */
     getRetailDeliverymen: shopOwnerProcedure
         .route({
@@ -5362,15 +5604,11 @@ const incomingOrderQueries = {
                     createdAt: user.createdAt,
                 })
                 .from(user)
-                .where(
-                    and(
-                        eq(user.shopId, shopId),
-                        eq(user.role, "deliveryman"),
-                    ),
-                )
+                .where(and(eq(user.shopId, shopId), eq(user.role, "deliveryman")))
                 .orderBy(user.name);
 
-            const activeGroups = deliverymen.length > 0
+            const activeGroups =
+                deliverymen.length > 0
                 ? await db
                     .select({
                         deliverymanId: deliveryGroup.deliverymanId,
@@ -5380,10 +5618,10 @@ const incomingOrderQueries = {
                     .where(
                         and(
                             eq(deliveryGroup.shopId, shopId),
-                            inArray(
-                                deliveryGroup.status,
-                                ["assigned", "out_for_delivery"],
-                            ),
+                                    inArray(deliveryGroup.status, [
+                                        "assigned",
+                                        "out_for_delivery",
+                                    ]),
                         ),
                     )
                 : [];
@@ -5400,6 +5638,199 @@ const incomingOrderQueries = {
             };
         }),
 
+    getRetailDeliverymanById: shopOwnerProcedure
+        .route({
+            method: "GET",
+            path: "/shop-owner/delivery-team/{deliverymanId}",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Get retailer rider detail",
+        })
+        .input(z.object({ deliverymanId: z.string() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            const rider = await db.query.user.findFirst({
+                where: and(
+                    eq(user.id, input.deliverymanId),
+                    eq(user.shopId, shopId),
+                    eq(user.role, "deliveryman"),
+                ),
+            });
+            if (!rider)
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Delivery rider not found",
+                });
+            const groups = await db.query.deliveryGroup.findMany({
+                where: and(
+                    eq(deliveryGroup.shopId, shopId),
+                    eq(deliveryGroup.deliverymanId, rider.id),
+                ),
+                with: { invoices: true },
+                orderBy: [desc(deliveryGroup.createdAt)],
+            });
+            return { rider, groups };
+        }),
+
+    updateRetailDeliveryman: shopOwnerProcedure
+        .route({
+            method: "PATCH",
+            path: "/shop-owner/delivery-team/{deliverymanId}",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Update retailer delivery rider",
+        })
+        .input(
+            z.object({
+                deliverymanId: z.string(),
+                name: z.string().trim().min(2).max(100),
+                phoneNumber: z.string().trim().max(20).nullable().optional(),
+                serviceArea: z.string().trim().max(200).nullable().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const [updated] = await db
+                .update(user)
+                .set({
+                    name: input.name,
+                    phoneNumber: input.phoneNumber ?? null,
+                    serviceArea: input.serviceArea ?? null,
+                })
+                .where(
+                    and(
+                        eq(user.id, input.deliverymanId),
+                        eq(user.shopId, context.session.user.id),
+                        eq(user.role, "deliveryman"),
+                    ),
+                )
+                .returning({ id: user.id });
+            if (!updated)
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Delivery rider not found",
+                });
+            return { success: true };
+        }),
+
+    resetRetailDeliverymanPassword: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/delivery-team/{deliverymanId}/reset-password",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Reset retailer delivery rider password",
+        })
+        .input(
+            z.object({
+                deliverymanId: z.string(),
+                newPassword: z.string().min(8).max(100),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const rider = await db.query.user.findFirst({
+                where: and(
+                    eq(user.id, input.deliverymanId),
+                    eq(user.shopId, context.session.user.id),
+                    eq(user.role, "deliveryman"),
+                ),
+                columns: { id: true },
+            });
+            if (!rider)
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Delivery rider not found",
+                });
+            await setCredentialPassword(rider.id, input.newPassword);
+            return { success: true };
+        }),
+
+    toggleRetailDeliverymanBan: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/delivery-team/{deliverymanId}/ban",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Ban or restore retailer delivery rider",
+        })
+        .input(
+            z.object({
+                deliverymanId: z.string(),
+                banned: z.boolean(),
+                reason: z.string().max(200).optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const rider = await db.query.user.findFirst({
+                where: and(
+                    eq(user.id, input.deliverymanId),
+                    eq(user.shopId, context.session.user.id),
+                    eq(user.role, "deliveryman"),
+                ),
+                columns: { id: true },
+            });
+            if (!rider)
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Delivery rider not found",
+                });
+            const headers = new Headers({
+                Authorization: `Bearer ${context.session.session.token}`,
+            });
+            if (input.banned) {
+                await auth.api.banUser({
+                    body: {
+                        userId: rider.id,
+                        banReason: input.reason || "Banned by retailer",
+                    },
+                    headers,
+                });
+            } else {
+                await auth.api.unbanUser({ body: { userId: rider.id }, headers });
+            }
+            return { success: true };
+        }),
+
+    deleteRetailDeliveryman: shopOwnerProcedure
+        .route({
+            method: "DELETE",
+            path: "/shop-owner/delivery-team/{deliverymanId}",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Delete retailer delivery rider",
+        })
+        .input(z.object({ deliverymanId: z.string() }))
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            const rider = await db.query.user.findFirst({
+                where: and(
+                    eq(user.id, input.deliverymanId),
+                    eq(user.shopId, shopId),
+                    eq(user.role, "deliveryman"),
+                ),
+                columns: { id: true },
+            });
+            if (!rider)
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Delivery rider not found",
+                });
+            const activeGroup = await db.query.deliveryGroup.findFirst({
+                where: and(
+                    eq(deliveryGroup.shopId, shopId),
+                    eq(deliveryGroup.deliverymanId, rider.id),
+                    inArray(deliveryGroup.status, [
+                        "assigned",
+                        "out_for_delivery",
+                        "partial",
+                    ]),
+                ),
+                columns: { id: true },
+            });
+            if (activeGroup) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message:
+                        "Complete or reassign the rider's active group before deleting them",
+                });
+            }
+            await auth.api.removeUser({
+                body: { userId: rider.id },
+                headers: new Headers({
+                    Authorization: `Bearer ${context.session.session.token}`,
+                }),
+            });
+            return { success: true };
+        }),
+
     /** Create a rider account owned by this retailer store. */
     createRetailDeliveryman: shopOwnerProcedure
         .route({
@@ -5408,13 +5839,15 @@ const incomingOrderQueries = {
             tags: ["Shop Owner", "Delivery Management"],
             summary: "Create a retailer delivery rider",
         })
-        .input(z.object({
+        .input(
+            z.object({
             name: z.string().trim().min(2).max(100),
             email: z.string().trim().email(),
             password: z.string().min(8).max(100),
             phoneNumber: z.string().trim().max(20).optional(),
             serviceArea: z.string().trim().max(200).optional(),
-        }))
+            }),
+        )
         .handler(async ({ context, input }) => {
             const shopId = context.session.user.id;
             const newUser = await auth.api.createUser({
@@ -5460,18 +5893,18 @@ const incomingOrderQueries = {
             tags: ["Shop Owner", "Delivery Management"],
             summary: "Create a retailer delivery group",
         })
-        .input(z.object({
+        .input(
+            z.object({
             orderId: z.number(),
             groupName: z.string().trim().min(1).max(120),
             vehicleType: z.enum(["bike", "car", "van", "truck"]).optional(),
             expectedDeliveryAt: z.string().optional(),
-        }))
+            }),
+        )
         .handler(async ({ context, input }) => {
             const shopId = context.session.user.id;
             return db.transaction(async (tx) => {
-                await tx.execute(
-                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
-                );
+                await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
                 const existingInvoice = await tx.query.invoice.findFirst({
                     where: and(
                         eq(invoice.orderId, input.orderId),
@@ -5563,16 +5996,16 @@ const incomingOrderQueries = {
             tags: ["Shop Owner", "Delivery Management"],
             summary: "Assign a retailer rider to a delivery group",
         })
-        .input(z.object({
+        .input(
+            z.object({
             groupId: z.number(),
             deliverymanId: z.string(),
-        }))
+            }),
+        )
         .handler(async ({ context, input }) => {
             const shopId = context.session.user.id;
             return db.transaction(async (tx) => {
-                await tx.execute(
-                    sql`SELECT pg_advisory_xact_lock(${input.groupId})`,
-                );
+                await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.groupId})`);
                 const group = await tx.query.deliveryGroup.findFirst({
                     where: and(
                         eq(deliveryGroup.id, input.groupId),
@@ -5608,10 +6041,7 @@ const incomingOrderQueries = {
                         eq(deliveryGroup.shopId, shopId),
                         eq(deliveryGroup.deliverymanId, rider.id),
                         sql`${deliveryGroup.id} <> ${group.id}`,
-                        inArray(
-                            deliveryGroup.status,
-                            ["assigned", "out_for_delivery"],
-                        ),
+                        inArray(deliveryGroup.status, ["assigned", "out_for_delivery"]),
                     ),
                 });
                 if (activeGroup) {
@@ -5640,9 +6070,9 @@ const incomingOrderQueries = {
                         .where(inArray(invoice.id, invoiceIds));
                     const orderIds = [
                         ...new Set(
-                            links.map((entry) => entry.invoice?.orderId).filter(
-                                (id): id is number => typeof id === "number",
-                            ),
+                            links
+                                .map((entry) => entry.invoice?.orderId)
+                                .filter((id): id is number => typeof id === "number"),
                         ),
                     ];
                     if (orderIds.length > 0) {
@@ -5672,9 +6102,7 @@ const incomingOrderQueries = {
         .handler(async ({ context, input }) => {
             const shopId = context.session.user.id;
             return db.transaction(async (tx) => {
-                await tx.execute(
-                    sql`SELECT pg_advisory_xact_lock(${input.orderId})`,
-                );
+                await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
                 const failedInvoice = await tx.query.invoice.findFirst({
                     where: and(
                         eq(invoice.orderId, input.orderId),

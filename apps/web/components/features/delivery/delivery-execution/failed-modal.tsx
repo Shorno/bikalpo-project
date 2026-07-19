@@ -50,7 +50,7 @@ export function FailedModal({
         <div className="py-4">
           <Label className="mb-2 block">Reason for failure</Label>
           <Textarea
-            placeholder="e.g., Customer not available, Wrong address..."
+            placeholder="e.g., Delivery Recipient not available, wrong address..."
             value={reason}
             onChange={(e) => onReasonChange(e.target.value)}
             rows={3}

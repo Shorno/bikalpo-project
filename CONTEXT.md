@@ -8,6 +8,10 @@ Bikalpo coordinates marketplace orders across consumer, retailer, warehouse, and
 An order placed by a consumer with one retailer store and fulfilled by that store.
 _Avoid_: Warehouse order, purchase order
 
+**Order Approval**:
+The retailer or warehouse operational decision that accepts a pending order and moves it to `ready_for_dispatch`. Consumer tracking projects this event as **Store confirmed** for retailer orders.
+_Avoid_: Consumer confirmation, invoice creation
+
 **Retailer Delivery Team**:
 Delivery staff employed by one retailer store to fulfill that store's consumer orders.
 _Avoid_: Warehouse rider, global rider
@@ -19,6 +23,10 @@ _Avoid_: Order assignment, rider order
 **Handoff OTP**:
 A short code owned by the recipient and entered by the rider only after the goods are physically handed over.
 _Avoid_: Login OTP, consumer confirmation form
+
+**Delivery Recipient**:
+The person or organization receiving a rider handoff. A Delivery Recipient can be a consumer, retailer store, or warehouse and has a computed type and display name in the rider portal.
+_Avoid_: Customer when the recipient may be a store or warehouse
 
 ## Consumer Experience
 

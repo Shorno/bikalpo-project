@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 
-const runDatabaseIntegration =
-  process.env.RUN_RETAILER_ORDER_DB_TEST === "1";
+const runDatabaseIntegration = process.env.RUN_RETAILER_ORDER_DB_TEST === "1";
 
 type ProcedureLike = {
   "~orpc": {
@@ -23,11 +22,19 @@ async function invokeProcedure<Result>(
 }
 
 test(
-  "runs direct-retailer fulfillment and returns a winning open order to confirmation",
+    "batches two retailer invoices through the shared owner-scoped delivery flow",
   { skip: !runDatabaseIntegration },
   async () => {
-    const [{ db }, schema, drizzle, customerModule, shopOwnerModule, deliverymanModule, matchingModule, stockModule] =
-      await Promise.all([
+        const [
+            { db },
+            schema,
+            drizzle,
+            customerModule,
+            shopOwnerModule,
+            deliverymanModule,
+            matchingModule,
+            stockModule,
+        ] = await Promise.all([
         import("@bikalpo-project/db"),
         import("@bikalpo-project/db/schema"),
         import("drizzle-orm"),
@@ -65,9 +72,12 @@ test(
 
     const suffix = randomUUID();
     const consumerId = `retailer-flow-consumer-${suffix}`;
+        const secondConsumerId = `retailer-flow-consumer-2-${suffix}`;
     const shopId = `retailer-flow-shop-${suffix}`;
+        const otherShopId = `retailer-flow-other-shop-${suffix}`;
     const productSlug = `retailer-flow-product-${suffix}`;
     const riderId = `retailer-flow-rider-${suffix}`;
+        const otherRiderId = `retailer-flow-other-rider-${suffix}`;
     const rollbackOrderNumber = `TEST-ROLLBACK-${suffix}`;
     let productId: number | null = null;
     let inventoryId: number | null = null;
@@ -75,9 +85,15 @@ test(
     const consumerContext = {
       session: { user: { id: consumerId, role: "consumer" } },
     };
+        const secondConsumerContext = {
+            session: { user: { id: secondConsumerId, role: "consumer" } },
+        };
     const shopContext = {
       session: { user: { id: shopId, role: "shop_owner" } },
     };
+        const otherShopContext = {
+            session: { user: { id: otherShopId, role: "shop_owner" } },
+        };
     const shippingInfo = {
       name: "Retailer Flow Test",
       phone: "01700000000",
@@ -86,7 +102,10 @@ test(
     };
 
     try {
-      const [categoryRow] = await db.select({ id: category.id }).from(category).limit(1);
+            const [categoryRow] = await db
+                .select({ id: category.id })
+                .from(category)
+                .limit(1);
       assert.ok(categoryRow, "A category fixture is required");
 
       await db.insert(user).values([
@@ -96,6 +115,12 @@ test(
           email: `${consumerId}@example.test`,
           role: "consumer",
         },
+                {
+                    id: secondConsumerId,
+                    name: "Second Retailer Flow Consumer",
+                    email: `${secondConsumerId}@example.test`,
+                    role: "consumer",
+                },
         {
           id: shopId,
           name: "Retailer Flow Shop",
@@ -106,6 +131,13 @@ test(
           shopName: "Retailer Flow Shop",
           shopSlug: `retailer-flow-shop-${suffix}`,
         },
+                {
+                    id: otherShopId,
+                    name: "Other Retailer Flow Shop",
+                    email: `${otherShopId}@example.test`,
+                    role: "shop_owner",
+                    shopName: "Other Retailer Flow Shop",
+                },
       ]);
 
       const [productRow] = await db
@@ -156,7 +188,7 @@ test(
           ownerType: "shop",
           ownerId: shopId,
           variantId: testVariantId,
-          availableQty: "2.00",
+                    availableQty: "3.00",
           reservedQty: "0.00",
           retailPrice: "100.00",
         })
@@ -211,7 +243,7 @@ test(
                 productId: testProductId,
                 variantId: testVariantId,
                 productName: "concurrent-loss line",
-                quantity: 2,
+                                quantity: 3,
               },
             ],
           );
@@ -230,7 +262,7 @@ test(
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-        "2.00",
+                "3.00",
       );
 
       const addInput = {
@@ -239,7 +271,11 @@ test(
         shopId,
         quantity: 1,
       };
-      await invokeProcedure(customerRouter.addToCart, consumerContext, addInput);
+            await invokeProcedure(
+                customerRouter.addToCart,
+                consumerContext,
+                addInput,
+            );
       const firstPlacement = await invokeProcedure<{
         order: { id: number };
       }>(customerRouter.placeOrder, consumerContext, {
@@ -258,7 +294,7 @@ test(
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-        "1.00",
+                "2.00",
       );
 
       await invokeProcedure(customerRouter.cancelOrder, consumerContext, {
@@ -270,31 +306,37 @@ test(
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-        "2.00",
+                "3.00",
       );
 
-      await invokeProcedure(customerRouter.addToCart, consumerContext, addInput);
+            await invokeProcedure(
+                customerRouter.addToCart,
+                consumerContext,
+                addInput,
+            );
       const secondPlacement = await invokeProcedure<{
         order: { id: number };
       }>(customerRouter.placeOrder, consumerContext, {
         shippingInfo,
         paymentMethod: "cash_on_delivery",
       });
-      await invokeProcedure(
-        shopOwnerRouter.cancelIncomingOrder,
-        shopContext,
-        { orderId: secondPlacement.order.id },
-      );
+            await invokeProcedure(shopOwnerRouter.cancelIncomingOrder, shopContext, {
+                orderId: secondPlacement.order.id,
+            });
       assert.equal(
         (
           await db.query.inventory.findFirst({
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-        "2.00",
+                "3.00",
       );
 
-      await invokeProcedure(customerRouter.addToCart, consumerContext, addInput);
+            await invokeProcedure(
+                customerRouter.addToCart,
+                consumerContext,
+                addInput,
+            );
       const deliveryPlacement = await invokeProcedure<{
         order: { id: number; orderNumber: string };
       }>(customerRouter.placeOrder, consumerContext, {
@@ -316,15 +358,35 @@ test(
       });
       assert.equal(duplicateInvoice.invoice.id, firstInvoice.invoice.id);
 
+            await invokeProcedure(
+                customerRouter.addToCart,
+                secondConsumerContext,
+                addInput,
+            );
+            const secondDeliveryPlacement = await invokeProcedure<{
+                order: { id: number; orderNumber: string };
+            }>(customerRouter.placeOrder, secondConsumerContext, {
+                shippingInfo: { ...shippingInfo, name: "Second Delivery Recipient" },
+                paymentMethod: "cash_on_delivery",
+            });
+            await invokeProcedure(shopOwnerRouter.approveIncomingOrder, shopContext, {
+                orderId: secondDeliveryPlacement.order.id,
+            });
+            const secondInvoice = await invokeProcedure<{
+                invoice: { id: number };
+            }>(shopOwnerRouter.createIncomingOrderInvoice, shopContext, {
+                orderId: secondDeliveryPlacement.order.id,
+            });
+
       const createdGroup = await invokeProcedure<{
         group: {
           id: number;
           status: string;
           deliverymanId: string | null;
         };
-      }>(shopOwnerRouter.createIncomingDeliveryGroup, shopContext, {
-        orderId: deliveryPlacement.order.id,
+            }>(deliverymanRouter.createGroup, shopContext, {
         groupName: `Test delivery ${suffix}`,
+                invoiceIds: [firstInvoice.invoice.id, secondInvoice.invoice.id],
         vehicleType: "bike",
       });
       assert.equal(createdGroup.group.status, "pending_assignment");
@@ -342,11 +404,28 @@ test(
         role: "deliveryman",
         shopId,
       });
-      await invokeProcedure(
-        shopOwnerRouter.assignIncomingDeliveryman,
-        shopContext,
-        { groupId: createdGroup.group.id, deliverymanId: riderId },
+            await db.insert(user).values({
+                id: otherRiderId,
+                name: "Other Store Rider",
+                email: `${otherRiderId}@example.test`,
+                role: "deliveryman",
+                shopId: otherShopId,
+            });
+            await assert.rejects(
+                invokeProcedure(deliverymanRouter.getGroupById, otherShopContext, {
+                    id: createdGroup.group.id,
+                }),
       );
+            await assert.rejects(
+                invokeProcedure(deliverymanRouter.assignDeliveryman, shopContext, {
+                    groupId: createdGroup.group.id,
+                    deliverymanId: otherRiderId,
+                }),
+            );
+            await invokeProcedure(deliverymanRouter.assignDeliveryman, shopContext, {
+                groupId: createdGroup.group.id,
+                deliverymanId: riderId,
+            });
       deliveryOrder = await db.query.order.findFirst({
         where: eq(order.id, deliveryPlacement.order.id),
       });
@@ -358,6 +437,21 @@ test(
           user: { id: riderId, role: "deliveryman", shopId },
         },
       };
+            await assert.rejects(
+                invokeProcedure(
+                    deliverymanRouter.getMyGroupById,
+                    {
+                        session: {
+                            user: {
+                                id: otherRiderId,
+                                role: "deliveryman",
+                                shopId: otherShopId,
+                            },
+                        },
+                    },
+                    { id: createdGroup.group.id },
+                ),
+            );
       await invokeProcedure(deliverymanRouter.startDelivery, riderContext, {
         id: createdGroup.group.id,
       });
@@ -367,9 +461,17 @@ test(
       assert.equal(deliveryOrder?.status, "processing");
       assert.ok(deliveryOrder?.shippedAt);
 
-      const activeLink = await db.query.deliveryGroupInvoice.findFirst({
+            const secondDeliveryOrder = await db.query.order.findFirst({
+                where: eq(order.id, secondDeliveryPlacement.order.id),
+            });
+            assert.equal(secondDeliveryOrder?.status, "processing");
+            assert.ok(secondDeliveryOrder?.shippedAt);
+
+            const activeLinks = await db.query.deliveryGroupInvoice.findMany({
         where: eq(deliveryGroupInvoice.groupId, createdGroup.group.id),
       });
+            assert.equal(activeLinks.length, 2);
+            const activeLink = activeLinks[0];
       assert.ok(activeLink?.deliveryOtp);
       await assert.rejects(
         invokeProcedure(deliverymanRouter.markDelivered, riderContext, {
@@ -394,6 +496,14 @@ test(
         paymentMethod: "cash",
         amountCollected: 100,
       });
+            const secondActiveLink = activeLinks[1];
+            assert.ok(secondActiveLink?.deliveryOtp);
+            await invokeProcedure(deliverymanRouter.markDelivered, riderContext, {
+                deliveryInvoiceId: secondActiveLink.id,
+                deliveryOtp: secondActiveLink.deliveryOtp,
+                paymentMethod: "cash",
+                amountCollected: 100,
+            });
       deliveryOrder = await db.query.order.findFirst({
         where: eq(order.id, deliveryPlacement.order.id),
       });
@@ -457,17 +567,21 @@ test(
       if (inventoryId) {
         await db
           .update(inventory)
-          .set({ availableQty: "2.00" })
+                    .set({ availableQty: "3.00" })
           .where(eq(inventory.id, inventoryId));
       }
       await db.delete(deliveryGroup).where(eq(deliveryGroup.shopId, shopId));
       await db.delete(invoice).where(eq(invoice.customerId, consumerId));
+            await db.delete(invoice).where(eq(invoice.customerId, secondConsumerId));
       await db.delete(user).where(eq(user.id, riderId));
+            await db.delete(user).where(eq(user.id, otherRiderId));
       await db.delete(user).where(eq(user.id, consumerId));
+            await db.delete(user).where(eq(user.id, secondConsumerId));
       if (productId) {
         await db.delete(product).where(eq(product.id, productId));
       }
       await db.delete(user).where(eq(user.id, shopId));
+            await db.delete(user).where(eq(user.id, otherShopId));
 
       // Guard against a partial fixture creation before relations existed.
       await db
@@ -479,6 +593,7 @@ test(
           ),
         );
       await db.delete(cart).where(eq(cart.userId, consumerId));
+            await db.delete(cart).where(eq(cart.userId, secondConsumerId));
     }
   },
 );

@@ -6,6 +6,7 @@ import {
   BarChart3Icon,
   BookOpenIcon,
   BoxesIcon,
+  ClipboardListIcon,
   CreditCardIcon,
   DollarSignIcon,
   ExternalLinkIcon,
@@ -15,6 +16,7 @@ import {
   LayoutDashboardIcon,
   MegaphoneIcon,
   PackageIcon,
+  PackageSearchIcon,
   PlusCircleIcon,
   ReceiptIcon,
   SettingsIcon,
@@ -24,6 +26,8 @@ import {
   StoreIcon,
   TrendingDownIcon,
   TrendingUpIcon,
+  TruckIcon,
+  UserCheckIcon,
   UsersIcon,
   WalletIcon,
   Warehouse as WarehouseIcon,
@@ -159,13 +163,39 @@ const shopOwnerNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "E-Commerce Store",
+    label: "E-Commerce & Fulfillment",
     items: [
       { title: "Product Sync", url: `${D}/product-sync`, icon: PackageIcon },
       {
         title: "Order Management",
         url: `${D}/incoming-orders`,
         icon: ShoppingCartIcon,
+      },
+      {
+        title: "Dispatch Orders",
+        url: `${D}/dispatch-orders`,
+        icon: TruckIcon,
+      },
+      {
+        title: "Delivery Management",
+        url: `${D}/delivery-management`,
+        icon: PackageSearchIcon,
+      },
+    ],
+  },
+  {
+    label: "Team Management",
+    items: [
+      { title: "Delivery Team", url: `${D}/delivery-team`, icon: TruckIcon },
+      {
+        title: "Rider Assignment",
+        url: `${D}/delivery-team/assignment`,
+        icon: UserCheckIcon,
+      },
+      {
+        title: "Assign Orders",
+        url: `${D}/delivery-team/assignments`,
+        icon: ClipboardListIcon,
       },
     ],
   },

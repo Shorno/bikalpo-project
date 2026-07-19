@@ -8,7 +8,7 @@ import type {
 } from "@bikalpo-project/db/schema";
 
 // ============================================================================
-// Customer Types
+// Delivery Recipient Types
 // ============================================================================
 
 export interface InvoiceCustomer {
@@ -16,6 +16,12 @@ export interface InvoiceCustomer {
   name: string;
   phoneNumber: string | null;
   shopName?: string | null;
+  warehouseName?: string | null;
+}
+
+export interface DeliveryRecipient {
+  type: "consumer" | "retailer_store" | "warehouse";
+  displayName: string;
 }
 
 // ============================================================================
@@ -44,6 +50,7 @@ export interface DeliveryInvoiceWithDetails extends DeliveryGroupInvoice {
     "id" | "invoiceNumber" | "grandTotal" | "invoiceType" | "splitSequence"
   > & {
     customer: InvoiceCustomer | null;
+    recipient: DeliveryRecipient;
     items: DeliveryInvoiceItem[];
     order: Pick<
       Order,

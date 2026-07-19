@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getRetailerOrderTransition } from "./retailer-consumer-flow";
+import {
+    getRetailerOperationalStatusLabel,
+    getRetailerOrderTransition,
+} from "./retailer-consumer-flow";
 
 test("confirming a pending retailer order makes it ready for invoicing", () => {
   assert.deepEqual(getRetailerOrderTransition("pending", "confirm"), {
@@ -30,4 +33,19 @@ test("retailer cancellation stops once an invoice exists", () => {
   }
   assert.equal(getRetailerOrderTransition("invoiced", "cancel"), null);
   assert.equal(getRetailerOrderTransition("processing", "cancel"), null);
+});
+
+test("operational approval terminology stays separate from the consumer journey", () => {
+    assert.equal(
+        getRetailerOperationalStatusLabel("pending"),
+        "Pending Approval",
+    );
+    assert.equal(
+        getRetailerOperationalStatusLabel("ready_for_dispatch"),
+        "Ready for Dispatch",
+    );
+    assert.notEqual(
+        getRetailerOperationalStatusLabel("pending"),
+        "Store confirmed",
+    );
 });

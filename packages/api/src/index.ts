@@ -127,8 +127,13 @@ const requireWarehouseOrAdmin = o.middleware(async ({ context, next }) => {
   if (!context.session?.user) {
     throw new ORPCError("UNAUTHORIZED");
   }
-  if (context.session.user.role !== "warehouse" && context.session.user.role !== "admin") {
-    throw new ORPCError("FORBIDDEN", { message: "Warehouse or admin access required" });
+  if (
+    context.session.user.role !== "warehouse" &&
+    context.session.user.role !== "admin"
+  ) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "Warehouse or admin access required",
+    });
   }
   return next({
     context: {
@@ -138,3 +143,27 @@ const requireWarehouseOrAdmin = o.middleware(async ({ context, next }) => {
 });
 
 export const warehouseOrAdminProcedure = publicProcedure.use(requireWarehouseOrAdmin);
+
+// Fulfillment desk procedure - warehouse and retailer desks share the same
+// grouping/assignment contract while remaining strictly owner scoped.
+const requireFulfillmentManager = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  if (
+    !["warehouse", "shop_owner", "admin"].includes(
+      context.session.user.role ?? "",
+    )
+  ) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "Fulfillment manager access required",
+    });
+  }
+  return next({
+    context: {
+      session: context.session,
+    },
+  });
+});
+
+export const fulfillmentManagerProcedure = publicProcedure.use(requireFulfillmentManager);

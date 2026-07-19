@@ -42,8 +42,8 @@ flowchart LR
 | Rider Assignment | `/warehouse/dashboard/delivery-team/assignment` | **Done** | Rider workload, idle/active, assign pending group to rider |
 | Delivery Team CRUD | `/warehouse/dashboard/delivery-team` | **Done** | Redesigned to match desk pattern; create/ban/delete/reset password |
 | Delivery Tracking | `/warehouse/dashboard/delivery-tracking` | **Stub** | Raw `fetch`; rebuild planned |
-| Rider delivery dashboard | `/dashboard/delivery` (main app) | **Exists** | oRPC `getMyGroups`; not warehouse subdomain |
-| Legacy rider mobile UI | `/deliveryman/dashboard` | **Exists** | Raw `fetch("/my-deliveries")`; parallel to above |
+| Rider delivery dashboard | Delivery subdomain `/dashboard` | **Active** | Canonical owner-scoped portal for warehouse and retailer riders |
+| Legacy rider mobile UI | `/deliveryman/dashboard` | **Redirect** | Redirects to the canonical delivery subdomain; four deferred child routes remain direct-access only |
 | Settlement / OTP / complete group on warehouse UI | — | **Not built** | Belongs to tracking/settlement phase |
 | Third-party delivery in DM | — | **Stubbed** | Internal delivery only in v1 |
 
@@ -98,10 +98,10 @@ On `assignDeliveryman` ([`packages/api/src/routers/deliveryman.ts`](../packages/
 
 Riders see work via `GET /my-deliveries` (`deliveryman.getMyGroups`) on:
 
-- **Primary:** `/dashboard/delivery` (login redirect for `deliveryman` role)
-- **Legacy:** `/deliveryman/dashboard`
+- **Primary:** delivery subdomain `/dashboard` (login redirect for every `deliveryman` role)
+- **Legacy entry:** `/deliveryman/dashboard` redirects to the primary portal
 
-Warehouse staff use **`warehouse.bikalpo...`** (`role = warehouse`). Riders use the **main app**, not the warehouse management subdomain.
+Warehouse staff use **`warehouse.bikalpo...`** (`role = warehouse`), retailer staff use **`shop.bikalpo...`**, and riders use **`delivery.bikalpo...`**.
 
 ---
 
@@ -201,7 +201,7 @@ Use `.key()` without args (not `queryKey()` without input — caused TS issues).
 | Priority | Item |
 |----------|------|
 | 1 | **Delivery Tracking rebuild** — oRPC, `pending_assignment` visibility, timeline, link from assigned groups |
-| 2 | **Unify rider UIs** — `/dashboard/delivery` vs `/deliveryman/dashboard` |
+| 2 | **Rebuild deferred legacy rider tools** — active route, empty packs, reconciliation, and performance |
 | 3 | **Settlement phase** — collection summary, OTP, `approveAndClose`, group completion on warehouse |
 | 4 | **Rider profile page** — [`delivery-team/[id]`](apps/web/app/warehouse/(management)/dashboard/delivery-team/[id]/page.tsx) still Card-based; optional redesign |
 | 5 | **Optional:** `serviceArea` on `getDeliverymen` + Area column on Delivery Team table |

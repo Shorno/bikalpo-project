@@ -1,14 +1,10 @@
 "use client";
 
 import {
-  BarChart3Icon,
   ClipboardCheckIcon,
   LogOutIcon,
-  MapPinIcon,
   MenuIcon,
-  PackageIcon,
   TruckIcon,
-  WalletIcon,
   XIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -16,15 +12,14 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { redirectToRootLogin } from "@/lib/auth-routing";
-
-const DM = "/deliveryman/dashboard";
+import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
 
 const navItems = [
-  { title: "My Tasks", url: DM, icon: ClipboardCheckIcon },
-  { title: "Active Route", url: `${DM}/active-route`, icon: MapPinIcon },
-  { title: "Reconciliation", url: `${DM}/reconciliation`, icon: WalletIcon },
-  { title: "Empty Packs", url: `${DM}/empty-packs`, icon: PackageIcon },
-  { title: "My Performance", url: `${DM}/performance`, icon: BarChart3Icon },
+  {
+    title: "Delivery Portal",
+    url: `${getDeliverySubdomainUrl()}/dashboard`,
+    icon: ClipboardCheckIcon,
+  },
 ];
 
 export function DeliverymanMobileNav() {
@@ -46,7 +41,11 @@ export function DeliverymanMobileNav() {
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <button onClick={() => setOpen(!open)} className="p-1 -ml-1">
-              {open ? <XIcon className="w-6 h-6" /> : <MenuIcon className="w-6 h-6" />}
+              {open ? (
+                <XIcon className="w-6 h-6" />
+              ) : (
+                <MenuIcon className="w-6 h-6" />
+              )}
             </button>
             <div className="flex items-center gap-2">
               <TruckIcon className="w-5 h-5" />
@@ -73,8 +72,12 @@ export function DeliverymanMobileNav() {
                   <TruckIcon className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="font-bold">{data?.user?.name || "Deliveryman"}</p>
-                  <p className="text-xs opacity-80">{(data?.user as any)?.phoneNumber || ""}</p>
+                  <p className="font-bold">
+                    {data?.user?.name || "Deliveryman"}
+                  </p>
+                  <p className="text-xs opacity-80">
+                    {(data?.user as any)?.phoneNumber || ""}
+                  </p>
                 </div>
               </div>
             </div>
@@ -92,7 +95,9 @@ export function DeliverymanMobileNav() {
                         : "text-gray-700 hover:bg-gray-50"
                     }`}
                   >
-                    <item.icon className={`w-5 h-5 ${isActive ? "text-emerald-600" : "text-gray-400"}`} />
+                    <item.icon
+                      className={`w-5 h-5 ${isActive ? "text-emerald-600" : "text-gray-400"}`}
+                    />
                     {item.title}
                   </Link>
                 );
@@ -124,7 +129,9 @@ export function DeliverymanMobileNav() {
                   isActive ? "text-emerald-600" : "text-gray-400"
                 }`}
               >
-                <item.icon className={`w-5 h-5 ${isActive ? "text-emerald-600" : "text-gray-400"}`} />
+                <item.icon
+                  className={`w-5 h-5 ${isActive ? "text-emerald-600" : "text-gray-400"}`}
+                />
                 {item.title}
               </Link>
             );
