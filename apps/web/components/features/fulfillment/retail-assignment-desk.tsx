@@ -1,6 +1,7 @@
 "use client";
 
 import { Bike, CheckCircle2, Clock3, Route, UserCheck } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,10 +29,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useAssignRetailDeliveryman,
   useRetailAssignmentOverview,
 } from "@/hooks/use-shop-owner-api";
+import {
+  getRetailAssignmentViewHref,
+  normalizeRetailAssignmentView,
+  RETAIL_ASSIGNMENT_PATH,
+} from "@/lib/retail-assignment-view";
 import {
   FulfillmentDesk,
   FulfillmentKpis,
@@ -47,7 +54,10 @@ type Overview = NonNullable<
 type Group = Overview["groups"][number];
 type Rider = Overview["deliverymen"][number];
 
-export function RetailAssignmentDesk({ lens }: { lens: "group" | "rider" }) {
+export function RetailAssignmentDesk() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const query = useRetailAssignmentOverview();
   const assign = useAssignRetailDeliveryman();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -56,6 +66,7 @@ export function RetailAssignmentDesk({ lens }: { lens: "group" | "rider" }) {
   const data = query.data;
   const groups = data?.groups ?? [];
   const riders = data?.deliverymen ?? [];
+  const view = normalizeRetailAssignmentView(searchParams.get("view"));
   const openGroups = groups.filter((group) =>
     ["pending_assignment", "assigned"].includes(group.status),
   );
@@ -87,6 +98,18 @@ export function RetailAssignmentDesk({ lens }: { lens: "group" | "rider" }) {
     setRiderId(rider?.id ?? group?.deliverymanId ?? "");
     setDialogOpen(true);
   };
+
+  const changeView = (nextView: string) => {
+    const viewHref = getRetailAssignmentViewHref(
+      normalizeRetailAssignmentView(nextView),
+      searchParams.toString(),
+    );
+
+    if (`${pathname}?${searchParams.toString()}` !== viewHref) {
+      router.push(viewHref, { scroll: false });
+    }
+  };
+
   const submit = () =>
     assign.mutate(
       { groupId: Number(groupId), deliverymanId: riderId },
@@ -227,17 +250,9 @@ export function RetailAssignmentDesk({ lens }: { lens: "group" | "rider" }) {
   return (
     <FulfillmentDesk
       adapter={RETAILER_FULFILLMENT_ADAPTER}
-      activeHref={
-        lens === "group"
-          ? "/dashboard/delivery-team/assignments"
-          : "/dashboard/delivery-team/assignment"
-      }
-      title={lens === "group" ? "Assign Orders" : "Rider Assignment"}
-      description={
-        lens === "group"
-          ? "Group-centric view: inspect each Delivery Group, its recipient areas, and assign one available store rider."
-          : "Rider-centric view: compare availability and current workload, then attach an open Delivery Group to an available store rider."
-      }
+      activeHref={RETAIL_ASSIGNMENT_PATH}
+      title="Delivery Assignment"
+      description="Assign each Delivery Group to an available store rider. Switch perspectives to work from the group queue or review rider capacity."
     >
       <FulfillmentKpis
         items={[
@@ -267,30 +282,59 @@ export function RetailAssignmentDesk({ lens }: { lens: "group" | "rider" }) {
           },
         ]}
       />
-      <FulfillmentPanel
-        title={lens === "group" ? "Delivery Group queue" : "Rider workload"}
-      >
-        <FulfillmentState
-          loading={query.isLoading}
-          error={query.isError}
-          empty={
-            !query.isLoading &&
-            (lens === "group" ? groups.length === 0 : riders.length === 0)
+      <Tabs value={view} onValueChange={changeView} className="gap-0">
+        <FulfillmentPanel
+          title={view === "groups" ? "Delivery Group queue" : "Rider workload"}
+          actions={
+            <TabsList
+              aria-label="Delivery assignment view"
+              className="h-10 w-full bg-slate-100 p-1 sm:w-auto"
+            >
+              <TabsTrigger value="groups" className="gap-2 px-3 sm:min-w-44">
+                <Route className="h-4 w-4" />
+                By Delivery Group
+                <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-600 shadow-sm">
+                  {openGroups.length}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="riders" className="gap-2 px-3 sm:min-w-36">
+                <Bike className="h-4 w-4" />
+                By Rider
+                <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-600 shadow-sm">
+                  {data?.stats.availableRiders ?? 0}
+                </span>
+              </TabsTrigger>
+            </TabsList>
           }
-          emptyTitle={
-            lens === "group" ? "No Delivery Groups" : "No store riders"
-          }
-        />
-        {lens === "group" && groups.length > 0 ? groupTable : null}
-        {lens === "rider" && riders.length > 0 ? riderTable : null}
-      </FulfillmentPanel>
+        >
+          <TabsContent value="groups" className="m-0">
+            <FulfillmentState
+              loading={query.isLoading}
+              error={query.isError}
+              empty={!query.isLoading && groups.length === 0}
+              emptyTitle="No Delivery Groups"
+            />
+            {groups.length > 0 ? groupTable : null}
+          </TabsContent>
+          <TabsContent value="riders" className="m-0">
+            <FulfillmentState
+              loading={query.isLoading}
+              error={query.isError}
+              empty={!query.isLoading && riders.length === 0}
+              emptyTitle="No store riders"
+            />
+            {riders.length > 0 ? riderTable : null}
+          </TabsContent>
+        </FulfillmentPanel>
+      </Tabs>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign store rider</DialogTitle>
             <DialogDescription>
-              The shared fulfillment boundary rejects cross-store, banned, or
-              busy riders.
+              Select one available store rider for this Delivery Group. Riders
+              who are banned or already handling an active group cannot be
+              assigned.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

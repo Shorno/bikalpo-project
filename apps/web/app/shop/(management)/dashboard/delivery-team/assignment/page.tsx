@@ -1,5 +1,5 @@
-import { RetailAssignmentDesk } from "@/components/features/fulfillment/retail-assignment-desk";
+import { redirect } from "next/navigation";
 
 export default function RetailRiderAssignmentPage() {
-  return <RetailAssignmentDesk lens="rider" />;
+  redirect("/dashboard/delivery-team/assignments?view=riders");
 }

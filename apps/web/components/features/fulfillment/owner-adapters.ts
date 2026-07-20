@@ -29,7 +29,7 @@ export type FulfillmentOwnerAdapter = {
   stages: FulfillmentStage[];
 };
 
-function buildStages(
+function buildSharedStages(
   base: string,
   orderManagementPath: "incoming-orders" | "order-management",
 ): FulfillmentStage[] {
@@ -50,16 +50,6 @@ function buildStages(
       icon: PackageCheck,
     },
     { label: "Delivery Team", href: `${base}/delivery-team`, icon: Users },
-    {
-      label: "Assign Orders",
-      href: `${base}/delivery-team/assignments`,
-      icon: Route,
-    },
-    {
-      label: "Rider Assignment",
-      href: `${base}/delivery-team/assignment`,
-      icon: Bike,
-    },
   ];
 }
 
@@ -73,7 +63,14 @@ export const RETAILER_FULFILLMENT_ADAPTER: FulfillmentOwnerAdapter = {
     chooseDeliveryType: false,
     batchInvoices: true,
   },
-  stages: buildStages("/dashboard", "incoming-orders"),
+  stages: [
+    ...buildSharedStages("/dashboard", "incoming-orders"),
+    {
+      label: "Delivery Assignment",
+      href: "/dashboard/delivery-team/assignments",
+      icon: Route,
+    },
+  ],
 };
 
 export const WAREHOUSE_FULFILLMENT_ADAPTER: FulfillmentOwnerAdapter = {
@@ -86,5 +83,17 @@ export const WAREHOUSE_FULFILLMENT_ADAPTER: FulfillmentOwnerAdapter = {
     chooseDeliveryType: true,
     batchInvoices: true,
   },
-  stages: buildStages("/warehouse/dashboard", "order-management"),
+  stages: [
+    ...buildSharedStages("/warehouse/dashboard", "order-management"),
+    {
+      label: "Assign Orders",
+      href: "/warehouse/dashboard/delivery-team/assignments",
+      icon: Route,
+    },
+    {
+      label: "Rider Assignment",
+      href: "/warehouse/dashboard/delivery-team/assignment",
+      icon: Bike,
+    },
+  ],
 };

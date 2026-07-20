@@ -27,7 +27,6 @@ import {
   TrendingDownIcon,
   TrendingUpIcon,
   TruckIcon,
-  UserCheckIcon,
   UsersIcon,
   WalletIcon,
   Warehouse as WarehouseIcon,
@@ -189,12 +188,7 @@ const shopOwnerNavGroups: NavGroup[] = [
     items: [
       { title: "Delivery Team", url: `${D}/delivery-team`, icon: TruckIcon },
       {
-        title: "Rider Assignment",
-        url: `${D}/delivery-team/assignment`,
-        icon: UserCheckIcon,
-      },
-      {
-        title: "Assign Orders",
+        title: "Delivery Assignment",
         url: `${D}/delivery-team/assignments`,
         icon: ClipboardListIcon,
       },
