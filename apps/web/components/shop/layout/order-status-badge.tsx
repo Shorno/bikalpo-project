@@ -3,7 +3,7 @@
 import { ArrowRight, Package, Truck } from "lucide-react";
 import Link from "next/link";
 import { useActiveOrder } from "@/hooks/use-customer-api";
-import { getConsumerPhasePresentation } from "@/lib/consumer-order-presentation";
+import { getConsumerPhasePresentationForMode } from "@/lib/consumer-order-presentation";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/utils/currency";
 
@@ -12,7 +12,10 @@ export function OrderStatusButton() {
   if (isLoading || !data?.order || !data.journey) return null;
 
   const { order, journey } = data;
-  const presentation = getConsumerPhasePresentation(journey.phase);
+  const presentation = getConsumerPhasePresentationForMode(
+    journey.phase,
+    journey.fulfillmentMode,
+  );
   const Icon = journey.phase === "out_for_delivery" ? Truck : Package;
 
   return (
@@ -44,7 +47,10 @@ export function MobileOrderStatus() {
   if (isLoading || !data?.order || !data.journey) return null;
 
   const { order, journey } = data;
-  const presentation = getConsumerPhasePresentation(journey.phase);
+  const presentation = getConsumerPhasePresentationForMode(
+    journey.phase,
+    journey.fulfillmentMode,
+  );
   const Icon = journey.phase === "out_for_delivery" ? Truck : Package;
 
   return (

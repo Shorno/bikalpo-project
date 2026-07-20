@@ -204,13 +204,15 @@ export function FulfillmentStatus({ status }: { status: string }) {
     pending_assignment: "Pending Assignment",
     assigned: "Assigned",
     out_for_delivery: "Out for Delivery",
+    ready_for_pickup: "Ready for Pickup",
     delivered: "Delivered",
+    picked_up: "Picked Up",
     completed: "Completed",
     failed: "Failed",
     returned: "Returned",
     cancelled: "Cancelled",
   };
-  const success = ["delivered", "completed"].includes(status);
+  const success = ["delivered", "picked_up", "completed"].includes(status);
   const danger = ["failed", "returned", "cancelled"].includes(status);
   return (
     <Badge

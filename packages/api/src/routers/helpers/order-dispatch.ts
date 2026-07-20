@@ -3,11 +3,17 @@ import {
 	invoice,
 	invoiceItem,
 	order,
+	user,
 	type orderItem,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { markOrderItemCartonsDispatched } from "./b2b-inventory-movement";
+import {
+	fulfillmentInvoiceOwnerCondition,
+	persistedInvoiceFulfillmentMode,
+	type FulfillmentOwner,
+} from "./fulfillment-owner";
 
 export type DispatchFulfillmentMode = "self_pickup" | "delivery";
 export type DispatchQueueStatus =
@@ -134,6 +140,7 @@ export function calculateDispatchInvoiceCharges(input: {
 	shippingCost: number;
 	hasExistingInvoices: boolean;
 	fullyInvoiced: boolean;
+	fulfillmentMode?: DispatchFulfillmentMode;
 }) {
 	const remainingDiscount = Math.max(
 		0,
@@ -151,7 +158,12 @@ export function calculateDispatchInvoiceCharges(input: {
 						) / 100
 					: 0,
 			);
-	const deliveryCharge = input.hasExistingInvoices ? 0 : input.shippingCost;
+	const deliveryCharge =
+		input.fulfillmentMode === "self_pickup"
+			? 0
+			: input.hasExistingInvoices
+				? 0
+				: input.shippingCost;
 	return {
 		discountAmount,
 		deliveryCharge,
@@ -173,14 +185,16 @@ async function generateInvoiceNumber(tx: DbTransaction) {
 	return `${prefix}${(latestSequence + 1).toString().padStart(4, "0")}`;
 }
 
-async function applyFulfillmentMode(
+export async function applyFulfillmentMode(
 	tx: DbTransaction,
 	input: {
 		invoiceId: number;
 		orderId: number;
 		orderReadyAt: Date | null;
 		fulfillmentMode: DispatchFulfillmentMode;
+		persistedMode?: "delivery" | "internal_delivery" | "self_pickup";
 		existingFulfillmentMode?: string | null;
+		existingCompletionOtp?: string | null;
 		deliveryStatus?: string | null;
 	},
 ) {
@@ -191,22 +205,27 @@ async function applyFulfillmentMode(
 	}
 	if (
 		input.existingFulfillmentMode &&
-		input.existingFulfillmentMode !== input.fulfillmentMode
+		input.existingFulfillmentMode !==
+			(input.persistedMode ?? input.fulfillmentMode)
 	) {
 		throw new ORPCError("BAD_REQUEST", {
 			message: "Fulfillment mode has already been selected",
 		});
 	}
 
+	const persistedMode = input.persistedMode ?? input.fulfillmentMode;
 	const completionOtp =
 		input.fulfillmentMode === "self_pickup"
-			? Math.floor(1000 + Math.random() * 9000).toString()
+			? input.existingFulfillmentMode === persistedMode &&
+				input.existingCompletionOtp
+				? input.existingCompletionOtp
+				: Math.floor(1000 + Math.random() * 9000).toString()
 			: null;
 
 	await tx
 		.update(invoice)
 		.set({
-			fulfillmentMode: input.fulfillmentMode,
+			fulfillmentMode: persistedMode,
 			completionOtp,
 			completionOtpGeneratedAt:
 				input.fulfillmentMode === "self_pickup" ? new Date() : null,
@@ -366,6 +385,7 @@ export async function createDispatchInvoiceForOrder(input: {
 				shippingCost: Number(existingOrder.shippingCost),
 				hasExistingInvoices: existingInvoices.length > 0,
 				fullyInvoiced,
+				fulfillmentMode: input.fulfillmentMode,
 			});
 		const mainInvoice = existingInvoices.find(
 			(row) => row.invoiceType === "main",
@@ -469,22 +489,74 @@ export async function configureExistingInvoiceFulfillment(input: {
 	invoiceId: number;
 	fulfillmentMode: DispatchFulfillmentMode;
 }) {
+	return configureExistingInvoiceFulfillmentForOwner({
+		owner: { kind: "warehouse", id: input.userId },
+		invoiceId: input.invoiceId,
+		fulfillmentMode: input.fulfillmentMode,
+	});
+}
+
+export async function configureExistingInvoiceFulfillmentForOwner(input: {
+	owner: FulfillmentOwner;
+	invoiceId: number;
+	fulfillmentMode: DispatchFulfillmentMode;
+}) {
 	return db.transaction(async (tx) => {
 		const existingInvoice = await tx.query.invoice.findFirst({
 			where: and(
 				eq(invoice.id, input.invoiceId),
-				sql`EXISTS (
-          SELECT 1 FROM "order" scoped_order
-          WHERE scoped_order."id" = ${invoice.orderId}
-            AND scoped_order."warehouse_id" = ${input.userId}
-        )`,
+				fulfillmentInvoiceOwnerCondition(input.owner),
 			),
 			with: {
-				order: { columns: { id: true, readyAt: true } },
+				order: {
+					columns: {
+						id: true,
+						readyAt: true,
+						subtotal: true,
+						discount: true,
+						shippingCost: true,
+						total: true,
+					},
+				},
 			},
 		});
 		if (!existingInvoice?.order) {
 			throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
+		}
+		const persistedMode = persistedInvoiceFulfillmentMode(
+			input.owner,
+			input.fulfillmentMode,
+		);
+		if (existingInvoice.fulfillmentMode) {
+			if (existingInvoice.fulfillmentMode !== persistedMode) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Fulfillment mode has already been selected",
+				});
+			}
+			if (existingInvoice.deliveryStatus === "delivered") {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "This invoice has already been completed",
+				});
+			}
+			return {
+				invoice: existingInvoice,
+				completionOtp:
+					existingInvoice.fulfillmentMode === "self_pickup"
+						? existingInvoice.completionOtp
+						: null,
+			};
+		}
+		if (input.owner.kind === "shop" && input.fulfillmentMode === "self_pickup") {
+			const shop = await tx.query.user.findFirst({
+				where: eq(user.id, input.owner.id),
+				columns: { shopAddress: true },
+			});
+			if (!shop?.shopAddress?.trim()) {
+				throw new ORPCError("BAD_REQUEST", {
+					message:
+						"Add a shop address before offering self pickup to consumers",
+				});
+			}
 		}
 
 		const fulfillment = await applyFulfillmentMode(tx, {
@@ -492,9 +564,31 @@ export async function configureExistingInvoiceFulfillment(input: {
 			orderId: existingInvoice.order.id,
 			orderReadyAt: existingInvoice.order.readyAt,
 			fulfillmentMode: input.fulfillmentMode,
+			persistedMode,
 			existingFulfillmentMode: existingInvoice.fulfillmentMode,
+			existingCompletionOtp: existingInvoice.completionOtp,
 			deliveryStatus: existingInvoice.deliveryStatus,
 		});
+
+		if (input.owner.kind === "shop" && input.fulfillmentMode === "self_pickup") {
+			await tx
+				.update(order)
+				.set({
+					shippingCost: "0.00",
+					total: (
+						Math.round(
+							(Math.max(
+								0,
+								Number(existingInvoice.order.subtotal) -
+									Number(existingInvoice.order.discount),
+							) +
+								Number.EPSILON) *
+								100,
+						) / 100
+					).toFixed(2),
+				})
+				.where(eq(order.id, existingInvoice.order.id));
+		}
 
 		return { invoice: existingInvoice, ...fulfillment };
 	});

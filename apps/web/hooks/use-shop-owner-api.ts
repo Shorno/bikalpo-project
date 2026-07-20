@@ -667,6 +667,24 @@ export function useCreateIncomingOrderInvoice() {
   );
 }
 
+export function useConfigureIncomingOrderFulfillment() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.configureIncomingOrderFulfillment.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useVerifyIncomingSelfPickup() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.verifyIncomingSelfPickup.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
 export function useCreateIncomingDeliveryGroup() {
   const queryClient = useQueryClient();
   return useMutation(

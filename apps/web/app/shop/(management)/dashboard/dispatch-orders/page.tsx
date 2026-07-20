@@ -1,9 +1,8 @@
 "use client";
 
-import { FileCheck2, FileText, PackageCheck, Search } from "lucide-react";
+import { FileCheck2, FileText, Search, Store } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { toast } from "sonner";
 import {
   FulfillmentDesk,
   FulfillmentKpis,
@@ -23,10 +22,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  useCreateIncomingOrderInvoice,
-  useRetailDispatchOrders,
-} from "@/hooks/use-shop-owner-api";
+import { useRetailDispatchOrders } from "@/hooks/use-shop-owner-api";
+import { RetailerDispatchModal } from "./_components/retailer-dispatch-modal";
 
 const money = new Intl.NumberFormat("en-BD", {
   style: "currency",
@@ -39,28 +36,33 @@ export default function RetailDispatchOrdersPage() {
     "ready_for_dispatch",
   );
   const [search, setSearch] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const query = useRetailDispatchOrders(view, search);
-  const createInvoice = useCreateIncomingOrderInvoice();
   const orders = query.data?.orders ?? [];
-
-  const invoiceOrder = (orderId: number) =>
-    createInvoice.mutate(
-      { orderId },
-      {
-        onSuccess: () => {
-          toast.success("Full invoice created");
-          query.refetch();
-        },
-        onError: (error) => toast.error(error.message),
-      },
-    );
+  const selectedOrder =
+    orders.find((order) => order.id === selectedOrderId) ?? null;
+  const presentationStatus = (order: (typeof orders)[number]) => {
+    if (
+      order.invoice?.fulfillmentMode === "self_pickup" &&
+      order.invoice.deliveryStatus === "pending"
+    ) {
+      return "ready_for_pickup";
+    }
+    if (
+      order.invoice?.fulfillmentMode === "self_pickup" &&
+      order.invoice.deliveryStatus === "delivered"
+    ) {
+      return "picked_up";
+    }
+    return order.status;
+  };
 
   return (
     <FulfillmentDesk
       adapter={RETAILER_FULFILLMENT_ADAPTER}
       activeHref="/dashboard/dispatch-orders"
       title="Dispatch Orders"
-      description="Turn each approved consumer order into its one full, idempotent invoice. Retailer invoices always use internal delivery and do not expose partial or pickup options."
+      description="Turn each approved consumer order into one full invoice. Choose delivery or self pickup here; pickup is completed with a consumer OTP at the shop."
     >
       <FulfillmentKpis
         items={[
@@ -80,9 +82,9 @@ export default function RetailDispatchOrdersPage() {
             tone: "blue",
           },
           {
-            label: "Internal delivery",
-            value: "Required",
-            icon: PackageCheck,
+            label: "Fulfillment options",
+            value: query.data?.pickupAvailable ? "2" : "1",
+            icon: Store,
             tone: "emerald",
           },
         ]}
@@ -150,26 +152,29 @@ export default function RetailDispatchOrdersPage() {
                     </p>
                   </TableCell>
                   <TableCell>
-                    <FulfillmentStatus status={order.status} />
+                    <FulfillmentStatus status={presentationStatus(order)} />
                   </TableCell>
                   <TableCell className="text-right font-medium">
                     {money.format(Number(order.total))}
                   </TableCell>
                   <TableCell className="text-right">
-                    {order.status === "ready_for_dispatch" ? (
-                      <Button
-                        size="sm"
-                        onClick={() => invoiceOrder(order.id)}
-                        disabled={createInvoice.isPending}
-                      >
-                        <FileText className="mr-2 h-4 w-4" />
-                        Create Invoice
-                      </Button>
-                    ) : (
-                      <span className="text-sm font-medium text-emerald-700">
-                        {order.invoice?.invoiceNumber ?? "Invoice created"}
-                      </span>
-                    )}
+                    <Button
+                      size="sm"
+                      variant={
+                        order.status === "ready_for_dispatch"
+                          ? "default"
+                          : "outline"
+                      }
+                      onClick={() => setSelectedOrderId(order.id)}
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      {order.status === "ready_for_dispatch"
+                        ? "Dispatch"
+                        : order.invoice?.fulfillmentMode === "self_pickup" &&
+                            order.invoice.deliveryStatus !== "delivered"
+                          ? "Complete Pickup"
+                          : "Review"}
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -177,6 +182,18 @@ export default function RetailDispatchOrdersPage() {
           </Table>
         ) : null}
       </FulfillmentPanel>
+      <RetailerDispatchModal
+        order={selectedOrder}
+        open={!!selectedOrder}
+        pickupAvailable={query.data?.pickupAvailable ?? false}
+        pickupLocation={query.data?.pickupLocation ?? null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedOrderId(null);
+        }}
+        onSuccess={() => {
+          void query.refetch();
+        }}
+      />
     </FulfillmentDesk>
   );
 }

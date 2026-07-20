@@ -26,6 +26,31 @@ export const consumerJourneySteps = [
   },
 ] as const;
 
+export type ConsumerFulfillmentMode = "internal_delivery" | "self_pickup";
+
+export function getConsumerJourneySteps(
+  mode: ConsumerFulfillmentMode | null | undefined,
+) {
+  if (mode !== "self_pickup") return consumerJourneySteps;
+  return consumerJourneySteps.map((step) => {
+    if (step.key === "out_for_delivery") {
+      return {
+        ...step,
+        label: "Ready for pickup",
+        description: "Your order is ready at the retailer's shop.",
+      };
+    }
+    if (step.key === "delivered") {
+      return {
+        ...step,
+        label: "Picked up",
+        description: "Your pickup was verified at the shop.",
+      };
+    }
+    return step;
+  });
+}
+
 export type ConsumerPhase =
   | (typeof consumerJourneySteps)[number]["key"]
   | "cancelled"
@@ -85,10 +110,32 @@ export const consumerPhasePresentation: Record<
 };
 
 export function getConsumerPhasePresentation(phase: string) {
-  return (
+  return getConsumerPhasePresentationForMode(phase, null);
+}
+
+export function getConsumerPhasePresentationForMode(
+  phase: string,
+  mode: ConsumerFulfillmentMode | null | undefined,
+) {
+  const base =
     consumerPhasePresentation[phase as ConsumerPhase] ??
-    consumerPhasePresentation.placed
-  );
+    consumerPhasePresentation.placed;
+  if (mode !== "self_pickup") return base;
+  if (phase === "out_for_delivery") {
+    return {
+      ...base,
+      label: "Ready for pickup",
+      description: "Your order is ready at the retailer's shop.",
+    };
+  }
+  if (phase === "delivered") {
+    return {
+      ...base,
+      label: "Picked up",
+      description: "Your pickup was verified at the shop.",
+    };
+  }
+  return base;
 }
 
 export function isTerminalConsumerPhase(phase: string) {

@@ -33,6 +33,16 @@ type JourneyInvoice = {
   invoiceNumber: string;
   createdAt: Date;
   deliveryStatus?: string | null;
+  fulfillmentMode?: string | null;
+  completionOtp?: string | null;
+  completionOtpVerifiedAt?: Date | null;
+  deliveredAt?: Date | null;
+};
+
+type JourneyPickupLocation = {
+  name: string | null;
+  address: string;
+  phone: string | null;
 };
 
 type JourneyDeliveryLink = {
@@ -59,6 +69,7 @@ export type ConsumerOrderJourney = {
   } | null;
   delivery: {
     status: string | null;
+    mode: "internal_delivery" | "self_pickup" | null;
     riderName: string | null;
     riderPhone: string | null;
     otp: string | null;
@@ -66,12 +77,15 @@ export type ConsumerOrderJourney = {
     startedAt: Date | null;
     deliveredAt: Date | null;
   };
+  pickupLocation: JourneyPickupLocation | null;
+  fulfillmentMode: "internal_delivery" | "self_pickup" | null;
 };
 
 export function buildConsumerOrderJourney(input: {
   order: JourneyOrder;
   invoices?: JourneyInvoice[];
   deliveryLinks?: JourneyDeliveryLink[];
+  pickupLocation?: JourneyPickupLocation | null;
 }): ConsumerOrderJourney {
   const invoices = input.invoices ?? [];
   const deliveryLinks = input.deliveryLinks ?? [];
@@ -94,6 +108,15 @@ export function buildConsumerOrderJourney(input: {
     (primaryInvoice?.deliveryStatus === "not_assigned"
       ? null
       : historicalLink);
+  const fulfillmentMode =
+    invoices.some((invoice) => invoice.fulfillmentMode === "self_pickup")
+      ? "self_pickup"
+      : invoices.length > 0
+        ? "internal_delivery"
+        : null;
+  const pickupInvoice = invoices.find(
+    (invoice) => invoice.fulfillmentMode === "self_pickup",
+  );
 
   let stepPhase: ConsumerJourneyStepKey = "placed";
   if (
@@ -104,6 +127,14 @@ export function buildConsumerOrderJourney(input: {
   ) {
     stepPhase = "delivered";
   } else if (input.order.status === "returned") {
+    stepPhase = "out_for_delivery";
+  } else if (
+    fulfillmentMode === "self_pickup" &&
+    pickupInvoice &&
+    (pickupInvoice.completionOtp ||
+      pickupInvoice.completionOtpVerifiedAt ||
+      pickupInvoice.deliveryStatus === "delivered")
+  ) {
     stepPhase = "out_for_delivery";
   } else if (
     currentLink?.groupStatus === "out_for_delivery" ||
@@ -180,17 +211,35 @@ export function buildConsumerOrderJourney(input: {
         }
       : null,
     delivery: {
-      status: currentLink?.groupStatus ?? null,
+      status:
+        fulfillmentMode === "self_pickup"
+          ? pickupInvoice?.deliveryStatus === "delivered"
+            ? "delivered"
+            : pickupInvoice?.completionOtp
+              ? "ready_for_pickup"
+              : null
+          : (currentLink?.groupStatus ?? null),
+      mode: fulfillmentMode,
       riderName: input.order.riderName ?? null,
       riderPhone: input.order.riderPhone ?? null,
       otp:
-        currentLink?.groupStatus === "out_for_delivery" &&
-        currentLink.invoiceStatus === "pending"
-          ? (currentLink.deliveryOtp ?? null)
-          : null,
+        fulfillmentMode === "self_pickup"
+          ? pickupInvoice?.completionOtpVerifiedAt
+            ? null
+            : (pickupInvoice?.completionOtp ?? null)
+          : currentLink?.groupStatus === "out_for_delivery" &&
+              currentLink.invoiceStatus === "pending"
+            ? (currentLink.deliveryOtp ?? null)
+            : null,
       assignedAt: currentLink?.assignedAt ?? null,
       startedAt: currentLink?.startedAt ?? null,
-      deliveredAt: currentLink?.deliveredAt ?? null,
+      deliveredAt:
+        fulfillmentMode === "self_pickup"
+          ? (pickupInvoice?.deliveredAt ?? null)
+          : (currentLink?.deliveredAt ?? null),
     },
+    pickupLocation:
+      fulfillmentMode === "self_pickup" ? (input.pickupLocation ?? null) : null,
+    fulfillmentMode,
   };
 }

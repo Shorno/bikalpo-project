@@ -10,7 +10,15 @@ interface OrderTabsProps {
 }
 
 export type ConsumerOrder = OrderWithItems & {
-  journey: { phase: string };
+  journey: {
+    phase: string;
+    fulfillmentMode: "internal_delivery" | "self_pickup" | null;
+    pickupLocation: {
+      name: string | null;
+      address: string;
+      phone: string | null;
+    } | null;
+  };
 };
 
 function filterOrders(orders: ConsumerOrder[], status: string) {
@@ -19,9 +27,12 @@ function filterOrders(orders: ConsumerOrder[], status: string) {
       return orders.filter((order) => order.journey.phase === "placed");
     case "active":
       return orders.filter((order) =>
-        ["confirmed", "preparing", "out_for_delivery", "delivery_issue"].includes(
-          order.journey.phase,
-        ),
+        [
+          "confirmed",
+          "preparing",
+          "out_for_delivery",
+          "delivery_issue",
+        ].includes(order.journey.phase),
       );
     case "delivered":
       return orders.filter((order) => order.journey.phase === "delivered");

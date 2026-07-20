@@ -123,6 +123,76 @@ test("only an active delivery exposes the OTP and out-for-delivery phase", () =>
   assert.equal(journey.steps[3]?.completedAt, startedAt);
 });
 
+test("a retailer self-pickup invoice exposes pickup readiness, code, and location", () => {
+  const invoiceAt = new Date("2026-07-19T08:25:00.000Z");
+  const journey = buildConsumerOrderJourney({
+    order: {
+      status: "invoiced",
+      createdAt: placedAt,
+      confirmedAt: new Date("2026-07-19T08:15:00.000Z"),
+    },
+    invoices: [
+      {
+        id: 11,
+        invoiceNumber: "INV-2026-0011",
+        createdAt: invoiceAt,
+        deliveryStatus: "pending",
+        fulfillmentMode: "self_pickup",
+        completionOtp: "4821",
+        completionOtpVerifiedAt: null,
+        deliveredAt: null,
+      },
+    ],
+    pickupLocation: {
+      name: "Corner Shop",
+      address: "12 Main Road",
+      phone: "01700000000",
+    },
+  });
+
+  assert.equal(journey.fulfillmentMode, "self_pickup");
+  assert.equal(journey.phase, "out_for_delivery");
+  assert.equal(journey.delivery.status, "ready_for_pickup");
+  assert.equal(journey.delivery.mode, "self_pickup");
+  assert.equal(journey.delivery.otp, "4821");
+  assert.deepEqual(journey.pickupLocation, {
+    name: "Corner Shop",
+    address: "12 Main Road",
+    phone: "01700000000",
+  });
+});
+
+test("completed retailer self pickup hides the code and marks the final journey step", () => {
+  const completedAt = new Date("2026-07-19T09:00:00.000Z");
+  const journey = buildConsumerOrderJourney({
+    order: {
+      status: "delivered",
+      createdAt: placedAt,
+      confirmedAt: new Date("2026-07-19T08:15:00.000Z"),
+      deliveredAt: completedAt,
+      receivedAt: completedAt,
+    },
+    invoices: [
+      {
+        id: 11,
+        invoiceNumber: "INV-2026-0011",
+        createdAt: new Date("2026-07-19T08:25:00.000Z"),
+        deliveryStatus: "delivered",
+        fulfillmentMode: "self_pickup",
+        completionOtp: "4821",
+        completionOtpVerifiedAt: completedAt,
+        deliveredAt: completedAt,
+      },
+    ],
+  });
+
+  assert.equal(journey.fulfillmentMode, "self_pickup");
+  assert.equal(journey.phase, "delivered");
+  assert.equal(journey.delivery.status, "delivered");
+  assert.equal(journey.delivery.otp, null);
+  assert.equal(journey.steps[4]?.state, "current");
+});
+
 test("OTP-completed delivery marks the consumer journey delivered and hides the code", () => {
   const deliveredAt = new Date("2026-07-19T09:40:00.000Z");
   const journey = buildConsumerOrderJourney({

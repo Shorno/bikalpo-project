@@ -44,8 +44,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useOrderByNumber } from "@/hooks/use-customer-api";
 import {
-  consumerJourneySteps,
-  getConsumerPhasePresentation,
+  getConsumerJourneySteps,
+  getConsumerPhasePresentationForMode,
 } from "@/lib/consumer-order-presentation";
 import { cn } from "@/lib/utils";
 import { client } from "@/utils/orpc";
@@ -105,7 +105,11 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
   if (!data?.order || !data.journey) return null;
 
   const { order, journey } = data;
-  const presentation = getConsumerPhasePresentation(journey.phase);
+  const presentation = getConsumerPhasePresentationForMode(
+    journey.phase,
+    journey.fulfillmentMode,
+  );
+  const journeyStepCopy = getConsumerJourneySteps(journey.fulfillmentMode);
   const canReport = [
     "confirmed",
     "preparing",
@@ -182,10 +186,14 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
       >
         <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
           <h2 id="journey-heading" className="font-semibold text-slate-950">
-            Delivery journey
+            {journey.fulfillmentMode === "self_pickup"
+              ? "Pickup journey"
+              : "Delivery journey"}
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Five clear updates from checkout to verified receipt.
+            {journey.fulfillmentMode === "self_pickup"
+              ? "Five clear updates from checkout to verified pickup."
+              : "Five clear updates from checkout to verified receipt."}
           </p>
         </div>
         <ol
@@ -193,9 +201,7 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
           aria-label="Order delivery progress"
         >
           {journey.steps.map((step, index) => {
-            const copy = consumerJourneySteps.find(
-              (item) => item.key === step.key,
-            );
+            const copy = journeyStepCopy.find((item) => item.key === step.key);
             const complete = step.state === "complete";
             const current = step.state === "current";
             return (
@@ -315,17 +321,24 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
             <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-blue-700" />
             <div>
               <h2 id="otp-heading" className="font-semibold text-blue-950">
-                Confirm only after receiving your order
+                {journey.fulfillmentMode === "self_pickup"
+                  ? "Show this code at pickup"
+                  : "Confirm only after receiving your order"}
               </h2>
               <p className="mt-1 max-w-xl text-sm leading-6 text-blue-900/80">
-                Check the items first. Share this code with the rider only after
-                the order is physically in your hands.
+                Check the items first.{" "}
+                {journey.fulfillmentMode === "self_pickup"
+                  ? "Share this code with store staff only after the order is physically in your hands."
+                  : "Share this code with the rider only after the order is physically in your hands."}
               </p>
             </div>
           </div>
           <div className="mt-5 rounded-lg border border-blue-200 bg-white px-6 py-4 text-center sm:mt-0 sm:min-w-48">
             <p className="flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
-              <KeyRound className="h-3.5 w-3.5" /> Delivery OTP
+              <KeyRound className="h-3.5 w-3.5" />{" "}
+              {journey.fulfillmentMode === "self_pickup"
+                ? "Pickup OTP"
+                : "Delivery OTP"}
             </p>
             <p className="mt-1 font-mono text-3xl font-bold tracking-[0.25em] text-blue-950">
               {journey.delivery.otp}
@@ -333,6 +346,31 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
           </div>
         </section>
       )}
+
+      {journey.fulfillmentMode === "self_pickup" &&
+        journey.pickupLocation &&
+        journey.delivery.status !== "delivered" && (
+          <section
+            className="rounded-xl border border-amber-200 bg-amber-50 p-5 sm:p-6"
+            aria-labelledby="pickup-location-heading"
+          >
+            <h2
+              id="pickup-location-heading"
+              className="font-semibold text-amber-950"
+            >
+              Pickup location
+            </h2>
+            <div className="mt-3 space-y-1 text-sm text-amber-900/80">
+              <p className="font-medium text-amber-950">
+                {journey.pickupLocation.name || "Retailer shop"}
+              </p>
+              <p>{journey.pickupLocation.address}</p>
+              {journey.pickupLocation.phone && (
+                <p>Call {journey.pickupLocation.phone}</p>
+              )}
+            </div>
+          </section>
+        )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
         <section
@@ -380,7 +418,11 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
                 value={money.format(Number(order.subtotal))}
               />
               <PriceRow
-                label="Delivery"
+                label={
+                  journey.fulfillmentMode === "self_pickup"
+                    ? "Pickup charge"
+                    : "Delivery"
+                }
                 value={
                   Number(order.shippingCost) === 0
                     ? "Free"
@@ -406,30 +448,47 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
 
         <aside className="space-y-4">
           <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-semibold text-slate-950">Delivery details</h2>
+            <h2 className="font-semibold text-slate-950">
+              {journey.fulfillmentMode === "self_pickup"
+                ? "Pickup details"
+                : "Delivery details"}
+            </h2>
             <div className="mt-4 space-y-4 text-sm">
               <div className="flex gap-3">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                 <div className="text-slate-600">
                   <p className="font-medium text-slate-900">
-                    {order.shippingName}
+                    {journey.fulfillmentMode === "self_pickup" &&
+                    journey.pickupLocation
+                      ? journey.pickupLocation.name || "Retailer shop"
+                      : order.shippingName}
                   </p>
                   <p className="mt-1 leading-6">
-                    {order.shippingAddress}
-                    <br />
-                    {[
-                      order.shippingArea,
-                      order.shippingCity,
-                      order.shippingPostalCode,
-                    ]
-                      .filter(Boolean)
-                      .join(", ")}
+                    {journey.fulfillmentMode === "self_pickup" &&
+                    journey.pickupLocation ? (
+                      journey.pickupLocation.address
+                    ) : (
+                      <>
+                        {order.shippingAddress}
+                        <br />
+                        {[
+                          order.shippingArea,
+                          order.shippingCity,
+                          order.shippingPostalCode,
+                        ]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-3 text-slate-600">
                 <Phone className="h-4 w-4 text-slate-400" />
-                {order.shippingPhone}
+                {journey.fulfillmentMode === "self_pickup" &&
+                journey.pickupLocation?.phone
+                  ? journey.pickupLocation.phone
+                  : order.shippingPhone}
               </div>
             </div>
           </div>

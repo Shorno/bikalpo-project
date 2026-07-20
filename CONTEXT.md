@@ -21,8 +21,16 @@ A retailer- or warehouse-owned batch of invoiced orders assigned to one rider fo
 _Avoid_: Order assignment, rider order
 
 **Handoff OTP**:
-A short code owned by the recipient and entered by the rider only after the goods are physically handed over.
+A short code owned by the recipient and entered by a delivery rider only after the goods are physically handed over.
 _Avoid_: Login OTP, consumer confirmation form
+
+**Self Pickup**:
+An owner-selected fulfillment mode where a consumer collects an invoiced order at the retailer shop or warehouse. It does not create a Delivery Group or involve a rider.
+_Avoid_: Delivery, customer pickup request
+
+**Pickup OTP**:
+A four-digit code shown to the consumer and entered by store or warehouse staff only after the goods are physically handed over at the pickup location. For retailer self pickup, successful verification also records counter payment.
+_Avoid_: Delivery OTP, login OTP
 
 **Delivery Recipient**:
 The person or organization receiving a rider handoff. A Delivery Recipient can be a consumer, retailer store, or warehouse and has a computed type and display name in the rider portal.
@@ -31,7 +39,7 @@ _Avoid_: Customer when the recipient may be a store or warehouse
 ## Consumer Experience
 
 **Consumer Journey**:
-The five-stage projection of a retailer order: Order placed, Store confirmed, Preparing, Out for delivery, and Delivered.
+The five-stage projection of a retailer order: Order placed, Store confirmed, Preparing, Out for delivery or Ready for pickup, and Delivered or Picked up. It hides raw operational statuses.
 _Avoid_: Raw order status, fulfillment status
 
 **Delivery Issue**:

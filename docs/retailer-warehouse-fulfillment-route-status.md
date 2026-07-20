@@ -7,7 +7,7 @@ This document records the operational route handoff and distinguishes active pag
 | Stage | Warehouse route | Retailer route | Status | Owner responsibility |
 |---|---|---|---|---|
 | Order Management | `/warehouse/dashboard/order-management` + `/[id]` | `/dashboard/incoming-orders` + `/[id]` | Active | Review, Order Approval, or cancellation |
-| Dispatch Orders | `/warehouse/dashboard/dispatch-orders` | `/dashboard/dispatch-orders` | Active | Create invoices; retailer is full-only and idempotent |
+| Dispatch Orders | `/warehouse/dashboard/dispatch-orders` | `/dashboard/dispatch-orders` | Active | Create full invoices and select Delivery or Self Pickup; retailer remains full-only and idempotent |
 | Delivery Management | `/warehouse/dashboard/delivery-management` | `/dashboard/delivery-management` | Active | Batch invoices into owner-scoped Delivery Groups |
 | Delivery Team | `/warehouse/dashboard/delivery-team` | `/dashboard/delivery-team` | Active | Owner-scoped rider CRUD and availability |
 | Assign Orders | `/warehouse/dashboard/delivery-team/assignments` | `/dashboard/delivery-team/assignments` | Active | Group-centric rider assignment |
@@ -34,4 +34,4 @@ Retailer operational labels use **Pending Approval** and **Approve Order**. The 
 
 ## Retailer capability differences
 
-Retailer fulfillment reuses the warehouse desk pattern but disables quantity adjustment, partial invoices, self-pickup, and delivery-type selection. Approval moves directly to `ready_for_dispatch`; invoice creation always produces the one full `internal_delivery` invoice. Multiple compatible consumer invoices may share one store-owned Delivery Group.
+Retailer fulfillment reuses the warehouse desk pattern but disables quantity adjustment and partial invoices. Approval moves directly to `ready_for_dispatch`; Dispatch Orders creates one full `internal_delivery` invoice or a `self_pickup` invoice. Self-pickup generates a Pickup OTP, removes delivery charge, and completes at the retailer desk without a Delivery Group. Multiple compatible consumer delivery invoices may share one store-owned Delivery Group.

@@ -50,6 +50,21 @@ export default function IncomingOrdersPage() {
   const query = useIncomingOrders({ status, page, limit: 20 });
   const orders = query.data?.orders ?? [];
   const pagination = query.data?.pagination;
+  const presentationStatus = (order: (typeof orders)[number]) => {
+    if (
+      order.fulfillment?.fulfillmentMode === "self_pickup" &&
+      order.fulfillment.deliveryStatus === "pending"
+    ) {
+      return "ready_for_pickup";
+    }
+    if (
+      order.fulfillment?.fulfillmentMode === "self_pickup" &&
+      order.fulfillment.deliveryStatus === "delivered"
+    ) {
+      return "picked_up";
+    }
+    return order.status;
+  };
 
   return (
     <FulfillmentDesk
@@ -152,7 +167,7 @@ export default function IncomingOrdersPage() {
                     {new Date(order.createdAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    <FulfillmentStatus status={order.status} />
+                    <FulfillmentStatus status={presentationStatus(order)} />
                   </TableCell>
                   <TableCell className="text-right font-medium tabular-nums">
                     {money.format(Number(order.total))}

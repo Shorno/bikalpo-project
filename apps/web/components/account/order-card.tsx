@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getConsumerPhasePresentation } from "@/lib/consumer-order-presentation";
+import { getConsumerPhasePresentationForMode } from "@/lib/consumer-order-presentation";
 import { formatPrice } from "@/utils/currency";
 import type { ConsumerOrder } from "./order-tabs";
 
@@ -16,7 +16,11 @@ interface OrderCardProps {
 
 export function OrderCard({ order }: OrderCardProps) {
   const itemCount = order.items.length;
-  const presentation = getConsumerPhasePresentation(order.journey.phase);
+  const isPickup = order.journey.fulfillmentMode === "self_pickup";
+  const presentation = getConsumerPhasePresentationForMode(
+    order.journey.phase,
+    order.journey.fulfillmentMode,
+  );
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors hover:border-blue-200">
@@ -73,16 +77,23 @@ export function OrderCard({ order }: OrderCardProps) {
 
       {/* Delivery Info */}
       <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-sm text-gray-600">
-        <span className="text-gray-500">Deliver to: </span>
+        <span className="text-gray-500">
+          {isPickup ? "Pick up at: " : "Deliver to: "}
+        </span>
         <span className="font-medium text-gray-900">
-          {order.shippingAddress}, {order.shippingCity}
-          {order.shippingPostalCode && ` - ${order.shippingPostalCode}`}
+          {isPickup && order.journey.pickupLocation
+            ? order.journey.pickupLocation.address
+            : `${order.shippingAddress}, ${order.shippingCity}`}
+          {!isPickup &&
+            order.shippingPostalCode &&
+            ` - ${order.shippingPostalCode}`}
         </span>
         {order.deliveredAt && (
           <>
             <span className="mx-2">•</span>
             <span className="text-green-600 font-medium">
-              Delivered: {format(new Date(order.deliveredAt), "MMM d, yyyy")}
+              {isPickup ? "Picked up" : "Delivered"}:{" "}
+              {format(new Date(order.deliveredAt), "MMM d, yyyy")}
             </span>
           </>
         )}

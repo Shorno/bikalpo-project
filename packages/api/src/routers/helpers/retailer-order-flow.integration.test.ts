@@ -73,6 +73,7 @@ test(
     const suffix = randomUUID();
     const consumerId = `retailer-flow-consumer-${suffix}`;
         const secondConsumerId = `retailer-flow-consumer-2-${suffix}`;
+    const pickupConsumerId = `retailer-flow-pickup-consumer-${suffix}`;
     const shopId = `retailer-flow-shop-${suffix}`;
         const otherShopId = `retailer-flow-other-shop-${suffix}`;
     const productSlug = `retailer-flow-product-${suffix}`;
@@ -88,6 +89,9 @@ test(
         const secondConsumerContext = {
             session: { user: { id: secondConsumerId, role: "consumer" } },
         };
+    const pickupConsumerContext = {
+      session: { user: { id: pickupConsumerId, role: "consumer" } },
+    };
     const shopContext = {
       session: { user: { id: shopId, role: "shop_owner" } },
     };
@@ -122,6 +126,12 @@ test(
                     role: "consumer",
                 },
         {
+          id: pickupConsumerId,
+          name: "Pickup Retailer Flow Consumer",
+          email: `${pickupConsumerId}@example.test`,
+          role: "consumer",
+        },
+        {
           id: shopId,
           name: "Retailer Flow Shop",
           email: `${shopId}@example.test`,
@@ -130,6 +140,7 @@ test(
           sellerStatus: "approved",
           shopName: "Retailer Flow Shop",
           shopSlug: `retailer-flow-shop-${suffix}`,
+          shopAddress: "12 Pickup Road, Dhaka",
         },
                 {
                     id: otherShopId,
@@ -520,13 +531,116 @@ test(
       assert.equal(customerOrder.journey.phase, "delivered");
       assert.equal(customerOrder.journey.delivery.otp, null);
       assert.equal(
-        (
+          (
           await db.query.inventory.findFirst({
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
         "1.00",
       );
+
+      await invokeProcedure(
+        customerRouter.addToCart,
+        pickupConsumerContext,
+        addInput,
+      );
+      const pickupPlacement = await invokeProcedure<{
+        order: { id: number; orderNumber: string };
+      }>(customerRouter.placeOrder, pickupConsumerContext, {
+        shippingInfo: {
+          ...shippingInfo,
+          name: "Pickup Recipient",
+        },
+        paymentMethod: "cash_on_delivery",
+      });
+      await invokeProcedure(shopOwnerRouter.confirmIncomingOrder, shopContext, {
+        orderId: pickupPlacement.order.id,
+      });
+      const pickupInvoice = await invokeProcedure<{
+        invoice: {
+          id: number;
+          fulfillmentMode: string | null;
+          deliveryCharge: string;
+          grandTotal: string;
+        };
+        completionOtp: string | null;
+      }>(shopOwnerRouter.createIncomingOrderInvoice, shopContext, {
+        orderId: pickupPlacement.order.id,
+        fulfillmentMode: "self_pickup",
+      });
+      assert.equal(pickupInvoice.invoice.fulfillmentMode, "self_pickup");
+      assert.equal(pickupInvoice.invoice.deliveryCharge, "0.00");
+      assert.equal(pickupInvoice.completionOtp?.length, 4);
+      const pickupOtp = pickupInvoice.completionOtp;
+      assert.ok(pickupOtp);
+      assert.equal(
+        (
+          await db.query.deliveryGroupInvoice.findMany({
+            where: eq(deliveryGroupInvoice.invoiceId, pickupInvoice.invoice.id),
+          })
+        ).length,
+        0,
+      );
+      const pickupConsumerOrder = await invokeProcedure<{
+        journey: {
+          phase: string;
+          fulfillmentMode: string | null;
+          delivery: { status: string | null; otp: string | null };
+          pickupLocation: { address: string } | null;
+        };
+      }>(customerRouter.getOrderByNumber, pickupConsumerContext, {
+        orderNumber: pickupPlacement.order.orderNumber,
+      });
+      assert.equal(pickupConsumerOrder.journey.phase, "out_for_delivery");
+      assert.equal(pickupConsumerOrder.journey.fulfillmentMode, "self_pickup");
+      assert.equal(
+        pickupConsumerOrder.journey.delivery.status,
+        "ready_for_pickup",
+      );
+      assert.equal(
+        pickupConsumerOrder.journey.delivery.otp,
+        pickupOtp,
+      );
+      assert.equal(
+        pickupConsumerOrder.journey.pickupLocation?.address,
+        "12 Pickup Road, Dhaka",
+      );
+      await assert.rejects(
+        invokeProcedure(shopOwnerRouter.verifyIncomingSelfPickup, shopContext, {
+          invoiceId: pickupInvoice.invoice.id,
+          otp: "0000",
+        }),
+      );
+      const pendingPickupInvoice = await db.query.invoice.findFirst({
+        where: eq(invoice.id, pickupInvoice.invoice.id),
+      });
+      assert.equal(pendingPickupInvoice?.deliveryStatus, "pending");
+      assert.equal(pendingPickupInvoice?.paymentStatus, "unpaid");
+      await invokeProcedure(shopOwnerRouter.verifyIncomingSelfPickup, shopContext, {
+        invoiceId: pickupInvoice.invoice.id,
+        otp: pickupOtp,
+      });
+      const completedPickupInvoice = await db.query.invoice.findFirst({
+        where: eq(invoice.id, pickupInvoice.invoice.id),
+      });
+      assert.equal(completedPickupInvoice?.deliveryStatus, "delivered");
+      assert.equal(completedPickupInvoice?.paymentStatus, "collected");
+      const completedPickupOrder = await db.query.order.findFirst({
+        where: eq(order.id, pickupPlacement.order.id),
+      });
+      assert.equal(completedPickupOrder?.paymentStatus, "paid");
+      assert.equal(completedPickupOrder?.status, "delivered");
+      assert.ok(completedPickupOrder?.receivedAt);
+      const completedPickupJourney = await invokeProcedure<{
+        journey: {
+          phase: string;
+          delivery: { otp: string | null };
+        };
+      }>(customerRouter.getOrderByNumber, pickupConsumerContext, {
+        orderNumber: pickupPlacement.order.orderNumber,
+      });
+      assert.equal(completedPickupJourney.journey.phase, "delivered");
+      assert.equal(completedPickupJourney.journey.delivery.otp, null);
 
       const [openOrder] = await db
         .insert(order)
@@ -573,10 +687,12 @@ test(
       await db.delete(deliveryGroup).where(eq(deliveryGroup.shopId, shopId));
       await db.delete(invoice).where(eq(invoice.customerId, consumerId));
             await db.delete(invoice).where(eq(invoice.customerId, secondConsumerId));
+      await db.delete(invoice).where(eq(invoice.customerId, pickupConsumerId));
       await db.delete(user).where(eq(user.id, riderId));
             await db.delete(user).where(eq(user.id, otherRiderId));
       await db.delete(user).where(eq(user.id, consumerId));
             await db.delete(user).where(eq(user.id, secondConsumerId));
+      await db.delete(user).where(eq(user.id, pickupConsumerId));
       if (productId) {
         await db.delete(product).where(eq(product.id, productId));
       }
@@ -594,6 +710,7 @@ test(
         );
       await db.delete(cart).where(eq(cart.userId, consumerId));
             await db.delete(cart).where(eq(cart.userId, secondConsumerId));
+      await db.delete(cart).where(eq(cart.userId, pickupConsumerId));
     }
   },
 );

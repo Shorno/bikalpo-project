@@ -33,7 +33,6 @@ import {
     deliverySchedule,
     inventory,
     invoice,
-    invoiceItem,
     openOrderBid,
     openOrderBidItem,
     order,
@@ -89,6 +88,11 @@ import {
     releaseB2bOrderReservations,
 } from "./helpers/b2b-inventory-movement";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
+import { configureExistingInvoiceFulfillmentForOwner } from "./helpers/order-dispatch";
+import {
+    createRetailerDispatchInvoiceForOrder,
+} from "./helpers/retailer-dispatch";
+import { completeSelfPickupInvoice } from "./helpers/self-pickup";
 import { getRetailerOrderTransition } from "./helpers/retailer-consumer-flow";
 import {
     getRetailerHandoffOtps,
@@ -5052,6 +5056,7 @@ const incomingOrderQueries = {
                         orderId: invoice.orderId,
                         invoiceId: invoice.id,
                         invoiceNumber: invoice.invoiceNumber,
+                        fulfillmentMode: invoice.fulfillmentMode,
                         deliveryStatus: invoice.deliveryStatus,
                         groupId: deliveryGroup.id,
                         groupStatus: deliveryGroup.status,
@@ -5279,7 +5284,7 @@ const incomingOrderQueries = {
             });
         }),
 
-    /** Create the one full internal-delivery invoice for a retailer order. */
+    /** Create the one full invoice for a retailer order. */
     createIncomingOrderInvoice: shopOwnerProcedure
         .route({
             method: "POST",
@@ -5287,121 +5292,74 @@ const incomingOrderQueries = {
             tags: ["Shop Owner"],
             summary: "Create a full invoice for an incoming B2C order",
         })
-        .input(z.object({ orderId: z.number() }))
+        .input(
+            z.object({
+                orderId: z.number(),
+                fulfillmentMode: z.enum(["delivery", "self_pickup"]).default("delivery"),
+            }),
+        )
         .handler(async ({ context, input }) => {
-            const shopId = context.session.user.id;
-
-            return db.transaction(async (tx) => {
-                await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
-                const existingOrder = await tx.query.order.findFirst({
-                    where: and(
-                        eq(order.id, input.orderId),
-                        eq(order.shopId, shopId),
-                        eq(order.orderType, "b2c"),
-                    ),
-                    with: { items: true },
-                });
-                if (!existingOrder) {
-                    throw new ORPCError("NOT_FOUND", {
-                        message: "Order not found or not owned by your shop",
-                    });
-                }
-
-                const existingInvoice = await tx.query.invoice.findFirst({
-                    where: and(
-                        eq(invoice.orderId, existingOrder.id),
-                        eq(invoice.invoiceType, "main"),
-                    ),
-                });
-                if (existingInvoice) {
-                    return {
-                        success: true,
-                        status: "invoiced" as const,
-                        invoice: existingInvoice,
-                    };
-                }
-
-                const transition = getRetailerOrderTransition(
-                    existingOrder.status,
-                    "create_invoice",
-                );
-                if (!transition) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: "Confirm the order before creating its invoice",
-                    });
-                }
-                if (existingOrder.items.length === 0) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: "Cannot invoice an order without items",
-                    });
-                }
-
-                const [createdInvoice] = await tx
-                    .insert(invoice)
-                    .values({
-                        invoiceNumber: `INV-${existingOrder.orderNumber}`,
-                        orderId: existingOrder.id,
-                        customerId: existingOrder.userId,
-                        invoiceType: "main",
-                        paymentStatus: "unpaid",
-                        deliveryStatus: "not_assigned",
-                        fulfillmentMode: "internal_delivery",
-                        subtotal: existingOrder.subtotal,
-                        discountAmount: existingOrder.discount,
-                        deliveryCharge: existingOrder.shippingCost,
-                        taxAmount: "0",
-                        grandTotal: existingOrder.total,
-                        customerNotes: existingOrder.customerNote,
-                    })
-                    .returning();
-                if (!createdInvoice) {
-                    throw new ORPCError("INTERNAL_SERVER_ERROR", {
-                        message: "Failed to create invoice",
-                    });
-                }
-
-                await tx.insert(invoiceItem).values(
-                    existingOrder.items.map((item) => ({
-                        invoiceId: createdInvoice.id,
-                        orderItemId: item.id,
-                        productId: item.productId,
-                        variantId: item.variantId,
-                        productName: item.productName,
-                        productSku: item.productSize,
-                        productImage: item.productImage,
-                        quantity: item.quantity,
-                        quantityUnit: item.quantityUnit,
-                        inventoryUnit: item.inventoryUnit,
-                        conversionFactor: item.conversionFactor,
-                        inventoryQty: item.inventoryQty,
-                        unitPrice: item.unitPrice,
-                        lineTotal: item.totalPrice,
-                    })),
-                );
-
-                const updated = await tx
-                    .update(order)
-                    .set({ status: transition.nextStatus })
-                    .where(
-                        and(
-                            eq(order.id, existingOrder.id),
-                            eq(order.status, existingOrder.status),
-                        ),
-                    )
-                    .returning({ id: order.id });
-                if (updated.length !== 1) {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: "Order was already updated by another request",
-                    });
-                }
-
-                return {
-                    success: true,
-                    status: transition.nextStatus,
-                    invoice: createdInvoice,
-                };
+            return createRetailerDispatchInvoiceForOrder({
+                shopId: context.session.user.id,
+                orderId: input.orderId,
+                fulfillmentMode: input.fulfillmentMode,
             });
         }),
+
+    configureIncomingOrderFulfillment: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/incoming-orders/fulfillment",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Configure retailer invoice fulfillment",
+        })
+        .input(
+            z.object({
+                invoiceId: z.number(),
+                fulfillmentMode: z.enum(["delivery", "self_pickup"]),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const result = await configureExistingInvoiceFulfillmentForOwner({
+                owner: { kind: "shop", id: context.session.user.id },
+                invoiceId: input.invoiceId,
+                fulfillmentMode: input.fulfillmentMode,
+            });
+            return {
+                success: true,
+                invoiceId: result.invoice.id,
+                invoiceNumber: result.invoice.invoiceNumber,
+                fulfillmentMode: input.fulfillmentMode,
+                completionOtp: result.completionOtp,
+                message:
+                    input.fulfillmentMode === "self_pickup"
+                        ? "Self pickup is ready. Ask the consumer for their pickup code at handover."
+                        : "Invoice saved for delivery management.",
+            };
+        }),
+
+    verifyIncomingSelfPickup: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/incoming-orders/self-pickup/verify",
+            tags: ["Shop Owner", "Delivery Management"],
+            summary: "Verify a retailer self-pickup OTP",
+        })
+        .input(
+            z.object({
+                invoiceId: z.number(),
+                otp: z.string().length(4),
+            }),
+        )
+        .handler(async ({ context, input }) =>
+            completeSelfPickupInvoice({
+                owner: { kind: "shop", id: context.session.user.id },
+                invoiceId: input.invoiceId,
+                otp: input.otp,
+                paymentStatus: "collected",
+                markOrderPaid: true,
+            }),
+        ),
 
     /** Orders shown at the retailer dispatch desk. */
     getRetailDispatchOrders: shopOwnerProcedure
@@ -5420,6 +5378,15 @@ const incomingOrderQueries = {
             }),
         )
         .handler(async ({ context, input }) => {
+            const shopProfile = await db.query.user.findFirst({
+                where: eq(user.id, context.session.user.id),
+                columns: {
+                    shopName: true,
+                    name: true,
+                    phoneNumber: true,
+                    shopAddress: true,
+                },
+            });
             const conditions: SQL[] = [
                 eq(order.shopId, context.session.user.id),
                 eq(order.orderType, "b2c"),
@@ -5451,6 +5418,14 @@ const incomingOrderQueries = {
                 invoices.map((entry) => [entry.orderId, entry]),
             );
             return {
+                pickupAvailable: Boolean(shopProfile?.shopAddress?.trim()),
+                pickupLocation: shopProfile?.shopAddress
+                    ? {
+                          name: shopProfile.shopName || shopProfile.name,
+                          address: shopProfile.shopAddress,
+                          phone: shopProfile.phoneNumber,
+                      }
+                    : null,
                 orders: orders.map((entry) => ({
                     ...entry,
                     invoice: invoiceByOrder.get(entry.id) ?? null,

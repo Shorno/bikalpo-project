@@ -1,4 +1,4 @@
-import { deliveryGroup, invoice, user } from "@bikalpo-project/db/schema";
+import { deliveryGroup, invoice, order, user } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { eq, type SQL, sql } from "drizzle-orm";
 
@@ -74,6 +74,25 @@ export function fulfillmentInvoiceOwnerCondition(
         )`;
     }
     return undefined;
+}
+
+export function fulfillmentOrderOwnerCondition(owner: FulfillmentOwner): SQL | undefined {
+    if (owner.kind === "warehouse") {
+        return sql`${order.warehouseId} = ${owner.id} AND ${order.orderType} = 'b2b'`;
+    }
+    if (owner.kind === "shop") {
+        return sql`${order.shopId} = ${owner.id} AND ${order.orderType} = 'b2c'`;
+    }
+    return undefined;
+}
+
+export function persistedInvoiceFulfillmentMode(
+    owner: FulfillmentOwner,
+    mode: "delivery" | "self_pickup",
+) {
+    return owner.kind === "shop" && mode === "delivery"
+        ? ("internal_delivery" as const)
+        : mode;
 }
 
 export function fulfillmentGroupOwnerValues(owner: FulfillmentOwner) {

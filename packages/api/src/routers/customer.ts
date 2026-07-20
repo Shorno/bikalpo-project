@@ -171,6 +171,10 @@ async function loadConsumerOrderJourney(
       invoiceNumber: true,
       createdAt: true,
       deliveryStatus: true,
+      fulfillmentMode: true,
+      completionOtp: true,
+      completionOtpVerifiedAt: true,
+      deliveredAt: true,
     },
     orderBy: [asc(invoice.createdAt)],
   });
@@ -195,10 +199,29 @@ async function loadConsumerOrderJourney(
         .where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
     : [];
 
+  const shopProfile = orderData.shopId
+    ? await db.query.user.findFirst({
+        where: eq(user.id, orderData.shopId),
+        columns: {
+          shopName: true,
+          name: true,
+          phoneNumber: true,
+          shopAddress: true,
+        },
+      })
+    : null;
+
   return buildConsumerOrderJourney({
     order: orderData,
     invoices: orderInvoices,
     deliveryLinks,
+    pickupLocation: shopProfile?.shopAddress
+      ? {
+          name: shopProfile.shopName || shopProfile.name,
+          address: shopProfile.shopAddress,
+          phone: shopProfile.phoneNumber,
+        }
+      : null,
   });
 }
 
@@ -2084,6 +2107,8 @@ const queries = {
           ? {
               status: journey.delivery.status,
               otp: journey.delivery.otp,
+              mode: journey.delivery.mode,
+              pickupLocation: journey.pickupLocation,
             }
           : null,
       };
@@ -2145,6 +2170,8 @@ const queries = {
           ? {
               status: journey.delivery.status,
               otp: journey.delivery.otp,
+              mode: journey.delivery.mode,
+              pickupLocation: journey.pickupLocation,
             }
           : null,
       };
