@@ -116,6 +116,7 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Sales",
     items: [
+      { title: "Point of Sale", url: `${D}/pos`, icon: ReceiptIcon },
       { title: "Sales", url: `${D}/sales`, icon: ShoppingCartIcon },
       { title: "Daybook", url: `${D}/daybook`, icon: BookOpenIcon },
       { title: "EMI Management", url: `${D}/emi`, icon: ReceiptIcon },

@@ -45,3 +45,33 @@ _Avoid_: Raw order status, fulfillment status
 **Delivery Issue**:
 A non-terminal consumer-visible exception indicating that an attempted delivery did not complete and requires retailer action.
 _Avoid_: Delivered, returned
+
+## Retailer Point of Sale
+
+**Point of Sale**:
+The shop-owned counter workspace where the retailer selects available inventory, applies sale-level adjustments, accepts one tender, and completes an immediate handover without creating a marketplace order or delivery work.
+_Avoid_: Online checkout, order fulfillment
+
+**Counter Sale**:
+A completed retailer or warehouse POS transaction whose stock is handed over at the counter. It is a sales record, not a marketplace order.
+_Avoid_: Retailer Order, delivery invoice
+
+**POS Customer**:
+A customer profile owned by one shop or warehouse and used for counter receipts, payment history, and Outstanding Balances. A POS Customer may be linked to a consumer who has ordered from that owner.
+_Avoid_: Global customer, unrelated consumer
+
+**Walk-in Customer**:
+The default anonymous POS Customer for fully paid Counter Sales. A Walk-in Customer cannot carry an Outstanding Balance.
+_Avoid_: Named customer, consumer account
+
+**Held Cart**:
+A saved POS selection that does not reserve stock or price and must be revalidated before checkout.
+_Avoid_: Stock reservation, completed sale
+
+**Outstanding Balance**:
+The unpaid portion of a completed Counter Sale, attached to a named POS Customer with a phone number and reduced only by recorded collections or a Sale Void.
+_Avoid_: Marketplace receivable, delivery collection
+
+**Sale Void**:
+An owner-authorized cancellation of a complete Counter Sale that restores stock once and retains compensating payment reversals for audit.
+_Avoid_: Partial return, item refund, deletion

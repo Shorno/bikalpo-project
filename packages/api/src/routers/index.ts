@@ -55,6 +55,7 @@ import { productRouter } from "./product";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
 import { returnsRouter } from "./returns";
+import { retailerPosRouter } from "./retailer-pos";
 import { salesmanRouter } from "./salesman";
 import { sellerApplicationRouter } from "./seller-application";
 import { shopOwnerRouter } from "./shop-owner";
@@ -115,6 +116,7 @@ export const appRouter = {
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
   returns: returnsRouter,
+  retailerPos: retailerPosRouter,
   dashboard: dashboardRouter,
 
   verifiedUser: verifiedUserRouter,
