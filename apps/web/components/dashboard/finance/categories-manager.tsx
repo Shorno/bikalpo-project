@@ -77,6 +77,18 @@ export function CategoriesManager() {
     setSearchTerm(category.name);
   };
 
+  const handleCreateAccount = (account: Omit<ChartAccount, "id">) => {
+    setAccounts((currentAccounts) => [
+      ...currentAccounts,
+      {
+        ...account,
+        id: createChartAccountId("account"),
+      },
+    ]);
+    setAccountTypeFilter(account.accountType);
+    setSearchTerm(account.name);
+  };
+
   useEffect(() => {
     const state = loadChartAccountState();
     setCategories(state.categories);
@@ -138,6 +150,7 @@ export function CategoriesManager() {
         <AddAccountDialog
           categories={categories}
           open={addAccountOpen}
+          onCreate={handleCreateAccount}
           onOpenChange={setAddAccountOpen}
         />
       </div>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
   AccountType,
+  ChartAccount,
   FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
 import {
@@ -33,12 +34,14 @@ import { Textarea } from "@/components/ui/textarea";
 type AddAccountDialogProps = {
   categories: FinanceCategory[];
   open: boolean;
+  onCreate: (account: Omit<ChartAccount, "id">) => void;
   onOpenChange: (open: boolean) => void;
 };
 
 export function AddAccountDialog({
   categories,
   open,
+  onCreate,
   onOpenChange,
 }: AddAccountDialogProps) {
   const [name, setName] = useState("");
@@ -81,6 +84,22 @@ export function AddAccountDialog({
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (!name.trim() || !categoryId) {
+      return;
+    }
+
+    const parsedAmount = Number(amount.replace(/,/g, ""));
+
+    onCreate({
+      name: name.trim(),
+      accountType,
+      categoryId,
+      amount: Number.isFinite(parsedAmount) ? parsedAmount : 0,
+      description: description.trim(),
+      isSubaccount,
+      parentAccountId: isSubaccount ? parentAccountId : "",
+    });
     onOpenChange(false);
   };
 
@@ -202,7 +221,10 @@ export function AddAccountDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!name.trim()}>
+            <Button
+              type="submit"
+              disabled={!name.trim() || !categoryId || (isSubaccount && !parentAccountId)}
+            >
               Submit
             </Button>
           </DialogFooter>
