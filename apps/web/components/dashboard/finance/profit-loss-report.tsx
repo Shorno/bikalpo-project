@@ -35,7 +35,21 @@ type ExpenseLine = {
   slug?: string | null;
 };
 
+type AccountLine = {
+  amount: number;
+  label: string;
+  muted?: boolean;
+};
+
+type AccountSection = {
+  rows: AccountLine[];
+  title: string;
+  total: number;
+  totalLabel: string;
+};
+
 type ReportTotals = {
+  accountSections: AccountSection[];
   expense: number;
   income: number;
   isProfit: boolean;
@@ -104,8 +118,43 @@ export function ProfitLossReport() {
     const expense = toNumber(pnl?.cogs);
     const operatingExpenses = toNumber(pnl?.expenses?.total);
     const netProfit = toNumber(pnl?.netProfit);
+    const operatingExpenseRows = (
+      (pnl?.expenses?.breakdown ?? []) as ExpenseLine[]
+    ).map((line) => ({
+      amount: toNumber(line.amount),
+      label: line.category,
+    }));
 
     return {
+      accountSections: [
+        {
+          rows: [{ amount: income, label: "Product Sales" }],
+          title: "Income",
+          total: income,
+          totalLabel: "Total Income",
+        },
+        {
+          rows: [{ amount: expense, label: "Product Purchase" }],
+          title: "Expense",
+          total: expense,
+          totalLabel: "Total Expense",
+        },
+        {
+          rows:
+            operatingExpenseRows.length > 0
+              ? operatingExpenseRows
+              : [
+                  {
+                    amount: 0,
+                    label: "No operating expenses",
+                    muted: true,
+                  },
+                ],
+          title: "Operating Expenses",
+          total: operatingExpenses,
+          totalLabel: "Total Operating Expenses",
+        },
+      ],
       expense,
       income,
       isProfit: netProfit >= 0,
