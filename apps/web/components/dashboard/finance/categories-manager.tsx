@@ -15,6 +15,7 @@ import {
   loadChartAccountState,
   saveChartAccountState,
 } from "@/components/dashboard/finance/chart-of-accounts-storage";
+import { NewCategoryDialog } from "@/components/dashboard/finance/new-category-dialog";
 
 export function CategoriesManager() {
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
@@ -99,6 +100,12 @@ export function CategoriesManager() {
             categories={categories}
           />
         </section>
+
+        <NewCategoryDialog
+          open={addCategoryOpen}
+          onCreate={() => undefined}
+          onOpenChange={setAddCategoryOpen}
+        />
       </div>
     </main>
   );
