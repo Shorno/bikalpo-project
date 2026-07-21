@@ -259,11 +259,21 @@ const warehouseNavGroups: NavGroup[] = [
   {
     label: "Finance & Accounts",
     items: [
-      { title: "Finance Dashboard", url: `${WH}/finance`, icon: WalletIcon },
+      {
+        title: "Financial Overview (KPI)",
+        url: `${WH}/finance`,
+        icon: WalletIcon,
+      },
+      { title: "Income", url: `${WH}/finance/income`, icon: WalletIcon },
       {
         title: "Expenses",
         url: `${WH}/finance/expenses`,
         icon: TrendingDownIcon,
+      },
+      {
+        title: "Receivable",
+        url: `${WH}/finance/receivable`,
+        icon: CreditCardIcon,
       },
       {
         title: "Payable",
@@ -271,15 +281,35 @@ const warehouseNavGroups: NavGroup[] = [
         icon: CreditCardIcon,
       },
       {
-        title: "Profit & Loss",
-        url: `${WH}/finance/profit-loss`,
-        icon: BarChart3Icon,
-      },
-      { title: "Payees", url: `${WH}/finance/payees`, icon: UsersIcon },
-      {
         title: "Transactions",
         url: `${WH}/transactions`,
         icon: CreditCardIcon,
+      },
+      {
+        title: "Accounts",
+        url: `${WH}/payment-accounts`,
+        icon: CreditCardIcon,
+      },
+      { title: "Ledger", url: `${WH}/finance/ledger`, icon: FileTextIcon },
+      {
+        title: "Cash Collection",
+        url: `${WH}/finance/cash-collection`,
+        icon: WalletIcon,
+      },
+      {
+        title: "Profit & Loss (Simple)",
+        url: `${WH}/finance/profit-loss`,
+        icon: BarChart3Icon,
+      },
+      {
+        title: "Balance Sheet",
+        url: `${WH}/finance/balance-sheet`,
+        icon: FileTextIcon,
+      },
+      {
+        title: "Ledger / Trial Balance (Hidden / Advanced)",
+        url: `${WH}/finance/trial-balance`,
+        icon: FileTextIcon,
       },
     ],
   },
