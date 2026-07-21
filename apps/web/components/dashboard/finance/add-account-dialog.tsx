@@ -5,8 +5,12 @@ import type {
   AccountType,
   FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
-import { ACCOUNT_TYPES } from "@/components/dashboard/finance/chart-of-accounts-data";
+import {
+  ACCOUNT_TYPES,
+  DUMMY_PARENT_ACCOUNTS,
+} from "@/components/dashboard/finance/chart-of-accounts-data";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +42,8 @@ export function AddAccountDialog({
 }: AddAccountDialogProps) {
   const [name, setName] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("ASSET");
+  const [isSubaccount, setIsSubaccount] = useState(false);
+  const [parentAccountId, setParentAccountId] = useState("");
   const availableCategories = useMemo(
     () =>
       categories.filter((category) => category.accountType === accountType),
@@ -50,9 +56,21 @@ export function AddAccountDialog({
   }, [availableCategories]);
 
   useEffect(() => {
+    if (isSubaccount && !parentAccountId) {
+      setParentAccountId(DUMMY_PARENT_ACCOUNTS[0]?.id ?? "");
+    }
+
+    if (!isSubaccount) {
+      setParentAccountId("");
+    }
+  }, [isSubaccount, parentAccountId]);
+
+  useEffect(() => {
     if (!open) {
       setName("");
       setAccountType("ASSET");
+      setIsSubaccount(false);
+      setParentAccountId("");
     }
   }, [open]);
 
@@ -113,6 +131,36 @@ export function AddAccountDialog({
                   {availableCategories.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
                       {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={isSubaccount}
+                onCheckedChange={(checked) => setIsSubaccount(checked === true)}
+              />
+              <span>Make this a Subaccount</span>
+            </label>
+
+            <div className="grid gap-2">
+              <Label>Parent Account *</Label>
+              <Select
+                disabled={!isSubaccount}
+                value={parentAccountId}
+                onValueChange={setParentAccountId}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {DUMMY_PARENT_ACCOUNTS.map((parentAccount) => (
+                    <SelectItem key={parentAccount.id} value={parentAccount.id}>
+                      {parentAccount.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
