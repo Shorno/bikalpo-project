@@ -35,6 +35,15 @@ type ExpenseLine = {
   slug?: string | null;
 };
 
+type ReportTotals = {
+  expense: number;
+  income: number;
+  isProfit: boolean;
+  monthLabel: string;
+  netProfit: number;
+  operatingExpenses: number;
+};
+
 function money(value: number) {
   return `\u09F3${value.toLocaleString("en-US", {
     maximumFractionDigits: 2,
@@ -148,22 +157,29 @@ export function ProfitLossReport() {
           <Loader2 className="size-8 animate-spin text-slate-400" />
         </div>
       ) : (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <ReportAmount label="Income" value={money(totals.income)} />
-            <ReportAmount label="Expense" value={money(totals.expense)} />
-            <ReportAmount
-              label="Operating Expenses"
-              value={money(totals.operatingExpenses)}
-            />
-            <ReportAmount
-              emphasis={totals.isProfit ? "profit" : "loss"}
-              label={totals.isProfit ? "Net Profit" : "Net Loss"}
-              value={money(Math.abs(totals.netProfit))}
-            />
-          </div>
-        </div>
+        <ReportEquation totals={totals} />
       )}
+    </div>
+  );
+}
+
+function ReportEquation({ totals }: { totals: ReportTotals }) {
+  return (
+    <div className="flex flex-wrap items-end justify-center gap-x-5 gap-y-4 py-2 text-center">
+      <EquationMetric label="Income" value={money(totals.income)} />
+      <EquationOperator value="-" />
+      <EquationMetric label="Expense" value={money(totals.expense)} />
+      <EquationOperator value="-" />
+      <EquationMetric
+        label="Operating Expenses"
+        value={money(totals.operatingExpenses)}
+      />
+      <EquationOperator value="=" />
+      <EquationMetric
+        emphasis={totals.isProfit ? "profit" : "loss"}
+        label={totals.isProfit ? "Net Profit" : "Net Loss"}
+        value={money(Math.abs(totals.netProfit))}
+      />
     </div>
   );
 }
@@ -273,7 +289,7 @@ function DateInput({
   );
 }
 
-function ReportAmount({
+function EquationMetric({
   emphasis,
   label,
   value,
@@ -283,10 +299,10 @@ function ReportAmount({
   value: string;
 }) {
   return (
-    <div>
-      <div className="text-xs font-semibold text-slate-500">{label}</div>
+    <div className="min-w-36">
+      <div className="text-xs font-bold text-slate-600">{label}</div>
       <div
-        className={`mt-2 text-2xl font-semibold ${
+        className={`mt-3 text-3xl font-medium tracking-normal ${
           emphasis === "profit"
             ? "text-emerald-700"
             : emphasis === "loss"
@@ -296,6 +312,14 @@ function ReportAmount({
       >
         {value}
       </div>
+    </div>
+  );
+}
+
+function EquationOperator({ value }: { value: "-" | "=" }) {
+  return (
+    <div className="pb-1 text-3xl font-semibold leading-none text-slate-950">
+      {value}
     </div>
   );
 }
