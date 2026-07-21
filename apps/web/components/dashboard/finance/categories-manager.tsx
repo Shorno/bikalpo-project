@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type {
+  AccountType,
   ChartAccount,
   FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
@@ -12,6 +13,7 @@ import {
 import { CategoriesTable } from "@/components/dashboard/finance/categories-table";
 import { CategoriesToolbar } from "@/components/dashboard/finance/categories-toolbar";
 import {
+  createChartAccountId,
   loadChartAccountState,
   saveChartAccountState,
 } from "@/components/dashboard/finance/chart-of-accounts-storage";
@@ -47,6 +49,32 @@ export function CategoriesManager() {
       return matchesType && matchesSearch;
     });
   }, [accountTypeFilter, accounts, categoryById, searchTerm]);
+
+  const handleCreateCategory = (category: {
+    accountType: AccountType;
+    name: string;
+  }) => {
+    const exists = categories.some(
+      (item) =>
+        item.accountType === category.accountType &&
+        item.name.toLowerCase() === category.name.toLowerCase()
+    );
+
+    if (!exists) {
+      setCategories((currentCategories) => [
+        ...currentCategories,
+        {
+          id: createChartAccountId("category"),
+          accountType: category.accountType,
+          name: category.name,
+          isDefault: false,
+        },
+      ]);
+    }
+
+    setAccountTypeFilter(category.accountType);
+    setSearchTerm(category.name);
+  };
 
   useEffect(() => {
     const state = loadChartAccountState();
@@ -103,7 +131,7 @@ export function CategoriesManager() {
 
         <NewCategoryDialog
           open={addCategoryOpen}
-          onCreate={() => undefined}
+          onCreate={handleCreateCategory}
           onOpenChange={setAddCategoryOpen}
         />
       </div>
