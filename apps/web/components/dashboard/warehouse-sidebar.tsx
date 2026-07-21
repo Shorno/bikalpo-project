@@ -307,6 +307,11 @@ const warehouseNavGroups: NavGroup[] = [
         icon: FileTextIcon,
       },
       {
+        title: "Categories",
+        url: `${WH}/finance/categories`,
+        icon: TagIcon,
+      },
+      {
         title: "Ledger / Trial Balance (Hidden / Advanced)",
         url: `${WH}/finance/trial-balance`,
         icon: FileTextIcon,

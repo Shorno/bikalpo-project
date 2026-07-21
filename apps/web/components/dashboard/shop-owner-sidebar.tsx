@@ -22,6 +22,7 @@ import {
   ShoppingCartIcon,
   SmartphoneIcon,
   StoreIcon,
+  TagIcon,
   TrendingDownIcon,
   TrendingUpIcon,
   UsersIcon,
@@ -162,6 +163,11 @@ const shopOwnerNavGroups: NavGroup[] = [
         title: "Balance Sheet",
         url: `${D}/finance/balance-sheet`,
         icon: FileTextIcon,
+      },
+      {
+        title: "Categories",
+        url: `${D}/finance/categories`,
+        icon: TagIcon,
       },
       {
         title: "Ledger / Trial Balance (Hidden / Advanced)",
