@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { orpc } from "@/utils/orpc";
 
 const MONTH_NAMES = [
@@ -127,6 +128,7 @@ export function ProfitLossReport() {
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [reportType, setReportType] = useState("accrual");
+  const [view, setView] = useState("details");
 
   const { data: pnl, isLoading } = useQuery(
     orpc.profitLoss.getMonthlyPnL.queryOptions({
@@ -229,11 +231,35 @@ export function ProfitLossReport() {
       ) : (
         <>
           <ReportEquation totals={totals} />
-          <AccountDetailsTable
-            endDate={endDate}
-            startDate={startDate}
-            totals={totals}
-          />
+          <Tabs
+            className="space-y-6"
+            onValueChange={setView}
+            value={view}
+          >
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-7">
+              <div className="h-px bg-slate-200" />
+              <TabsList className="bg-sky-100">
+                <TabsTrigger className="px-5" value="summary">
+                  Summary
+                </TabsTrigger>
+                <TabsTrigger className="px-5" value="details">
+                  Details
+                </TabsTrigger>
+              </TabsList>
+              <div className="h-px bg-slate-200" />
+            </div>
+
+            <TabsContent value="summary">
+              <SummaryTable totals={totals} />
+            </TabsContent>
+            <TabsContent value="details">
+              <AccountDetailsTable
+                endDate={endDate}
+                startDate={startDate}
+                totals={totals}
+              />
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </div>
@@ -478,6 +504,41 @@ function AccountDetailsTable({
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function SummaryTable({ totals }: { totals: ReportTotals }) {
+  const rows = [
+    { label: "Income", value: totals.income },
+    { label: "Expense", value: totals.expense },
+    { label: "Operating Expenses", value: totals.operatingExpenses },
+  ];
+
+  return (
+    <div className="mx-auto max-w-2xl border-y border-slate-200">
+      {rows.map((row) => (
+        <div
+          className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-slate-200 px-2 py-3 last:border-b-0"
+          key={row.label}
+        >
+          <div className="font-semibold text-slate-700">{row.label}</div>
+          <div className="font-semibold text-slate-950">{money(row.value)}</div>
+        </div>
+      ))}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-t-2 border-slate-400 px-2 py-4">
+        <div className="font-bold text-slate-950">
+          {totals.isProfit ? "Net Profit" : "Net Loss"}
+        </div>
+        <div
+          className={`font-bold ${
+            totals.isProfit ? "text-emerald-700" : "text-red-700"
+          }`}
+        >
+          {totals.isProfit ? "" : "-"}
+          {money(Math.abs(totals.netProfit))}
+        </div>
       </div>
     </div>
   );
