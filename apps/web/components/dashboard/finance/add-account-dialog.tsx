@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 type AddAccountDialogProps = {
   categories: FinanceCategory[];
@@ -42,6 +43,8 @@ export function AddAccountDialog({
 }: AddAccountDialogProps) {
   const [name, setName] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("ASSET");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
   const [isSubaccount, setIsSubaccount] = useState(false);
   const [parentAccountId, setParentAccountId] = useState("");
   const availableCategories = useMemo(
@@ -69,6 +72,8 @@ export function AddAccountDialog({
     if (!open) {
       setName("");
       setAccountType("ASSET");
+      setAmount("");
+      setDescription("");
       setIsSubaccount(false);
       setParentAccountId("");
     }
@@ -166,6 +171,27 @@ export function AddAccountDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="account-description">Description</Label>
+            <Textarea
+              id="account-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Short note for this account"
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="account-amount">Amount</Label>
+            <Input
+              id="account-amount"
+              inputMode="decimal"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              placeholder="Enter Amount"
+            />
           </div>
 
           <DialogFooter>
