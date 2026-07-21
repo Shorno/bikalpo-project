@@ -1,10 +1,10 @@
 "use client";
 
+import { CategoriesAccountActions } from "@/components/dashboard/finance/categories-account-actions";
 import type {
   ChartAccount,
   FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
-import { CategoriesAccountActions } from "@/components/dashboard/finance/categories-account-actions";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -25,7 +25,7 @@ export function CategoriesTable({
   categories,
 }: CategoriesTableProps) {
   const categoryById = new Map(
-    categories.map((category) => [category.id, category])
+    categories.map((category) => [category.id, category]),
   );
 
   return (

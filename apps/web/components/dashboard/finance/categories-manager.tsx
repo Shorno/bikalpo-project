@@ -1,11 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type {
-  AccountType,
-  ChartAccount,
-  FinanceCategory,
-} from "@/components/dashboard/finance/chart-of-accounts-data";
 import { AddAccountDialog } from "@/components/dashboard/finance/add-account-dialog";
 import {
   type AccountTypeFilter,
@@ -13,6 +8,11 @@ import {
 } from "@/components/dashboard/finance/categories-filters";
 import { CategoriesTable } from "@/components/dashboard/finance/categories-table";
 import { CategoriesToolbar } from "@/components/dashboard/finance/categories-toolbar";
+import type {
+  AccountType,
+  ChartAccount,
+  FinanceCategory,
+} from "@/components/dashboard/finance/chart-of-accounts-data";
 import {
   createChartAccountId,
   loadChartAccountState,
@@ -31,7 +31,7 @@ export function CategoriesManager() {
 
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
-    [categories]
+    [categories],
   );
 
   const filteredAccounts = useMemo(() => {
@@ -40,7 +40,8 @@ export function CategoriesManager() {
     return accounts.filter((account) => {
       const category = categoryById.get(account.categoryId);
       const matchesType =
-        accountTypeFilter === "ALL" || account.accountType === accountTypeFilter;
+        accountTypeFilter === "ALL" ||
+        account.accountType === accountTypeFilter;
       const matchesSearch =
         normalizedSearch.length === 0 ||
         account.name.toLowerCase().includes(normalizedSearch) ||
@@ -58,7 +59,7 @@ export function CategoriesManager() {
     const exists = categories.some(
       (item) =>
         item.accountType === category.accountType &&
-        item.name.toLowerCase() === category.name.toLowerCase()
+        item.name.toLowerCase() === category.name.toLowerCase(),
     );
 
     if (!exists) {
@@ -107,9 +108,7 @@ export function CategoriesManager() {
     <main className="min-h-screen bg-background px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-1">
-          <h1 className="font-semibold text-2xl text-foreground">
-            Categories
-          </h1>
+          <h1 className="font-semibold text-2xl text-foreground">Categories</h1>
           <p className="text-muted-foreground text-sm">
             Manage your categories
           </p>

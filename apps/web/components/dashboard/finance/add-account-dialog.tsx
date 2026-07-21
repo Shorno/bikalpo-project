@@ -51,9 +51,8 @@ export function AddAccountDialog({
   const [isSubaccount, setIsSubaccount] = useState(false);
   const [parentAccountId, setParentAccountId] = useState("");
   const availableCategories = useMemo(
-    () =>
-      categories.filter((category) => category.accountType === accountType),
-    [accountType, categories]
+    () => categories.filter((category) => category.accountType === accountType),
+    [accountType, categories],
   );
   const [categoryId, setCategoryId] = useState("");
 
@@ -224,7 +223,9 @@ export function AddAccountDialog({
             <Button
               type="submit"
               disabled={
-                !name.trim() || !categoryId || (isSubaccount && !parentAccountId)
+                !name.trim() ||
+                !categoryId ||
+                (isSubaccount && !parentAccountId)
               }
             >
               Submit
