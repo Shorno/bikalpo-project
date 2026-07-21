@@ -136,6 +136,7 @@ export function CategoriesManager() {
           onOpenChange={setAddCategoryOpen}
         />
         <AddAccountDialog
+          categories={categories}
           open={addAccountOpen}
           onOpenChange={setAddAccountOpen}
         />

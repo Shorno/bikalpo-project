@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  AccountType,
+  FinanceCategory,
+} from "@/components/dashboard/finance/chart-of-accounts-data";
+import { ACCOUNT_TYPES } from "@/components/dashboard/finance/chart-of-accounts-data";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,21 +17,42 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type AddAccountDialogProps = {
+  categories: FinanceCategory[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
 export function AddAccountDialog({
+  categories,
   open,
   onOpenChange,
 }: AddAccountDialogProps) {
   const [name, setName] = useState("");
+  const [accountType, setAccountType] = useState<AccountType>("ASSET");
+  const availableCategories = useMemo(
+    () =>
+      categories.filter((category) => category.accountType === accountType),
+    [accountType, categories]
+  );
+  const [categoryId, setCategoryId] = useState("");
+
+  useEffect(() => {
+    setCategoryId(availableCategories[0]?.id ?? "");
+  }, [availableCategories]);
 
   useEffect(() => {
     if (!open) {
       setName("");
+      setAccountType("ASSET");
     }
   }, [open]);
 
@@ -55,6 +81,43 @@ export function AddAccountDialog({
               placeholder="Account name"
               required
             />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label>Account Type *</Label>
+              <Select
+                value={accountType}
+                onValueChange={(value) => setAccountType(value as AccountType)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select Account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ACCOUNT_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Category *</Label>
+              <Select value={categoryId} onValueChange={setCategoryId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableCategories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <DialogFooter>
