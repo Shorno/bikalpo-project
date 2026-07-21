@@ -1,7 +1,13 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { CalendarIcon, Loader2, RefreshCcwIcon } from "lucide-react";
+import {
+  CalendarIcon,
+  ChevronDownIcon,
+  DownloadIcon,
+  Loader2,
+  RefreshCcwIcon,
+} from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,12 +36,6 @@ const MONTH_NAMES = [
   "December",
 ];
 
-type ExpenseLine = {
-  amount: number | string;
-  category: string;
-  slug?: string | null;
-};
-
 type AccountLine = {
   amount: number;
   label: string;
@@ -56,7 +56,6 @@ type ReportTotals = {
   isProfit: boolean;
   monthLabel: string;
   netProfit: number;
-  operatingExpenses: number;
 };
 
 function money(value: number) {
@@ -139,14 +138,7 @@ export function ProfitLossReport() {
   const totals = useMemo(() => {
     const income = toNumber(pnl?.revenue);
     const expense = toNumber(pnl?.cogs);
-    const operatingExpenses = toNumber(pnl?.expenses?.total);
-    const netProfit = toNumber(pnl?.netProfit);
-    const operatingExpenseRows = (
-      (pnl?.expenses?.breakdown ?? []) as ExpenseLine[]
-    ).map((line) => ({
-      amount: toNumber(line.amount),
-      label: line.category,
-    }));
+    const netProfit = income - expense;
 
     return {
       accountSections: [
@@ -162,28 +154,12 @@ export function ProfitLossReport() {
           total: expense,
           totalLabel: "Total Expense",
         },
-        {
-          rows:
-            operatingExpenseRows.length > 0
-              ? operatingExpenseRows
-              : [
-                  {
-                    amount: 0,
-                    label: "No operating expenses",
-                    muted: true,
-                  },
-                ],
-          title: "Operating Expenses",
-          total: operatingExpenses,
-          totalLabel: "Total Operating Expenses",
-        },
       ],
       expense,
       income,
       isProfit: netProfit >= 0,
       monthLabel: `${MONTH_NAMES[month - 1]} ${year}`,
       netProfit,
-      operatingExpenses,
     };
   }, [month, pnl, year]);
 
@@ -207,9 +183,19 @@ export function ProfitLossReport() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-950">Profit & Loss</h1>
-        <p className="mt-1 text-sm text-slate-500">{totals.monthLabel}</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-950">Profit & Loss</h1>
+          <p className="mt-1 text-sm text-slate-500">{totals.monthLabel}</p>
+        </div>
+        <Button
+          className="h-10 w-fit rounded-full border-blue-600 px-5 font-semibold text-blue-700 hover:bg-blue-50 hover:text-blue-800"
+          variant="outline"
+        >
+          <DownloadIcon />
+          Export
+          <ChevronDownIcon />
+        </Button>
       </div>
 
       <ReportFilters
@@ -231,11 +217,7 @@ export function ProfitLossReport() {
       ) : (
         <>
           <ReportEquation totals={totals} />
-          <Tabs
-            className="space-y-6"
-            onValueChange={setView}
-            value={view}
-          >
+          <Tabs className="space-y-6" onValueChange={setView} value={view}>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-7">
               <div className="h-px bg-slate-200" />
               <TabsList className="bg-sky-100">
@@ -272,11 +254,6 @@ function ReportEquation({ totals }: { totals: ReportTotals }) {
       <EquationMetric label="Income" value={money(totals.income)} />
       <EquationOperator value="-" />
       <EquationMetric label="Expense" value={money(totals.expense)} />
-      <EquationOperator value="-" />
-      <EquationMetric
-        label="Operating Expenses"
-        value={money(totals.operatingExpenses)}
-      />
       <EquationOperator value="=" />
       <EquationMetric
         emphasis={totals.isProfit ? "profit" : "loss"}
@@ -354,7 +331,9 @@ function ReportFilters({
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-[auto_minmax(180px,235px)] sm:items-center">
-        <label className="text-sm font-medium text-slate-900">Report Type</label>
+        <label className="text-sm font-medium text-slate-900">
+          Report Type
+        </label>
         <Select onValueChange={onReportTypeChange} value={reportType}>
           <SelectTrigger className="h-9 w-full border-blue-200 bg-white">
             <SelectValue />
@@ -483,7 +462,7 @@ function AccountDetailsTable({
                     {money(section.total)}
                   </td>
                 </tr>
-                <tr aria-hidden="true">
+                <tr>
                   <td className="py-5" colSpan={2} />
                 </tr>
               </Fragment>
@@ -513,7 +492,6 @@ function SummaryTable({ totals }: { totals: ReportTotals }) {
   const rows = [
     { label: "Income", value: totals.income },
     { label: "Expense", value: totals.expense },
-    { label: "Operating Expenses", value: totals.operatingExpenses },
   ];
 
   return (
