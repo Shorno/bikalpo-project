@@ -4,6 +4,7 @@ import type {
   ChartAccount,
   FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
+import { CategoriesAccountActions } from "@/components/dashboard/finance/categories-account-actions";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -53,8 +54,8 @@ export function CategoriesTable({
                 <TableCell className="font-medium">{account.name}</TableCell>
                 <TableCell>{account.accountType}</TableCell>
                 <TableCell>{category?.name ?? "Uncategorized"}</TableCell>
-                <TableCell className="text-right text-muted-foreground">
-                  Account History
+                <TableCell className="text-right">
+                  <CategoriesAccountActions account={account} />
                 </TableCell>
               </TableRow>
             );
