@@ -5,6 +5,7 @@ import type {
   ChartAccount,
   FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
+import { CategoriesToolbar } from "@/components/dashboard/finance/categories-toolbar";
 import {
   loadChartAccountState,
   saveChartAccountState,
@@ -13,6 +14,8 @@ import {
 export function CategoriesManager() {
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
   const [accounts, setAccounts] = useState<ChartAccount[]>([]);
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
+  const [addCategoryOpen, setAddCategoryOpen] = useState(false);
 
   useEffect(() => {
     const state = loadChartAccountState();
@@ -46,6 +49,12 @@ export function CategoriesManager() {
               Chart of Accounts
             </h2>
           </div>
+
+          <CategoriesToolbar
+            accountCount={accounts.length}
+            onAddAccount={() => setAddAccountOpen(true)}
+            onAddCategory={() => setAddCategoryOpen(true)}
+          />
         </section>
       </div>
     </main>
