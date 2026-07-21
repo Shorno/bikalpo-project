@@ -1,7 +1,7 @@
 import {
+  type ChartAccount,
   DEFAULT_CHART_ACCOUNTS,
   DEFAULT_FINANCE_CATEGORIES,
-  type ChartAccount,
   type FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
 
@@ -22,7 +22,7 @@ const isBrowser = () => typeof window !== "undefined";
 const mergeDefaultCategories = (categories: FinanceCategory[]) => {
   const categoryIds = new Set(categories.map((category) => category.id));
   const missingDefaults = DEFAULT_FINANCE_CATEGORIES.filter(
-    (category) => !categoryIds.has(category.id)
+    (category) => !categoryIds.has(category.id),
   );
 
   return [...missingDefaults, ...categories];

@@ -64,8 +64,8 @@ const categoryGroups: Record<AccountType, string[]> = {
   ],
 };
 
-export const DEFAULT_FINANCE_CATEGORIES: FinanceCategory[] = ACCOUNT_TYPES.flatMap(
-  (accountType) =>
+export const DEFAULT_FINANCE_CATEGORIES: FinanceCategory[] =
+  ACCOUNT_TYPES.flatMap((accountType) =>
     categoryGroups[accountType].map((name) => ({
       id: `${accountType.toLowerCase()}-${name
         .toLowerCase()
@@ -74,12 +74,12 @@ export const DEFAULT_FINANCE_CATEGORIES: FinanceCategory[] = ACCOUNT_TYPES.flatM
       name,
       accountType,
       isDefault: true,
-    }))
-);
+    })),
+  );
 
 const getCategoryId = (accountType: AccountType, name: string) => {
   const category = DEFAULT_FINANCE_CATEGORIES.find(
-    (item) => item.accountType === accountType && item.name === name
+    (item) => item.accountType === accountType && item.name === name,
   );
 
   if (!category) {
@@ -201,7 +201,10 @@ export const DEFAULT_CHART_ACCOUNTS: ChartAccount[] = [
     id: "account-utility-bills",
     name: "Utility Bills",
     accountType: "EXPENSE",
-    categoryId: getCategoryId("EXPENSE", "Utility Bills (Electricity, Gas, Water)"),
+    categoryId: getCategoryId(
+      "EXPENSE",
+      "Utility Bills (Electricity, Gas, Water)",
+    ),
     amount: 0,
     description: "Electricity, gas, and water bills",
     isSubaccount: false,
