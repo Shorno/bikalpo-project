@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { CalendarIcon, Loader2, RefreshCcwIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -98,6 +98,27 @@ function getDateParts(value: string) {
     month: Math.min(Math.max(nextMonth, 1), 12),
     year: nextYear,
   };
+}
+
+function formatReportDate(value: string) {
+  const [rawYear, rawMonth, rawDay] = value.split("-");
+  const year = Number.parseInt(rawYear ?? "", 10);
+  const month = Number.parseInt(rawMonth ?? "", 10);
+  const day = Number.parseInt(rawDay ?? "", 10);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
 }
 
 export function ProfitLossReport() {
@@ -206,7 +227,14 @@ export function ProfitLossReport() {
           <Loader2 className="size-8 animate-spin text-slate-400" />
         </div>
       ) : (
-        <ReportEquation totals={totals} />
+        <>
+          <ReportEquation totals={totals} />
+          <AccountDetailsTable
+            endDate={endDate}
+            startDate={startDate}
+            totals={totals}
+          />
+        </>
       )}
     </div>
   );
@@ -369,6 +397,88 @@ function EquationOperator({ value }: { value: "-" | "=" }) {
   return (
     <div className="pb-1 text-3xl font-semibold leading-none text-slate-950">
       {value}
+    </div>
+  );
+}
+
+function AccountDetailsTable({
+  endDate,
+  startDate,
+  totals,
+}: {
+  endDate: string;
+  startDate: string;
+  totals: ReportTotals;
+}) {
+  return (
+    <div className="pt-6">
+      <div className="flex items-end justify-between gap-4">
+        <h2 className="text-base font-bold text-slate-950">ACCOUNTS</h2>
+        <div className="text-right text-sm font-bold text-slate-950">
+          <div>{formatReportDate(startDate)}</div>
+          <div>to {formatReportDate(endDate)}</div>
+        </div>
+      </div>
+
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
+          <tbody>
+            {totals.accountSections.map((section) => (
+              <Fragment key={section.title}>
+                <tr>
+                  <td
+                    className="bg-slate-200 px-4 py-3 font-bold text-slate-950"
+                    colSpan={2}
+                  >
+                    {section.title}
+                  </td>
+                </tr>
+                {section.rows.map((row) => (
+                  <tr className="border-b border-slate-200" key={row.label}>
+                    <td
+                      className={`px-4 py-3 font-semibold ${
+                        row.muted
+                          ? "text-slate-400"
+                          : "text-blue-700 hover:text-blue-800"
+                      }`}
+                    >
+                      {row.label}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-slate-950">
+                      {money(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="border-b border-slate-300">
+                  <td className="px-4 py-3 font-bold text-slate-950">
+                    {section.totalLabel}
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold text-slate-950">
+                    {money(section.total)}
+                  </td>
+                </tr>
+                <tr aria-hidden="true">
+                  <td className="py-5" colSpan={2} />
+                </tr>
+              </Fragment>
+            ))}
+
+            <tr className="border-t-2 border-slate-400">
+              <td className="px-4 py-4 text-base font-bold text-slate-950">
+                {totals.isProfit ? "Net Profit" : "Net Loss"}
+              </td>
+              <td
+                className={`px-4 py-4 text-right text-base font-bold ${
+                  totals.isProfit ? "text-emerald-700" : "text-red-700"
+                }`}
+              >
+                {totals.isProfit ? "" : "-"}
+                {money(Math.abs(totals.netProfit))}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
