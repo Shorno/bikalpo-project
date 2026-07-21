@@ -29,7 +29,7 @@ export function CategoriesTable({
   );
 
   return (
-    <div className="border-border border-t">
+    <div className="overflow-hidden rounded-lg border border-border bg-background">
       <Table>
         <TableHeader>
           <TableRow>
@@ -43,6 +43,17 @@ export function CategoriesTable({
           </TableRow>
         </TableHeader>
         <TableBody>
+          {accounts.length === 0 && (
+            <TableRow>
+              <TableCell
+                colSpan={5}
+                className="h-28 text-center text-muted-foreground"
+              >
+                No accounts match the current filters.
+              </TableCell>
+            </TableRow>
+          )}
+
           {accounts.map((account) => {
             const category = categoryById.get(account.categoryId);
 
