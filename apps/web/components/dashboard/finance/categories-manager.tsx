@@ -9,6 +9,7 @@ import {
   type AccountTypeFilter,
   CategoriesFilters,
 } from "@/components/dashboard/finance/categories-filters";
+import { CategoriesTable } from "@/components/dashboard/finance/categories-table";
 import { CategoriesToolbar } from "@/components/dashboard/finance/categories-toolbar";
 import {
   loadChartAccountState,
@@ -91,6 +92,11 @@ export function CategoriesManager() {
             searchTerm={searchTerm}
             onAccountTypeChange={setAccountTypeFilter}
             onSearchTermChange={setSearchTerm}
+          />
+
+          <CategoriesTable
+            accounts={filteredAccounts}
+            categories={categories}
           />
         </section>
       </div>
