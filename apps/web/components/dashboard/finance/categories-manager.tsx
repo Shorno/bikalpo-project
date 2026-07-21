@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   ChartAccount,
   FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
+import {
+  type AccountTypeFilter,
+  CategoriesFilters,
+} from "@/components/dashboard/finance/categories-filters";
 import { CategoriesToolbar } from "@/components/dashboard/finance/categories-toolbar";
 import {
   loadChartAccountState,
@@ -16,6 +20,31 @@ export function CategoriesManager() {
   const [accounts, setAccounts] = useState<ChartAccount[]>([]);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [accountTypeFilter, setAccountTypeFilter] =
+    useState<AccountTypeFilter>("ALL");
+
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories]
+  );
+
+  const filteredAccounts = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return accounts.filter((account) => {
+      const category = categoryById.get(account.categoryId);
+      const matchesType =
+        accountTypeFilter === "ALL" || account.accountType === accountTypeFilter;
+      const matchesSearch =
+        normalizedSearch.length === 0 ||
+        account.name.toLowerCase().includes(normalizedSearch) ||
+        account.id.toLowerCase().includes(normalizedSearch) ||
+        category?.name.toLowerCase().includes(normalizedSearch);
+
+      return matchesType && matchesSearch;
+    });
+  }, [accountTypeFilter, accounts, categoryById, searchTerm]);
 
   useEffect(() => {
     const state = loadChartAccountState();
@@ -54,6 +83,14 @@ export function CategoriesManager() {
             accountCount={accounts.length}
             onAddAccount={() => setAddAccountOpen(true)}
             onAddCategory={() => setAddCategoryOpen(true)}
+          />
+
+          <CategoriesFilters
+            accountType={accountTypeFilter}
+            filteredCount={filteredAccounts.length}
+            searchTerm={searchTerm}
+            onAccountTypeChange={setAccountTypeFilter}
+            onSearchTermChange={setSearchTerm}
           />
         </section>
       </div>
