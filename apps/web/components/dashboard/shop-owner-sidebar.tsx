@@ -120,6 +120,11 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Finance & Accounts",
     items: [
+      {
+        title: "Financial Overview (KPI)",
+        url: `${D}/finance`,
+        icon: BarChart3Icon,
+      },
       { title: "Income", url: `${D}/finance/income`, icon: TrendingUpIcon },
       {
         title: "Expenses",
@@ -132,11 +137,36 @@ const shopOwnerNavGroups: NavGroup[] = [
         icon: DollarSignIcon,
       },
       { title: "Payable", url: `${D}/finance/payable`, icon: WalletIcon },
+      {
+        title: "Transactions",
+        url: `${D}/finance/transactions`,
+        icon: ReceiptIcon,
+      },
+      {
+        title: "Accounts",
+        url: `${D}/payment-accounts`,
+        icon: CreditCardIcon,
+      },
       { title: "Ledger", url: `${D}/finance/ledger`, icon: FileTextIcon },
       {
-        title: "Profit & Loss",
+        title: "Cash Collection",
+        url: `${D}/finance/cash-collection`,
+        icon: DollarSignIcon,
+      },
+      {
+        title: "Profit & Loss (Simple)",
         url: `${D}/finance/profit-loss`,
         icon: BarChart3Icon,
+      },
+      {
+        title: "Balance Sheet",
+        url: `${D}/finance/balance-sheet`,
+        icon: FileTextIcon,
+      },
+      {
+        title: "Ledger / Trial Balance (Hidden / Advanced)",
+        url: `${D}/finance/trial-balance`,
+        icon: FileTextIcon,
       },
     ],
   },
