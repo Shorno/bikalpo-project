@@ -6,6 +6,7 @@ import type {
   ChartAccount,
   FinanceCategory,
 } from "@/components/dashboard/finance/chart-of-accounts-data";
+import { AddAccountDialog } from "@/components/dashboard/finance/add-account-dialog";
 import {
   type AccountTypeFilter,
   CategoriesFilters,
@@ -133,6 +134,10 @@ export function CategoriesManager() {
           open={addCategoryOpen}
           onCreate={handleCreateCategory}
           onOpenChange={setAddCategoryOpen}
+        />
+        <AddAccountDialog
+          open={addAccountOpen}
+          onOpenChange={setAddAccountOpen}
         />
       </div>
     </main>
