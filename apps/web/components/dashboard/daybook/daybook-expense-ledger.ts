@@ -71,3 +71,58 @@ export const DAYBOOK_EXPENSE_CATEGORIES = [
   "Refreshments & Hospitality",
   "Miscellaneous Expenses",
 ] as const;
+
+const isBrowser = () => typeof window !== "undefined";
+
+const normalizeEntry = (
+  entry: DaybookExpenseEntry,
+): DaybookExpenseEntry => ({
+  ...entry,
+  total: Number.isFinite(entry.total) ? entry.total : 0,
+  lines: entry.lines.map((line) => ({
+    ...line,
+    amount: Number.isFinite(line.amount) ? line.amount : 0,
+  })),
+});
+
+export function loadDaybookExpenses(scope?: DaybookExpenseScope) {
+  if (!isBrowser()) {
+    return [];
+  }
+
+  const raw = window.localStorage.getItem(DAYBOOK_EXPENSE_STORAGE_KEY);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const entries = JSON.parse(raw) as DaybookExpenseEntry[];
+    const normalizedEntries = entries.map(normalizeEntry);
+
+    return scope
+      ? normalizedEntries.filter((entry) => entry.scope === scope)
+      : normalizedEntries;
+  } catch {
+    return [];
+  }
+}
+
+export function saveDaybookExpenses(entries: DaybookExpenseEntry[]) {
+  if (!isBrowser()) {
+    return;
+  }
+
+  window.localStorage.setItem(
+    DAYBOOK_EXPENSE_STORAGE_KEY,
+    JSON.stringify(entries.map(normalizeEntry)),
+  );
+  window.dispatchEvent(new CustomEvent(DAYBOOK_EXPENSE_EVENT));
+}
+
+export function addDaybookExpense(entry: DaybookExpenseEntry) {
+  saveDaybookExpenses([...loadDaybookExpenses(), normalizeEntry(entry)]);
+}
+
+export function createDaybookExpenseId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
