@@ -1898,7 +1898,7 @@ const queries = {
     .handler(async ({ context }) => {
       const userId = context.session.user.id;
       const orders = await db.query.order.findMany({
-        where: eq(order.userId, userId),
+        where: and(eq(order.userId, userId), eq(order.isOpenOrder, false)),
         with: { items: true },
         orderBy: [desc(order.createdAt)],
       });
@@ -1920,6 +1920,7 @@ const queries = {
         where: and(
           eq(order.orderNumber, input.orderNumber),
           eq(order.userId, userId),
+          eq(order.isOpenOrder, false),
         ),
         with: { items: true },
       });
@@ -1971,7 +1972,13 @@ const queries = {
       const [orderData] = await db
         .select()
         .from(order)
-        .where(and(eq(order.id, input.orderId), eq(order.userId, userId)))
+        .where(
+          and(
+            eq(order.id, input.orderId),
+            eq(order.userId, userId),
+            eq(order.isOpenOrder, false),
+          ),
+        )
         .limit(1);
 
       if (!orderData)
@@ -1997,7 +2004,7 @@ const queries = {
     .handler(async ({ context }) => {
       const userId = context.session.user.id;
       const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+        where: sql`${order.userId} = ${userId} AND ${order.isOpenOrder} = false AND ${order.status} NOT IN ('delivered', 'cancelled')`,
         with: { items: true },
         orderBy: [desc(order.createdAt)],
       });
@@ -4973,6 +4980,151 @@ const openOrderEndpoints = {
         offerDeadline: offerDeadline.toISOString(),
         selectionDeadline: selectionDeadline.toISOString(),
         eligibleRetailerCount: sellers.length,
+      };
+    }),
+
+  /** List every Open Order separately from direct retailer orders. */
+  getOpenOrderHistory: consumerProcedure
+    .route({
+      method: "GET",
+      path: "/customer/open-orders",
+      tags: ["Customer", "Open Order"],
+      summary: "List the consumer's Open Order requests",
+    })
+    .handler(async ({ context }) => {
+      const userId = context.session.user.id;
+      const activeRequest = await db.query.order.findFirst({
+        where: and(
+          eq(order.userId, userId),
+          eq(order.isOpenOrder, true),
+          inArray(order.status, ["matching_shop", "negotiating"]),
+        ),
+        columns: { id: true },
+      });
+
+      if (activeRequest) {
+        const transition = await reconcileOpenOrder(activeRequest.id);
+        if (transition !== "unchanged") {
+          const event =
+            transition === "offer_window_closed"
+              ? "open-order:offer-window-closed"
+              : transition === "no_offers"
+                ? "open-order:no-offers"
+                : `open-order:${transition}`;
+          context.realtime.emitToOrder(activeRequest.id, event, {
+            orderId: activeRequest.id,
+          });
+        }
+      }
+
+      const requests = await db.query.order.findMany({
+        where: and(eq(order.userId, userId), eq(order.isOpenOrder, true)),
+        with: { items: true },
+        orderBy: [desc(order.createdAt)],
+      });
+      if (requests.length === 0) return { history: [] };
+
+      const requestIds = requests.map((request) => request.id);
+      const bids = await db
+        .select({
+          orderId: openOrderBid.subOrderId,
+          submittedAt: openOrderBid.submittedAt,
+          isWinner: openOrderBid.isWinner,
+        })
+        .from(openOrderBid)
+        .where(inArray(openOrderBid.subOrderId, requestIds));
+      const offerCountByOrder = new Map<number, number>();
+      for (const bid of bids) {
+        if (!bid.submittedAt && !bid.isWinner) continue;
+        offerCountByOrder.set(
+          bid.orderId,
+          (offerCountByOrder.get(bid.orderId) ?? 0) + 1,
+        );
+      }
+
+      const selectedShopIds = [
+        ...new Set(
+          requests
+            .map((request) => request.shopId)
+            .filter((shopId): shopId is string => !!shopId),
+        ),
+      ];
+      const selectedShops =
+        selectedShopIds.length > 0
+          ? await db.query.user.findMany({
+              where: inArray(user.id, selectedShopIds),
+              columns: { id: true, shopName: true },
+            })
+          : [];
+      const shopNameById = new Map(
+        selectedShops.map((shop) => [
+          shop.id,
+          shop.shopName ?? "Selected retailer",
+        ]),
+      );
+
+      const now = new Date();
+      return {
+        history: requests.map((request) => {
+          let requestStage:
+            | "collecting_offers"
+            | "selecting_offer"
+            | "confirmed"
+            | "cancelled"
+            | "no_offers"
+            | "expired";
+          if (
+            !["matching_shop", "negotiating", "cancelled"].includes(
+              request.status,
+            )
+          ) {
+            requestStage = "confirmed";
+          } else if (request.status === "cancelled") {
+            if (request.openOrderOutcome === "no_offers") {
+              requestStage = "no_offers";
+            } else if (request.openOrderOutcome === "selection_expired") {
+              requestStage = "expired";
+            } else {
+              requestStage = "cancelled";
+            }
+          } else if (
+            request.broadcastExpiresAt &&
+            now < request.broadcastExpiresAt
+          ) {
+            requestStage = "collecting_offers";
+          } else {
+            requestStage = "selecting_offer";
+          }
+
+          return {
+            orderId: request.id,
+            orderNumber: request.orderNumber,
+            requestStage,
+            fulfillmentStatus: request.status,
+            offerCount: offerCountByOrder.get(request.id) ?? 0,
+            referenceSubtotal: Number(
+              request.previousTotal ?? request.subtotal,
+            ),
+            finalTotal: request.shopId
+              ? Number(request.confirmedTotal ?? request.total)
+              : null,
+            selectedRetailer: request.shopId
+              ? (shopNameById.get(request.shopId) ?? "Selected retailer")
+              : null,
+            offerDeadline: request.broadcastExpiresAt?.toISOString() ?? null,
+            selectionDeadline:
+              request.selectionExpiresAt?.toISOString() ?? null,
+            createdAt: request.createdAt.toISOString(),
+            updatedAt: request.updatedAt.toISOString(),
+            items: request.items.map((item) => ({
+              id: item.id,
+              productName: item.productName,
+              productImage: item.productImage,
+              productSize: item.productSize,
+              quantity: item.quantity,
+            })),
+          };
+        }),
       };
     }),
 

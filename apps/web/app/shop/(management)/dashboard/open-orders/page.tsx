@@ -210,28 +210,18 @@ export default function OpenOrdersPage() {
         </div>
       </header>
 
-      <Tabs defaultValue="active" className="space-y-5">
-        <div className="border-b border-slate-200">
-          <TabsList className="h-auto gap-7 rounded-none bg-transparent p-0">
-            <TabsTrigger
-              value="active"
-              className="relative h-11 rounded-none border-0 bg-transparent px-0 text-sm font-semibold text-slate-500 shadow-none after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-slate-950 data-[state=active]:shadow-none data-[state=active]:after:bg-emerald-600"
-            >
-              Active requests
-              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-600">
-                {pool.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="history"
-              className="relative h-11 rounded-none border-0 bg-transparent px-0 text-sm font-semibold text-slate-500 shadow-none after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-slate-950 data-[state=active]:shadow-none data-[state=active]:after:bg-emerald-600"
-            >
-              History
-            </TabsTrigger>
-          </TabsList>
-        </div>
+      <Tabs defaultValue="active">
+        <TabsList>
+          <TabsTrigger value="active">
+            Active requests
+            <span className="rounded-sm bg-black/5 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+              {pool.length}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
+        </TabsList>
 
-        <TabsContent value="active" className="mt-0 space-y-5">
+        <TabsContent value="active" className="space-y-5">
           {poolQuery.isLoading ? (
             <div className="grid min-h-72 place-items-center rounded-2xl border border-slate-200 bg-white">
               <div className="text-center">
@@ -669,7 +659,7 @@ export default function OpenOrdersPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="history" className="mt-0">
+        <TabsContent value="history">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.45)]">
             {historyQuery.isLoading ? (
               <div className="grid min-h-72 place-items-center">

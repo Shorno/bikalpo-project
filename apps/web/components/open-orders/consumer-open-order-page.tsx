@@ -663,8 +663,8 @@ export default function OpenOrderTrackerPage() {
               asChild
               className="sm:ml-auto bg-emerald-600 hover:bg-emerald-700"
             >
-              <Link href="/shop/account">
-                <Check className="mr-2 h-4 w-4" /> View confirmed order
+              <Link href="/account/open-orders">
+                <Check className="mr-2 h-4 w-4" /> View Open Order history
               </Link>
             </Button>
           )}

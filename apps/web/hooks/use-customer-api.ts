@@ -558,9 +558,19 @@ export function usePlaceOpenOrder() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() });
       qc.invalidateQueries({ queryKey: orpc.customer.getMyOrders.key() });
+      qc.invalidateQueries({
+        queryKey: orpc.customer.getOpenOrderHistory.key(),
+      });
     },
     onError: (err) => toast.error(err.message),
   });
+}
+
+/** Consumer's Open Order requests, kept separate from direct orders. */
+export function useOpenOrderHistory() {
+  return useQuery(
+    orpc.customer.getOpenOrderHistory.queryOptions({ refetchInterval: 5000 }),
+  );
 }
 
 /** Get open order status (polls) */
@@ -588,6 +598,9 @@ export function useAcceptOpenOrderOffer() {
         }),
       });
       qc.invalidateQueries({ queryKey: orpc.customer.getMyOrders.key() });
+      qc.invalidateQueries({
+        queryKey: orpc.customer.getOpenOrderHistory.key(),
+      });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -603,6 +616,9 @@ export function useCancelOpenOrder() {
         queryKey: orpc.customer.getOpenOrderStatus.key({
           input: { orderId: variables.orderId },
         }),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.customer.getOpenOrderHistory.key(),
       });
     },
     onError: (error) => toast.error(error.message),
