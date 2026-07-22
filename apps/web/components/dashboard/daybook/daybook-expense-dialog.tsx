@@ -1,5 +1,8 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
+import { DAYBOOK_PAYMENT_ACCOUNTS } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import {
   Dialog,
   DialogContent,
@@ -7,7 +10,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type DaybookExpenseDialogProps = {
   onOpenChange: (open: boolean) => void;
@@ -15,12 +26,30 @@ type DaybookExpenseDialogProps = {
   scope: DaybookExpenseScope;
 };
 
+function money(value: number) {
+  return `Tk${value.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  })}`;
+}
+
 export function DaybookExpenseDialog({
   onOpenChange,
   open,
   scope,
 }: DaybookExpenseDialogProps) {
+  const [payee, setPayee] = useState("");
+  const [paymentAccountId, setPaymentAccountId] = useState(
+    DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "",
+  );
   const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
+  const selectedPaymentAccount = useMemo(
+    () =>
+      DAYBOOK_PAYMENT_ACCOUNTS.find(
+        (account) => account.id === paymentAccountId,
+      ) ?? DAYBOOK_PAYMENT_ACCOUNTS[0],
+    [paymentAccountId],
+  );
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -35,8 +64,56 @@ export function DaybookExpenseDialog({
         </DialogHeader>
 
         <div className="px-5 py-6">
-          <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
-            Expense form is loading.
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="grid gap-5 md:grid-cols-[minmax(220px,360px)_minmax(260px,1fr)]">
+              <div className="grid gap-2">
+                <Label htmlFor="daybook-expense-payee">Payee</Label>
+                <Input
+                  id="daybook-expense-payee"
+                  onChange={(event) => setPayee(event.target.value)}
+                  placeholder="Who did you pay?"
+                  value={payee}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="daybook-expense-payment-account">
+                  Payment account
+                </Label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Select
+                    onValueChange={setPaymentAccountId}
+                    value={paymentAccountId}
+                  >
+                    <SelectTrigger
+                      className="w-full border-emerald-500 bg-white"
+                      id="daybook-expense-payment-account"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DAYBOOK_PAYMENT_ACCOUNTS.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
+                    Balance {money(selectedPaymentAccount?.balance ?? 0)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-4 text-right">
+              <div className="font-semibold text-slate-500 text-xs uppercase">
+                Amount
+              </div>
+              <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
+                {money(0)}
+              </div>
+            </div>
           </div>
         </div>
       </DialogContent>
