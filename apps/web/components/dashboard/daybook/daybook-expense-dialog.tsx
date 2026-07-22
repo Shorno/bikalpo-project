@@ -2,8 +2,12 @@
 
 import { CalendarIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
-import { DAYBOOK_PAYMENT_ACCOUNTS } from "@/components/dashboard/daybook/daybook-expense-ledger";
+import {
+  createDaybookExpenseId,
+  DAYBOOK_EXPENSE_CATEGORIES,
+  DAYBOOK_PAYMENT_ACCOUNTS,
+  type DaybookExpenseScope,
+} from "@/components/dashboard/daybook/daybook-expense-ledger";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +31,13 @@ type DaybookExpenseDialogProps = {
   scope: DaybookExpenseScope;
 };
 
+type DraftExpenseLine = {
+  amount: string;
+  category: string;
+  description: string;
+  id: string;
+};
+
 const PAYMENT_METHODS = [
   "Cash",
   "Cheque",
@@ -34,6 +45,15 @@ const PAYMENT_METHODS = [
   "Mobile Banking",
   "Bank Transfer",
 ];
+
+function createDraftLine(): DraftExpenseLine {
+  return {
+    amount: "",
+    category: DAYBOOK_EXPENSE_CATEGORIES[0] ?? "Bills / Utilities",
+    description: "",
+    id: createDaybookExpenseId("expense-line"),
+  };
+}
 
 function dateValue(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
@@ -49,6 +69,11 @@ function money(value: number) {
   })}`;
 }
 
+function toAmount(value: string) {
+  const parsed = Number.parseFloat(value.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function DaybookExpenseDialog({
   onOpenChange,
   open,
@@ -61,6 +86,10 @@ export function DaybookExpenseDialog({
   const [paymentDate, setPaymentDate] = useState(dateValue);
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0] ?? "");
   const [referenceNo, setReferenceNo] = useState("");
+  const [lines, setLines] = useState<DraftExpenseLine[]>(() => [
+    createDraftLine(),
+    createDraftLine(),
+  ]);
   const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
   const selectedPaymentAccount = useMemo(
     () =>
@@ -69,6 +98,22 @@ export function DaybookExpenseDialog({
       ) ?? DAYBOOK_PAYMENT_ACCOUNTS[0],
     [paymentAccountId],
   );
+  const total = useMemo(
+    () => lines.reduce((sum, line) => sum + toAmount(line.amount), 0),
+    [lines],
+  );
+
+  const updateLine = (
+    lineId: string,
+    field: keyof Omit<DraftExpenseLine, "id">,
+    value: string,
+  ) => {
+    setLines((currentLines) =>
+      currentLines.map((line) =>
+        line.id === lineId ? { ...line, [field]: value } : line,
+      ),
+    );
+  };
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -130,7 +175,7 @@ export function DaybookExpenseDialog({
                 Amount
               </div>
               <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
-                {money(0)}
+                {money(total)}
               </div>
             </div>
           </div>
@@ -178,6 +223,59 @@ export function DaybookExpenseDialog({
                 placeholder="Reference"
                 value={referenceNo}
               />
+            </div>
+          </div>
+
+          <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(260px,1.4fr)_minmax(140px,0.45fr)] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+              <div>#</div>
+              <div>Category</div>
+              <div>Description</div>
+              <div className="text-right">Amount</div>
+            </div>
+            <div>
+              {lines.map((line, index) => (
+                <div
+                  className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(260px,1.4fr)_minmax(140px,0.45fr)] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
+                  key={line.id}
+                >
+                  <div className="font-medium text-slate-500">{index + 1}</div>
+                  <Select
+                    onValueChange={(value) =>
+                      updateLine(line.id, "category", value)
+                    }
+                    value={line.category}
+                  >
+                    <SelectTrigger className="h-9 w-full bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DAYBOOK_EXPENSE_CATEGORIES.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    className="h-9 rounded-none border-x-0 border-y-0 bg-transparent focus-visible:ring-0"
+                    onChange={(event) =>
+                      updateLine(line.id, "description", event.target.value)
+                    }
+                    placeholder="Description"
+                    value={line.description}
+                  />
+                  <Input
+                    className="h-9 text-right tabular-nums"
+                    inputMode="decimal"
+                    onChange={(event) =>
+                      updateLine(line.id, "amount", event.target.value)
+                    }
+                    placeholder="0.00"
+                    value={line.amount}
+                  />
+                </div>
+              ))}
             </div>
           </div>
         </div>
