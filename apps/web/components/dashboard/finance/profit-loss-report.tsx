@@ -206,9 +206,7 @@ export function ProfitLossReport() {
     const income = toNumber(pnl?.income?.total ?? pnl?.revenue);
     const cogs = toNumber(pnl?.costOfGoods?.total ?? pnl?.cogs);
     const grossProfit = toNumber(pnl?.grossProfit ?? income - cogs);
-    const netProfit = toNumber(
-      pnl?.netProfit ?? grossProfit - operatingExpenses,
-    );
+    const netProfit = grossProfit - operatingExpenses;
 
     return {
       cogs,
@@ -221,9 +219,7 @@ export function ProfitLossReport() {
       incomeRows,
       isProfit: netProfit >= 0,
       netProfit,
-      netProfitPercent: toNumber(
-        pnl?.netProfitPercent ?? toPercent(netProfit, income),
-      ),
+      netProfitPercent: toPercent(netProfit, income),
       operatingExpenseRows,
       operatingExpenses,
     };
