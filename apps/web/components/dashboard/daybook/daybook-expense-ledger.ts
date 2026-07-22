@@ -38,3 +38,18 @@ export type DaybookExpenseEntry = {
   total: number;
   lines: DaybookExpenseLine[];
 };
+
+export const DAYBOOK_PAYMENT_ACCOUNTS: DaybookPaymentAccount[] = [
+  {
+    balance: 90_000,
+    id: "cash-on-hand",
+    name: "Cash on Hand",
+    type: "cash",
+  },
+  {
+    balance: 0,
+    id: "bank-account",
+    name: "Bank Account",
+    type: "bank",
+  },
+];
